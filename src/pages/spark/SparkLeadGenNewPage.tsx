@@ -24,7 +24,10 @@ import {
 
 type SearchMode = "strict" | "focused" | "balanced" | "broad";
 
-interface CategoryHit { id: number; name: string; industry_id?: number | null; is_curated?: boolean | number | null }
+// `custom: true` (id 0) = the customer typed a category the taxonomy does not have
+// (Brandon 2026-09-04: "snow removal"). It is searchable through its topics and is
+// queued for the category review server-side.
+interface CategoryHit { id: number; name: string; industry_id?: number | null; is_curated?: boolean | number | null; custom?: boolean }
 interface TermHit { id: number; term: string; weight?: number }
 interface CityHit { id: number; name: string; state: string }
 interface ZipHit { zip: string; city?: string; state?: string }
@@ -107,10 +110,23 @@ interface ComboProps<T> {
   renderItem: (item: T) => React.ReactNode;
   disabled?: boolean;
   icon?: React.ReactNode;
+  /** Brandon 2026-09-04: "I should just be able to select this and it should say
+   *  custom option." When set, the dropdown always offers a selectable row that
+   *  hands the typed text back (label from customLabel). */
+  onPickCustom?: (value: string) => void;
+  customLabel?: (value: string) => string;
+  /** A second, differently-typed suggestion list rendered under its own heading
+   *  (e.g. matching search TOPICS while the user is in the CATEGORY box). */
+  secondary?: { title: string; items: { key: string; label: React.ReactNode }[]; onPick: (key: string) => void };
+  emptyText?: string;
+  /** Enter key. Brandon 2026-09-04: "it says press Enter to add it as a custom
+   *  term, but it doesn't accept me pressing enter" — it was never wired. */
+  onEnter?: (value: string, firstResult: T | null) => void;
 }
 
 function AutocompleteCombo<T>({
   placeholder, value, onChange, results, loading, onPick, renderItem, disabled, icon,
+  onPickCustom, customLabel, secondary, emptyText, onEnter,
 }: ComboProps<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -133,6 +149,15 @@ function AutocompleteCombo<T>({
           value={value}
           onChange={(e) => { onChange(e.target.value); setOpen(true); }}
           onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") { setOpen(false); return; }
+            if (e.key !== "Enter") return;
+            e.preventDefault();
+            const txt = value.trim();
+            if (!txt) return;
+            if (onEnter) { onEnter(txt, results.length ? results[0] : null); setOpen(false); return; }
+            if (results.length) { onPick(results[0]); setOpen(false); }
+          }}
           placeholder={placeholder}
           className={`w-full text-sm border border-slate-300 rounded px-3 py-2 focus:outline-none focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33] disabled:bg-slate-50 disabled:text-slate-400 ${icon ? "pl-8" : ""}`}
         />
@@ -142,8 +167,8 @@ function AutocompleteCombo<T>({
           {loading && (
             <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
           )}
-          {!loading && results.length === 0 && value.trim() && (
-            <div className="px-3 py-2 text-xs text-slate-400">No matches — add it under Search topics as a custom term. It becomes your search seed and is queued for the category review.</div>
+          {!loading && results.length === 0 && value.trim() && !onPickCustom && !(secondary && secondary.items.length) && (
+            <div className="px-3 py-2 text-xs text-slate-400">{emptyText || "No matches — press Enter to add it as a custom term."}</div>
           )}
           {results.map((r, i) => (
             <button
@@ -155,6 +180,31 @@ function AutocompleteCombo<T>({
               {renderItem(r)}
             </button>
           ))}
+          {!loading && secondary && secondary.items.length > 0 && (
+            <>
+              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide font-semibold text-slate-400 border-t border-slate-100">{secondary.title}</div>
+              {secondary.items.map((it) => (
+                <button
+                  key={it.key}
+                  type="button"
+                  onClick={() => { secondary.onPick(it.key); setOpen(false); }}
+                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-orange-50 hover:text-orange-900 flex items-center justify-between"
+                >
+                  {it.label}
+                </button>
+              ))}
+            </>
+          )}
+          {!loading && onPickCustom && value.trim().length >= 2 && (
+            <button
+              type="button"
+              onClick={() => { onPickCustom(value.trim()); setOpen(false); }}
+              className="w-full text-left px-3 py-2 text-sm border-t border-slate-100 text-[#EF6C33] hover:bg-orange-50 flex items-center gap-2"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              <span>{customLabel ? customLabel(value.trim()) : `Use "${value.trim()}" as a custom option`}</span>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -287,6 +337,23 @@ export function SparkLeadGenNewPage() {
     return () => { cancelled = true; };
   }, [debouncedCat, get, ready, catTop25Only]);
 
+  // Search TOPICS that match what is typed in the CATEGORY box — so "snow" shows
+  // "snow removal services" even though no category matches (Brandon 2026-09-04).
+  const [catTermSuggestions, setCatTermSuggestions] = useState<TermHit[]>([]);
+  useEffect(() => {
+    if (!ready || catTop25Only || debouncedCat.trim().length < 2) { setCatTermSuggestions([]); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<{ data: TermHit[] }>(`/api/v1/leadgen/terms/autocomplete?q=${encodeURIComponent(debouncedCat)}`);
+        if (!cancelled) setCatTermSuggestions((r?.data || []).slice(0, 6));
+      } catch {
+        if (!cancelled) setCatTermSuggestions([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [debouncedCat, get, ready, catTop25Only]);
+
   // Term autocomplete (scoped to category if present).
   useEffect(() => {
     if (!ready || debouncedTerm.trim().length < 2) { setTermResults([]); return; }
@@ -355,8 +422,9 @@ export function SparkLeadGenNewPage() {
 
   // ── live keyword expansion preview ──────────────────────────────────────
   const kwInputs = useMemo(() => ({
-    categoryId: form.category?.id ?? null,
-    industryId: form.category?.industry_id ?? null,
+    // A custom category (id 0) has no taxonomy expansion — the typed topics carry the seed.
+    categoryId: form.category && form.category.id > 0 ? form.category.id : null,
+    industryId: form.category && form.category.id > 0 ? (form.category.industry_id ?? null) : null,
     termIds: form.terms.map((t) => t.id).sort(),
     termTexts: form.terms.map((t) => t.term).sort(),
     mode: form.searchMode,
@@ -473,13 +541,51 @@ export function SparkLeadGenNewPage() {
     setForm({ ...form, terms: [...form.terms, t] });
     setTermQuery("");
   }
-  function addCustomTerm() {
-    const txt = termQuery.trim();
+  function addCustomTermText(raw: string) {
+    const txt = raw.trim();
     if (!txt) return;
-    if (form.terms.some((x) => x.term.toLowerCase() === txt.toLowerCase())) return;
+    if (form.terms.some((x) => x.term.toLowerCase() === txt.toLowerCase())) { setTermQuery(""); return; }
     // Custom terms use a synthetic negative id so the backend knows it's free-text.
     setForm({ ...form, terms: [...form.terms, { id: -Date.now(), term: txt }] });
     setTermQuery("");
+  }
+  function addCustomTerm() { addCustomTermText(termQuery); }
+  // Enter in the topics box: an exact taxonomy match is taken as-is, anything else
+  // is added as a custom term (the placeholder always promised this).
+  function onTopicEnter(txt: string, first: TermHit | null) {
+    if (first && first.term.toLowerCase() === txt.toLowerCase()) { addTerm(first); return; }
+    addCustomTermText(txt);
+  }
+  // Enter in the category box: exact category match wins, else custom category.
+  function onCategoryEnter(txt: string, first: CategoryHit | null) {
+    if (first && first.name.toLowerCase() === txt.toLowerCase()) { setForm({ ...form, category: first }); setCatQuery(""); return; }
+    if (!catTop25Only) pickCustomCategory(txt);
+    else if (first) { setForm({ ...form, category: first }); setCatQuery(""); }
+  }
+  // Brandon 2026-09-04: a typed category with no taxonomy match becomes a CUSTOM
+  // category — and its text is also the first search topic, so the preview and the
+  // job have a seed. Server-side the term is queued for the category review.
+  function pickCustomCategory(txt: string) {
+    const name = txt.trim();
+    if (!name) return;
+    const already = form.terms.some((x) => x.term.toLowerCase() === name.toLowerCase());
+    setForm({
+      ...form,
+      category: { id: 0, name, industry_id: null, custom: true },
+      terms: already ? form.terms : [...form.terms, { id: -Date.now(), term: name }],
+    });
+    setCatQuery("");
+  }
+  // A search TOPIC picked from the category box: custom category named after it,
+  // and the taxonomy term itself (positive id) becomes the seed for expansion.
+  function pickTermAsCategory(t: TermHit) {
+    const already = form.terms.some((x) => x.id === t.id || x.term.toLowerCase() === t.term.toLowerCase());
+    setForm({
+      ...form,
+      category: { id: 0, name: t.term, industry_id: null, custom: true },
+      terms: already ? form.terms : [...form.terms, t],
+    });
+    setCatQuery("");
   }
   function addCity(c: CityHit) {
     if (form.cities.some((x) => x.id === c.id)) return;
@@ -493,8 +599,10 @@ export function SparkLeadGenNewPage() {
   }
 
   const buildPayload = useCallback(() => ({
-    customer_category_id: form.category?.id ?? null,
-    industry_id: form.category?.industry_id ?? null,
+    customer_category_id: form.category && form.category.id > 0 ? form.category.id : null,
+    industry_id: form.category && form.category.id > 0 ? (form.category.industry_id ?? null) : null,
+    // custom category (no taxonomy match) — the server queues it for the category review
+    custom_category_text: form.category?.custom ? form.category.name : null,
     terms: form.terms.map((t) => ({ id: t.id > 0 ? t.id : null, term: t.term })),
     // 2026-09-04 — the job must run exactly what the Live Preview showed. The
     // preview's expanded keyword list and radius-resolved cities go with the
@@ -563,9 +671,12 @@ export function SparkLeadGenNewPage() {
         {/* ─── LEFT: form ──────────────────────────────────────────────── */}
         <div className="space-y-6">
           {/* Business Category */}
-          <Section title="Business Category" required>
+          <Section
+            title="Business Category"
+            hint="A shortcut: pick a category and we pull in the search topics attached to it. Type anything — if it is not a category yet you can use it as a custom one, or skip this and add your own topics below."
+          >
             {form.category ? (
-              <Chip label={form.category.name} onRemove={() => setForm({ ...form, category: null })} icon={<Building2 className="h-3 w-3" />} />
+              <Chip label={form.category.custom ? `${form.category.name} · custom` : form.category.name} onRemove={() => setForm({ ...form, category: null })} icon={<Building2 className="h-3 w-3" />} />
             ) : (
               <>
                 {/* F-LG.158: Top-25 curated filter toggle */}
@@ -596,6 +707,14 @@ export function SparkLeadGenNewPage() {
                     </span>
                   )}
                   icon={<Building2 className="h-3.5 w-3.5" />}
+                  secondary={catTermSuggestions.length ? {
+                    title: "Search topics that match",
+                    items: catTermSuggestions.map((t) => ({ key: String(t.id), label: <span className="flex-1 flex items-center gap-2"><Tag className="h-3 w-3 text-slate-400" /><span>{t.term}</span></span> })),
+                    onPick: (key) => { const t = catTermSuggestions.find((x) => String(x.id) === key); if (t) pickTermAsCategory(t); },
+                  } : undefined}
+                  onPickCustom={catTop25Only ? undefined : pickCustomCategory}
+                  customLabel={(v) => `Use "${v}" as a custom category`}
+                  onEnter={onCategoryEnter}
                 />
               </>
             )}
@@ -604,7 +723,9 @@ export function SparkLeadGenNewPage() {
           {/* Search Topics */}
           <Section
             title="Search Topics"
-            hint="Optional. Leave blank to search on the category alone, or add specific service types to narrow."
+            required
+            requiredLabel="required — a category counts"
+            hint="These are what we actually search for. A category fills them in for you; add your own to narrow or to search something the category list does not have. Press Enter to add what you typed."
           >
             <div className="flex flex-wrap gap-1.5 mb-2">
               {form.terms.map((t) => (
@@ -623,6 +744,9 @@ export function SparkLeadGenNewPage() {
               results={termResults}
               loading={termLoading}
               onPick={addTerm}
+              onEnter={onTopicEnter}
+              onPickCustom={addCustomTermText}
+              customLabel={(v) => `Add "${v}" as a custom topic`}
               renderItem={(t) => (
                 <span className="flex-1 flex items-center justify-between">
                   <span>{t.term}</span>
@@ -1033,13 +1157,13 @@ export function SparkLeadGenNewPage() {
 // Small primitives used only by this page
 // ─────────────────────────────────────────────────────────────────────────────
 
-function Section({ title, children, required, hint, icon }: { title: string; children: React.ReactNode; required?: boolean; hint?: string; icon?: React.ReactNode }) {
+function Section({ title, children, required, requiredLabel, hint, icon }: { title: string; children: React.ReactNode; required?: boolean; requiredLabel?: string; hint?: string; icon?: React.ReactNode }) {
   return (
     <div className="rounded-xl bg-white border border-slate-200 p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
           {icon}{title}
-          {required && <span className="text-[10px] text-rose-500 font-normal">required</span>}
+          {required && <span className="text-[10px] text-rose-500 font-normal normal-case tracking-normal">{requiredLabel || "required"}</span>}
         </div>
       </div>
       {hint && <p className="text-[11px] text-slate-500 mb-2">{hint}</p>}
