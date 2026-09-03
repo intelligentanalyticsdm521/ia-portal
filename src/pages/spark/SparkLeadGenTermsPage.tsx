@@ -68,7 +68,7 @@ export default function SparkLeadGenTermsPage() {
             <li>Resell, license, rent, share or otherwise redistribute leads or lead data to anyone outside your business.</li>
             <li>Build, contribute to, or sell a marketing list, directory, database or data product using leads.</li>
             <li>Scrape, bulk-export or automate extraction of the Lead Inbox for any purpose other than your own outreach.</li>
-            <li>Use leads to offer a competing lead-generation or data service.</li>
+            <li>Use leads to build or seed a contact database, or to offer a competing lead-generation, email-finding or data service.</li>
             <li>Use leads for any unlawful, deceptive, harassing or discriminatory purpose.</li>
           </ul>
           <p>
@@ -90,8 +90,10 @@ export default function SparkLeadGenTermsPage() {
               consent. Respect the National Do Not Call Registry and state lists, and calling-hour restrictions.
             </li>
             <li>
-              <strong>Privacy law:</strong> where a lead&apos;s contact is covered by a state privacy law (for example California),
-              provide the required notice and honor access, deletion and opt-out requests.
+              <strong>Data protection:</strong> you are the independent data controller of the lead data you receive. You decide
+              how you use it, you need your own lawful basis for outreach, and you must honor access, deletion and opt-out
+              requests. Where a lead&apos;s contact is covered by a state privacy law (for example California), provide the
+              required notice.
             </li>
           </ul>
           <p>SPARK campaigns include unsubscribe handling and consent tracking to help you meet these obligations; using them does not transfer the obligation.</p>
@@ -100,7 +102,9 @@ export default function SparkLeadGenTermsPage() {
         <Section title="6. Removal and suppression">
           <p>
             If a business asks not to be contacted, stop contacting it and add it to your Suppressed Domains. Businesses that ask
-            Intelligent Analytics directly are suppressed platform-wide. Suppressed domains are never delivered again.
+            Intelligent Analytics directly are suppressed platform-wide. Suppressed domains are never delivered again. When a person
+            asks our data providers to remove their details, we remove that contact from your Lead Inbox and you must remove it
+            from your own records.
           </p>
         </Section>
 
@@ -115,8 +119,9 @@ export default function SparkLeadGenTermsPage() {
         <Section title="8. Accuracy">
           <p>
             Contacts are verified at the time of delivery. Businesses change; we do not guarantee that a contact remains
-            deliverable, that a business will respond, or any particular sales outcome. If a lead looks wrong, mark it in the
-            Lead Inbox so it can be reviewed.
+            deliverable, that a business will respond, or any particular sales outcome. Our discovery and data sources may change
+            or be withdrawn without notice, and we do not guarantee the continued supply of any particular data field. If a lead
+            looks wrong, mark it in the Lead Inbox so it can be reviewed.
           </p>
         </Section>
 
