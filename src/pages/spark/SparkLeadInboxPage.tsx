@@ -246,6 +246,27 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
 // LeadInboxTab — body of the legacy SparkLeadsPage.tsx, lifted as-is.
 //
 // Preserves F-LG.6.6 (since-last-visit pill), F-LG.10 (Run Summary banner),
+// SOURCE column (Brandon 2026-09-04): customers don't care which engine
+// pointed us at a business, and we no longer store pointer names on the lead
+// (storage_policy none). Every current source reads "SPARK Lead Gen"; a future
+// named social source (e.g. LinkedIn) would show its own name.
+const SOURCE_LABELS: Record<string, string> = {
+  spark_leadgen: "SPARK Lead Gen",
+  hunter_discover: "SPARK Lead Gen",
+  data_axle: "SPARK Lead Gen",
+  brave_search: "SPARK Lead Gen",
+  you_search: "SPARK Lead Gen",
+  mojeek_search: "SPARK Lead Gen",
+  google_cse: "SPARK Lead Gen",
+  linkedin: "LinkedIn",
+};
+function sourceLabel(raw: string | null | undefined): string {
+  if (!raw) return "—";
+  let first = String(raw);
+  try { const arr = JSON.parse(first); if (Array.isArray(arr) && arr.length) first = String(arr[0]); } catch { /* plain string */ }
+  return SOURCE_LABELS[first] ?? first;
+}
+
 // F-LG.15 (adversarial-verify column + filter + sort), and all per-row actions
 // (promote, suppress, dismiss). The SparkPageShell chrome lives on the
 // parent SparkLeadInboxPage; this tab just renders the body content.
@@ -707,7 +728,7 @@ function LeadInboxTab() {
                   <td className="px-4 py-3 text-xs text-slate-700">{l.email || <span className="text-slate-400">—</span>}</td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.phone || <span className="text-slate-400">—</span>}</td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
-                  <td className="px-4 py-3 text-[10px] text-slate-500">{l.source || l.sources_found || "—"}</td>
+                  <td className="px-4 py-3 text-[10px] text-slate-500">{sourceLabel(l.source || l.sources_found)}</td>
                   <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     {l.verification_status === "promoted" && (
