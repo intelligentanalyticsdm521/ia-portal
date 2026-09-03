@@ -688,7 +688,7 @@ export function SparkLeadGenNewPage() {
           {/* Business Category */}
           <Section
             title="Business Category"
-            hint="A shortcut: pick a category and we pull in the search topics attached to it. Type anything — if it is not a category yet you can use it as a custom one, or skip this and add your own topics below."
+            hint="Adds all the search topics associated with a category. You can remove any you don't want in the preview pane."
           >
             {form.category ? (
               <Chip label={form.category.custom ? `${form.category.name} · custom` : form.category.name} onRemove={() => setForm({ ...form, category: null })} icon={<Building2 className="h-3 w-3" />} />
@@ -738,9 +738,7 @@ export function SparkLeadGenNewPage() {
           {/* Search Topics */}
           <Section
             title="Search Topics"
-            required
-            requiredLabel="required — a category counts"
-            hint="These are what we actually search for. A category fills them in for you; add your own to narrow or to search something the category list does not have. Press Enter to add what you typed."
+            hint="Specific topics you want searched. Type one and press Enter."
           >
             <div className="flex flex-wrap gap-1.5 mb-2">
               {form.terms.map((t) => (
