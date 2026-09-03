@@ -35,7 +35,7 @@ export interface LeadGenBillingRow {
   run_name: string;
   created_at: string;
   completed_at: string | null;
-  status: "reserved" | "delivered" | "paid" | "invoice_open" | "invoice_failed" | "refunded" | "failed" | string;
+  status: "reserved" | "settling" | "delivered" | "paid" | "invoice_open" | "invoice_failed" | "void" | "refunded" | "failed" | string;
   job_status: string;
   pay_method: string;
   target_count: number;
@@ -79,6 +79,8 @@ export function splitRun(c: LeadGenCredits | null, target: number): { fromCredit
 
 export const BILLING_STATUS_LABEL: Record<string, { label: string; tone: "ok" | "warn" | "bad" | "muted" }> = {
   reserved:       { label: "Running",        tone: "muted" },
+  settling:       { label: "Finishing",      tone: "muted" },
+  void:           { label: "Waived",         tone: "ok" },
   delivered:      { label: "Included",       tone: "ok" },
   paid:           { label: "Paid",           tone: "ok" },
   invoice_open:   { label: "Payment due",    tone: "warn" },

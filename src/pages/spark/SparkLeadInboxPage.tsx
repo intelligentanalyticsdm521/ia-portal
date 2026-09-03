@@ -350,6 +350,7 @@ interface Lead {
   created_at: string;
   // Billing model: leads of a run whose invoice is unpaid are locked (visible, not promotable).
   locked?: boolean | number | null;
+  contact_masked?: boolean;
   search_job_id?: number | null;
 }
 
@@ -768,8 +769,15 @@ function LeadInboxTab() {
                       <span className="ml-1 opacity-70">{tier ? tier[0].toUpperCase() : "—"}</span>
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{l.email || <span className="text-slate-400">—</span>}</td>
-                  <td className="px-4 py-3 text-xs text-slate-700">{l.phone || <span className="text-slate-400">—</span>}</td>
+                  {/* Locked (unpaid run): the server masks email/phone — "j•••@example.com" — until the invoice is paid. */}
+                  <td className="px-4 py-3 text-xs text-slate-700">
+                    {l.email || <span className="text-slate-400">—</span>}
+                    {!!l.locked && l.email && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
+                  </td>
+                  <td className="px-4 py-3 text-xs text-slate-700">
+                    {l.phone || <span className="text-slate-400">—</span>}
+                    {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                   <td className="px-4 py-3 text-[10px] text-slate-500">{sourceLabel(l.source || l.sources_found)}</td>
                   <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
@@ -952,7 +960,7 @@ function BillingTab() {
           </thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map((r) => {
-              const settled = r.status !== "reserved";
+              const settled = r.status !== "reserved" && r.status !== "settling";
               const s = BILLING_STATUS_LABEL[r.status] ?? { label: r.status, tone: "muted" as const };
               const toneCls = s.tone === "ok" ? "bg-emerald-100 text-emerald-800" : s.tone === "warn" ? "bg-amber-100 text-amber-800" : s.tone === "bad" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700";
               const metered = settled ? r.metered_delivered : r.metered_reserved;

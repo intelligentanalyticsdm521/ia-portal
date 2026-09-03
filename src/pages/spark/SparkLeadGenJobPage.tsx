@@ -402,7 +402,7 @@ export function SparkLeadGenJobPage() {
           const b = billingRow;
           const tone = BILLING_STATUS_LABEL[b.status] ?? { label: b.status, tone: "muted" as const };
           const toneCls = tone.tone === "ok" ? "bg-emerald-100 text-emerald-800" : tone.tone === "warn" ? "bg-amber-100 text-amber-800" : tone.tone === "bad" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-700";
-          const settled = b.status !== "reserved";
+          const settled = b.status !== "reserved" && b.status !== "settling";
           const credits = settled ? (b.credits_consumed ?? 0) : (b.credits_reserved ?? 0);
           const metered = settled ? (b.metered_delivered ?? 0) : (b.metered_reserved ?? 0);
           return (
