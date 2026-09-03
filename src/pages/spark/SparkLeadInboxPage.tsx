@@ -34,6 +34,11 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink } from "../../components/spark/LeadGenTermsLink";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError } from "../../lib/leadgenBilling";
+// Inbox v1 (LOCKED 2026-09-04): the lead card, the shared capacity banner, and
+// the source/channel labels the row and the card both read from one place.
+import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
+import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
+import { sourceLabel, channelLabel } from "../../lib/leadSource";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
@@ -283,22 +288,8 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
 // pointed us at a business, and we no longer store pointer names on the lead
 // (storage_policy none). Every current source reads "SPARK Lead Gen"; a future
 // named social source (e.g. LinkedIn) would show its own name.
-const SOURCE_LABELS: Record<string, string> = {
-  spark_leadgen: "SPARK Lead Gen",
-  hunter_discover: "SPARK Lead Gen",
-  data_axle: "SPARK Lead Gen",
-  brave_search: "SPARK Lead Gen",
-  you_search: "SPARK Lead Gen",
-  mojeek_search: "SPARK Lead Gen",
-  google_cse: "SPARK Lead Gen",
-  linkedin: "LinkedIn",
-};
-function sourceLabel(raw: string | null | undefined): string {
-  if (!raw) return "—";
-  let first = String(raw);
-  try { const arr = JSON.parse(first); if (Array.isArray(arr) && arr.length) first = String(arr[0]); } catch { /* plain string */ }
-  return SOURCE_LABELS[first] ?? first;
-}
+// SOURCE_LABELS + sourceLabel now live in lib/leadSource so the row and the
+// lead card can never disagree about what a lead says it is.
 
 // F-LG.15 (adversarial-verify column + filter + sort), and all per-row actions
 // (promote, suppress, dismiss). The SparkPageShell chrome lives on the
@@ -371,6 +362,17 @@ function firstRefusalReason(json: string | null | undefined): string | null {
   }
 }
 
+interface InboxCapacity {
+  unlimited: boolean;
+  cap: number | null;
+  used: number;
+  remaining: number | null;
+  pct: number;
+  band: "warning" | "high" | "critical" | null;
+  full: boolean;
+  cold_count?: number;
+}
+
 interface LeadListResponse {
   data: Lead[];
   meta: {
@@ -379,6 +381,10 @@ interface LeadListResponse {
     per_page: number;
     total_pages: number;
     since_last_visit_count?: number;
+    // Inbox v1: capacity rides along on the list so the page fetches once.
+    inbox_capacity?: InboxCapacity | null;
+    // T1/T2 — false means this tenant is below Pro: no points, no band.
+    lead_intelligence?: boolean;
   };
 }
 
@@ -413,6 +419,14 @@ function LeadInboxTab() {
   });
   const [sinceLastVisit, setSinceLastVisit] = useState<number>(0);
   const [visitPillDismissed, setVisitPillDismissed] = useState<boolean>(false);
+  // Inbox v1: capacity (C7), the lead card, and the cold-lead bulk move (C7b).
+  const [capacity, setCapacity] = useState<InboxCapacity | null>(null);
+  const [showIntel, setShowIntel] = useState(true);
+  const [openLeadId, setOpenLeadId] = useState<number | null>(null);
+  const [coldOpen, setColdOpen] = useState(false);
+  const [coldCount, setColdCount] = useState<number | null>(null);
+  const [coldBusy, setColdBusy] = useState<"move_to_contacts" | "remove" | null>(null);
+  const [coldResult, setColdResult] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -428,6 +442,8 @@ function LeadInboxTab() {
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
+      setCapacity(r.meta?.inbox_capacity ?? null);
+      setShowIntel(r.meta?.lead_intelligence !== false);
       if (page === 1 && tierFilter === "all" && verifiedFilter === "all") {
         setSinceLastVisit(r.meta?.since_last_visit_count ?? 0);
         setVisitPillDismissed(false);
@@ -528,6 +544,50 @@ function LeadInboxTab() {
     }
   };
 
+  // ── Cold leads (C7b) ────────────────────────────────────────────────────
+  // Untouched for 90 days. They leave the inbox ONLY when the client presses
+  // one of these two buttons — nothing sweeps them out on a timer.
+  const refreshColdCount = useCallback(async () => {
+    try {
+      const r = await get<{ meta?: { total?: number } }>("/api/v1/leads/cold");
+      setColdCount(r?.meta?.total ?? 0);
+    } catch {
+      setColdCount(null);   // the count is a nicety; the buttons still work
+    }
+  }, [get]);
+
+  const openCold = useCallback(async () => {
+    setColdOpen(true);
+    setColdResult(null);
+    setColdCount(null);
+    await refreshColdCount();
+  }, [refreshColdCount]);
+
+  const runCold = async (action: "move_to_contacts" | "remove") => {
+    setColdBusy(action);
+    setColdResult(null);
+    try {
+      const r = await post<{ data?: { moved?: number; removed?: number; skipped?: number } }>(
+        "/api/v1/leads/cold/bulk", { action });
+      const d = (r as { data?: { moved?: number; removed?: number; skipped?: number } })?.data || {};
+      const n = action === "move_to_contacts" ? (d.moved ?? 0) : (d.removed ?? 0);
+      setColdResult(
+        n === 0
+          ? "No cold leads to move — everything in your inbox has been touched in the last 90 days."
+          : action === "move_to_contacts"
+            ? `Moved ${n} lead${n === 1 ? "" : "s"} to Contacts on the "Cold leads" list.`
+            : `Removed ${n} lead${n === 1 ? "" : "s"} from your inbox.`
+        + ((d.skipped ?? 0) > 0 ? ` ${d.skipped} could not be moved — try again.` : ""),
+      );
+      await load();
+      await refreshColdCount();
+    } catch (err) {
+      setColdResult(`That didn't work: ${friendlyApiError(err).message}`);
+    } finally {
+      setColdBusy(null);
+    }
+  };
+
   const counts = useMemo(() => {
     const c = { all: leads.length, hot: 0, warm: 0, cold: 0 };
     for (const l of leads) {
@@ -552,6 +612,34 @@ function LeadInboxTab() {
 
   return (
     <div className="space-y-4">
+      {/* C7 + Banners (LOCKED): one shared component, 60% yellow / 75% orange /
+          90%+ red, with the count and the one thing to do about it. Silent
+          below 60% — a bar that never goes away stops being a warning. */}
+      {capacity && (
+        <SparkCapacityBanner
+          label="Your Lead Inbox"
+          used={capacity.used}
+          cap={capacity.cap}
+          unlimited={capacity.unlimited}
+          alwaysShow={capacity.full}
+          fullNote={
+            <>
+              An inquiry from your own website still comes through. New B2B searches wait until
+              you have made room.
+            </>
+          }
+          action={
+            <button
+              type="button"
+              onClick={openCold}
+              className="rounded-lg border border-current/30 bg-white/80 px-3 py-1.5 text-xs font-semibold hover:bg-white"
+            >
+              Move cold leads
+            </button>
+          }
+        />
+      )}
+
       {sinceLastVisit > 0 && !visitPillDismissed && (
         <button
           type="button"
@@ -614,7 +702,9 @@ function LeadInboxTab() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {(["all", "hot", "warm", "cold"] as const).map((t) => (
+          {/* T1/T2: Hot / Warm / Cold is Pro and above. Standard still gets the
+              full inbox — it just isn't sorted by a score it can't see. */}
+          {(showIntel ? (["all", "hot", "warm", "cold"] as const) : (["all"] as const)).map((t) => (
             <button
               key={t}
               onClick={() => { setTierFilter(t); setPage(1); }}
@@ -676,7 +766,7 @@ function LeadInboxTab() {
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>
               <th className="px-4 py-3">Business</th>
-              <th className="px-4 py-3">
+              {showIntel && <th className="px-4 py-3">
                 <button
                   type="button"
                   onClick={() => { setSortMode((s) => (s === "score" ? "newest" : "score")); setPage(1); }}
@@ -686,7 +776,7 @@ function LeadInboxTab() {
                   Score
                   <ArrowUpDown className="h-3 w-3" />
                 </button>
-              </th>
+              </th>}
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Phone</th>
               <th className="px-4 py-3">Lifecycle</th>
@@ -731,8 +821,9 @@ function LeadInboxTab() {
               return (
                 <tr
                   key={l.id}
-                  className="hover:bg-slate-50 relative"
-                  onClick={dismissVisitPill}
+                  className="hover:bg-slate-50 relative cursor-pointer"
+                  title="Open this business"
+                  onClick={() => { dismissVisitPill(); setOpenLeadId(l.id); }}
                 >
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
@@ -760,15 +851,17 @@ function LeadInboxTab() {
                       )}
                     </div>
                   </td>
-                  <td className="px-4 py-3">
-                    <span
-                      title={scoreTip}
-                      className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${tier ? TIER_BADGE[tier] : "bg-slate-100 text-slate-600"}`}
-                    >
-                      {score}
-                      <span className="ml-1 opacity-70">{tier ? tier[0].toUpperCase() : "—"}</span>
-                    </span>
-                  </td>
+                  {showIntel && (
+                    <td className="px-4 py-3">
+                      <span
+                        title={scoreTip}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-bold ${tier ? TIER_BADGE[tier] : "bg-slate-100 text-slate-600"}`}
+                      >
+                        {score}
+                        <span className="ml-1 opacity-70">{tier ? tier[0].toUpperCase() : "—"}</span>
+                      </span>
+                    </td>
+                  )}
                   {/* Locked (unpaid run): the server masks email/phone — "j•••@example.com" — until the invoice is paid. */}
                   <td className="px-4 py-3 text-xs text-slate-700">
                     {l.email || <span className="text-slate-400">—</span>}
@@ -779,7 +872,12 @@ function LeadInboxTab() {
                     {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
-                  <td className="px-4 py-3 text-[10px] text-slate-500">{sourceLabel(l.source || l.sources_found)}</td>
+                  <td className="px-4 py-3 text-[10px] text-slate-500">
+                    {sourceLabel(l.source || l.sources_found)}
+                    {channelLabel(l.source || l.sources_found) && (
+                      <span className="block text-slate-400">via {channelLabel(l.source || l.sources_found)}</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
                   <td className="px-4 py-3">
                     {l.verification_status === "promoted" && (
@@ -819,7 +917,7 @@ function LeadInboxTab() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="relative inline-block">
+                    <div className="relative inline-block" onClick={(e) => e.stopPropagation()}>
                       <button
                         disabled={busyId === l.id}
                         onClick={() => setActionMenuOpen(actionMenuOpen === l.id ? null : l.id)}
@@ -853,7 +951,7 @@ function LeadInboxTab() {
             })}
             {!loading && filteredLeads.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-sm text-slate-500">
+                <td colSpan={showIntel ? 9 : 8} className="px-4 py-12 text-center text-sm text-slate-500">
                   {leads.length === 0
                     ? <>You haven't run a sweep yet. <a href="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
                     : `No leads match "${search}".`}
@@ -881,6 +979,79 @@ function LeadInboxTab() {
           </div>
         </div>
       )}
+
+      {/* The lead card: the business, its people, notes, activity, actions. */}
+      <SparkLeadModal
+        leadId={openLeadId}
+        open={openLeadId != null}
+        onClose={() => setOpenLeadId(null)}
+        onChanged={load}
+        onRemoved={(id) => setLeads((rows) => rows.filter((r) => r.id !== id))}
+      />
+
+      {/* C7b — the ONLY way cold leads leave the inbox. Two buttons, both
+          pressed by the client, neither of them on a timer. */}
+      <IadmModal
+        open={coldOpen}
+        onClose={() => setColdOpen(false)}
+        product="spark"
+        eyebrow="LEAD INBOX"
+        title="Move cold leads out"
+        size="lg"
+        footer={<IadmButton variant="ghost" onClick={() => setColdOpen(false)}>Close</IadmButton>}
+      >
+        <div className="px-6 py-5 space-y-4 text-sm text-slate-700">
+          <p>
+            A lead is <strong>cold</strong> when nobody has touched it for 90 days and it never became a
+            contact. Cold leads stay in your inbox until you decide what to do with them — nothing here
+            happens on its own.
+          </p>
+          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2 text-sm">
+            {coldCount == null
+              ? "Counting…"
+              : coldCount === 0
+                ? "You have no cold leads right now."
+                : <>You have <strong>{coldCount}</strong> cold lead{coldCount === 1 ? "" : "s"}.</>}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="font-semibold text-slate-900 text-sm">Move to Contacts</div>
+              <p className="text-xs text-slate-600 mt-1">
+                Adds them to Contacts on a list called <strong>Cold leads</strong>, tagged the same way so you
+                can email them later. They use your contact plan, not your inbox.
+              </p>
+              <button
+                type="button"
+                disabled={!!coldBusy || coldCount === 0}
+                onClick={() => runCold("move_to_contacts")}
+                className="mt-2 rounded-lg bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-50"
+              >
+                {coldBusy === "move_to_contacts" ? "Moving…" : "Move to Contacts"}
+              </button>
+            </div>
+            <div className="rounded-lg border border-slate-200 p-3">
+              <div className="font-semibold text-slate-900 text-sm">Remove</div>
+              <p className="text-xs text-slate-600 mt-1">
+                Takes them out of the inbox and adds nothing to Contacts. We still remember the business, so a
+                future search will not sell you the same one again.
+              </p>
+              <button
+                type="button"
+                disabled={!!coldBusy || coldCount === 0}
+                onClick={() => runCold("remove")}
+                className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {coldBusy === "remove" ? "Removing…" : "Remove"}
+              </button>
+            </div>
+          </div>
+          {coldResult && (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+              {coldResult}
+            </div>
+          )}
+        </div>
+      </IadmModal>
     </div>
   );
 }
