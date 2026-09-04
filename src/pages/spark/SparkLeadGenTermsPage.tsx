@@ -13,8 +13,12 @@ import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 
-const EFFECTIVE = "September 4, 2026";
-const VERSION = "1.0";
+// v1.1 adds §10 (aggregate learning — the L5 wording approved in
+// DECISIONS_QUEUE.md) and §11 (Intake sources). The canonical markdown is
+// overnight-report/LEADGEN_CLIENT_TERMS_v1.md and test/leadgen-terms-parity
+// .test.mjs asserts the two carry the same sentences, word for word.
+const EFFECTIVE = "September 5, 2026";
+const VERSION = "1.1";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -155,6 +159,32 @@ export default function SparkLeadGenTermsPage() {
           <p>
             We may update these terms as our data providers or the law change. The version and effective date appear at the top
             of this page; material changes are announced in the Lead Inbox.
+          </p>
+        </Section>
+
+        <Section title="10. Aggregate learning">
+          <p>
+            We learn from anonymised, aggregated results across our clients — for example how often leads from a source become
+            jobs in your industry — to improve scoring and suggestions for everyone. Nothing that identifies you, your customers
+            or your leads leaves your account, and this data is never sold or shared.
+          </p>
+        </Section>
+
+        <Section title="11. Leads from platforms you connect">
+          <p>
+            You can connect the platforms you already use — for example Google lead forms, Local Services Ads, Facebook and
+            Instagram lead forms, your Google Business Profile, and your own website forms — so the leads they produce arrive in
+            your Lead Inbox. We receive only what the connected platform sends for the accounts you connect: the person&apos;s
+            name and contact details, what they asked for, their answers to that form&apos;s own questions, and the
+            platform&apos;s own identifier for the lead.
+          </p>
+          <p>
+            We use it only to deliver that lead to you and to run the features you have turned on: matching it against leads you
+            already have so you are not called twice about the same job, scoring it, labelling where it came from, and drafting a
+            reply where you enabled that. It is your data. We do not sell it, we do not share it with another client, and we
+            never add it to the pool of businesses we find for anyone else. You are the controller of these records and you
+            remain the sender of anything you send in reply (section 5). You can disconnect a platform at any time and the flow
+            stops; ask us and we delete what we already received.
           </p>
         </Section>
       </div>
