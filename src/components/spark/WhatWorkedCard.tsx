@@ -21,7 +21,7 @@ import { IL_FINDINGS_PATHS, type IlFindingsReport } from "../../lib/ilFindingsAp
 
 const WHAT_WORKED_ROUTE = "/app/services/spark_what_worked";
 
-export function WhatWorkedCard() {
+export function WhatWorkedCard({ className = "" }: { className?: string } = {}) {
   const { get, ready } = useLumenApi();
   const [report, setReport] = useState<IlFindingsReport | null>(null);
 
@@ -45,7 +45,7 @@ export function WhatWorkedCard() {
   const headline = report.findings.slice(0, 3);
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white">
+    <div className={`rounded-lg border border-slate-200 bg-white ${className}`}>
       <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-3">
         <BarChart3 className="h-4 w-4 text-indigo-500" />
         <h2 className="text-sm font-semibold text-slate-900">What worked in {report.label}</h2>

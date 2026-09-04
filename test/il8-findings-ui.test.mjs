@@ -148,10 +148,18 @@ test("the card and the page read the same payload the email is built from", () =
   assert.match(card, /if \(!report \|\| report\.empty \|\| !report\.findings\.length\) return null;/);
 });
 
-test("the card is mounted once on the SPARK overview", () => {
-  const mounts = (overview.match(/<WhatWorkedCard\s*\/>/g) || []).length;
-  assert.equal(mounts, 1, `expected one mount, found ${mounts}`);
-  assert.ok(overview.includes('from "../../components/spark/WhatWorkedCard"'));
+test("the card is mounted exactly once on each surface that carries it", () => {
+  // Two surfaces, one component: SPARK Overview (where an owner lands) and
+  // SPARK -> IA Insights (where the monthly reports live, beside the Lead Pool
+  // card that reads its own email's payload the same way). Once each — a card
+  // that hides itself when there is nothing to say is not noise, but two of it
+  // on one page would be.
+  const health = read("pages/spark/SparkIAInsightsHealthPage.tsx");
+  for (const [name, src] of [["overview", overview], ["IA Insights", health]]) {
+    const mounts = (src.match(/<WhatWorkedCard[\s/]/g) || []).length;
+    assert.equal(mounts, 1, `${name}: expected one mount, found ${mounts}`);
+    assert.ok(src.includes("components/spark/WhatWorkedCard"), `${name}: no import`);
+  }
 });
 
 test("money is rendered as money and never as a bare number", () => {
