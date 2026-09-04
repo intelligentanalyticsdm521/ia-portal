@@ -871,6 +871,74 @@ export function useArionContext() {
         const { assembleBlocks } = await import('../lib/arionApi');
         return assembleBlocks({ ...b, siteId, pageId: params.pageId, draftBlockIds: params.draftBlockIds });
       },
+
+      /* Site builder — Pages + the section-list editor (Phase 1A, 2026-09-05).
+         Reads and writes the live WordPress page through the plugin's site
+         token. On every ARION tier (W-4); none of these spend credits. */
+      async listSitePages(siteId: string) {
+        const b = await base();
+        const { listSitePages } = await import('../lib/arionApi');
+        return listSitePages({ ...b, siteId });
+      },
+
+      async getSitePageSections(siteId: string, pageId: number) {
+        const b = await base();
+        const { getSitePageSections } = await import('../lib/arionApi');
+        return getSitePageSections({ ...b, siteId, pageId });
+      },
+
+      async saveSitePageSections(
+        siteId: string,
+        pageId: number,
+        params: { sections: Array<{ fields: any; node: any }>; title?: string; status?: string },
+      ) {
+        const b = await base();
+        const { saveSitePageSections } = await import('../lib/arionApi');
+        return saveSitePageSections({ ...b, siteId, pageId, ...params });
+      },
+
+      async previewSitePage(
+        siteId: string,
+        pageId: number,
+        params: { sections: Array<{ fields: any; node: any }>; title?: string },
+      ) {
+        const b = await base();
+        const { previewSitePage } = await import('../lib/arionApi');
+        return previewSitePage({ ...b, siteId, pageId, ...params });
+      },
+
+      async undoSitePage(siteId: string, pageId: number) {
+        const b = await base();
+        const { undoSitePage } = await import('../lib/arionApi');
+        return undoSitePage({ ...b, siteId, pageId });
+      },
+
+      async createSitePage(siteId: string, params: { title: string; sections: Array<{ kind: string }> }) {
+        const b = await base();
+        const { createSitePage } = await import('../lib/arionApi');
+        return createSitePage({ ...b, siteId, ...params });
+      },
+
+      async buildSiteSection(siteId: string, kind: string) {
+        const b = await base();
+        const { buildSiteSection } = await import('../lib/arionApi');
+        return buildSiteSection({ ...b, siteId, kind });
+      },
+
+      async getSectionLibrary(siteId: string) {
+        const b = await base();
+        const { getSectionLibrary } = await import('../lib/arionApi');
+        return getSectionLibrary({ ...b, siteId });
+      },
+
+      async uploadSiteMedia(
+        siteId: string,
+        params: { filename?: string; contentType?: string; dataBase64?: string; url?: string; alt?: string },
+      ) {
+        const b = await base();
+        const { uploadSiteMedia } = await import('../lib/arionApi');
+        return uploadSiteMedia({ ...b, siteId, ...params });
+      },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);
 
