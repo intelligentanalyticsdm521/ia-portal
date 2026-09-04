@@ -13,6 +13,16 @@ interface ContactListItem {
   company_name?: string;
 }
 
+/** A past job for this customer — the return-visit picker's options. */
+interface PastJob {
+  job_id: string;
+  job_number?: string;
+  title?: string;
+  status?: string;
+  actual_end?: string | null;
+  scheduled_start?: string | null;
+}
+
 interface Address {
   address_id: string;
   label?: string;
@@ -45,6 +55,11 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
   const [contacts, setContacts] = useState<ContactListItem[]>([]);
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loadingAddrs, setLoadingAddrs] = useState(false);
+  // Foundation C (F-4) — "this is us coming back for job #X". An explicit link,
+  // not a guess from dates: the outcomes chain counts repeat work off it, and
+  // repeat rate is one of the numbers the AI learns each business by.
+  const [pastJobs, setPastJobs] = useState<PastJob[]>([]);
+  const [returnOfJobId, setReturnOfJobId] = useState("");
 
   // Existing-customer mode
   const [contactId, setContactId] = useState("");
@@ -94,7 +109,10 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
 
   // Load addresses when an existing contact is picked
   useEffect(() => {
-    if (mode !== "existing" || !contactId) { setAddresses([]); setAddressId(""); return; }
+    if (mode !== "existing" || !contactId) {
+      setAddresses([]); setAddressId(""); setPastJobs([]); setReturnOfJobId("");
+      return;
+    }
     setLoadingAddrs(true);
     (async () => {
       try {
@@ -107,6 +125,16 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
       } finally {
         setLoadingAddrs(false);
       }
+      // Their earlier jobs, for the return-visit picker. A separate,
+      // best-effort call: a customer with no history is the normal case, and
+      // failing to list it must never stop someone booking work.
+      try {
+        const activity = await get<{ jobs?: PastJob[] }>(`/contacts/${contactId}/activity`);
+        setPastJobs(activity.jobs || []);
+      } catch {
+        setPastJobs([]);
+      }
+      setReturnOfJobId("");
     })();
   }, [contactId, mode, get]);
 
@@ -153,6 +181,9 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
       customer_notes: customerNotes.trim() || null,
       source: "manual",
       ...(loc.multi && locationId ? { location_id: locationId } : {}),
+      // Only sent when they picked one. The API validates it belongs to this
+      // business, is not this job, and does not close a loop.
+      ...(returnOfJobId ? { return_of_job_id: returnOfJobId } : {}),
     };
 
     // Service address is OPTIONAL — consulting/agency/SaaS work doesn't
@@ -327,6 +358,25 @@ export function JobCreateForm({ onCreated, onCancel }: JobCreateProps) {
           <input type="datetime-local" value={scheduledEnd} onChange={(e) => setScheduledEnd(e.target.value)} style={selectStyle} />
         </Field>
       </div>
+
+      {mode === "existing" && pastJobs.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <Field label="Is this a return visit? (optional)">
+            <select value={returnOfJobId} onChange={(e) => setReturnOfJobId(e.target.value)} style={selectStyle}>
+              <option value="">No — this is new work</option>
+              {pastJobs.map((j) => (
+                <option key={j.job_id} value={j.job_id}>
+                  {[j.job_number, j.title].filter(Boolean).join(" — ")}
+                  {j.actual_end ? ` (finished ${new Date(j.actual_end).toLocaleDateString()})` : ""}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
+              Pick the earlier job you are going back for. It is how repeat work is counted.
+            </div>
+          </Field>
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
         <Field label="Customer notes (visible in portal)">
