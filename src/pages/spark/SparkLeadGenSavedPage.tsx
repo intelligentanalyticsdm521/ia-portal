@@ -23,6 +23,8 @@ interface SearchProfile {
   name: string;
   customer_category_id?: number | null;
   customer_category_name?: string | null;
+  /** A13 — a saved search can hold several categories; this is all of them. */
+  category_names?: string[] | null;
   search_mode?: string;
   state?: string;
   cities?: Array<{ id: number; name: string; state?: string }>;
@@ -142,7 +144,9 @@ export function SparkLeadGenSavedPage() {
                     <div className="text-[10px] text-slate-400 mt-0.5">Created {new Date(p.created_at).toLocaleDateString()}</div>
                   </td>
                   <td className="px-4 py-2.5 align-top text-xs text-slate-700">
-                    {p.customer_category_name || <span className="text-slate-300 italic">—</span>}
+                    {p.category_names?.length
+                      ? p.category_names.join(" · ")
+                      : p.customer_category_name || <span className="text-slate-300 italic">—</span>}
                     {typeof p.term_count === "number" && p.term_count > 0 && (
                       <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
                         <Tag className="h-2.5 w-2.5" /> {p.term_count} extra term{p.term_count === 1 ? "" : "s"}

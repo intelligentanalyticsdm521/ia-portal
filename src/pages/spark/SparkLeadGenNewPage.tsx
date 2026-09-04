@@ -14,8 +14,12 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink, LeadGenTermsNotice } from "../../components/spark/LeadGenTermsLink";
 import {
-  type LeadGenCredits, BILLING_SETTINGS_ROUTE, fmtUsd, friendlyApiError, hasLeadsPackage, splitRun,
+  type LeadGenCredits, type LeadGenForecast,
+  BILLING_SETTINGS_ROUTE, fmtUsd, friendlyApiError, hasLeadsPackage, splitRun,
 } from "../../lib/leadgenBilling";
+import {
+  type ExpandedKeyword, withTypedTopics, mergeExpansions, categoryPayloadFrom,
+} from "../../lib/leadgenCategories";
 import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
   X, ChevronDown, Check, Tag, Snowflake, Building2, Info, CreditCard, CalendarClock,
@@ -39,19 +43,9 @@ interface ZipHit { zip: string; city?: string; state?: string }
 // expects ?state=ABBR.
 interface StateRow { id: number; abbr: string; name: string }
 
-interface ExpandedKeyword { term: string; weight: number; source: string }
-/** Expansion + the customer's own typed topics (weight 1, source "typed"), deduped case-insensitively. */
-function withTypedTopics(expanded: ExpandedKeyword[], typed: string[]): ExpandedKeyword[] {
-  const seen = new Set(expanded.map((k) => k.term.toLowerCase()));
-  const extra: ExpandedKeyword[] = [];
-  for (const t of typed) {
-    const s = String(t || "").trim();
-    if (!s || seen.has(s.toLowerCase())) continue;
-    seen.add(s.toLowerCase());
-    extra.push({ term: s, weight: 1, source: "typed" });
-  }
-  return [...extra, ...expanded];
-}
+// A13 — the keyword shape and the three merge/attribution rules live in
+// lib/leadgenCategories (pure, and pinned by test/leadgenCategories.test.mjs)
+// so the preview can never disagree with what the server will actually run.
 // Backend (/api/v1/leadgen/locations/expand) returns
 // { data: { cities: [{id, name, lat, lon, miles}], zips, origin } }.
 // Cities don't carry a state in the response (the request scoped them), but
@@ -60,7 +54,8 @@ interface ExpandedCity { city_id: number; name: string; state: string; miles: nu
 interface ExpandLocResponse { cities: ExpandedCity[]; zip_count: number }
 
 interface FormState {
-  category: CategoryHit | null;
+  // A13 — more than one Business Category in one search (D31).
+  categories: CategoryHit[];
   terms: TermHit[];
   searchMode: SearchMode;
   state: string;
@@ -73,7 +68,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
-  category: null,
+  categories: [],
   terms: [],
   searchMode: "balanced",
   state: "",
@@ -391,7 +386,8 @@ export function SparkLeadGenNewPage() {
     setTermLoading(true);
     (async () => {
       try {
-        const indParam = form.category?.industry_id ? `industry_id=${form.category.industry_id}&` : "";
+        const scoped = form.categories.find((c) => c.id > 0 && c.industry_id);
+        const indParam = scoped?.industry_id ? `industry_id=${scoped.industry_id}&` : "";
         // GET /api/v1/leadgen/terms/autocomplete?industry_id=&q=
         const r = await get<{ data: TermHit[] }>(`/api/v1/leadgen/terms/autocomplete?${indParam}q=${encodeURIComponent(debouncedTerm)}`);
         if (!cancelled) setTermResults(r?.data || []);
@@ -402,7 +398,7 @@ export function SparkLeadGenNewPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [debouncedTerm, get, ready, form.category]);
+  }, [debouncedTerm, get, ready, form.categories]);
 
   // City autocomplete (requires a state).
   useEffect(() => {
@@ -451,44 +447,56 @@ export function SparkLeadGenNewPage() {
   }, [debouncedZip, form.zipMode, form.state, get, ready]);
 
   // ── live keyword expansion preview ──────────────────────────────────────
+  // A13 — one expansion PER selected category, so the preview shows what each
+  // one contributes and the job can search them in rotation. A custom category
+  // (id 0) has no taxonomy expansion; its own name is the seed.
   const kwInputs = useMemo(() => ({
-    // A custom category (id 0) has no taxonomy expansion — the typed topics carry the seed.
-    categoryId: form.category && form.category.id > 0 ? form.category.id : null,
-    industryId: form.category && form.category.id > 0 ? (form.category.industry_id ?? null) : null,
-    termIds: form.terms.map((t) => t.id).sort(),
+    cats: form.categories.map((c) => ({ id: c.id > 0 ? c.id : null, name: c.name, custom: !!c.custom })),
     termTexts: form.terms.map((t) => t.term).sort(),
     mode: form.searchMode,
-  }), [form.category, form.terms, form.searchMode]);
+  }), [form.categories, form.terms, form.searchMode]);
 
   const debouncedKw = useDebounced(kwInputs, 350);
 
   useEffect(() => {
     if (!ready) return;
     // Custom-only searches (no taxonomy category, typed topics) still get a preview.
-    if (!debouncedKw.categoryId && debouncedKw.termTexts.length === 0) {
+    if (!debouncedKw.cats.length && debouncedKw.termTexts.length === 0) {
       setPreviewKw([]); return;
     }
     let cancelled = false;
     setPreviewKwLoading(true);
     (async () => {
-      try {
-        // POST /api/v1/leadgen/expand body { keywords: [string], mode, category_id }
-        // → { data: { terms: [{id, term, weight, source}], unknown, mode, threshold, stats } }
-        type ExpandResp = { data: { terms: ExpandedKeyword[] } };
-        const r = await post<ExpandResp>("/api/v1/leadgen/expand", {
-          keywords: debouncedKw.termTexts,
-          mode: debouncedKw.mode,
-          category_id: debouncedKw.categoryId,
-        });
-        // The typed topics themselves are always searched (the server seeds the
-        // job from them when expansion has nothing) — show them in the preview
-        // so a custom topic like "snow" never previews as "0 keywords".
-        if (!cancelled) setPreviewKw(withTypedTopics(r?.data?.terms || [], debouncedKw.termTexts));
-      } catch {
-        if (!cancelled) setPreviewKw(withTypedTopics([], debouncedKw.termTexts));
-      } finally {
-        if (!cancelled) setPreviewKwLoading(false);
-      }
+      // POST /api/v1/leadgen/expand body { keywords: [string], mode, category_id }
+      // → { data: { terms: [{id, term, weight, source}], unknown, mode, threshold, stats } }
+      type ExpandResp = { data: { terms: ExpandedKeyword[] } };
+      const expandFor = async (cat: { id: number | null; name: string; custom: boolean } | null, first = false) => {
+        // A custom category is seeded from its own NAME; a taxonomy category from
+        // its id. The typed topics are sent with the first call only — sending them
+        // with every category would file the same topic under whichever category
+        // happened to be listed first, which is a guess, and we do not guess.
+        const keywords = cat && cat.custom ? [cat.name] : (first || !cat ? debouncedKw.termTexts : []);
+        try {
+          const r = await post<ExpandResp>("/api/v1/leadgen/expand", {
+            keywords,
+            mode: debouncedKw.mode,
+            category_id: cat ? cat.id : null,
+          });
+          const rows = (r?.data?.terms || []).map((k) => ({ ...k, category: cat ? cat.name : null }));
+          // The typed topics themselves are always searched (the server seeds the
+          // job from them when expansion has nothing) — show them in the preview
+          // so a custom topic like "snow" never previews as "0 keywords".
+          return withTypedTopics(rows, cat && cat.custom ? [cat.name] : [], cat ? cat.name : null);
+        } catch {
+          return withTypedTopics([], cat && cat.custom ? [cat.name] : [], cat ? cat.name : null);
+        }
+      };
+      const lists = debouncedKw.cats.length
+        ? await Promise.all(debouncedKw.cats.map((c, i) => expandFor(c, i === 0)))
+        : [await expandFor(null, true)];
+      // Topics the customer typed outside every category are still searched.
+      const merged = withTypedTopics(mergeExpansions(lists), debouncedKw.termTexts, null);
+      if (!cancelled) { setPreviewKw(merged); setPreviewKwLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [debouncedKw, post, ready]);
@@ -554,13 +562,63 @@ export function SparkLeadGenNewPage() {
 
   // Estimated cost = the metered portion at the real per-lead rate (delivered
   // leads only — fewer delivered means a smaller invoice).
+  // A13 — each selected category travels with the terms it actually contributed,
+  // taken from the ACTIVE preview so a keyword the customer switched off is not
+  // searched under any category. The server round-robins these lists.
+  const categoryPayload = useMemo(
+    () => categoryPayloadFrom(form.categories, activeKw),
+    [form.categories, activeKw],
+  );
+
   const estCostUsd = split.meteredCents / 100;
   const estTimeStr = "4–7 min";
+
+  // ── X1 pre-run forecast ────────────────────────────────────────────────
+  // The server measures the pool with a handful of FREE Hunter Discover calls
+  // and answers with a BAND and, when the search looks tight, one soft sentence.
+  // We show the sentence and nothing else — there is never a count in here, and
+  // it never blocks Start Search or widens anything on the customer's behalf.
+  // The server caches its measurement for 10 minutes, so re-previewing is free.
+  const [forecast, setForecast] = useState<LeadGenForecast | null>(null);
+  const forecastInputs = useMemo(() => ({
+    cats: categoryPayload,
+    terms: activeKw.map((k) => k.term),
+    cityIds: activeCities.map((c) => c.city_id),
+    state: form.state,
+    target: form.maxLeads,
+  }), [categoryPayload, activeKw, activeCities, form.state, form.maxLeads]);
+  const debouncedForecast = useDebounced(forecastInputs, 700);
+
+  useEffect(() => {
+    if (!ready) return;
+    const f = debouncedForecast;
+    if (!f.terms.length || !f.cityIds.length) { setForecast(null); return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        // POST /api/v1/leadgen/estimate → { data: { …, forecast: { band, message } } }
+        type EstimateResp = { data?: { forecast?: LeadGenForecast | null } };
+        const r = await post<EstimateResp>("/api/v1/leadgen/estimate", {
+          target_count: f.target,
+          max_leads: f.target,
+          categories: f.cats,
+          expanded_terms: f.terms,
+          expanded_city_ids: f.cityIds,
+          state: f.state,
+        });
+        if (!cancelled) setForecast(r?.data?.forecast ?? null);
+      } catch {
+        // A forecast is a courtesy. Losing it must never colour the page.
+        if (!cancelled) setForecast(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [debouncedForecast, post, ready]);
 
   // Brandon 2026-09-04: a topic that is not a taxonomy category ("snow removal")
   // must still be searchable — a custom search topic is enough; the server seeds
   // the job from it and queues it for the quarterly category review.
-  const hasSeed = !!form.category || form.terms.length > 0;
+  const hasSeed = form.categories.length > 0 || form.terms.length > 0;
   const canSubmit =
     hasSeed &&
     !!form.state &&
@@ -593,11 +651,25 @@ export function SparkLeadGenNewPage() {
     if (first && first.term.toLowerCase() === txt.toLowerCase()) { addTerm(first); return; }
     addCustomTermText(txt);
   }
+  // A13 — add a category to the list; picking the same one twice is a no-op.
+  function addCategory(c: CategoryHit) {
+    const dup = form.categories.some((x) => (c.id > 0 ? x.id === c.id : x.name.toLowerCase() === c.name.toLowerCase()));
+    if (!dup) setForm({ ...form, categories: [...form.categories, c] });
+    setCatQuery("");
+  }
+  function removeCategory(c: CategoryHit) {
+    setForm({
+      ...form,
+      categories: form.categories.filter((x) => x !== c),
+      // A custom category put its own name in as a topic; take it back out with it.
+      terms: c.custom ? form.terms.filter((t) => t.term.toLowerCase() !== c.name.toLowerCase()) : form.terms,
+    });
+  }
   // Enter in the category box: exact category match wins, else custom category.
   function onCategoryEnter(txt: string, first: CategoryHit | null) {
-    if (first && first.name.toLowerCase() === txt.toLowerCase()) { setForm({ ...form, category: first }); setCatQuery(""); return; }
+    if (first && first.name.toLowerCase() === txt.toLowerCase()) { addCategory(first); return; }
     if (!catTop25Only) pickCustomCategory(txt);
-    else if (first) { setForm({ ...form, category: first }); setCatQuery(""); }
+    else if (first) addCategory(first);
   }
   // Brandon 2026-09-04: a typed category with no taxonomy match becomes a CUSTOM
   // category — and its text is also the first search topic, so the preview and the
@@ -605,10 +677,11 @@ export function SparkLeadGenNewPage() {
   function pickCustomCategory(txt: string) {
     const name = txt.trim();
     if (!name) return;
+    if (form.categories.some((x) => x.name.toLowerCase() === name.toLowerCase())) { setCatQuery(""); return; }
     const already = form.terms.some((x) => x.term.toLowerCase() === name.toLowerCase());
     setForm({
       ...form,
-      category: { id: 0, name, industry_id: null, custom: true },
+      categories: [...form.categories, { id: 0, name, industry_id: null, custom: true }],
       terms: already ? form.terms : [...form.terms, { id: -Date.now(), term: name }],
     });
     setCatQuery("");
@@ -616,10 +689,11 @@ export function SparkLeadGenNewPage() {
   // A search TOPIC picked from the category box: custom category named after it,
   // and the taxonomy term itself (positive id) becomes the seed for expansion.
   function pickTermAsCategory(t: TermHit) {
+    if (form.categories.some((x) => x.name.toLowerCase() === t.term.toLowerCase())) { setCatQuery(""); return; }
     const already = form.terms.some((x) => x.id === t.id || x.term.toLowerCase() === t.term.toLowerCase());
     setForm({
       ...form,
-      category: { id: 0, name: t.term, industry_id: null, custom: true },
+      categories: [...form.categories, { id: 0, name: t.term, industry_id: null, custom: true }],
       terms: already ? form.terms : [...form.terms, t],
     });
     setCatQuery("");
@@ -636,10 +710,13 @@ export function SparkLeadGenNewPage() {
   }
 
   const buildPayload = useCallback(() => ({
-    customer_category_id: form.category && form.category.id > 0 ? form.category.id : null,
-    industry_id: form.category && form.category.id > 0 ? (form.category.industry_id ?? null) : null,
+    // Legacy single-category keys: kept so an older server (and the saved-profile
+    // row's own columns) still see the first taxonomy category.
+    customer_category_id: form.categories.find((c) => c.id > 0)?.id ?? null,
+    industry_id: form.categories.find((c) => c.id > 0)?.industry_id ?? null,
     // custom category (no taxonomy match) — the server queues it for the category review
-    custom_category_text: form.category?.custom ? form.category.name : null,
+    custom_category_text: form.categories.find((c) => c.custom)?.name ?? null,
+    categories: categoryPayload,
     terms: form.terms.map((t) => ({ id: t.id > 0 ? t.id : null, term: t.term })),
     // 2026-09-04 — the job must run exactly what the Live Preview showed. The
     // preview's expanded keyword list and radius-resolved cities go with the
@@ -655,7 +732,7 @@ export function SparkLeadGenNewPage() {
     zips: form.zips.map((z) => z.zip),
     include_cold_leads: form.includeCold,
     max_leads: form.maxLeads,
-  }), [form, activeKw, activeCities]);
+  }), [form, activeKw, activeCities, categoryPayload]);
 
   async function handleStart() {
     if (!canSubmit) return;
@@ -700,7 +777,7 @@ export function SparkLeadGenNewPage() {
     <SparkPageShell
       title="New B2B Lead Search"
       subtitle="Find verified B2B leads — see exactly what you're searching for before you pay"
-      help="Set your category, location, and search mode. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost, and estimated runtime. Nothing runs (and you're not charged) until you click Start Search."
+      help="Set your categories, location, and search mode. Pick more than one category and the search asks each of them in turn. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost and estimated runtime, and tells you when a search looks too strict to fill your order. Nothing runs (and you're not charged) until you click Start Search."
       actions={<LeadGenTermsLink />}
       error={error}
       loading={false}
@@ -708,15 +785,24 @@ export function SparkLeadGenNewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-1">
         {/* ─── LEFT: form ──────────────────────────────────────────────── */}
         <div className="space-y-6">
-          {/* Business Category */}
+          {/* Business Categories (A13 — more than one per run) */}
           <Section
-            title="Business Category"
-            hint="Adds all the search topics associated with a category. You can remove any you don't want in the preview pane."
+            title="Business Categories"
+            hint="Add one or more. Each category brings its own search topics, and the search asks them in turn so one category cannot crowd out another. Remove any topic you don't want in the preview pane."
           >
-            {form.category ? (
-              <Chip label={form.category.custom ? `${form.category.name} · custom` : form.category.name} onRemove={() => setForm({ ...form, category: null })} icon={<Building2 className="h-3 w-3" />} />
-            ) : (
-              <>
+            {form.categories.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {form.categories.map((c) => (
+                  <Chip
+                    key={`${c.id}:${c.name}`}
+                    label={c.custom ? `${c.name} · custom` : c.name}
+                    onRemove={() => removeCategory(c)}
+                    icon={<Building2 className="h-3 w-3" />}
+                  />
+                ))}
+              </div>
+            )}
+            <>
                 {/* F-LG.158: Top-25 curated filter toggle */}
                 <label className="flex items-center gap-2 text-[12px] text-slate-300 mb-2 select-none cursor-pointer">
                   <input
@@ -730,12 +816,14 @@ export function SparkLeadGenNewPage() {
                 <AutocompleteCombo
                   placeholder={catTop25Only
                     ? "Browse the curated Top 25 — type to filter"
-                    : "Start typing a business category (e.g. plumbing contractors)"}
+                    : form.categories.length
+                      ? "Add another business category"
+                      : "Start typing a business category (e.g. plumbing contractors)"}
                   value={catQuery}
                   onChange={setCatQuery}
                   results={catResults}
                   loading={catLoading}
-                  onPick={(c) => { setForm({ ...form, category: c }); setCatQuery(""); }}
+                  onPick={addCategory}
                   renderItem={(c) => (
                     <span className="flex-1 flex items-center justify-between">
                       <span className="font-medium">{c.name}</span>
@@ -754,8 +842,7 @@ export function SparkLeadGenNewPage() {
                   customLabel={(v) => `Use "${v}" as a custom category`}
                   onEnter={onCategoryEnter}
                 />
-              </>
-            )}
+            </>
           </Section>
 
           {/* Search Topics */}
@@ -1113,7 +1200,10 @@ export function SparkLeadGenNewPage() {
                       >
                         {off ? <X className="h-3 w-3 text-slate-400 flex-shrink-0" /> : <Check className="h-3 w-3 text-emerald-600 flex-shrink-0" />}
                         <span className="truncate">{k.term}</span>
-                        {k.weight < 1 && <span className="text-[9px] text-slate-400 tabular-nums ml-auto">w {k.weight.toFixed(2)}</span>}
+                        {form.categories.length > 1 && k.category && (
+                          <span className="text-[9px] text-slate-500 bg-slate-100 rounded px-1 py-px flex-shrink-0 ml-auto max-w-[9rem] truncate" title={k.category}>{k.category}</span>
+                        )}
+                        {k.weight < 1 && <span className={`text-[9px] text-slate-400 tabular-nums ${form.categories.length > 1 && k.category ? "" : "ml-auto"}`}>w {k.weight.toFixed(2)}</span>}
                       </button>
                     </li>
                   );
@@ -1183,6 +1273,21 @@ export function SparkLeadGenNewPage() {
                 <div className="text-[10px] text-slate-400 leading-tight">Average for V1 jobs</div>
               </div>
             </div>
+
+            {/* X1 — the pre-run forecast. Quiet when the search looks fine, and
+                quiet when we could not take a reading; one soft, directional
+                sentence when it looks tight. Never a number, never a blocker,
+                and we never widen the search ourselves. Same slate card as the
+                job page's "About this search". */}
+            {forecast?.message && (
+              <div className="mx-4 mb-3 rounded-lg border border-slate-300 bg-slate-50 px-3 py-2.5 flex items-start gap-2">
+                <Sparkles className="h-4 w-4 text-slate-600 mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="text-[12px] font-semibold text-slate-900">About this search</div>
+                  <p className="text-[11px] text-slate-700 mt-0.5 leading-relaxed">{forecast.message}</p>
+                </div>
+              </div>
+            )}
 
             {/* Actions */}
             <div className="px-4 py-3 border-t border-slate-100 space-y-2">
