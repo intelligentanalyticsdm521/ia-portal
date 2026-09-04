@@ -436,6 +436,16 @@ function LeadInboxTab() {
   const [capacity, setCapacity] = useState<InboxCapacity | null>(null);
   const [showIntel, setShowIntel] = useState(true);
   const [openLeadId, setOpenLeadId] = useState<number | null>(null);
+  // ?lead=<id> opens that lead's card straight away. The Agents page links here
+  // when the Responder has a draft waiting: without this the link lands on a
+  // list of forty rows and the person has to go hunting for the one they were
+  // just told about. Runs once per URL; closing the card leaves the query
+  // string alone so a refresh reopens what you were looking at.
+  useEffect(() => {
+    const raw = new URLSearchParams(window.location.search).get("lead");
+    const id = raw == null ? NaN : Number.parseInt(raw, 10);
+    if (Number.isFinite(id) && id > 0) setOpenLeadId(id);
+  }, []);
   const [coldOpen, setColdOpen] = useState(false);
   const [coldCount, setColdCount] = useState<number | null>(null);
   const [coldBusy, setColdBusy] = useState<"move_to_contacts" | "remove" | null>(null);
