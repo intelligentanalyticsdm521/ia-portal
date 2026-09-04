@@ -37,6 +37,7 @@ import {
   type BusinessProfileVersion,
   type BusinessProfileFields,
 } from '../../lib/platformApi';
+import { RulesAppliedCard } from '../../components/spark/RulesAppliedCard';
 import {
   EMPTY_DRAFT,
   toDraft,
@@ -452,10 +453,16 @@ export function YourBusinessPage() {
       </Question>
 
       {/* 8 */}
+      <div id="rules" />
       <Question n={8} title="What rules should we always follow?" drives="Written in your words, applied to every reply, quote and suggestion.">
         <Field label="Your rules, one per line" hint="Plain English. For example: no jobs over two days this month; Ankeny only until November.">
           <textarea className={`${area} min-h-[110px]`} value={draft.rulesPlainText} onChange={(e) => set({ rulesPlainText: e.target.value })} placeholder={'No jobs over two days this month.\nAnkeny only until November.\nAlways offer the autumn package to repeat customers.'} />
         </Field>
+        {/* IL-3 — the readback. The owner has just written a paragraph; this is
+            where they find out whether the software understood it, and what it
+            has already done with it. Read-only: the words are edited above and
+            saved by this page's own Save button. */}
+        <RulesAppliedCard />
       </Question>
 
       {/* 9 */}

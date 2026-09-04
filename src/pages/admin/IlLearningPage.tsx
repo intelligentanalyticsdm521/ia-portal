@@ -16,13 +16,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMsal } from "@azure/msal-react";
-import { Brain, RefreshCw, GraduationCap, ShieldCheck, ShieldAlert, Target, Scale, Coins } from "lucide-react";
+import { Brain, RefreshCw, GraduationCap, ShieldCheck, ShieldAlert, Target, Scale, Coins, ScrollText, ClipboardCheck } from "lucide-react";
 import { useActiveAccount } from "../../auth/useAccessToken";
 import {
   getIlGate, getIlDecisions, recomputeIlGate, trainIlModel,
   getIlLearning, getIlOutcomeSummary, syncIlOutcomes,
+  getIlRules, getIlAudit, runIlAudit,
   type IlGateSummary, type IlDecisionRow,
   type IlLearningSummary, type IlOutcomeSummary, type IlWeightSet,
+  type IlRulesAdmin, type IlAuditHistory,
 } from "../../lib/ilApi";
 
 function pct(n: number | null | undefined): string {
@@ -74,6 +76,10 @@ export default function IlLearningPage() {
   const [learning, setLearning] = useState<IlLearningSummary | null>(null);
   const [picked, setPicked] = useState<string>("");
   const [outcomes, setOutcomes] = useState<IlOutcomeSummary | null>(null);
+  // IL-3 — the owner's compiled rules, and the audit's coverage list.
+  const [ruleAdmin, setRuleAdmin] = useState<IlRulesAdmin | null>(null);
+  const [auditHistory, setAuditHistory] = useState<IlAuditHistory | null>(null);
+  const [auditBudget, setAuditBudget] = useState("5");
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -559,6 +565,162 @@ export default function IlLearningPage() {
             {outcomes.conversion_window_days} days of it arriving. Money can land months later and is counted whenever it does.
           </div>
         )}
+      </section>
+
+      {/* ── IL-3: the owner's own rules ───────────────────────────────── */}
+      <section className="rounded-lg border bg-white">
+        <header className="flex flex-wrap items-baseline gap-3 border-b px-5 py-3">
+          <ScrollText className="h-4 w-4 shrink-0 text-gray-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Rules, in each owner&rsquo;s own words</h2>
+          <span className="text-xs text-gray-500">
+            Compiled once per change of wording{ruleAdmin ? ` (${ruleAdmin.grammar.model})` : ""}, then applied by
+            arithmetic to every inquiry. A rule set can move an inquiry at most{" "}
+            {ruleAdmin?.grammar.max_total_delta ?? 40} points, and never below {ruleAdmin?.grammar.floor ?? 20}.
+          </span>
+        </header>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                {["Business", "v", "Status", "What they wrote", "What we understood", "Rules", "Inquiries", "Held", "Took it", "Declined", "Runs until"].map((h) => (
+                  <th key={h} className="whitespace-nowrap px-4 py-2 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(ruleAdmin?.rules || []).map((r) => (
+                <tr key={r.rule_id} className="border-t align-top">
+                  <td className="px-4 py-2 font-mono text-xs">{short(r.tenant_id)}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{r.version}</td>
+                  <td className="px-4 py-2">
+                    <span className={`rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+                      r.status === "active"
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border-amber-200 bg-amber-50 text-amber-800"
+                    }`}>
+                      {r.status === "active" ? "Applying" : "Could not read"}
+                    </span>
+                  </td>
+                  <td className="max-w-xs px-4 py-2 text-xs text-gray-600">{r.source_text}</td>
+                  <td className="max-w-sm px-4 py-2 text-xs text-gray-700">
+                    {r.explanation_plain || <span className="text-amber-700">{r.rejected_reason}</span>}
+                    {r.constraints.length > 0 && (
+                      <ul className="mt-1 list-disc pl-4 text-gray-500">
+                        {r.constraints.map((c) => <li key={c.key}>{c.say}</li>)}
+                      </ul>
+                    )}
+                  </td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{r.constraint_count}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{r.leads_touched}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{r.held_now || "—"}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums text-emerald-700">{r.accepted_anyway || "—"}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums text-gray-500">{r.declined || "—"}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-xs text-gray-500">
+                    {r.expires_at ? new Date(r.expires_at).toLocaleDateString() : "no end date"}
+                  </td>
+                </tr>
+              ))}
+              {!(ruleAdmin?.rules || []).length && (
+                <tr><td colSpan={11} className="px-4 py-8 text-center text-sm text-gray-400">
+                  Nobody has written their rules yet.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p className="border-t px-5 py-2 text-xs text-gray-500">
+          <strong className="font-medium text-gray-700">Took it / Declined</strong> is the number that matters:
+          a rule holding ten inquiries and overruled nine times was read too narrowly, and the owner is told so
+          rather than left to notice.
+        </p>
+      </section>
+
+      {/* ── IL-3: the quarterly audit ─────────────────────────────────── */}
+      <section className="rounded-lg border bg-white">
+        <header className="flex flex-wrap items-center gap-3 border-b px-5 py-3">
+          <ClipboardCheck className="h-4 w-4 shrink-0 text-gray-500" />
+          <h2 className="text-sm font-semibold text-gray-900">Audit — did we look at everybody?</h2>
+          <span className="flex-1 text-xs text-gray-500">
+            {auditHistory?.runs?.[0]
+              ? `Last audit: ${new Date(auditHistory.runs[0].started_at).toLocaleString()} · ${auditHistory.runs[0].rejudged} re-checked across ${auditHistory.runs[0].tenants_sampled} of ${auditHistory.runs[0].tenants_total} businesses · ${pct(auditHistory.runs[0].agreement_pct)} agreement · ${usd(auditHistory.runs[0].spent_usd)}${auditHistory.runs[0].budget_exhausted ? " · CEILING REACHED" : ""}`
+              : "No audit has been run yet."}
+          </span>
+          <label className="flex items-center gap-1 text-xs text-gray-600">
+            Ceiling $
+            <input
+              value={auditBudget}
+              onChange={(e) => setAuditBudget(e.target.value)}
+              inputMode="decimal"
+              className="w-16 rounded border px-1.5 py-1 text-xs tabular-nums"
+            />
+          </label>
+          <button
+            type="button"
+            disabled={busy != null || !account}
+            onClick={() => run("audit", async () => {
+              const r = await runIlAudit(instance, account!, { budget_usd: Number(auditBudget) || undefined });
+              return r.ok
+                ? `Audited ${r.rejudged} decisions across ${r.tenants_total} businesses — ${pct(r.agreement_pct)} agreement, ${usd(r.spent_usd)} spent${r.budget_exhausted ? " (ceiling reached)" : ""}.`
+                : `The audit failed: ${r.error}`;
+            })}
+            className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+          >
+            <ClipboardCheck className="h-3.5 w-3.5" />
+            {busy === "audit" ? "Auditing…" : "Run the audit"}
+          </button>
+        </header>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                {["Business", "Decisions in the quarter", "Sampled", "Re-checked", "Agreed", "Agreement", "Back to full checking", "Note"].map((h) => (
+                  <th key={h} className="whitespace-nowrap px-4 py-2 font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {(auditHistory?.tenants || []).map((t) => (
+                <tr key={t.tenant_id} className={`border-t ${t.under_floor ? "bg-amber-50" : ""}`}>
+                  <td className="px-4 py-2 font-mono text-xs">{short(t.tenant_id)}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{t.decisions_in_period}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{t.sampled}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{t.rejudged}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{t.agreed}</td>
+                  <td className="px-4 py-2 text-xs tabular-nums">{pct(t.agreement_pct)}</td>
+                  <td className="px-4 py-2 text-xs">{t.gate_reset ? <span className="font-medium text-amber-800">yes</span> : "—"}</td>
+                  <td className="px-4 py-2 text-xs text-gray-500">{t.notes || "—"}</td>
+                </tr>
+              ))}
+              {!(auditHistory?.tenants || []).length && (
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-gray-400">
+                  Run the audit to see the coverage list — one row per business, including the ones with a single decision.
+                </td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {auditHistory?.runs?.[0]?.summary?.by_model_version?.length ? (
+          <div className="border-t px-5 py-3 text-xs text-gray-600">
+            <span className="font-medium text-gray-700">By version:</span>{" "}
+            {auditHistory.runs[0].summary.by_model_version.map((m) => (
+              <span key={m.model_version} className="mr-3">
+                {m.model_version} {pct(m.agreement_pct)} ({m.rejudged} checked)
+              </span>
+            ))}
+          </div>
+        ) : null}
+
+        <p className="border-t px-5 py-2 text-xs text-gray-500">
+          The sample is {auditHistory ? `${Math.round(auditHistory.thresholds.sample_pct * 100)}%` : "5%"} of the
+          quarter&rsquo;s decisions, never fewer than {auditHistory?.thresholds.sample_min ?? 20} and never more than{" "}
+          {auditHistory?.thresholds.sample_max ?? 200}, and it is handed out{" "}
+          <strong className="font-medium text-gray-700">per business, smallest first</strong> — a business with one
+          decision is never skipped in favour of the biggest one. Anything under{" "}
+          {auditHistory?.thresholds.tenant_floor_pct ?? 90}% goes straight back to having every decision checked.
+          Nothing else is changed by a run.
+        </p>
       </section>
 
       {/* ── the log ────────────────────────────────────────────────────── */}

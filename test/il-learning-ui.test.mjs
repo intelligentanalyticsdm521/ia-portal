@@ -70,11 +70,12 @@ test("the page is read-only apart from recompute, retrain and the roll-up", () =
   // promoted or demoted by it — and never a label, which is why it is allowed
   // on a page whose whole promise is that it cannot decide anything.
   const posts = api.match(/lumenPost<[\s\S]*?>\(\s*msal,\s*account,\s*"([^"]+)"/g) || [];
-  assert.equal(posts.length, 3, `the client makes ${posts.length} POSTs; only recompute, train and the roll-up are allowed`);
+  assert.equal(posts.length, 4, `the client makes ${posts.length} POSTs; only recompute, train, the roll-up and the audit are allowed`);
   for (const p of [
     "/api/v1/il/admin/gate/recompute",
     "/api/v1/il/admin/model/train",
     "/api/v1/il/admin/outcomes/sync",
+    "/api/v1/il/admin/audit/run",
   ]) {
     assert.ok(api.includes(p), `${p} is missing from the client`);
   }
