@@ -33,6 +33,7 @@ import {
 } from './pages/settings/SettingsRoutes';
 import { BrandIdentityPage } from './pages/settings/BrandIdentityPage';
 import { YourBusinessPage } from './pages/settings/YourBusinessPage';
+import { ResponderSettingsPage } from './pages/settings/ResponderSettingsPage';
 // F-79 per-tenant custom email sender domain (task #116).
 import { SenderDomainPage } from './pages/settings/SenderDomainPage';
 import { ArgusDataPlanPage } from './pages/settings/ArgusDataPlanPage';
@@ -235,6 +236,7 @@ export function App() {
             <Route path="settings/business-profile" element={<BusinessProfileSettingsPage />} />
             {/* Foundation B — the ONE record every product and every agent reads. */}
             <Route path="settings/your-business" element={<YourBusinessPage />} />
+            <Route path="settings/responder" element={<ResponderSettingsPage />} />
             <Route path="settings/brand-identity" element={<BrandIdentityPage />} />
             <Route path="settings/sender-domain" element={<SenderDomainPage />} />
             <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />

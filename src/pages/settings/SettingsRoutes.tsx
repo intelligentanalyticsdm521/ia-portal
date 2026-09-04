@@ -148,6 +148,7 @@ const SETTINGS_TILES: Array<{
     group: 'Business',
     items: [
       { to: '/app/settings/your-business', label: 'Your business', description: 'The ten things every product and every agent needs to know about you' },
+      { to: '/app/settings/responder', label: 'The Responder', description: 'Your receptionist — who it answers, what it drafts, and what it may send on its own' },
       { to: '/app/settings/business-profile', label: 'Business Profile', description: 'Name, address, phone, email, logo, brand colors' },
       { to: '/app/settings/brand-identity', label: 'Brand Identity', description: 'Logo, colors, typography, voice, tagline — applies everywhere' },
       { to: '/app/settings/plan-pricing', label: 'Plan & Pricing', description: 'Subscriptions, invoices, plan changes' },
