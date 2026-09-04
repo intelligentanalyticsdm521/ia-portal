@@ -36,8 +36,11 @@ function visibleText(src) {
 
 test("the panel is one tab bolted onto the existing lead modal", () => {
   assert.match(modal, /import \{ LeadResponderPanel \} from "\.\/LeadResponderPanel"/);
-  // Conversations 4 slotted "conversation" in beside it. Both tabs, in order.
-  assert.match(modal, /type Tab = "overview" \| "contacts" \| "notes" \| "conversation" \| "responder" \| "activity" \| "actions";/);
+  // Conversations 4 slotted "conversation" in beside it; Conversations 2 + 3
+  // slotted "textscalls" in after that. Every tab, in order — the pin is on the
+  // ORDER as much as the membership, because the Responder tab sitting next to
+  // the channel tabs is what makes "the draft is over there" findable.
+  assert.match(modal, /type Tab = "overview" \| "contacts" \| "notes" \| "conversation" \| "textscalls" \| "responder" \| "activity" \| "actions";/);
   assert.match(modal, /\{ key: "responder", label: "Responder", icon: Sparkles \}/);
   assert.match(modal, /\{tab === "responder" && lead && \(\s*<LeadResponderPanel leadId=\{lead\.id\} onChanged=\{onChanged\} \/>/);
 });

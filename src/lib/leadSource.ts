@@ -35,6 +35,14 @@ const SOURCE_LABELS: Record<string, string> = {
   // services/chat writes `channel` = the site's own domain, so the channel half
   // names WHICH website rather than repeating the capture point.
   web_chat: "Website chat",
+  // Conversations 2 + 3. The client's OWN phone number, so Inbound, not Intake.
+  // The row reads "Text message · via +1 ••• ••• 0100" and "Missed call · via
+  // …": services/conversations writes `channel` = the MASKED business number,
+  // so the channel half names WHICH number it came in on rather than repeating
+  // the capture point. A voicemail carries its own source_label ("Voicemail")
+  // written by the same service, which wins over this map.
+  sms: "Text message",
+  phone_call: "Missed call",
   landing_page: "Landing page",
   import: "Import",
   // Intake connectors (G-2). One entry per provider in the locked order; a
@@ -56,6 +64,11 @@ const CHANNEL_LABELS: Record<string, string> = {
   // own domain in `channel`, and rowChannelLabel prefers that. This is what an
   // older row with no domain on it reads as.
   web_chat: "Your website",
+  // The fallback only: an SMS or call lead written by services/conversations
+  // carries the masked business number in `channel`, and rowChannelLabel
+  // prefers that. This is what an older row with no number on it reads as.
+  sms: "Your number",
+  phone_call: "Your number",
   spark_leadgen: "B2B search",
   hunter_discover: "B2B search",
   data_axle: "B2B search",

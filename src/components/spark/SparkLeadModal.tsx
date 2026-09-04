@@ -37,6 +37,10 @@ import { LeadResponderPanel } from "./LeadResponderPanel";
 // Conversations 4 — the website chat behind this lead. One tab, its own
 // component, for the same reason the Responder panel is one.
 import { LeadChatPanel } from "./LeadChatPanel";
+// Conversations 2 + 3 — the texts and the calls behind this lead. One tab, its
+// own component, for the same reason the chat has one: the modal stays a modal
+// and the channel grows in its own file.
+import { LeadTextsCallsPanel } from "./LeadTextsCallsPanel";
 // IL-2 — the owner's two-button correction. Its own component so this modal
 // stays a modal (see the file header there).
 import { LeadCorrectionButtons } from "./LeadCorrectionButtons";
@@ -102,7 +106,7 @@ export interface LeadDetail {
   account: { id: number; name: string; domain: string | null } | null;
 }
 
-type Tab = "overview" | "contacts" | "notes" | "conversation" | "responder" | "activity" | "actions";
+type Tab = "overview" | "contacts" | "notes" | "conversation" | "textscalls" | "responder" | "activity" | "actions";
 
 // The lead's own ladder. The contact it becomes moves through the SPARK
 // workflow separately.
@@ -274,6 +278,7 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
             { key: "contacts", label: lead?.contacts?.length ? `Contacts (${lead.contacts.length})` : "Contacts", icon: Users },
             { key: "notes", label: lead?.notes?.length ? `Notes (${lead.notes.length})` : "Notes", icon: FileText },
             { key: "conversation", label: "Conversation", icon: MessageSquare },
+            { key: "textscalls", label: "Texts & calls", icon: Phone },
             { key: "responder", label: "Responder", icon: Sparkles },
             { key: "activity", label: "Activity", icon: ActivityIcon },
             { key: "actions", label: "Actions", icon: Zap },
@@ -576,6 +581,10 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
           )}
 
           {/* ── Responder ────────────────────────────────────────────── */}
+          {tab === "textscalls" && lead && (
+            <LeadTextsCallsPanel leadId={lead.id} onChanged={onChanged} />
+          )}
+
           {tab === "responder" && lead && (
             <LeadResponderPanel leadId={lead.id} onChanged={onChanged} />
           )}

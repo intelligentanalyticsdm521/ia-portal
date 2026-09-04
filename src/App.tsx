@@ -122,6 +122,10 @@ const IlLearningPageAdmin = lazy(() => import('./pages/admin/IlLearningPage'));
 // shows what agent work costs us. LUMEN's /il/admin routes 403 non-founders
 // on their own, so the route gate here is belt, not braces.
 const AgentsAcrossBusinessesPageAdmin = lazy(() => import('./pages/admin/AgentsAcrossBusinessesPage'));
+// Conversations 2 + 3 — every business's phone line, and the buttons that spend
+// money on a carrier. Founder-only here AND founder-only in LUMEN, which fails
+// closed: hiding the link is not what protects it.
+const PhoneLinesPageAdmin = lazy(() => import('./pages/admin/PhoneLinesPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -316,6 +320,20 @@ export function App() {
                 element={
                   <Suspense fallback={<AdminRouteLoading />}>
                     <AgentsAcrossBusinessesPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
+
+            {/* Phone lines. The one page on this platform with a button that
+                buys a carrier resource, so the same shape again and the same
+                fail-closed gate on every endpoint behind it. */}
+            <Route path="admin/phone-lines" element={<RequireFounderRoute />}>
+              <Route
+                index
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <PhoneLinesPageAdmin />
                   </Suspense>
                 }
               />
