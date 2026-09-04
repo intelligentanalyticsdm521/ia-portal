@@ -337,6 +337,8 @@ interface Lead {
   cache_age_days: number | null;
   contact_id: number | null;
   verification_status: "promoted" | "suppressed" | "verification_unavailable" | null;
+  // L16 — written by the monthly overnight re-score.
+  rescored_at: string | null;
   verification_reasons_json: string | null;
   created_at: string;
   // Billing model: leads of a run whose invoice is unpaid are locked (visible, not promotable).
@@ -588,6 +590,17 @@ function LeadInboxTab() {
     }
   };
 
+  // L16 — the most recent monthly re-score across the loaded rows. Derived
+  // from the list we already have; no extra fetch.
+  const lastRescoredAt = useMemo(() => {
+    let latest: number | null = null;
+    for (const l of leads) {
+      const t = l.rescored_at ? Date.parse(l.rescored_at) : NaN;
+      if (!Number.isNaN(t) && (latest == null || t > latest)) latest = t;
+    }
+    return latest == null ? null : new Date(latest);
+  }, [leads]);
+
   const counts = useMemo(() => {
     const c = { all: leads.length, hot: 0, warm: 0, cold: 0 };
     for (const l of leads) {
@@ -638,6 +651,13 @@ function LeadInboxTab() {
             </button>
           }
         />
+      )}
+
+      {lastRescoredAt && (
+        <p className="text-xs text-slate-500">
+          Last re-scored {lastRescoredAt.toLocaleDateString()} — leads nobody has worked lose ground
+          over time; nothing leaves this inbox unless you move it.
+        </p>
       )}
 
       {sinceLastVisit > 0 && !visitPillDismissed && (
