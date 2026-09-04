@@ -33,6 +33,9 @@ import { friendlyApiError } from "../../lib/leadgenBilling";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
+// IL-2 — the owner's two-button correction. Its own component so this modal
+// stays a modal (see the file header there).
+import { LeadCorrectionButtons } from "./LeadCorrectionButtons";
 
 export interface LeadContactRow {
   id: number;
@@ -340,6 +343,11 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                   Lead scoring — points, the reasons behind them, and Hot / Warm / Cold — comes with{" "}
                   <strong className="text-slate-800">SPARK Pro</strong>.
                 </div>
+              )}
+
+              {/* IL-2 — the owner can overrule the score, right where it is shown. */}
+              {showIntel && (
+                <LeadCorrectionButtons leadId={lead.id} onChanged={() => { void load(); onChanged?.(); }} />
               )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
