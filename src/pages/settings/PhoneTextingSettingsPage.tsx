@@ -443,7 +443,7 @@ function LineCard({ line, purpose, meta, busy, onAsk, secondary }: {
               type="button"
               onClick={onAsk}
               disabled={busy}
-              className="mt-2 inline-flex items-center gap-1 rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
+              className="mt-2 inline-flex min-h-[40px] items-center gap-1 rounded bg-[#EF6C33] px-3 py-2 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
             >
               <Plus className="h-3 w-3" />
               {secondary
@@ -529,7 +529,7 @@ function QuietHoursCard({ quiet, busy, onSave }: {
           type="button"
           onClick={() => onSave(draft)}
           disabled={busy}
-          className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+          className="rounded border border-slate-300 px-3 py-1.5 max-md:min-h-[40px] max-md:px-4 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
         >
           Save
         </button>

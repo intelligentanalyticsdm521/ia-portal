@@ -231,7 +231,10 @@ export function IadmButton({
   /** InteractiveWalkthrough hook — lets flows spotlight this button by selector. */
   "data-tour"?: string;
 }) {
-  const baseClass = "inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50";
+  // PHONE PASS 2026-09-06: 28px is a comfortable button under a mouse and a
+  // miss under a thumb. `max-md:` raises it to 40px BELOW 768px only, so
+  // every dense desktop modal this button appears in is byte-identical.
+  const baseClass = "inline-flex items-center gap-1 rounded px-3 py-1.5 max-md:min-h-[40px] max-md:px-4 text-xs font-semibold transition-colors disabled:opacity-50";
   if (variant === "primary") {
     return (
       <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: CORE_BLUE }}>

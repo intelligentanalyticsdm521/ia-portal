@@ -226,7 +226,7 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
               <button
                 type="button"
                 onClick={() => setTab(t)}
-                className={`px-3 py-2 text-sm border-b-2 transition-colors ${
+                className={`px-3 py-2 max-md:min-h-[40px] text-sm border-b-2 transition-colors ${
                   active
                     ? "border-[#EF6C33] text-[#EF6C33] font-semibold"
                     : "border-transparent text-slate-600 hover:text-slate-900"
@@ -841,7 +841,13 @@ function LeadInboxTab() {
         </a>
       </div>
 
-      <div className="rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden">
+      {/* PHONE PASS 2026-09-06: was `overflow-hidden`, which is not "the table
+          scrolls inside its own container" — it is "the table is cut off".
+          Measured at 375px: wrapper clientWidth 274, table scrollWidth 1055, so
+          Score, Status, Contact and every action were unreachable on a phone
+          with no scrollbar to say so. x scrolls, y still clips so the rounded
+          corners survive. */}
+      <div className="rounded-xl bg-white ring-1 ring-slate-200 overflow-y-hidden overflow-x-auto">
         <table className="min-w-full text-left text-sm">
           <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
             <tr>

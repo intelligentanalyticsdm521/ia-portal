@@ -601,7 +601,7 @@ export function SparkLeadSourcesPage() {
                     type="button"
                     onClick={requestLine}
                     disabled={lineBusy}
-                    className="mt-2 rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
+                    className="mt-2 min-h-[40px] rounded bg-[#EF6C33] px-3 py-2 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
                   >
                     Ask for a number
                   </button>

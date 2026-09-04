@@ -165,11 +165,15 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
   return (
     <div className={className}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      {/* PHONE PASS 2026-09-06: the month arrows were 28x28 and Today 26px
+          tall; below 768px they become 40px so a thumb can change the month.
+          `flex-wrap` because the header row is 375px wide on a phone and the
+          month label alone is 180px. Desktop is untouched (`max-md:`). */}
+      <div className="flex items-center justify-between mb-3 max-md:flex-wrap max-md:gap-2">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCursor(addDays(startOfMonth(cursor), -1))}
-            className="p-1.5 rounded hover:bg-slate-100"
+            className="p-1.5 max-md:h-10 max-md:w-10 max-md:flex max-md:items-center max-md:justify-center rounded hover:bg-slate-100"
             aria-label="Previous month"
           >
             <ChevronLeft className="h-4 w-4" />
@@ -177,14 +181,14 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
           <h3 className="text-lg font-bold text-slate-900 min-w-[180px] text-center">{monthLabel}</h3>
           <button
             onClick={() => setCursor(addDays(endOfMonth(cursor), 1))}
-            className="p-1.5 rounded hover:bg-slate-100"
+            className="p-1.5 max-md:h-10 max-md:w-10 max-md:flex max-md:items-center max-md:justify-center rounded hover:bg-slate-100"
             aria-label="Next month"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
           <button
             onClick={() => setCursor(startOfMonth(new Date()))}
-            className="ml-2 text-xs px-2 py-1 rounded border border-slate-300 hover:bg-slate-50"
+            className="ml-2 text-xs px-2 py-1 max-md:min-h-[40px] max-md:px-3 rounded border border-slate-300 hover:bg-slate-50"
           >
             Today
           </button>
