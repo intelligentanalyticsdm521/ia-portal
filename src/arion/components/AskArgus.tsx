@@ -53,8 +53,14 @@ export function DiffRows({ rows }: { rows: SectionDiffRow[] }) {
   }
   return (
     <div>
-      {rows.map((r) => (
-        <div key={r.field} style={{ marginBottom: 10 }}>
+      {/* Keyed by position AND field: a PAGE-level suggestion flattens the
+          diffs of several sections into one list, and two sections both
+          changing their headline would otherwise collide on the same key —
+          React then drops or duplicates a row, so the client reads a diff
+          that is not the one they are about to approve. Caught by the
+          click-through, not by a unit test. */}
+      {rows.map((r, i) => (
+        <div key={`${i}-${r.field}`} style={{ marginBottom: 10 }}>
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4 }}>
             {r.label}
           </div>
@@ -156,7 +162,10 @@ export function AskArgusBox({
             <button
               type="button"
               className="abtn abtn-sky"
-              style={{ minHeight: 40 }}
+              // 44px, like Use this / No thanks below it and the sticky Save
+              // bar. This one shipped at 40 and was the only control in the
+              // flow that was — measured at 375px, not guessed.
+              style={{ minHeight: 44 }}
               disabled={busy || !text.trim()}
               onClick={() => onAsk(text.trim())}
             >

@@ -302,3 +302,22 @@ test('a section built from a curated layout is asked for by blueprint id', () =>
   const src = SRC('src/lib/arionApi.ts');
   assert.match(src, /body: \{ kind: p\.kind, blueprintId: p\.blueprintId \}/);
 });
+
+test('a page-level diff can list the same field twice without colliding', () => {
+  // Two sections both changing `headline` land in one flattened list. Keying
+  // on the field name alone made React drop or duplicate a row, so the client
+  // read a diff that was not the one they were approving. Found by clicking
+  // through the real app; pinned here so it cannot come back.
+  const src = SRC('src/arion/components/AskArgus.tsx');
+  assert.match(src, /rows\.map\(\(r, i\) =>/);
+  assert.match(src, /key=\{`\$\{i\}-\$\{r\.field\}`\}/);
+  assert.equal(/key=\{r\.field\}/.test(src), false);
+});
+
+test('every control in the ARGUS panel is a 44px tap target', () => {
+  // Measured at 375px during the click-through: Ask ARGUS was the only one
+  // still at 40. On a phone that is the difference between a tap and a miss.
+  const src = SRC('src/arion/components/AskArgus.tsx');
+  assert.equal(/minHeight: 40/.test(src), false, 'a 40px control is left in the ARGUS panel');
+  assert.equal((src.match(/minHeight: 44/g) || []).length >= 3, true);
+});
