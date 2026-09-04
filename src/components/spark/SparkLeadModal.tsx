@@ -25,6 +25,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2, Phone, MapPin, Mail, ExternalLink, FileText, Activity as ActivityIcon,
   Zap, Users, ShieldCheck, ShieldX, ShieldAlert, Plus, Star, Lock, CheckCircle2, Sparkles,
+  MessageSquare,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
@@ -33,6 +34,9 @@ import { friendlyApiError } from "../../lib/leadgenBilling";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
+// Conversations 4 — the website chat behind this lead. One tab, its own
+// component, for the same reason the Responder panel is one.
+import { LeadChatPanel } from "./LeadChatPanel";
 // IL-2 — the owner's two-button correction. Its own component so this modal
 // stays a modal (see the file header there).
 import { LeadCorrectionButtons } from "./LeadCorrectionButtons";
@@ -98,7 +102,7 @@ export interface LeadDetail {
   account: { id: number; name: string; domain: string | null } | null;
 }
 
-type Tab = "overview" | "contacts" | "notes" | "responder" | "activity" | "actions";
+type Tab = "overview" | "contacts" | "notes" | "conversation" | "responder" | "activity" | "actions";
 
 // The lead's own ladder. The contact it becomes moves through the SPARK
 // workflow separately.
@@ -269,6 +273,7 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
             { key: "overview", label: "Overview", icon: Building2 },
             { key: "contacts", label: lead?.contacts?.length ? `Contacts (${lead.contacts.length})` : "Contacts", icon: Users },
             { key: "notes", label: lead?.notes?.length ? `Notes (${lead.notes.length})` : "Notes", icon: FileText },
+            { key: "conversation", label: "Conversation", icon: MessageSquare },
             { key: "responder", label: "Responder", icon: Sparkles },
             { key: "activity", label: "Activity", icon: ActivityIcon },
             { key: "actions", label: "Actions", icon: Zap },
@@ -563,6 +568,11 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 </ul>
               )}
             </div>
+          )}
+
+          {/* ── Conversation ─────────────────────────────────────────── */}
+          {tab === "conversation" && lead && (
+            <LeadChatPanel leadId={lead.id} onChanged={onChanged} />
           )}
 
           {/* ── Responder ────────────────────────────────────────────── */}

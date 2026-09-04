@@ -36,7 +36,8 @@ function visibleText(src) {
 
 test("the panel is one tab bolted onto the existing lead modal", () => {
   assert.match(modal, /import \{ LeadResponderPanel \} from "\.\/LeadResponderPanel"/);
-  assert.match(modal, /type Tab = "overview" \| "contacts" \| "notes" \| "responder" \| "activity" \| "actions";/);
+  // Conversations 4 slotted "conversation" in beside it. Both tabs, in order.
+  assert.match(modal, /type Tab = "overview" \| "contacts" \| "notes" \| "conversation" \| "responder" \| "activity" \| "actions";/);
   assert.match(modal, /\{ key: "responder", label: "Responder", icon: Sparkles \}/);
   assert.match(modal, /\{tab === "responder" && lead && \(\s*<LeadResponderPanel leadId=\{lead\.id\} onChanged=\{onChanged\} \/>/);
 });
@@ -59,7 +60,10 @@ test("the panel shows the acknowledgement, the alert and the follow-up as facts,
 });
 
 test("every draft offers Approve & send, Edit and Discard", () => {
-  assert.match(panel, /"Approve & send quote" : "Approve & send"/);
+  // Conversations 4 added a third label to the same one button.
+  assert.match(panel, /"Approve & send quote"/);
+  assert.match(panel, /"Approve & send to the chat"/);
+  assert.match(panel, /: "Approve & send"/);
   assert.match(panel, /\/>Edit\b/);
   assert.match(panel, /\/>Discard\b/);
   assert.match(panel, /Open in OLIVER/);
