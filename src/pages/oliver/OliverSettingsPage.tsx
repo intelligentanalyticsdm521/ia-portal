@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import PhoneInput from "../../components/PhoneInput";
+import { QuickBooksCard } from "./QuickBooksCard";
 
 interface TenantSettings {
   tenantName?: string;
@@ -164,7 +165,11 @@ function InvoicePreview({ tpl, businessName, email, phone }: { tpl: InvoiceTempl
 }
 
 export function OliverSettingsPage() {
-  const { get, post, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
+  // useMemo'd, per the data-fetching convention: a fresh object literal every
+  // render would re-fire QuickBooksCard's load effect on every keystroke in the
+  // business-profile form below it.
+  const accountingApi = useMemo(() => ({ get, post, del }), [get, post, del]);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
   const [stripe, setStripe] = useState<StripeStatus | null>(null);
   const [tpl, setTpl] = useState<InvoiceTemplate | null>(null);
@@ -431,6 +436,12 @@ export function OliverSettingsPage() {
           </div>
         )}
       </div>
+
+      {/* Accounting — QuickBooks Online (Ops O-5 step a).
+          Here rather than in its own nav row: this is where the money plumbing
+          already lives (Stripe Connect is directly above), and a new nav row is
+          a `core.services` row, which is platform-pool-only. */}
+      <QuickBooksCard api={accountingApi} />
 
       {/* Invoice Template */}
       {tplDraft && (
