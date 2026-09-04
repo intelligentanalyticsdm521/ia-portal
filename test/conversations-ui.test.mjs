@@ -34,6 +34,10 @@ const founder = read("src/pages/admin/PhoneLinesPage.tsx");
 const leadSource = read("src/lib/leadSource.ts");
 const app = read("src/App.tsx");
 const adminHome = read("src/pages/PlatformAdminPage.tsx");
+// The Conversations follow-up pack's two new client surfaces (§4.8, SMS-15).
+const settings = read("src/pages/settings/PhoneTextingSettingsPage.tsx");
+const reg = read("src/pages/settings/PhoneRegistrationPage.tsx");
+const settingsRoutes = read("src/pages/settings/SettingsRoutes.tsx");
 
 /* ── the lead card ───────────────────────────────────────────────────────── */
 
@@ -130,8 +134,19 @@ test("carrier registration is a separate state with its own buttons", () => {
   assert.match(founder, /REGISTRATION_CHIP/);
   assert.match(founder, /File carrier registration/);
   assert.match(founder, /Carrier approved/);
-  assert.match(founder, /cannot be edited once it is filed/);
-  assert.match(founder, /opt_in_description/, "the carrier asks how consent is collected, so we ask");
+  assert.match(founder, /CANNOT be edited once it is sent/);
+  // SMS-15, 2026-09-06: the six browser prompts the founder used to type — legal
+  // name, address, website, EIN, one sample, a sentence about consent — are
+  // GONE. The client fills the form on their own Phone & texting page, it is
+  // validated and blocking, and this button only exists once it is complete.
+  // The founder is the wrong person to ask a business for its EIN.
+  assert.doesNotMatch(founder, /How does this business collect consent/,
+    "the founder no longer types the client's answers into a browser prompt");
+  assert.match(founder, /registration_complete !== false/,
+    "the file button does not exist until the form is finished");
+  assert.match(founder, /non-refundable/, "and the button says what it costs");
+  assert.match(reg, /opt_in_description|What the mobile carriers need/,
+    "the carrier asks how consent is collected, so the CLIENT is asked");
 });
 
 test("the pool level and the two purchase switches are on the founder's screen", () => {
