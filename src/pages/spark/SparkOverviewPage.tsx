@@ -22,6 +22,10 @@ import { EngagementAlertCallout } from "../../components/insights/EngagementAler
 // and a LINK to a prefilled screen; nothing on it acts on its own (L4). Renders
 // nothing at all when there is nothing worth saying.
 import { SuggestionsCard } from "../../components/spark/SuggestionsCard";
+// IL step 8 — "What worked in <Month>": the monthly report as a card, reading
+// the SAME payload the monthly email is rendered from. Renders nothing until
+// the business has a month behind it.
+import { WhatWorkedCard } from "../../components/spark/WhatWorkedCard";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -148,6 +152,7 @@ export function SparkOverviewPage() {
         {/* IL-3 suggestions. Above the setup hints on purpose: a hint is
             something to configure, a suggestion is money on the table today. */}
         <SuggestionsCard />
+        <WhatWorkedCard />
         {/* Onboarding nag lives on Command Center only (UnifiedSetupCard). */}
 
         {/* F-118 — lightweight, dismissable setup hints. This is the ONLY
