@@ -2,17 +2,27 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>IADM Portal</title>
 
     <!-- Foundation A2 (web push). iOS/iPadOS only deliver a push to a site
          that has been added to the Home Screen, and Safari only offers "Add to
          Home Screen" as an app when there is a manifest — so this link is not
          cosmetic, it is the thing that makes iPhone push possible at all.
-         Minimal on purpose: the ops PWA pack owns real icons (including a
-         180x180 apple-touch-icon PNG), the offline shell and the install
-         prompt. -->
+         Q-APPS-PWA fixed the two things that were backwards here: the manifest
+         named an SVG only, and iOS does not read SVG for a Home Screen icon —
+         so an iPhone that added the Portal got a screenshot of the page as its
+         icon. There is now a real 180x180 apple-touch-icon PNG and a 192/512
+         PNG pair, and `viewport-fit=cover` above so the layout reaches under
+         the notch instead of leaving a white band.
+
+         This app is NOT path-scoped: the Portal is one origin for one product
+         and stays on portal.intelligentanalyticsdm.com. Its manifest link is
+         in the served HTML, unlike the three white-label apps, and that is
+         correct — there is only one of it. -->
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <meta name="theme-color" content="#0F172A" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

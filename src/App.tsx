@@ -37,6 +37,9 @@ import { ResponderSettingsPage } from './pages/settings/ResponderSettingsPage';
 // F-79 per-tenant custom email sender domain (task #116).
 import { SenderDomainPage } from './pages/settings/SenderDomainPage';
 import { ArgusDataPlanPage } from './pages/settings/ArgusDataPlanPage';
+// §4.8 — the client's own Phone & texting page, and the carrier form behind it.
+import { PhoneTextingSettingsPage } from './pages/settings/PhoneTextingSettingsPage';
+import { PhoneRegistrationPage } from './pages/settings/PhoneRegistrationPage';
 import { ArgusMarginPage } from './pages/admin/ArgusMarginPage';
 import { PlatformAdminPage } from './pages/PlatformAdminPage';
 import { ArionOnboardExistingPage } from './pages/admin/ArionOnboardExistingPage';
@@ -254,6 +257,8 @@ export function App() {
             <Route path="settings/tours" element={<SettingsToursPage />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
+            <Route path="settings/phone-texting" element={<PhoneTextingSettingsPage />} />
+            <Route path="settings/phone-texting/registration" element={<PhoneRegistrationPage />} />
             <Route path="admin/argus-margin" element={<ArgusMarginPage />} />
 
             {/* Platform admin (SUPER_ADMIN only — gear icon target).
