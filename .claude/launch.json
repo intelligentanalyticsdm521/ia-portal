@@ -18,6 +18,15 @@
         "dev:hestia2"
       ],
       "port": 5175
+    },
+    {
+      "name": "portal-site-builder",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:builder"
+      ],
+      "port": 5173
     }
   ]
 }

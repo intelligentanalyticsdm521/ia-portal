@@ -2445,3 +2445,196 @@ export async function removeInternalIp(params: { baseUrl: string; bearerToken: s
     method: 'DELETE',
   });
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// ARION site builder — Pages and the section-list editor (Phase 1A, 2026-09-05)
+//
+// The client opens the Portal, clicks a page, changes the words or the
+// picture, previews it, and publishes. No WordPress, no Elementor.
+// Backend: arion-api routes/arion/pages.js. Every ARION tier can use it (W-4).
+// ───────────────────────────────────────────────────────────────────────────
+
+export type PageStatus = 'publish' | 'draft' | 'pending' | 'future' | 'private';
+
+export interface ArionSitePage {
+  pageId: number;
+  title: string;
+  slug: string;
+  status: PageStatus | string;
+  type: string;
+  modified: string | null;
+  permalink: string | null;
+  /** True when at least one section on the page is one we can edit here. */
+  iaManaged: boolean;
+  sectionCount: number;
+  editableSectionCount: number;
+}
+
+/** Why a section cannot be edited in the Portal. `null` means it can. */
+export type SectionLockReason = 'custom' | 'no_field_markers' | null;
+
+export interface ArionPageSection {
+  index: number;
+  handle: string | null;
+  kind: string | null;
+  blueprintId: string | null;
+  blockId: string | null;
+  editable: boolean;
+  reason: SectionLockReason;
+  label: string;
+  fields: Record<string, any> | null;
+  /** The Elementor node. Carried untouched so a save preserves everything. */
+  node: any;
+}
+
+export interface ArionPageDetail {
+  pageId: number;
+  title: string;
+  slug: string;
+  status: string;
+  permalink: string | null;
+  previewUrl: string | null;
+  modified: string | null;
+  canUndo: boolean;
+  undoCount: number;
+  sections: ArionPageSection[];
+}
+
+/** One editable field, exactly as arion-api lib/websiteBuilder/sectionSchema.js declares it. */
+export interface SectionFieldSpec {
+  key: string;
+  label: string;
+  /** text | textarea | link | email | image | choice | rating | icon | list | paragraphs */
+  type: string;
+  required?: boolean;
+  max?: number;
+  min?: number;
+  help?: string;
+  options?: string[];
+  optionLabels?: Array<{ value: string; label: string }>;
+  itemLabel?: string;
+  item?: SectionFieldSpec[];
+}
+
+export interface SectionCatalogEntry {
+  kind: string;
+  label: string;
+  blurb: string;
+  available: boolean;
+  unavailableReason: string | null;
+  fields: SectionFieldSpec[];
+}
+
+export async function listSitePages(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ data: { pages: ArionSitePage[]; pluginVersion: string | null } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function getSitePageSections(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{ data: ArionPageDetail }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSitePageSections(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>;
+  title?: string; status?: string;
+}) {
+  return requestJson<{
+    data: {
+      pageId: number; status: string | null; permalink: string | null; previewUrl: string | null;
+      sectionsWritten: number; canUndo: boolean; undoCount: number; cachePurged: boolean;
+    };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'PUT',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections`,
+    body: { sections: p.sections, title: p.title, status: p.status },
+    timeoutMs: 90_000,
+  });
+}
+
+export async function previewSitePage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>; title?: string;
+}) {
+  return requestJson<{ data: { html: string; sectionCount: number; saved: boolean } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/preview`,
+    body: { sections: p.sections, title: p.title },
+    timeoutMs: 45_000,
+  });
+}
+
+export async function undoSitePage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{
+    data: { pageId: number; restoredFrom: string | null; canUndo: boolean; undoCount: number; cachePurged: boolean };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/undo`,
+    timeoutMs: 90_000,
+  });
+}
+
+export async function createSitePage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  title: string; sections: Array<{ kind: string }>;
+}) {
+  return requestJson<{
+    data: { pageId: number; title: string; status: string; permalink: string | null; previewUrl: string | null };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages`,
+    body: { title: p.title, sections: p.sections },
+    timeoutMs: 90_000,
+  });
+}
+
+export async function buildSiteSection(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; kind: string;
+}) {
+  return requestJson<{ data: { section: ArionPageSection } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/sections`,
+    body: { kind: p.kind },
+  });
+}
+
+export async function getSectionLibrary(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: { sections: SectionCatalogEntry[]; elementorProAvailable: boolean } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/section-library`,
+  });
+}
+
+export async function uploadSiteMedia(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  filename?: string; contentType?: string; dataBase64?: string; url?: string; alt?: string;
+}) {
+  return requestJson<{ data: { url: string; attachmentId: number | null; alt: string } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media`,
+    body: {
+      filename: p.filename, contentType: p.contentType,
+      dataBase64: p.dataBase64, url: p.url, alt: p.alt,
+    },
+    timeoutMs: 120_000,
+  });
+}

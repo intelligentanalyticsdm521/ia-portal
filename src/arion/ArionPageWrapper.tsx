@@ -8,7 +8,7 @@ const SECTION_MAP: Record<string, string> = {
 };
 
 const PAGE_MAP: Record<string, string> = {
-  overview: 'Overview', content: 'Content', staging: 'Staging',
+  overview: 'Overview', content: 'Content', staging: 'Staging', pages: 'Pages',
   ai_builder: 'AI Builder',
   content_seo_overview: 'Content SEO', security_overview: 'Security',
   security_vulnerabilities: 'Vulnerabilities', security_firewall: 'Firewall',

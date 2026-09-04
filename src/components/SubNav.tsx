@@ -256,6 +256,10 @@ const ARION_NAV: SubNavConfig = {
       label: "Website", icon: Monitor, collapsible: true, sectionId: "website",
       items: [
         { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview" },
+        // Pages is the client's own job ("change the words on my About page"),
+        // so it sits directly under Overview and above the technology-named
+        // entries. Site builder Phase 1A, 2026-09-05.
+        { key: "arion_website_pages", label: "Pages", route: "/app/services/arion_website_pages" },
         { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
         { key: "arion_website_ai_builder", label: "AI Builder", route: "/app/services/arion_website_ai_builder", tag: { label: "IL", color: "#38BDF8" } },
         { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },

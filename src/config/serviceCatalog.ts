@@ -47,6 +47,9 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_dashboard', displayName: 'Dashboard', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_dashboard', description: 'High-level ARION dashboard with website, hosting, SEO, and business profile status.' },
   { key: 'arion_website_overview', displayName: 'Website Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_overview', description: 'Website health summary — uptime, WordPress version, plugin status, and quick actions.' },
   { key: 'arion_website_content', displayName: 'Website Content', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content', description: 'Page and post content inventory with last-modified dates and publish status.' },
+  // Site builder Phase 1A (2026-09-05) — edit the words and pictures on a page
+  // from the Portal instead of opening WordPress. Every ARION tier (W-4).
+  { key: 'arion_website_pages', displayName: 'Pages', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_pages', description: 'Every page on your website. Open one, change the wording or a picture, preview it, and publish — without opening WordPress.' },
   // F-AI-WB (re-added 2026-06-28) — catalog entry was lost during a scope flip;
   // SubNav + ServiceRouter case were re-added but this entry was missed,
   // causing the URL to render "Service not found". Scope: overnight-report/
