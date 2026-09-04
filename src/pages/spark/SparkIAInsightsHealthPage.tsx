@@ -21,6 +21,7 @@ import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDas
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
+import { SparkLeadPoolCard } from "../../components/spark/SparkLeadPoolCard";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/spark_ia_insights_trends";
@@ -69,6 +70,11 @@ export function SparkIAInsightsHealthPage() {
         <p className="text-sm text-slate-500 mt-0.5">Composite snapshot of your SPARK marketing platform. Drill into Trends or Intelligence for the full dashboards and detail reports.</p>
       </div>
       <IAInsightsHeader data={headerData} />
+
+      {/* "Lead pool this month" — the section the monthly overnight re-score
+          produces (L16). Same payload as the monthly email, so the page and
+          the client's inbox always say the same thing. */}
+      <SparkLeadPoolCard className="mt-4" />
 
       {/* Contact scoring + the raw activity feed used to be their own nav
           items. The feature map folds them in here ("Health/Contact Scoring ·
