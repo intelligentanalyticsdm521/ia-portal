@@ -6,9 +6,11 @@ import { useArionData } from '../../useArionData';
 import { SectionEditSheet } from '../../components/SectionEditSheet';
 import { SectionPicker } from '../../components/SectionPicker';
 import { AskArgusBox, DiffRows } from '../../components/AskArgus';
+import { AdoptSectionSheet, AdoptReviewList } from '../../components/AdoptSectionSheet';
 import { smallButton } from '../../components/SectionFieldInputs';
 import type {
   ArionSitePage, SectionCatalogEntry, SectionDiffRow, SectionProposal, PageProposal, AiPricing,
+  AdoptPreview,
 } from '../../../lib/arionApi';
 import type { FieldContext } from '../../components/SectionFieldInputs';
 import {
@@ -19,6 +21,7 @@ import {
   setParagraph, addParagraph, removeParagraph, removeSection, appendSection,
   sectionSummary, proposalIdsOf, applyProposal, applyPageProposal,
   insertProposedSection, acceptProposedSections, dropProposedSections,
+  replaceAdoptedSection, customSectionRows, customSectionCount,
 } from '../../utils/sectionListState';
 import { splitPages } from '../../utils/siteBuilderCopy';
 
@@ -182,7 +185,10 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           {p.type === 'post' ? 'Blog post · ' : ''}
           {p.editableSectionCount > 0
             ? `${p.editableSectionCount} of ${p.sectionCount} sections you can edit here`
-            : 'Built on the website itself'}
+            : (p.adoptCandidateCount || 0) > 0
+              ? `Built on the website itself · up to ${p.adoptCandidateCount} of ${p.sectionCount} `
+                + 'may be editable here'
+              : 'Built on the website itself'}
           {p.modified ? ` · last changed ${whenText(p.modified)}` : ''}
         </div>
         {p.status === 'publish' && p.permalink && (
@@ -196,13 +202,17 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           type="button"
           className="abtn abtn-sky"
           style={{ minHeight: 44 }}
-          disabled={p.editableSectionCount === 0}
-          title={p.editableSectionCount === 0
-            ? 'Every section on this page was built on the website itself, so there is nothing to edit here yet.'
+          // A page with NOTHING editable but something that could be still
+          // opens — that is precisely the page whose owner most needs the
+          // review, and disabling it locked them out of Phase 3 entirely.
+          disabled={p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) === 0}
+          title={p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) === 0
+            ? 'Every section on this page was built on the website itself and none of them can be '
+              + 'made editable here, so there is nothing to change. Use “Ask us to change it”.'
             : undefined}
           onClick={() => onOpen(p.pageId)}
         >
-          Edit
+          {p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) > 0 ? 'Review' : 'Edit'}
         </button>
         {p.permalink && (
           <a
@@ -364,6 +374,15 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [pageAiError, setPageAiError] = useState<string | null>(null);
   const [pageAiOpen, setPageAiOpen] = useState(false);
 
+  // Adoption (Phase 3). `adoptIndex` is the section being looked at, and the
+  // preview it is showing. One at a time, deliberately — two before/afters
+  // open at once would be two decisions about the same live page.
+  const [adoptIndex, setAdoptIndex] = useState<number | null>(null);
+  const [adoptPreview, setAdoptPreview] = useState<AdoptPreview | null>(null);
+  const [adoptLoading, setAdoptLoading] = useState(false);
+  const [adoptError, setAdoptError] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
+
   const load = useCallback(async () => {
     if (!activeSiteId) return;
     setLoading(true); setLoadError(null);
@@ -460,6 +479,84 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
       },
     },
   }), [activeSiteId, arionApi, bookingHref]);
+
+  /* ── Adoption (Phase 3) ────────────────────────────────────────────────
+   * Three handlers and one rule between them: the website changes on
+   * `doAdopt` and `undoAdoption`, and on nothing else. Opening the sheet
+   * writes nothing, so it is safe to tap out of curiosity — which is exactly
+   * what a client should be able to do before agreeing to have a piece of
+   * their live page rebuilt.
+   * ------------------------------------------------------------------- */
+
+  const openAdopt = useCallback(async (index: number) => {
+    if (!activeSiteId) return;
+    setReviewOpen(false);
+    setAdoptIndex(index);
+    setAdoptPreview(null);
+    setAdoptError(null);
+    setAdoptLoading(true);
+    try {
+      const res: any = await arionApi.adoptSectionPreview(activeSiteId, pageId, index);
+      setAdoptPreview(res?.data || null);
+    } catch (e: any) {
+      setAdoptError(messageFrom(e, 'We could not read that section from your website.'));
+    } finally {
+      setAdoptLoading(false);
+    }
+  }, [activeSiteId, pageId, arionApi]);
+
+  const closeAdopt = useCallback(() => {
+    setAdoptIndex(null);
+    setAdoptPreview(null);
+    setAdoptError(null);
+  }, []);
+
+  const doAdopt = useCallback(async (fixes: Record<string, string>) => {
+    if (!activeSiteId || adoptIndex === null || !adoptPreview?.fingerprint) return;
+    setBusy('adopt'); setAdoptError(null);
+    try {
+      const res: any = await arionApi.adoptSection(activeSiteId, pageId, adoptIndex, {
+        fingerprint: adoptPreview.fingerprint,
+        fixes,
+      });
+      const adopted = res?.data?.section;
+      // A 200 with no section back is a failed adoption wearing a success.
+      if (!adopted) throw new Error('Your website said it changed the section but did not say what to.');
+      setSections((cur) => replaceAdoptedSection(cur, adoptIndex, adopted));
+      setBaseOrder((cur) => cur); // the order did not change; only the row did
+      setOk(`That section is yours to edit now. You can put it back the way it was for `
+        + `${res?.data?.undoDays ?? 30} days.`);
+      setError(null);
+      closeAdopt();
+    } catch (e: any) {
+      setAdoptError(messageFrom(e, 'We could not take charge of that section, so it is exactly as it was.'));
+    } finally {
+      setBusy(null);
+    }
+  }, [activeSiteId, pageId, arionApi, adoptIndex, adoptPreview, closeAdopt]);
+
+  const undoAdoption = useCallback(async (index: number, adoptionId: string) => {
+    if (!activeSiteId) return;
+    if (!window.confirm(
+      'Put this section back exactly as it was built on the website? '
+      + 'Anything you have changed on it since will go with it.',
+    )) return;
+    setBusy('undo-adopt'); setError(null);
+    try {
+      await arionApi.undoSectionAdoption(activeSiteId, pageId, adoptionId);
+      setOk('That section is back the way it was built on your website.');
+      // Re-read rather than patch: the section came back as somebody else's
+      // Elementor markup and only the server can say what the row now is.
+      await load();
+    } catch (e: any) {
+      setError(messageFrom(e, 'We could not put that section back, so nothing was changed.'));
+    } finally {
+      setBusy(null);
+    }
+  }, [activeSiteId, pageId, arionApi, load]);
+
+  const customRows = useMemo(() => customSectionRows(sections), [sections]);
+  const customCount = useMemo(() => customSectionCount(sections), [sections]);
 
   const runPreview = async () => {
     if (!activeSiteId) return;
@@ -759,6 +856,37 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
                   {s.reason === 'custom'
                     ? 'Built on the website itself. It stays exactly as it is when you save.'
                     : 'This one was built before the editor existed, so its wording cannot be changed here yet.'}
+                  {' '}
+                  {s.adoptable
+                    ? `This looks like ${s.adoptKindLabel ? `a “${s.adoptKindLabel}” section` : 'one we know'} — you can make it editable.`
+                    : (s.adoptReasonText || '')}
+                </div>
+              )}
+              {/* A row that got here by adoption says so, and offers the way
+                  back. Discovering afterwards that we rebuilt something is
+                  exactly what this note exists to prevent. */}
+              {s.editable && s.adoption && (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Made editable{s.adoption.adoptedAt ? ` on ${whenText(s.adoption.adoptedAt)}` : ''}.
+                  {s.adoption.canUndo ? (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        onClick={() => undoAdoption(i, s.adoption!.adoptionId)}
+                        disabled={busy === 'undo-adopt'}
+                        style={{
+                          background: 'none', border: 0, padding: 0, font: 'inherit',
+                          color: 'var(--brand-sky, #0284C7)', textDecoration: 'underline', cursor: 'pointer',
+                        }}
+                      >
+                        Undo adoption
+                      </button>
+                      {s.adoption.undoUntil ? ` (until ${whenText(s.adoption.undoUntil)})` : ''}
+                    </>
+                  ) : (
+                    ' The window for putting it back the way it was has passed.'
+                  )}
                 </div>
               )}
             </div>
@@ -774,14 +902,26 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
                 style={{ ...smallButton, minWidth: 44 }}
                 onClick={() => setSections((cur) => moveSection(cur, i, i + 1))}
               >↓</button>
-              <button
-                type="button" className={s.editable && !s.isProposed ? 'abtn abtn-sky' : undefined}
-                style={s.editable && !s.isProposed ? { minHeight: 44 } : smallButton}
-                disabled={!s.editable || s.isProposed}
-                onClick={() => { setSectionProposal(null); setSectionAiError(null); setOpenUid(s.uid); }}
-              >
-                Edit
-              </button>
+              {!s.editable && !s.isProposed && s.adoptable ? (
+                <button
+                  type="button"
+                  className="abtn abtn-sky"
+                  style={{ minHeight: 44 }}
+                  onClick={() => openAdopt(i)}
+                >
+                  Make it editable
+                </button>
+              ) : (
+                <button
+                  type="button" className={s.editable && !s.isProposed ? 'abtn abtn-sky' : undefined}
+                  style={s.editable && !s.isProposed ? { minHeight: 44 } : smallButton}
+                  disabled={!s.editable || s.isProposed}
+                  title={!s.editable && !s.isProposed ? (s.adoptReasonText || undefined) : undefined}
+                  onClick={() => { setSectionProposal(null); setSectionAiError(null); setOpenUid(s.uid); }}
+                >
+                  Edit
+                </button>
+              )}
               <button
                 type="button" style={smallButton} disabled={s.isProposed}
                 onClick={() => {
@@ -800,6 +940,11 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           <button type="button" style={smallButton} onClick={() => setPickerOpen(true)}>
             Add a section
           </button>
+          {customCount > 0 && (
+            <button type="button" style={smallButton} onClick={() => setReviewOpen(true)}>
+              Review sections built on the site ({customCount})
+            </button>
+          )}
           <button type="button" style={smallButton} onClick={() => setPageAiOpen((v) => !v)}>
             {pageAiOpen ? 'Hide ARGUS' : 'Ask ARGUS about this page'}
           </button>
@@ -972,6 +1117,28 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           busyKind={addingKind}
           onAdd={addSection}
           onClose={() => setPickerOpen(false)}
+        />
+      )}
+
+      {/* Adoption (Phase 3). The review list is a CHECKLIST — it opens one
+          before/after at a time and never adopts anything itself. */}
+      {reviewOpen && (
+        <AdoptReviewList
+          rows={customRows}
+          onOpen={openAdopt}
+          onClose={() => setReviewOpen(false)}
+        />
+      )}
+
+      {adoptIndex !== null && (
+        <AdoptSectionSheet
+          sectionLabel={sections[adoptIndex]?.label || 'this section'}
+          preview={adoptPreview}
+          loading={adoptLoading}
+          busy={busy === 'adopt'}
+          error={adoptError}
+          onAdopt={doAdopt}
+          onClose={closeAdopt}
         />
       )}
 
