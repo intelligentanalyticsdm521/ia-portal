@@ -111,6 +111,8 @@ const ConsultingClientsPageAdmin = lazy(() => import('./pages/consulting/Consult
 const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/ConsultingWorkBoardPage'));
 // Sept-A F7 — founder-only client-facing error log viewer.
 const ErrorLogPageAdmin = lazy(() => import('./pages/admin/ErrorLogPage'));
+// Foundation §3A3 — founder queue for ARION website change requests.
+const SiteRequestsPageAdmin = lazy(() => import('./pages/admin/SiteRequestsPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -260,6 +262,20 @@ export function App() {
                 element={
                   <Suspense fallback={<AdminRouteLoading />}>
                     <ErrorLogPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
+
+            {/* Foundation §3A3 — the founder queue for website change requests.
+                arion-api /admin/site-requests refuses non-founders on its own
+                (middleware/requireFounder), so this guard is the UI half. */}
+            <Route path="admin/site-requests" element={<RequireFounderRoute />}>
+              <Route
+                index
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <SiteRequestsPageAdmin />
                   </Suspense>
                 }
               />

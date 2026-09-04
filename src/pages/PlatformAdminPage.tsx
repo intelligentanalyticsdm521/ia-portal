@@ -9,7 +9,7 @@
  * /app/settings/*.
  */
 import { Link } from 'react-router-dom';
-import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle } from 'lucide-react';
+import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle, Inbox } from 'lucide-react';
 
 export function PlatformAdminPage() {
   return (
@@ -59,6 +59,18 @@ export function PlatformAdminPage() {
           </div>
           <div className="mt-1 text-xs text-gray-500">
             Every 4xx/5xx across all four APIs — when a client says "it broke", the attempt is here.
+          </div>
+        </Link>
+        <Link
+          to="/app/admin/site-requests"
+          className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <Inbox className="h-4 w-4 text-[#EF6C33]" />
+            Website Change Requests
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            What clients have asked us to change on their websites — move one to Done and they get told.
           </div>
         </Link>
         <Link

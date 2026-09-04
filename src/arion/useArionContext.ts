@@ -22,6 +22,7 @@ import {
   createSeoProject as portalCreateSeoProject,
   linkSeoProject as portalLinkSeoProject,
   createArionRequest,
+  listArionRequests,
   getForms as portalGetForms,
   getBookings as portalGetBookings,
   getGbpProfile as portalGetGbpProfile,
@@ -516,6 +517,11 @@ export function useArionContext() {
       async submitRequest(siteId: string, requestType: string, notes: string) {
         const b = await base();
         return createArionRequest({ ...b, siteId, requestType, notes });
+      },
+
+      async listRequests(siteId: string) {
+        const b = await base();
+        return listArionRequests({ ...b, siteId });
       },
 
       async getForms(siteId: string) {

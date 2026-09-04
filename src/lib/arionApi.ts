@@ -1243,6 +1243,56 @@ export async function createArionRequest(params: { baseUrl: string; bearerToken:
   });
 }
 
+// ─── Website change requests ─────────────────────────────────────────────
+// arion.site_request (migration 055). The client sees their own site's
+// history; the founder sees every business's queue behind /admin.
+export type SiteRequestStatus = 'open' | 'in_progress' | 'done' | 'declined';
+
+export interface ArionSiteRequest {
+  siteRequestId: string;
+  tenantId: string;
+  siteId: string;
+  requestType: string;
+  notes: string | null;
+  status: SiteRequestStatus;
+  requestedByEmail: string | null;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+  /** What we wrote back when we finished or declined it. */
+  resolutionNotes: string | null;
+  /** Founder queue only — joined from arion.site / core.tenants. */
+  domain?: string | null;
+  tenantName?: string | null;
+}
+
+/** The signed-in business's own history for one site, newest first. */
+export async function listArionRequests(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<{ requests: ArionSiteRequest[] }>({
+    ...params,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/requests`
+  });
+}
+
+/** Founder queue across every business. arion-api /admin/site-requests. */
+export async function listFounderSiteRequests(params: { baseUrl: string; bearerToken: string; tenantId: string; status?: string }) {
+  const qs = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
+  return requestJson<{ requests: ArionSiteRequest[] }>({ ...params, path: `/admin/site-requests${qs}` });
+}
+
+/** Founder moves one request, optionally leaving the client a reply. */
+export async function updateFounderSiteRequest(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  siteRequestId: string; status: SiteRequestStatus; resolutionNotes?: string;
+}) {
+  return requestJson<{ request: ArionSiteRequest; clientEmailQueued: boolean }>({
+    ...params,
+    method: 'PATCH',
+    path: `/admin/site-requests/${encodeURIComponent(params.siteRequestId)}`,
+    body: { status: params.status, resolutionNotes: params.resolutionNotes || undefined }
+  });
+}
+
 export async function getContentSeo(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<{ data: { pages: any[]; posts: any[]; summary: { avg_score: number; missing_meta: number; no_focus_keyword: number; total: number } } }>({
     ...params,
