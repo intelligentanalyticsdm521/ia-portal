@@ -9,7 +9,7 @@
  * /app/settings/*.
  */
 import { Link } from 'react-router-dom';
-import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle, Inbox, Hammer } from 'lucide-react';
+import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle, Inbox, Hammer, Brain } from 'lucide-react';
 
 export function PlatformAdminPage() {
   return (
@@ -87,6 +87,18 @@ export function PlatformAdminPage() {
             Decide, approve scopes, tick to-dos, walk features and watch the build queue. Opens the FORGE console (your Claude login).
           </div>
         </a>
+        <Link
+          to="/app/admin/il-learning"
+          className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <Brain className="h-4 w-4 text-[#EF6C33]" />
+            Intelligence Layer
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Can we trust the model yet, and what is checking it costing? Agreement per model and per business.
+          </div>
+        </Link>
         <Link
           to="/app/admin/argus-margin"
           className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
