@@ -1,32 +1,53 @@
-// useProductTier — small hook that returns the active Stripe subscription
-// tier ("lite" / "standard" / "pro" / "business" / "active") for a single
-// product (oliver | spark | arion). Used by IA Insights Intelligence pages
-// (and other tier-gated surfaces) to render an upgrade-locked state for
-// reports whose minTier is above the user's current tier.
+// useProductTier — the active business's tier for one product
+// ("lite" / "standard" / "pro" / "business" / "active"), and useEntitlements —
+// the whole payload for a page that needs more than a tier.
 //
-// Failure mode: returns { tier: null, ready: true, error } and the caller
-// should treat null tier as "Lite" — i.e. lock business/pro-tier cards
-// rather than silently let the engine run. Null-tier MUST NOT crash the
-// page.
-import { useEffect, useState } from "react";
-import { fetchSubscriptions, type ProductSubscription } from "../lib/billingApi";
-import { useAccessToken } from "../auth/useAccessToken";
-import { useAppState } from "../app/AppState";
-import { DEV_AUTH } from "../lib/devAuth";
-// The tier ladder (TierKey / IntelMinTier / tierMeets) lives in lib/tierRank —
-// a pure module, so navVisibility and its node tests don't drag React in.
-import type { TierKey } from "../lib/tierRank";
+// SEAMS PACK 3 (SEAM-3-A), 2026-09-06. This hook used to GET oliver-api
+// /billing/subscriptions on every mount, per product, and the browser kept its
+// own copy of the tier ladder (src/lib/tierRank.ts) and its own copy of the
+// per-feature minimums (src/config/serviceCatalog.ts). Three copies of one
+// table, refreshed from the service that owns CHECKOUT.
+//
+// It now reads platform-api GET /me/entitlements — ONE document that carries
+// the products, the add-ons, the ladder, the feature minimums and the limits,
+// and is the SAME document the APIs gate on. That is the fix for the 2026-08-17
+// incident, where the Portal showed every SPARK Pro feature unlocked while
+// every Pro route 403'd: the screen and the server now read one answer.
+//
+// FAILURE MODE — SEAM-3-B, and it CHANGED, on purpose.
+// The old header said: "the caller should treat null tier as 'Lite' — i.e. lock
+// business/pro-tier cards". That is the wrong half of the rule and it is the
+// browser side of the incident above. An answer we could not get means we do
+// not know, and not knowing must never lock a paying customer out of a feature
+// they bought. So a null tier ALLOWS, `decided` says whether we really know,
+// and the API — which is the thing that can actually spend money — refuses the
+// spend on the same undecided answer. Features open, spending shut.
+//
+// Null-tier MUST NOT crash the page. That part is unchanged.
+import { useEffect, useState } from 'react';
+import { useAccessToken } from '../auth/useAccessToken';
+import { useAppState } from '../app/AppState';
+import { DEV_AUTH } from '../lib/devAuth';
+import {
+  fetchEntitlements,
+  tierOf,
+  type EntitlementPayload,
+  type TierKey,
+} from '../lib/entitlements';
 
-// Local-dev tier seam (2026-07-21). The tier is resolved from oliver-api's
-// Stripe-backed /billing/subscriptions, which the local dev stack doesn't run
-// — so every tier-gated surface read as below-Standard and the TEST TENANT
-// couldn't test gated features at all. Under VITE_DEV_AUTH=1 the test tenant
-// resolves to VITE_DEV_TIER (default "business") so every feature is
-// walkable. Build-time constant — tree-shaken out of prod builds.
-const DEV_TIER = (String(import.meta.env.VITE_DEV_TIER || "business").toLowerCase() as TierKey);
+const PLATFORM_API_BASE = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string) || '';
 
-export function useProductTier(product: "oliver" | "spark" | "arion"): {
-  tier: TierKey;
+// Local-dev tier seam (2026-07-21). The tier is resolved from platform-api's
+// entitlement service, which the fully-local stack may not run — so every
+// tier-gated surface would read as below-Standard and the TEST TENANT could not
+// test gated features at all. Under VITE_DEV_AUTH=1 the test tenant resolves to
+// VITE_DEV_TIER (default "business") so every feature is walkable. Build-time
+// constant — tree-shaken out of prod builds.
+const DEV_TIER = String(import.meta.env.VITE_DEV_TIER || 'business').toLowerCase() as TierKey;
+
+/** The whole payload for the active business. */
+export function useEntitlements(): {
+  entitlements: EntitlementPayload | null;
   ready: boolean;
   error: unknown;
 } {
@@ -34,42 +55,43 @@ export function useProductTier(product: "oliver" | "spark" | "arion"): {
   const { activeTenantId } = appState;
   const isFounder = !!appState.bootstrap?.user?.isFounder;
   const { getToken } = useAccessToken();
-  const [tier, setTier] = useState<TierKey>(null);
+  const [entitlements, setEntitlements] = useState<EntitlementPayload | null>(null);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<unknown>(null);
 
+  const home = appState.bootstrap?.homeTenantId;
+
   useEffect(() => {
-    if (DEV_AUTH) { setTier(DEV_TIER); setReady(true); return; }
+    if (DEV_AUTH) { setEntitlements(null); setReady(true); return; }
+    if (!activeTenantId || !PLATFORM_API_BASE) { setReady(true); return; }
 
     // 2026-08-06 — AGENCY / PLATFORM-OWNER BYPASS.
     // Intelligent Analytics IS the agency: it owns the platform and holds NO
-    // Stripe subscriptions of its own. /billing/subscriptions returns nothing
-    // for it, tier resolved to null, and every tier-gated surface read as
-    // locked — which locked Brandon out of ARION/OLIVER/SPARK the moment tier
-    // gating went live. The agency's own tenant always resolves to the top tier.
-    // (The APIs already behave this way server-side: myBrand/tierCheck.js treats
-    // FOUNDER_TENANT_ID as "business"; requireArionTier reads
-    // arion.site.arion_tier = "business" for IA.)
+    // Stripe subscriptions of its own, so every tier-gated surface read as
+    // locked the moment tier gating went live. The service answers this too
+    // (sources.is_agency, from core.tenants.tenant_kind) — the shortcut here
+    // exists so the founder stays unblocked even when the service is the thing
+    // that is down.
     //
     // Scoped to the founder's OWN tenant on purpose: `isFounder` stays true
     // while viewing a client (ClientTenantModal reuses the founder bootstrap),
     // so an unscoped bypass would show unlocked features inside a CLIENT's
     // portal and defeat view-as. homeTenantId is the founder's own tenant.
-    const home = appState.bootstrap?.homeTenantId;
     const inOwnTenant =
-      isFounder && !!activeTenantId && !!home &&
+      isFounder && !!home &&
       String(activeTenantId).toLowerCase() === String(home).toLowerCase();
-    if (inOwnTenant) { setTier("business"); setReady(true); return; }
+    if (inOwnTenant) { setEntitlements(null); setReady(true); return; }
 
-    if (!activeTenantId) { setReady(true); return; }
     let cancelled = false;
     (async () => {
       try {
         const t = await getToken();
-        const r = await fetchSubscriptions({ token: t.accessToken, tenantId: activeTenantId });
-        if (cancelled) return;
-        const sub = (r.subscriptions || []).find((s: ProductSubscription) => s.product === product);
-        setTier((sub?.tier as TierKey) ?? null);
+        const payload = await fetchEntitlements({
+          baseUrl: PLATFORM_API_BASE,
+          token: t.accessToken,
+          tenantId: activeTenantId,
+        });
+        if (!cancelled) setEntitlements(payload);
       } catch (e) {
         if (!cancelled) setError(e);
       } finally {
@@ -77,7 +99,33 @@ export function useProductTier(product: "oliver" | "spark" | "arion"): {
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTenantId, getToken, product, isFounder, appState.bootstrap?.homeTenantId]);
+  }, [activeTenantId, getToken, isFounder, home]);
 
-  return { tier, ready, error };
+  return { entitlements, ready, error };
 }
+
+export function useProductTier(product: 'oliver' | 'spark' | 'arion' | 'stella'): {
+  tier: TierKey;
+  ready: boolean;
+  error: unknown;
+} {
+  const appState = useAppState();
+  const { activeTenantId } = appState;
+  const isFounder = !!appState.bootstrap?.user?.isFounder;
+  const home = appState.bootstrap?.homeTenantId;
+  const { entitlements, ready, error } = useEntitlements();
+
+  if (DEV_AUTH) return { tier: DEV_TIER, ready: true, error: null };
+
+  const inOwnTenant =
+    isFounder && !!activeTenantId && !!home &&
+    String(activeTenantId).toLowerCase() === String(home).toLowerCase();
+  if (inOwnTenant) return { tier: 'business', ready: true, error: null };
+
+  // tierOf() returns null for a product we could not decide, and null ALLOWS
+  // (SEAM-3-B). Callers that render an upgrade CTA must check `tier` for a
+  // POSITIVE shortfall, never for absence.
+  return { tier: tierOf(entitlements, product), ready, error };
+}
+
+export default useProductTier;
