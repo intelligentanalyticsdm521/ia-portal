@@ -18,6 +18,10 @@ import { WalkthroughRunner } from "../../components/walkthroughs/WalkthroughRunn
 // layer on Overview was duplication, not value.
 import { SetupHints } from "../../components/SetupHints";
 import { EngagementAlertCallout } from "../../components/insights/EngagementAlertCallout";
+// IL-3 — what the Intelligence Layer noticed this week. Each row is a sentence
+// and a LINK to a prefilled screen; nothing on it acts on its own (L4). Renders
+// nothing at all when there is nothing worth saying.
+import { SuggestionsCard } from "../../components/spark/SuggestionsCard";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -140,6 +144,10 @@ export function SparkOverviewPage() {
         {/* Engagement alerts call-out (2026-07-26) — the platform's open
             alerts lead the dashboard, not just the home Alerts tab. */}
         <EngagementAlertCallout platform="spark" />
+
+        {/* IL-3 suggestions. Above the setup hints on purpose: a hint is
+            something to configure, a suggestion is money on the table today. */}
+        <SuggestionsCard />
         {/* Onboarding nag lives on Command Center only (UnifiedSetupCard). */}
 
         {/* F-118 — lightweight, dismissable setup hints. This is the ONLY

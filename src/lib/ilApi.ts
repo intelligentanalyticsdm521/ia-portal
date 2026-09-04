@@ -284,3 +284,146 @@ export function syncIlOutcomes(
     } | null;
   }>(msal, account, "/api/v1/il/admin/outcomes/sync", body);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * IL-3 — the owner's compiled rules, and the quarterly audit
+ *
+ * Two more read-only blocks and one more button. The rules block answers the
+ * question no agreement percentage can ("is the compiler reading people
+ * correctly"); the audit block answers Brandon's coverage rule ("did we look at
+ * EVERY business"). Neither changes a label; the audit's single side effect is
+ * putting a business that fell under 90% back on 100% judging.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+export interface IlRuleConstraintRow {
+  key: string;
+  kind: string;
+  effect: string;
+  delta_points: number;
+  say: string;
+}
+
+export interface IlOwnerRuleRow {
+  rule_id: number;
+  tenant_id: string;
+  version: number;
+  status: "active" | "rejected" | "superseded";
+  compiled_by: "model" | "owner";
+  compiled_model: string | null;
+  constraint_count: number;
+  compiled_at: string | null;
+  expires_at: string | null;
+  explanation_plain: string | null;
+  rejected_reason: string | null;
+  compile_cost_usd: number | null;
+  source_text: string;
+  constraints: IlRuleConstraintRow[];
+  applications: number;
+  leads_touched: number;
+  held_now: number;
+  accepted_anyway: number;
+  declined: number;
+}
+
+export interface IlRulesAdmin {
+  grammar: {
+    kinds: string[];
+    effects: string[];
+    fields_by_kind: Record<string, string[]>;
+    floor: number;
+    max_delta: number;
+    max_total_delta: number;
+    model: string;
+  };
+  rules: IlOwnerRuleRow[];
+  suggestions: Array<{ tenant_id: string; status: string; n: number }>;
+}
+
+export interface IlAuditTenantRow {
+  tenant_id: string;
+  decisions_in_period: number;
+  sampled: number;
+  rejudged: number;
+  agreed: number;
+  agreement_pct: number | null;
+  under_floor: boolean;
+  gate_reset: boolean;
+  notes: string | null;
+}
+
+export interface IlAuditRunRow {
+  run_id: number;
+  kind: "quarterly" | "annual";
+  decision_kind: string;
+  period_start: string;
+  period_end: string;
+  started_at: string;
+  finished_at: string | null;
+  status: "running" | "done" | "failed";
+  tenants_total: number;
+  tenants_sampled: number;
+  sampled: number;
+  rejudged: number;
+  agreed: number;
+  agreement_pct: number | null;
+  tenants_under_floor: number;
+  budget_usd: number;
+  spent_usd: number;
+  budget_exhausted: boolean;
+  baseline_note: string | null;
+  error_text: string | null;
+  triggered_by: string | null;
+  summary: {
+    planned_rows?: number;
+    decisions_in_period?: number;
+    skipped_unjudgeable?: number;
+    tenant_floor_pct?: number;
+    by_model_version?: Array<{ model_version: string; rejudged: number; agreed: number; agreement_pct: number | null }>;
+  } | null;
+}
+
+export interface IlAuditHistory {
+  thresholds: {
+    sample_pct: number;
+    sample_min: number;
+    sample_max: number;
+    default_budget_usd: number;
+    tenant_floor_pct: number;
+    tenant_min_rejudged: number;
+  };
+  runs: IlAuditRunRow[];
+  latest_run_id: number | null;
+  tenants: IlAuditTenantRow[];
+}
+
+export function getIlRules(msal: IPublicClientApplication, account: AccountInfo) {
+  return lumenGet<IlRulesAdmin>(msal, account, "/api/v1/il/admin/rules");
+}
+
+export function getIlAudit(msal: IPublicClientApplication, account: AccountInfo, runId?: number) {
+  const qs = runId ? `?run_id=${runId}` : "";
+  return lumenGet<IlAuditHistory>(msal, account, `/api/v1/il/admin/audit${qs}`);
+}
+
+/**
+ * Start an audit. `budget_usd` is the ceiling for THIS run (default $5,
+ * platform-wide) — the run stops when it is reached and says so rather than
+ * reporting an agreement number it did not earn.
+ */
+export function runIlAudit(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  body: { decision_kind?: string; budget_usd?: number; kind?: "quarterly" | "annual"; baseline_note?: string } = {}
+) {
+  return lumenPost<{
+    ok: boolean;
+    run_id: number;
+    tenants_total: number;
+    sampled: number;
+    rejudged: number;
+    agreement_pct: number | null;
+    spent_usd: number;
+    budget_exhausted: boolean;
+    error?: string;
+  }>(msal, account, "/api/v1/il/admin/audit/run", body);
+}
