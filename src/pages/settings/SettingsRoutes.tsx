@@ -156,6 +156,7 @@ const SETTINGS_TILES: Array<{
       { to: '/app/settings/team-members', label: 'Team Members', description: 'Invite users to your organization' },
       { to: '/app/settings/integrations', label: 'Connected Accounts & Integrations', description: 'Google, Bing, Stripe, lead intake' },
       { to: '/app/settings/sender-domain', label: 'Email Sender Domain', description: 'Send from your own domain — DNS records + verification' },
+      { to: '/app/settings/phone-texting', label: 'Phone & texting', description: 'Your numbers, texts used this month, and who has asked you to stop' },
     ],
   },
   {

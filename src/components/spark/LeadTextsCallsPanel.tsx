@@ -92,7 +92,19 @@ interface PhoneLine {
 
 interface Payload {
   data: { threads: SmsThreadRow[]; calls: CallRow[] };
-  meta: { line: PhoneLine | null; shared_number: string | null; sms_enabled: boolean; engine: string };
+  meta: {
+    line: PhoneLine | null;
+    shared_number: string | null;
+    sms_enabled: boolean;
+    engine: string;
+    sending_from?: string | null;
+    /** SMS-16(a). On the shared IA number every message goes out as
+     *  "Intelligent Analytics on behalf of <business>: …". That is about 51
+     *  characters and it is part of what the carrier bills, so the counter
+     *  under the compose box has to include it — otherwise the owner is told
+     *  "1 text" and charged for two. Null on a business's own line. */
+    shared_identity_prefix?: string | null;
+  };
 }
 
 function when(ts: string | null | undefined) {
@@ -122,6 +134,19 @@ const CANNOT_REPLY: Record<string, string> = {
     "It has been over a month since they last texted. Send an email or give them a ring instead.",
   thread_spam: "This conversation is marked as spam.",
   no_thread: "There is no text conversation behind this lead.",
+  // The follow-up pack's refusals. Every one of these is a DECISION with a
+  // reason, and showing it as a generic send error is what turns a working
+  // guard rail into a support ticket.
+  no_consent:
+    "No texting consent on file for this customer. They have to agree to be texted before we can send.",
+  consent_declined: "This customer said no to texting. You can still email or call.",
+  unsubscribed: "They replied STOP, so we cannot text them. You can still email or call.",
+  shared_line_marketing:
+    "Campaign and marketing texts cannot go out from our shared number — it is registered to us, "
+    + "not to your business. Your own number lifts that, and we file the carrier registration for you.",
+  shared_line_cap:
+    "You have used this month's allowance on our shared number. Your own number lifts that limit.",
+  shared_line_off: "Texting from our shared number is switched off. Your own number is the way round it.",
 };
 
 const STATUS_CHIP: Record<SmsThreadRow["status"], { label: string; cls: string }> = {
@@ -248,7 +273,12 @@ export function LeadTextsCallsPanel({ leadId, onChanged }: Props) {
   useEffect(() => { endRef.current?.scrollIntoView({ block: "nearest" }); }, [threads]);
 
   const active = threads[0] || null;
-  const segments = segmentsFor(draft.trim());
+  // The text as it will actually leave: on the shared line that includes the
+  // identification. Counting the draft alone would understate a shared-line
+  // reply by a segment in three.
+  const prefix = meta?.shared_identity_prefix || "";
+  const outgoing = draft.trim() ? `${prefix}${draft.trim()}` : "";
+  const segments = segmentsFor(outgoing);
 
   async function sendReply() {
     if (!leadId || !active || !draft.trim()) return;
@@ -371,6 +401,17 @@ export function LeadTextsCallsPanel({ leadId, onChanged }: Props) {
                       {segments <= 1 ? "1 text" : `${segments} texts off your allowance`}
                     </span>
                   </div>
+                  {prefix && (
+                    /* SMS-16(a). On our shared number the message really does go
+                       out with this on the front, and it is counted. Saying so
+                       here is the difference between a client who understands
+                       the segment count and one who thinks it is broken. */
+                    <p className="mt-1 text-[10px] text-slate-500">
+                      Sent from our shared number, so it starts with{" "}
+                      <span className="font-medium text-slate-700">&ldquo;{prefix.trim()}&rdquo;</span>{" "}
+                      — the carriers require it. Your own number sends as just you.
+                    </p>
+                  )}
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <button
                       type="button"

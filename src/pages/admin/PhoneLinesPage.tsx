@@ -28,6 +28,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Phone, ShieldAlert, CheckCircle2, Clock, AlertTriangle, Ban, Sparkles, DollarSign,
+  ExternalLink, Users,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { friendlyApiError } from "../../lib/leadgenBilling";
@@ -64,15 +65,67 @@ interface Line {
   notes: string | null;
   requested_at: string;
   active_at: string | null;
+  /** LINE-4. DAYS, not a timestamp: toll-free verification status cannot be
+   *  read from the CLI or any API, so somebody has to open the Azure portal and
+   *  look — and "waiting 19 days" is what makes them do it. */
+  days_waiting: number | null;
+  regulatory_blade_url?: string;
+  registration_sunk_cents?: number;
+  registration_cost_cents?: number;
+  /** SMS-15. The carrier form has to be finished before this line can be
+   *  filed: the fee is non-refundable at submission and a submission cannot be
+   *  edited afterwards. */
+  registration_complete?: boolean;
+  registration_missing?: string[];
+  registration_unchecked?: string[];
+  sole_proprietor?: boolean;
+}
+
+interface CoolingNumber {
+  id: number;
+  number: string | null;
+  kind: string;
+  cooling_since: string | null;
+  releasable_at: string | null;
+  releasable_now: boolean;
+  /** LINE-2. A churned client's number goes back to the CARRIER, never to
+   *  another client — it carries their opt-in history and their customers still
+   *  have it in their phones. */
+  never_reassign: boolean;
+  previous_business: string | null;
 }
 
 interface PoolStatus {
   available: number;
+  /** LINE-4. "3 local · 2 toll-free" is the sentence; one aggregate number
+   *  hides the case that bites — five toll-free in stock and a client who wants
+   *  a local one. */
+  available_by_kind?: Record<string, number>;
   target: number;
   short_by: number;
   purchase_live: boolean;
   cool_off_days: number;
   counts: Record<string, number>;
+  cooling?: CoolingNumber[];
+}
+
+interface SharedLineLoad {
+  period: string;
+  businesses: number;
+  segments: number;
+  cap_per_business: number;
+  fallback_enabled: boolean;
+}
+
+interface AllowanceRow {
+  tenant_id: string;
+  business_name: string | null;
+  included: number;
+  used: number;
+  overage_units: number;
+  shared_used: number;
+  by_source: Record<string, number>;
+  refused: Record<string, number>;
 }
 
 interface Meta {
@@ -84,6 +137,12 @@ interface Meta {
   cost_sentence: string;
   setup_estimate: string;
   pool?: PoolStatus | null;
+  shared_line?: SharedLineLoad | null;
+  allowance_by_business?: AllowanceRow[];
+  failed_registrations?: number;
+  failed_registration_cost_cents?: number;
+  registration_fee_cents?: number;
+  regulatory_blade_url?: string;
 }
 
 /** What the carrier has said about THIS business on THIS number. Separate from
@@ -176,34 +235,31 @@ export function PhoneLinesPage() {
     );
   }
 
+  /**
+   * FILE IT. The $44 moment.
+   *
+   * This used to be six browser prompts typed by the founder — legal name,
+   * address, website, EIN, one sample message, a sentence about consent — which
+   * is both the fastest way to file a rejection and the wrong person to ask.
+   * The CLIENT fills the form now (Settings › Phone & texting), it is validated
+   * and blocking, and the button above only exists once it is complete. So this
+   * is a confirmation, not a data-entry screen: the record already exists and
+   * this sends it.
+   */
   function register(l: Line) {
-    const legal = prompt(
-      `File ${l.business_name || "this business"}'s carrier registration for ${l.number}.\n\n`
-      + `This cannot be edited once it is filed, and the carrier approves or rejects THIS business — `
-      + `buying the number in advance does not make it faster.\n\n`
-      + `Legal business name:`
-    );
-    if (!legal) return;
-    const address = prompt("Registered address:");
-    if (!address) return;
-    const website = prompt("Website:");
-    if (!website) return;
-    const ein = prompt("EIN (optional — leave blank if none):") || null;
-    const samples = prompt(
-      "One sample message the carrier will see (what this business actually texts):",
-      "Hi {name}, this is a reminder about your appointment tomorrow at {time}. Reply STOP to opt out."
-    );
-    const optIn = prompt(
-      "How does this business collect consent to text?",
-      "Customers give their mobile number when they book, and tick a box agreeing to text updates."
-    );
-    void act(l.id, "register", {
-      registration: {
-        legal_name: legal.trim(), address: address.trim(), website: website.trim(),
-        ein: ein?.trim() || null, sample_messages: samples ? [samples.trim()] : [],
-        opt_in_description: optIn?.trim() || null,
-      },
-    });
+    const fee = money(l.registration_cost_cents ?? 4400);
+    if (!confirm(
+      `File ${l.business_name || "this business"}'s carrier registration for ${l.number}?
+
+`
+      + `This costs ${fee} and the fee is spent whether the carrier approves or refuses. `
+      + `It CANNOT be edited once it is sent, and a refusal means paying it again and waiting `
+      + `another 5 to 8 business days.
+
+`
+      + `It files what the client filled in on their own Phone & texting page.`
+    )) return;
+    void act(l.id, "register", {});
   }
 
   function decide(l: Line, approved: boolean) {
@@ -304,7 +360,21 @@ export function PhoneLinesPage() {
         <div className="rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{notice}</div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      {/* ── LINE-4: the bank ───────────────────────────────────────────────
+          Amber below two available of a kind, red at zero. The threshold is
+          here rather than on the server because it is a judgement about how
+          much warning a founder needs, not a fact about the pool. */}
+      {meta?.pool && <BankLevel pool={meta.pool} />}
+
+      {/* ── LINE-4: how hard the shared IA line is being ridden ────────────
+          The compliance boundary from holistic §3. A number belongs to ONE
+          registered brand, and ours carries every business without a line of
+          its own. Past roughly ten paying businesses this needs a written read
+          from the aggregator and a telecom attorney — and the only way anybody
+          remembers that is if the number is on the screen before then. */}
+      {meta?.shared_line && <SharedLineLoadCard load={meta.shared_line} />}
+
+      <div className="grid gap-3 sm:grid-cols-4">
         <div className="rounded-lg border bg-white p-4">
           <div className="text-xs uppercase tracking-wider text-slate-500">Live lines</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">{live.length}</div>
@@ -321,14 +391,40 @@ export function PhoneLinesPage() {
           <div className="mt-1 text-2xl font-semibold tabular-nums">{money(monthlyFee)}</div>
           <div className="text-[10px] text-slate-400">lines included on a plan are not counted</div>
         </div>
+        {/* Failed registrations, and the money they cost. Non-refundable at
+            submission, so three rejections is real cash — and a PATTERN is only
+            visible if the total is on the screen rather than three red chips. */}
+        <div className={`rounded-lg border p-4 ${
+          (meta?.failed_registrations || 0) > 0 ? "border-rose-200 bg-rose-50" : "bg-white"
+        }`}>
+          <div className="text-xs uppercase tracking-wider text-slate-500">Registrations refused</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums">{meta?.failed_registrations ?? 0}</div>
+          <div className="text-[10px] text-slate-500">
+            {money(meta?.failed_registration_cost_cents ?? 0)} spent and not coming back
+          </div>
+        </div>
       </div>
 
       {loading && <div className="text-sm text-slate-500">Loading…</div>}
 
       {!loading && waiting.length > 0 && (
         <section>
-          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <h2 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
             <Clock className="h-4 w-4 text-amber-600" />Waiting on you
+            {meta?.regulatory_blade_url && (
+              /* Toll-free verification status is not readable from the az CLI
+                 or from any API — the Azure portal's Regulatory Documents blade
+                 is the only place it exists. Somebody has to go and look, and
+                 they need the link to hand. */
+              <a
+                href={meta.regulatory_blade_url}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 rounded border border-slate-300 px-2 py-0.5 text-[10px] font-normal text-slate-600 hover:bg-slate-50"
+              >
+                <ExternalLink className="h-3 w-3" />Check status in the Azure portal
+              </a>
+            )}
           </h2>
           <div className="space-y-2">
             {waiting.map((l) => <Row key={l.id} l={l} meta={meta} busy={busy === l.id}
@@ -341,6 +437,10 @@ export function PhoneLinesPage() {
               onTextBack={(on) => void act(l.id, "text-back", { enabled: on })} />)}
           </div>
         </section>
+      )}
+
+      {!loading && meta?.allowance_by_business && meta.allowance_by_business.length > 0 && (
+        <SegmentsThisMonth rows={meta.allowance_by_business} cap={meta.shared_line?.cap_per_business ?? null} />
       )}
 
       {!loading && (
@@ -367,6 +467,210 @@ export function PhoneLinesPage() {
         </section>
       )}
     </div>
+  );
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   LINE-4 — the bank, the shared line, and the segment sheet
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Amber under two of a kind, red at zero. Ordering a number is instant; being
+ *  APPROVED to send from it is five to eight business days, so running out is a
+ *  problem discovered a fortnight after it started. Two is the amount of warning
+ *  that is worth anything. */
+function levelClass(n: number) {
+  if (n <= 0) return "bg-rose-100 text-rose-900 ring-rose-200";
+  if (n < 2) return "bg-amber-100 text-amber-900 ring-amber-200";
+  return "bg-emerald-100 text-emerald-900 ring-emerald-200";
+}
+
+const KIND_LABEL: Record<string, string> = { local: "local", toll_free: "toll-free" };
+
+function BankLevel({ pool }: { pool: PoolStatus }) {
+  const byKind = pool.available_by_kind || {};
+  const kinds = Object.keys(byKind).length ? Object.keys(byKind) : ["local", "toll_free"];
+  const cooling = pool.cooling || [];
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Numbers on hand</h2>
+        <span className="text-[10px] text-slate-400">target {pool.target}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {kinds.map((k) => {
+          const n = byKind[k] || 0;
+          return (
+            <span
+              key={k}
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ring-1 ${levelClass(n)}`}
+            >
+              {n} {KIND_LABEL[k] || k} available
+            </span>
+          );
+        })}
+        {cooling.length > 0 && (
+          <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-700 ring-1 ring-slate-200">
+            {cooling.length} cooling
+          </span>
+        )}
+      </div>
+      {pool.short_by > 0 && (
+        <p className="mt-2 text-[11px] text-amber-800">
+          {pool.short_by} short of target — the 15-minute top-up will{" "}
+          {pool.purchase_live ? "BUY" : "mint stand-ins for"} them.
+        </p>
+      )}
+      {cooling.length > 0 && (
+        <ul className="mt-2 space-y-1">
+          {cooling.map((c) => (
+            <li key={c.id} className="flex flex-wrap items-center gap-2 text-[11px] text-slate-600">
+              <span className="tabular-nums font-medium text-slate-800">{c.number || "—"}</span>
+              <span className="text-slate-400">{KIND_LABEL[c.kind] || c.kind}</span>
+              <span>
+                {c.releasable_now
+                  ? "cool-off finished — it can go back to the carrier"
+                  : `back to the carrier after ${when(c.releasable_at)}`}
+              </span>
+              {c.never_reassign && (
+                // LINE-2. It carries the previous business's opt-in history and
+                // their customers still have it in their phones.
+                <span
+                  className="rounded-full bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-800 ring-1 ring-rose-200"
+                  title="This number belonged to a business that left. It goes back to the carrier — never to another client."
+                >
+                  never reassign
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[10px] text-slate-400">
+        A cancelled number waits {pool.cool_off_days} days before it can be handed back. Holding one
+        costs about $2 a month; the alternative is a stranger receiving a business&rsquo;s appointment reminders.
+      </p>
+    </section>
+  );
+}
+
+/**
+ * How many businesses ride the shared IA number, and how hard.
+ *
+ * This is the number that decides when the product line has to change shape. A
+ * US number belongs to exactly ONE registered brand, and ours is registered to
+ * Intelligent Analytics — so every business we carry on it is traffic filed
+ * under our name. It works at three clients. It is not a shape that survives
+ * thirty, and if our sending reputation takes a hit it does not hit one client,
+ * it hits every client on this infrastructure at once.
+ */
+function SharedLineLoadCard({ load }: { load: SharedLineLoad }) {
+  const heavy = load.businesses >= 10;
+  return (
+    <section className={`rounded-lg p-4 ring-1 ${
+      heavy ? "bg-amber-50 ring-amber-200" : "bg-slate-50 ring-slate-200"
+    }`}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Users className={`h-4 w-4 ${heavy ? "text-amber-700" : "text-slate-400"}`} />
+        <h2 className="text-sm font-semibold text-slate-900">Our shared number</h2>
+        <span className="text-[10px] text-slate-400">{load.period}</span>
+      </div>
+      <div className="mt-1 text-sm text-slate-700">
+        <span className="font-semibold tabular-nums">{load.businesses}</span>{" "}
+        {load.businesses === 1 ? "business is" : "businesses are"} sending from it this month —{" "}
+        <span className="font-semibold tabular-nums">{load.segments}</span> texts, capped at{" "}
+        {load.cap_per_business} each.
+      </div>
+      {heavy && (
+        <p className="mt-1 text-[11px] text-amber-900">
+          Ten or more businesses on one registered brand. Get a written read from the aggregator and a
+          telecom-compliance attorney before the next one joins — this is the rule that can end the
+          product line, and it is cheaper to ask now.
+        </p>
+      )}
+      {!load.fallback_enabled && (
+        <p className="mt-1 text-[11px] text-slate-600">
+          SHARED_LINE_FALLBACK_ENABLED is off, so nothing is riding it — every business texts from its
+          own number or not at all.
+        </p>
+      )}
+    </section>
+  );
+}
+
+/**
+ * Segments this month, per business and per source — the sheet that says when
+ * the $5 line is underwater.
+ *
+ * `refused` sits beside `used` on purpose: "12 texts sent, 40 refused for want
+ * of consent" is a completely different conversation from "12 texts sent", and
+ * splitting them across two screens is how the second number never gets looked
+ * at.
+ */
+function SegmentsThisMonth({ rows, cap }: { rows: AllowanceRow[]; cap: number | null }) {
+  return (
+    <section>
+      <h2 className="mb-2 text-sm font-semibold text-slate-900">Texts this month, by business</h2>
+      <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+        <table className="w-full min-w-[46rem] text-left text-xs">
+          <thead className="bg-slate-50 text-[10px] uppercase tracking-wider text-slate-500">
+            <tr>
+              <th className="px-3 py-2">Business</th>
+              <th className="px-3 py-2 text-right">Used</th>
+              <th className="px-3 py-2 text-right">Included</th>
+              <th className="px-3 py-2 text-right">Over</th>
+              <th className="px-3 py-2 text-right">On our shared number</th>
+              <th className="px-3 py-2">What is eating them</th>
+              <th className="px-3 py-2">Refused</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.tenant_id} className="border-t border-slate-100">
+                <td className="px-3 py-2 font-medium text-slate-900">
+                  {r.business_name || r.tenant_id.slice(0, 8)}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{r.used}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-slate-500">{r.included || "—"}</td>
+                <td className={`px-3 py-2 text-right tabular-nums ${r.overage_units ? "text-amber-700" : "text-slate-400"}`}>
+                  {r.overage_units || "—"}
+                </td>
+                <td className={`px-3 py-2 text-right tabular-nums ${
+                  cap && r.shared_used >= cap ? "font-semibold text-rose-700" : "text-slate-600"
+                }`}>
+                  {r.shared_used ? `${r.shared_used}${cap ? ` of ${cap}` : ""}` : "—"}
+                </td>
+                <td className="px-3 py-2 text-slate-600">
+                  {Object.entries(r.by_source).length
+                    ? Object.entries(r.by_source)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
+                      .join(" · ")
+                    : "—"}
+                </td>
+                <td className="px-3 py-2">
+                  {Object.entries(r.refused).length ? (
+                    <span className="text-rose-700">
+                      {Object.entries(r.refused)
+                        .sort((a, b) => b[1] - a[1])
+                        .map(([k, v]) => `${k.replace(/_/g, " ")} ${v}`)
+                        .join(" · ")}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">none</span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-[10px] text-slate-400">
+        Overage is counted, never charged — there is no charge code for it yet. &ldquo;Refused&rdquo; is
+        what we did not send and why: no consent on file, past the shared-number cap, or a campaign that
+        cannot ride our brand&rsquo;s number.
+      </p>
+    </section>
   );
 }
 
@@ -421,6 +725,47 @@ function Row({ l, meta, busy, onProvision, onVerify, onActivate, onSuspend, onRe
             {l.verification_ref ? ` · TFV ${l.verification_ref}` : ""}
             {l.provisioned_by ? ` · provisioned by ${l.provisioned_by}` : ""}
           </div>
+          {/* LINE-4 — DAYS ELAPSED on anything still waiting. Nobody subtracts
+              a request date from today in their head, so without this the
+              nineteen-day-old submission looks exactly like the one filed this
+              morning. Amber past two weeks: ACS publishes 4–5 weeks to a
+              toll-free verdict, so a fortnight is when a chase is reasonable
+              rather than premature. */}
+          {l.pending && l.days_waiting != null && (
+            <div className={`mt-0.5 text-[10px] font-semibold ${
+              l.days_waiting >= 14 ? "text-amber-700" : "text-slate-500"
+            }`}>
+              Waiting {l.days_waiting} day{l.days_waiting === 1 ? "" : "s"}
+              {l.days_waiting >= 14 && " — worth checking the Regulatory Documents blade"}
+            </div>
+          )}
+          {l.registration_status === "rejected" && !!l.registration_sunk_cents && (
+            <div className="mt-0.5 text-[10px] font-semibold text-rose-700">
+              Refused — {money(l.registration_sunk_cents)} spent and not coming back
+            </div>
+          )}
+          {/* SMS-15 — what the client still has to give us before this can be
+              filed. Named, not a disabled button with a shrug: the founder is
+              the one who has to ring them about it. */}
+          {l.number && l.registration_status === "none" && !l.registration_complete && (
+            <div className="mt-1 rounded bg-amber-50 px-2 py-1 text-[10px] text-amber-900 ring-1 ring-amber-200">
+              Cannot file yet — still needed from the client:{" "}
+              <span className="font-semibold">
+                {(l.registration_missing || []).map((f) => f.replace(/_/g, " ")).join(", ") || "the form"}
+              </span>
+            </div>
+          )}
+          {!!l.registration_unchecked?.length && l.registration_status === "none" && (
+            <div className="mt-1 text-[10px] text-slate-500">
+              Not able to check: {l.registration_unchecked.map((f) => f.replace(/_/g, " ")).join(", ")}
+            </div>
+          )}
+          {l.sole_proprietor && l.registration_status !== "approved" && (
+            <div className="mt-1 text-[10px] text-slate-500">
+              No EIN — filing as a sole proprietor: one campaign, low daily limit, no upgrade later
+              without registering again.
+            </div>
+          )}
         </div>
 
         <div className="flex flex-shrink-0 flex-wrap gap-1.5">
@@ -431,11 +776,17 @@ function Row({ l, meta, busy, onProvision, onVerify, onActivate, onSuspend, onRe
               Provision{meta?.purchase_enabled ? " ($)" : " (stand-in)"}
             </button>
           )}
-          {l.number && l.registration_status === "none" && (
+          {/* SMS-15 — the button EXISTS only when the form is finished. The $44
+              is spent on submission whether the carrier says yes or no, and a
+              submission cannot be edited afterwards, so a half-filled filing is
+              not a draft to fix later: it is a rejection to wait five to eight
+              business days for, and then pay for again. The reason it is absent
+              is spelled out above the row rather than hidden in a tooltip. */}
+          {l.number && l.registration_status === "none" && l.registration_complete !== false && (
             <button type="button" onClick={onRegister} disabled={busy}
               className="rounded bg-slate-800 px-2.5 py-1 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-40"
               title="Per client, and it cannot be pre-done. Buying the number in advance does not make this faster.">
-              File carrier registration
+              File carrier registration ({money(l.registration_cost_cents ?? 4400)}, non-refundable)
             </button>
           )}
           {l.registration_status === "submitted" && (
