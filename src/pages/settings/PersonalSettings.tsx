@@ -65,6 +65,7 @@ import {
   unsubscribe as browserUnsubscribe,
   PushError,
 } from '../../lib/push';
+import { InstallPrompt } from '../../components/InstallPrompt';
 
 const TABS = ['Profile', 'Notifications', 'Sign-in'] as const;
 type Tab = typeof TABS[number];
@@ -476,17 +477,24 @@ function NotificationsTab() {
         </button>
       </div>
 
-      {/* iOS is the one platform where an off switch is not the user's fault. */}
-      {iosNeedsHomeScreen && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-medium">On iPhone and iPad, add this to your Home Screen first.</p>
-          <p className="mt-1">
-            Apple only sends alerts to apps on the Home Screen. In Safari, tap the share button, choose
-            <span className="font-medium"> Add to Home Screen</span>, then open the Portal from that icon and
-            turn this switch on there.
-          </p>
-        </div>
-      )}
+      {/* Ops scope P5. This was an iPhone-only paragraph of advice with no
+          button: right about Apple, silent on Android where one tap installs
+          the app, and offering nothing to press on either. InstallPrompt is
+          the same wording plus the button, and it hides itself once the Portal
+          IS installed — which is the state that makes iPhone push work, so
+          leaving the note up afterwards would be telling somebody to do a
+          thing they have already done.
+
+          `iosNeedsHomeScreen` still gates the REASON line: Apple's
+          Home-Screen requirement is an iPhone fact and saying it on a desktop
+          would be wrong. The prompt itself decides its own visibility. */}
+      <InstallPrompt
+        reason={
+          iosNeedsHomeScreen
+            ? 'On iPhone and iPad, Apple only sends alerts to apps on the Home Screen. Add the Portal, open it from that icon, and turn the switch on there.'
+            : 'Open the Portal like an app, and get alerts without keeping a tab open.'
+        }
+      />
 
       {blocked && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
