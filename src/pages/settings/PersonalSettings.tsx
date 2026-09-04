@@ -44,7 +44,6 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMsal } from '@azure/msal-react';
-import { authScopes } from '../../auth/msalConfig';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import {
@@ -92,8 +91,12 @@ function Toast({ message, onDone }: { message: string; onDone: () => void }) {
 /* ------------------------------------------------------------------ */
 
 function ProfileTab() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  // useAccessToken, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there is
+  // no MSAL session and `accounts` is permanently empty, so a load gated on
+  // accounts[0] never ran and this tab sat on "Loading your profile…" forever
+  // in local dev. The hook hands back the dev stand-in (dev-tester@local.test)
+  // and compiles down to accounts[0] in a production build.
+  const { activeAccount: account, getToken } = useAccessToken();
   const { active } = useAppState();
   const tenantId = active?.tenant?.tenantId ?? null;
 
@@ -124,7 +127,7 @@ function ProfileTab() {
     setLoading(true);
     setErrMsg(null);
     try {
-      const r = await instance.acquireTokenSilent({ scopes: authScopes, account });
+      const r = await getToken();
       const p = await getProfile({
         baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
         bearerToken: r.accessToken,
@@ -141,7 +144,7 @@ function ProfileTab() {
     } finally {
       setLoading(false);
     }
-  }, [account, instance, tenantId]);
+  }, [account, getToken, tenantId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -160,7 +163,7 @@ function ProfileTab() {
     setSaving(true);
     setErrMsg(null);
     try {
-      const r = await instance.acquireTokenSilent({ scopes: authScopes, account });
+      const r = await getToken();
       const p = await updateProfile({
         baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
         bearerToken: r.accessToken,
@@ -178,7 +181,7 @@ function ProfileTab() {
     } finally {
       setSaving(false);
     }
-  }, [account, instance, tenantId, firstName, lastName]);
+  }, [account, getToken, tenantId, firstName, lastName]);
 
   if (!tenantId) {
     return <div className="py-8 text-center text-sm text-gray-500">Select a business to edit your profile.</div>;
@@ -284,8 +287,7 @@ function describeDevice(userAgent: string | null): string {
 function NotificationsTab() {
   // useAccessToken, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there is
   // no MSAL session and `accounts` is permanently empty, so anything gated on
-  // accounts[0] sits on "Loading…" forever in local dev. (ProfileTab above
-  // still reads accounts[0] directly and has that problem — a separate fix.)
+  // accounts[0] sits on "Loading…" forever in local dev.
   const { activeAccount: account, getToken } = useAccessToken();
   const { active } = useAppState();
   const tenantId = active?.tenant?.tenantId ?? null;
