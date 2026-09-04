@@ -288,7 +288,7 @@ export function ArgusChatbot() {
           onClick={() => setOpen(true)}
           aria-label="Open ARGUS Agent"
           title="ARGUS Agent"
-          className="fixed bottom-5 right-5 z-[9000] flex items-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition-shadow"
+          className="fixed bottom-5 right-5 z-[9000] flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition-shadow"
           style={{ background: "linear-gradient(135deg, #84CC16 0%, #65A30D 100%)" }}
         >
           <MessageSquare className="h-4 w-4" />

@@ -69,7 +69,7 @@ export function AccountMenu({
     <div ref={rootRef} className="relative">
       <button
         type="button"
-        className="iadm-btn-ghost flex items-center gap-2"
+        className="iadm-btn-ghost flex min-h-[40px] items-center gap-2"
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}

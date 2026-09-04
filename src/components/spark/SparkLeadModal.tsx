@@ -279,7 +279,11 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
       size="info"
     >
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-2 py-1 flex-shrink-0">
+        {/* PHONE PASS 2026-09-06: `overflow-x-auto`. At 375px this strip is 501px
+            of tabs in a 353px modal with `overflow: visible`, so the last two —
+            Tags and Delete on the contact, Conversation on the lead — sat off the
+            right of the screen with no way to reach them. */}
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-2 py-1 flex-shrink-0">
           {([
             { key: "overview", label: "Overview", icon: Building2 },
             { key: "contacts", label: lead?.contacts?.length ? `Contacts (${lead.contacts.length})` : "Contacts", icon: Users },

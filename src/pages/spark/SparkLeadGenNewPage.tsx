@@ -1393,7 +1393,7 @@ export function SparkLeadGenNewPage() {
                 type="button"
                 onClick={handleStart}
                 disabled={!canSubmit}
-                className="w-full rounded-md bg-[#EF6C33] text-white text-sm font-semibold py-2 hover:bg-[#D85F2A] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                className="w-full min-h-[44px] rounded-md bg-[#EF6C33] text-white text-sm font-semibold py-2 hover:bg-[#D85F2A] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
                 <Play className="h-3.5 w-3.5" /> {submitting ? "Starting…" : "Start Search"}
               </button>
@@ -1408,7 +1408,7 @@ export function SparkLeadGenNewPage() {
                 type="button"
                 onClick={() => setShowSaveModal(true)}
                 disabled={!hasSeed}
-                className="w-full rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-medium py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
+                className="w-full min-h-[40px] rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-medium py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
                 <Save className="h-3 w-3" /> Save this search
               </button>

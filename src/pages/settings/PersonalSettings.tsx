@@ -467,7 +467,11 @@ function NotificationsTab() {
           aria-label="Get alerts on this device"
           disabled={!canToggle}
           onClick={() => (enabled ? void turnOff() : void turnOn())}
-          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+          /* PHONE PASS 2026-09-06: the switch stays 24px tall because that is
+             what a switch looks like; the ::after gives it a 40px TAP target
+             (-8px above, -8px below) so a thumb on a 375px screen hits it.
+             Nothing visual changes — the pseudo-element has no background. */
+          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 after:absolute after:-top-2 after:-bottom-2 after:left-0 after:right-0 after:content-[''] ${
             enabled ? 'bg-black' : 'bg-gray-300'
           }`}
         >
@@ -635,7 +639,7 @@ export function PersonalSettings() {
             key={tab}
             type="button"
             onClick={() => setActiveTab(tab)}
-            className={`whitespace-nowrap rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+            className={`whitespace-nowrap rounded-md px-4 py-2 max-md:min-h-[40px] text-sm font-medium transition-colors ${
               activeTab === tab ? 'bg-black text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
             }`}
           >

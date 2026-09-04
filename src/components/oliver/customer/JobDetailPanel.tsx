@@ -356,12 +356,24 @@ function JobLayout(p: JobLayoutProps) {
         <div style={{ marginBottom: 12, background: "#DCFCE7", border: "1px solid #BBF7D0", color: "#166534", borderRadius: 6, padding: "8px 12px", fontSize: 12 }}>{p.toast}</div>
       )}
 
-      {/* Two-column body: tabs on left, sticky summary on right */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 280px", gap: 16, alignItems: "start" }}>
+      {/* Two-column body: tabs on left, sticky summary on right.
+          PHONE PASS 2026-09-06: the fixed 280px right column left the main
+          column 8.5px wide inside a 353px modal at 375px — the job's own
+          content was a 9px ribbon with the summary card sitting on top of it.
+          `auto-fit` + a 260px floor keeps the exact two-column layout at every
+          width that can hold it and stacks them below that. The class carries
+          the rule so a media query is not fighting an inline style. */}
+      <div className="oliver-job-detail-grid" style={{ display: "grid", gap: 16, alignItems: "start" }}>
         {/* Main column — tabs */}
         <div>
+          {/* PHONE PASS 2026-09-06: five tabs need 332px and the stacked column
+              is 305px, so "Proof of Work" hung off the edge with `overflow:
+              visible` — visible in the sense of painted, not of reachable.
+              Scroll the strip; `flex-shrink: 0` on the tabs keeps them from
+              being squeezed into unreadable slivers instead. */}
           <div role="tablist" style={{
             display: "flex", gap: 2, marginBottom: 10,
+            overflowX: "auto",
             borderBottom: "1px solid #E5E7EB",
           }}>
             <TabBtn label="Details" active={tab === "details"} onClick={() => setTab("details")} />
@@ -519,6 +531,10 @@ function TabBtn({ label, active, onClick }: { label: string; active: boolean; on
         fontWeight: active ? 700 : 500,
         color: active ? "#0B1C24" : "#5A7A8A",
         cursor: "pointer",
+        // Phone pass 2026-09-06: the strip scrolls, so a tab must keep its own
+        // width rather than being squeezed by flexbox into "Workers &" / "Time".
+        flexShrink: 0,
+        whiteSpace: "nowrap",
       }}
     >
       {label}

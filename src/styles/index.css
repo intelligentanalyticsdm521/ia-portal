@@ -300,6 +300,17 @@ body {
 
 /* Tables */
 .arion-page .tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+/* PHONE PASS 2026-09-06 — tables scroll INSIDE themselves, not by sliding the
+   page. Measured on OLIVER Invoices at 375px: the `.tbl` needed 573px, its
+   `.card` was 341px with `overflow: visible`, so the overflow escaped all the
+   way up to `main` (clientWidth 375, scrollWidth 590) and swiping the invoice
+   list dragged the page header sideways with it. `display: block` makes the
+   table its own scroll box; the rows stay a table internally, so every column
+   width and alignment is unchanged. `min-width: 100%` — not `width` — is what
+   keeps it filling the card when the content is NARROWER than the card, which
+   is the desktop case and the one a naive `display: block` would break.
+   Unconditional: where the table fits, an `auto` scroller shows nothing. */
+.arion-page .tbl { display: block; min-width: 100%; max-width: 100%; overflow-x: auto; }
 .arion-page .tbl th { text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid rgba(45,156,219,0.1); }
 .arion-page .tbl td { padding: 8px; border-bottom: 1px solid rgba(45,156,219,0.07); color: var(--text-primary); }
 .arion-page .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -559,6 +570,14 @@ body {
   border-radius: 8px;
   overflow: hidden;
 }
+/* PHONE PASS 2026-09-06 — and it was never only a phone problem.
+   `overflow: hidden` above means a table wider than this wrapper is CUT OFF,
+   at any width, with no scrollbar to say a column is missing. Measured on
+   Contacts: wrapper 331px, table 375px at a 375px viewport and 774px at a
+   768px one — the last column gone in both. x scrolls; y stays clipped so the
+   rounded corners still clip the header row. Unconditional on purpose: where
+   the table fits, an `auto` scroller shows nothing and costs nothing. */
+.spark-table-wrap { overflow-x: auto; overflow-y: hidden; }
 .spark-table {
   width: 100%;
   border-collapse: separate;
@@ -714,12 +733,71 @@ body {
   color: rgb(71, 85, 105);
 }
 
+.oliver-bucket-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+/* The job detail body: content column + 280px summary. Below ~560px of usable
+   width there is no room for both, so they stack. See JobDetailPanel.tsx. */
+.oliver-job-detail-grid { grid-template-columns: minmax(0, 1fr) 280px; }
+@media (max-width: 767px) { .oliver-job-detail-grid { grid-template-columns: minmax(0, 1fr); } }
+
 /* Responsive */
 @media (max-width: 768px) {
   .spark-stat-strip { flex-wrap: wrap; gap: 12px; }
   .spark-stat-item { flex-basis: 45%; padding: 0; border-right: 0; }
   .spark-page-body { padding: 12px; }
   .spark-table-row-actions { opacity: 1; }
+}
+
+/* ──────────────────────────────────────────────────────────────────────────
+ * PHONE PASS 2026-09-06 (small pack 2) — the 80% page shell is a DESKTOP rule.
+ *
+ * `.arion-page` (line ~225, and every OLIVER page reuses it) and `.spark-page`
+ * (line ~437) are both `max-width: 80%; margin: 0 auto`. Brandon asked for that
+ * at 1600px, where a full-bleed table sprawls. At 375px it does something else
+ * entirely: it throws away 75 of 375 pixels — 20% of a phone screen — as two
+ * empty 37.5px gutters, and squeezes every table, stat strip and header into
+ * 300px. Measured on the Lead Inbox: `.spark-page` clientWidth 298 inside a
+ * 375px `main`.
+ *
+ * The cap stays exactly as it was above 768px. Below it the page uses the
+ * screen it was given, with 8px of breathing room and the rounded card edge
+ * kept so the page still reads as a surface rather than raw content.
+ * ────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .arion-page,
+  .spark-page {
+    max-width: 100%;
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+  /* .arion-page's padding is `16px 0`; on a phone the content needs the
+     horizontal breathing room the desktop got from the gutters. */
+  .arion-page { padding-left: 8px; padding-right: 8px; }
+  .spark-page-header { padding: 12px 12px; gap: 8px; }
+  .spark-filter-row { padding: 10px 12px; }
+  .spark-stat-strip { padding: 12px; }
+
+  /* Tap targets. The segmented tab (`.ptab` — List/Kanban on the Job Board,
+     All/Draft/Sent/Paid on Invoices) is 30px and the filter pill is 28px;
+     both are how you change what the page is showing, so on a phone they are
+     primary. 40px is the smallest a thumb reliably hits. Font size, colour and
+     radius are untouched — this is padding, not a redesign. */
+  .arion-page .ptab { min-height: 40px; padding: 8px 14px; }
+  /* `.ptabs` is `width: fit-content; overflow: hidden`. The customer modal's
+     six section tabs (Overview · Jobs · Quotes · Invoices · Payments ·
+     Subscriptions) are ~700px of them inside a 353px modal, so Payments and
+     Subscriptions were not merely off-screen — `overflow: hidden` meant there
+     was no way to reach them at all. */
+  .arion-page .ptabs { max-width: 100%; overflow-x: auto; }
+  .spark-pill { min-height: 40px; padding: 8px 12px; }
+
+  /* The Job Board's five status tiles. See OliverJobBoardPage.tsx. */
+  .oliver-bucket-grid { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+
+  /* A page header that puts its actions beside a title has ~120px left for
+     each on a phone, which is where "+ New job" wraps onto three lines and
+     "Kanban" gets its last letter cut. Below 768px the actions go under the
+     title and get the full width. */
+  .spark-page-header { flex-direction: column; align-items: stretch; }
 }
 
 /* ==========================================================================

@@ -313,13 +313,15 @@ export function OliverJobBoardPage() {
       {/* F-05 — Stat cards: smaller (compact padding + smaller numbers) and
           5-column grid that aligns 1:1 with the Kanban buckets below. Click
           a card to filter the board to that bucket; click again to clear. */}
+      {/* PHONE PASS 2026-09-06: five 1fr columns is 63px each at 375px, which
+          cut "SCHEDULED" and "JOB COMPLETED" mid-word. `auto-fit` with a 104px
+          floor keeps the five-across row on every desktop width the design was
+          drawn for and drops to three, then two, on a phone. The class exists
+          so the width rule can live in CSS; the inline style would otherwise
+          win over any media query. */}
       <div
-        className="mb-3"
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
-          gap: 8,
-        }}
+        className="mb-3 oliver-bucket-grid"
+        style={{ display: "grid", gap: 8 }}
       >
         {BUCKETS.map((b) => {
           const count = bucketCounts[b.key] ?? 0;
