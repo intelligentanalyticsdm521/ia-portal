@@ -18,22 +18,33 @@
  *   6. Show import summary (imported / merged / skipped / errored)
  *
  * Skip button always available — the customer can come back to this later.
+ *
+ * 2026-09-04 (ops scope I1/I2) — the widget now has a VENDOR PRESET picker
+ * (QuickBooks Online / Wave / Jobber / Housecall Pro, from csvPresets.ts) and
+ * carries address, tags and notes through to POST /contacts/import. Auto-detect
+ * consults the chosen preset first, then the generic name matching. Every
+ * preset shows its "not yet confirmed against a real export" warning — see the
+ * honesty note at the top of csvPresets.ts.
+ *
+ * OLIVER's full three-tab importer (jobs and invoices too) is its own page,
+ * OliverCustomerImportPage; this widget stays the one-step onboarding flow and
+ * SPARK's contact import.
  */
 
 import { useMemo, useState } from 'react';
 import { useSparkApi } from '../../hooks/useSparkApi';
+import {
+  TARGET_FIELDS as PRESET_TARGET_FIELDS, buildMapping, detectPreset,
+  getPreset, presetsFor, presetWarning, projectRow,
+  type ContactField, type CsvPreset, type Mapping,
+} from './csvPresets';
 
 type Row = Record<string, string>;
-type FieldKey = 'first_name' | 'last_name' | 'email' | 'phone' | 'company' | 'title';
+type FieldKey = ContactField;
 
-const TARGET_FIELDS: { key: FieldKey; label: string }[] = [
-  { key: 'first_name', label: 'First name' },
-  { key: 'last_name', label: 'Last name' },
-  { key: 'email', label: 'Email' },
-  { key: 'phone', label: 'Phone' },
-  { key: 'company', label: 'Company' },
-  { key: 'title', label: 'Title' },
-];
+/** The contact fields this widget maps — the full set from csvPresets. */
+const TARGET_FIELDS: { key: FieldKey; label: string }[] =
+  PRESET_TARGET_FIELDS.contacts.map((f) => ({ key: f.key as FieldKey, label: f.label }));
 
 interface Props {
   product: 'spark' | 'oliver';
@@ -52,16 +63,28 @@ interface ImportResult {
 
 export function CsvImportWidget({ product, source, onDone, onSkip }: Props) {
   const sparkApi = useSparkApi();
+  const [presetKey, setPresetKey] = useState<string>('');
+  const [autoDetected, setAutoDetected] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<Row[]>([]);
-  const [mapping, setMapping] = useState<Partial<Record<FieldKey, string>>>({});
+  const [mapping, setMapping] = useState<Mapping>({});
   const [isImporting, setIsImporting] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const noun = product === 'spark' ? 'contacts' : 'customers';
   const Noun = noun.charAt(0).toUpperCase() + noun.slice(1);
+
+  const preset = useMemo(() => (presetKey ? getPreset(presetKey) : null), [presetKey]);
+  const presetOptions = useMemo(() => presetsFor('contacts'), []);
+  const warning = preset ? presetWarning(preset) : null;
+
+  function onPresetChange(key: string) {
+    setPresetKey(key);
+    setAutoDetected(false);
+    if (headers.length) setMapping(buildMapping(headers, 'contacts', key ? getPreset(key) : null));
+  }
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -80,7 +103,14 @@ export function CsvImportWidget({ product, source, onDone, onSkip }: Props) {
       }
       setHeaders(parsed.headers);
       setRows(parsed.rows);
-      setMapping(autoDetectMapping(parsed.headers));
+      // Preset first (if one is chosen or the headers clearly name a vendor),
+      // then the generic name matching for whatever the preset did not claim.
+      let chosen: CsvPreset | null = presetKey ? getPreset(presetKey) : null;
+      if (!chosen) {
+        chosen = detectPreset(parsed.headers, 'contacts');
+        if (chosen) { setPresetKey(chosen.preset_key); setAutoDetected(true); }
+      }
+      setMapping(buildMapping(parsed.headers, 'contacts', chosen));
     };
     reader.onerror = () => setError('Could not read that file.');
     reader.readAsText(file);
@@ -95,14 +125,9 @@ export function CsvImportWidget({ product, source, onDone, onSkip }: Props) {
     setIsImporting(true);
     setError(null);
 
-    const contacts = rows.map((r) => {
-      const out: Record<string, string | null> = {};
-      for (const tf of TARGET_FIELDS) {
-        const srcCol = mapping[tf.key];
-        out[tf.key] = srcCol ? (r[srcCol] || '').trim() || null : null;
-      }
-      return out;
-    });
+    // projectRow also splits a one-cell "Full Name" / "Billing Address" the
+    // way QuickBooks Online exports them.
+    const contacts = rows.map((r) => projectRow(r, mapping, 'contacts', preset));
 
     // Batch in 1000s — the backend caps at 10,000 per request anyway.
     const totals: ImportResult = { imported: 0, merged: 0, skipped: 0, errored: 0, total: contacts.length };
@@ -114,9 +139,15 @@ export function CsvImportWidget({ product, source, onDone, onSkip }: Props) {
           merged: number;
           skipped: number;
           errored: number;
+          addresses_saved?: number;
+          tags_linked?: number;
         }>('/api/v1/contacts/import', {
           contacts: batch,
           source: source || (product === 'spark' ? 'spark_onboarding' : 'oliver_onboarding'),
+          // The OLIVER customer list IS `WHERE is_oliver_customer = 1`. Without
+          // this an OLIVER import lands in the CRM and the customer list stays
+          // empty (Rolling In It, 2026-08-13).
+          is_oliver_customer: product === 'oliver',
         });
         totals.imported += res?.imported || 0;
         totals.merged += res?.merged || 0;
@@ -144,6 +175,35 @@ export function CsvImportWidget({ product, source, onDone, onSkip }: Props) {
           Upload a CSV and we&apos;ll bring them in now. Take 30 seconds, or skip and add them later.
         </p>
       </header>
+
+      <div>
+        <label htmlFor="csv-import-preset" className="block text-xs font-medium text-slate-600 mb-1">
+          Which system is this list coming from?
+        </label>
+        <select
+          id="csv-import-preset"
+          className="block w-full rounded-lg border border-slate-300 text-sm px-3 py-2"
+          value={presetKey}
+          onChange={(e) => onPresetChange(e.target.value)}
+        >
+          <option value="">Something else — I&apos;ll check the columns myself</option>
+          {presetOptions.map((p) => (
+            <option key={p.preset_key} value={p.preset_key}>{p.label}</option>
+          ))}
+        </select>
+        {preset && (
+          <p className="text-xs text-slate-500 mt-1">
+            Where to get the file: {preset.export_path}
+            {autoDetected && <span className="ml-1 text-emerald-700">· we recognised this from your column names</span>}
+          </p>
+        )}
+      </div>
+
+      {warning && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 text-sm rounded-lg px-4 py-3">
+          <span className="font-medium">Check the preview. </span>{warning}
+        </div>
+      )}
 
       {!fileName && (
         <label className="block border-2 border-dashed border-slate-300 rounded-xl p-8 text-center cursor-pointer hover:bg-slate-50">
@@ -303,22 +363,6 @@ function parseLine(line: string): string[] {
   }
   out.push(cur);
   return out;
-}
-
-/** Best-effort column → field auto-detection by name. */
-function autoDetectMapping(headers: string[]): Partial<Record<FieldKey, string>> {
-  const mapping: Partial<Record<FieldKey, string>> = {};
-  const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
-  for (const h of headers) {
-    const n = norm(h);
-    if (!mapping.email && /email|mail|emailaddress/.test(n)) mapping.email = h;
-    else if (!mapping.phone && /^(phone|mobile|cell|tel)/.test(n)) mapping.phone = h;
-    else if (!mapping.first_name && /^(first|fname|firstname|given)/.test(n)) mapping.first_name = h;
-    else if (!mapping.last_name && /^(last|lname|lastname|surname|family)/.test(n)) mapping.last_name = h;
-    else if (!mapping.company && /^(company|organization|org|business)/.test(n)) mapping.company = h;
-    else if (!mapping.title && /^(title|jobtitle|role|position)/.test(n)) mapping.title = h;
-  }
-  return mapping;
 }
 
 export default CsvImportWidget;
