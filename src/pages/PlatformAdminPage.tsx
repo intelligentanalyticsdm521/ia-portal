@@ -73,6 +73,20 @@ export function PlatformAdminPage() {
             What clients have asked us to change on their websites — move one to Done and they get told.
           </div>
         </Link>
+        <a
+          href="https://claude.ai/code/artifact/9b14ebf7-1de1-45b9-859b-6f16bbcec805"
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
+        >
+          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <Hammer className="h-4 w-4 text-[#EF6C33]" />
+            FORGE
+          </div>
+          <div className="mt-1 text-xs text-gray-500">
+            Decide, approve scopes, tick to-dos, walk features and watch the build queue. Opens the FORGE console (your Claude login).
+          </div>
+        </a>
         <Link
           to="/app/admin/argus-margin"
           className="rounded-lg border border-slate-200 bg-white p-4 transition-colors hover:border-[#EF6C33] hover:bg-amber-50/40"
