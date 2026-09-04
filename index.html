@@ -4,6 +4,20 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>IADM Portal</title>
+
+    <!-- Foundation A2 (web push). iOS/iPadOS only deliver a push to a site
+         that has been added to the Home Screen, and Safari only offers "Add to
+         Home Screen" as an app when there is a manifest — so this link is not
+         cosmetic, it is the thing that makes iPhone push possible at all.
+         Minimal on purpose: the ops PWA pack owns real icons (including a
+         180x180 apple-touch-icon PNG), the offline shell and the install
+         prompt. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#0F172A" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="IA Portal" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   </head>
   <body>
     <div id="root"></div>

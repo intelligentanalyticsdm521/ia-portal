@@ -1,7 +1,10 @@
 {
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/assets/*", "/*.{css,scss,png,jpg,jpeg,gif,svg,webp,ico}"]
+    "exclude": ["/assets/*", "/sw.js", "/manifest.webmanifest", "/*.{css,scss,png,jpg,jpeg,gif,svg,webp,ico}"]
+  },
+  "mimeTypes": {
+    ".webmanifest": "application/manifest+json"
   },
   "responseOverrides": {
     "404": {
