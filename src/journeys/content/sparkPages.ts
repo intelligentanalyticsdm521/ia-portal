@@ -333,6 +333,10 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "New enquiries in one queue, before they become contacts or deals. Work it daily — speed of first reply is the strongest predictor of whether you win the job.",
   },
+  spark_lead_sources: {
+    body:
+      "The places that already collect enquiries for you — a Google Ads lead form today, more platforms as they open up. Connect one and its leads arrive in your Lead Inbox within seconds, scored, instead of sitting in an email you meant to read.",
+  },
   spark_pipelines: {
     body:
       "The stages a lead moves through from interested to paid. Keep it to four or five stages you'd actually recognise; long pipelines get abandoned halfway through.",

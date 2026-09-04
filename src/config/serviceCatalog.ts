@@ -292,6 +292,9 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // canonical key; `spark_leads` is retained as a back-compat alias.
   { key: 'spark_lead_inbox', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lead_inbox', description: 'B2B Lead Inbox with Hot/Warm/Cold scoring, plus tabs for Suppressed Domains and Territories.' },
   { key: 'spark_leads', displayName: 'Lead Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_leads', description: 'B2B lead inbox with Hot/Warm/Cold scoring.' },
+  // Intake connectors (G-2, 2026-09-04): the platforms a business already has
+  // collecting enquiries for it. Sits beside the Lead Inbox those leads land in.
+  { key: 'spark_lead_sources', displayName: 'Lead sources', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lead_sources', description: 'Connect Google Ads lead forms (and, as they open up, Local Services Ads, Facebook and Instagram) so their leads land in the Lead Inbox automatically.' },
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   // SPARK Lead Gen V1 (F-150/F-163) — Option 3 live-preview lead search flow
   { key: 'spark_leadgen_new', displayName: 'New B2B Lead Search', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/b2b_new', description: 'Build a B2B lead search with a live preview panel — see expanded keywords, resolved cities, estimated cost, and runtime before you pay.' },

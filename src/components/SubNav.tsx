@@ -537,6 +537,11 @@ const SPARK_NAV: SubNavConfig = {
         // /spark_leads, /spark_lead_suppression, /spark_lead_territories
         // still resolve and pre-select the correct tab.
         { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
+        // Intake connectors (G-2, 2026-09-04). Directly under the Inbox,
+        // because the only reason to connect a source is to fill that inbox.
+        // Same `leadgen` add-on gate — the number of sources a business may
+        // connect is a Leads-package question the API answers at runtime.
+        { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources", addon: "leadgen" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
       ],

@@ -38,7 +38,7 @@ import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError 
 // the source/channel labels the row and the card both read from one place.
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
-import { sourceLabel, channelLabel } from "../../lib/leadSource";
+import { rowSourceLabel, rowChannelLabel, sourceFacetKey, sourceFacetLabel } from "../../lib/leadSource";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
@@ -318,7 +318,9 @@ type Tier = "hot" | "warm" | "cold";
 interface Lead {
   id: number;
   tenant_id: string;
-  domain: string;
+  // G-1 (migration 146): nullable — a person who filled in a lead form has no
+  // website, and inventing one would poison the known-business exclusion.
+  domain: string | null;
   business_name: string | null;
   phone: string | null;
   email: string | null;
@@ -331,6 +333,10 @@ interface Lead {
   status: string | null;
   source: string | null;
   sources_found: string | null;
+  // G-1: what the client named the source, and where the person came from.
+  source_label?: string | null;
+  channel?: string | null;
+  kind?: "business" | "person" | null;
   lifecycle_stage: string | null;
   review_flag: string | null;
   is_from_cache: boolean | null;
@@ -412,6 +418,11 @@ function LeadInboxTab() {
   // 2026-09-04 (Brandon): newest first by default, then score; Score and Found headers toggle.
   const [sortMode, setSortMode] = useState<"newest" | "score" | "verification">("newest");
   const [search, setSearch] = useState("");
+  // Source facet (G-2): leads now arrive from connected platforms as well as
+  // from B2B search, so "show me only the Google Ads ones" is a real question.
+  // Grouped by the source KEY, never by the client's own label, so ten Google
+  // Ads forms are one chip and not ten.
+  const [sourceFilter, setSourceFilter] = useState<string>("all");
   const [actionMenuOpen, setActionMenuOpen] = useState<number | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [recentRun, setRecentRun] = useState<RecentRun | null>(null);
@@ -495,14 +506,31 @@ function LeadInboxTab() {
   }, [post, visitPillDismissed]);
 
   const filteredLeads = useMemo(() => {
-    if (!search.trim()) return leads;
-    const q = search.toLowerCase();
-    return leads.filter((l) =>
-      (l.business_name || "").toLowerCase().includes(q) ||
-      (l.domain || "").toLowerCase().includes(q) ||
-      (l.email || "").toLowerCase().includes(q)
-    );
-  }, [leads, search]);
+    const q = search.trim().toLowerCase();
+    if (!q && sourceFilter === "all") return leads;
+    return leads.filter((l) => {
+      if (sourceFilter !== "all" && sourceFacetKey(l) !== sourceFilter) return false;
+      if (!q) return true;
+      return (
+        (l.business_name || "").toLowerCase().includes(q) ||
+        (l.domain || "").toLowerCase().includes(q) ||
+        (l.email || "").toLowerCase().includes(q)
+      );
+    });
+  }, [leads, search, sourceFilter]);
+
+  // The facet only appears when there is something to choose BETWEEN — a
+  // client with one source does not need a filter that says "all" and "the one".
+  const sourceFacets = useMemo(() => {
+    const byKey = new Map<string, number>();
+    for (const l of leads) {
+      const k = sourceFacetKey(l);
+      byKey.set(k, (byKey.get(k) || 0) + 1);
+    }
+    return [...byKey.entries()]
+      .map(([key, count]) => ({ key, count, label: sourceFacetLabel(key) }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [leads]);
 
   const onSuppress = async (lead: Lead) => {
     if (!confirm(`Suppress ${lead.domain}? Future searches will skip this domain.`)) return;
@@ -756,6 +784,28 @@ function LeadInboxTab() {
               {v.label}
             </button>
           ))}
+          {sourceFacets.length > 1 && (
+            <>
+              <div className="mx-2 h-5 w-px bg-slate-200" aria-hidden="true" />
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Source:</span>
+              <button
+                onClick={() => { setSourceFilter("all"); setPage(1); }}
+                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${sourceFilter === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+              >
+                All sources
+              </button>
+              {sourceFacets.map((f) => (
+                <button
+                  key={f.key}
+                  onClick={() => { setSourceFilter(f.key); setPage(1); }}
+                  title={`Only leads from ${f.label}`}
+                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${sourceFilter === f.key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                >
+                  {f.label} ({f.count})
+                </button>
+              ))}
+            </>
+          )}
           <div className="relative ml-2">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
@@ -848,8 +898,10 @@ function LeadInboxTab() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div>
-                        <div className="font-semibold text-slate-900">{l.business_name || l.domain}</div>
-                        <div className="text-[10px] text-slate-500">{l.domain}</div>
+                        <div className="font-semibold text-slate-900">{l.business_name || l.domain || l.email || "Unnamed"}</div>
+                        {/* A person lead has no domain (G-1) — show how to
+                            reach them instead of an empty line. */}
+                        <div className="text-[10px] text-slate-500">{l.domain || l.email || ""}</div>
                       </div>
                       {l.review_flag === "same_contact_diff_business" && (
                         <span title="Same email matched at another business — review and decide: legit new business, update existing, or merge."
@@ -892,10 +944,13 @@ function LeadInboxTab() {
                     {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
+                  {/* "Source · via Channel" (post-capture L9). An Intake lead
+                      shows the name the client gave the connection; a B2B
+                      search lead falls back to the map in lib/leadSource. */}
                   <td className="px-4 py-3 text-[10px] text-slate-500">
-                    {sourceLabel(l.source || l.sources_found)}
-                    {channelLabel(l.source || l.sources_found) && (
-                      <span className="block text-slate-400">via {channelLabel(l.source || l.sources_found)}</span>
+                    {rowSourceLabel(l)}
+                    {rowChannelLabel(l) && (
+                      <span className="block text-slate-400">via {rowChannelLabel(l)}</span>
                     )}
                   </td>
                   <td className="px-4 py-3 text-[10px] text-slate-500 whitespace-nowrap">{new Date(l.created_at).toLocaleDateString()}</td>
