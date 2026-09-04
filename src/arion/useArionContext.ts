@@ -946,6 +946,20 @@ export function useArionContext() {
         return uploadSiteMedia({ ...b, siteId, ...params });
       },
 
+      /* Pictures (Phase 2). The library read is what lets the picker offer
+         what the site already has instead of sending a client to wp-admin. */
+      async listSiteMedia(siteId: string, params: { page?: number; perPage?: number; search?: string } = {}) {
+        const b = await base();
+        const { listSiteMedia } = await import('../lib/arionApi');
+        return listSiteMedia({ ...b, siteId, ...params });
+      },
+
+      async setSiteMediaAlt(siteId: string, attachmentId: number, alt: string) {
+        const b = await base();
+        const { setSiteMediaAlt } = await import('../lib/arionApi');
+        return setSiteMediaAlt({ ...b, siteId, attachmentId, alt });
+      },
+
       /* "Ask ARGUS to change it" (Phase 1B). These PROPOSE and cost credits;
          nothing here writes to the website. An approved proposal leaves via
          saveSitePageSections with its proposalIds, so the audit row is stamped

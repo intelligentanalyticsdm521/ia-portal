@@ -1,7 +1,10 @@
 import React from 'react';
 import type { SectionCatalogEntry, SectionFieldSpec, SectionDiffRow } from '../../lib/arionApi';
 import type { EditorSection } from '../utils/sectionListState';
-import { ScalarField, ParagraphsField, ListField, blankItem, smallButton } from './SectionFieldInputs';
+import {
+  ScalarField, ParagraphsField, ListField, blankItem, smallButton, isHiddenSpec,
+  type FieldContext,
+} from './SectionFieldInputs';
 import { AskArgusBox } from './AskArgus';
 
 /**
@@ -31,24 +34,28 @@ export interface SectionAskArgus {
 }
 
 export function SectionEditSheet({
-  section, catalog, onClose, onField, onListItem, onListAdd, onListRemove,
-  onParagraph, onParagraphAdd, onParagraphRemove, onUpload, ask,
+  section, catalog, ctx, onClose, onField, onFields, onListItem, onListItemPatch,
+  onListAdd, onListRemove, onParagraph, onParagraphAdd, onParagraphRemove, ask,
 }: {
   section: EditorSection;
   catalog: SectionCatalogEntry | null;
+  /** Pictures and the booking link — everything the inputs need from the site. */
+  ctx: FieldContext;
   onClose: () => void;
   onField: (key: string, v: any) => void;
+  /** Several fields at once: a picture writes its url, its id and its description together. */
+  onFields: (patch: Record<string, any>) => void;
   onListItem: (listKey: string, index: number, key: string, v: any) => void;
+  onListItemPatch: (listKey: string, index: number, patch: Record<string, any>) => void;
   onListAdd: (listKey: string, blank: Record<string, any>) => void;
   onListRemove: (listKey: string, index: number) => void;
   onParagraph: (key: string, index: number, v: string) => void;
   onParagraphAdd: (key: string) => void;
   onParagraphRemove: (key: string, index: number) => void;
-  onUpload: (file: File) => Promise<string>;
   /** Omitted on a sheet with no AI at all — the box simply does not render. */
   ask?: SectionAskArgus;
 }) {
-  const fields: SectionFieldSpec[] = catalog?.fields || [];
+  const fields: SectionFieldSpec[] = (catalog?.fields || []).filter((f) => !isHiddenSpec(f));
 
   return (
     <div
@@ -63,9 +70,10 @@ export function SectionEditSheet({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        className="ia-sheet"
         style={{
           background: 'var(--surface, #fff)',
-          width: '100%', maxWidth: 640, maxHeight: '92vh',
+          width: '100%', maxWidth: 640,
           borderTopLeftRadius: 16, borderTopRightRadius: 16,
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 -8px 32px rgba(15,23,42,0.2)',
@@ -100,9 +108,10 @@ export function SectionEditSheet({
                   spec={spec}
                   value={Array.isArray(value) ? value : []}
                   onItemChange={(i, key, v) => onListItem(spec.key, i, key, v)}
+                  onItemPatch={(i, patch) => onListItemPatch(spec.key, i, patch)}
                   onAdd={() => onListAdd(spec.key, blankItem(spec))}
                   onRemove={(i) => onListRemove(spec.key, i)}
-                  onUpload={onUpload}
+                  ctx={ctx}
                 />
               );
             }
@@ -123,8 +132,10 @@ export function SectionEditSheet({
                 key={spec.key}
                 spec={spec}
                 value={value}
+                siblings={section.fields || {}}
                 onChange={(v) => onField(spec.key, v)}
-                onUpload={onUpload}
+                onPatch={onFields}
+                ctx={ctx}
               />
             );
           })}
@@ -148,12 +159,13 @@ export function SectionEditSheet({
           )}
         </div>
 
-        {/* paddingRight clears the floating ARGUS button, which is fixed to
-            the bottom-right corner and sat squarely on top of Done at 375px. */}
-        <div style={{
-          padding: '12px 76px 12px 16px', borderTop: '1px solid var(--border)',
+        {/* `.ia-sticky-bar` clears the floating ARGUS button, which is fixed
+            to the bottom-right corner and sat squarely on top of Done at
+            375px, and the phone's home indicator underneath it. */}
+        <div className="ia-sticky-bar ia-sticky-bar--sheet" style={{
+          borderTop: '1px solid var(--border)',
           display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
-          position: 'sticky', bottom: 0, background: 'var(--surface, #fff)',
+          background: 'var(--surface, #fff)',
         }}>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
             Changes are kept here until you hit Save on the page.

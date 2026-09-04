@@ -115,6 +115,26 @@ export function setSectionField(
   });
 }
 
+/**
+ * Set SEVERAL top-level fields at once.
+ *
+ * A picture is three values that have to move together — its address, its
+ * attachment id and its description. Setting them one at a time would leave a
+ * render in between where the new url sits beside the old id, which is how
+ * Elementor ends up emitting the wrong srcset.
+ */
+export function setSectionFields(
+  sections: EditorSection[],
+  uid: string,
+  patch: Record<string, unknown>,
+): EditorSection[] {
+  return sections.map((s) => {
+    if (s.uid !== uid) return s;
+    if (!s.editable) return s;
+    return { ...s, dirty: true, fields: { ...(s.fields || {}), ...patch } };
+  });
+}
+
 /** Set one field inside one row of a list field (a service, an FAQ, a photo). */
 export function setListItemField(
   sections: EditorSection[],
@@ -129,6 +149,23 @@ export function setListItemField(
     const list = Array.isArray(s.fields?.[listKey]) ? (s.fields as any)[listKey].slice() : [];
     if (itemIndex < 0 || itemIndex >= list.length) return s;
     list[itemIndex] = { ...(list[itemIndex] || {}), [key]: value };
+    return { ...s, dirty: true, fields: { ...(s.fields || {}), [listKey]: list } };
+  });
+}
+
+/** The same, inside one row of a list — a gallery picture and its id. */
+export function setListItemFields(
+  sections: EditorSection[],
+  uid: string,
+  listKey: string,
+  itemIndex: number,
+  patch: Record<string, unknown>,
+): EditorSection[] {
+  return sections.map((s) => {
+    if (s.uid !== uid || !s.editable) return s;
+    const list = Array.isArray(s.fields?.[listKey]) ? (s.fields as any)[listKey].slice() : [];
+    if (itemIndex < 0 || itemIndex >= list.length) return s;
+    list[itemIndex] = { ...(list[itemIndex] || {}), ...patch };
     return { ...s, dirty: true, fields: { ...(s.fields || {}), [listKey]: list } };
   });
 }
