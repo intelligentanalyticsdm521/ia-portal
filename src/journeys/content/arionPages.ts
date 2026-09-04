@@ -41,6 +41,10 @@ export const ARION_PAGES: PageContentMap = {
     body:
       "Every page and post on your site, with when it was last touched. Sites that publish regularly hold their rankings; ones that go quiet drift down. Use the last-updated column to spot the pages that have gone stale.",
   },
+  arion_website_pages: {
+    body:
+      "Every page on your site, and the one place to change what they say. Open a page, tap a section, change the heading or swap the picture, hit Preview to see it, then Publish. If you get it wrong, Undo puts the last version straight back. Anything built by hand on the site itself is shown but left alone.",
+  },
   arion_website_ai_builder: {
     body:
       "Describe a page you need and it drafts one for you — layout, copy and images. It writes a draft, never publishes for you, so there's nothing to be nervous about. Good for the pages you keep meaning to write and never do.",
