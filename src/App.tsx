@@ -113,6 +113,9 @@ const ConsultingRequestsBoardPageAdmin = lazy(() => import('./pages/consulting/C
 const ErrorLogPageAdmin = lazy(() => import('./pages/admin/ErrorLogPage'));
 // Foundation §3A3 — founder queue for ARION website change requests.
 const SiteRequestsPageAdmin = lazy(() => import('./pages/admin/SiteRequestsPage'));
+// IL-1 — the founder's Intelligence Layer card: can we trust the model yet,
+// and what is it costing us. Read-only; LUMEN 403s non-founders on its own.
+const IlLearningPageAdmin = lazy(() => import('./pages/admin/IlLearningPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -276,6 +279,20 @@ export function App() {
                 element={
                   <Suspense fallback={<AdminRouteLoading />}>
                     <SiteRequestsPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
+
+            {/* IL-1 — the Intelligence Layer instrument panel. LUMEN's
+                /api/v1/il/admin routes 403 non-founders independently, so a
+                direct API call can't bypass this either. */}
+            <Route path="admin/il-learning" element={<RequireFounderRoute />}>
+              <Route
+                index
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <IlLearningPageAdmin />
                   </Suspense>
                 }
               />
