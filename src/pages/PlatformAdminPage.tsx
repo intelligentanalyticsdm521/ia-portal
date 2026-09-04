@@ -9,7 +9,7 @@
  * /app/settings/*.
  */
 import { Link } from 'react-router-dom';
-import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle, Inbox } from 'lucide-react';
+import { Shield, Database, Users as UsersIcon, Settings as SettingsIcon, Target, TrendingUp, AlertTriangle, Inbox, Hammer } from 'lucide-react';
 
 export function PlatformAdminPage() {
   return (
