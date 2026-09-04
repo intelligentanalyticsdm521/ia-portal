@@ -3,6 +3,10 @@ import { isTierGateError, type TierGateError } from "../../hooks/useOliverApi";
 import { OliverUpgradeGate } from "../OliverUpgradeGate";
 import { SparkTooltip } from "./SparkTooltip";
 import { UsageChip } from "./UsageChip";
+// P5 — "you have new leads": the banner on the first SPARK page after a
+// scheduled run, and the toast when a run finishes while you are in the app.
+// Mounted once here so no page opts in (and the Lead Inbox page is untouched).
+import { NewLeadsBanner, NewLeadsToast } from "./NewLeadsBanner";
 
 interface SparkPageShellProps {
   title: string;
@@ -55,6 +59,8 @@ export function SparkPageShell({
 
   return (
     <div className="spark-page">
+      <NewLeadsBanner />
+      <NewLeadsToast />
       <SparkPageHeader title={title} subtitle={subtitle} help={help} actions={actions} />
       {stats && <div className="spark-stat-strip-wrap">{stats}</div>}
       {filters && <div className="spark-filter-row">{filters}</div>}
