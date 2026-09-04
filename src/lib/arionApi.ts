@@ -2504,7 +2504,7 @@ export interface ArionPageDetail {
 export interface SectionFieldSpec {
   key: string;
   label: string;
-  /** text | textarea | link | email | image | choice | rating | icon | list | paragraphs */
+  /** text | textarea | link | email | image | choice | rating | icon | list | paragraphs | hidden */
   type: string;
   required?: boolean;
   max?: number;
@@ -2514,6 +2514,45 @@ export interface SectionFieldSpec {
   optionLabels?: Array<{ value: string; label: string }>;
   itemLabel?: string;
   item?: SectionFieldSpec[];
+  /**
+   * Shown but not editable — the value has ONE home elsewhere. Today that is
+   * a form's recipient, which lives on the business details so a form can
+   * never quietly point at an inbox nobody reads.
+   */
+  readOnly?: boolean;
+  /** Where a read-only value comes from, in the client's words. */
+  source?: string;
+  /** Required only when this sibling field has something in it (a picture's description). */
+  requiredWith?: string;
+  /** A button link: offer "Link to your booking page" when the business has one. */
+  offersBooking?: boolean;
+  /** A wire, not words — never rendered, never sent to ARGUS (an attachment id). */
+  notForAi?: boolean;
+  /** On a picture field: the sibling key that holds its attachment id. */
+  idKey?: string;
+  /** On a picture field: the sibling key that holds its description. Absent = decorative. */
+  altKey?: string;
+}
+
+/** One picture already on the website, as the picker shows it. */
+export interface SiteMediaItem {
+  attachmentId: number | null;
+  url: string;
+  thumbnailUrl: string;
+  alt: string;
+  title: string;
+  filename: string;
+  mime: string;
+  width: number | null;
+  height: number | null;
+  bytes: number | null;
+  uploadedAt: string | null;
+  /**
+   * How many rendered sizes WordPress made for this picture. With the
+   * attachment id stored on the widget, Elementor turns those into
+   * srcset/sizes by itself — which is why the picker hands the id back.
+   */
+  sizeCount: number;
 }
 
 /** One curated-library layout of a section kind, from arion.section_library. */
@@ -2716,11 +2755,56 @@ export async function getSectionLibrary(p: {
       sections: SectionCatalogEntry[];
       elementorProAvailable: boolean;
       ai: { available: boolean; reason: string | null };
+      /** The business's own booking page, or '' — what "Link to your booking page" uses. */
+      bookingHref: string;
+      /** The inbox a form's read-only recipient shows, from the business details. */
+      businessEmail: string;
+      businessName: string;
     };
   }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/section-library`,
     timeoutMs: 45_000,
+  });
+}
+
+/**
+ * The pictures already on the website, a page at a time.
+ * "Where do I get a picture from?" is the most common reason a client opens
+ * wp-admin, and the answer should be "one you already have" before it is
+ * "upload another one".
+ */
+export async function listSiteMedia(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  page?: number; perPage?: number; search?: string;
+}) {
+  const qs = new URLSearchParams();
+  if (p.page) qs.set('page', String(p.page));
+  if (p.perPage) qs.set('perPage', String(p.perPage));
+  if (p.search) qs.set('search', p.search);
+  const suffix = qs.toString() ? `?${qs.toString()}` : '';
+  return requestJson<{
+    data: {
+      items: SiteMediaItem[];
+      page: number; perPage: number; total: number; totalPages: number; search: string;
+    };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media${suffix}`,
+    timeoutMs: 45_000,
+  });
+}
+
+/** Describe a picture once, on the picture itself, for every page it is on. */
+export async function setSiteMediaAlt(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  attachmentId: number; alt: string;
+}) {
+  return requestJson<{ data: { attachmentId: number; alt: string } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media/${p.attachmentId}/alt`,
+    body: { alt: p.alt },
   });
 }
 

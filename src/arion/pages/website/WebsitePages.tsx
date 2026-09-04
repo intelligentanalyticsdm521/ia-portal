@@ -10,10 +10,12 @@ import { smallButton } from '../../components/SectionFieldInputs';
 import type {
   ArionSitePage, SectionCatalogEntry, SectionDiffRow, SectionProposal, PageProposal, AiPricing,
 } from '../../../lib/arionApi';
+import type { FieldContext } from '../../components/SectionFieldInputs';
 import {
   type EditorSection,
   toEditorSections, toSavePayload, isDirty, orderOf, moveSection,
-  setSectionField, setListItemField, addListItem, removeListItem,
+  setSectionField, setSectionFields, setListItemField, setListItemFields,
+  addListItem, removeListItem,
   setParagraph, addParagraph, removeParagraph, removeSection, appendSection,
   sectionSummary, proposalIdsOf, applyProposal, applyPageProposal,
   insertProposedSection, acceptProposedSections, dropProposedSections,
@@ -193,7 +195,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
         <button
           type="button"
           className="abtn abtn-sky"
-          style={{ minHeight: 40 }}
+          style={{ minHeight: 44 }}
           disabled={p.editableSectionCount === 0}
           title={p.editableSectionCount === 0
             ? 'Every section on this page was built on the website itself, so there is nothing to edit here yet.'
@@ -257,7 +259,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
             : `Every page on ${selectedSite?.primaryDomain || 'your website'}, drafts included.`
         }
         action={
-          <button type="button" className="abtn abtn-sky" style={{ minHeight: 40 }} onClick={() => setCreating(true)}>
+          <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} onClick={() => setCreating(true)}>
             New page
           </button>
         }
@@ -284,7 +286,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
               It starts as a draft with one banner section, so nothing appears on your website until you publish it.
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="abtn abtn-sky" style={{ minHeight: 40 }} disabled={busy || !newTitle.trim()} onClick={create}>
+              <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !newTitle.trim()} onClick={create}>
                 {busy ? 'Creating…' : 'Create draft'}
               </button>
               <button type="button" style={smallButton} onClick={() => { setCreating(false); setNewTitle(''); }}>Cancel</button>
@@ -316,7 +318,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
             }}
           />
           <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-            <button type="button" className="abtn abtn-sky" style={{ minHeight: 40 }} disabled={busy || !askText.trim()} onClick={askUs}>
+            <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !askText.trim()} onClick={askUs}>
               {busy ? 'Sending…' : 'Send it to us'}
             </button>
             <button type="button" style={smallButton} onClick={() => setAskFor(null)}>Cancel</button>
@@ -336,6 +338,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [baseOrder, setBaseOrder] = useState<string[]>([]);
   const [detail, setDetail] = useState<any>(null);
   const [catalog, setCatalog] = useState<SectionCatalogEntry[]>([]);
+  const [bookingHref, setBookingHref] = useState('');
   const [aiLocked, setAiLocked] = useState<string | null>(null);
   const [pricing, setPricing] = useState<AiPricing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -377,6 +380,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
       setBaseOrder(orderOf(list));
       setDetail(page?.data || null);
       setCatalog(lib?.data?.sections || []);
+      setBookingHref(String(lib?.data?.bookingHref || ''));
       setAiLocked(lib?.data?.ai?.available === false ? (lib?.data?.ai?.reason || null) : null);
       setPricing(price?.data || null);
     } catch (e: any) {
@@ -389,29 +393,73 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   useEffect(() => { load(); }, [load]);
 
   const dirty = useMemo(() => isDirty(sections, baseOrder), [sections, baseOrder]);
+
+  /**
+   * Leaving with work in the editor loses it — the editor holds unsaved
+   * changes in memory on purpose (nothing reaches the website until Save).
+   * On a phone the back gesture is one flick, so this is not a nicety.
+   *
+   * Two halves, because they catch different exits: `beforeunload` covers
+   * closing the tab, reloading and following a link out; `leave()` below
+   * covers "Back to pages", which never leaves the page at all.
+   */
+  useEffect(() => {
+    if (!dirty) return undefined;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [dirty]);
+
+  const leave = useCallback(() => {
+    if (dirty && !window.confirm(
+      'You have changes here that are not on your website yet. Leave the page and lose them?',
+    )) return;
+    onBack();
+  }, [dirty, onBack]);
+
   const openSection = sections.find((s) => s.uid === openUid) || null;
   const catalogFor = (kind: string | null) => catalog.find((c) => c.kind === kind) || null;
   const proposedCount = sections.filter((s) => s.isProposed).length;
 
-  const upload = useCallback(async (file: File): Promise<string> => {
-    if (!activeSiteId) throw new Error('No website selected.');
-    const dataBase64 = await new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error('That file could not be read.'));
-      reader.onload = () => {
-        const result = String(reader.result || '');
-        const comma = result.indexOf(',');
-        resolve(comma >= 0 ? result.slice(comma + 1) : result);
-      };
-      reader.readAsDataURL(file);
-    });
-    const res: any = await arionApi.uploadSiteMedia(activeSiteId, {
-      filename: file.name, contentType: file.type, dataBase64,
-    });
-    const url = res?.data?.url;
-    if (!url) throw new Error('The picture uploaded but your website did not say where it went.');
-    return url;
-  }, [activeSiteId, arionApi]);
+  /**
+   * Everything the inputs need from the website: its picture library, and
+   * where "your booking page" points. Memoised so the edit sheet does not
+   * re-mount its picker on every keystroke.
+   */
+  const fieldCtx: FieldContext = useMemo(() => ({
+    bookingHref,
+    media: {
+      list: async (params) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        const res: any = await arionApi.listSiteMedia(activeSiteId, params);
+        return res?.data || { items: [], page: 1, totalPages: 1, total: 0 };
+      },
+      upload: async (file: File) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('That file could not be read.'));
+          reader.onload = () => {
+            const result = String(reader.result || '');
+            const comma = result.indexOf(',');
+            resolve(comma >= 0 ? result.slice(comma + 1) : result);
+          };
+          reader.readAsDataURL(file);
+        });
+        const res: any = await arionApi.uploadSiteMedia(activeSiteId, {
+          filename: file.name, contentType: file.type, dataBase64,
+        });
+        const url = res?.data?.url;
+        // A 200 with no url is a FAILED upload wearing a success. Say so.
+        if (!url) throw new Error('The picture uploaded but your website did not say where it went.');
+        return { url, attachmentId: res?.data?.attachmentId ?? null };
+      },
+      describe: async (attachmentId: number, alt: string) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        await arionApi.setSiteMediaAlt(activeSiteId, attachmentId, alt);
+      },
+    },
+  }), [activeSiteId, arionApi, bookingHref]);
 
   const runPreview = async () => {
     if (!activeSiteId) return;
@@ -625,7 +673,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
             ? 'This page is a draft — nobody can see it until you publish it.'
             : 'This page is live. Anything you publish here shows on your website straight away.'
         }
-        action={<button type="button" style={smallButton} onClick={onBack}>Back to pages</button>}
+        action={<button type="button" style={smallButton} onClick={leave}>Back to pages</button>}
       >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
           <StatusChip status={detail?.status || 'draft'} />
@@ -669,13 +717,21 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
               display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
             }}
           >
+            {/* A mouse affordance, and only that. HTML5 drag-and-drop does
+                not fire on touch at all, so `.ia-drag-handle` is hidden on a
+                coarse pointer and the ↑ ↓ buttons ARE the reorder there — a
+                handle that cannot work is a control that lies. */}
             <span
+              className="ia-drag-handle"
               draggable={!s.isProposed}
               onDragStart={() => setDragFrom(i)}
               onDragEnd={() => setDragFrom(null)}
               aria-hidden="true"
               title="Drag to move"
-              style={{ cursor: 'grab', color: 'var(--text-muted)', fontSize: 18, lineHeight: 1, padding: '4px 2px' }}
+              // Layout lives in `.ia-drag-handle`, NOT here: an inline
+              // `display` would beat the stylesheet's `display: none` and the
+              // handle would reappear on a touch screen. (It did.)
+              style={{ color: 'var(--text-muted)', fontSize: 18 }}
             >
               ⠿
             </span>
@@ -720,7 +776,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
               >↓</button>
               <button
                 type="button" className={s.editable && !s.isProposed ? 'abtn abtn-sky' : undefined}
-                style={s.editable && !s.isProposed ? { minHeight: 40 } : smallButton}
+                style={s.editable && !s.isProposed ? { minHeight: 44 } : smallButton}
                 disabled={!s.editable || s.isProposed}
                 onClick={() => { setSectionProposal(null); setSectionAiError(null); setOpenUid(s.uid); }}
               >
@@ -785,14 +841,15 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
       </Card>
 
       {/* Sticky action bar — reachable on a 375px screen without scrolling.
-          The right padding clears the floating ARGUS button, which is fixed to
-          the bottom-right corner and would otherwise sit on top of Undo. */}
-      <div style={{
-        position: 'sticky', bottom: 0, zIndex: 5, marginTop: 12,
+          `.ia-sticky-bar` clears the floating ARGUS button, which is fixed to
+          the bottom-right corner and would otherwise sit on top of Undo, and
+          the phone's home indicator underneath it. */}
+      <div className="ia-sticky-bar" style={{
+        zIndex: 5, marginTop: 12,
         background: 'var(--surface, #fff)', borderTop: '1px solid var(--border)',
-        padding: '10px 76px 10px 12px', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
+        display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center',
       }}>
-        <button type="button" style={{ ...smallButton, minHeight: 44 }} disabled={busy !== null} onClick={runPreview}>
+        <button type="button" style={smallButton} disabled={busy !== null} onClick={runPreview}>
           {busy === 'preview' ? 'Building…' : 'Preview'}
         </button>
         <button
@@ -809,7 +866,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         )}
         {isLive && (
           <button
-            type="button" style={{ ...smallButton, minHeight: 44 }} disabled={busy !== null}
+            type="button" style={smallButton} disabled={busy !== null}
             title="Takes the page off your website. It keeps everything on it and you can publish it again."
             onClick={() => {
               if (window.confirm('Take this page off your website? It becomes a draft — nothing on it is lost, and you can publish it again whenever you like.')) {
@@ -821,7 +878,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           </button>
         )}
         <button
-          type="button" style={{ ...smallButton, minHeight: 44 }}
+          type="button" style={smallButton}
           disabled={busy !== null || !detail?.canUndo}
           title={detail?.canUndo ? undefined : 'There is nothing to go back to yet.'}
           onClick={undo}
@@ -864,7 +921,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
               You can put it back exactly as it was with Undo last change.
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-              <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setConfirmPublish(false)}>
+              <button type="button" style={smallButton} onClick={() => setConfirmPublish(false)}>
                 Not yet
               </button>
               <button
@@ -922,15 +979,17 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         <SectionEditSheet
           section={openSection}
           catalog={catalogFor(openSection.kind)}
+          ctx={fieldCtx}
           onClose={() => { setOpenUid(null); setSectionProposal(null); setSectionAiError(null); }}
           onField={(key, v) => setSections((cur) => setSectionField(cur, openSection.uid, key, v))}
+          onFields={(patch) => setSections((cur) => setSectionFields(cur, openSection.uid, patch))}
           onListItem={(listKey, idx, key, v) => setSections((cur) => setListItemField(cur, openSection.uid, listKey, idx, key, v))}
+          onListItemPatch={(listKey, idx, patch) => setSections((cur) => setListItemFields(cur, openSection.uid, listKey, idx, patch))}
           onListAdd={(listKey, blank) => setSections((cur) => addListItem(cur, openSection.uid, listKey, blank))}
           onListRemove={(listKey, idx) => setSections((cur) => removeListItem(cur, openSection.uid, listKey, idx))}
           onParagraph={(key, idx, v) => setSections((cur) => setParagraph(cur, openSection.uid, key, idx, v))}
           onParagraphAdd={(key) => setSections((cur) => addParagraph(cur, openSection.uid, key))}
           onParagraphRemove={(key, idx) => setSections((cur) => removeParagraph(cur, openSection.uid, key, idx))}
-          onUpload={upload}
           ask={{
             lockedReason: aiLocked,
             credits: pricing?.actions?.section?.credits ?? null,

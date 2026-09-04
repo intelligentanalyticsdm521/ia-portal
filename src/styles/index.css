@@ -721,3 +721,58 @@ body {
   .spark-page-body { padding: 12px; }
   .spark-table-row-actions { opacity: 1; }
 }
+
+/* ==========================================================================
+ * ARION site builder — the bottom sheets and the sticky bars.
+ * (SCOPE_ARION_SITE_BUILDER_2026-09-05 §3.10 — the section-list shape was
+ *  chosen partly BECAUSE it works on a phone, so the phone is the case these
+ *  rules are written for and the desktop is the one that inherits.)
+ * ======================================================================== */
+
+/* A sheet is 92% of the VISIBLE viewport. `vh` on iOS Safari is the viewport
+   with the keyboard CLOSED, so a sheet sized in vh puts its own Save bar
+   under the keyboard the moment somebody types. `dvh` is the live one. */
+.ia-sheet { max-height: 92vh; }
+@supports (height: 100dvh) {
+  .ia-sheet { max-height: 92dvh; }
+}
+
+/* Every sticky action bar in the builder clears the floating ARGUS button,
+   which is fixed to the bottom-right corner, and the phone's home indicator.
+   Measured at 375px, not guessed.
+
+   The WHOLE padding lives here, not just the right edge: an inline `padding`
+   shorthand on the element would silently beat a stylesheet `padding-right`
+   and put Undo back under the ARGUS bubble. That is exactly what happened the
+   first time these were classes, and it is why the test below refuses an
+   inline padding on any element carrying this class. */
+.ia-sticky-bar {
+  position: sticky;
+  bottom: 0;
+  padding: 10px 76px 10px 12px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+/* The same bar inside a bottom sheet, which is padded 16px not 12px. */
+.ia-sticky-bar--sheet {
+  padding-left: 16px;
+  padding-top: 12px;
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* The drag handle is a MOUSE affordance and nothing else. HTML5 drag-and-drop
+   does not fire on touch at all, so on a touch screen the ↑ ↓ buttons ARE the
+   reorder and a handle that cannot work is a control that lies.
+   Its layout lives here too, for the same reason as the bar above: an inline
+   `display` would beat the `display: none` and the handle would come back. */
+.ia-drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 44px;
+  cursor: grab;
+  line-height: 1;
+}
+@media (pointer: coarse) {
+  .ia-drag-handle { display: none; }
+}

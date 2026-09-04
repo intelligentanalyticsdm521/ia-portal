@@ -75,8 +75,8 @@ function Sheet({ label, title, subtitle, onClose, children }: {
       }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{
-        background: 'var(--surface, #fff)', width: '100%', maxWidth: 640, maxHeight: '92vh',
+      <div className="ia-sheet" style={{
+        background: 'var(--surface, #fff)', width: '100%', maxWidth: 640,
         borderTopLeftRadius: 16, borderTopRightRadius: 16, display: 'flex', flexDirection: 'column',
       }}>
         <div style={{
