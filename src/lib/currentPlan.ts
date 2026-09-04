@@ -1,14 +1,17 @@
+import { isFounderTenantId } from "./founderTenant";
+
 // lib/currentPlan.ts — shared "what plan is this tenant on" helpers.
 //
 // The platform-owner/founder tenant (Intelligent Analytics itself) always
 // resolves to the TOP of every product — Business tier + all top add-ons —
 // and is never gated or charged. Every other tenant shows its real current
 // subscription, and the Plan & Pricing pages tag it + bill it as line items.
-export const PLATFORM_OWNER_TENANT_ID =
-  "8c9527b9-8999-4b31-a306-f3d4ccc39fbd";
+// SEAMS PACK 4B — the id lives in ONE module per repo (lib/founderTenant.ts).
+// Re-exported under its existing name because callers import it from here.
+export { FOUNDER_TENANT_ID_DEFAULT as PLATFORM_OWNER_TENANT_ID } from "./founderTenant";
 
 export function isPlatformOwner(tenantId: string | null | undefined): boolean {
-  return !!tenantId && tenantId.toLowerCase() === PLATFORM_OWNER_TENANT_ID;
+  return isFounderTenantId(tenantId);
 }
 
 // Founder defaults, per product, when isPlatformOwner is true.

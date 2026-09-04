@@ -34,13 +34,21 @@
  *
  * Three independent locks. Any one of them alone is sufficient.
  */
+import { FOUNDER_TENANT_ID_DEFAULT } from "./founderTenant";
 
 export const DEV_AUTH = String(import.meta.env.VITE_DEV_AUTH || '') === '1';
 export const DEV_TENANT = String(import.meta.env.VITE_DEV_TENANT || '').trim();
 
 // The backend dev seam hard-blocks the founder tenant; sending it would 401
 // every call, so the resolver skips it and falls back to the env pin.
-const FOUNDER_TENANT = '8c9527b9-8999-4b31-a306-f3d4ccc39fbd';
+//
+// SEAMS PACK 4B — the id lives in ONE module (lib/founderTenant.ts). The
+// DEFAULT rather than founderTenantId(), matching every backend's devAuth: what
+// the seam refuses is the PRODUCTION founder tenant, whose GUID the shared CIAM
+// directory shares. A configured override may legitimately point at a fixture
+// agency that IS an allowed dev tenant (oliver-api's dev env does exactly
+// that), and refusing it here would break the seam it is configured for.
+const FOUNDER_TENANT = FOUNDER_TENANT_ID_DEFAULT;
 
 /**
  * 2026-07-26 (Brandon: "cross tenant leakage") — the dev tenant now FOLLOWS
