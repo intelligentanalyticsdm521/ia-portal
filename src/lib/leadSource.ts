@@ -30,6 +30,11 @@ const SOURCE_LABELS: Record<string, string> = {
   linkedin: "LinkedIn",
   arion_form: "Website form",
   spark_form: "Website form",
+  // Conversations 4. The client's OWN website, so it is Inbound, not Intake
+  // (§9 "Naming"). The row reads "Website chat · via fernbrook.example":
+  // services/chat writes `channel` = the site's own domain, so the channel half
+  // names WHICH website rather than repeating the capture point.
+  web_chat: "Website chat",
   landing_page: "Landing page",
   import: "Import",
   // Intake connectors (G-2). One entry per provider in the locked order; a
@@ -47,6 +52,10 @@ const SOURCE_LABELS: Record<string, string> = {
 
 /** Where the person came from. B2B search has no visitor journey behind it. */
 const CHANNEL_LABELS: Record<string, string> = {
+  // The fallback only: a chat lead written by services/chat carries the site's
+  // own domain in `channel`, and rowChannelLabel prefers that. This is what an
+  // older row with no domain on it reads as.
+  web_chat: "Your website",
   spark_leadgen: "B2B search",
   hunter_discover: "B2B search",
   data_axle: "B2B search",

@@ -16,14 +16,16 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   Sparkles, CheckCircle2, Clock, AlertTriangle, Send, Pencil, Trash2,
-  FileText, RefreshCw, Bell, Route, Info,
+  FileText, RefreshCw, Bell, Route, Info, MessageSquare,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { friendlyApiError } from "../../lib/leadgenBilling";
 
 export interface ResponderDraft {
   draft_id: number;
-  kind: "reply" | "quote";
+  // Conversations 4 added `chat_reply`: the same draft, the same approve
+  // gate, delivered into the website chat thread instead of an inbox.
+  kind: "reply" | "quote" | "chat_reply";
   subject: string | null;
   body: string | null;
   grounded_on: Record<string, unknown> | null;
@@ -81,6 +83,11 @@ const HOLD_WORDS: Record<string, string> = {
   guardrail: "Something in the draft did not pass our checks, so it is waiting for you.",
   no_recipient: "There is no email address on this inquiry to reply to.",
 };
+
+/** A draft made of words the owner may edit. A quote's numbers live in OLIVER. */
+function isWords(d: ResponderDraft) {
+  return d.kind === "reply" || d.kind === "chat_reply";
+}
 
 function money(n: number | null | undefined) {
   if (n == null) return "";
@@ -287,9 +294,13 @@ export function LeadResponderPanel({ leadId, onChanged }: Props) {
             <div className="flex items-center gap-2">
               {d.kind === "quote"
                 ? <FileText className="h-3.5 w-3.5 text-emerald-600" />
-                : <Send className="h-3.5 w-3.5 text-violet-600" />}
+                : d.kind === "chat_reply"
+                  ? <MessageSquare className="h-3.5 w-3.5 text-violet-600" />
+                  : <Send className="h-3.5 w-3.5 text-violet-600" />}
               <span className="text-xs font-semibold text-slate-900">
-                {d.kind === "quote" ? `Draft quote — ${money(d.quote_total)}` : "Draft reply"}
+                {d.kind === "quote"
+                  ? `Draft quote — ${money(d.quote_total)}`
+                  : d.kind === "chat_reply" ? "Draft chat reply" : "Draft reply"}
               </span>
             </div>
             <span className="text-[11px] text-slate-500">{d.attribution}</span>
@@ -303,13 +314,14 @@ export function LeadResponderPanel({ leadId, onChanged }: Props) {
               </div>
             )}
 
-            {d.kind === "reply" && editing === d.draft_id ? (
+            {isWords(d) && editing === d.draft_id ? (
               <div className="space-y-2">
                 <input
                   value={editSubject}
                   onChange={(e) => setEditSubject(e.target.value)}
                   className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
-                  placeholder="Subject"
+                  placeholder={d.kind === "chat_reply" ? "Your own summary of this one" : "Subject"}
+                  aria-label={d.kind === "chat_reply" ? "Your own summary of this one" : "Subject"}
                 />
                 <textarea
                   value={editBody}
@@ -333,7 +345,14 @@ export function LeadResponderPanel({ leadId, onChanged }: Props) {
               </div>
             ) : (
               <>
-                {d.subject && <div className="text-xs font-medium text-slate-800">{d.subject}</div>}
+                {d.subject && (
+                  <div className="text-xs font-medium text-slate-800">
+                    {d.subject}
+                    {d.kind === "chat_reply" && (
+                      <span className="ml-1 font-normal text-slate-400">(your summary — not sent)</span>
+                    )}
+                  </div>
+                )}
                 <div className="whitespace-pre-wrap text-xs leading-relaxed text-slate-700">{d.body}</div>
               </>
             )}
@@ -368,9 +387,9 @@ export function LeadResponderPanel({ leadId, onChanged }: Props) {
                   className="flex items-center gap-1 rounded bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40"
                 >
                   <Send className="h-3 w-3" />
-                  {d.kind === "quote" ? "Approve & send quote" : "Approve & send"}
+                  {d.kind === "quote" ? "Approve & send quote" : d.kind === "chat_reply" ? "Approve & send to the chat" : "Approve & send"}
                 </button>
-                {d.kind === "reply" && (
+                {isWords(d) && (
                   <button
                     onClick={() => { setEditing(d.draft_id); setEditSubject(d.subject || ""); setEditBody(d.body || ""); }}
                     className="flex items-center gap-1 rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
@@ -407,7 +426,9 @@ export function LeadResponderPanel({ leadId, onChanged }: Props) {
               <li key={d.draft_id} className="flex items-start gap-1.5">
                 <CheckCircle2 className="mt-0.5 h-3 w-3 flex-shrink-0 text-emerald-600" />
                 <span>
-                  {d.kind === "quote" ? `Quote for ${money(d.quote_total)} sent` : "Reply sent"}
+                  {d.kind === "quote"
+                    ? `Quote for ${money(d.quote_total)} sent`
+                    : d.kind === "chat_reply" ? "Chat reply sent" : "Reply sent"}
                   {d.sent_at ? ` at ${when(d.sent_at)}` : ""}
                   {d.approved_by ? ` by ${d.approved_by}` : ""}
                   {d.kind === "quote" && d.quote_accept_url && (

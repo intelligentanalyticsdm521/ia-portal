@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "portal-chat",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "dev:chat"
+      ],
+      "port": 5178
+    },
+    {
       "name": "portal",
       "runtimeExecutable": "npm",
       "runtimeArgs": [

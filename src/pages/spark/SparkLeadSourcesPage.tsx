@@ -15,12 +15,19 @@
 //   • Disconnect and Rotate key.
 //   • The tier line: "Essentials connects 3 lead sources."
 //
+// CONVERSATIONS 4 added the INBOUND section above the connectors. The naming
+// is locked (§9): **Inbound** is the client's own properties — their website,
+// their landing pages, their referrals — and **Intake** is a third-party
+// platform we connect to through its API. Web chat is the client's own
+// website, so it is Inbound, it needs no key, and it is switched on per
+// website rather than "connected".
+//
 // "Business", never "tenant" (feedback_no_tenant_in_ui).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plug, Copy, Check, RefreshCw, Trash2, Clock, AlertTriangle,
-  CheckCircle2, Lock, Send, X, Activity,
+  CheckCircle2, Lock, Send, X, Activity, MessageSquare, Globe,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
@@ -70,6 +77,27 @@ interface CreateResponse {
   key: string | null;
   webhook_url: string | null;
   instructions: InstructionCard | null;
+}
+
+/** One of the client's own websites, and whether the chat bubble is on there. */
+interface ChatSiteRow {
+  site_id: string;
+  domain: string | null;
+  status: string | null;
+  enabled: boolean;
+  greeting: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
+}
+
+interface ChatMeta {
+  hours_line: string | null;
+  response_promise: string | null;
+  /** Word for word what a visitor is answered with — read from the same place
+   *  the widget reads it, so the preview cannot drift from what it previews. */
+  ack_preview: string | null;
+  business_name: string | null;
+  engine: string;
 }
 
 interface EventRow {
@@ -152,10 +180,13 @@ function CopyField({ label, value, once }: { label: string; value: string; once?
 }
 
 export function SparkLeadSourcesPage() {
-  const { get, post, del, ready } = useSparkApi();
+  const { get, post, put, del, ready } = useSparkApi();
 
   const [catalog, setCatalog] = useState<CatalogRow[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [chatSites, setChatSites] = useState<ChatSiteRow[]>([]);
+  const [chatMeta, setChatMeta] = useState<ChatMeta | null>(null);
+  const [chatBusy, setChatBusy] = useState<string | null>(null);
   const [sourceLimit, setSourceLimit] = useState<number | null>(null);
   const [limitReason, setLimitReason] = useState<string>("unresolved");
   const [loading, setLoading] = useState(true);
@@ -180,14 +211,19 @@ export function SparkLeadSourcesPage() {
     setError(null);
     try {
       // Portal data-fetching convention: both lists in one pass.
-      const [cat, conns] = await Promise.all([
+      const [cat, conns, chat] = await Promise.all([
         get<{ data: CatalogRow[]; meta: { source_limit: number | null; source_limit_reason: string } }>("/api/v1/intake/providers"),
         get<{ data: Connection[] }>("/api/v1/intake/connections"),
+        // Inbound (Conversations 4). Its own failure: a business with no
+        // website should still see its connectors, not an error page.
+        get<{ data: ChatSiteRow[]; meta: ChatMeta }>("/api/v1/chat/sites").catch(() => null),
       ]);
       setCatalog(cat.data || []);
       setSourceLimit(cat.meta?.source_limit ?? null);
       setLimitReason(cat.meta?.source_limit_reason ?? "unresolved");
       setConnections(conns.data || []);
+      setChatSites(chat?.data || []);
+      setChatMeta(chat?.meta || null);
     } catch (err) {
       setError(err);
     } finally {
@@ -229,6 +265,22 @@ export function SparkLeadSourcesPage() {
       alert(friendlyApiError(err).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function toggleChat(site: ChatSiteRow, enabled: boolean) {
+    setChatBusy(site.site_id);
+    try {
+      await put(`/api/v1/chat/sites/${site.site_id}`, { enabled });
+      setChatSites((rows) => rows.map((r) => (r.site_id === site.site_id ? { ...r, enabled } : r)));
+      setNotice(enabled
+        ? `The chat bubble is on for ${site.domain || "that website"}. It appears on the next page load.`
+        : `The chat bubble is off for ${site.domain || "that website"}.`);
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+      await load();
+    } finally {
+      setChatBusy(null);
     }
   }
 
@@ -314,6 +366,93 @@ export function SparkLeadSourcesPage() {
             <button onClick={() => setNotice(null)} className="text-emerald-700 hover:text-emerald-900"><X className="h-3.5 w-3.5" /></button>
           </div>
         )}
+
+        {/* ── Inbound: the client's OWN properties ─────────────────── */}
+        <section className="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+          <div className="flex items-start gap-2">
+            <Globe className="mt-0.5 h-4 w-4 flex-shrink-0 text-slate-400" />
+            <div>
+              <h2 className="font-semibold text-slate-900">Inbound — your own website</h2>
+              <p className="mt-0.5 text-xs text-slate-600">
+                No key, nothing to paste. These are already yours; you just switch them on.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 flex-shrink-0 text-slate-400" />
+              <h3 className="font-semibold text-slate-900">Website chat</h3>
+            </div>
+            <p className="mt-1 text-xs text-slate-600">
+              A chat bubble in the corner of your website. Every conversation lands in your Lead Inbox,
+              gets answered straight away in your own words, and you reply from the lead.
+              {chatMeta?.engine ? ` Powered by ${chatMeta.engine}.` : ""}
+            </p>
+
+            {chatSites.length === 0 ? (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+                We do not manage a website for this business yet, so there is nowhere to put the bubble.
+              </div>
+            ) : (
+              <ul className="mt-3 space-y-2">
+                {chatSites.map((site) => (
+                  <li key={site.site_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-900">{site.domain || "Your website"}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {site.enabled ? "The bubble is on" : "The bubble is off"}
+                        {site.updated_by ? ` · last changed by ${site.updated_by}` : ""}
+                      </div>
+                    </div>
+                    <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={site.enabled}
+                        disabled={chatBusy === site.site_id}
+                        onChange={(e) => toggleChat(site, e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300"
+                        aria-label={`Website chat on ${site.domain || "your website"}`}
+                      />
+                      {site.enabled ? "On" : "Off"}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {/* What a visitor is actually told, and where the words come from. */}
+            <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div className="rounded-lg bg-slate-50 px-3 py-2">
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Your hours, as the bubble shows them</dt>
+                <dd className="mt-0.5 text-xs text-slate-700">
+                  {chatMeta?.hours_line || (
+                    <span className="text-slate-500">
+                      Not set — the bubble says nothing about opening times. Add them under Settings &rsaquo; Business.
+                    </span>
+                  )}
+                </dd>
+              </div>
+              <div className="rounded-lg bg-slate-50 px-3 py-2">
+                <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">What we answer with, straight away</dt>
+                <dd className="mt-0.5 text-xs text-slate-700">
+                  {chatMeta?.ack_preview || "Thanks — we have got that."}
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-2 text-[10px] text-slate-400">
+              Every chat becomes a lead the moment somebody asks a real question or leaves their details.
+              It reads &ldquo;Website chat &middot; via your address&rdquo; in the inbox.
+            </p>
+          </div>
+        </section>
+
+        <div className="pt-1">
+          <h2 className="font-semibold text-slate-900">Intake — platforms you connect</h2>
+          <p className="mt-0.5 text-xs text-slate-600">
+            Somebody else collects the enquiry and hands it to us through their own API.
+          </p>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {catalog.map((row) => {
