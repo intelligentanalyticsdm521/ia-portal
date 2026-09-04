@@ -22,12 +22,25 @@
 // website, so it is Inbound, it needs no key, and it is switched on per
 // website rather than "connected".
 //
+// CONVERSATIONS 2 + 3 added TEXTS & CALLS to that same Inbound section. A phone
+// number is the client's own property too — more so than their website — but
+// unlike the chat bubble it cannot simply be switched on: a number is a real
+// carrier resource that costs real money, and the carrier verifies the business
+// before it will carry a single message. So this row is a REQUEST, with the
+// price and the wait said plainly before the button, and a waiting state that
+// tells the client what is happening for the weeks it takes.
+//
+// The missed-call text-back switch is rendered GREYED with the reason on it,
+// rather than hidden: the client should be able to see that the feature exists
+// and that we are not shipping it until the texting-consent read is done. A
+// hidden switch is a feature nobody knows they are waiting for.
+//
 // "Business", never "tenant" (feedback_no_tenant_in_ui).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plug, Copy, Check, RefreshCw, Trash2, Clock, AlertTriangle,
-  CheckCircle2, Lock, Send, X, Activity, MessageSquare, Globe,
+  CheckCircle2, Lock, Send, X, Activity, MessageSquare, Globe, Phone,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
@@ -88,6 +101,53 @@ interface ChatSiteRow {
   greeting: string | null;
   updated_at: string | null;
   updated_by: string | null;
+}
+
+/** The business's own phone line, and this month's texting allowance. */
+interface PhoneLineRow {
+  id: number;
+  number: string | null;
+  purpose: "operations" | "marketing";
+  status: "requested" | "provisioning" | "verifying" | "active" | "suspended" | "released";
+  /** What the carrier has said about THIS business. Separate from `status` on
+   *  purpose: calls work the moment the line is switched on, texting waits for
+   *  somebody else's queue, and telling a client "live" when their texts do not
+   *  send would be the worst kind of true. */
+  registration_status: "none" | "submitted" | "approved" | "rejected";
+  registration_promise: string | null;
+  pending: boolean;
+  setup_estimate: string | null;
+  can_text: boolean;
+  can_take_calls: boolean;
+  monthly_fee_cents: number;
+  included_in_plan: boolean;
+  sms_included_per_month: number;
+  forward_to_e164: string | null;
+  ring_seconds: number;
+  voicemail_greeting: string | null;
+  missed_call_text_back: boolean;
+}
+
+interface AllowanceRow {
+  period: string;
+  included: number;
+  used: number;
+  overage_units: number;
+  remaining: number;
+}
+
+interface PhoneLineMeta {
+  shared_number: string | null;
+  monthly_fee_cents: number;
+  entitled: boolean;
+  entitlement_source: string;
+  included_in_plan: boolean;
+  setup_estimate: string;
+  registration_promise: string;
+  allowance: AllowanceRow | null;
+  text_back_available: boolean;
+  text_back_locked_reason: string | null;
+  engine: string;
 }
 
 interface ChatMeta {
@@ -187,6 +247,11 @@ export function SparkLeadSourcesPage() {
   const [chatSites, setChatSites] = useState<ChatSiteRow[]>([]);
   const [chatMeta, setChatMeta] = useState<ChatMeta | null>(null);
   const [chatBusy, setChatBusy] = useState<string | null>(null);
+  const [line, setLine] = useState<PhoneLineRow | null>(null);
+  const [lineMeta, setLineMeta] = useState<PhoneLineMeta | null>(null);
+  const [lineBusy, setLineBusy] = useState(false);
+  const [forwardTo, setForwardTo] = useState("");
+  const [greeting, setGreeting] = useState("");
   const [sourceLimit, setSourceLimit] = useState<number | null>(null);
   const [limitReason, setLimitReason] = useState<string>("unresolved");
   const [loading, setLoading] = useState(true);
@@ -211,12 +276,15 @@ export function SparkLeadSourcesPage() {
     setError(null);
     try {
       // Portal data-fetching convention: both lists in one pass.
-      const [cat, conns, chat] = await Promise.all([
+      const [cat, conns, chat, phone] = await Promise.all([
         get<{ data: CatalogRow[]; meta: { source_limit: number | null; source_limit_reason: string } }>("/api/v1/intake/providers"),
         get<{ data: Connection[] }>("/api/v1/intake/connections"),
         // Inbound (Conversations 4). Its own failure: a business with no
         // website should still see its connectors, not an error page.
         get<{ data: ChatSiteRow[]; meta: ChatMeta }>("/api/v1/chat/sites").catch(() => null),
+        // Conversations 2 + 3. Its own failure too: a business whose phone line
+        // could not be read should still see its connectors, not an error page.
+        get<{ data: PhoneLineRow | null; meta: PhoneLineMeta }>("/api/v1/conversations/phone-line").catch(() => null),
       ]);
       setCatalog(cat.data || []);
       setSourceLimit(cat.meta?.source_limit ?? null);
@@ -224,6 +292,10 @@ export function SparkLeadSourcesPage() {
       setConnections(conns.data || []);
       setChatSites(chat?.data || []);
       setChatMeta(chat?.meta || null);
+      setLine(phone?.data || null);
+      setLineMeta(phone?.meta || null);
+      setForwardTo(phone?.data?.forward_to_e164 || "");
+      setGreeting(phone?.data?.voicemail_greeting || "");
     } catch (err) {
       setError(err);
     } finally {
@@ -281,6 +353,44 @@ export function SparkLeadSourcesPage() {
       await load();
     } finally {
       setChatBusy(null);
+    }
+  }
+
+  async function requestLine() {
+    if (!confirm(
+      `Ask us to set up a phone number for your business?
+
+`
+      + `It is $${((lineMeta?.monthly_fee_cents ?? 500) / 100).toFixed(2)} a month`
+      + `${lineMeta?.included_in_plan ? " — included on your plan" : ""}, and it takes `
+      + `${lineMeta?.setup_estimate || "a few weeks"}: the carrier has to verify your business before `
+      + `it will carry a single message. We will email you when it is live.`
+    )) return;
+    setLineBusy(true);
+    try {
+      const r = await post<{ line: PhoneLineRow; message: string }>("/api/v1/conversations/phone-line/request", {});
+      setLine(r.line || null);
+      setNotice(r.message);
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setLineBusy(false);
+    }
+  }
+
+  async function saveLineSettings() {
+    setLineBusy(true);
+    try {
+      const r = await put<{ line: PhoneLineRow }>("/api/v1/conversations/phone-line/settings", {
+        forward_to_e164: forwardTo.trim() || null,
+        voicemail_greeting: greeting.trim() || null,
+      });
+      setLine(r.line || null);
+      setNotice("Saved. Calls to your number ring that phone from now on.");
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setLineBusy(false);
     }
   }
 
@@ -444,6 +554,189 @@ export function SparkLeadSourcesPage() {
               Every chat becomes a lead the moment somebody asks a real question or leaves their details.
               It reads &ldquo;Website chat &middot; via your address&rdquo; in the inbox.
             </p>
+          </div>
+
+          {/* -- Texts & calls (Conversations 2 + 3) ------------------- */}
+          <div className="mt-3 rounded-lg border border-slate-200 p-3">
+            <div className="flex items-center gap-2">
+              <Phone className="h-4 w-4 flex-shrink-0 text-slate-400" />
+              <h3 className="font-semibold text-slate-900">Texts &amp; calls</h3>
+              {line?.status === "active" && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-800 ring-1 ring-emerald-200">
+                  {line.can_text ? "Live" : "Calls live"}
+                </span>
+              )}
+              {line?.pending && (
+                <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-800 ring-1 ring-amber-200">
+                  Being set up
+                </span>
+              )}
+            </div>
+            <p className="mt-1 text-xs text-slate-600">
+              Your own phone number. People text it and the whole conversation lands in your Lead Inbox; people
+              ring it and it rings your phone, and if you miss it the voicemail is written down and becomes a lead.
+            </p>
+
+            {!line && (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
+                <div className="text-xs text-slate-700">
+                  Today your texts go out from our shared number
+                  {lineMeta?.shared_number ? ` (${lineMeta.shared_number})` : ""}, which works but cannot receive
+                  replies for you &mdash; when two of our clients know the same person, there is no way to tell
+                  whose customer texted. Your own number fixes that, and it takes calls.
+                </div>
+                <div className="mt-2 text-xs font-semibold text-slate-900">
+                  {lineMeta?.included_in_plan
+                    ? "Included on your plan."
+                    : `$${((lineMeta?.monthly_fee_cents ?? 500) / 100).toFixed(2)} a month.`}{" "}
+                  <span className="font-normal text-slate-600">
+                    {lineMeta?.registration_promise
+                      || "Your number is reserved today; texts flow when the carrier approves — we file it for you."}{" "}
+                    Calls work as soon as we switch it on; texting takes{" "}
+                    {lineMeta?.setup_estimate || "a few weeks"}.
+                  </span>
+                </div>
+                {lineMeta?.entitled ? (
+                  <button
+                    type="button"
+                    onClick={requestLine}
+                    disabled={lineBusy}
+                    className="mt-2 rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
+                  >
+                    Ask for a number
+                  </button>
+                ) : (
+                  <p className="mt-2 flex items-start gap-1.5 text-[11px] text-slate-500">
+                    <Lock className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                    <span>A phone line is an add-on. Add it to your plan and we will set one up.</span>
+                  </p>
+                )}
+              </div>
+            )}
+
+            {line?.pending && (
+              <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-900 ring-1 ring-amber-200">
+                <Clock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                <div>
+                  <div className="font-semibold">
+                    Your line is being set up &mdash; {line.setup_estimate || "a few weeks"}.
+                  </div>
+                  <div className="mt-0.5">
+                    {line.registration_promise
+                      || "Your number is reserved today; texts flow when the carrier approves — we file it for you."}{" "}
+                    Until then everything carries on exactly as it does now.
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {line?.status === "active" && (
+              <>
+                {!line.can_text && (
+                  <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-900 ring-1 ring-amber-200">
+                    <Clock className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                    <div>
+                      <div className="font-semibold">Calls are working. Texting is still with the carrier.</div>
+                      <div className="mt-0.5">
+                        {line.registration_promise
+                          || "Your number is reserved; texts flow when the carrier approves — we file it for you."}{" "}
+                        Your texts keep going out from our shared number in the meantime, exactly as they do now.
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <dl className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Your number</dt>
+                    <dd className="mt-0.5 text-sm font-semibold tabular-nums text-slate-900">{line.number}</dd>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-3 py-2">
+                    <dt className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Texts this month
+                    </dt>
+                    <dd className="mt-0.5 text-sm text-slate-900">
+                      {lineMeta?.allowance ? (
+                        <>
+                          <span className="font-semibold tabular-nums">{lineMeta.allowance.used}</span>
+                          <span className="text-slate-500"> of {lineMeta.allowance.included}</span>
+                          {lineMeta.allowance.overage_units > 0 && (
+                            <span className="ml-1 text-amber-700">
+                              &middot; {lineMeta.allowance.overage_units} over your plan this month
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-500">Nothing sent yet</span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      Ring this phone when somebody calls
+                    </span>
+                    <input
+                      type="tel"
+                      value={forwardTo}
+                      onChange={(e) => setForwardTo(e.target.value)}
+                      placeholder="Your mobile"
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                      What the caller hears if nobody answers
+                    </span>
+                    <textarea
+                      rows={2}
+                      value={greeting}
+                      onChange={(e) => setGreeting(e.target.value)}
+                      placeholder="Leave blank and we use your business name."
+                      className="mt-1 w-full rounded border border-slate-300 px-2 py-1.5 text-xs"
+                    />
+                  </label>
+                </div>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  We always add &ldquo;This call may be recorded.&rdquo; to the end of your greeting &mdash;
+                  several states require it, and it is not ours or yours to leave off.
+                </p>
+                <button
+                  type="button"
+                  onClick={saveLineSettings}
+                  disabled={lineBusy}
+                  className="mt-2 rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40"
+                >
+                  Save
+                </button>
+
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 opacity-60">
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium text-slate-900">
+                      Text people back when you miss their call
+                    </div>
+                    <div className="flex items-start gap-1 text-[10px] text-slate-500">
+                      <Lock className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                      <span>
+                        {lineMeta?.text_back_locked_reason
+                          ? `Not available yet \u2014 ${lineMeta.text_back_locked_reason}.`
+                          : "Not available yet."}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    disabled
+                    readOnly
+                    className="h-4 w-4 cursor-not-allowed rounded border-slate-300"
+                    aria-label="Text people back when you miss their call (not available yet)"
+                  />
+                </div>
+              </>
+            )}
           </div>
         </section>
 
