@@ -890,7 +890,13 @@ export function useArionContext() {
       async saveSitePageSections(
         siteId: string,
         pageId: number,
-        params: { sections: Array<{ fields: any; node: any }>; title?: string; status?: string },
+        params: {
+          sections: Array<{ fields: any; node: any }>;
+          title?: string;
+          status?: string;
+          /** ARGUS suggestions this save carries; stamped applied only if it lands. */
+          proposalIds?: string[];
+        },
       ) {
         const b = await base();
         const { saveSitePageSections } = await import('../lib/arionApi');
@@ -919,10 +925,10 @@ export function useArionContext() {
         return createSitePage({ ...b, siteId, ...params });
       },
 
-      async buildSiteSection(siteId: string, kind: string) {
+      async buildSiteSection(siteId: string, kind: string, blueprintId?: string) {
         const b = await base();
         const { buildSiteSection } = await import('../lib/arionApi');
-        return buildSiteSection({ ...b, siteId, kind });
+        return buildSiteSection({ ...b, siteId, kind, blueprintId });
       },
 
       async getSectionLibrary(siteId: string) {
@@ -938,6 +944,42 @@ export function useArionContext() {
         const b = await base();
         const { uploadSiteMedia } = await import('../lib/arionApi');
         return uploadSiteMedia({ ...b, siteId, ...params });
+      },
+
+      /* "Ask ARGUS to change it" (Phase 1B). These PROPOSE and cost credits;
+         nothing here writes to the website. An approved proposal leaves via
+         saveSitePageSections with its proposalIds, so the audit row is stamped
+         only once the write has actually landed. */
+      async aiEditSection(
+        siteId: string,
+        pageId: number,
+        params: { handle: string; index: number; instruction: string; section: { fields: any; node: any } },
+      ) {
+        const b = await base();
+        const { aiEditSection } = await import('../lib/arionApi');
+        return aiEditSection({ ...b, siteId, pageId, ...params });
+      },
+
+      async aiEditPage(
+        siteId: string,
+        pageId: number,
+        params: { instruction: string; sections: Array<{ fields: any; node: any }> },
+      ) {
+        const b = await base();
+        const { aiEditPage } = await import('../lib/arionApi');
+        return aiEditPage({ ...b, siteId, pageId, ...params });
+      },
+
+      async discardSiteProposal(siteId: string, proposalId: string) {
+        const b = await base();
+        const { discardSiteProposal } = await import('../lib/arionApi');
+        return discardSiteProposal({ ...b, siteId, proposalId });
+      },
+
+      async getSiteAiPricing(siteId: string) {
+        const b = await base();
+        const { getSiteAiPricing } = await import('../lib/arionApi');
+        return getSiteAiPricing({ ...b, siteId });
       },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);

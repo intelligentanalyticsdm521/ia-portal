@@ -22,6 +22,18 @@ export interface EditorSection extends ArionPageSection {
   dirty: boolean;
   /** Set on a section the client added but has not saved yet. */
   isNew?: boolean;
+  /**
+   * Set on a section ARGUS suggested that the client has not approved yet.
+   * A proposed row is visible in the list, marked, and is NOT sent on Save —
+   * that is what "nothing reaches the site until you approve" means at the
+   * level of a whole new section (SCOPE §3.8).
+   */
+  isProposed?: boolean;
+  /**
+   * The ARGUS suggestion this section is carrying, so an approved edit can be
+   * stamped `applied` by the same request that writes it — never before.
+   */
+  proposalId?: string | null;
 }
 
 let uidSeq = 0;
@@ -39,18 +51,35 @@ export function toEditorSections(sections: ArionPageSection[]): EditorSection[] 
   }));
 }
 
-/** What goes back to the API on Save or Preview. */
+/**
+ * What goes back to the API on Save or Preview.
+ *
+ * A section still marked `isProposed` is left out. ARGUS suggesting a new
+ * section is not the client accepting one, and a Save must never quietly
+ * publish a suggestion nobody said yes to.
+ */
 export function toSavePayload(sections: EditorSection[]) {
-  return sections.map((s) => ({
+  return sections.filter((s) => !s.isProposed).map((s) => ({
     fields: s.editable ? s.fields : null,
     node: s.node,
   }));
 }
 
+/** Every ARGUS suggestion this save is carrying. */
+export function proposalIdsOf(sections: EditorSection[]): string[] {
+  return [...new Set(
+    sections.filter((s) => !s.isProposed && s.proposalId).map((s) => String(s.proposalId)),
+  )];
+}
+
 export function isDirty(sections: EditorSection[], originalOrder: string[]): boolean {
-  if (sections.some((s) => s.dirty || s.isNew)) return true;
-  if (sections.length !== originalOrder.length) return true;
-  return sections.some((s, i) => s.uid !== originalOrder[i]);
+  // A proposed section is not a change yet — it is a suggestion sitting on the
+  // screen. Counting it as dirty would light up "Unsaved changes" for
+  // something a Save would not write.
+  const real = sections.filter((s) => !s.isProposed);
+  if (real.some((s) => s.dirty || s.isNew)) return true;
+  if (real.length !== originalOrder.length) return true;
+  return real.some((s, i) => s.uid !== originalOrder[i]);
 }
 
 export function orderOf(sections: EditorSection[]): string[] {
@@ -190,4 +219,66 @@ export function sectionSummary(s: EditorSection): string {
   if (headline) return headline;
   if (!s.editable) return 'Built on the website itself';
   return 'No headline yet';
+}
+
+/* ── ARGUS suggestions ──────────────────────────────────────────────────── */
+
+/**
+ * Put an approved suggestion's wording into a section. It becomes an ordinary
+ * unsaved edit from here on — the same Save and Publish buttons stand between
+ * it and the website, and Undo covers it once it is published.
+ */
+export function applyProposal(
+  sections: EditorSection[],
+  uid: string,
+  fields: Record<string, unknown>,
+  proposalId: string,
+): EditorSection[] {
+  return sections.map((s) => {
+    if (s.uid !== uid || !s.editable) return s;
+    return { ...s, dirty: true, fields: { ...(s.fields || {}), ...fields }, proposalId };
+  });
+}
+
+/** The page-level equivalent: several sections at once, by their index. */
+export function applyPageProposal(
+  sections: EditorSection[],
+  edits: Array<{ index: number; after: Record<string, unknown> }>,
+  proposalId: string,
+): EditorSection[] {
+  const byIndex = new Map(edits.map((e) => [Number(e.index), e.after]));
+  return sections.map((s, i) => {
+    const after = byIndex.get(i);
+    if (!after || !s.editable) return s;
+    return { ...s, dirty: true, fields: { ...(s.fields || {}), ...after }, proposalId };
+  });
+}
+
+/**
+ * Drop a suggested NEW section into the list, marked as a suggestion. It shows
+ * in position so the client can see where it would go, and it is skipped by
+ * Save until they approve it.
+ */
+export function insertProposedSection(
+  sections: EditorSection[],
+  added: ArionPageSection,
+  afterIndex: number,
+  proposalId: string,
+): EditorSection[] {
+  const at = Math.max(0, Math.min(afterIndex + 1, sections.length));
+  const next = sections.slice();
+  next.splice(at, 0, {
+    ...added, uid: nextUid('argus'), dirty: false, isNew: true, isProposed: true, proposalId,
+  });
+  return next.map((s, i) => ({ ...s, index: i }));
+}
+
+/** The client said yes to a suggested new section: it becomes an ordinary one. */
+export function acceptProposedSections(sections: EditorSection[]): EditorSection[] {
+  return sections.map((s) => (s.isProposed ? { ...s, isProposed: false, dirty: true } : s));
+}
+
+/** The client said no: every suggested section leaves the list. */
+export function dropProposedSections(sections: EditorSection[]): EditorSection[] {
+  return sections.filter((s) => !s.isProposed).map((s, i) => ({ ...s, index: i }));
 }

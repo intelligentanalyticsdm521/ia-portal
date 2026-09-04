@@ -1,7 +1,8 @@
 import React from 'react';
-import type { SectionCatalogEntry, SectionFieldSpec } from '../../lib/arionApi';
+import type { SectionCatalogEntry, SectionFieldSpec, SectionDiffRow } from '../../lib/arionApi';
 import type { EditorSection } from '../utils/sectionListState';
 import { ScalarField, ParagraphsField, ListField, blankItem, smallButton } from './SectionFieldInputs';
+import { AskArgusBox } from './AskArgus';
 
 /**
  * The full-screen sheet that opens when a client taps a section row.
@@ -10,10 +11,28 @@ import { ScalarField, ParagraphsField, ListField, blankItem, smallButton } from 
  * never raw JSON (SCOPE_ARION_SITE_BUILDER_2026-09-05 §3.2, walkthrough T2).
  * On a phone it is a single column with a sticky bar at the bottom; on a
  * desktop it is the same sheet, centred.
+ *
+ * At the bottom sits "Ask ARGUS to change this section" (Phase 1B) — type it
+ * in plain English instead of filling the fields in. What comes back is a
+ * suggestion shown as a before/after; approving it fills these same fields,
+ * and the website still only changes on Save.
  */
+export interface SectionAskArgus {
+  /** null when the plan includes AI actions; the upsell sentence when it does not. */
+  lockedReason: string | null;
+  credits: number | null;
+  busy: boolean;
+  error: string | null;
+  summary: string | null;
+  diff: SectionDiffRow[] | null;
+  onAsk: (instruction: string) => void;
+  onApprove: () => void;
+  onDiscard: () => void;
+}
+
 export function SectionEditSheet({
   section, catalog, onClose, onField, onListItem, onListAdd, onListRemove,
-  onParagraph, onParagraphAdd, onParagraphRemove, onUpload,
+  onParagraph, onParagraphAdd, onParagraphRemove, onUpload, ask,
 }: {
   section: EditorSection;
   catalog: SectionCatalogEntry | null;
@@ -26,6 +45,8 @@ export function SectionEditSheet({
   onParagraphAdd: (key: string) => void;
   onParagraphRemove: (key: string, index: number) => void;
   onUpload: (file: File) => Promise<string>;
+  /** Omitted on a sheet with no AI at all — the box simply does not render. */
+  ask?: SectionAskArgus;
 }) {
   const fields: SectionFieldSpec[] = catalog?.fields || [];
 
@@ -107,6 +128,24 @@ export function SectionEditSheet({
               />
             );
           })}
+
+          {ask && (
+            <AskArgusBox
+              strings={{
+                title: 'Ask ARGUS to change this section',
+                placeholder: 'e.g. “Make this warmer and mention that we are family-run.”',
+                lockedReason: ask.lockedReason,
+              }}
+              credits={ask.credits}
+              busy={ask.busy}
+              error={ask.error}
+              summary={ask.summary}
+              diff={ask.diff}
+              onAsk={ask.onAsk}
+              onApprove={ask.onApprove}
+              onDiscard={ask.onDiscard}
+            />
+          )}
         </div>
 
         {/* paddingRight clears the floating ARGUS button, which is fixed to
