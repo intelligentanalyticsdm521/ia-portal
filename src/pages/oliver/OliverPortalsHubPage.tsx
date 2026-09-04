@@ -15,6 +15,7 @@ import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 import { PortalActivationWizard } from "../../components/oliver/PortalActivationWizard";
 import { PortalLayoutTab } from "../../components/oliver/PortalLayoutTab";
+import { AppLinksCard } from "../../components/oliver/AppLinksCard";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
   AlertTriangle, CheckCircle2, Clock, Palette, Upload, Layers,
@@ -39,10 +40,24 @@ interface HubData {
 const DEFAULT_CUSTOMER_HOST = "customer.ia-dm.com";
 const DEFAULT_CREW_HOST = "crew.ia-dm.com";
 
+/**
+ * Q-APPS-PWA — the business is in the PATH now, not the host.
+ *
+ * `https://customer.ia-dm.com/summit-lawn/`, not
+ * `https://summit-lawn.customer.ia-dm.com/`. Azure Static Web Apps binds a
+ * handful of custom domains per app, so a subdomain per client ran out at
+ * roughly the sixth; three domains for the whole platform does not.
+ *
+ * The old subdomains stay bound and 301 to this shape (SEAM-5-B), so anything
+ * already printed still works — but this is the address we now SHOW, because
+ * it is the one that installs as its own app.
+ *
+ * A business on its own domain is unchanged: they own that whole origin.
+ */
 function portalUrl(p: PortalStatus, kind: PortalKind): string {
   if (p.custom_domain && p.custom_domain_status === "ready") return `https://${p.custom_domain}`;
   const slug = p.subdomain_slug || "your-tenant-slug";
-  return `https://${slug}.${kind === "customer" ? DEFAULT_CUSTOMER_HOST : DEFAULT_CREW_HOST}`;
+  return `https://${kind === "customer" ? DEFAULT_CUSTOMER_HOST : DEFAULT_CREW_HOST}/${slug}/`;
 }
 
 export function OliverPortalsHubPage() {
@@ -109,6 +124,14 @@ export function OliverPortalsHubPage() {
             else setEditing({ kind: "crew", tab });
           }}
         />
+      </div>
+
+      {/* Q-APPS-PWA / APP-8 — the three app addresses, their QR codes, and the
+          install instructions a business owner actually has to give somebody.
+          Below the two portal cards because it is about handing the apps OUT,
+          not about configuring them. */}
+      <div className="mb-4">
+        <AppLinksCard slug={customer.subdomain_slug || crew.subdomain_slug} />
       </div>
 
       {editing && (
