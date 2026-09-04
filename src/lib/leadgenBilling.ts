@@ -29,6 +29,21 @@ export interface LeadGenCredits {
   period_end: string | null;
 }
 
+/**
+ * X1 — what POST /leadgen/estimate says about whether a search will fill the order.
+ *
+ * The server measures the pool with a handful of FREE Hunter Discover calls and
+ * sends back a WORD and, when the search looks tight, one soft sentence. There is
+ * deliberately NO count in this shape and there never will be: a vendor's index
+ * size is not a promise, and showing it turns the conversation into an argument
+ * about a number. `message` is null whenever the search looks fine, or whenever a
+ * forecast could not be taken — silence is the ordinary case.
+ */
+export interface LeadGenForecast {
+  band: "comfortable" | "tight" | "unlikely" | "unknown";
+  message: string | null;
+}
+
 export interface LeadGenBillingRow {
   id: number;
   job_id: number;
