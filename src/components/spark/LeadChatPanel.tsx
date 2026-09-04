@@ -231,7 +231,7 @@ export function LeadChatPanel({ leadId, onChanged }: Props) {
               {c.status === "open" ? (
                 <>
                   <label htmlFor="ia-lead-chat-reply" className="mb-1 block text-[11px] font-semibold text-slate-600">
-                    Reply as {c.first_name ? `${c.first_name} sees it` : "the business"}
+                    {c.first_name ? `Reply to ${c.first_name}` : "Your reply"} — they see it straight away
                   </label>
                   <textarea
                     id="ia-lead-chat-reply"

@@ -11,7 +11,8 @@
     "dev:hestia2": "vite --mode hestia2 --port 5176 --strictPort --host ::",
     "dev:builder": "vite --port 5173 --strictPort --host ::",
     "dev:builder1b": "vite --port 5175 --strictPort --host ::",
-    "dev:builder2": "vite --port 5173 --strictPort --host ::"
+    "dev:builder2": "vite --port 5173 --strictPort --host ::",
+    "dev:chat": "vite --port 5176 --strictPort --host ::"
   },
   "dependencies": {
     "@azure/msal-browser": "^3.14.0",
