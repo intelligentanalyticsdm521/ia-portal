@@ -21,6 +21,196 @@ interface Notification {
   sent_at?: string;
 }
 
+/** Shape of GET/PATCH /settings/owner-alerts (oliver-api, migration 178). */
+interface OwnerAlerts {
+  push: boolean;
+  sms: boolean;
+  email: boolean;
+  quiet_hours: { start?: string | null; end?: string | null; tz?: string };
+  sms_daily_cap: number;
+  events?: Record<string, boolean>;
+  owner_phone?: string | null;
+  owner_email?: string | null;
+  quiet_hours_timezone?: string;
+  kinds?: string[];
+}
+
+const KIND_LABELS: Record<string, string> = {
+  "booking.requested": "Someone requests a booking",
+  "booking.confirmed": "A booking is confirmed",
+  "quote.accepted": "A quote is accepted",
+  "invoice.paid": "An invoice is paid",
+  "support_ticket.created": "A customer opens a support ticket",
+  "review.new": "A new Google review arrives",
+};
+
+/**
+ * "Alert me on my phone" — how the business hears about its own bookings,
+ * accepted quotes, payments and tickets.
+ *
+ * This is the owner's side of notifications; everything below it on this page
+ * is the log of what went out to CUSTOMERS. Deliberately small: no phone
+ * number field (that lives once, on the business profile) and no way to raise
+ * the daily SMS cap, which is a platform cost control rather than a setting.
+ */
+function OwnerAlertsCard() {
+  const { get, patch, ready } = useOliverApi();
+  const [cfg, setCfg] = useState<OwnerAlerts | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    get<OwnerAlerts>("/settings/owner-alerts")
+      .then((d) => { if (!cancelled) setCfg(d); })
+      .catch((e) => { if (!cancelled) setLoadError(e instanceof Error ? e.message : "Could not load alert settings"); });
+    return () => { cancelled = true; };
+  }, [get, ready]);
+
+  const save = useCallback(async (patchBody: Partial<OwnerAlerts>) => {
+    setSaving(true); setSaved(false);
+    // Optimistic: the toggles must feel like switches, not like forms.
+    setCfg((prev) => (prev ? { ...prev, ...patchBody } as OwnerAlerts : prev));
+    try {
+      const next = await patch<OwnerAlerts>("/settings/owner-alerts", patchBody);
+      setCfg((prev) => (prev ? { ...prev, ...next } : prev));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }, [patch]);
+
+  if (loadError && !cfg) {
+    return (
+      <div className="card">
+        <div style={{ fontSize: 12, color: "#B45309" }}>
+          Alert settings unavailable: {loadError}
+        </div>
+      </div>
+    );
+  }
+  if (!cfg) return null;
+
+  const quietOn = !!(cfg.quiet_hours?.start && cfg.quiet_hours?.end);
+  const tz = cfg.quiet_hours_timezone || cfg.quiet_hours?.tz || "";
+
+  const channel = (key: "push" | "sms" | "email", label: string, hint: string, disabled?: string) => (
+    <label
+      key={key}
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px",
+        border: "1px solid #E2E8F0", borderRadius: 8, flex: "1 1 200px",
+        opacity: disabled ? 0.6 : 1, cursor: disabled ? "not-allowed" : "pointer",
+      }}
+      title={disabled || undefined}
+    >
+      <input
+        type="checkbox"
+        checked={!!cfg[key]}
+        disabled={!!disabled || saving}
+        onChange={(e) => save({ [key]: e.target.checked } as Partial<OwnerAlerts>)}
+        style={{ marginTop: 2 }}
+      />
+      <span>
+        <span style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{label}</span>
+        <span style={{ display: "block", fontSize: 11, color: "#5A7A8A" }}>{disabled || hint}</span>
+      </span>
+    </label>
+  );
+
+  return (
+    <div className="card">
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 4 }}>
+        <h3 style={{ fontSize: 14, fontWeight: 700, color: "#0B1C24", margin: 0 }}>Alert me on my phone</h3>
+        <span style={{ fontSize: 11, color: saved ? "#059669" : "#5A7A8A" }}>
+          {saving ? "Saving…" : saved ? "Saved" : "These are alerts to you, not to your customers"}
+        </span>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 12 }}>
+        {channel("push", "Push", "A notification on your phone or desktop.")}
+        {channel("email", "Email",
+          cfg.owner_email ? `To ${cfg.owner_email}` : "No business email set",
+          cfg.owner_email ? undefined : "Set your business email on the Business Setup page first.")}
+        {channel("sms", "Text message",
+          cfg.owner_phone ? `To ${cfg.owner_phone} — up to ${cfg.sms_daily_cap} a day` : "No business phone set",
+          cfg.owner_phone ? undefined : "Set your business phone on the Business Setup page first.")}
+      </div>
+
+      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 8 }}>
+        Your phone and email come from your Business Setup page, so they only ever need changing in one place.
+      </div>
+
+      {/* Quiet hours — text only, by design (O-3). A push is dismissible; a
+          text at 2 a.m. is not. Texts raised during quiet hours are still
+          queued straight away and go out at the end time. */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #E2E8F0" }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
+          <input
+            type="checkbox"
+            checked={quietOn}
+            disabled={saving}
+            onChange={(e) => save({
+              quiet_hours: e.target.checked
+                ? { start: "21:00", end: "07:00" }
+                : { start: null, end: null },
+            })}
+          />
+          Quiet hours for text messages
+        </label>
+        {quietOn && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, fontSize: 12, color: "#0B1C24" }}>
+            <span>No texts between</span>
+            <input
+              type="time"
+              value={cfg.quiet_hours.start || "21:00"}
+              disabled={saving}
+              onChange={(e) => save({ quiet_hours: { ...cfg.quiet_hours, start: e.target.value } })}
+              style={{ fontSize: 12, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4 }}
+            />
+            <span>and</span>
+            <input
+              type="time"
+              value={cfg.quiet_hours.end || "07:00"}
+              disabled={saving}
+              onChange={(e) => save({ quiet_hours: { ...cfg.quiet_hours, end: e.target.value } })}
+              style={{ fontSize: 12, padding: "2px 6px", border: "1px solid #CBD5E1", borderRadius: 4 }}
+            />
+            {tz && <span style={{ color: "#5A7A8A", fontSize: 11 }}>({tz})</span>}
+          </div>
+        )}
+        <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 6 }}>
+          Texts raised during quiet hours are held and sent at the end time — nothing is lost. Push and email are not held.
+        </div>
+      </div>
+
+      {/* What to be told about. Absent from the saved config means "all of
+          them", so an unticked box is the only thing that turns anything off. */}
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #E2E8F0" }}>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", marginBottom: 8 }}>Tell me when…</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 6 }}>
+          {(cfg.kinds || Object.keys(KIND_LABELS)).map((k) => (
+            <label key={k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24" }}>
+              <input
+                type="checkbox"
+                checked={cfg.events?.[k] !== false}
+                disabled={saving}
+                onChange={(e) => save({ events: { ...(cfg.events || {}), [k]: e.target.checked } })}
+              />
+              {KIND_LABELS[k] || k}
+            </label>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const FILTER_PILLS = [
   { key: "", label: "All" },
   { key: "channel:email", label: "Email" },
@@ -137,6 +327,11 @@ export function OliverNotificationsPage() {
         subtitle="Every email and SMS sent from OLIVER — delivery status, recipients, and templates"
         actions={<TimeRangeSelector value={range} onChange={setRange} />}
       />
+
+      {/* How the BUSINESS hears about its own activity. Everything below is
+          the log of what went out to customers — two different audiences on
+          one page, so this sits first and says whose alerts it is. */}
+      <OwnerAlertsCard />
 
       <div className="stat-row">
         <div className="stat-card">
