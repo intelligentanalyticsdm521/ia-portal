@@ -24,12 +24,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2, Phone, MapPin, Mail, ExternalLink, FileText, Activity as ActivityIcon,
-  Zap, Users, ShieldCheck, ShieldX, ShieldAlert, Plus, Star, Lock, CheckCircle2,
+  Zap, Users, ShieldCheck, ShieldX, ShieldAlert, Plus, Star, Lock, CheckCircle2, Sparkles,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
 import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+// The ARGUS Responder's panel — one tab, its own component, so this modal
+// stays a modal and the agent surface can grow without it.
+import { LeadResponderPanel } from "./LeadResponderPanel";
 
 export interface LeadContactRow {
   id: number;
@@ -91,7 +94,7 @@ export interface LeadDetail {
   account: { id: number; name: string; domain: string | null } | null;
 }
 
-type Tab = "overview" | "contacts" | "notes" | "activity" | "actions";
+type Tab = "overview" | "contacts" | "notes" | "responder" | "activity" | "actions";
 
 // The lead's own ladder. The contact it becomes moves through the SPARK
 // workflow separately.
@@ -262,6 +265,7 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
             { key: "overview", label: "Overview", icon: Building2 },
             { key: "contacts", label: lead?.contacts?.length ? `Contacts (${lead.contacts.length})` : "Contacts", icon: Users },
             { key: "notes", label: lead?.notes?.length ? `Notes (${lead.notes.length})` : "Notes", icon: FileText },
+            { key: "responder", label: "Responder", icon: Sparkles },
             { key: "activity", label: "Activity", icon: ActivityIcon },
             { key: "actions", label: "Actions", icon: Zap },
           ] as Array<{ key: Tab; label: string; icon: typeof Building2 }>).map((t) => {
@@ -543,6 +547,11 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 </ul>
               )}
             </div>
+          )}
+
+          {/* ── Responder ────────────────────────────────────────────── */}
+          {tab === "responder" && lead && (
+            <LeadResponderPanel leadId={lead.id} onChanged={onChanged} />
           )}
 
           {/* ── Actions ──────────────────────────────────────────────── */}
