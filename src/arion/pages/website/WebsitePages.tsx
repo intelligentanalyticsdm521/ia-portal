@@ -5,15 +5,20 @@ import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { SectionEditSheet } from '../../components/SectionEditSheet';
 import { SectionPicker } from '../../components/SectionPicker';
+import { AskArgusBox, DiffRows } from '../../components/AskArgus';
 import { smallButton } from '../../components/SectionFieldInputs';
-import type { ArionSitePage, SectionCatalogEntry } from '../../../lib/arionApi';
+import type {
+  ArionSitePage, SectionCatalogEntry, SectionDiffRow, SectionProposal, PageProposal, AiPricing,
+} from '../../../lib/arionApi';
 import {
   type EditorSection,
   toEditorSections, toSavePayload, isDirty, orderOf, moveSection,
   setSectionField, setListItemField, addListItem, removeListItem,
   setParagraph, addParagraph, removeParagraph, removeSection, appendSection,
-  sectionSummary,
+  sectionSummary, proposalIdsOf, applyProposal, applyPageProposal,
+  insertProposedSection, acceptProposedSections, dropProposedSections,
 } from '../../utils/sectionListState';
+import { splitPages } from '../../utils/siteBuilderCopy';
 
 /**
  * ARION → Website → Pages
@@ -32,8 +37,13 @@ import {
  * Safety: preview before save, a snapshot on every write, one-tap Undo, and
  * new pages born as drafts (decision W-3). No per-page staging.
  *
- * Every ARION tier can use this (decision W-4). Nothing on this page spends
- * credits — the AI actions that will are Phase 1B.
+ * Phase 1B adds the third way in — "Ask ARGUS to change it", per section and
+ * per page. It always PROPOSES: what comes back is shown as a before/after,
+ * and approving it only fills the editor. The website still changes on Save
+ * and nowhere else, so Undo covers an AI edit exactly as it covers a typed
+ * one. Every ARION tier can use the editor (W-4); the AI actions need a paid
+ * plan and cost credits, and the price is read from the server, never guessed
+ * here (feedback_no_fabricated_catalog).
  */
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
@@ -115,6 +125,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     [activeSiteId],
   );
   const pages: ArionSitePage[] = (data as any)?.data?.pages || [];
+  const { drafts, live } = useMemo(() => splitPages(pages), [pages]);
 
   const create = async () => {
     if (!activeSiteId || !newTitle.trim()) return;
@@ -152,6 +163,63 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     }
   };
 
+  const row = (p: ArionSitePage) => (
+    <div
+      key={p.pageId}
+      style={{
+        borderTop: '1px solid var(--border)', padding: '14px 0',
+        display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
+      }}
+    >
+      <div style={{ minWidth: 220, flex: '1 1 240px' }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{p.title || '(no title)'}</span>
+          <StatusChip status={p.status} />
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+          {p.type === 'post' ? 'Blog post · ' : ''}
+          {p.editableSectionCount > 0
+            ? `${p.editableSectionCount} of ${p.sectionCount} sections you can edit here`
+            : 'Built on the website itself'}
+          {p.modified ? ` · last changed ${whenText(p.modified)}` : ''}
+        </div>
+        {p.status === 'publish' && p.permalink && (
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, wordBreak: 'break-all' }}>
+            {p.permalink}
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <button
+          type="button"
+          className="abtn abtn-sky"
+          style={{ minHeight: 40 }}
+          disabled={p.editableSectionCount === 0}
+          title={p.editableSectionCount === 0
+            ? 'Every section on this page was built on the website itself, so there is nothing to edit here yet.'
+            : undefined}
+          onClick={() => onOpen(p.pageId)}
+        >
+          Edit
+        </button>
+        {p.permalink && (
+          <a
+            className="abtn"
+            style={{ ...smallButton, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
+            href={p.permalink}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {p.status === 'draft' ? 'Preview' : 'Open'}
+          </a>
+        )}
+        <button type="button" style={smallButton} onClick={() => { setAskFor(p); setAskText(''); }}>
+          Ask us to change it
+        </button>
+      </div>
+    </div>
+  );
+
   if (loading && pages.length === 0) return <Loading message="Reading the pages on your website…" />;
   if (loadError) {
     return (
@@ -171,9 +239,23 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
         </Banner>
       )}
 
+      {drafts.length > 0 && (
+        <Card
+          title="Drafts"
+          subtitle="Nobody can see these until you publish them."
+          style={{ marginBottom: 12 }}
+        >
+          {drafts.map(row)}
+        </Card>
+      )}
+
       <Card
-        title="Pages"
-        subtitle={`Every page on ${selectedSite?.primaryDomain || 'your website'}, drafts included.`}
+        title={drafts.length > 0 ? 'Live pages' : 'Pages'}
+        subtitle={
+          drafts.length > 0
+            ? `On ${selectedSite?.primaryDomain || 'your website'} right now.`
+            : `Every page on ${selectedSite?.primaryDomain || 'your website'}, drafts included.`
+        }
         action={
           <button type="button" className="abtn abtn-sky" style={{ minHeight: 40 }} onClick={() => setCreating(true)}>
             New page
@@ -210,62 +292,14 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           </div>
         )}
 
-        {pages.length === 0 ? (
-          <EmptyPanel message="We could not find any pages on this website yet." />
+        {live.length === 0 ? (
+          <EmptyPanel message={
+            drafts.length > 0
+              ? 'Nothing is live on this website yet.'
+              : 'We could not find any pages on this website yet.'
+          } />
         ) : (
-          <div>
-            {pages.map((p) => (
-              <div
-                key={p.pageId}
-                style={{
-                  borderTop: '1px solid var(--border)', padding: '14px 0',
-                  display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-                }}
-              >
-                <div style={{ minWidth: 220, flex: '1 1 240px' }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 14, fontWeight: 600 }}>{p.title || '(no title)'}</span>
-                    <StatusChip status={p.status} />
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                    {p.type === 'post' ? 'Blog post · ' : ''}
-                    {p.editableSectionCount > 0
-                      ? `${p.editableSectionCount} of ${p.sectionCount} sections you can edit here`
-                      : 'Built on the website itself'}
-                    {p.modified ? ` · last changed ${whenText(p.modified)}` : ''}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="abtn abtn-sky"
-                    style={{ minHeight: 40 }}
-                    disabled={p.editableSectionCount === 0}
-                    title={p.editableSectionCount === 0
-                      ? 'Every section on this page was built on the website itself, so there is nothing to edit here yet.'
-                      : undefined}
-                    onClick={() => onOpen(p.pageId)}
-                  >
-                    Edit
-                  </button>
-                  {p.permalink && (
-                    <a
-                      className="abtn"
-                      style={{ ...smallButton, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
-                      href={p.permalink}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      Open
-                    </a>
-                  )}
-                  <button type="button" style={smallButton} onClick={() => { setAskFor(p); setAskText(''); }}>
-                    Ask us to change it
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
+          <div>{live.map(row)}</div>
         )}
       </Card>
 
@@ -302,6 +336,8 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [baseOrder, setBaseOrder] = useState<string[]>([]);
   const [detail, setDetail] = useState<any>(null);
   const [catalog, setCatalog] = useState<SectionCatalogEntry[]>([]);
+  const [aiLocked, setAiLocked] = useState<string | null>(null);
+  const [pricing, setPricing] = useState<AiPricing | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -313,21 +349,36 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Array<{ field: string; message: string }>>([]);
   const [ok, setOk] = useState<string | null>(null);
+  const [liveUrl, setLiveUrl] = useState<string | null>(null);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [confirmPublish, setConfirmPublish] = useState(false);
+
+  // ARGUS, per section and per page. Both hold at most one open suggestion:
+  // a second one would mean two before/afters describing the same page.
+  const [sectionProposal, setSectionProposal] = useState<SectionProposal | null>(null);
+  const [sectionAiError, setSectionAiError] = useState<string | null>(null);
+  const [pageProposal, setPageProposal] = useState<PageProposal | null>(null);
+  const [pageAiError, setPageAiError] = useState<string | null>(null);
+  const [pageAiOpen, setPageAiOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!activeSiteId) return;
     setLoading(true); setLoadError(null);
     try {
-      const [page, lib]: any[] = await Promise.all([
+      const [page, lib, price]: any[] = await Promise.all([
         arionApi.getSitePageSections(activeSiteId, pageId),
         arionApi.getSectionLibrary(activeSiteId),
+        // Best effort: a price we cannot read is a price we do not quote, and
+        // the box still works — it just does not promise a number.
+        arionApi.getSiteAiPricing(activeSiteId).catch(() => null),
       ]);
       const list = toEditorSections(page?.data?.sections || []);
       setSections(list);
       setBaseOrder(orderOf(list));
       setDetail(page?.data || null);
       setCatalog(lib?.data?.sections || []);
+      setAiLocked(lib?.data?.ai?.available === false ? (lib?.data?.ai?.reason || null) : null);
+      setPricing(price?.data || null);
     } catch (e: any) {
       setLoadError(messageFrom(e, 'We could not read that page from your website.'));
     } finally {
@@ -340,6 +391,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const dirty = useMemo(() => isDirty(sections, baseOrder), [sections, baseOrder]);
   const openSection = sections.find((s) => s.uid === openUid) || null;
   const catalogFor = (kind: string | null) => catalog.find((c) => c.kind === kind) || null;
+  const proposedCount = sections.filter((s) => s.isProposed).length;
 
   const upload = useCallback(async (file: File): Promise<string> => {
     if (!activeSiteId) throw new Error('No website selected.');
@@ -379,18 +431,24 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
 
   const save = async (status?: string) => {
     if (!activeSiteId) return;
-    setBusy('save'); setError(null); setFieldErrors([]); setOk(null);
+    setBusy('save'); setError(null); setFieldErrors([]); setOk(null); setLiveUrl(null);
     try {
       const res: any = await arionApi.saveSitePageSections(activeSiteId, pageId, {
         sections: toSavePayload(sections),
         status,
+        proposalIds: proposalIdsOf(sections),
       });
       const written = res?.data?.sectionsWritten ?? sections.length;
+      const nowLive = (res?.data?.status || status) === 'publish';
       setOk(
-        (status === 'publish' ? 'Published. ' : 'Saved. ')
+        (status === 'publish' ? 'Published. ' : status === 'draft' ? 'Saved as a draft. ' : 'Saved. ')
         + `${written} ${written === 1 ? 'section is' : 'sections are'} on your website now.`
         + (res?.data?.cachePurged === false ? ' Your website’s cache did not clear — give it a minute.' : ''),
       );
+      // The live address, right where they published it — the single most
+      // asked question after a publish is "where is it?".
+      if (nowLive && res?.data?.permalink) setLiveUrl(res.data.permalink);
+      setConfirmPublish(false);
       await load();
     } catch (e: any) {
       const rows = e?.body?.errors;
@@ -403,7 +461,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
 
   const undo = async () => {
     if (!activeSiteId) return;
-    setBusy('undo'); setError(null); setOk(null);
+    setBusy('undo'); setError(null); setOk(null); setLiveUrl(null);
     try {
       const res: any = await arionApi.undoSitePage(activeSiteId, pageId);
       setOk(res?.data?.restoredFrom
@@ -417,14 +475,14 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
     }
   };
 
-  const addSection = async (kind: string) => {
+  const addSection = async (kind: string, blueprintId?: string) => {
     if (!activeSiteId) return;
-    setAddingKind(kind); setError(null);
+    setAddingKind(blueprintId || kind); setError(null);
     try {
       // The server builds the section, filled from the business's own details,
       // and writes nothing. The editor never invents Elementor JSON, and the
       // new section only reaches the website on the next Save.
-      const built: any = await arionApi.buildSiteSection(activeSiteId, kind);
+      const built: any = await arionApi.buildSiteSection(activeSiteId, kind, blueprintId);
       const node = built?.data?.section;
       if (!node) throw new Error('We could not build that section.');
       setSections((cur) => appendSection(cur, node));
@@ -434,6 +492,90 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
     } finally {
       setAddingKind(null);
     }
+  };
+
+  /* ── ARGUS, one section ──────────────────────────────────────────────── */
+
+  const askSection = async (instruction: string) => {
+    if (!activeSiteId || !openSection) return;
+    setBusy('ai-section'); setSectionAiError(null);
+    try {
+      const res: any = await arionApi.aiEditSection(activeSiteId, pageId, {
+        handle: openSection.handle || 'section',
+        index: openSection.index,
+        instruction,
+        section: { fields: openSection.fields, node: openSection.node },
+      });
+      setSectionProposal(res?.data || null);
+    } catch (e: any) {
+      setSectionAiError(messageFrom(e, 'ARGUS AI could not answer just now. Nothing was changed.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approveSection = () => {
+    if (!openSection || !sectionProposal) return;
+    setSections((cur) => applyProposal(cur, openSection.uid, sectionProposal.after, sectionProposal.proposal_id));
+    setSectionProposal(null);
+    setOk('The new wording is in the editor. Save when you are happy with it.');
+  };
+
+  const discardSection = async () => {
+    const id = sectionProposal?.proposal_id;
+    setSectionProposal(null);
+    setSectionAiError(null);
+    if (!activeSiteId || !id) return;
+    // Recording the "no" is best effort: the suggestion is already off the
+    // screen, and a failed audit write must not look like a failed discard.
+    try { await arionApi.discardSiteProposal(activeSiteId, id); } catch { /* recorded next time */ }
+  };
+
+  /* ── ARGUS, the whole page ───────────────────────────────────────────── */
+
+  const askPage = async (instruction: string) => {
+    if (!activeSiteId) return;
+    setBusy('ai-page'); setPageAiError(null);
+    try {
+      const res: any = await arionApi.aiEditPage(activeSiteId, pageId, {
+        instruction,
+        sections: toSavePayload(sections),
+      });
+      const proposal: PageProposal | null = res?.data || null;
+      setPageProposal(proposal);
+      // Suggested NEW sections go into the list straight away, marked, so the
+      // client can see WHERE they would land. They are skipped by Save until
+      // approved (sectionListState.toSavePayload).
+      if (proposal?.additions?.length) {
+        setSections((cur) => proposal.additions.reduce(
+          (acc, add) => insertProposedSection(acc, add.section, add.afterIndex, proposal.proposal_id),
+          cur,
+        ));
+      }
+    } catch (e: any) {
+      setPageAiError(messageFrom(e, 'ARGUS AI could not answer just now. Nothing was changed.'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const approvePage = () => {
+    if (!pageProposal) return;
+    setSections((cur) => acceptProposedSections(
+      applyPageProposal(cur, pageProposal.edits, pageProposal.proposal_id),
+    ));
+    setPageProposal(null);
+    setPageAiOpen(false);
+    setOk('The changes are in the editor. Save when you are happy with them.');
+  };
+
+  const discardPage = async () => {
+    const id = pageProposal?.proposal_id;
+    setSections((cur) => dropProposedSections(cur));
+    setPageProposal(null);
+    setPageAiError(null);
+    if (!activeSiteId || !id) return;
+    try { await arionApi.discardSiteProposal(activeSiteId, id); } catch { /* recorded next time */ }
   };
 
   if (loading) return <Loading message="Opening the page…" />;
@@ -450,6 +592,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   }
 
   const isDraft = detail?.status === 'draft';
+  const isLive = detail?.status === 'publish';
 
   return (
     <div>
@@ -461,7 +604,19 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           </ul>
         </Banner>
       )}
-      {ok && <Banner tone="good" onClose={() => setOk(null)}>{ok}</Banner>}
+      {ok && (
+        <Banner tone="good" onClose={() => { setOk(null); setLiveUrl(null); }}>
+          {ok}
+          {liveUrl && (
+            <>
+              {' '}
+              <a href={liveUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'inherit', fontWeight: 700 }}>
+                {liveUrl}
+              </a>
+            </>
+          )}
+        </Banner>
+      )}
 
       <Card
         title={detail?.title || 'Page'}
@@ -477,11 +632,16 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           {detail?.permalink && (
             <a href={detail.permalink} target="_blank" rel="noopener noreferrer"
                style={{ ...smallButton, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>
-              Open on the website
+              {isDraft ? 'Preview on the website' : 'Open on the website'}
             </a>
           )}
           {dirty && (
             <span style={{ fontSize: 12, color: '#92400E', fontWeight: 600 }}>Unsaved changes</span>
+          )}
+          {proposedCount > 0 && (
+            <span style={{ fontSize: 12, color: '#1E40AF', fontWeight: 600 }}>
+              {proposedCount} suggested {proposedCount === 1 ? 'section' : 'sections'} waiting for you
+            </span>
           )}
         </div>
 
@@ -502,14 +662,15 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
               setDragFrom(null);
             }}
             style={{
-              border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 10,
-              background: s.editable ? 'var(--surface, #fff)' : 'var(--surface-2, #F8FAFC)',
+              border: s.isProposed ? '1px dashed #60A5FA' : '1px solid var(--border)',
+              borderRadius: 10, padding: 12, marginBottom: 10,
+              background: s.isProposed ? '#EFF6FF' : s.editable ? 'var(--surface, #fff)' : 'var(--surface-2, #F8FAFC)',
               opacity: dragFrom === i ? 0.5 : 1,
               display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap',
             }}
           >
             <span
-              draggable
+              draggable={!s.isProposed}
               onDragStart={() => setDragFrom(i)}
               onDragEnd={() => setDragFrom(null)}
               aria-hidden="true"
@@ -522,7 +683,9 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
             <div style={{ flex: '1 1 200px', minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>
                 {s.label}
-                {s.isNew && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · new</span>}
+                {s.isProposed
+                  ? <span style={{ fontWeight: 400, color: '#1E40AF' }}> · proposed</span>
+                  : s.isNew && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}> · new</span>}
               </div>
               <div style={{
                 fontSize: 12, color: 'var(--text-muted)', marginTop: 2,
@@ -530,7 +693,12 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
               }}>
                 {sectionSummary(s)}
               </div>
-              {!s.editable && (
+              {s.isProposed && (
+                <div style={{ fontSize: 11, color: '#1E40AF', marginTop: 4 }}>
+                  Suggested by ARGUS AI. It is not on your website — decide below.
+                </div>
+              )}
+              {!s.editable && !s.isProposed && (
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
                   {s.reason === 'custom'
                     ? 'Built on the website itself. It stays exactly as it is when you save.'
@@ -541,25 +709,25 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
 
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               <button
-                type="button" aria-label={`Move ${s.label} up`} disabled={i === 0}
+                type="button" aria-label={`Move ${s.label} up`} disabled={i === 0 || s.isProposed}
                 style={{ ...smallButton, minWidth: 44 }}
                 onClick={() => setSections((cur) => moveSection(cur, i, i - 1))}
               >↑</button>
               <button
-                type="button" aria-label={`Move ${s.label} down`} disabled={i === sections.length - 1}
+                type="button" aria-label={`Move ${s.label} down`} disabled={i === sections.length - 1 || s.isProposed}
                 style={{ ...smallButton, minWidth: 44 }}
                 onClick={() => setSections((cur) => moveSection(cur, i, i + 1))}
               >↓</button>
               <button
-                type="button" className={s.editable ? 'abtn abtn-sky' : undefined}
-                style={s.editable ? { minHeight: 40 } : smallButton}
-                disabled={!s.editable}
-                onClick={() => setOpenUid(s.uid)}
+                type="button" className={s.editable && !s.isProposed ? 'abtn abtn-sky' : undefined}
+                style={s.editable && !s.isProposed ? { minHeight: 40 } : smallButton}
+                disabled={!s.editable || s.isProposed}
+                onClick={() => { setSectionProposal(null); setSectionAiError(null); setOpenUid(s.uid); }}
               >
                 Edit
               </button>
               <button
-                type="button" style={smallButton}
+                type="button" style={smallButton} disabled={s.isProposed}
                 onClick={() => {
                   if (window.confirm(`Remove the ${s.label.toLowerCase()} section? You can put it back with Undo after you save.`)) {
                     setSections((cur) => removeSection(cur, s.uid));
@@ -572,9 +740,48 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           </div>
         ))}
 
-        <button type="button" style={{ ...smallButton, marginTop: 4 }} onClick={() => setPickerOpen(true)}>
-          Add a section
-        </button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 4 }}>
+          <button type="button" style={smallButton} onClick={() => setPickerOpen(true)}>
+            Add a section
+          </button>
+          <button type="button" style={smallButton} onClick={() => setPageAiOpen((v) => !v)}>
+            {pageAiOpen ? 'Hide ARGUS' : 'Ask ARGUS about this page'}
+          </button>
+        </div>
+
+        {pageAiOpen && (
+          <AskArgusBox
+            strings={{
+              title: 'Ask ARGUS to change this page',
+              placeholder: 'e.g. “Make the tone warmer” or “Add a section about winter services.”',
+              lockedReason: aiLocked,
+            }}
+            credits={pricing?.actions?.page?.credits ?? null}
+            busy={busy === 'ai-page'}
+            error={pageAiError}
+            summary={pageProposal?.summary || null}
+            diff={pageProposal ? pageProposal.edits.flatMap((e) => e.diff) as SectionDiffRow[] : null}
+            onAsk={askPage}
+            onApprove={approvePage}
+            onDiscard={discardPage}
+            extra={pageProposal && pageProposal.additions.length > 0 ? (
+              <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>
+                  NEW SECTIONS
+                </div>
+                {pageProposal.additions.map((a, i) => (
+                  <div key={i} style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{a.label}</div>
+                    <DiffRows rows={a.diff} />
+                  </div>
+                ))}
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  They are shown in the list above marked “proposed”, and are not on your website.
+                </div>
+              </div>
+            ) : undefined}
+          />
+        )}
       </Card>
 
       {/* Sticky action bar — reachable on a 375px screen without scrolling.
@@ -591,13 +798,26 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         <button
           type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
           disabled={busy !== null || (!dirty && !isDraft)}
-          onClick={() => save(isDraft ? 'draft' : undefined)}
+          onClick={() => (isDraft ? save('draft') : setConfirmPublish(true))}
         >
           {busy === 'save' ? 'Saving…' : isDraft ? 'Save draft' : 'Save and publish'}
         </button>
         {isDraft && (
-          <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy !== null} onClick={() => save('publish')}>
+          <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy !== null} onClick={() => setConfirmPublish(true)}>
             Publish
+          </button>
+        )}
+        {isLive && (
+          <button
+            type="button" style={{ ...smallButton, minHeight: 44 }} disabled={busy !== null}
+            title="Takes the page off your website. It keeps everything on it and you can publish it again."
+            onClick={() => {
+              if (window.confirm('Take this page off your website? It becomes a draft — nothing on it is lost, and you can publish it again whenever you like.')) {
+                save('draft');
+              }
+            }}
+          >
+            Unpublish
           </button>
         )}
         <button
@@ -612,6 +832,52 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           Preview never changes your website.
         </span>
       </div>
+
+      {confirmPublish && (
+        <div
+          role="dialog" aria-modal="true" aria-label="Publish this page"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1100, background: 'rgba(15,23,42,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) setConfirmPublish(false); }}
+        >
+          <div style={{
+            background: 'var(--surface, #fff)', borderRadius: 12, padding: 18,
+            width: '100%', maxWidth: 420,
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>
+              Publish “{detail?.title || 'this page'}”?
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 6 }}>
+              {isDraft
+                ? 'It goes onto your website straight away, where anybody can see it.'
+                : 'Your changes go onto the live page straight away, where anybody can see them.'}
+            </div>
+            {proposedCount > 0 && (
+              <div style={{ fontSize: 13, color: '#1E40AF', marginBottom: 6 }}>
+                {proposedCount} suggested {proposedCount === 1 ? 'section is' : 'sections are'} still
+                waiting for you and will NOT be published.
+              </div>
+            )}
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+              You can put it back exactly as it was with Undo last change.
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+              <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setConfirmPublish(false)}>
+                Not yet
+              </button>
+              <button
+                type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
+                disabled={busy !== null}
+                onClick={() => save('publish')}
+              >
+                {busy === 'save' ? 'Publishing…' : 'Yes, publish it'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {previewHtml !== null && (
         <div
@@ -656,7 +922,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         <SectionEditSheet
           section={openSection}
           catalog={catalogFor(openSection.kind)}
-          onClose={() => setOpenUid(null)}
+          onClose={() => { setOpenUid(null); setSectionProposal(null); setSectionAiError(null); }}
           onField={(key, v) => setSections((cur) => setSectionField(cur, openSection.uid, key, v))}
           onListItem={(listKey, idx, key, v) => setSections((cur) => setListItemField(cur, openSection.uid, listKey, idx, key, v))}
           onListAdd={(listKey, blank) => setSections((cur) => addListItem(cur, openSection.uid, listKey, blank))}
@@ -665,6 +931,17 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           onParagraphAdd={(key) => setSections((cur) => addParagraph(cur, openSection.uid, key))}
           onParagraphRemove={(key, idx) => setSections((cur) => removeParagraph(cur, openSection.uid, key, idx))}
           onUpload={upload}
+          ask={{
+            lockedReason: aiLocked,
+            credits: pricing?.actions?.section?.credits ?? null,
+            busy: busy === 'ai-section',
+            error: sectionAiError,
+            summary: sectionProposal?.summary || null,
+            diff: sectionProposal ? sectionProposal.diff : null,
+            onAsk: askSection,
+            onApprove: approveSection,
+            onDiscard: discardSection,
+          }}
         />
       )}
     </div>

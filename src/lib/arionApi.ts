@@ -2516,6 +2516,14 @@ export interface SectionFieldSpec {
   item?: SectionFieldSpec[];
 }
 
+/** One curated-library layout of a section kind, from arion.section_library. */
+export interface SectionVariant {
+  blueprintId: string;
+  label: string;
+  available: boolean;
+  unavailableReason: string | null;
+}
+
 export interface SectionCatalogEntry {
   kind: string;
   label: string;
@@ -2523,6 +2531,85 @@ export interface SectionCatalogEntry {
   available: boolean;
   unavailableReason: string | null;
   fields: SectionFieldSpec[];
+  /**
+   * Curated layouts of this section kind that the editor can look after
+   * afterwards. Empty when the library is unreachable, which is a smaller
+   * menu rather than a broken one.
+   */
+  variants: SectionVariant[];
+}
+
+/* ── "Ask ARGUS to change it" (Phase 1B) ──────────────────────────────────
+   Every one of these PROPOSES. Nothing here writes to the website: an
+   approved proposal goes out through saveSitePageSections, the same call a
+   typed edit makes, carrying its proposalIds so the audit row is stamped
+   only once the write has landed. Externally this is always
+   "Powered by ARGUS AI" — never a vendor
+   (memory: reference_intelligence_layer_terminology). */
+
+/** One field the proposal would change, in the words the edit sheet uses. */
+export interface SectionDiffRow {
+  field: string;
+  label: string;
+  kind: 'text' | 'list';
+  before: any;
+  after: any;
+  beforeText: string;
+  afterText: string;
+}
+
+export interface SectionProposal {
+  proposal_id: string;
+  scope: 'section';
+  kind: string;
+  before: Record<string, any>;
+  after: Record<string, any>;
+  diff: SectionDiffRow[];
+  diff_plain: string;
+  summary: string;
+  /** ARGUS credits this proposal cost. Charged when it was made, not when approved. */
+  cost_units: number | null;
+  recorded: boolean;
+  poweredBy: string;
+}
+
+export interface PageProposalEdit {
+  index: number;
+  kind: string;
+  label: string;
+  before: Record<string, any>;
+  after: Record<string, any>;
+  diff: SectionDiffRow[];
+}
+
+export interface PageProposalAddition {
+  afterIndex: number;
+  label: string;
+  diff: SectionDiffRow[];
+  /** A real, editable section the server built — the Portal never invents Elementor JSON. */
+  section: ArionPageSection;
+}
+
+export interface PageProposal {
+  proposal_id: string;
+  scope: 'page';
+  edits: PageProposalEdit[];
+  additions: PageProposalAddition[];
+  skipped: Array<{ field: string; message: string }>;
+  diff_plain: string;
+  summary: string;
+  cost_units: number | null;
+  recorded: boolean;
+  poweredBy: string;
+}
+
+export interface AiPricing {
+  actions: {
+    section: { actionType: string; credits: number | null; available: boolean };
+    page: { actionType: string; credits: number | null; available: boolean };
+  };
+  ai: { available: boolean; reason: string | null };
+  poweredBy: string;
 }
 
 export async function listSitePages(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
@@ -2547,17 +2634,20 @@ export async function saveSitePageSections(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
   sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>;
   title?: string; status?: string;
+  /** ARGUS suggestions this save is carrying. Stamped applied only if it lands. */
+  proposalIds?: string[];
 }) {
   return requestJson<{
     data: {
       pageId: number; status: string | null; permalink: string | null; previewUrl: string | null;
       sectionsWritten: number; canUndo: boolean; undoCount: number; cachePurged: boolean;
+      proposalsApplied?: number;
     };
   }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'PUT',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections`,
-    body: { sections: p.sections, title: p.title, status: p.status },
+    body: { sections: p.sections, title: p.title, status: p.status, proposalIds: p.proposalIds },
     timeoutMs: 90_000,
   });
 }
@@ -2604,22 +2694,33 @@ export async function createSitePage(p: {
 }
 
 export async function buildSiteSection(p: {
-  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; kind: string;
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  kind: string;
+  /** A curated layout of that kind. Omitted means the plain one, filled from the business's details. */
+  blueprintId?: string;
 }) {
-  return requestJson<{ data: { section: ArionPageSection } }>({
+  return requestJson<{ data: { section: ArionPageSection; blueprintId: string | null } }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/sections`,
-    body: { kind: p.kind },
+    body: { kind: p.kind, blueprintId: p.blueprintId },
+    timeoutMs: 45_000,
   });
 }
 
 export async function getSectionLibrary(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
 }) {
-  return requestJson<{ data: { sections: SectionCatalogEntry[]; elementorProAvailable: boolean } }>({
+  return requestJson<{
+    data: {
+      sections: SectionCatalogEntry[];
+      elementorProAvailable: boolean;
+      ai: { available: boolean; reason: string | null };
+    };
+  }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/section-library`,
+    timeoutMs: 45_000,
   });
 }
 
@@ -2636,5 +2737,69 @@ export async function uploadSiteMedia(p: {
       dataBase64: p.dataBase64, url: p.url, alt: p.alt,
     },
     timeoutMs: 120_000,
+  });
+}
+
+/**
+ * Ask ARGUS AI to change ONE section. Returns a proposal — nothing is written.
+ * The section travels in the body so the suggestion is made against what the
+ * client is looking at, unsaved changes included.
+ */
+export async function aiEditSection(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  handle: string; index: number;
+  instruction: string;
+  section: Pick<ArionPageSection, 'fields' | 'node'>;
+}) {
+  return requestJson<{ data: SectionProposal }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}`
+        + `/sections/${encodeURIComponent(p.handle || 'section')}/ai-edit`,
+    body: {
+      instruction: p.instruction,
+      section: { index: p.index, fields: p.section.fields, node: p.section.node },
+    },
+    timeoutMs: 90_000,
+  });
+}
+
+/** Ask ARGUS AI to change the whole page. May also propose new sections. */
+export async function aiEditPage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  instruction: string;
+  sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>;
+}) {
+  return requestJson<{ data: PageProposal }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/ai-edit`,
+    body: { instruction: p.instruction, sections: p.sections },
+    timeoutMs: 120_000,
+  });
+}
+
+/** The client said no. No refund — the suggestion was made and paid for. */
+export async function discardSiteProposal(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; proposalId: string;
+}) {
+  return requestJson<{ data: { proposalId: string; status: string } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/proposals/${encodeURIComponent(p.proposalId)}/discard`,
+  });
+}
+
+/**
+ * What an AI action costs, read from argus.action_pricing. NEVER hardcode
+ * this in the UI: the old AI Builder page does exactly that and the server
+ * charges something else (memory: feedback_no_fabricated_catalog).
+ */
+export async function getSiteAiPricing(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: AiPricing }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/ai-pricing`,
   });
 }
