@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
-import { sourceLabel, channelLabel } from "../../lib/leadSource";
+import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
 
 export interface LeadContactRow {
@@ -71,6 +71,13 @@ export interface LeadDetail {
   status: string | null;
   source: string | null;
   sources_found: string | null;
+  // G-1 (migration 146): what the client named the source and where the person
+  // came from, written by the Intake framework. `domain` is now nullable — a
+  // person who filled in a lead form has no website.
+  source_label?: string | null;
+  channel?: string | null;
+  kind?: "business" | "person" | null;
+  intake_message?: string | null;
   verification_status: string | null;
   created_at: string;
   search_job_id: number | null;
@@ -240,10 +247,10 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
       title={loading && !lead ? "Loading…" : name}
       subtitle={lead ? (
         <>
-          {lead.domain}
-          {" · "}
-          {sourceLabel(lead.source || lead.sources_found)}
-          {channelLabel(lead.source || lead.sources_found) ? ` · via ${channelLabel(lead.source || lead.sources_found)}` : ""}
+          {/* A person lead has no domain (G-1) — show what we DO know rather
+              than a stray separator. */}
+          {lead.domain ? `${lead.domain} · ` : lead.email ? `${lead.email} · ` : ""}
+          {rowSourceAndChannel(lead)}
         </>
       ) : undefined}
       headerActions={scoreBadge}
@@ -333,15 +340,22 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <Field label="Lifecycle">{titleCase(lead.lifecycle_stage || "lead")}</Field>
-                <Field label="Source">
-                  {sourceLabel(lead.source || lead.sources_found)}
-                  {channelLabel(lead.source || lead.sources_found) && (
-                    <span className="text-slate-500"> · via {channelLabel(lead.source || lead.sources_found)}</span>
-                  )}
-                </Field>
+                <Field label="Source">{rowSourceAndChannel(lead)}</Field>
                 <Field label="Found">{new Date(lead.created_at).toLocaleDateString()}</Field>
                 <Field label="Run">{lead.search_job_id ? `#${lead.search_job_id}` : "—"}</Field>
               </div>
+
+              {/* What the person actually said. Only an Intake / Inbound lead
+                  has this (a B2B search lead was never asked a question), so
+                  the block is absent rather than empty for everything else. */}
+              {lead.intake_message && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+                    What they told you
+                  </div>
+                  <div className="whitespace-pre-wrap text-xs text-slate-800">{lead.intake_message}</div>
+                </div>
+              )}
 
               {lead.account && (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">

@@ -1,0 +1,536 @@
+// SparkLeadSourcesPage — SPARK → Leads → Lead sources.
+//
+// LOCKED (SCOPE_GROWTH_GAPS_2026-09-04.md §3A "UI", §4 step 8; LEADGEN_POST_
+// CAPTURE_SCOPE §9 I1 + "Intake by tier"):
+//   • A card per platform, in the locked order, with a status chip.
+//   • Google Ads lead form is the only one that CONNECTS today (G-2: it needs
+//     nobody's approval). Everything else shows why it is not ready and has no
+//     button — the card's `available` comes from the API, which derives it from
+//     whether a provider module exists, so a card can never promise something
+//     that is not built.
+//   • Connect flow: name it → create → the key is shown ONCE with a copy
+//     button → the exact paste instructions for Google Ads.
+//   • Health: last event, last error. Event drawer: the last 50 deliveries with
+//     what happened to each.
+//   • Disconnect and Rotate key.
+//   • The tier line: "Essentials connects 3 lead sources."
+//
+// "Business", never "tenant" (feedback_no_tenant_in_ui).
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Plug, Copy, Check, RefreshCw, Trash2, Clock, AlertTriangle,
+  CheckCircle2, Lock, Send, X, Activity,
+} from "lucide-react";
+import { useSparkApi } from "../../hooks/useSparkApi";
+import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { IadmModal, IadmButton } from "../../components/IadmModal";
+import { friendlyApiError } from "../../lib/leadgenBilling";
+
+// ── shapes the API serves ───────────────────────────────────────────────────
+interface CatalogRow {
+  provider: string;
+  label: string;
+  channel: string;
+  kind: "webhook" | "poll" | "meta_webhook";
+  blurb: string;
+  connect: string;
+  speed: string;
+  coming?: string;
+  available: boolean;
+}
+
+interface Connection {
+  id: number;
+  provider: string;
+  provider_label: string;
+  channel: string | null;
+  kind: string;
+  label: string;
+  status: "pending" | "active" | "error" | "disconnected";
+  key_prefix: string | null;
+  key_issued_at: string | null;
+  last_event_at: string | null;
+  last_error: string | null;
+  last_error_at: string | null;
+  event_count: number;
+  lead_count: number;
+  created_at: string;
+}
+
+interface InstructionCard {
+  title: string;
+  fields: { label: string; value: string; copy?: boolean; once?: boolean }[];
+  steps: string[];
+  note: string;
+}
+
+interface CreateResponse {
+  data: Connection;
+  key: string | null;
+  webhook_url: string | null;
+  instructions: InstructionCard | null;
+}
+
+interface EventRow {
+  id: number;
+  received_at: string;
+  processed_at: string | null;
+  result: string | null;
+  external_ref: string | null;
+  lead_id: number | null;
+  is_test: boolean;
+  error: string | null;
+  duration_ms: number | null;
+}
+
+const RESULT_LABEL: Record<string, string> = {
+  lead_created: "New lead",
+  attached_to_contact: "Existing contact",
+  duplicate: "Already had it",
+  rejected: "Rejected",
+  error: "Error",
+  received: "Received",
+};
+
+const RESULT_CLASS: Record<string, string> = {
+  lead_created: "bg-emerald-100 text-emerald-800",
+  attached_to_contact: "bg-sky-100 text-sky-800",
+  duplicate: "bg-slate-100 text-slate-600",
+  rejected: "bg-rose-100 text-rose-800",
+  error: "bg-rose-100 text-rose-800",
+  received: "bg-slate-100 text-slate-600",
+};
+
+const STATUS_CHIP: Record<Connection["status"], { label: string; cls: string }> = {
+  pending: { label: "Waiting for the first lead", cls: "bg-amber-100 text-amber-800 ring-amber-200" },
+  active: { label: "Connected", cls: "bg-emerald-100 text-emerald-800 ring-emerald-200" },
+  error: { label: "Needs attention", cls: "bg-rose-100 text-rose-800 ring-rose-200" },
+  disconnected: { label: "Disconnected", cls: "bg-slate-100 text-slate-600 ring-slate-200" },
+};
+
+function when(iso: string | null): string {
+  if (!iso) return "never";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(ms)) return "never";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs} hr ago`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function CopyField({ label, value, once }: { label: string; value: string; once?: boolean }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
+        {label}
+        {once && <span className="ml-2 normal-case tracking-normal text-amber-700">shown once</span>}
+      </div>
+      <div className="flex items-stretch gap-2">
+        <code className="flex-1 min-w-0 overflow-x-auto whitespace-nowrap rounded border border-slate-300 bg-slate-50 px-2 py-1.5 text-xs text-slate-800">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(value).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1800);
+            }).catch(() => { /* clipboard blocked — the value is selectable */ });
+          }}
+          className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+          {copied ? "Copied" : "Copy"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function SparkLeadSourcesPage() {
+  const { get, post, del, ready } = useSparkApi();
+
+  const [catalog, setCatalog] = useState<CatalogRow[]>([]);
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [sourceLimit, setSourceLimit] = useState<number | null>(null);
+  const [limitReason, setLimitReason] = useState<string>("unresolved");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+
+  // connect flow
+  const [connectFor, setConnectFor] = useState<CatalogRow | null>(null);
+  const [newLabel, setNewLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [issued, setIssued] = useState<CreateResponse | null>(null);
+
+  // event drawer
+  const [eventsFor, setEventsFor] = useState<Connection | null>(null);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // Portal data-fetching convention: both lists in one pass.
+      const [cat, conns] = await Promise.all([
+        get<{ data: CatalogRow[]; meta: { source_limit: number | null; source_limit_reason: string } }>("/api/v1/intake/providers"),
+        get<{ data: Connection[] }>("/api/v1/intake/connections"),
+      ]);
+      setCatalog(cat.data || []);
+      setSourceLimit(cat.meta?.source_limit ?? null);
+      setLimitReason(cat.meta?.source_limit_reason ?? "unresolved");
+      setConnections(conns.data || []);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [get, ready]);
+  useEffect(() => { load(); }, [load]);
+
+  const byProvider = useMemo(() => {
+    const m = new Map<string, Connection[]>();
+    for (const c of connections) {
+      if (c.status === "disconnected") continue;
+      const list = m.get(c.provider) || [];
+      list.push(c);
+      m.set(c.provider, list);
+    }
+    return m;
+  }, [connections]);
+
+  const activeCount = useMemo(
+    () => connections.filter((c) => c.status !== "disconnected").length,
+    [connections]
+  );
+  const atLimit = sourceLimit != null && activeCount >= sourceLimit;
+
+  async function createConnection() {
+    if (!connectFor) return;
+    setBusy(true);
+    try {
+      const r = await post<CreateResponse>("/api/v1/intake/connections", {
+        provider: connectFor.provider,
+        label: newLabel.trim() || connectFor.label,
+      });
+      setIssued(r);
+      setConnectFor(null);
+      setNewLabel("");
+      await load();
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function rotateKey(c: Connection) {
+    if (!confirm(`Issue a new key for “${c.label}”?\n\nThe current key stops working immediately — you will need to paste the new one into the platform.`)) return;
+    setBusy(true);
+    try {
+      const r = await post<CreateResponse>(`/api/v1/intake/connections/${c.id}/rotate-key`, {});
+      setIssued({ data: c, key: r.key, webhook_url: r.webhook_url, instructions: r.instructions });
+      await load();
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendTest(c: Connection) {
+    if (!confirm(`Send a sample lead through “${c.label}”?\n\nA test lead will appear in your Lead Inbox, tagged “test”. A new key is issued, so you will need to paste it into the platform afterwards.`)) return;
+    setBusy(true);
+    try {
+      const r = await post<CreateResponse & { result?: string; key?: string }>(`/api/v1/intake/connections/${c.id}/test`, {});
+      setNotice(`Sample lead sent — the Lead Inbox shows it as “${c.label}”. Paste the new key below into the platform.`);
+      setIssued({ data: c, key: r.key ?? null, webhook_url: r.webhook_url ?? null, instructions: r.instructions ?? null });
+      await load();
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(c: Connection) {
+    if (!confirm(`Disconnect “${c.label}”?\n\nNew leads from this platform will stop arriving. The leads you already have are untouched.`)) return;
+    setBusy(true);
+    try {
+      await del(`/api/v1/intake/connections/${c.id}`);
+      await load();
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function openEvents(c: Connection) {
+    setEventsFor(c);
+    setEvents([]);
+    setEventsLoading(true);
+    try {
+      const r = await get<{ data: EventRow[] }>(`/api/v1/intake/connections/${c.id}/events?limit=50`);
+      setEvents(r.data || []);
+    } catch {
+      setEvents([]);
+    } finally {
+      setEventsLoading(false);
+    }
+  }
+
+  const tierLine = sourceLimit == null
+    ? (limitReason === "no_package"
+        ? "Connecting a lead source is part of the SPARK Leads add-on."
+        : "Your plan connects as many lead sources as you like.")
+    : `Your plan connects ${sourceLimit} lead sources. ${activeCount} connected.`;
+
+  return (
+    <SparkPageShell
+      title="Lead sources"
+      subtitle="Connect the places your leads already come from. Every one of them lands in your Lead Inbox."
+      help="A lead source is a platform that already collects enquiries for you — a Google Ads lead form, and soon Local Services Ads, Facebook and Instagram. Connect one and its leads arrive here automatically, scored, next to the ones we find for you."
+      error={error}
+      loading={loading}
+    >
+      <div className="space-y-4">
+        <div className="rounded-lg bg-slate-50 ring-1 ring-slate-200 px-4 py-2.5 text-xs text-slate-700">
+          {tierLine}
+        </div>
+
+        {notice && (
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2.5 text-xs text-emerald-900">
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">{notice}</div>
+            <button onClick={() => setNotice(null)} className="text-emerald-700 hover:text-emerald-900"><X className="h-3.5 w-3.5" /></button>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {catalog.map((row) => {
+            const mine = byProvider.get(row.provider) || [];
+            return (
+              <div key={row.provider} className="rounded-xl bg-white ring-1 ring-slate-200 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <Plug className="h-4 w-4 text-slate-400 flex-shrink-0" />
+                      <h3 className="font-semibold text-slate-900 truncate">{row.label}</h3>
+                      {!row.available && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase text-slate-500">
+                          <Lock className="h-2.5 w-2.5" /> Coming
+                        </span>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-slate-600">{row.blurb}</p>
+                    <p className="mt-1 text-[10px] text-slate-400">Leads arrive {row.speed}.</p>
+                  </div>
+                  {row.available && (
+                    <IadmButton
+                      variant="primary"
+                      product="spark"
+                      disabled={busy || (atLimit && mine.length === 0)}
+                      onClick={() => { setConnectFor(row); setNewLabel(row.label); }}
+                    >
+                      Connect
+                    </IadmButton>
+                  )}
+                </div>
+
+                {!row.available && row.coming && (
+                  <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">{row.coming}</div>
+                )}
+
+                {atLimit && row.available && mine.length === 0 && (
+                  <div className="mt-3 rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[11px] text-amber-900">
+                    You have used all {sourceLimit} of your lead sources. Disconnect one, or move up a plan for as many as you like.
+                  </div>
+                )}
+
+                {mine.map((c) => {
+                  const chip = STATUS_CHIP[c.status];
+                  return (
+                    <div key={c.id} className="mt-3 rounded-lg border border-slate-200 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-slate-900 truncate">{c.label}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {c.key_prefix ? `Key ${c.key_prefix}…` : "No key"} · {c.lead_count} lead{c.lead_count === 1 ? "" : "s"} · last delivery {when(c.last_event_at)}
+                          </div>
+                        </div>
+                        <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${chip.cls}`}>
+                          {chip.label}
+                        </span>
+                      </div>
+
+                      {c.last_error && (
+                        <div className="mt-2 flex items-start gap-1.5 rounded bg-rose-50 px-2 py-1.5 text-[11px] text-rose-900">
+                          <AlertTriangle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                          <span>{c.last_error} <span className="text-rose-600">({when(c.last_error_at)})</span></span>
+                        </div>
+                      )}
+
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <button onClick={() => openEvents(c)} className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50">
+                          <Activity className="h-3 w-3" /> Recent activity
+                        </button>
+                        <button onClick={() => sendTest(c)} disabled={busy} className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                          <Send className="h-3 w-3" /> Send a sample lead
+                        </button>
+                        <button onClick={() => rotateKey(c)} disabled={busy} className="inline-flex items-center gap-1 rounded border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+                          <RefreshCw className="h-3 w-3" /> Rotate key
+                        </button>
+                        <button onClick={() => disconnect(c)} disabled={busy} className="inline-flex items-center gap-1 rounded border border-rose-200 bg-white px-2 py-1 text-[11px] font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50">
+                          <Trash2 className="h-3 w-3" /> Disconnect
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── name it ─────────────────────────────────────────────────────── */}
+      <IadmModal
+        open={!!connectFor}
+        onClose={() => setConnectFor(null)}
+        product="spark"
+        eyebrow="SPARK · LEAD SOURCES"
+        title={connectFor ? `Connect ${connectFor.label}` : ""}
+        subtitle="Give it a name you will recognise in your inbox."
+        size="info"
+        footer={
+          <div className="flex justify-end gap-2">
+            <IadmButton variant="ghost" onClick={() => setConnectFor(null)}>Cancel</IadmButton>
+            <IadmButton variant="primary" product="spark" disabled={busy} onClick={createConnection}>
+              {busy ? "Connecting…" : "Create and show me the key"}
+            </IadmButton>
+          </div>
+        }
+      >
+        <div className="p-4 space-y-3">
+          <label className="block">
+            <span className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Name</span>
+            <input
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              maxLength={120}
+              placeholder="Spring tune-up lead form"
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <p className="text-xs text-slate-600">
+            This is what your leads will say they came from — every lead reads
+            “<strong>{newLabel.trim() || connectFor?.label}</strong> · via {connectFor?.channel}”.
+            One name per form works best.
+          </p>
+        </div>
+      </IadmModal>
+
+      {/* ── the key, shown once ─────────────────────────────────────────── */}
+      <IadmModal
+        open={!!issued}
+        onClose={() => setIssued(null)}
+        product="spark"
+        eyebrow="SPARK · LEAD SOURCES"
+        title={issued?.instructions?.title || "Your webhook details"}
+        subtitle="Copy both of these into the platform now — the key is not shown again."
+        size="lg"
+        footer={
+          <div className="flex justify-end">
+            <IadmButton variant="primary" product="spark" onClick={() => setIssued(null)}>I have copied them</IadmButton>
+          </div>
+        }
+      >
+        <div className="p-4 space-y-4">
+          {issued?.webhook_url && <CopyField label="Webhook URL" value={issued.webhook_url} />}
+          {issued?.key && <CopyField label="Key" value={issued.key} once />}
+
+          {issued?.instructions && (
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">Where these go</div>
+              <ol className="space-y-1.5 text-xs text-slate-700">
+                {issued.instructions.steps.map((step, n) => (
+                  <li key={n} className="flex gap-2">
+                    <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full bg-slate-200 text-[9px] font-bold text-slate-700">{n + 1}</span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
+          {issued?.instructions?.note && (
+            <div className="rounded-lg bg-amber-50 ring-1 ring-amber-200 px-3 py-2 text-[11px] text-amber-900">
+              {issued.instructions.note}
+            </div>
+          )}
+        </div>
+      </IadmModal>
+
+      {/* ── the event drawer ────────────────────────────────────────────── */}
+      <IadmModal
+        open={!!eventsFor}
+        onClose={() => setEventsFor(null)}
+        product="spark"
+        eyebrow="SPARK · LEAD SOURCES"
+        title={eventsFor ? `Recent activity — ${eventsFor.label}` : ""}
+        subtitle="The last 50 deliveries from this platform and what happened to each."
+        size="lg"
+      >
+        <div className="p-4">
+          {eventsLoading && <div className="text-sm text-slate-500">Loading…</div>}
+          {!eventsLoading && events.length === 0 && (
+            <div className="rounded-lg bg-slate-50 px-4 py-6 text-center text-xs text-slate-500">
+              <Clock className="mx-auto mb-2 h-5 w-5 text-slate-400" />
+              Nothing has arrived yet. Use “Send a sample lead”, or the platform’s own test button, to check the wiring.
+            </div>
+          )}
+          {!eventsLoading && events.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-left text-xs">
+                <thead className="text-[10px] uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="py-2 pr-3">Arrived</th>
+                    <th className="py-2 pr-3">Result</th>
+                    <th className="py-2 pr-3">Their reference</th>
+                    <th className="py-2 pr-3">Lead</th>
+                    <th className="py-2">Detail</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {events.map((e) => (
+                    <tr key={e.id}>
+                      <td className="py-2 pr-3 whitespace-nowrap text-slate-600">{when(e.received_at)}</td>
+                      <td className="py-2 pr-3">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${RESULT_CLASS[e.result || "received"] || "bg-slate-100 text-slate-600"}`}>
+                          {RESULT_LABEL[e.result || "received"] || e.result}
+                        </span>
+                        {e.is_test && <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-500">test</span>}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-500">{e.external_ref || "—"}</td>
+                      <td className="py-2 pr-3 text-slate-500">{e.lead_id ? `#${e.lead_id}` : "—"}</td>
+                      <td className="py-2 text-slate-500">{e.error || (e.duration_ms != null ? `${e.duration_ms} ms` : "—")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </IadmModal>
+    </SparkPageShell>
+  );
+}

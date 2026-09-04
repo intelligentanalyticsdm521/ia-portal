@@ -177,6 +177,7 @@ const SparkAutomationsPage = lazyNamed(() => import('./spark/SparkAutomationsPag
 // SuppressionPage / SparkTerritoriesPage files are retained on disk for
 // reference but no longer mounted.
 const SparkLeadInboxPage = lazyNamed(() => import('./spark/SparkLeadInboxPage'), 'SparkLeadInboxPage');
+const SparkLeadSourcesPage = lazyNamed(() => import('./spark/SparkLeadSourcesPage'), 'SparkLeadSourcesPage');
 const SparkSearchProfilesPage = lazyNamed(() => import('./spark/SparkSearchProfilesPage'), 'SparkSearchProfilesPage');
 const SparkIntelligencePage = lazyNamed(() => import('./spark/SparkIntelligencePage'), 'SparkIntelligencePage');
 const SparkContactScoringPage = lazyNamed(() => import('./spark/SparkContactScoringPage'), 'SparkContactScoringPage');
@@ -819,6 +820,8 @@ function ServiceRouterInner() {
       // and ARGUS intents — both render the same tabbed page (default tab = inbox).
       case 'spark_lead_inbox':
       case 'spark_leads': sparkPage = <SparkLeadInboxPage />; break;
+      // Intake connectors (G-2) — the Lead sources page beside the inbox.
+      case 'spark_lead_sources': sparkPage = <SparkLeadSourcesPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
       case 'spark_intelligence': sparkPage = <SparkIntelligencePage />; break;
       case 'spark_contact_scoring': sparkPage = <SparkContactScoringPage />; break;
