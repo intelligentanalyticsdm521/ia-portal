@@ -41,6 +41,10 @@ import { LeadChatPanel } from "./LeadChatPanel";
 // stays a modal (see the file header there).
 import { LeadCorrectionButtons } from "./LeadCorrectionButtons";
 import { LeadRuleChip } from "./LeadRuleChip";
+// B18 — one badge component, three mounts. A household bought from a licensed
+// direct-mail list may only be posted to; the badge says so where the empty
+// email field would otherwise look like a bug.
+import { MailOnlyBadge, isMailOnly } from "./MailOnlyBadge";
 
 export interface LeadContactRow {
   id: number;
@@ -88,6 +92,9 @@ export interface LeadDetail {
   source_label?: string | null;
   channel?: string | null;
   kind?: "business" | "person" | null;
+  // B18 (migration 164): "full" | "mail_only". A mail_only row is a household
+  // from a licensed direct-mail list and can never hold an email or a phone.
+  contact_policy?: string | null;
   intake_message?: string | null;
   verification_status: string | null;
   created_at: string;
@@ -309,6 +316,10 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
               </span>
             </div>
           )}
+          {/* B18 — the one mount in this modal. Above the tabs' content so it
+              is read before the empty Phone field is puzzled over, on every
+              tab, because "why can't I email them" is asked from all of them. */}
+          {lead && isMailOnly(lead.contact_policy) && <MailOnlyBadge className="mb-3" />}
           {loading && !lead && <div className="text-sm text-slate-500">Loading…</div>}
 
           {/* ── Overview ─────────────────────────────────────────────── */}

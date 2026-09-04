@@ -23,6 +23,7 @@ import {
 import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
   X, ChevronDown, Check, Tag, Snowflake, Building2, Info, CreditCard, CalendarClock,
+  Mailbox, Users, Lock,
 } from "lucide-react";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -52,6 +53,87 @@ interface StateRow { id: number; abbr: string; name: string }
 // the page needs one for display — fill it from form.state on read.
 interface ExpandedCity { city_id: number; name: string; state: string; miles: number }
 interface ExpandLocResponse { cities: ExpandedCity[]; zip_count: number }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B18 — the search model chooser.
+//
+// SCOPE_GROWTH_GAPS §3B: a Find run looks for BUSINESSES or for HOUSEHOLDS, and
+// that is a choice made here, before anything else on the form. Only B2B can be
+// picked today. The other two cards are visible and locked on purpose: the model
+// split is the honest answer to "can you find me homeowners", and a client who
+// can see what is coming (and when, and with which limits) does not have to ask.
+//
+// The B2C card states the hard rule in the client's own words, because it is the
+// rule they will be held to: direct mail only, and the system cannot store an
+// email address or phone number for those records at all (C2/N2 + the CHECK
+// constraints in LUMEN migration 164).
+type SearchModel = "b2b" | "b2c_mail" | "blended";
+
+const SEARCH_MODELS: Array<{
+  key: SearchModel; label: string; blurb: string; note?: string;
+  icon: typeof Building2; available: boolean;
+}> = [
+  {
+    key: "b2b",
+    label: "B2B (businesses)",
+    blurb: "Businesses with a verified work email. Reach them by email, phone or post.",
+    icon: Building2,
+    available: true,
+  },
+  {
+    key: "b2c_mail",
+    label: "B2C direct mail only",
+    blurb: "Households from a licensed list. We find households, you reach them by mail — no email or text, ever; the system cannot store them.",
+    note: "Coming in October",
+    icon: Mailbox,
+    available: false,
+  },
+  {
+    key: "blended",
+    label: "Blended",
+    blurb: "Businesses and households in one run.",
+    note: "Coming",
+    icon: Users,
+    available: false,
+  },
+];
+
+function ModelChooser({ value, onChange }: { value: SearchModel; onChange: (m: SearchModel) => void }) {
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+      {SEARCH_MODELS.map((m) => {
+        const Icon = m.icon;
+        const selected = value === m.key;
+        return (
+          <button
+            key={m.key}
+            type="button"
+            disabled={!m.available}
+            aria-pressed={selected}
+            onClick={() => m.available && onChange(m.key)}
+            className={[
+              "text-left rounded-lg border p-3 transition",
+              selected ? "border-[#EF6C33] bg-orange-50" : "border-slate-200 bg-white",
+              m.available ? "hover:border-slate-300 cursor-pointer" : "opacity-60 cursor-not-allowed",
+            ].join(" ")}
+          >
+            <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-800">
+              <Icon className="h-3.5 w-3.5 text-slate-500" />
+              {m.label}
+              {!m.available && <Lock className="h-3 w-3 text-slate-400" />}
+            </div>
+            <p className="mt-1 text-[11px] leading-snug text-slate-600">{m.blurb}</p>
+            {m.note && (
+              <span className="mt-1.5 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                {m.note}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 interface FormState {
   // A13 — more than one Business Category in one search (D31).
@@ -241,6 +323,12 @@ export function SparkLeadGenNewPage() {
   const navigate = useNavigate();
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
+  // B18 — the search model. Only "b2b" is selectable, so this is the value the
+  // job is created with today; the B2C form and its adapter are step B19, after
+  // the vendor contract. Held in its own state rather than in FormState because
+  // nothing in the form below depends on it yet, and a field the submit payload
+  // does not carry has no business pretending to be part of the form.
+  const [model, setModel] = useState<SearchModel>("b2b");
   const [submitting, setSubmitting] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -785,6 +873,16 @@ export function SparkLeadGenNewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-6 p-1">
         {/* ─── LEFT: form ──────────────────────────────────────────────── */}
         <div className="space-y-6">
+          {/* B18 — what kind of thing are we looking for? First question on the
+              form, because it changes every answer under it. Only B2B runs
+              today; the B2C card is the explainer, not a form. */}
+          <Section
+            title="What are we looking for?"
+            hint="Businesses today. Household lists for postcards arrive in October — and they stay postcard-only."
+          >
+            <ModelChooser value={model} onChange={setModel} />
+          </Section>
+
           {/* Business Categories (A13 — more than one per run) */}
           <Section
             title="Business Categories"

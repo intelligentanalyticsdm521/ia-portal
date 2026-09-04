@@ -21,12 +21,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Mail, Phone, Building2, MapPin, Cake, Tag as TagIcon, List as ListIcon,
   Activity as ActivityIcon, FileText, AlertTriangle, Edit3, Save, Trash2,
-  Plus, X,
+  Plus, X, Lock,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { ContactCustomFields } from "./ContactCustomFields";
 import { PhoneInput } from "../PhoneInput";
+// B18 — a household bought from a licensed direct-mail list. Same badge and
+// same sentence as the lead modal; the channel fields below are not editable
+// because the database will not store what they would write (migration 164).
+import { MailOnlyBadge, MAIL_ONLY_SHORT, isMailOnly } from "./MailOnlyBadge";
 
 export interface ContactLite {
   id: number;
@@ -45,6 +49,8 @@ export interface ContactLite {
   contact_intelligence_score?: number | null;
   email_unsubscribed?: boolean;
   email_invalid?: boolean;
+  /** B18 (migration 164): "full" | "mail_only". */
+  contact_policy?: string | null;
   sms_unsubscribed?: boolean;
   tag_names?: string | null;
   created_at?: string;
@@ -333,6 +339,13 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
       for (const f of fields) {
         if (draft[f] !== contact?.[f]) payload[f] = draft[f] as never;
       }
+      // B18 — a household from a licensed direct-mail list never sends a
+      // contact channel back. The fields are not editable and the API refuses
+      // it anyway (400 contact_policy_mail_only), but a stale draft in state
+      // must not turn a name edit into a rejected save.
+      if (isMailOnly(contact?.contact_policy)) {
+        delete payload.email; delete payload.phone; delete payload.mobile_phone;
+      }
       // Custom values are saved even when nothing standard changed — the early
       // return below used to drop them on the floor in exactly that case.
       if (Object.keys(customDraft).length) {
@@ -545,6 +558,9 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
 
           {tab === "overview" && contact && (
             <div className="space-y-4">
+              {/* B18 — read before the locked Email row below it. */}
+              {isMailOnly(contact.contact_policy) && <MailOnlyBadge />}
+
               {/* Status flags */}
               {(contact.email_unsubscribed || contact.email_invalid || contact.sms_unsubscribed) && (
                 <div className="space-y-1">
@@ -585,10 +601,11 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                   <Field label="Last name" value={contact.last_name} editing={editing}
                     onChange={(v) => setDraft({ ...draft, last_name: v })} draft={draft.last_name} />
                   <Field label="Email" value={contact.email} editing={editing} icon={Mail}
-                    onChange={(v) => setDraft({ ...draft, email: v })} draft={draft.email} />
+                    onChange={(v) => setDraft({ ...draft, email: v })} draft={draft.email}
+                    locked={isMailOnly(contact.contact_policy)} />
                   <Field label="Phone" value={contact.phone} editing={editing} icon={Phone}
                     onChange={(v) => setDraft({ ...draft, phone: v })} draft={draft.phone}
-                    as="phone" />
+                    as="phone" locked={isMailOnly(contact.contact_policy)} />
                   <Field label="Title" value={contact.title} editing={editing}
                     onChange={(v) => setDraft({ ...draft, title: v })} draft={draft.title} />
                 </div>
@@ -646,7 +663,8 @@ export function SparkContactModal({ contactId, open, onClose, onChanged }: Props
                       )}
                     </div>
                     <Field label="Mobile (can receive texts)" value={contact.mobile_phone} editing={editing} as="phone"
-                      onChange={(v) => setDraft({ ...draft, mobile_phone: v })} draft={draft.mobile_phone} />
+                      onChange={(v) => setDraft({ ...draft, mobile_phone: v })} draft={draft.mobile_phone}
+                      locked={isMailOnly(contact.contact_policy)} />
                     <div>
                       <div className="text-[10px] uppercase text-slate-500 font-semibold">Prefers to be contacted by</div>
                       {editing ? (
@@ -1151,7 +1169,7 @@ function Flag({ color, children }: { color: "rose" | "amber" | "emerald"; childr
 
 function Field({
   label, value, draft, editing, onChange, icon: Icon,
-  as,
+  as, locked = false, lockedNote,
 }: {
   label: string;
   value?: string | null;
@@ -1162,9 +1180,25 @@ function Field({
   /** 2026-06-28 (#245) — render PhoneInput for phone fields so input
       auto-formats to (XXX) XXX-XXXX as the user types. */
   as?: "phone";
+  /** B18 — a contact channel on a direct-mail-only household. The input is
+      never rendered (a disabled box you can still paste into is a trap), and
+      the reason is shown in its place. */
+  locked?: boolean;
+  lockedNote?: string;
 }) {
   const editingClassName =
     "mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm focus:border-[#EF6C33] focus:outline-none focus:ring-1 focus:ring-[#EF6C33]";
+  if (locked) {
+    return (
+      <div>
+        <div className="text-[10px] uppercase text-slate-500 font-semibold">{label}</div>
+        <div className="mt-0.5 flex items-center gap-1 text-sm text-slate-400">
+          <Lock className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="truncate italic">{lockedNote || MAIL_ONLY_SHORT}</span>
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="text-[10px] uppercase text-slate-500 font-semibold">{label}</div>
