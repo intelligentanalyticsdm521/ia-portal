@@ -234,3 +234,29 @@ test("prefilled answers are marked, and the page says nothing is saved until Sav
   assert.match(PAGE, /We filled this in from/);
   assert.match(PAGE, /Nothing is saved until you press Save/);
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Foundation C — the return-visit picker (decision F-4)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const JOB_FORM = readFileSync(path.join(process.cwd(), "src/pages/oliver/JobCreateForm.tsx"), "utf8");
+
+test("the job form offers a return-visit picker built from that customer's own jobs", () => {
+  assert.match(JOB_FORM, /Is this a return visit\?/);
+  assert.match(JOB_FORM, /\/contacts\/\$\{contactId\}\/activity/,
+    "the options come from the customer's real job history, not a free-text id");
+  assert.match(JOB_FORM, /No — this is new work/, "not picking one is an explicit choice");
+});
+
+test("MUTATION: return_of_job_id is sent ONLY when one was picked", () => {
+  // Sending an empty string would clear a link the owner never touched, and
+  // sending it unconditionally would make every job look like a return visit
+  // to a nullable-id bug.
+  assert.match(JOB_FORM, /\.\.\.\(returnOfJobId \? \{ return_of_job_id: returnOfJobId \} : \{\}\)/);
+});
+
+test("switching customer clears the picked return visit", () => {
+  // Otherwise a job for customer B would be linked to customer A's job — which
+  // the API refuses, but the form should never have offered.
+  assert.match(JOB_FORM, /setPastJobs\(\[\]\); setReturnOfJobId\(""\)/);
+});
