@@ -804,3 +804,160 @@ export function deletePushSubscription(params: PushCallParams & { endpoint: stri
     body: { endpoint: params.endpoint },
   });
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Foundation B — "Your business"
+   ══════════════════════════════════════════════════════════════════════════
+
+   ONE record per business, read by every product and every agent.
+
+   The response separates what this record OWNS from what it BORROWS. Hours,
+   the business basics and the price list live somewhere else and are echoed
+   here read-only, each labelled with the page that owns them, so this page can
+   show the whole picture in one call without ever becoming a second place to
+   edit them (decision F-3, one home per fact). Sending one of those on the PUT
+   is a 400 naming where it belongs — not a silent drop.
+*/
+
+export interface BusinessProfileFields {
+  industry: string | null;
+  description: string | null;
+  tagline: string | null;
+  targetAudience: string | null;
+  brandVoice: string | null;
+  services: Array<{ name: string; offering_id?: string; note?: string }> | null;
+  servicesSummary: string | null;
+  serviceArea: {
+    kind?: 'radius' | 'list';
+    center_postal_code?: string;
+    miles?: number;
+    states?: string[];
+    cities?: string[];
+    zip_prefixes?: string[];
+    note?: string;
+  } | null;
+  capacity: { jobs_per_day?: number; crew_count?: number; lead_time_days?: number; booked_through?: string } | null;
+  capacityNote: string | null;
+  idealJob: string | null;
+  idealCustomer: string | null;
+  differentiators: string | null;
+  noGoList: string | null;
+  doNotSay: string | null;
+  rulesPlainText: string | null;
+  responsePromiseMinutes: number | null;
+  responsePromiseText: string | null;
+  escalation: { name?: string; phone?: string; email?: string; when?: string } | null;
+  languages: string[] | null;
+}
+
+export type BusinessHours = Record<
+  string,
+  { open: string | null; close: string | null; closed: boolean }
+>;
+
+export interface BusinessProfilePriceItem {
+  offeringId: string;
+  name: string;
+  description: string | null;
+  requiresQuote: boolean;
+  /** Read live from the OLIVER catalogue on every load. Never stored here. */
+  startsAt: number | null;
+  currency: string;
+}
+
+export interface BusinessProfileResponse {
+  profile: BusinessProfileFields;
+  borrowed: {
+    businessHours: { value: BusinessHours | null; editedAt: string; home: string };
+    basics: { value: Record<string, string | null> | null; editedAt: string; home: string };
+    prices: {
+      available: boolean;
+      items: BusinessProfilePriceItem[];
+      /** Present and true when the catalogue could not be read — with a reason. */
+      prices_unavailable?: boolean;
+      reason?: string | null;
+      editedAt: string;
+      home: string;
+    };
+  };
+  prices_unavailable: boolean;
+  /** Fields we filled in from ARION / OLIVER that the owner has not confirmed. */
+  prefilled: Array<{ field: string; source: string }>;
+  prefilledFields: string[];
+  questions: Array<{ key: string; label: string; fields: string[]; borrowed?: string }>;
+  completeness: { answered: number; total: number; pct: number; questions: Array<{ key: string; label: string; answered: boolean }> };
+  version: number;
+  exists: boolean;
+  updatedAt: string | null;
+  updatedByUserId: string | null;
+  sources: Array<{ source: string; ok: boolean; error?: string }>;
+  /** Only on a PUT response. */
+  changed?: boolean;
+  changes?: Array<{ field: string; from: unknown; to: unknown }>;
+}
+
+export interface BusinessProfileVersion {
+  versionId: string;
+  version: number;
+  changes: Array<{ field: string; from: unknown; to: unknown }>;
+  changedAt: string;
+  changedBy: string | null;
+}
+
+interface BusinessProfileCallParams {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}
+
+async function businessProfileRequest<T>(
+  params: BusinessProfileCallParams,
+  path: string,
+  init: { method: string; body?: unknown } = { method: 'GET' },
+): Promise<T> {
+  const res = await fetchWithTimeout(`${normalizeBaseUrl(params.baseUrl)}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+  });
+
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : null;
+  if (!res.ok) {
+    // A "this belongs somewhere else" refusal carries the list; surface it as
+    // the message so the page can say exactly which field and which page.
+    const b = body as { error?: string; message?: string; details?: string[]; rejected?: Array<{ field: string; message: string }> } | null;
+    if (b?.rejected?.length) {
+      throw new PlatformApiError(b.rejected.map((r) => `${r.field}: ${r.message}`).join(' '), res.status, body);
+    }
+    if (b?.details?.length) throw new PlatformApiError(b.details.join(' '), res.status, body);
+    throw new PlatformApiError(b?.message || b?.error || `Request failed (${res.status})`, res.status, body);
+  }
+  return body as T;
+}
+
+export function getBusinessProfile(params: BusinessProfileCallParams) {
+  return businessProfileRequest<BusinessProfileResponse>(params, '/me/business-profile');
+}
+
+/** Partial: send only what changed. Anything owned elsewhere is refused, loudly. */
+export function updateBusinessProfile(
+  params: BusinessProfileCallParams & { payload: Partial<BusinessProfileFields> },
+) {
+  return businessProfileRequest<BusinessProfileResponse>(params, '/me/business-profile', {
+    method: 'PUT',
+    body: params.payload,
+  });
+}
+
+export function getBusinessProfileHistory(params: BusinessProfileCallParams) {
+  return businessProfileRequest<{ versions: BusinessProfileVersion[] }>(
+    params,
+    '/me/business-profile/history',
+  );
+}
