@@ -721,3 +721,86 @@ export async function getErrorLog(params: {
   }
   return (body as { data: { total: number; rows: ErrorLogRow[] } }).data;
 }
+
+/* ── Web push (Foundation A2) ───────────────────────────────────────────── */
+
+export interface PushSubscriptionRow {
+  subscriptionId: string;
+  endpoint: string;
+  userAgent: string | null;
+  createdAt: string;
+  lastUsedAt: string | null;
+  disabledAt: string | null;
+}
+
+interface PushCallParams {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}
+
+/**
+ * One request helper for the four push routes. They all share the header block
+ * and the error shape, and copying it four more times is how the sixth caller
+ * ends up missing `emergencyActAsHeaders()`.
+ */
+async function pushRequest<T>(
+  params: PushCallParams,
+  path: string,
+  init: { method: string; body?: unknown } = { method: 'GET' },
+): Promise<T> {
+  const res = await fetchWithTimeout(`${normalizeBaseUrl(params.baseUrl)}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+  });
+
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : null;
+  if (!res.ok) {
+    const msg = typeof body === 'object' && body && 'error' in body
+      ? String((body as any).error)
+      : `Request failed (${res.status})`;
+    throw new PlatformApiError(msg, res.status, body);
+  }
+  return body as T;
+}
+
+/**
+ * The VAPID public key the browser needs to subscribe. `configured: false`
+ * means the environment has no key pair — the settings row shows push as
+ * unavailable rather than throwing an error at someone who did nothing wrong.
+ */
+export function getPushPublicKey(params: PushCallParams) {
+  return pushRequest<{ publicKey: string | null; configured: boolean }>(
+    params,
+    '/me/push/vapid-public-key',
+  );
+}
+
+/** The caller's own devices. THIS is the state the toggle reads — not localStorage. */
+export function listPushSubscriptions(params: PushCallParams) {
+  return pushRequest<{ subscriptions: PushSubscriptionRow[] }>(params, '/me/push/subscriptions');
+}
+
+export function savePushSubscription(
+  params: PushCallParams & { subscription: { endpoint: string; keys: { p256dh: string; auth: string } } },
+) {
+  return pushRequest<{ ok: boolean; subscriptionId: string; created: boolean }>(
+    params,
+    '/me/push/subscribe',
+    { method: 'POST', body: params.subscription },
+  );
+}
+
+export function deletePushSubscription(params: PushCallParams & { endpoint: string }) {
+  return pushRequest<{ ok: boolean; deleted: number }>(params, '/me/push/subscribe', {
+    method: 'DELETE',
+    body: { endpoint: params.endpoint },
+  });
+}

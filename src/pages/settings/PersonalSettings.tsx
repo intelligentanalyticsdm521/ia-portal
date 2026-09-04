@@ -32,14 +32,40 @@
  * The deleted tabs are not "coming soon" — they were never wired to anything.
  * Per the standing rule, a replacement deletes what it replaces rather than
  * leaving a dead surface next to a working one.
+ *
+ * 2026-09-05 — Notifications comes BACK, this time real (Foundation A2).
+ * The tab that was deleted held a push switch backed by
+ * localStorage['iadm.personal.pushNotifications'] and nothing else. The one
+ * below asks the browser for permission, registers /sw.js, subscribes with the
+ * platform's VAPID key and stores the subscription in core.push_subscription —
+ * and reads its own state back from that table, so a reload, a second laptop,
+ * or a revoked browser permission all show the truth instead of a remembered
+ * click.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMsal } from '@azure/msal-react';
 import { authScopes } from '../../auth/msalConfig';
 import { useAppState } from '../../app/AppState';
-import { getProfile, updateProfile } from '../../lib/platformApi';
+import {
+  getProfile,
+  updateProfile,
+  getPushPublicKey,
+  listPushSubscriptions,
+  savePushSubscription,
+  deletePushSubscription,
+  type PushSubscriptionRow,
+} from '../../lib/platformApi';
+import {
+  checkSupport,
+  currentSubscription,
+  isIosBrowserWithoutHomeScreen,
+  permissionState,
+  subscribe as browserSubscribe,
+  unsubscribe as browserUnsubscribe,
+  PushError,
+} from '../../lib/push';
 
-const TABS = ['Profile', 'Sign-in'] as const;
+const TABS = ['Profile', 'Notifications', 'Sign-in'] as const;
 type Tab = typeof TABS[number];
 
 /* ------------------------------------------------------------------ */
@@ -221,6 +247,305 @@ function ProfileTab() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Tab: Notifications — real web push (Foundation A2)                 */
+/* ------------------------------------------------------------------ */
+
+/** A plain-English name for a browser, from its user-agent string. */
+function describeDevice(userAgent: string | null): string {
+  const ua = userAgent || '';
+  if (!ua) return 'Unknown device';
+  const browser = /Edg\//.test(ua)
+    ? 'Edge'
+    : /OPR\//.test(ua)
+      ? 'Opera'
+      : /Firefox\//.test(ua)
+        ? 'Firefox'
+        : /Chrome\//.test(ua)
+          ? 'Chrome'
+          : /Safari\//.test(ua)
+            ? 'Safari'
+            : 'Browser';
+  const os = /iPhone/.test(ua)
+    ? 'iPhone'
+    : /iPad/.test(ua)
+      ? 'iPad'
+      : /Android/.test(ua)
+        ? 'Android'
+        : /Mac OS X/.test(ua)
+          ? 'Mac'
+          : /Windows/.test(ua)
+            ? 'Windows'
+            : '';
+  return os ? `${browser} on ${os}` : browser;
+}
+
+function NotificationsTab() {
+  const { instance, accounts } = useMsal();
+  const account = accounts[0];
+  const { active } = useAppState();
+  const tenantId = active?.tenant?.tenantId ?? null;
+
+  const support = useMemo(() => checkSupport(), []);
+  const iosNeedsHomeScreen = useMemo(() => isIosBrowserWithoutHomeScreen(), []);
+
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
+  const [publicKey, setPublicKey] = useState<string | null>(null);
+  const [configured, setConfigured] = useState(false);
+  const [rows, setRows] = useState<PushSubscriptionRow[]>([]);
+  const [thisEndpoint, setThisEndpoint] = useState<string | null>(null);
+  const [permission, setPermission] = useState(permissionState());
+
+  const call = useCallback(async () => {
+    if (!account || !tenantId) return null;
+    const r = await instance.acquireTokenSilent({ scopes: authScopes, account });
+    return {
+      baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
+      bearerToken: r.accessToken,
+      tenantId,
+    };
+  }, [account, instance, tenantId]);
+
+  /**
+   * The toggle's state is the AND of two facts: this browser holds a
+   * subscription, and the server knows about that exact endpoint. Either one
+   * alone lies — see src/lib/push.ts.
+   */
+  const load = useCallback(async () => {
+    if (!account || !tenantId) return;
+    setLoading(true);
+    setErrMsg(null);
+    try {
+      const p = await call();
+      if (!p) return;
+      const [key, list, sub] = await Promise.all([
+        getPushPublicKey(p),
+        listPushSubscriptions(p),
+        support.supported ? currentSubscription() : Promise.resolve(null),
+      ]);
+      setPublicKey(key.publicKey);
+      setConfigured(key.configured);
+      setRows(list.subscriptions || []);
+      setThisEndpoint(sub?.endpoint ?? null);
+      setPermission(permissionState());
+    } catch (e) {
+      setErrMsg((e as Error).message || 'Could not load your notification settings.');
+    } finally {
+      setLoading(false);
+    }
+  }, [account, tenantId, call, support.supported]);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const thisDeviceRow = useMemo(
+    () => (thisEndpoint ? rows.find((r) => r.endpoint === thisEndpoint) ?? null : null),
+    [rows, thisEndpoint],
+  );
+  const enabled = Boolean(thisDeviceRow && !thisDeviceRow.disabledAt);
+  const otherDevices = useMemo(
+    () => rows.filter((r) => r.endpoint !== thisEndpoint),
+    [rows, thisEndpoint],
+  );
+
+  const turnOn = useCallback(async () => {
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      const p = await call();
+      if (!p) return;
+      const payload = await browserSubscribe(publicKey || '');
+      try {
+        await savePushSubscription({ ...p, subscription: payload });
+      } catch (apiErr) {
+        // The server did not take it, so this browser must not keep a
+        // subscription nobody can send to — otherwise the toggle would read ON
+        // off a browser fact the server has never heard of.
+        await browserUnsubscribe();
+        throw apiErr;
+      }
+      setToast('Alerts are on for this device');
+      await load();
+    } catch (e) {
+      setPermission(permissionState());
+      if (e instanceof PushError && e.kind === 'permission-denied') {
+        setErrMsg('Your browser blocked notifications for this site, so alerts stay off.');
+      } else {
+        setErrMsg((e as Error).message || 'Could not turn on alerts.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [call, publicKey, load]);
+
+  const turnOff = useCallback(async () => {
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      const p = await call();
+      if (!p) return;
+      // Capture the endpoint before unsubscribing — it is unreachable after.
+      const endpoint = (await browserUnsubscribe()) || thisDeviceRow?.endpoint || null;
+      if (endpoint) await deletePushSubscription({ ...p, endpoint });
+      setToast('Alerts are off for this device');
+      await load();
+    } catch (e) {
+      setErrMsg((e as Error).message || 'Could not turn off alerts.');
+    } finally {
+      setBusy(false);
+    }
+  }, [call, load, thisDeviceRow]);
+
+  const removeDevice = useCallback(async (endpoint: string) => {
+    setBusy(true);
+    setErrMsg(null);
+    try {
+      const p = await call();
+      if (!p) return;
+      await deletePushSubscription({ ...p, endpoint });
+      setToast('Device removed');
+      await load();
+    } catch (e) {
+      setErrMsg((e as Error).message || 'Could not remove that device.');
+    } finally {
+      setBusy(false);
+    }
+  }, [call, load]);
+
+  if (!tenantId) {
+    return <div className="py-8 text-center text-sm text-gray-500">Select a business to manage alerts.</div>;
+  }
+  if (loading) {
+    return <div className="py-8 text-center text-sm text-gray-500">Loading your notification settings…</div>;
+  }
+
+  const blocked = permission === 'denied';
+  const canToggle = support.supported && configured && !blocked && !busy;
+
+  const unsupportedReason =
+    support.supported
+      ? null
+      : support.reason === 'insecure'
+        ? 'Alerts need a secure (https) connection.'
+        : 'This browser cannot receive alerts.';
+
+  return (
+    <div className="space-y-6">
+      {errMsg && (
+        <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{errMsg}</div>
+      )}
+
+      <div>
+        <h3 className="text-sm font-semibold text-gray-900">Alerts</h3>
+        <p className="mt-1 text-sm text-gray-600">
+          We can pop a notification on this device when something happens in your business — a new
+          enquiry, or a lead search finishing. Nothing else is sent here.
+        </p>
+      </div>
+
+      <div className="flex items-start justify-between gap-4 rounded-lg border p-4">
+        <div>
+          <div className="text-sm font-medium text-gray-900">Get alerts on this device</div>
+          <div className="mt-1 text-xs text-gray-500">
+            {enabled
+              ? 'On. Turning this off only affects this device.'
+              : 'Off. Your browser will ask for permission the first time you turn this on.'}
+          </div>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Get alerts on this device"
+          disabled={!canToggle}
+          onClick={() => (enabled ? void turnOff() : void turnOn())}
+          className={`relative mt-0.5 inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+            enabled ? 'bg-black' : 'bg-gray-300'
+          }`}
+        >
+          <span
+            className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+              enabled ? 'translate-x-5' : 'translate-x-0.5'
+            }`}
+          />
+        </button>
+      </div>
+
+      {/* iOS is the one platform where an off switch is not the user's fault. */}
+      {iosNeedsHomeScreen && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">On iPhone and iPad, add this to your Home Screen first.</p>
+          <p className="mt-1">
+            Apple only sends alerts to apps on the Home Screen. In Safari, tap the share button, choose
+            <span className="font-medium"> Add to Home Screen</span>, then open the Portal from that icon and
+            turn this switch on there.
+          </p>
+        </div>
+      )}
+
+      {blocked && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">This browser is blocking notifications for the Portal.</p>
+          <p className="mt-1">
+            We cannot turn them back on from here — the block lives in your browser. Click the padlock (or
+            the icon beside the web address), set Notifications to <span className="font-medium">Allow</span>,
+            then reload this page.
+          </p>
+        </div>
+      )}
+
+      {unsupportedReason && (
+        <div className="rounded-lg border bg-gray-50 p-4 text-sm text-gray-600">{unsupportedReason}</div>
+      )}
+
+      {support.supported && !configured && (
+        <div className="rounded-lg border bg-gray-50 p-4 text-sm text-gray-600">
+          Alerts are not switched on for this environment yet. Nothing is wrong with your account.
+        </div>
+      )}
+
+      {otherDevices.length > 0 && (
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">Your other devices</h4>
+          <p className="mt-1 text-xs text-gray-500">
+            Each device is separate. Removing one here stops alerts on it.
+          </p>
+          <ul className="mt-2 divide-y rounded-lg border">
+            {otherDevices.map((d) => (
+              <li key={d.subscriptionId} className="flex items-center justify-between gap-4 px-4 py-3">
+                <div>
+                  <div className="text-sm text-gray-900">{describeDevice(d.userAgent)}</div>
+                  <div className="text-xs text-gray-500">
+                    Added {new Date(d.createdAt).toLocaleDateString()}
+                    {d.disabledAt ? ' · not responding' : ''}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void removeDevice(d.endpoint)}
+                  className="rounded-md border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40"
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <p className="text-xs text-gray-500">
+        Alerts are per device and per browser, so signing in somewhere else does not carry them across.
+        Emails are separate and are not affected by this switch.
+      </p>
+
+      {toast && <Toast message={toast} onDone={() => setToast('')} />}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /*  Tab: Sign-in                                                       */
 /* ------------------------------------------------------------------ */
 
@@ -287,7 +612,7 @@ export function PersonalSettings() {
     <div className="mx-auto max-w-3xl space-y-6 p-6">
       <section className="rounded-lg border bg-white p-5">
         <h1 className="text-2xl font-semibold">Personal Settings</h1>
-        <p className="mt-1 text-sm text-gray-500">Your name and how you sign in. Business-wide settings live under Settings.</p>
+        <p className="mt-1 text-sm text-gray-500">Your name, your alerts, and how you sign in. Business-wide settings live under Settings.</p>
       </section>
 
       <div className="flex gap-1 overflow-x-auto rounded-lg border bg-white p-1">
@@ -307,6 +632,7 @@ export function PersonalSettings() {
 
       <section className="rounded-lg border bg-white p-5">
         {activeTab === 'Profile' && <ProfileTab />}
+        {activeTab === 'Notifications' && <NotificationsTab />}
         {activeTab === 'Sign-in' && <SignInTab />}
       </section>
     </div>
