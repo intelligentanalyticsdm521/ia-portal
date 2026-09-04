@@ -118,6 +118,10 @@ const SiteRequestsPageAdmin = lazy(() => import('./pages/admin/SiteRequestsPage'
 // IL-1 — the founder's Intelligence Layer card: can we trust the model yet,
 // and what is it costing us. Read-only; LUMEN 403s non-founders on its own.
 const IlLearningPageAdmin = lazy(() => import('./pages/admin/IlLearningPage'));
+// Agents across businesses — the founder's rollup, and the ONLY surface that
+// shows what agent work costs us. LUMEN's /il/admin routes 403 non-founders
+// on their own, so the route gate here is belt, not braces.
+const AgentsAcrossBusinessesPageAdmin = lazy(() => import('./pages/admin/AgentsAcrossBusinessesPage'));
 const ConsultingProjectsPageAdmin = lazy(() => import('./pages/consulting/ConsultingProjectsPage'));
 const ConsultingOnboardClientPageAdmin = lazy(() => import('./pages/consulting/ConsultingOnboardClientPageV2'));
 const ConsultingDocumentLibraryPageAdmin = lazy(() => import('./pages/consulting/ConsultingDocumentLibraryPage'));
@@ -298,6 +302,20 @@ export function App() {
                 element={
                   <Suspense fallback={<AdminRouteLoading />}>
                     <IlLearningPageAdmin />
+                  </Suspense>
+                }
+              />
+            </Route>
+
+            {/* Agents across businesses. Same shape, same server-side gate:
+                /api/v1/il/admin/agents/activity is founder-only and fails
+                closed, so hiding the link is not what protects it. */}
+            <Route path="admin/agents" element={<RequireFounderRoute />}>
+              <Route
+                index
+                element={
+                  <Suspense fallback={<AdminRouteLoading />}>
+                    <AgentsAcrossBusinessesPageAdmin />
                   </Suspense>
                 }
               />

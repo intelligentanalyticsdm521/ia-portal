@@ -272,6 +272,10 @@ const OliverJobBoardPage = lazyNamed(() => import('./oliver/OliverJobBoardPage')
 const OliverJobsArchivePage = lazyNamed(() => import('./oliver/OliverJobsArchivePage'), 'OliverJobsArchivePage');
 const OliverSchedulePage = lazyNamed(() => import('./oliver/OliverSchedulePage'), 'OliverSchedulePage');
 const OliverDispatchPage = lazyNamed(() => import('./oliver/OliverDispatchPage'), 'OliverDispatchPage');
+// Agents (2026-09-05) — one Agents page per product; see SCOPE_AGENT_SURFACES.
+const OliverAgentsPage = lazyNamed(() => import('./oliver/OliverAgentsPage'), 'OliverAgentsPage');
+const SparkAgentsPage = lazyNamed(() => import('./spark/SparkAgentsPage'), 'SparkAgentsPage');
+const ArionAgentsPage = lazyNamed(() => import('./arion/ArionAgentsPage'), 'ArionAgentsPage');
 const OliverWorkersPage = lazyNamed(() => import('./oliver/OliverWorkersPage'), 'OliverWorkersPage');
 const OliverCrewPerformancePage = lazyNamed(() => import('./oliver/OliverCrewPerformancePage'), 'OliverCrewPerformancePage');
 const OliverContactsPage = lazyNamed(() => import('./oliver/OliverContactsPage'), 'OliverContactsPage');
@@ -559,6 +563,7 @@ function ServiceRouterInner() {
       case 'arion_ia_insights_reports': arionPage = <ArionIAInsightsReportsPage />; break;
       case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
+      case 'arion_agents': arionPage = <ArionAgentsPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
       case 'arion_plugin_provisioning': arionPage = <ArionPluginProvisioningPage service={service} status={status} />; break;
       default: break;
@@ -698,6 +703,7 @@ function ServiceRouterInner() {
       case 'oliver_jobs_archive': oliverPage = <OliverJobsArchivePage />; break;
       case 'oliver_schedule': oliverPage = <OliverSchedulePage />; break;
       case 'oliver_dispatch': oliverPage = <OliverDispatchPage />; break;
+      case 'oliver_agents': oliverPage = <OliverAgentsPage />; break;
       case 'oliver_workers': oliverPage = <OliverWorkersPage />; break;
       case 'oliver_crew_performance': oliverPage = <OliverCrewPerformancePage />; break;
       case 'oliver_contacts': oliverPage = <OliverContactsPage />; break;
@@ -822,6 +828,7 @@ function ServiceRouterInner() {
       // and ARGUS intents — both render the same tabbed page (default tab = inbox).
       case 'spark_lead_inbox':
       case 'spark_leads': sparkPage = <SparkLeadInboxPage />; break;
+      case 'spark_agents': sparkPage = <SparkAgentsPage />; break;
       // Intake connectors (G-2) — the Lead sources page beside the inbox.
       case 'spark_lead_sources': sparkPage = <SparkLeadSourcesPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;
