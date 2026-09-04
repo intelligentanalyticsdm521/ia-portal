@@ -27,6 +27,7 @@ import { DataTable, EmptyState, type Column } from "../../components/oliver/ui";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 import type { CoaAccount } from "./RecordTransactionModal";
 import { TransactionDetailModal } from "./TransactionDetailModal";
+import { RecurringTab } from "./RecurringTab";
 
 // GET /ledger/transactions returns stella.[transaction] rows (t.*).
 interface StellaTransaction {
@@ -54,17 +55,6 @@ interface OverviewMoney {
   expenses: number;
   net: number;
   owedToYou: number;
-}
-
-// /ledger/recurring ships in the Ingestion phase — shape is best-effort.
-interface RecurringRow {
-  recurring_id?: string;
-  template_id?: string;
-  name?: string | null;
-  counterparty_name?: string | null;
-  cadence?: string | null;
-  amount?: number | string | null;
-  next_date?: string | null;
 }
 
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
@@ -105,8 +95,6 @@ export function StellaTransactionsPage() {
   const [rows, setRows] = useState<StellaTransaction[]>([]);
   const [coa, setCoa] = useState<CoaAccount[]>([]);
   const [money, setMoney] = useState<OverviewMoney | null>(null);
-  // recurring: undefined = not loaded, null = endpoint not live yet (404)
-  const [recurring, setRecurring] = useState<RecurringRow[] | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
@@ -156,8 +144,9 @@ export function StellaTransactionsPage() {
   }, []);
 
   // One fetch per page (house rule): transactions + COA + overview money-bar
-  // together; recurring is allowed to 404 until the Ingestion phase and the
-  // overview soft-fails (money bar simply hides) — neither poisons the page.
+  // together; the overview soft-fails (the money bar simply hides) rather than
+  // poisoning the page. Recurring loads its own data inside RecurringTab —
+  // it is a whole surface now, not one extra list.
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -169,16 +158,14 @@ export function StellaTransactionsPage() {
       if (coaFilter) qs.set("coa_account_id", coaFilter);
       if (jobFilter) qs.set("job_id", jobFilter);
       const query = qs.toString();
-      const [txns, accounts, ovw, rec] = await Promise.all([
+      const [txns, accounts, ovw] = await Promise.all([
         get<StellaTransaction[]>(`/ledger/transactions${query ? `?${query}` : ""}`),
         get<CoaAccount[]>("/ledger/coa").catch(() => [] as CoaAccount[]),
         get<OverviewMoney>(`/ledger/overview?month=${month}`).catch(() => null),
-        get<RecurringRow[]>("/ledger/recurring").catch(() => null),
       ]);
       setRows(txns || []);
       setCoa(accounts || []);
       setMoney(ovw);
-      setRecurring(rec);
     } catch (e) {
       setError(e);
     } finally {
@@ -326,13 +313,6 @@ export function StellaTransactionsPage() {
     },
   ];
 
-  const recurringColumns: Column<RecurringRow>[] = [
-    { key: "name", header: "Template", render: (r) => <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{r.name || r.counterparty_name || "—"}</span> },
-    { key: "cadence", header: "Cadence", render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A", textTransform: "capitalize" }}>{r.cadence || "—"}</span> },
-    { key: "amount", header: "Amount", align: "right", render: (r) => <span style={{ fontSize: 12, fontVariantNumeric: "tabular-nums" }}>{r.amount != null ? fmtMoney(toNum(r.amount)) : "—"}</span> },
-    { key: "next_date", header: "Next", render: (r) => <span style={{ fontSize: 11, color: "#5A7A8A" }}>{fmtDate(r.next_date)}</span> },
-  ];
-
   const moneyTile = (label: string, value: number, targetTab: string, color?: string) => {
     const active = tab === targetTab;
     return (
@@ -387,20 +367,11 @@ export function StellaTransactionsPage() {
 
       <StellaTabs tabs={TABS} active={tab} onChange={setTab} dataTour="stella-txn-tabs" />
 
+      {/* Ops O-5 (b): the real recurring surface. This tab used to say the
+          feature was "coming in the Ingestion phase" while POST /ledger/recurring
+          and /run had already shipped behind it. */}
       {tab === "recurring" ? (
-        recurring == null || recurring.length === 0 ? (
-          <EmptyState
-            title="Recurring is coming in the Ingestion phase"
-            description="STELLA will auto-detect recurring obligations — rent, SaaS, insurance — from your transaction history and let you define your own templates, with variance and missed-fire flags. Nothing to set up yet."
-          />
-        ) : (
-          <DataTable
-            rows={recurring}
-            columns={recurringColumns}
-            rowKey={(r) => r.recurring_id || r.template_id || `${r.name || ""}-${r.next_date || ""}-${r.amount ?? ""}`}
-            emptyMessage="No recurring templates yet."
-          />
-        )
+        <RecurringTab />
       ) : !rows.length && !loading && !reimbOnly && !personalOnly && !coaFilter && !jobFilter && !search ? (
         <EmptyState
           title="No transactions yet"

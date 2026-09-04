@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { BalanceSheetReport, TrialBalanceReport, GeneralLedgerReport, type Basis } from "./accounting/AccountingReports";
+import { AccountantPack } from "./accounting/AccountantPack";
 import { StellaShell, StellaScaffoldCard, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 
 // GET /ledger/pnl response (oliver-api routes/stellaLedger.js).
@@ -73,11 +74,14 @@ const REPORTS = [
   { key: "ap_aging", label: "AP Aging" },
   { key: "sales_tax", label: "Sales Tax" },
   { key: "1099", label: "1099" },
+  // Ops O-5 (b): the year-end hand-off — GL + trial balance + transactions
+  // for a period, as one Excel workbook or as CSVs.
+  { key: "accountant", label: "Accountant pack" },
 ];
 
 // The three journal-backed reports render themselves; the rest of this page
 // reads the register directly and is cash-only by construction.
-const JOURNAL_REPORTS = new Set(["balance_sheet", "trial_balance", "general_ledger"]);
+const JOURNAL_REPORTS = new Set(["balance_sheet", "trial_balance", "general_ledger", "accountant"]);
 
 // The two remaining placeholders — same page, honest copy, no fake data.
 // Walkthrough finding (Brandon, 2026-08-14): the Pro badge here read as "my
@@ -197,7 +201,7 @@ export function StellaReportsPage() {
   return (
     <StellaShell
       title="Reports"
-      subtitle="Your financial statements in one place — P&L, Balance Sheet, Trial Balance, General Ledger, Cash Flow, AR Aging, Sales Tax and 1099."
+      subtitle="Your financial statements in one place — P&L, Balance Sheet, Trial Balance, General Ledger, Cash Flow, AR Aging, Sales Tax, 1099, and the pack your accountant asks for."
       showRecord
       onRecorded={() => reload()}
       actions={
@@ -228,6 +232,7 @@ export function StellaReportsPage() {
       {report === "balance_sheet" && <BalanceSheetReport basis={basis} onBasis={setBasis} />}
       {report === "trial_balance" && <TrialBalanceReport basis={basis} onBasis={setBasis} />}
       {report === "general_ledger" && <GeneralLedgerReport basis={basis} onBasis={setBasis} />}
+      {report === "accountant" && <AccountantPack />}
 
       {report === "pnl" && pnl && (
         <>

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Check } from "lucide-react";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
 import { useStellaApi } from "../../../hooks/useStellaApi";
+import { BankStatementImport } from "./BankStatementImport";
 import {
   DbCard, DbError, DbLoading, DbButton, DbInput, DbSelect, DbField, DbTable,
   DbEmpty, DbNotice, useNotice, Pill, DbModal,
@@ -270,7 +271,7 @@ function NewEntryModal({ accounts, onClose, onDone }: {
 // ── Bank reconciliation ─────────────────────────────────────────────────────
 
 type Rec = {
-  bank_reconciliation_id: string; coa_code: string; account_name: string;
+  bank_reconciliation_id: string; coa_account_id: string; coa_code: string; account_name: string;
   statement_start: string; statement_end: string; opening_balance: number; closing_balance: number;
   status: string; cleared_count: number;
 };
@@ -283,6 +284,9 @@ function ReconcileTab() {
   const api = useStellaApi();
   const [list, setList] = useState<Rec[] | null>(null);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  // Every account, not just the bank/card ones: booking a statement line the
+  // books have never heard of needs a revenue or expense account to book it TO.
+  const [allAccounts, setAllAccounts] = useState<Account[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecDetail | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -299,7 +303,10 @@ function ReconcileTab() {
   useEffect(() => {
     if (!api.ready) return;
     api.get<Account[]>("/ledger/coa?active=true")
-      .then((rows) => setAccounts(rows.filter((a) => ["asset", "liability"].includes(String(a.type).toLowerCase()))))
+      .then((rows) => {
+        setAllAccounts(rows);
+        setAccounts(rows.filter((a) => ["asset", "liability"].includes(String(a.type).toLowerCase())));
+      })
       .catch(setError);
   }, [api]);
 
@@ -426,6 +433,16 @@ function ReconcileTab() {
               what: l.description || l.memo || l.counterparty_name || "—",
             })) as never}
             empty={<DbEmpty title="Nothing in this window" reason="No transactions hit this account between those dates." />}
+          />
+          <div style={{ height: 20 }} />
+          {/* Ops O-5 (b): the BANK’s side. Above is what your books say;
+              this is what the statement says, and the difference between the
+              two is the only thing a reconciliation is actually asking. */}
+          <BankStatementImport
+            reconciliationId={detail.bank_reconciliation_id}
+            coaAccountId={detail.coa_account_id}
+            accounts={allAccounts}
+            onImported={loadDetail}
           />
         </DbCard>
       )}
