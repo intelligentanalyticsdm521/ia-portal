@@ -9,6 +9,7 @@ import {
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { oliverFetchRaw, oliverDownload } from "../../lib/oliverApi";
 import { InvoiceCreateForm } from "./InvoiceCreateForm";
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -88,7 +89,11 @@ export function OliverInvoicesPage() {
 
   const { get, post, patch, ready } = useOliverApi();
   const loc = useOliverLocations();
-  const { instance, accounts } = useMsal();
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const activeAccount = useActiveAccount();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -148,7 +153,7 @@ export function OliverInvoicesPage() {
   }
 
   async function exportCsv() {
-    const account = accounts[0];
+    const account = activeAccount;
     if (!account) return;
     setExporting(true);
     try {
@@ -458,7 +463,11 @@ interface DrawerProps {
 }
 
 function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps) {
-  const { instance, accounts } = useMsal();
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const activeAccount = useActiveAccount();
   const [inv, setInv] = useState<InvoiceDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -469,7 +478,7 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
   const [editDueDate, setEditDueDate] = useState<string>("");
 
   async function downloadPdf() {
-    const account = accounts[0];
+    const account = activeAccount;
     if (!account || !inv) return;
     try {
       const res = await oliverFetchRaw(instance, account, `/invoices/${inv.invoice_id}/pdf`);

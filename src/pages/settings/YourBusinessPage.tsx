@@ -27,7 +27,8 @@ import { Link } from 'react-router-dom';
 import { useMsal } from '@azure/msal-react';
 import { ChevronLeft, Check, History, Info, ExternalLink } from 'lucide-react';
 
-import { authScopes } from '../../auth/msalConfig';
+import { useActiveAccount } from '../../auth/useAccessToken';
+import { acquireApiToken } from '../../lib/msalToken';
 import { useAppState } from '../../app/AppState';
 import {
   getBusinessProfile,
@@ -147,8 +148,13 @@ function money(v: number | null, currency: string) {
 /* ── the page ────────────────────────────────────────────────────────────── */
 
 export function YourBusinessPage() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]. Under VITE_DEV_AUTH=1 there is
+  // no MSAL session and never will be, so `accounts` is permanently empty:
+  // `load()`'s `if (!account) return` fired before `setLoading(false)` and this
+  // page sat on "Loading your business profile…" for ever, with no request in
+  // the network tab and no error on screen. Same defect PersonalSettings had.
+  const account = useActiveAccount();
   const { active } = useAppState();
   const tenantId = active?.tenant?.tenantId ?? null;
 
@@ -165,10 +171,11 @@ export function YourBusinessPage() {
 
   const callParams = useCallback(async () => {
     if (!account || !tenantId) throw new Error('Not signed in to a business yet.');
-    const r = await instance.acquireTokenSilent({ scopes: authScopes, account });
+    // The one shared token seam: it short-circuits under dev auth instead of
+    // handing MSAL a stand-in account it rightly refuses (authority_mismatch).
     return {
       baseUrl: import.meta.env.VITE_PLATFORM_API_BASE_URL,
-      bearerToken: r.accessToken,
+      bearerToken: await acquireApiToken(instance, account),
       tenantId,
     };
   }, [account, instance, tenantId]);
