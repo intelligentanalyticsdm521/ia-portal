@@ -20,6 +20,25 @@
 // When a page has no authored content it renders NOTHING rather than a button
 // that opens a generic tour — offering help that does not answer the question
 // is worse than offering none, and it hides the gap from missingPageContent().
+/**
+ * The button's classes, exported for MEASUREMENT rather than reuse:
+ * scripts/dev/measure-tap-targets.mjs reads this constant out of this file so
+ * the thing it measures is the thing that ships, and Tailwind emits the class
+ * because it appears in a scanned source file.
+ *
+ * October pull-forward P4.1, 2026-09-07 — `max-md:min-h-[40px]` and the wider
+ * padding are the phone tap target. Small pack 2 raised twelve surfaces and
+ * left this one at 28px, which is the smallest control on most pages and the
+ * one somebody reaches for precisely when they are stuck. Desktop is
+ * unchanged and the measuring script asserts it is still 28px at 1440x900.
+ */
+export const HELP_BUTTON_CLASS =
+  "inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1 " +
+  "text-[12px] font-medium text-slate-600 transition-colors " +
+  "max-md:min-h-[40px] max-md:px-3 " +
+  "hover:border-slate-400 hover:text-slate-900 " +
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500";
+
 import { useMemo } from "react";
 import { useLocation } from "react-router-dom";
 import { HelpCircle, MousePointerClick } from "lucide-react";
@@ -50,15 +69,12 @@ export function PageHelpButton({ compact = false }: { compact?: boolean }) {
   const hasDoIt = Array.isArray(step.doIt) && step.doIt.length > 0;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 max-md:flex-wrap">
       <button
         type="button"
         onClick={() => launchJourneyStep(step.id, "explain")}
         title={`Explain this page: ${step.label}`}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1
-                   text-[12px] font-medium text-slate-600 transition-colors
-                   hover:border-slate-400 hover:text-slate-900
-                   focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+        className={HELP_BUTTON_CLASS}
       >
         <HelpCircle className="h-3.5 w-3.5" aria-hidden="true" />
         Explain this page
@@ -68,10 +84,7 @@ export function PageHelpButton({ compact = false }: { compact?: boolean }) {
           type="button"
           onClick={() => launchJourneyStep(step.id, "doIt")}
           title={`Do it with me: ${step.label}`}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1
-                     text-[12px] font-medium text-slate-600 transition-colors
-                     hover:border-slate-400 hover:text-slate-900
-                     focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-500"
+          className={HELP_BUTTON_CLASS}
         >
           <MousePointerClick className="h-3.5 w-3.5" aria-hidden="true" />
           Do it with me

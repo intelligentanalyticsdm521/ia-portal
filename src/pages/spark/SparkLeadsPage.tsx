@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX, ShieldAlert, ArrowUpDown } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { FilterChip, FilterChipRow } from "../../components/spark/FilterChip";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
@@ -377,41 +378,49 @@ export function SparkLeadsPage() {
         {/* Filter chips + search + new run */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            {(["all", "hot", "warm", "cold"] as const).map((t) => (
-              <button
-                key={t}
-                onClick={() => { setTierFilter(t); setPage(1); }}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${tierFilter === t ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-              >
-                {t === "all" ? "All" : t[0].toUpperCase() + t.slice(1)}
-                {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
-              </button>
-            ))}
-            {/* F-LG.15: Verified filter group. Visually offset by a thin
-                divider so it doesn't look like a 5th temperature chip. */}
-            <div className="mx-2 h-5 w-px bg-slate-200" aria-hidden="true" />
-            <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Show:</span>
-            {([
-              { value: "all", label: "All" },
-              { value: "true", label: "Verified only" },
-              { value: "false", label: "Failed verification" },
-            ] as const).map((v) => (
-              <button
-                key={v.value}
-                onClick={() => { setVerifiedFilter(v.value); setPage(1); }}
-                title={
-                  v.value === "true"  ? "Passed SMTP probe + domain freshness check (F-LG.15 adversarial verify)" :
-                  v.value === "false" ? "Refuted by at least one verifier — check the Verified column for the reason" :
-                  "All leads regardless of verification outcome"
-                }
-                className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${verifiedFilter === v.value ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-              >
-                {v.value === "true"  && <ShieldCheck className="h-3 w-3" />}
-                {v.value === "false" && <ShieldX className="h-3 w-3" />}
-                {v.label}
-              </button>
-            ))}
-            <div className="relative ml-2">
+            {/* THE CHIP ROW (October pull-forward P4.1, 2026-09-07). Found by
+                test/tap-targets.test.mjs rather than by the brief: the Leads
+                page carries the SAME chips as the Lead Inbox, at the same
+                24px, and fixing only the page that was named would have left
+                the guard failing on this one within the hour. */}
+            <FilterChipRow>
+              {(["all", "hot", "warm", "cold"] as const).map((t) => (
+                <FilterChip
+                  key={t}
+                  active={tierFilter === t}
+                  onClick={() => { setTierFilter(t); setPage(1); }}
+                >
+                  {t === "all" ? "All" : t[0].toUpperCase() + t.slice(1)}
+                  {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
+                </FilterChip>
+              ))}
+              {/* F-LG.15: Verified filter group. Visually offset by a thin
+                  divider so it doesn't look like a 5th temperature chip. */}
+              <div className="mx-2 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
+              <span className="shrink-0 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Show:</span>
+              {([
+                { value: "all", label: "All" },
+                { value: "true", label: "Verified only" },
+                { value: "false", label: "Failed verification" },
+              ] as const).map((v) => (
+                <FilterChip
+                  key={v.value}
+                  tone="emerald"
+                  active={verifiedFilter === v.value}
+                  onClick={() => { setVerifiedFilter(v.value); setPage(1); }}
+                  title={
+                    v.value === "true"  ? "Passed SMTP probe + domain freshness check (F-LG.15 adversarial verify)" :
+                    v.value === "false" ? "Refuted by at least one verifier — check the Verified column for the reason" :
+                    "All leads regardless of verification outcome"
+                  }
+                >
+                  {v.value === "true"  && <ShieldCheck className="h-3 w-3" />}
+                  {v.value === "false" && <ShieldX className="h-3 w-3" />}
+                  {v.label}
+                </FilterChip>
+              ))}
+            </FilterChipRow>
+            <div className="relative ml-2 max-md:ml-0 max-md:w-full">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
               <input
                 type="text"

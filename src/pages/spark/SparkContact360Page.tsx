@@ -10,9 +10,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-// SEAM-7-B stopgap — one line, one file, deleted whole when the activity-table
-// merge lands. Do not inline it.
-import { NewInquiriesElsewhereNote } from "../../components/spark/NewInquiriesElsewhereNote";
 import {
   User,
   Mail,
@@ -195,13 +192,19 @@ export function SparkContact360Page() {
                   ))}
                 </ul>
               ) : <Empty />}
-              {/* SEAM-7-B stopgap. A new inquiry lands on the LEAD, not on the
-                  contact, because at that moment there is no contact to attach
-                  it to — so this activity list has a gap whose explanation is
-                  ours and not the reader's. One quiet sentence until the
-                  activity-table merge lands, and then this line and its import
-                  are one delete. */}
-              <NewInquiriesElsewhereNote />
+              {/* The SEAM-7-B stopgap that used to sit here ("New inquiries
+                  show on the lead itself in the Lead Inbox") is DELETED, on
+                  2026-09-07, by the thing it was waiting for. Its own header
+                  asked for this: "the real fix is the activity-table merge,
+                  which another builder is doing in parallel ... when the merge
+                  lands: delete this file and its single usage."
+
+                  The merge landed. There is one activity table now, and a
+                  lead-scoped row carries the lead's contact_id — so a new
+                  inquiry from somebody this business already knows appears in
+                  the list ABOVE. Leaving the sentence would not have been a
+                  harmless leftover: it would point a reader somewhere else to
+                  find a line that is already in front of them. */}
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

@@ -38,6 +38,7 @@ import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError 
 // the source/channel labels the row and the card both read from one place.
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
+import { FilterChip, FilterChipRow } from "../../components/spark/FilterChip";
 import { rowSourceLabel, rowChannelLabel, sourceFacetKey, sourceFacetLabel } from "../../lib/leadSource";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -760,63 +761,72 @@ function LeadInboxTab() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          {/* T1/T2: Hot / Warm / Cold is Pro and above. Standard still gets the
-              full inbox — it just isn't sorted by a score it can't see. */}
-          {(showIntel ? (["all", "hot", "warm", "cold"] as const) : (["all"] as const)).map((t) => (
-            <button
-              key={t}
-              onClick={() => { setTierFilter(t); setPage(1); }}
-              className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${tierFilter === t ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-            >
-              {t === "all" ? "All" : t[0].toUpperCase() + t.slice(1)}
-              {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
-            </button>
-          ))}
-          <div className="mx-2 h-5 w-px bg-slate-200" aria-hidden="true" />
-          <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Show:</span>
-          {([
-            { value: "all", label: "All" },
-            { value: "true", label: "Verified only" },
-            { value: "false", label: "Failed verification" },
-          ] as const).map((v) => (
-            <button
-              key={v.value}
-              onClick={() => { setVerifiedFilter(v.value); setPage(1); }}
-              title={
-                v.value === "true"  ? "Passed SMTP probe + domain freshness check (F-LG.15 adversarial verify)" :
-                v.value === "false" ? "Refuted by at least one verifier — check the Verified column for the reason" :
-                "All leads regardless of verification outcome"
-              }
-              className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold transition-colors ${verifiedFilter === v.value ? "bg-emerald-700 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
-            >
-              {v.value === "true"  && <ShieldCheck className="h-3 w-3" />}
-              {v.value === "false" && <ShieldX className="h-3 w-3" />}
-              {v.label}
-            </button>
-          ))}
-          {sourceFacets.length > 1 && (
-            <>
-              <div className="mx-2 h-5 w-px bg-slate-200" aria-hidden="true" />
-              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Source:</span>
-              <button
-                onClick={() => { setSourceFilter("all"); setPage(1); }}
-                className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${sourceFilter === "all" ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+          {/* THE CHIP ROW (October pull-forward P4.1, 2026-09-07).
+              FilterChipRow is `display: contents` on desktop — invisible to
+              layout, so this container behaves exactly as it did before — and
+              a horizontally scrolling 40px row on a phone. Ten chips at a
+              40px tap target WRAPPED would be four rows and ~170px of an
+              812px screen spent before the first lead. */}
+          <FilterChipRow>
+            {/* T1/T2: Hot / Warm / Cold is Pro and above. Standard still gets the
+                full inbox — it just isn't sorted by a score it can't see. */}
+            {(showIntel ? (["all", "hot", "warm", "cold"] as const) : (["all"] as const)).map((t) => (
+              <FilterChip
+                key={t}
+                active={tierFilter === t}
+                onClick={() => { setTierFilter(t); setPage(1); }}
               >
-                All sources
-              </button>
-              {sourceFacets.map((f) => (
-                <button
-                  key={f.key}
-                  onClick={() => { setSourceFilter(f.key); setPage(1); }}
-                  title={`Only leads from ${f.label}`}
-                  className={`rounded-full px-3 py-1 text-xs font-semibold transition-colors ${sourceFilter === f.key ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}
+                {t === "all" ? "All" : t[0].toUpperCase() + t.slice(1)}
+                {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
+              </FilterChip>
+            ))}
+            <div className="mx-2 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
+            <span className="shrink-0 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Show:</span>
+            {([
+              { value: "all", label: "All" },
+              { value: "true", label: "Verified only" },
+              { value: "false", label: "Failed verification" },
+            ] as const).map((v) => (
+              <FilterChip
+                key={v.value}
+                tone="emerald"
+                active={verifiedFilter === v.value}
+                onClick={() => { setVerifiedFilter(v.value); setPage(1); }}
+                title={
+                  v.value === "true"  ? "Passed SMTP probe + domain freshness check (F-LG.15 adversarial verify)" :
+                  v.value === "false" ? "Refuted by at least one verifier — check the Verified column for the reason" :
+                  "All leads regardless of verification outcome"
+                }
+              >
+                {v.value === "true"  && <ShieldCheck className="h-3 w-3" />}
+                {v.value === "false" && <ShieldX className="h-3 w-3" />}
+                {v.label}
+              </FilterChip>
+            ))}
+            {sourceFacets.length > 1 && (
+              <>
+                <div className="mx-2 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />
+                <span className="shrink-0 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Source:</span>
+                <FilterChip
+                  active={sourceFilter === "all"}
+                  onClick={() => { setSourceFilter("all"); setPage(1); }}
                 >
-                  {f.label} ({f.count})
-                </button>
-              ))}
-            </>
-          )}
-          <div className="relative ml-2">
+                  All sources
+                </FilterChip>
+                {sourceFacets.map((f) => (
+                  <FilterChip
+                    key={f.key}
+                    active={sourceFilter === f.key}
+                    onClick={() => { setSourceFilter(f.key); setPage(1); }}
+                    title={`Only leads from ${f.label}`}
+                  >
+                    {f.label} ({f.count})
+                  </FilterChip>
+                ))}
+              </>
+            )}
+          </FilterChipRow>
+          <div className="relative ml-2 max-md:ml-0 max-md:w-full">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
             <input
               type="text"
