@@ -73,7 +73,15 @@ test("the chip row scrolls sideways on a phone and is INVISIBLE to layout on des
 
 test("every Lead Inbox filter chip goes through FilterChip", () => {
   const code = stripComments(INBOX);
-  assert.match(code, /import \{ FilterChip, FilterChipRow \}/);
+  // Matched on the NAMES rather than the literal line: pre-walk pass 2 added
+  // TAB_STRIP_ROW / TAB_STRIP_ITEM to the same import, and a test that pins the
+  // exact spelling of an import list fails on every future addition without
+  // anything being wrong. What must hold is that both come from this module.
+  const imp = code.match(/import \{([^}]*)\} from "\.\.\/\.\.\/components\/spark\/FilterChip"/);
+  assert.ok(imp, "SparkLeadInboxPage no longer imports from components/spark/FilterChip");
+  const names = imp[1].split(",").map((n) => n.trim());
+  assert.ok(names.includes("FilterChip"), `FilterChip is not imported (got ${names.join(", ")})`);
+  assert.ok(names.includes("FilterChipRow"), `FilterChipRow is not imported (got ${names.join(", ")})`);
   assert.match(code, /<FilterChipRow>/);
   // Five sites used to carry the same Tailwind string. A sixth copy appearing
   // is a sixth thing to raise the next time somebody measures a phone.
@@ -132,4 +140,55 @@ test("no OTHER page grew an inline 24px filter chip while this was being fixed",
     .map(rel);
   assert.deepEqual(offenders, [],
     `these files write a filter chip inline instead of using FilterChip:\n  ${offenders.join("\n  ")}`);
+});
+
+// ── Pre-walk pass 2, 2026-09-07 — the tab strip nobody could reach ──────────
+//
+// Measured live on the SPARK Lead Inbox at 375x812: the tab strip was 442px of
+// content inside a 333px container, clipped by `.spark-page { overflow-x:
+// hidden }` with no scrollbar. The four tabs sat at x = 21-113, 117-244,
+// 248-365 and 369-463 — so **Billing** began 6px past the right edge of a
+// 375px screen and could be neither tapped nor scrolled to, and Territories was
+// half cut off. Exactly W-SP2-C.4's fail ("a tab exists that cannot be
+// reached"); small pack 2 fixed that shape for the contact and job tab strips
+// and this strip was not on its list.
+//
+// Same treatment as the chips: nowrap + overflow-x on `max-md:` only, so
+// desktop is untouched by construction rather than by inspection.
+
+test("the tab strip scrolls on a phone instead of clipping a tab", () => {
+  const row = CHIP.match(/export const TAB_STRIP_ROW =([\s\S]*?);\n/);
+  assert.ok(row, "TAB_STRIP_ROW is gone from FilterChip.tsx");
+  assert.match(row[1], /max-md:flex-nowrap/,
+    "without flex-nowrap the strip wraps instead of scrolling and the fix is invisible");
+  assert.match(row[1], /max-md:overflow-x-auto/,
+    "overflow-x-auto is the whole fix: the strip must be its own scroll container, "
+    + "because its ancestor .spark-page is overflow-x:hidden and will clip it silently");
+
+  // Every mobile rule, and ONLY mobile rules. A bare `overflow-x-auto` here
+  // would put a scrollbar under the tabs on every desktop too.
+  for (const cls of row[1].match(/[a-z0-9:[\]#.\-/]+/gi) || []) {
+    if (cls === "max" || !cls.includes("-")) continue;
+    assert.ok(cls.startsWith("max-md:"),
+      `TAB_STRIP_ROW must be mobile-only; "${cls}" applies at every width`);
+  }
+
+  const item = CHIP.match(/export const TAB_STRIP_ITEM =([\s\S]*?);\n/);
+  assert.ok(item, "TAB_STRIP_ITEM is gone");
+  assert.match(item[1], /shrink-0/,
+    "inside a nowrap row a flex child is squeezed narrower than its text, so "
+    + "'Suppressed Domains' would ellipsis rather than scroll into view");
+});
+
+test("the Lead Inbox tab strip actually uses them", () => {
+  const src = stripComments(INBOX);
+  assert.match(src, /TAB_STRIP_ROW/,
+    "SparkLeadInboxPage no longer applies TAB_STRIP_ROW — the strip clips again");
+  assert.match(src, /TAB_STRIP_ITEM/,
+    "the tabs no longer carry TAB_STRIP_ITEM — they will be squeezed, not scrolled");
+  // The strip is identified by the border it draws; pin that the class lands on
+  // THAT element and not on some other flex row that happens to be nearby.
+  const strip = src.match(/className=\{`mb-4 flex items-end gap-1 border-b[^`]*`\}/);
+  assert.ok(strip, "the tab strip's className is no longer a template literal — is TAB_STRIP_ROW still on it?");
+  assert.match(strip[0], /TAB_STRIP_ROW/, "TAB_STRIP_ROW is not on the bordered tab strip");
 });

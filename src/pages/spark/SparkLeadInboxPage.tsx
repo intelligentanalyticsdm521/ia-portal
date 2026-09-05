@@ -38,7 +38,7 @@ import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError 
 // the source/channel labels the row and the card both read from one place.
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
-import { FilterChip, FilterChipRow } from "../../components/spark/FilterChip";
+import { FilterChip, FilterChipRow, TAB_STRIP_ROW, TAB_STRIP_ITEM } from "../../components/spark/FilterChip";
 import { rowSourceLabel, rowChannelLabel, sourceFacetLabel } from "../../lib/leadSource";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -219,11 +219,11 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
           active tab, slate text for inactive, with a small (?) info button
           immediately to the RIGHT of each label that opens an IadmModal
           (info size) with a plain-English explainer. */}
-      <div className="mb-4 flex items-end gap-1 border-b border-slate-200">
+      <div className={`mb-4 flex items-end gap-1 border-b border-slate-200 ${TAB_STRIP_ROW}`}>
         {TAB_ORDER.map((t) => {
           const active = tab === t;
           return (
-            <div key={t} className="flex items-center -mb-px">
+            <div key={t} className={`flex items-center -mb-px ${TAB_STRIP_ITEM}`}>
               <button
                 type="button"
                 onClick={() => setTab(t)}
