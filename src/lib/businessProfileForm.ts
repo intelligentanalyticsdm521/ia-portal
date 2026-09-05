@@ -74,12 +74,41 @@ const list = (v: string[] | undefined | null): string => (Array.isArray(v) ? v.j
 const parseList = (v: string): string[] =>
   v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 
+/** A structured group we read fields off. A stored scalar is not one. */
+function asObject<T extends object>(v: T | null | undefined): Partial<T> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+}
+
+/**
+ * PRE-WALK 1 (2026-09-07) — `service_area_json` is not guaranteed to hold the
+ * structured shape. The dev fixture holds the bare string "Des Moines metro",
+ * and older rows written before "Where do you work?" became five boxes hold
+ * one too.
+ *
+ * Read as an object, a string yields `kind`/`states`/`cities` all undefined,
+ * so `toFields` rebuilt an EMPTY group and collapsed it to null — which made
+ * `changedFields` report one change on a page nobody had touched ("1 change
+ * ready to save" on first load) and made that change the DELETION of the
+ * business's recorded service area. This module's own comment says a page that
+ * silently loses a value is how a good record gets overwritten with blanks.
+ *
+ * A plain string is what an owner typed in prose, so it lands in the prose box
+ * — the same shape `buildPrefillCandidates` mints from a questionnaire answer.
+ */
+function asServiceArea(v: BusinessProfileFields['serviceArea'] | string | null | undefined) {
+  if (typeof v === 'string') {
+    const note = v.trim();
+    return note ? ({ kind: 'list' as const, note }) : {};
+  }
+  return asObject(v as BusinessProfileFields['serviceArea']);
+}
+
 /** Server shape -> form shape. */
 export function toDraft(profile: BusinessProfileFields | null): BusinessProfileDraft {
   if (!profile) return { ...EMPTY_DRAFT };
-  const area = profile.serviceArea || {};
-  const cap = profile.capacity || {};
-  const esc = profile.escalation || {};
+  const area = asServiceArea(profile.serviceArea);
+  const cap = asObject(profile.capacity);
+  const esc = asObject(profile.escalation);
   const services = profile.services || [];
   return {
     industry: str(profile.industry),
@@ -213,9 +242,17 @@ export function changedFields(
   catalogue: CatalogueOption[] = [],
 ): Partial<BusinessProfileFields> {
   const next = toFields(draft, catalogue);
+  // PRE-WALK 1 — compare like with like. `loaded` is whatever the server had;
+  // `next` is always the form's canonical shape. Where the two shapes differ
+  // for a value nobody touched — a `service_area_json` holding a bare string,
+  // a services list in a different order — the raw comparison reported a
+  // change on first load and offered a Save that would rewrite (or, before the
+  // toDraft fix, erase) it. Round-tripping `loaded` through the same form asks
+  // the only question that matters: did the OWNER change anything?
+  const canonicalLoaded = toFields(toDraft(loaded), catalogue);
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(next) as Array<keyof BusinessProfileFields>) {
-    if (stable(next[key]) !== stable(loaded[key])) out[key] = next[key];
+    if (stable(next[key]) !== stable(canonicalLoaded[key])) out[key] = next[key];
   }
   return out as Partial<BusinessProfileFields>;
 }
