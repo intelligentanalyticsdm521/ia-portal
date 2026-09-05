@@ -99,7 +99,13 @@ test("the opted-out list carries the date and the reason in words", () => {
 
 test("a second line is one button with the price on it", () => {
   assert.match(settings, /Add a second line/);
-  assert.match(settings, /money\(meta\?\.monthly_fee_cents \?\? 500\)/);
+  // SMS-12 (2026-09-07): the price comes off the ONE price list rather than a
+  // hardcoded `?? 500`. A fallback in the page IS a second price list, which is
+  // how Growth sat at 300 in three files while the decision said 250.
+  assert.match(settings, /money\(meta\.pricing\.monthly_cents\)/);
+  // Comments may name the old figures — that is the history. The CODE may not.
+  assert.doesNotMatch(copy(settings), /\?\? 500/, "no hardcoded price anywhere on this page");
+  assert.doesNotMatch(copy(settings), /\?\? 250/, "nor a hardcoded allowance");
   assert.match(settings, /keeps your campaigns separate from your reminders/);
 });
 

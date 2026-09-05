@@ -54,6 +54,14 @@ interface Line {
   sms_included_per_month: number;
   registration_complete?: boolean;
   registration_missing?: string[];
+  // SMS-13 — what this line's activation cost, whether the plan covered it, and
+  // whether anything has actually been charged. Nothing has: the billing switch
+  // is off. `activation_charged` is how the page says that out loud rather than
+  // leaving somebody to wonder.
+  activation_fee_cents?: number | null;
+  activation_waived?: boolean;
+  activation_waived_reason?: string | null;
+  activation_charged?: boolean;
 }
 
 interface Allowance {
@@ -64,9 +72,34 @@ interface Allowance {
   remaining: number;
 }
 
+/**
+ * SMS-12 / SMS-13 — the price list, exactly as platform-api answers it.
+ *
+ * Every figure on this page comes off this object. There is deliberately no
+ * `?? 500` and no `?? 250` anywhere below: a hardcoded fallback IS a second
+ * price list, and a second price list is how Growth sat at 300 in three files
+ * while the decision said 250. When it is null the page says so.
+ */
+interface Pricing {
+  monthly_cents: number;
+  included_segments: number;
+  overage_cents_per_segment: number;
+  overage_billed: boolean;
+  activation: {
+    fee_cents: number;
+    full_fee_cents: number;
+    waived: boolean;
+    reason: string | null;
+  };
+  lines: { price: string; included: string; overage: string; activation: string };
+  confirm: string;
+}
+
 interface Meta {
   shared_number: string | null;
-  monthly_fee_cents: number;
+  monthly_fee_cents: number | null;
+  pricing?: Pricing | null;
+  pricing_unavailable?: boolean;
   entitled: boolean;
   included_in_plan: boolean;
   setup_estimate: string;
@@ -156,13 +189,21 @@ export function PhoneTextingSettingsPage() {
   const marketing = useMemo(() => lines.find((l) => l.purpose === "marketing") || null, [lines]);
 
   async function askForLine(purpose: "operations" | "marketing") {
-    const fee = money(meta?.monthly_fee_cents ?? 500);
+    // SMS-12/13 — the confirm names EVERY figure, in the same sentences the
+    // card shows and the same ones platform-api built. A confirm that says "$5
+    // a month" and omits a $99 is the surprise that arrives as a chargeback.
+    const p = meta?.pricing || null;
     const included = meta?.included_in_plan && purpose === "operations";
+    const price = included
+      ? "It is included on your plan."
+      : (p ? p.confirm
+        : "We could not read the price just now, so nothing has been agreed — ask us and we will confirm it.");
     if (!confirm(
       `Ask us to set up a ${PURPOSE_LABEL[purpose].title.toLowerCase()} number?\n\n`
-      + `${included ? "It is included on your plan." : `It is ${fee} a month.`}\n\n`
+      + `${price}\n\n`
       + `It takes ${meta?.setup_estimate || "a few weeks"}: the mobile carriers have to approve `
-      + `your business before it can send texts. We file that for you. Calls work sooner.`
+      + `your business before it can send texts. We file that for you. Calls work sooner.\n\n`
+      + "Nothing is charged today. We set it up first, and it appears on your next bill."
     )) return;
     setBusy(true);
     setNotice(null);
@@ -258,12 +299,29 @@ export function PhoneTextingSettingsPage() {
                   </div>
                 )}
                 {allowance.overage_units > 0 && (
-                  // Counted, NOT charged — and it says so, because "34 over"
-                  // with no explanation reads as a bill.
+                  // SMS-12. Counted, NOT charged — and it says so, because "34
+                  // over" with no explanation reads as a bill. The moment
+                  // Brandon flips SMS_OVERAGE_BILLING_ENABLED this sentence
+                  // changes with it, from the same object, so the page can
+                  // never claim "not charging" while the switch is on.
                   <p className="mt-2 text-xs text-amber-800">
                     You have gone {allowance.overage_units} text
-                    {allowance.overage_units === 1 ? "" : "s"} past what your plan includes. We are
-                    counting them, not charging for them — nothing extra is being billed.
+                    {allowance.overage_units === 1 ? "" : "s"} past what your plan includes.{" "}
+                    {meta?.pricing?.overage_billed
+                      ? <>They are {money(meta.pricing.overage_cents_per_segment)} each.</>
+                      : <>We are counting them, not charging for them — nothing extra is being billed.</>}
+                  </p>
+                )}
+                {/* SMS-12 — what the plan costs and includes, on the page that
+                    shows what has been used, so the two are never read apart. */}
+                {meta?.pricing && (
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    {meta.pricing.lines.included} {meta.pricing.lines.overage}
+                  </p>
+                )}
+                {meta?.pricing_unavailable && (
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    We could not read your plan&rsquo;s texting allowance just now.
                   </p>
                 )}
                 <p className="mt-2 text-[11px] text-slate-500">
@@ -349,6 +407,19 @@ function LineCard({ line, purpose, meta, busy, onAsk, secondary }: {
       )}
       <p className="mt-1 text-xs text-slate-600">{label.blurb}</p>
 
+      {/* SMS-13 — the one-time fee, on the line it belongs to, saying whether it
+          was waived and whether it has actually been charged. Nothing has been:
+          the billing switch is off platform-wide, and staying silent about that
+          is how a client assumes the worst when they see "$99" anywhere. */}
+      {line && typeof line.activation_fee_cents === "number" && (
+        <p className={`mt-1 text-[11px] ${line.activation_waived ? "text-emerald-700" : "text-slate-500"}`}>
+          {line.activation_waived
+            ? line.activation_waived_reason || "Your plan covers the carrier registration."
+            : <>Carrier registration and compliance filing: {money(line.activation_fee_cents)}, once.</>}
+          {!line.activation_charged && !line.activation_waived && " Not charged yet."}
+        </p>
+      )}
+
       {/* A pending line shows the wait AND the reason. Never a dead switch. */}
       {line?.pending && (
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-xs text-amber-900 ring-1 ring-amber-200">
@@ -428,16 +499,29 @@ function LineCard({ line, purpose, meta, busy, onAsk, secondary }: {
               </>
             )}
           </div>
+          {/* SMS-12/13 — the price, the allowance, the overage and the $99, in
+              four short sentences from the ONE price list. No hardcoded
+              fallback: when we could not read it, the card says so and the
+              button's confirm says so too. */}
           <div className="mt-2 text-xs font-semibold text-slate-900">
             {meta?.included_in_plan && purpose === "operations"
               ? "Included on your plan."
-              : `${money(meta?.monthly_fee_cents ?? 500)} a month.`}{" "}
+              : (meta?.pricing ? meta.pricing.lines.price : "We could not read the price just now.")}{" "}
             <span className="font-normal text-slate-600">
               {meta?.registration_promise
                 || "Your number is reserved today; texts flow when the carrier approves — we file it for you."}{" "}
               Calls work as soon as we switch it on; texting takes {meta?.setup_estimate || "a few weeks"}.
             </span>
           </div>
+          {meta?.pricing && !(meta.included_in_plan && purpose === "operations") && (
+            <ul className="mt-1.5 space-y-0.5 text-[11px] text-slate-600">
+              <li>{meta.pricing.lines.included}</li>
+              <li>{meta.pricing.lines.overage}</li>
+              <li className={meta.pricing.activation.waived ? "text-emerald-700" : undefined}>
+                {meta.pricing.lines.activation}
+              </li>
+            </ul>
+          )}
           {meta?.entitled ? (
             <button
               type="button"
@@ -446,8 +530,8 @@ function LineCard({ line, purpose, meta, busy, onAsk, secondary }: {
               className="mt-2 inline-flex min-h-[40px] items-center gap-1 rounded bg-[#EF6C33] px-3 py-2 text-xs font-semibold text-white hover:bg-[#D85F2A] disabled:opacity-40"
             >
               <Plus className="h-3 w-3" />
-              {secondary
-                ? `Add a second line — ${money(meta?.monthly_fee_cents ?? 500)}/month`
+              {secondary && meta?.pricing
+                ? `Add a second line — ${money(meta.pricing.monthly_cents)}/month`
                 : "Ask for a number"}
             </button>
           ) : (
