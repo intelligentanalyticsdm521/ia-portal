@@ -41,8 +41,9 @@ const HELP = read(path.join(SRC, "components", "PageHelpButton.tsx"));
 const INBOX = read(path.join(SRC, "pages", "spark", "SparkLeadInboxPage.tsx"));
 
 test("the chip carries a 40px tap target, and only on a phone", () => {
-  assert.match(CHIP, /max-md:min-h-\[40px\]/,
-    "40px is the smallest a thumb reliably hits");
+  const chipBase = CHIP.match(/export const CHIP_BASE =([\s\S]*?);\n/)[1];
+  assert.match(chipBase, /max-md:min-h-\[40px\]/,
+    "40px is the smallest a thumb reliably hits — and it must be in the CLASS, not the comment");
   // Unprefixed min-h would change the desktop. Every sizing rule this
   // component adds must be behind max-md:.
   const base = CHIP.match(/const CHIP_BASE =([\s\S]*?);\n/)[1];
@@ -61,6 +62,7 @@ test("the chip row scrolls sideways on a phone and is INVISIBLE to layout on des
   assert.match(row, /(^|["\s])contents(\s|"|$)/, "the row must be display:contents on desktop");
   assert.match(row, /max-md:flex\b/);
   assert.match(row, /max-md:flex-nowrap/, "wrapping ten 40px chips is four rows of a phone screen");
+  assert.ok(!/max-md:flex-wrap\b/.test(row), "nowrap, not wrap");
   assert.match(row, /max-md:overflow-x-auto/);
 
   // shrink-0 on the chip: inside a nowrap scrolling row a flex child WILL be
@@ -86,7 +88,13 @@ test("every Lead Inbox filter chip goes through FilterChip", () => {
 test('"Explain this page" and "Do it with me" carry the phone tap target', () => {
   assert.match(HELP, /export const HELP_BUTTON_CLASS/,
     "exported so the measuring script reads the shipped string, not a copy");
-  assert.match(HELP, /max-md:min-h-\[40px\]/);
+  // Against the CONSTANT, not the file. The JSDoc above it quotes
+  // `max-md:min-h-[40px]` while explaining why it is there, so a file-wide
+  // match was satisfied by the PROSE — the mutation harness deleted the rule
+  // from the constant and this test still passed.
+  const helpClass = HELP.match(/export const HELP_BUTTON_CLASS =([\s\S]*?);\n/)[1];
+  assert.match(helpClass, /max-md:min-h-\[40px\]/,
+    "the 40px phone tap target must be in the class, not only in the comment");
   // BOTH buttons use it. The first draft raised only the first one, which is
   // the half-fix that looks done.
   const uses = (stripComments(HELP).match(/className=\{HELP_BUTTON_CLASS\}/g) || []).length;
