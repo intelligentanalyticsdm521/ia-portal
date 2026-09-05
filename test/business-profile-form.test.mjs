@@ -260,3 +260,56 @@ test("switching customer clears the picked return visit", () => {
   // the API refuses, but the form should never have offered.
   assert.match(JOB_FORM, /setPastJobs\(\[\]\); setReturnOfJobId\(""\)/);
 });
+
+/* ── PRE-WALK 1 (2026-09-07) ────────────────────────────────────────────────
+ * `service_area_json` is not guaranteed to hold the structured shape. The dev
+ * fixture for Summit Lawn & Landscape holds the bare string "Des Moines
+ * metro", and rows written before "Where do you work?" became five boxes hold
+ * one too.
+ *
+ * Read as an object, a string yields kind/states/cities all undefined, so
+ * toFields rebuilt an EMPTY group and collapsed it to null. Two consequences,
+ * both visible to an owner:
+ *
+ *   1. The page said "1 change ready to save" on first load, on a form nobody
+ *      had touched.
+ *   2. That one change was the DELETION of the business's recorded service
+ *      area — the exact "a page that silently loses a value is how a good
+ *      record gets overwritten with blanks" failure this module warns about.
+ */
+test('a service area stored as a plain string lands in the prose box, not the bin', () => {
+  const draft = toDraft({ serviceArea: 'Des Moines metro' });
+  assert.equal(draft.serviceAreaNote, 'Des Moines metro', 'the words survive the read');
+  assert.equal(draft.serviceAreaKind, 'list');
+  assert.deepEqual(
+    toFields(draft).serviceArea,
+    { kind: 'list', note: 'Des Moines metro' },
+    'and writing it back keeps them',
+  );
+});
+
+test('a form nobody has touched has nothing to save, whatever shape the server stored', () => {
+  const stored = {
+    industry: 'Landscaping',
+    serviceArea: 'Des Moines metro', // legacy scalar
+    services: [{ name: 'Weekly Mowing', offering_id: 'EC61' }],
+  };
+  const catalogue = [{ offeringId: 'EC61', name: 'Weekly Mowing' }];
+  assert.deepEqual(
+    changedFields(stored, toDraft(stored), catalogue),
+    {},
+    'no phantom change on load — the Save button must not offer to rewrite what the owner never opened',
+  );
+});
+
+test('...but a real edit is still one change, and only that one', () => {
+  const stored = { industry: 'Landscaping', serviceArea: 'Des Moines metro' };
+  const draft = { ...toDraft(stored), industry: 'Landscaping and snow' };
+  assert.deepEqual(changedFields(stored, draft), { industry: 'Landscaping and snow' });
+});
+
+test('a capacity or escalation stored as a scalar does not crash the read', () => {
+  const draft = toDraft({ capacity: 'two crews', escalation: 'call Dave' });
+  assert.equal(draft.capacityJobsPerDay, '');
+  assert.equal(draft.escalationName, '', 'a scalar is not a group — it is ignored, never spread');
+});

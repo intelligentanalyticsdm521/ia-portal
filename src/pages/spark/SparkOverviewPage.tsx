@@ -3,6 +3,7 @@ import { Users, Megaphone, Globe as GlobeIcon, Zap as ZapIcon } from "lucide-rea
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { findWalkthrough, Walkthrough } from "../../components/walkthroughs/walkthroughRegistry";
 import { WalkthroughRunner } from "../../components/walkthroughs/WalkthroughRunner";
@@ -60,9 +61,12 @@ interface WalkthroughProgressResponse {
 export function SparkOverviewPage() {
   const { get, ready } = useSparkApi();
   const { get: lumenGet, put: lumenPut, ready: lumenReady } = useLumenApi();
-  const { accounts } = useMsal();
-  // Per-USER identity (not tenant) for once-only walkthrough gating.
-  const walkthroughUserId = accounts[0]?.localAccountId || accounts[0]?.homeAccountId || "anon";
+  // Per-USER identity (not tenant) for once-only walkthrough gating. Through
+  // the seam, so local dev gets the stand-in's stable id rather than "anon" —
+  // with "anon" every dev browser shared one key and the walkthrough could
+  // only ever be seen once across all of them.
+  const walkthroughAccount = useActiveAccount();
+  const walkthroughUserId = walkthroughAccount?.localAccountId || walkthroughAccount?.homeAccountId || "anon";
   const walkthroughSeenKey = `iadm.walkthrough.spark-basics.seen.${walkthroughUserId}`;
   // A founder/consultant viewing a client's portal is NOT the client user —
   // never fire the onboarding walkthrough in view-as / consultant-workspace mode.

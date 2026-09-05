@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { authScopes } from "../../auth/msalConfig";
 import { useAppState } from "../../app/AppState";
 import { useUserAccess } from "../../hooks/useUserAccess";
@@ -14,8 +15,11 @@ const PRODUCT_OPTIONS = ["arion", "oliver", "spark", "stella", "forge", "argus",
 const ROLE_LABEL: Record<string, string> = { admin: "Admin", user: "User", read_only: "Read only" };
 
 export function PlatformTeamAccess() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const account = useActiveAccount();
   const { active } = useAppState();
   const { isAdmin, canManageUsers, access } = useUserAccess();
   const [users, setUsers] = useState<PlatformTenantUser[]>([]);
