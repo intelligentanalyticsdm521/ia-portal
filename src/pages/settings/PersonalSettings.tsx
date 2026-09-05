@@ -44,6 +44,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMsal } from '@azure/msal-react';
+import { useActiveAccount } from '../../auth/useAccessToken';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import {
@@ -568,8 +569,11 @@ function NotificationsTab() {
 /* ------------------------------------------------------------------ */
 
 function SignInTab() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there is
+  // no MSAL session, so this tab showed a blank email address and a Sign out
+  // button with no account behind it.
+  const account = useActiveAccount();
   const email = account?.username || '';
 
   const signOut = useCallback(() => {

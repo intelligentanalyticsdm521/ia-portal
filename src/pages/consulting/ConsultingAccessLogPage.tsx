@@ -6,6 +6,7 @@
 // (sourced from platform.audit_log).
 import { useCallback, useEffect, useState } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { authScopes } from "../../auth/msalConfig";
 import { useAppState } from "../../app/AppState";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -16,8 +17,11 @@ import {
 import { ShieldCheck, ShieldOff } from "lucide-react";
 
 export function ConsultingAccessLogPage() {
-  const { instance, accounts } = useMsal();
-  const account = accounts[0];
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const account = useActiveAccount();
   const { active } = useAppState();
   const [managed, setManaged] = useState<boolean>(false);
   const [activeGrants, setActiveGrants] = useState<number>(0);

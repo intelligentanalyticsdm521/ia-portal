@@ -10,6 +10,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+// SEAM-7-B stopgap — one line, one file, deleted whole when the activity-table
+// merge lands. Do not inline it.
+import { NewInquiriesElsewhereNote } from "../../components/spark/NewInquiriesElsewhereNote";
 import {
   User,
   Mail,
@@ -192,6 +195,13 @@ export function SparkContact360Page() {
                   ))}
                 </ul>
               ) : <Empty />}
+              {/* SEAM-7-B stopgap. A new inquiry lands on the LEAD, not on the
+                  contact, because at that moment there is no contact to attach
+                  it to — so this activity list has a gap whose explanation is
+                  ours and not the reader's. One quiet sentence until the
+                  activity-table merge lands, and then this line and its import
+                  are one delete. */}
+              <NewInquiriesElsewhereNote />
             </Card>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

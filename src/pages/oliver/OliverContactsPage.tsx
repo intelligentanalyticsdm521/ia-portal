@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { formatPhone } from "../../lib/formatPhone";
 import { oliverDownload } from "../../lib/oliverApi";
@@ -79,7 +80,11 @@ export function OliverContactsPage() {
   const insightsPayload = useProductInsightsPayload('oliver');
 
   const { get, post, patch, del, ready } = useOliverApi();
-  const { instance, accounts } = useMsal();
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const activeAccount = useActiveAccount();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -89,7 +94,7 @@ export function OliverContactsPage() {
   const [exporting, setExporting] = useState(false);
 
   async function exportCsv() {
-    const account = accounts[0];
+    const account = activeAccount;
     if (!account) return;
     setExporting(true);
     try {

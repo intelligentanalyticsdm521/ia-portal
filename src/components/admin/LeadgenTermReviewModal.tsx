@@ -14,6 +14,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { AlertTriangle, ChevronRight, Tag, Copy, X as XIcon, Layers } from "lucide-react";
 import { sparkGet } from "../../lib/sparkApi";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
@@ -62,8 +63,11 @@ export function LeadgenTermReviewModal({ open, entry, token, apiBase, onClose, o
 
   // Parent-term autocomplete (MSAL-auth — uses the tenant API the way the new
   // search page does). Skipped unless the chosen action needs it.
-  const { instance, accounts } = useMsal();
-  const msalAccount = accounts[0];
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const msalAccount = useActiveAccount();
   const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {

@@ -82,7 +82,7 @@ test("an unknown row degrades to a dash, never to \"undefined\"", () => {
     "an unmapped key shows itself rather than pretending to be something else");
 });
 
-test("the Source facet groups by the KEY, not by what the client named it", () => {
+test("the Source facet groups by the LABEL, not by what the client named it", () => {
   const leads = [
     { source: "google_ads_leadform", source_label: "Spring tune-up" },
     { source: "google_ads_leadform", source_label: "Roof replacement" },
@@ -92,13 +92,31 @@ test("the Source facet groups by the KEY, not by what the client named it", () =
   ];
   const keys = leads.map(sourceFacetKey);
   assert.deepEqual(keys, [
-    "google_ads_leadform", "google_ads_leadform", "google_ads_leadform",
-    "spark_leadgen", "unknown",
+    "Google Ads lead form", "Google Ads lead form", "Google Ads lead form",
+    "SPARK Lead Gen", "Unknown",
   ]);
   const distinct = [...new Set(keys)];
   assert.equal(distinct.length, 3, "three Google Ads forms are ONE chip");
-  assert.equal(sourceFacetLabel("google_ads_leadform"), "Google Ads lead form");
+  assert.equal(sourceFacetLabel("Google Ads lead form"), "Google Ads lead form");
+  assert.equal(sourceFacetLabel("google_ads_leadform"), "Google Ads lead form",
+    "a raw key still resolves, so a filter stored before this change still reads");
   assert.equal(sourceFacetLabel("unknown"), "Unknown");
+});
+
+// PRE-WALK 1 (2026-09-07) — seven source keys map to the one label "SPARK Lead
+// Gen". Grouping on the raw key put TWO chips both reading "SPARK Lead Gen" in
+// front of a client (65 `spark_leadgen` + 17 `hunter_discover` on the dev
+// inbox), with no way to tell them apart, and picking one hid the other's
+// leads for a distinction we deliberately do not make.
+test("every B2B engine is ONE chip, because a client is never shown the engine", () => {
+  const engines = ["spark_leadgen", "hunter_discover", "brave_search", "you_search",
+                   "mojeek_search", "google_cse", "data_axle"];
+  const keys = engines.map((source) => sourceFacetKey({ source }));
+  assert.deepEqual([...new Set(keys)], ["SPARK Lead Gen"], keys.join(", "));
+  assert.ok(
+    !/hunter|brave|mojeek|you_search|google_cse|data_axle|leadgen/i.test(keys.join(" ")),
+    "no engine name reaches the chip",
+  );
 });
 
 test("nothing a client reads says \"tenant\"", () => {

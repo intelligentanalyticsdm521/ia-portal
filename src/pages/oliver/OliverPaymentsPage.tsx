@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useMsal } from "@azure/msal-react";
+import { useActiveAccount } from "../../auth/useAccessToken";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation } from "../../lib/oliverLocations";
@@ -67,7 +68,11 @@ function rangeToQuery(r: TimeRange): string {
 export function OliverPaymentsPage() {
   const { get, post, ready } = useOliverApi();
   const loc = useOliverLocations(); // header location picker → list scope (payments follow their invoice)
-  const { instance, accounts } = useMsal();
+  const { instance } = useMsal();
+  // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
+  // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
+  // guard below it turns the control into a button that does nothing.
+  const activeAccount = useActiveAccount();
   const [range, setRange] = useState<TimeRange>(() => rangeForPreset("last_30_days"));
   const [rows, setRows] = useState<PaymentRow[]>([]);
   const [meta, setMeta] = useState<PaymentMeta | null>(null);
@@ -81,7 +86,7 @@ export function OliverPaymentsPage() {
   const [manualFlash, setManualFlash] = useState<string | null>(null);
 
   async function exportCsv() {
-    const account = accounts[0];
+    const account = activeAccount;
     if (!account) return;
     setExporting(true);
     try {
