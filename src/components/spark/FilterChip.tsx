@@ -53,6 +53,30 @@ export const CHIP_OFF = "bg-slate-100 text-slate-700 hover:bg-slate-200";
 /** The verified/failed chips are green when on, not slate. Same geometry. */
 export const CHIP_ON_EMERALD = "bg-emerald-700 text-white";
 
+/**
+ * The TAB STRIP row — the same idea as CHIP_ROW, for a strip that is already a
+ * flex row on desktop and must stay one.
+ *
+ * Added 2026-09-07 by pre-walk pass 2. Measured on the SPARK Lead Inbox at
+ * 375x812: the strip was 442px inside a 333px container, clipped by
+ * `.spark-page { overflow-x: hidden }` with no scrollbar, so the **Billing**
+ * tab sat from x=369 to x=463 — entirely off a 375px screen, untappable and
+ * unscrollable. Small pack 2 fixed exactly this shape for the contact and job
+ * tab strips (W-SP2-C.4, "a tab exists that cannot be reached") and this strip
+ * was not in its list.
+ *
+ * Why not CHIP_ROW: that one is `contents` on desktop so it disappears from
+ * layout. This strip IS the layout — it carries the bottom border the active
+ * tab's underline sits on — so only the `max-md:` half applies.
+ */
+export const TAB_STRIP_ROW =
+  "max-md:flex-nowrap max-md:overflow-x-auto max-md:overflow-y-hidden max-md:-mx-1 max-md:px-1";
+
+/** A tab inside TAB_STRIP_ROW. `shrink-0` for the same reason as CHIP_BASE:
+ *  inside a nowrap scrolling row a flex child is squeezed narrower than its
+ *  text, and "Suppressed Domains" would ellipsis rather than scroll into view. */
+export const TAB_STRIP_ITEM = "shrink-0";
+
 export interface FilterChipProps {
   active: boolean;
   onClick: () => void;
