@@ -101,12 +101,58 @@ interface PoolStatus {
    *  hides the case that bites — five toll-free in stock and a client who wants
    *  a local one. */
   available_by_kind?: Record<string, number>;
-  target: number;
-  short_by: number;
+  /** LINE-1 — the two TARGETS, from platform-api, which owns the pool and runs
+   *  the top-up. `null` when it could not be reached, and the page says that
+   *  rather than implying the bank is full. */
+  targets?: { local: number; toll_free: number; total: number; auto_top_up: string[] } | null;
+  targets_unavailable?: boolean;
+  target: number | null;
+  short_by: number | null;
+  /** Short of target BY KIND. The aggregate says "one short"; only the split
+   *  says which one, and only the split can be acted on. */
+  short_by_kind?: Record<string, number> | null;
+  /** Which kinds the 15-minute tick will actually buy on its own. LOCAL only —
+   *  a toll-free number bought ahead cannot text until its OWN verification
+   *  clears weeks later, so buying it before a client asks rents a number that
+   *  cannot do the job. */
+  auto_top_up_kinds?: string[] | null;
   purchase_live: boolean;
   cool_off_days: number;
   counts: Record<string, number>;
   cooling?: CoolingNumber[];
+}
+
+/** SMS-12/13 — the price list, as platform-api answers it. */
+interface Pricing {
+  monthly_cents: number;
+  included_segments: number;
+  overage_cents_per_segment: number;
+  overage_billed: boolean;
+  overage_billing_flag?: string;
+  activation: { fee_cents: number; full_fee_cents: number; waived: boolean; reason: string | null };
+  lines: { price: string; included: string; overage: string; activation: string };
+  confirm: string;
+  our_cost_cents_per_segment?: number;
+  our_cost_unverified?: boolean;
+  billing?: { live: boolean; flag: string; blocked: string | null };
+}
+
+/** SMS-10 — who files carrier registrations, and who could. */
+interface RegistrationProviders {
+  active: string;
+  flag: string;
+  providers: Array<{
+    key: string;
+    label: string;
+    in_use: boolean;
+    api_driven: boolean;
+    minutes_of_human_work_per_client: number;
+    scales_to: string;
+    where_to_look: string;
+    limits: string[];
+    live?: boolean;
+    blocked?: string | null;
+  }>;
 }
 
 interface SharedLineLoad {
@@ -143,6 +189,10 @@ interface Meta {
   failed_registration_cost_cents?: number;
   registration_fee_cents?: number;
   regulatory_blade_url?: string;
+  pricing?: Pricing | null;
+  pricing_unavailable?: boolean;
+  registration_providers?: RegistrationProviders | null;
+  pool_targets?: { local: number; toll_free: number; total: number; auto_top_up: string[] } | null;
 }
 
 /** What the carrier has said about THIS business on THIS number. Separate from
@@ -218,6 +268,17 @@ export function PhoneLinesPage() {
   }
 
   function provision(l: Line) {
+    // SMS-12/13 — the price list is refused-on rather than guessed at. A line
+    // stamped with the wrong allowance carries it for years, so if platform-api
+    // could not be read the button says why instead of provisioning anyway.
+    if (meta?.pricing_unavailable) {
+      window.alert(
+        "The price list could not be read from the platform service, so this cannot provision.\n\n"
+        + "A line is stamped with its allowance and its activation fee at this moment and keeps them for "
+        + "as long as it exists. Try again in a minute."
+      );
+      return;
+    }
     const plan = prompt(
       `${meta?.cost_sentence || ""}\n\n`
       + `Which plan is ${l.business_name || "this business"} on? Type "growth" or "authority".\n`
@@ -226,12 +287,26 @@ export function PhoneLinesPage() {
     );
     if (!plan) return;
     const normalised = plan.trim().toLowerCase();
+    // LINE-1 — LOCAL by default. $1/month against toll-free's ~$2, better
+    // delivery, and it can take calls on day one; toll-free is for the client
+    // who insists on an 800 number.
+    const tollFree = window.confirm(
+      "Does this business specifically want a TOLL-FREE (800) number?\n\n"
+      + "OK = toll-free. Cancel = a local number, which is what we recommend: it costs half as much, "
+      + "delivers better, and can take calls the day it is bought."
+    );
     void act(
       l.id, "provision",
-      { confirm_spend: true, plan: normalised, included_in_plan: normalised === "authority" },
+      {
+        confirm_spend: true, plan: normalised,
+        included_in_plan: normalised === "authority",
+        kind: tollFree ? "toll_free" : "local",
+      },
       meta?.purchase_enabled
-        ? `This buys a REAL toll-free number now and starts a real monthly bill.\n\n${meta?.cost_sentence}\n\nGo ahead?`
-        : `${meta?.purchase_flag} is off, so this creates a stand-in number and bills nothing. Go ahead?`
+        ? `This buys a REAL ${tollFree ? "toll-free" : "local"} number now and starts a real monthly bill.\n\n`
+          + `${meta?.cost_sentence}\n\nGo ahead?`
+        : `${meta?.purchase_flag} is off, so this creates a stand-in ${tollFree ? "toll-free" : "local"} `
+          + "number and bills nothing. Go ahead?"
     );
   }
 
@@ -338,9 +413,11 @@ export function PhoneLinesPage() {
             </div>
             {meta.pool && (
               <div className="mt-1 text-xs">
-                Number pool: <span className="font-semibold tabular-nums">{meta.pool.available}</span> spare of{" "}
-                {meta.pool.target}
-                {meta.pool.short_by > 0 && (
+                Number pool: <span className="font-semibold tabular-nums">{meta.pool.available}</span> spare
+                {meta.pool.targets
+                  ? <> of {meta.pool.targets.total} ({meta.pool.targets.local} local · {meta.pool.targets.toll_free} toll-free)</>
+                  : <span className="ml-1 text-amber-800">— we could not read the targets from the platform service</span>}
+                {(meta.pool.short_by ?? 0) > 0 && (
                   <span className="ml-1 text-amber-800">
                     — {meta.pool.short_by} short; the 15-minute top-up will{" "}
                     {meta.pool.purchase_live ? "BUY" : "mint stand-ins for"} them
@@ -349,6 +426,31 @@ export function PhoneLinesPage() {
                 {meta.pool.counts?.cooling
                   ? ` · ${meta.pool.counts.cooling} cooling off (${meta.pool.cool_off_days} days before they can be handed back)`
                   : ""}
+              </div>
+            )}
+            {/* SMS-12/13 — the price list, on the page where the buttons are.
+                Every figure comes from platform-api's one home for them, so the
+                founder page and the client page cannot quote different prices. */}
+            {meta.pricing && (
+              <div className="mt-1 text-xs">
+                Sold at <span className="font-semibold">{money(meta.pricing.monthly_cents)}/month</span>
+                {" · "}{meta.pricing.included_segments} texts included
+                {" · "}{money(meta.pricing.overage_cents_per_segment)}/text over
+                {" "}<span className={meta.pricing.overage_billed ? "text-rose-800" : ""}>
+                  ({meta.pricing.overage_billed ? "CHARGED" : "counted, not charged"}
+                  {meta.pricing.overage_billing_flag ? ` — ${meta.pricing.overage_billing_flag}` : ""})
+                </span>
+                {" · "}{money(meta.pricing.activation.full_fee_cents)} activation
+                {" (waived on Authority, Business and OLIVER Pro+)"}
+                {meta.pricing.billing && (
+                  <> {" · "}Stripe {meta.pricing.billing.live ? "LIVE" : "off"} ({meta.pricing.billing.flag})</>
+                )}
+              </div>
+            )}
+            {meta.pricing_unavailable && (
+              <div className="mt-1 text-xs text-amber-800">
+                The price list could not be read from the platform service. Provisioning will refuse until
+                it can — a line stamped with a guessed allowance carries it for years.
               </div>
             )}
           </div>
@@ -365,6 +467,11 @@ export function PhoneLinesPage() {
           here rather than on the server because it is a judgement about how
           much warning a founder needs, not a fact about the pool. */}
       {meta?.pool && <BankLevel pool={meta.pool} />}
+
+      {/* ── SMS-10: who files carrier registrations ────────────────────────
+          The decision that has to be made before the eleventh client, on the
+          page where the filing buttons are. */}
+      {meta?.registration_providers && <RegistrationProvidersCard info={meta.registration_providers} />}
 
       {/* ── LINE-4: how hard the shared IA line is being ridden ────────────
           The compliance boundary from holistic §3. A number belongs to ONE
@@ -489,23 +596,38 @@ const KIND_LABEL: Record<string, string> = { local: "local", toll_free: "toll-fr
 
 function BankLevel({ pool }: { pool: PoolStatus }) {
   const byKind = pool.available_by_kind || {};
-  const kinds = Object.keys(byKind).length ? Object.keys(byKind) : ["local", "toll_free"];
   const cooling = pool.cooling || [];
+  // LINE-1 — the two kinds are ALWAYS both shown, even at zero, because "3
+  // local available" alone reads as a full bank to somebody who has forgotten
+  // there are two kinds.
+  const kinds = ["local", "toll_free"];
+  const auto = pool.auto_top_up_kinds || [];
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-semibold text-slate-900">Numbers on hand</h2>
-        <span className="text-[10px] text-slate-400">target {pool.target}</span>
+        {pool.targets
+          ? (
+            <span className="text-[10px] text-slate-400">
+              target {pool.targets.local} local · {pool.targets.toll_free} toll-free
+            </span>
+          )
+          : <span className="text-[10px] text-amber-700">targets unreadable</span>}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {kinds.map((k) => {
           const n = byKind[k] || 0;
+          const want = pool.targets ? (k === "local" ? pool.targets.local : pool.targets.toll_free) : null;
           return (
             <span
               key={k}
               className={`rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ring-1 ${levelClass(n)}`}
+              title={auto.includes(k)
+                ? "Topped up automatically on the 15-minute tick."
+                : "Bought only when you ask. A toll-free number cannot text until its own verification clears, so buying one ahead rents a number that cannot do the job."}
             >
-              {n} {KIND_LABEL[k] || k} available
+              {n}{want == null ? "" : ` of ${want}`} {KIND_LABEL[k] || k} available
+              {!auto.includes(k) && <span className="ml-1 font-normal text-[10px]">· on request</span>}
             </span>
           );
         })}
@@ -515,10 +637,20 @@ function BankLevel({ pool }: { pool: PoolStatus }) {
           </span>
         )}
       </div>
-      {pool.short_by > 0 && (
+      {/* LINE-1 — short BY KIND, and only the kinds a timer will act on are
+          described as something a timer will act on. Two toll-free short is not
+          a job for the tick, and saying it is would leave somebody waiting. */}
+      {(pool.short_by_kind?.local ?? 0) > 0 && (
         <p className="mt-2 text-[11px] text-amber-800">
-          {pool.short_by} short of target — the 15-minute top-up will{" "}
+          {pool.short_by_kind?.local} local short — the 15-minute top-up will{" "}
           {pool.purchase_live ? "BUY" : "mint stand-ins for"} them.
+        </p>
+      )}
+      {(pool.short_by_kind?.toll_free ?? 0) > 0 && (
+        <p className="mt-1 text-[11px] text-slate-600">
+          {pool.short_by_kind?.toll_free} toll-free short. Nothing will buy those on its own — a toll-free
+          number cannot text until its own verification clears, so we buy one when a client asks for an 800
+          number and not before.
         </p>
       )}
       {cooling.length > 0 && (
@@ -564,6 +696,75 @@ function BankLevel({ pool }: { pool: PoolStatus }) {
  * thirty, and if our sending reputation takes a hit it does not hit one client,
  * it hits every client on this infrastructure at once.
  */
+/**
+ * SMS-10 — who registers a business with the carriers, and what that costs in
+ * human time.
+ *
+ * This card exists because the decision is invisible otherwise. ACS has no API
+ * for brand or campaign registration: it is a wizard in the Azure portal, per
+ * ACS resource, not editable after submission — about forty minutes of clicking
+ * per client, forever, which works to roughly ten clients and then stops being
+ * a software business. Twilio's ISV pattern does the same thing by API.
+ *
+ * The number that decides it is "minutes of human work per client" multiplied
+ * by the client count on this very page, so it is printed here rather than
+ * living in a document nobody re-reads.
+ */
+function RegistrationProvidersCard({ info }: { info: RegistrationProviders }) {
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-sm font-semibold text-slate-900">Carrier registration</h2>
+        <span className="text-[10px] text-slate-400">{info.flag} = {info.active}</span>
+      </div>
+      <div className="mt-2 grid gap-2 md:grid-cols-2">
+        {info.providers.map((p) => (
+          <div
+            key={p.key}
+            className={`rounded-lg p-3 text-xs ring-1 ${
+              p.in_use ? "bg-amber-50 text-amber-900 ring-amber-200" : "bg-slate-50 text-slate-700 ring-slate-200"
+            }`}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-semibold">{p.label}</span>
+              {p.in_use && (
+                <span className="rounded-full bg-amber-200 px-1.5 py-0.5 text-[10px] font-bold uppercase">In use</span>
+              )}
+              {!p.api_driven && (
+                <span className="rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-rose-800">
+                  by hand
+                </span>
+              )}
+            </div>
+            <p className="mt-1">
+              {p.minutes_of_human_work_per_client > 0
+                ? <>About <span className="font-semibold tabular-nums">{p.minutes_of_human_work_per_client} minutes</span> of your time per client. Scales to {p.scales_to}.</>
+                : <>No human step per client. Scales to {p.scales_to}.</>}
+            </p>
+            {p.blocked && <p className="mt-1 text-[11px] text-slate-500">Not live: {p.blocked}.</p>}
+            <ul className="mt-1 list-disc space-y-0.5 pl-4 text-[11px]">
+              {p.limits.map((l) => <li key={l}>{l}</li>)}
+            </ul>
+            <a
+              href={p.where_to_look}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold underline"
+            >
+              Where to look <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[10px] text-slate-400">
+        Ask Microsoft about Messaging Connect first. If it does not give us per-client registration under one
+        resource, the texting registration moves to Twilio before the eleventh client — retrofitting thirty
+        clients&rsquo; registrations is a month of work.
+      </p>
+    </section>
+  );
+}
+
 function SharedLineLoadCard({ load }: { load: SharedLineLoad }) {
   const heavy = load.businesses >= 10;
   return (
