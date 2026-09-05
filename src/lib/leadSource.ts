@@ -151,17 +151,32 @@ export function rowSourceAndChannel(row: LeadSourceRow | null | undefined): stri
 }
 
 /**
- * The key a Source facet groups by. Facets group by the SOURCE KEY, never by
- * the client's own label, so ten Google Ads forms are one filter chip and not
- * ten — but the chip is named with the label a client would recognise.
+ * The key a Source facet groups by. Facets group by the LABEL a client would
+ * recognise, never by the client's own per-connection name and never by the
+ * raw source key — so ten Google Ads forms are one filter chip and not ten.
+ *
+ * PRE-WALK 1 (2026-09-07): it used to group by the raw source key, and SEVEN
+ * of those keys map to the one label "SPARK Lead Gen". A dev inbox holding 65
+ * `spark_leadgen` rows and 17 `hunter_discover` rows showed the client TWO
+ * chips both reading "SPARK Lead Gen", with different counts and no way to
+ * tell which was which — and picking one hid leads from the other for a
+ * distinction we deliberately do not make (Brandon 2026-09-04: customers do
+ * not care which engine pointed us at a business). Grouping on the label is
+ * the same rule the comment already stated, applied one level up.
  */
 export function sourceFacetKey(row: LeadSourceRow | null | undefined): string {
-  if (!row) return "unknown";
-  return firstSource(row.source || row.sources_found) || "unknown";
+  if (!row) return "Unknown";
+  const key = firstSource(row.source || row.sources_found);
+  if (!key) return "Unknown";
+  return SOURCE_LABELS[key] ?? key;
 }
 
-/** The chip's name for a facet key. */
+/**
+ * The chip's name for a facet key. The key IS the label now, so this is mostly
+ * the identity — but it still maps a raw source key, so a caller holding one
+ * (or a stored filter value from before this change) still reads correctly.
+ */
 export function sourceFacetLabel(key: string): string {
-  if (key === "unknown") return "Unknown";
+  if (!key || key.toLowerCase() === "unknown") return "Unknown";
   return SOURCE_LABELS[key] ?? key;
 }
