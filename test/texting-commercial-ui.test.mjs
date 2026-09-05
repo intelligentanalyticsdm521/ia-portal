@@ -29,7 +29,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,7 +43,6 @@ const copy = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/
 
 const settings = read("src/pages/settings/PhoneTextingSettingsPage.tsx");
 const founder = read("src/pages/admin/PhoneLinesPage.tsx");
-const note = read("src/components/spark/NewInquiriesElsewhereNote.tsx");
 const contact360 = read("src/pages/spark/SparkContact360Page.tsx");
 
 /* ── SMS-12: one price list, and the pages read it ───────────────────────── */
@@ -159,20 +158,26 @@ test("both registration providers are shown with the human cost of each", () => 
   assert.match(founder, /before the eleventh client/);
 });
 
-/* ── SEAM-7-B: the stopgap that is meant to be deleted ───────────────────── */
+/* ── SEAM-7-B: the stopgap is GONE, because what it waited for landed ────── */
 
-test("the Contact 360 note is one component, one usage, and says it is temporary", () => {
-  assert.match(note, /SEAM-7-B/);
-  assert.match(note, /New inquiries show on the lead itself/);
-  assert.match(note, /Lead Inbox/);
-  // Deleting it must be one delete and one import. If it ever grows a second
-  // usage, this fails and somebody has to think about it.
-  const rendered = contact360.match(/<NewInquiriesElsewhereNote\s*\/>/g) || [];
-  assert.equal(rendered.length, 1, "one usage — no more");
-  const imports = contact360.match(/^import .*NewInquiriesElsewhereNote.*$/gm) || [];
-  assert.equal(imports.length, 1, "and one import");
-  assert.match(note, /delete this file and its single usage/);
-  // The same path the new-leads banner uses. Two links by the same name must
-  // not go to two different pages.
-  assert.match(note, /\/app\/services\/spark_leads/);
+test("the Contact 360 stopgap note is deleted, not merely unused", () => {
+  // This test used to assert the note existed, had exactly one usage, and said
+  // out loud that it was temporary. That was the right test while the activity
+  // tables were still three. They are one as of 2026-09-07 (LUMEN migration
+  // 168), a lead-scoped activity row carries the lead's contact_id, and a new
+  // inquiry from somebody this business already knows now appears in Contact
+  // 360's own list. The note's header asked for exactly this: "when the merge
+  // lands: delete this file and its single usage."
+  //
+  // Inverted rather than removed. A deleted test proves nothing; this one
+  // fails if the file comes back, and it carries the reason it went.
+  assert.equal(existsSync(path.join(process.cwd(), "src/components/spark/NewInquiriesElsewhereNote.tsx")),
+    false, "the stopgap file is deleted");
+  assert.ok(!/NewInquiriesElsewhereNote/.test(contact360),
+    "and Contact 360 neither imports nor renders it");
+  // The gap it papered over must actually be closed, not just unmentioned:
+  // Contact 360 still renders an activity list, and that list is now fed by the
+  // one merged table (LUMEN routes/contacts.js reads lumen.activity).
+  assert.match(contact360, /data\.activity/, "Contact 360 still renders an activity list");
+  assert.match(contact360, /contacts\/\$\{contactId\}\/360/, "from the 360 endpoint it always used");
 });
