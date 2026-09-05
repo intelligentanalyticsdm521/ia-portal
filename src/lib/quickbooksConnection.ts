@@ -47,7 +47,7 @@ export interface QboStatus {
 
 export interface QboAttentionItem {
   queue_id: number;
-  entity: "customer" | "invoice" | "payment";
+  entity: "customer" | "invoice" | "payment" | "credit_memo";
   local_id: string;
   label: string | null;
   reason: string;
@@ -69,18 +69,32 @@ export const PUSHES = [
   "Customers — name, email, phone and billing address",
   "Invoices you have sent — line items, sales tax and the due date",
   "Payments — recorded against the invoice they paid",
+  // QB-1. Named as a credit note because that is the word an owner will see in
+  // QuickBooks, and the sentence says where it lands, because "we sent your
+  // refund somewhere" is not an answer an accountant can work with.
+  "Refunds — as a credit note in QuickBooks, applied to the invoice they came from",
 ] as const;
 
 export const DOES_NOT_PUSH = [
   "Invoices imported from your previous system — that money is already in your old books, and pushing it would count your revenue twice",
   "Anything from QuickBooks back into OLIVER — this only ever goes one way",
-  "Refunds, estimates, your chart of accounts, and your bank feed",
+  "Estimates, your chart of accounts, and your bank feed",
 ] as const;
+
+/** The one case worth spelling out on its own: a refund against an invoice that
+ *  is already paid in full has nothing left to reduce, so QuickBooks holds the
+ *  credit on the customer's account instead. That is what a bookkeeper would do
+ *  by hand, and an owner who is not told will read it as a missing refund. */
+export const REFUND_CREDIT_NOTE =
+  "If the invoice was already paid in full, the credit waits on that customer's account in QuickBooks instead of reducing the invoice.";
 
 export const ENTITY_LABEL: Record<string, string> = {
   customer: "Customer",
   invoice: "Invoice",
   payment: "Payment",
+  // The owner's word, not QuickBooks'. They pressed Refund; "Credit memo 1042"
+  // would send them looking for something they never created.
+  credit_memo: "Refund",
 };
 
 /** oliverApi throws `Error("OLIVER API 503: {json}")`. The code inside that

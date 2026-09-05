@@ -35,7 +35,7 @@ import path from "node:path";
 import {
   cardState, stateLabel, stateDetail, lastSyncLine, attentionLine,
   attentionItemLabel, environmentNote, errorCodeOf, errorMessageOf,
-  PUSHES, DOES_NOT_PUSH, NOT_CONFIGURED_FALLBACK,
+  PUSHES, DOES_NOT_PUSH, NOT_CONFIGURED_FALLBACK, REFUND_CREDIT_NOTE,
 } from "../src/lib/quickbooksConnection.ts";
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
@@ -156,10 +156,31 @@ test("the card says out loud that nothing comes back the other way", () => {
   assert.match(DOES_NOT_PUSH.join(" "), /only ever goes one way/i);
 });
 
-test("what IS sent is the three objects and nothing more", () => {
+test("what IS sent is the four objects and nothing more", () => {
   const joined = PUSHES.join(" ").toLowerCase();
-  for (const word of ["customers", "invoices", "payments"]) assert.match(joined, new RegExp(word));
-  assert.equal(PUSHES.length, 3);
+  for (const word of ["customers", "invoices", "payments", "refunds"]) assert.match(joined, new RegExp(word));
+  assert.equal(PUSHES.length, 4);
+});
+
+/* ── QB-1, refunds ────────────────────────────────────────────────────────── */
+
+test("refunds are sent, and the card no longer says they are not", () => {
+  assert.match(PUSHES.join(" "), /Refunds — as a credit note in QuickBooks, applied to the invoice they came from/);
+  assert.doesNotMatch(DOES_NOT_PUSH.join(" ").toLowerCase(), /refund/,
+    "the never-sent list said 'Refunds' until QB-1; leaving it there tells the owner the opposite of the truth");
+});
+
+test("the one refund case an owner would read as a missing refund is spelled out", () => {
+  assert.match(REFUND_CREDIT_NOTE, /already paid in full/i);
+  assert.match(REFUND_CREDIT_NOTE, /customer's account/i);
+});
+
+test("a refund in the needs-attention list is called a Refund, not a credit memo", () => {
+  assert.equal(
+    attentionItemLabel({ queue_id: 9, entity: "credit_memo", local_id: "abc", label: "1042", reason: "x", attempts: 1, since: null, next_attempt_at: null }),
+    "Refund 1042",
+    "the owner pressed Refund; 'Credit memo 1042' sends them looking for something they never created",
+  );
 });
 
 /* ── errors from the API ──────────────────────────────────────────────────── */

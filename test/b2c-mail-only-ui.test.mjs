@@ -71,31 +71,72 @@ test("a household's contact channels cannot be edited in the contact modal", () 
   assert.match(contactModal, /if \(isMailOnly\(contact\?\.contact_policy\)\) \{\s*\n\s*delete payload\.email; delete payload\.phone; delete payload\.mobile_phone;/);
 });
 
-test("New Search asks what we are looking for, and only B2B can be picked", () => {
-  assert.match(newSearch, /type SearchModel = "b2b" \| "b2c_mail" \| "blended"/);
-  assert.match(newSearch, /const \[model, setModel\] = useState<SearchModel>\("b2b"\)/);
-  assert.match(newSearch, /<ModelChooser value=\{model\} onChange=\{setModel\} \/>/);
+// ── B19 (2026-09-07) — the lock moved to the SERVER ─────────────────────────
+// B18 pinned "only B2B can be picked" against a hardcoded list in the
+// component. B19 built the household form behind the card, so the same
+// invariant now has to be pinned one level up: the availability of B2C comes
+// from `GET /api/v1/leadgen/models` (B2C_SEARCH_ENABLED on LUMEN), the page's
+// FALLBACK is locked, and the form does not mount unless the server says yes.
+// A hardcoded list here would be a page that still says October in December —
+// and, worse, a locked card over a switched-on backend.
 
-  const cards = newSearch.slice(newSearch.indexOf("const SEARCH_MODELS"), newSearch.indexOf("function ModelChooser"));
-  assert.match(cards, /key: "b2b",[\s\S]{0,400}available: true/);
-  assert.match(cards, /key: "b2c_mail",[\s\S]{0,500}available: false/);
-  assert.match(cards, /key: "blended",[\s\S]{0,400}available: false/);
-  assert.match(cards, /Coming in October/);
+test("New Search asks what we are looking for, and the chooser is server-driven", () => {
+  assert.match(newSearch, /type SearchModel = SearchModelKey/);
+  assert.match(newSearch, /const \[model, setModel\] = useState<SearchModel>\("b2b"\)/);
+  assert.match(newSearch, /<ModelChooser value=\{model\} onChange=\{setModel\} models=\{models\} \/>/);
+  assert.match(newSearch, /useState<SearchModelRow\[\]>\(FALLBACK_MODELS\)/,
+    "the safe default for a switch is off: a card that flashes unlocked and then locks got somebody's hopes up");
+  assert.match(newSearch, /get<\{ data: \{ models: SearchModelRow\[\] \} \}>\("\/api\/v1\/leadgen\/models"\)/);
   // The chooser must actually refuse the click, not merely look faded.
   const chooser = newSearch.slice(newSearch.indexOf("function ModelChooser"), newSearch.indexOf("interface FormState"));
   assert.match(chooser, /disabled=\{!m\.available\}/);
   assert.match(chooser, /onClick=\{\(\) => m\.available && onChange\(m\.key\)\}/);
+  // No hardcoded card list survives in the component.
+  assert.equal(newSearch.includes("const SEARCH_MODELS"), false,
+    "the model list lives on the server now; a second copy here is the one that goes stale");
 });
 
-test("the B2C card states the rule in the client's own words", () => {
-  const cards = newSearch.slice(newSearch.indexOf("const SEARCH_MODELS"), newSearch.indexOf("function ModelChooser"));
+test("the B2C card states the rule in the client's own words, and it is locked by default", () => {
+  const fallback = readFileSync(path.join(SRC, "lib/b2cSearch.ts"), "utf8");
+  const cards = fallback.slice(fallback.indexOf("FALLBACK_MODELS"), fallback.indexOf("export const B2C_RULE"));
+  assert.match(cards, /key: "b2b",[\s\S]{0,400}available: true/);
+  assert.match(cards, /key: "b2c_mail",[\s\S]{0,500}available: false/);
+  assert.match(cards, /key: "blended",[\s\S]{0,400}available: false/);
+  assert.match(cards, /Coming in October/);
   const b2c = cards.slice(cards.indexOf('key: "b2c_mail"'), cards.indexOf('key: "blended"'));
   assert.match(b2c, /We find households, you reach them by mail/);
   assert.match(b2c, /no email or text, ever/);
   assert.match(b2c, /the system cannot store them/);
-  // No B2C form here — that is B19, after the vendor contract.
-  assert.equal(/homeowner|home age|new mover|income band/i.test(visibleText(newSearch)), false,
-    "the B2C filter set comes from a vendor contract nobody has signed; inventing it here is a fabricated catalog");
+});
+
+test("the household form mounts only when the SERVER says B2C is available", () => {
+  assert.match(newSearch, /\{model === "b2c_mail" && \(/);
+  assert.match(newSearch, /<B2cHouseholdForm/);
+  // …and `model` can only BE "b2c_mail" if the server said so: an unavailable
+  // model is refused by the chooser and reset by resolveModel.
+  assert.match(newSearch, /setModel\(\(cur\) => resolveModel\(rows, cur\)\)/);
+
+  const lib = readFileSync(path.join(SRC, "lib/b2cSearch.ts"), "utf8");
+  assert.match(lib, /export function resolveModel[\s\S]{0,300}isModelAvailable\(models, wanted\) \? wanted : "b2b"/);
+});
+
+test("the trigger names come from the server, never from a list typed here", () => {
+  // The vendor filter set is a contract nobody has signed. The FORM renders
+  // whatever /leadgen/b2c/triggers returns; a hardcoded copy in the Portal
+  // would be a fabricated catalog with a second place to be wrong.
+  const form = readFileSync(path.join(SRC, "components/spark/B2cHouseholdForm.tsx"), "utf8");
+  assert.match(form, /get<\{ data: \{ triggers: TriggerRow\[\] \} \}>\("\/api\/v1\/leadgen\/b2c\/triggers"\)/);
+  assert.equal(/"new_mover"|"home_age"|"permit_filed"/.test(form), false,
+    "the trigger keys belong to the server's taxonomy, not to this component");
+});
+
+test("the household form says the rule before anything is filled in, and never invents a price", () => {
+  const form = readFileSync(path.join(SRC, "components/spark/B2cHouseholdForm.tsx"), "utf8");
+  const lib = readFileSync(path.join(SRC, "lib/b2cSearch.ts"), "utf8");
+  assert.match(form, /\{B2C_RULE\}/);
+  assert.match(lib, /Households are direct mail only[\s\S]{0,200}never store an email address or a phone number/);
+  assert.match(form, /price_sentence \?\? "Pricing for household records is not set yet/,
+    "$0.00 is a price, and the wrong one");
 });
 
 test("none of these surfaces says 'tenant' to a human", () => {

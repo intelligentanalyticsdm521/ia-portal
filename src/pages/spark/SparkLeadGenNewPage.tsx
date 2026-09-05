@@ -13,6 +13,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink, LeadGenTermsNotice } from "../../components/spark/LeadGenTermsLink";
+// B19 — the household form and the server-driven model chooser.
+import { B2cHouseholdForm } from "../../components/spark/B2cHouseholdForm";
+import {
+  type SearchModelKey, type SearchModelRow,
+  FALLBACK_MODELS, modelByKey, resolveModel,
+} from "../../lib/b2cSearch";
 import {
   type LeadGenCredits, type LeadGenForecast,
   BILLING_SETTINGS_ROUTE, fmtUsd, friendlyApiError, hasLeadsPackage, splitRun,
@@ -67,42 +73,35 @@ interface ExpandLocResponse { cities: ExpandedCity[]; zip_count: number }
 // rule they will be held to: direct mail only, and the system cannot store an
 // email address or phone number for those records at all (C2/N2 + the CHECK
 // constraints in LUMEN migration 164).
-type SearchModel = "b2b" | "b2c_mail" | "blended";
+type SearchModel = SearchModelKey;
 
-const SEARCH_MODELS: Array<{
-  key: SearchModel; label: string; blurb: string; note?: string;
-  icon: typeof Building2; available: boolean;
-}> = [
-  {
-    key: "b2b",
-    label: "B2B (businesses)",
-    blurb: "Businesses with a verified work email. Reach them by email, phone or post.",
-    icon: Building2,
-    available: true,
-  },
-  {
-    key: "b2c_mail",
-    label: "B2C direct mail only",
-    blurb: "Households from a licensed list. We find households, you reach them by mail — no email or text, ever; the system cannot store them.",
-    note: "Coming in October",
-    icon: Mailbox,
-    available: false,
-  },
-  {
-    key: "blended",
-    label: "Blended",
-    blurb: "Businesses and households in one run.",
-    note: "Coming",
-    icon: Users,
-    available: false,
-  },
-];
+// B18 kept this list in the component. B19 moved it to the server (see
+// FALLBACK_MODELS in lib/b2cSearch, which is what renders until the fetch
+// answers): whether B2C is available is a switch on LUMEN, and a card that
+// hardcodes "Coming in October" is a card that still says October in December.
 
-function ModelChooser({ value, onChange }: { value: SearchModel; onChange: (m: SearchModel) => void }) {
+/** B19 — the icon per model. Everything else about a card (its label, whether
+ *  it is available, the pill and the sentence) now comes from the SERVER, so a
+ *  locked card and a switched-on backend cannot disagree and nobody has to
+ *  remember to edit a component in October. */
+const MODEL_ICON: Record<SearchModel, typeof Building2> = {
+  b2b: Building2,
+  b2c_mail: Mailbox,
+  blended: Users,
+};
+
+function ModelChooser({
+  value, onChange, models,
+}: {
+  value: SearchModel;
+  onChange: (m: SearchModel) => void;
+  models: SearchModelRow[];
+}) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-      {SEARCH_MODELS.map((m) => {
-        const Icon = m.icon;
+      {models.map((row) => {
+        const m = { key: row.key, label: row.label, blurb: row.message, note: row.note ?? undefined, available: row.available };
+        const Icon = MODEL_ICON[row.key] ?? Building2;
         const selected = value === m.key;
         return (
           <button
@@ -329,6 +328,11 @@ export function SparkLeadGenNewPage() {
   // nothing in the form below depends on it yet, and a field the submit payload
   // does not carry has no business pretending to be part of the form.
   const [model, setModel] = useState<SearchModel>("b2b");
+  // B19 — which models this business may pick, from the server. FALLBACK_MODELS
+  // (B2C locked) is what renders until it answers: the safe default for a
+  // switch is off, and a card that flashes unlocked and then locks is a card
+  // that got somebody's hopes up.
+  const [models, setModels] = useState<SearchModelRow[]>(FALLBACK_MODELS);
   const [submitting, setSubmitting] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -380,6 +384,31 @@ export function SparkLeadGenNewPage() {
   // per-lead rate for extras (from Stripe), card on file. Drives the slider,
   // the live estimate and the Start gate. GET /leadgen/credits (LUMEN-API).
   const [credits, setCredits] = useState<LeadGenCredits | null>(null);
+
+  // B19 — which models this business may pick. FALLBACK_MODELS (B2C locked) is
+  // what renders until this answers, and what stays if it never does: the safe
+  // default for a switch is off, and an unreachable endpoint must never be the
+  // reason a switched-off product looks switched on.
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await get<{ data: { models: SearchModelRow[] } }>("/api/v1/leadgen/models");
+        if (cancelled) return;
+        const rows = r?.data?.models;
+        if (Array.isArray(rows) && rows.length) {
+          setModels(rows);
+          // A model that stops being available while somebody is on it falls
+          // back to B2B rather than leaving them on a form that cannot submit.
+          setModel((cur) => resolveModel(rows, cur));
+        }
+      } catch {
+        // Keep the locked fallback.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [get, ready]);
 
   // Load states once on mount.
   useEffect(() => {
@@ -880,8 +909,27 @@ export function SparkLeadGenNewPage() {
             title="What are we looking for?"
             hint="Businesses today. Household lists for postcards arrive in October — and they stay postcard-only."
           >
-            <ModelChooser value={model} onChange={setModel} />
+            <ModelChooser value={model} onChange={setModel} models={models} />
           </Section>
+
+          {/* B19 — the household form, mounted only when the SERVER says B2C is
+              available (B2C_SEARCH_ENABLED on LUMEN). With the switch off the
+              card above stays locked, "Coming in October", and this never
+              mounts — the lock is on the server, not in this component. */}
+          {model === "b2c_mail" && (
+            <Section
+              title="Which households?"
+              hint="Households are found by what is true about the house, not by keywords. Direct mail only."
+            >
+              <B2cHouseholdForm
+                api={{ get, post }}
+                state={form.state}
+                cities={form.cities.map((c) => c.name)}
+                zips={form.zips.map((z) => z.zip)}
+                mocked={modelByKey(models, "b2c_mail")?.mocked === true}
+              />
+            </Section>
+          )}
 
           {/* Business Categories (A13 — more than one per run) */}
           <Section

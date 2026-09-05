@@ -34,7 +34,7 @@ import { AlertTriangle, Check, RefreshCw } from "lucide-react";
 import { Button } from "../../components/oliver/ui";
 import {
   type QboStatus, type QboAttentionItem,
-  PUSHES, DOES_NOT_PUSH, NOT_CONFIGURED_FALLBACK,
+  PUSHES, DOES_NOT_PUSH, NOT_CONFIGURED_FALLBACK, REFUND_CREDIT_NOTE,
   cardState, stateLabel, stateDetail, lastSyncLine, attentionLine,
   attentionItemLabel, environmentNote, errorMessageOf,
 } from "../../lib/quickbooksConnection";
@@ -112,7 +112,7 @@ export function QuickBooksCard({ api }: { api: Api }) {
 
   async function disconnect() {
     if (!window.confirm(
-      "Disconnect QuickBooks? New customers, invoices and payments will stop being sent to your QuickBooks company. "
+      "Disconnect QuickBooks? New customers, invoices, payments and refunds will stop being sent to your QuickBooks company. "
       + "Nothing already in QuickBooks is removed.",
     )) return;
     setBusy("disconnect"); setError(null); setNotice(null);
@@ -162,8 +162,8 @@ export function QuickBooksCard({ api }: { api: Api }) {
         <div>
           <div className="card-ttl">Accounting — QuickBooks Online</div>
           <div className="card-sub">
-            Send your customers, invoices and payments to QuickBooks so your accountant works from the same
-            numbers you do. One direction only — nothing in QuickBooks changes anything in OLIVER.
+            Send your customers, invoices, payments and refunds to QuickBooks so your accountant works from the
+            same numbers you do. One direction only — nothing in QuickBooks changes anything in OLIVER.
           </div>
         </div>
         <StatePill state={state} />
@@ -279,6 +279,9 @@ export function QuickBooksCard({ api }: { api: Api }) {
               <ul style={{ margin: 0, paddingLeft: 16, fontSize: 11, color: MUTED, lineHeight: 1.6 }}>
                 {PUSHES.map((line) => <li key={line}>{line}</li>)}
               </ul>
+              {/* QB-1 — the one refund case an owner would otherwise read as a
+                  missing refund. */}
+              <p style={{ margin: "6px 0 0", fontSize: 11, color: MUTED, lineHeight: 1.5 }}>{REFUND_CREDIT_NOTE}</p>
             </div>
             <div>
               <div style={{ fontSize: 11, fontWeight: 600, color: INK, marginBottom: 4 }}>Never sent</div>
