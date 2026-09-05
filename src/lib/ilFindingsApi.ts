@@ -61,8 +61,21 @@ export interface IlFindingsReport {
   lead_intelligence: boolean;
   /** Standard and above — the paragraph. */
   narrative_available: boolean;
+  /** PRE-WALK 1b — one entry per section of the report, in reading order. A
+   *  section with nothing in it is still drawn, and says what it is waiting
+   *  for; a section this plan does not include says so instead. */
+  coverage?: IlFindingCoverage[];
   /** true when this business has no report for the month yet. */
   empty?: boolean;
+}
+
+export interface IlFindingCoverage {
+  kind: string;
+  measured: boolean;
+  /** 'pro' when the section exists but this plan does not include it. */
+  gated: string | null;
+  /** The plain sentence for a section that has nothing yet. */
+  waiting_for: string | null;
 }
 
 export interface IlFindingPeriod {

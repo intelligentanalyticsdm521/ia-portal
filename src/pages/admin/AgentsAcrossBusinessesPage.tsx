@@ -208,9 +208,14 @@ export default function AgentsAcrossBusinessesPage() {
           {(rollup?.businesses ?? []).map((b) => (
             <details key={b.tenant_id} className="rounded-lg border border-slate-200 bg-white">
               <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-3 py-2">
+                {/* PRE-WALK 1: a business whose name we could not resolve
+                    rendered as a bare GUID, which reads as data corruption
+                    rather than as "we could not name this one". The id is
+                    still shown — it is what you search on — but it is never
+                    the whole label. */}
                 <span className="text-xs font-semibold text-slate-900">
-                  {b.business_name || b.tenant_id}
-                  {b.business_name && <span className="ml-2 font-normal text-slate-400">{b.tenant_id}</span>}
+                  {b.business_name || <span className="text-slate-500">Unknown business</span>}
+                  <span className="ml-2 font-normal text-slate-400">{b.tenant_id}</span>
                 </span>
                 <span className="flex gap-4 text-[11px] text-slate-600">
                   <span>{b.runs} runs</span>

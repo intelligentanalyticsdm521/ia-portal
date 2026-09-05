@@ -41,6 +41,30 @@ const KIND_ORDER = [
   "campaign_reply", "rule_effect", "conversion_by_band",
 ];
 
+/**
+ * Why the month has no written-up paragraph, in the owner's words. Never the
+ * engine's status string, and never silence: a report that quietly drops its
+ * first paragraph is a report the reader assumes is broken.
+ */
+function narrativeAbsenceLine(status: string | null): string {
+  switch (status) {
+    case "no_findings":
+      return "There was not enough in the month to write up. The numbers below are everything we could measure.";
+    case "budget_spent":
+    case "budget_unreadable":
+      return "The written summary was not produced this month. The numbers below are unaffected.";
+    case "rejected_unverified_number":
+    case "rejected_too_long":
+    case "unparseable":
+      return "The written summary did not pass our own check, so it was not shown. Every figure on this page is still yours to read — the check exists so nothing on it is unverified.";
+    case "disabled":
+    case "not_configured":
+      return "The written summary is switched off at the moment. The numbers below are unaffected.";
+    default:
+      return "The written summary could not be produced this month. The numbers below are unaffected.";
+  }
+}
+
 function orderOf(kind: string) {
   const i = KIND_ORDER.indexOf(kind);
   return i < 0 ? KIND_ORDER.length : i;
@@ -219,16 +243,54 @@ export function SparkWhatWorkedPage() {
     }
   };
 
+  // PRE-WALK 1: the August report on the fixture business drew ONE section of
+  // the seven and said nothing at all about the other six. The data was
+  // honestly thin — but a report that promises "which source produced paid
+  // jobs, what each lead cost, which campaign got a reply" and then shows one
+  // card reads as broken software rather than as a quiet month.
+  //
+  // Every section is drawn now. One with rows shows them; one without shows
+  // what it is waiting for, in the server's words (`coverage`), because the
+  // server is the only thing that knows the thresholds. A section this plan
+  // does not include says THAT instead — a different reason, a different
+  // sentence (`reference_nav_visibility_semantics`).
   const grouped = useMemo(() => {
     const list = [...(report?.findings || [])].sort(
       (a, b) => orderOf(a.kind) - orderOf(b.kind) || a.finding_id - b.finding_id
     );
-    const out: { kind: string; label: string; rows: IlFinding[] }[] = [];
+    const rowsByKind = new Map<string, IlFinding[]>();
     for (const f of list) {
-      const label = FINDING_KIND_LABEL[f.kind] || "Also worth knowing";
-      const last = out[out.length - 1];
-      if (last && last.kind === f.kind) last.rows.push(f);
-      else out.push({ kind: f.kind, label, rows: [f] });
+      const arr = rowsByKind.get(f.kind);
+      if (arr) arr.push(f);
+      else rowsByKind.set(f.kind, [f]);
+    }
+    const coverage = report?.coverage;
+    const kinds = coverage?.length
+      ? coverage.map((c) => c.kind)
+      : [...rowsByKind.keys()].sort((a, b) => orderOf(a) - orderOf(b));
+    const waiting = new Map((coverage || []).map((c) => [c.kind, c]));
+    const out: {
+      kind: string; label: string; rows: IlFinding[];
+      waitingFor: string | null; gated: string | null;
+    }[] = [];
+    for (const kind of kinds) {
+      const c = waiting.get(kind);
+      out.push({
+        kind,
+        label: FINDING_KIND_LABEL[kind] || "Also worth knowing",
+        rows: rowsByKind.get(kind) || [],
+        waitingFor: c?.waiting_for ?? null,
+        gated: c?.gated ?? null,
+      });
+    }
+    // Anything stored under a kind the server did not list still gets shown.
+    for (const kind of rowsByKind.keys()) {
+      if (!out.some((g) => g.kind === kind)) {
+        out.push({
+          kind, label: FINDING_KIND_LABEL[kind] || "Also worth knowing",
+          rows: rowsByKind.get(kind) || [], waitingFor: null, gated: null,
+        });
+      }
     }
     return out;
   }, [report]);
@@ -287,6 +349,16 @@ export function SparkWhatWorkedPage() {
             </div>
           )}
 
+          {/* PRE-WALK 1: the paragraph was simply absent, with nothing to say
+              it had been tried. A month whose write-up could not be produced
+              says so — the numbers below are unaffected, and that is the part
+              that matters. */}
+          {report.narrative_available && !report.narrative && report.run && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              {narrativeAbsenceLine(report.run.narrative_status)}
+            </div>
+          )}
+
           {!report.narrative_available && (
             <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
               <Lock className="mr-1.5 -mt-0.5 inline h-3.5 w-3.5 text-slate-400" />
@@ -304,7 +376,15 @@ export function SparkWhatWorkedPage() {
                 <div className="bg-slate-50 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   {g.label}
                 </div>
-                <ul>{g.rows.map((f) => <FindingRow key={f.finding_id} finding={f} />)}</ul>
+                {g.rows.length > 0 ? (
+                  <ul>{g.rows.map((f) => <FindingRow key={f.finding_id} finding={f} />)}</ul>
+                ) : (
+                  <p className="px-4 py-2.5 text-xs text-slate-500">
+                    {g.gated === "pro"
+                      ? "Comes with Pro."
+                      : (g.waitingFor || "Nothing to measure here this month.")}
+                  </p>
+                )}
               </div>
             ))}
           </div>

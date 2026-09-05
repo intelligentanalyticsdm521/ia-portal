@@ -39,7 +39,7 @@ import { type LeadGenBillingRow, BILLING_STATUS_LABEL, fmtUsd, friendlyApiError 
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
 import { FilterChip, FilterChipRow } from "../../components/spark/FilterChip";
-import { rowSourceLabel, rowChannelLabel, sourceFacetKey, sourceFacetLabel } from "../../lib/leadSource";
+import { rowSourceLabel, rowChannelLabel, sourceFacetLabel } from "../../lib/leadSource";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
@@ -394,6 +394,16 @@ interface LeadListResponse {
     inbox_capacity?: InboxCapacity | null;
     // T1/T2 — false means this tenant is below Pro: no points, no band.
     lead_intelligence?: boolean;
+    // PRE-WALK 1b — the chips count the INBOX, and the server counts it. null
+    // means "not read", which is why every number below is optional: a chip
+    // with no number beats a chip with a wrong one.
+    //   band_counts   — null for Standard (Hot/Warm/Cold is Pro and above)
+    //   source_counts — RAW lumen.lead.source keys → count, folded to the
+    //                   client-facing labels here by lib/leadSource
+    //   last_rescored_at — newest re-score in the whole inbox, every tier
+    band_counts?: { all: number; hot: number; warm: number; cold: number; unscored: number } | null;
+    source_counts?: Record<string, number> | null;
+    last_rescored_at?: string | null;
   };
 }
 
@@ -452,6 +462,17 @@ function LeadInboxTab() {
   const [coldBusy, setColdBusy] = useState<"move_to_contacts" | "remove" | null>(null);
   const [coldResult, setColdResult] = useState<string | null>(null);
 
+  // label → the raw source keys behind it, so picking a chip can tell the
+  // server what it means without the server learning the labels.
+  const sourceKeysByLabel = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const rawKey of Object.keys(meta?.source_counts || {})) {
+      const label = sourceFacetLabel(rawKey);
+      (out[label] ||= []).push(rawKey);
+    }
+    return out;
+  }, [meta]);
+
   const load = useCallback(async () => {
     if (!ready) return;
     setLoading(true);
@@ -463,6 +484,13 @@ function LeadInboxTab() {
       if (tierFilter !== "all") qs.set("temperature", tierFilter);
       if (verifiedFilter !== "all") qs.set("verified", verifiedFilter);
       if (sortMode !== "newest") qs.set("sort", sortMode);
+      // The Source chip filters the INBOX now, not the fifty rows on screen.
+      // We send the RAW source keys behind the chosen label — seven of them
+      // read "SPARK Lead Gen" — so the label map stays here and the server
+      // never needs a second copy of it.
+      if (sourceFilter !== "all" && sourceKeysByLabel[sourceFilter]?.length) {
+        qs.set("source", sourceKeysByLabel[sourceFilter].join(","));
+      }
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
@@ -477,7 +505,7 @@ function LeadInboxTab() {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, page, tierFilter, verifiedFilter, sortMode]);
+  }, [get, ready, page, tierFilter, verifiedFilter, sortMode, sourceFilter, sourceKeysByLabel]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -516,32 +544,36 @@ function LeadInboxTab() {
     post("/api/v1/leadgen/inbox/visit", {}).catch(() => { /* ignore */ });
   }, [post, visitPillDismissed]);
 
+  // Search stays on the loaded page — it is a "find the one I can see" box,
+  // not a filter, and it has no chip claiming a total.
   const filteredLeads = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q && sourceFilter === "all") return leads;
-    return leads.filter((l) => {
-      if (sourceFilter !== "all" && sourceFacetKey(l) !== sourceFilter) return false;
-      if (!q) return true;
-      return (
-        (l.business_name || "").toLowerCase().includes(q) ||
-        (l.domain || "").toLowerCase().includes(q) ||
-        (l.email || "").toLowerCase().includes(q)
-      );
-    });
-  }, [leads, search, sourceFilter]);
+    if (!q) return leads;
+    return leads.filter((l) => (
+      (l.business_name || "").toLowerCase().includes(q) ||
+      (l.domain || "").toLowerCase().includes(q) ||
+      (l.email || "").toLowerCase().includes(q)
+    ));
+  }, [leads, search]);
 
   // The facet only appears when there is something to choose BETWEEN — a
   // client with one source does not need a filter that says "all" and "the one".
+  //
+  // PRE-WALK 1b: built from the SERVER's per-source counts over the whole
+  // inbox, not from the fifty rows on screen. Folded to the labels a client
+  // recognises here, because that map is a Portal thing and stays one.
   const sourceFacets = useMemo(() => {
-    const byKey = new Map<string, number>();
-    for (const l of leads) {
-      const k = sourceFacetKey(l);
-      byKey.set(k, (byKey.get(k) || 0) + 1);
+    const raw = meta?.source_counts;
+    if (!raw) return [] as { key: string; count: number; label: string }[];
+    const byLabel = new Map<string, number>();
+    for (const [rawKey, n] of Object.entries(raw)) {
+      const label = sourceFacetLabel(rawKey);
+      byLabel.set(label, (byLabel.get(label) || 0) + (Number(n) || 0));
     }
-    return [...byKey.entries()]
-      .map(([key, count]) => ({ key, count, label: sourceFacetLabel(key) }))
+    return [...byLabel.entries()]
+      .map(([label, count]) => ({ key: label, count, label }))
       .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
-  }, [leads]);
+  }, [meta]);
 
   const onSuppress = async (lead: Lead) => {
     if (!confirm(`Suppress ${lead.domain}? Future searches will skip this domain.`)) return;
@@ -629,26 +661,26 @@ function LeadInboxTab() {
     }
   };
 
-  // L16 — the most recent monthly re-score across the loaded rows. Derived
-  // from the list we already have; no extra fetch.
+  // L16 / walk row R12 — the most recent monthly re-score in the WHOLE inbox.
+  //
+  // PRE-WALK 1: this used to be the newest rescored_at among the LOADED rows,
+  // and page 1 of 197 held none of the 91 the job had touched — so the "Last
+  // re-scored …" sentence was simply absent on the page it is written for. The
+  // server reads the inbox; the page reads the server.
   const lastRescoredAt = useMemo(() => {
-    let latest: number | null = null;
-    for (const l of leads) {
-      const t = l.rescored_at ? Date.parse(l.rescored_at) : NaN;
-      if (!Number.isNaN(t) && (latest == null || t > latest)) latest = t;
-    }
-    return latest == null ? null : new Date(latest);
-  }, [leads]);
+    const raw = meta?.last_rescored_at;
+    if (!raw) return null;
+    const t = Date.parse(raw);
+    return Number.isNaN(t) ? null : new Date(t);
+  }, [meta]);
 
-  const counts = useMemo(() => {
-    const c = { all: leads.length, hot: 0, warm: 0, cold: 0 };
-    for (const l of leads) {
-      if (l.hot_warm_cold === "hot") c.hot++;
-      else if (l.hot_warm_cold === "warm") c.warm++;
-      else if (l.hot_warm_cold === "cold") c.cold++;
-    }
-    return c;
-  }, [leads]);
+  // Walk row R7 — the band chips. PRE-WALK 1: with 197 leads the list said
+  // "Showing 1–50 of 197" over chips reading All (50) · Hot (0) · Warm (26) ·
+  // Cold (24), while IA Insights → Health said Hot 51 for the same business
+  // after the same re-score. A client who reads "Hot (0)" decides they have no
+  // work to chase. null = the server could not count; the chip then carries no
+  // number rather than a made-up one.
+  const counts = meta?.band_counts ?? null;
 
   if (loading && leads.length === 0) {
     return <div className="text-sm text-slate-500 py-6">Loading…</div>;
@@ -777,7 +809,7 @@ function LeadInboxTab() {
                 onClick={() => { setTierFilter(t); setPage(1); }}
               >
                 {t === "all" ? "All" : t[0].toUpperCase() + t.slice(1)}
-                {t === "all" ? ` (${counts.all})` : t === "hot" ? ` (${counts.hot})` : t === "warm" ? ` (${counts.warm})` : ` (${counts.cold})`}
+                {counts ? ` (${counts[t]})` : ""}
               </FilterChip>
             ))}
             <div className="mx-2 h-5 w-px shrink-0 bg-slate-200" aria-hidden="true" />

@@ -230,6 +230,13 @@ export function PhoneLinesPage() {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // PRE-WALK 1: a refusal is not a reading. GET /conversations/admin/* answers
+  // 403 phone_lines_founder_only to anybody who is not the founder, and the
+  // page went on to render LIVE LINES 0, COSTS US A MONTH $0.00 and "No
+  // business has a live number yet" with the refusal in small print underneath.
+  // A founder whose role had lapsed would read the zeros as fact. The status
+  // decides which of the two the page is: a refusal, or a number.
+  const [refused, setRefused] = useState<string | null>(null);
   const [busy, setBusy] = useState<number | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -241,8 +248,15 @@ export function PhoneLinesPage() {
       setLines(r.data || []);
       setMeta(r.meta || null);
       setError(null);
+      setRefused(null);
     } catch (err) {
-      setError(friendlyApiError(err).message);
+      const e = friendlyApiError(err) as Error & { status?: number };
+      // 401/403 = "you cannot see this". Anything else is a fault, and a fault
+      // still gets the red strip it always had.
+      if (e.status === 403 || e.status === 401) { setRefused(e.message); setError(null); }
+      else { setError(e.message); setRefused(null); }
+      setLines([]);
+      setMeta(null);
     } finally {
       setLoading(false);
     }
@@ -385,8 +399,22 @@ export function PhoneLinesPage() {
         </div>
       </header>
 
+      {/* Refused: the page says so and stops. No zeros, no "nobody has a
+          number yet" — both of those are claims about the world, and a refusal
+          is the absence of one. */}
+      {refused && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="font-semibold">You cannot see this.</div>
+          <p className="mt-1">{refused}</p>
+          <p className="mt-2 text-xs text-amber-800">
+            Phone lines are founder-only. Nothing below is hidden or empty — it was not read at all,
+            so this page is showing you no numbers rather than the wrong ones.
+          </p>
+        </div>
+      )}
+
       {/* The switch that decides whether any of these buttons spend money. */}
-      {meta && (
+      {!refused && meta && (
         <div className={`flex items-start gap-2 rounded-lg p-3 text-sm ring-1 ${
           meta.purchase_enabled
             ? "bg-rose-50 text-rose-900 ring-rose-200"
@@ -466,12 +494,12 @@ export function PhoneLinesPage() {
           Amber below two available of a kind, red at zero. The threshold is
           here rather than on the server because it is a judgement about how
           much warning a founder needs, not a fact about the pool. */}
-      {meta?.pool && <BankLevel pool={meta.pool} />}
+      {!refused && meta?.pool && <BankLevel pool={meta.pool} />}
 
       {/* ── SMS-10: who files carrier registrations ────────────────────────
           The decision that has to be made before the eleventh client, on the
           page where the filing buttons are. */}
-      {meta?.registration_providers && <RegistrationProvidersCard info={meta.registration_providers} />}
+      {!refused && meta?.registration_providers && <RegistrationProvidersCard info={meta.registration_providers} />}
 
       {/* ── LINE-4: how hard the shared IA line is being ridden ────────────
           The compliance boundary from holistic §3. A number belongs to ONE
@@ -479,9 +507,9 @@ export function PhoneLinesPage() {
           its own. Past roughly ten paying businesses this needs a written read
           from the aggregator and a telecom attorney — and the only way anybody
           remembers that is if the number is on the screen before then. */}
-      {meta?.shared_line && <SharedLineLoadCard load={meta.shared_line} />}
+      {!refused && meta?.shared_line && <SharedLineLoadCard load={meta.shared_line} />}
 
-      <div className="grid gap-3 sm:grid-cols-4">
+      {!refused && <div className="grid gap-3 sm:grid-cols-4">
         <div className="rounded-lg border bg-white p-4">
           <div className="text-xs uppercase tracking-wider text-slate-500">Live lines</div>
           <div className="mt-1 text-2xl font-semibold tabular-nums">{live.length}</div>
@@ -510,11 +538,11 @@ export function PhoneLinesPage() {
             {money(meta?.failed_registration_cost_cents ?? 0)} spent and not coming back
           </div>
         </div>
-      </div>
+      </div>}
 
       {loading && <div className="text-sm text-slate-500">Loading…</div>}
 
-      {!loading && waiting.length > 0 && (
+      {!refused && !loading && waiting.length > 0 && (
         <section>
           <h2 className="mb-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
             <Clock className="h-4 w-4 text-amber-600" />Waiting on you
@@ -546,11 +574,11 @@ export function PhoneLinesPage() {
         </section>
       )}
 
-      {!loading && meta?.allowance_by_business && meta.allowance_by_business.length > 0 && (
+      {!refused && !loading && meta?.allowance_by_business && meta.allowance_by_business.length > 0 && (
         <SegmentsThisMonth rows={meta.allowance_by_business} cap={meta.shared_line?.cap_per_business ?? null} />
       )}
 
-      {!loading && (
+      {!refused && !loading && (
         <section>
           <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-900">
             <CheckCircle2 className="h-4 w-4 text-emerald-600" />Live
