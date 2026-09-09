@@ -183,9 +183,16 @@ test("both entry routes exist — type it, or import a trial balance", () => {
   assert.match(opening, /header row with an account <strong>Code<\/strong> column/);
 });
 
-test("open AR is offered; what you owe suppliers says why it is not", () => {
+test("BOTH halves of the carry-in are offered — what you are owed and what you owe", () => {
+  // Pack 1 could only carry in receivables, because vendor bills did not exist,
+  // and the page said so where the number would have been. Pack 2 built bills,
+  // so both halves are offered — a conversion that carried one and not the
+  // other started with the difference quietly in Retained Earnings.
   assert.match(opening, /Carry in what customers still owe you/);
-  assert.match(opening, /What you owe suppliers is not carried in\./);
+  assert.match(opening, /Carry in what you still owe suppliers/);
+  assert.ok(!/What you owe suppliers is not carried in/.test(opening), "the pre-Bill-Pay copy is still on the page");
+  assert.match(opening, /include_open_ap: includeAp/);
+  // A zero still explains WHICH zero it is.
   assert.match(opening, /data\.carry_in\.open_ap\.reason/);
 });
 

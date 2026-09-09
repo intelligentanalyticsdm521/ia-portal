@@ -43,7 +43,10 @@ type Existing = {
 
 type CarryIn = {
   open_ar: { invoices: number; total: number; source: string };
-  open_ap: { total: number | null; reason: string };
+  // STELLA pack 2: this used to be `{ total: null, reason }` — vendor bills did
+  // not exist, so what a business owed on conversion day could not be carried
+  // in and the page said so. Bills exist now, and so does the number.
+  open_ap: { bills: number; total: number; source: string; reason: string | null };
 };
 
 type GetResponse = {
@@ -87,6 +90,7 @@ export function OpeningBalances() {
   const [date, setDate] = useState(defaultConversionDate);
   const [rows, setRows] = useState<Row[]>([emptyRow(), emptyRow()]);
   const [includeAr, setIncludeAr] = useState(false);
+  const [includeAp, setIncludeAp] = useState(false);
   const [csv, setCsv] = useState<string | null>(null);
   const [csvName, setCsvName] = useState<string | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -113,6 +117,7 @@ export function OpeningBalances() {
   const body = () => ({
     conversion_date: date,
     include_open_ar: includeAr,
+      include_open_ap: includeAp,
     ...(csv
       ? { csv }
       : {
@@ -320,7 +325,10 @@ export function OpeningBalances() {
           </div>
         )}
 
-        {/* Carry-in. AR is real; AP has no shape yet, and says so. */}
+        {/* Carry-in. BOTH halves are real as of pack 2 — what customers owed
+            you and what you owed suppliers. Leaving the second one out was how
+            a conversion started with the receivables right, the payables
+            missing, and the difference quietly in Retained Earnings. */}
         {data && (
           <div style={{ marginTop: 14, display: "grid", gap: 8 }}>
             <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#334155", cursor: data.carry_in.open_ar.total ? "pointer" : "default" }}>
@@ -337,9 +345,25 @@ export function OpeningBalances() {
                   : <> — nothing to carry in; there are no open invoices dated on or before your start date.</>}
               </span>
             </label>
-            <div style={{ fontSize: 11, color: "#94A3B8", paddingLeft: 24, lineHeight: 1.5 }}>
-              <strong>What you owe suppliers is not carried in.</strong> {data.carry_in.open_ap.reason}
-            </div>
+            <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#334155", cursor: data.carry_in.open_ap.total ? "pointer" : "default" }}>
+              <input
+                type="checkbox" checked={includeAp}
+                disabled={!data.carry_in.open_ap.total}
+                onChange={(e) => { setIncludeAp(e.target.checked); setPreview(null); }}
+                style={{ marginTop: 3 }}
+              />
+              <span>
+                <strong>Carry in what you still owe suppliers</strong>
+                {data.carry_in.open_ap.total
+                  ? <> — {data.carry_in.open_ap.bills} unpaid bill{data.carry_in.open_ap.bills === 1 ? "" : "s"} totalling {fmtMoney(data.carry_in.open_ap.total)} dated on or before your start date.</>
+                  : <> — nothing to carry in.</>}
+              </span>
+            </label>
+            {data.carry_in.open_ap.reason && (
+              <div style={{ fontSize: 11, color: "#94A3B8", paddingLeft: 24, lineHeight: 1.5 }}>
+                {data.carry_in.open_ap.reason}
+              </div>
+            )}
           </div>
         )}
 
