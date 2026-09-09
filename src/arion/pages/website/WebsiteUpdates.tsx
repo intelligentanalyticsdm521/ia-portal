@@ -81,7 +81,7 @@ export function WebsiteUpdates() {
         // v2.0.11 — Surface plugin activation state honestly. If plugin was
         // active before update but isn't now, the upgrade deactivated it.
         if (d?.was_active && !d?.is_active) {
-          flashNotice('error', `Updated ${pluginFile} BUT plugin is now deactivated. Reactivation error: ${d?.reactivate_error || 'unknown'}. Go to WP Admin → Plugins to reactivate.`);
+          flashNotice('error', `Updated ${pluginFile}, but it did not start up again afterwards (${d?.reactivate_error || 'no reason given'}). Tell us — putting it back on is something we do, and nothing on your website is broken while it is off.`);
         } else if (d?.was_active && d?.reactivated) {
           flashNotice('success', `Updated ${pluginFile} — reactivated automatically.`);
         } else {

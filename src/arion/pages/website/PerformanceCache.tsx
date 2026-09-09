@@ -366,7 +366,9 @@ export function PerformanceCache() {
             <div style={{ padding: 10, fontSize: 12, color: '#5A7A8A' }}>Loading cache status…</div>
           ) : !ls?.installed ? (
             <div style={{ padding: 12, background: '#FEF3C7', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 12, color: '#78350F', lineHeight: 1.5 }}>
-              <strong>LiteSpeed Cache not installed.</strong> LiteSpeed is the recommended caching solution for Hostinger + LiteSpeed servers — install it from WP Admin → Plugins → Add New → search "LiteSpeed Cache".
+              <strong>Your pages are not being cached.</strong> Caching is what makes a page open
+              quickly for somebody who has been there before, and it is part of what we look after —
+              tell us and we will switch it on for you.
             </div>
           ) : (
             <>

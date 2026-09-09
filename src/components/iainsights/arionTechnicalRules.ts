@@ -143,7 +143,7 @@ export const TECHNICAL_RULES: InsightRule[] = [
       const cov = Number(wf?.admin_2fa?.coverage_pct || 0);
       return `${with2fa} of ${total} admin accounts have 2FA enabled (${cov}% coverage). Admin-account 2FA is the single highest-impact security upgrade — it blocks ~99% of account takeovers even if a password leaks.`;
     },
-    action: () => `Enroll every administrator in 2FA this week. WP Admin → Shield → Login Security → enable 2FA for each admin account. Each admin can use any TOTP app.`,
+    action: () => `Ask us to turn on two-step sign-in for every administrator account on your website this week. We do it for you; each person then confirms sign-ins with an app on their phone.`,
   },
   {
     id: "tech.wf.2fa_complete",

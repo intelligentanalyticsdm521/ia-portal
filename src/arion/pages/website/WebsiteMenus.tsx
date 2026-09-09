@@ -5,7 +5,7 @@ import { smallButton } from '../../components/SectionFieldInputs';
 import type { SiteMenus } from '../../../lib/arionApi';
 import {
   type MenuRow, menuRowKey, toMenuRows, toMenuInput, moveMenuRow, removeMenuRow,
-  toggleMenuRowParent, menuRowsEqual,
+  toggleMenuRowParent, canTuckMenuRow, menuRowsEqual,
 } from '../../utils/menuListState';
 
 /**
@@ -331,7 +331,13 @@ export function WebsiteMenus() {
                       <button type="button" style={smallButton} onClick={() => move(i, i - 1)} disabled={i === 0} aria-label="Move up">↑</button>
                       <button type="button" style={smallButton} onClick={() => move(i, i + 1)} disabled={i === rows.length - 1} aria-label="Move down">↓</button>
                       <button
-                        type="button" style={smallButton} disabled={i === 0}
+                        type="button" style={smallButton}
+                        disabled={!canTuckMenuRow(rows, i)}
+                        title={canTuckMenuRow(rows, i)
+                          ? undefined
+                          : (i === 0
+                            ? 'The first entry has nothing to sit under.'
+                            : 'This entry already has entries under it, and a menu only goes one level deep.')}
                         aria-label={r.parentIndex === null ? 'Tuck under the row above' : 'Bring back out'}
                         onClick={() => setRows(toggleMenuRowParent(rows, i))}
                       >

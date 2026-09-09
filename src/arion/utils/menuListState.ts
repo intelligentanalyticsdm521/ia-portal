@@ -100,12 +100,34 @@ export function removeMenuRow(rows: MenuRow[], index: number): MenuRow[] {
   });
 }
 
-/** Tuck a row under the one above it, or bring it back out. */
+/**
+ * Tuck a row under the one above it, or bring it back out.
+ *
+ * ONE LEVEL DEEP. Tucking a row under a row that is ITSELF tucked would make a
+ * third level, which no theme on the estate draws well — the website would
+ * come out visibly wrong on every page. So the row goes under its neighbour's
+ * OWN parent instead, which is the sibling position a person means when they
+ * indent the row under an indented one. The website refuses a third level as
+ * well; this is what stops a client ever being refused for it.
+ */
 export function toggleMenuRowParent(rows: MenuRow[], index: number): MenuRow[] {
   if (index <= 0 || index >= rows.length) return rows;
+  const above = rows[index - 1];
+  const target = above.parentIndex === null ? index - 1 : above.parentIndex;
   return rows.map((r, i) => (i === index
-    ? { ...r, parentIndex: r.parentIndex === null ? index - 1 : null }
+    ? { ...r, parentIndex: r.parentIndex === null ? target : null }
     : r));
+}
+
+/**
+ * A row cannot be tucked under a row that has children of its own — that is
+ * the same third level from the other direction, and the button has to be
+ * greyed rather than doing something surprising.
+ */
+export function canTuckMenuRow(rows: MenuRow[], index: number): boolean {
+  if (index <= 0 || index >= rows.length) return false;
+  if (rows[index].parentIndex !== null) return true;   // bringing it back out is always allowed
+  return !rows.some((r) => r.parentIndex === index);
 }
 
 export function menuRowsEqual(a: MenuRow[], b: MenuRow[]): boolean {

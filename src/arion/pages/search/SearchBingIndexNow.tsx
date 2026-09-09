@@ -191,18 +191,12 @@ export function SearchBingIndexNow() {
             <CopyBlock label="Final URL (this must return 200 when visited)" value={keyInfo.keyLocation} />
 
             <div style={{ marginTop: 16, padding: '12px 14px', background: '#F0F9FF', borderLeft: '3px solid #2D9CDB', borderRadius: 4, fontSize: 12, color: '#0C4A60', lineHeight: 1.6 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Three ways to host the file on <code>{host}</code>:</div>
-              <ol style={{ margin: 0, paddingLeft: 18 }}>
-                <li style={{ marginBottom: 6 }}>
-                  <strong>Rank Math — Instant Indexing module:</strong> In WP admin → Rank Math → Modules → enable <em>Instant Indexing</em>. Then Rank Math → Instant Indexing → Settings → paste <code>{keyInfo.key}</code> into the API key field and save. Rank Math will auto-host the file.
-                </li>
-                <li style={{ marginBottom: 6 }}>
-                  <strong>Yoast SEO (Premium):</strong> WP admin → Yoast → Tools → IndexNow → paste the key. Yoast auto-hosts.
-                </li>
-                <li>
-                  <strong>Direct upload via Hostinger File Manager / FTP:</strong> Create a plain-text file named <code>{keyFileName}</code> containing just the key on one line, and upload it to <code>public_html/</code> (or whichever is the web root for your WP install).
-                </li>
-              </ol>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Putting this file on <code>{host}</code></div>
+              This is ours to do, not yours — it goes in a place only your website's host can reach.
+              Tell us the key above is waiting and we will put the file in place, usually the same
+              day; then come back here and press Verify. If somebody else looks after your hosting,
+              send them the file name and the contents above and ask for it at the top level of the
+              site.
             </div>
 
             <div style={{ display: 'flex', gap: 8, marginTop: 16, flexWrap: 'wrap' }}>
