@@ -25,7 +25,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import {
-  toMenuRows, toMenuInput, moveMenuRow, removeMenuRow, toggleMenuRowParent, menuRowsEqual,
+  toMenuRows, toMenuInput, moveMenuRow, removeMenuRow, toggleMenuRowParent,
+  canTuckMenuRow, menuRowsEqual,
 } from '../src/arion/utils/menuListState.ts';
 import { splitPages } from '../src/arion/utils/siteBuilderCopy.ts';
 
@@ -110,6 +111,30 @@ test('tucking a row under the one above it, and bringing it back out', () => {
   assert.equal(out[1].parentIndex, null);
   // The first row has nothing to tuck under.
   assert.equal(toggleMenuRowParent(rows, 0)[0].parentIndex, null);
+});
+
+test('a menu never builds a third level, from either direction', () => {
+  // Tucking a row under a row that is ITSELF tucked would make a third level,
+  // which no theme on the estate draws well. It becomes a SIBLING instead.
+  const rows = toMenuRows(menu([item(10, 'Home'), item(11, 'Services'), item(12, 'Mowing')]));
+  const two = toggleMenuRowParent(rows, 1);              // Services under Home
+  assert.equal(two[1].parentIndex, 0);
+  const three = toggleMenuRowParent(two, 2);             // Mowing under Services?
+  assert.equal(three[2].parentIndex, 0, 'it sits beside Services, under Home — not a third level');
+
+  // And from the other direction: a row that already HAS children cannot be
+  // tucked itself, because that would push its children down to a third level.
+  const withChild = toMenuRows(menu([item(10, 'Home'), item(11, 'Services'), item(12, 'Mowing', 11)]));
+  assert.equal(withChild[2].parentIndex, 1, 'Mowing sits under Services');
+  assert.equal(canTuckMenuRow(withChild, 1), false, 'Services has an entry under it already');
+  assert.equal(canTuckMenuRow(withChild, 0), false, 'the first row has nothing to sit under');
+  assert.equal(canTuckMenuRow(withChild, 2), true, 'a tucked row may always come back out');
+});
+
+test('the tuck button carries the reason it is greyed', () => {
+  const src = read('pages/website/WebsiteMenus.tsx');
+  assert.match(src, /canTuckMenuRow\(rows, i\)/);
+  assert.match(src, /one level deep/i, 'a greyed button that says nothing is a bug report');
 });
 
 test('the whole ordered list is what goes back, every time', () => {
@@ -260,6 +285,54 @@ test('the WP Admin button is IA staff only, and gated on isFounder', () => {
   // And the gate wraps the BUTTON, not merely its label.
   const gated = src.slice(src.indexOf('{isFounder && ('));
   assert.match(gated.slice(0, 600), /WP Admin/);
+});
+
+/**
+ * The finish line's REAL test. Taking the button away is only half of it: a
+ * screen that still says "use the WP Admin button in the topbar" now points a
+ * client at something they cannot see, which is worse than before.
+ *
+ * Every ARION screen that used to give a client WordPress instructions is
+ * listed here. Any of them saying it again fails.
+ */
+test('no ARION screen tells a client to go into WordPress', () => {
+  const files = [
+    'pages/hosting/HostingBackups.tsx',
+    'pages/website/ContentSeoOverview.tsx',
+    'pages/website/PerformanceCache.tsx',
+    'pages/website/WebsiteUpdates.tsx',
+    'pages/search/SearchBingIndexNow.tsx',
+    'pages/website/WebsiteSettings.tsx',
+    'pages/website/WebsiteMenus.tsx',
+    'pages/website/WebsiteDesign.tsx',
+    'pages/website/WebsitePages.tsx',
+  ];
+  // The INSTRUCTION is what strands a client — a screen that names the tool it
+  // is reporting on (Content SEO reports on the search-engine plugin) is a
+  // separate, older wording problem, logged in §4d rather than fixed here.
+  for (const file of files) {
+    const body = stripComments(read(file));
+    for (const phrase of ['WP Admin', 'WP admin', 'wp-admin', 'WordPress editor', 'Plugins → Add New', 'File Manager']) {
+      assert.equal(body.includes(phrase), false, `${file} still says "${phrase}" to a client`);
+    }
+  }
+  // The insight cards a client reads are the same rule.
+  const rules = fs.readFileSync(path.resolve('src/components/iainsights/arionTechnicalRules.ts'), 'utf8');
+  assert.equal(/WP Admin/.test(stripComments(rules)), false, 'an insight still tells a client to open WordPress');
+});
+
+test('the two doors left on the practice-copy page are IA staff only', () => {
+  const src = read('pages/website/WebsiteStaging.tsx');
+  assert.match(src, /useIsFounder/);
+  assert.equal(/useIsSuperAdmin|isSuperUser/.test(src), false);
+  // Gated where the VALUE is made, not where it is drawn: a client never holds
+  // either address, so no later edit to the markup can put one back on their
+  // screen by accident.
+  assert.match(src, /const stagingAdmin = isFounder &&/);
+  assert.match(src, /const manageUrl = isFounder\s*\n?\s*\?/);
+  // And the client is told what a practice copy is FOR, rather than being
+  // handed somebody else's publish workflow.
+  assert.match(stripComments(src), /practice copy/i);
 });
 
 test('the deep link is asked for by name, not built by hand', () => {

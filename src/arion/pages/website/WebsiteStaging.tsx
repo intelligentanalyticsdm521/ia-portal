@@ -36,9 +36,15 @@ export function WebsiteStaging() {
 
   const stagingExists = staging.exists === true;
   const stagingFrontend = staging.url || (domain ? 'https://staging.' + domain : null);
-  const stagingAdmin = stagingFrontend ? `${stagingFrontend.replace(/\/$/, '')}/wp-admin` : null;
+  // IA STAFF ONLY (D-ARION-G), and gated where the VALUE is made rather than
+  // where it is drawn: a client simply never has these two addresses, so no
+  // future edit to the markup below can put one back on their screen by
+  // accident. Both open an admin screen we cannot support a client inside.
+  const stagingAdmin = isFounder && stagingFrontend ? `${stagingFrontend.replace(/\/$/, '')}/wp-admin` : null;
   // Hostinger hPanel staging management (only used for create/delete/publish)
-  const manageUrl = staging.manageUrl || (domain ? `https://hpanel.hostinger.com/websites/${domain}/wordpress/staging/${domain}` : null);
+  const manageUrl = isFounder
+    ? (staging.manageUrl || (domain ? `https://hpanel.hostinger.com/websites/${domain}/wordpress/staging/${domain}` : null))
+    : null;
 
   return (
     <div>
