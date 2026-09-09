@@ -48,7 +48,7 @@ function durationLabel(c: Coupon): string {
 }
 
 export function OliverCouponsPage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, patch, del, ready } = useOliverApi();
   const [coupons, setCoupons] = useState<Coupon[]>([]);
   const [loading, setLoading] = useState(true);

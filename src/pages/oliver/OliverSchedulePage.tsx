@@ -28,7 +28,7 @@ function ymd(d: Date) {
 }
 
 export function OliverSchedulePage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, patch, ready } = useOliverApi();
   const loc = useOliverLocations();
   const [events, setEvents] = useState<UnifiedEvent[]>([]);

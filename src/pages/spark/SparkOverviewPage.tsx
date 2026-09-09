@@ -27,6 +27,14 @@ import { SuggestionsCard } from "../../components/spark/SuggestionsCard";
 // the SAME payload the monthly email is rendered from. Renders nothing until
 // the business has a month behind it.
 import { WhatWorkedCard } from "../../components/spark/WhatWorkedCard";
+// SPARK pack 1 — the onboarding checklist, on screen at last. LUMEN's
+// /onboarding/checklist had no consumer in this app at all, so extending it with
+// the September steps (the Responder, a lead source, web chat, a phone line, your
+// own rules) would have added five invisible rows to an invisible list. This is
+// the surface. NOT a second onboarding wizard — the wizard stays on Command
+// Center (UnifiedSetupCard, Brandon 2026-06-17); this is the list you come back
+// to, and it hides itself once there is nothing left on it.
+import { SparkSetupChecklist } from "../../components/spark/SparkSetupChecklist";
 
 // ─ Types ──────────────────────────────────────────────────────────────────────
 interface UsageResponse {
@@ -157,7 +165,12 @@ export function SparkOverviewPage() {
             something to configure, a suggestion is money on the table today. */}
         <SuggestionsCard />
         <WhatWorkedCard />
-        {/* Onboarding nag lives on Command Center only (UnifiedSetupCard). */}
+
+        {/* What is still switched off, and the screen that switches it on.
+            Renders nothing when every step is done. The heavyweight onboarding
+            WIZARD still lives on Command Center only (UnifiedSetupCard) — this
+            card does not open it. */}
+        <SparkSetupChecklist />
 
         {/* F-118 — lightweight, dismissable setup hints. This is the ONLY
             content on Overview now — when every hint is dismissed/satisfied

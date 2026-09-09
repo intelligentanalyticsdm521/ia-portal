@@ -90,7 +90,7 @@ function fmtDate(d: string | null) { return d ? new Date(d).toLocaleString() : "
 export function SparkAnalyticsReportsPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
 
   const { get, post, patch, del, ready } = useSparkApi();
 

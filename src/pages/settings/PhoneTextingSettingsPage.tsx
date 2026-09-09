@@ -26,16 +26,34 @@
 //   5. "Add a second line — $5/month", so operations and marketing traffic are
 //      separate numbers. One button.
 //   6. Quiet hours, in ONE place.
+//   7. Texts we could not match to anyone (SPARK pack 1, 2026-09-08). Migration
+//      172 parked the legacy shared-line messages that arrived with no sender
+//      number: real messages somebody sent this business, which the old SPARK SMS
+//      Inbox page was the only place that showed, and the thread store could not
+//      attribute. Deleting them quietly would have been the honest-sounding way
+//      to lose them, so they have a screen. There is nothing to reply TO.
 //
 // NO "TENANT" ANYWHERE IN THE COPY. It is a business.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  Phone, Clock, ShieldCheck, AlertTriangle, ChevronLeft, Ban, Plus, FileText, Download,
+  Phone, Clock, ShieldCheck, AlertTriangle, ChevronLeft, Ban, Plus, FileText, Download, HelpCircle,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+
+/**
+ * A parked shared-line thread (migration 172). `counterpart_masked` is the
+ * literal "unassigned" — there is no number, which is the whole point — so this
+ * shape deliberately carries no reply affordance.
+ */
+interface UnassignedThread {
+  id: number;
+  business_number: string | null;
+  unassigned: boolean;
+  messages: { id: number; body: string; occurred_at: string }[];
+}
 
 interface Line {
   id: number;
@@ -153,6 +171,7 @@ export function PhoneTextingSettingsPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [meta, setMeta] = useState<Meta | null>(null);
   const [optOuts, setOptOuts] = useState<OptOut[]>([]);
+  const [unassigned, setUnassigned] = useState<UnassignedThread[]>([]);
   const [quiet, setQuiet] = useState<QuietHours | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -175,6 +194,15 @@ export function PhoneTextingSettingsPage() {
     // Both of these are decoration if they fail — the page's job is the line.
     try {
       const o = await get<{ data: OptOut[] }>("/api/v1/conversations/phone-line/opt-outs");
+      // Best-effort and LAST: an old shared-line message nobody can reply to must
+      // never be the reason this page fails to show a client their number.
+      try {
+        const u = await get<{ data: UnassignedThread[] }>("/api/v1/conversations/unassigned");
+        setUnassigned(u.data || []);
+      } catch (e) {
+        console.error("[phone-texting] unmatched texts unavailable", e);
+        setUnassigned([]);
+      }
       setOptOuts(o.data || []);
     } catch { /* an unreadable suppression list is an empty list with no claim */ }
     try {
@@ -363,6 +391,43 @@ export function PhoneTextingSettingsPage() {
               can reply START, or you can ask us.
             </p>
           </section>
+
+          {/* ── texts we could not match to anyone ────────────────────────── */}
+          {unassigned.length > 0 && (
+            <section className="rounded-lg border bg-white p-5">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <HelpCircle className="h-4 w-4 text-slate-400" />
+                Texts we could not match to anyone
+                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold tabular-nums text-slate-600">
+                  {unassigned.reduce((n, t) => n + (t.messages?.length || 0), 0)}
+                </span>
+              </h2>
+              <p className="mt-1 text-xs text-slate-600">
+                These arrived on our shared number before you had your own, and they came
+                through without a sender number — so there is nobody to reply to and no
+                lead we could attach them to. They are kept here so nothing anybody sent
+                you was thrown away.
+              </p>
+              <ul className="mt-3 space-y-3">
+                {unassigned.map((t) => (
+                  <li key={t.id} className="rounded border border-slate-200 bg-slate-50 p-3">
+                    <div className="text-[11px] text-slate-500">
+                      Sent to {t.business_number || "our shared number"} · {t.messages?.length || 0}
+                      {(t.messages?.length || 0) === 1 ? " message" : " messages"}
+                    </div>
+                    <ul className="mt-1.5 space-y-1.5">
+                      {(t.messages || []).map((m) => (
+                        <li key={m.id} className="text-xs text-slate-800">
+                          <span className="mr-2 text-slate-400 tabular-nums">{when(m.occurred_at)}</span>
+                          {m.body}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           {/* ── quiet hours, in ONE place ─────────────────────────────────── */}
           <QuietHoursCard quiet={quiet} busy={busy} onSave={saveQuietHours} />

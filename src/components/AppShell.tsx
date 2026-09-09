@@ -7,6 +7,7 @@ import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
+import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
 import { isActingAsClient } from "../lib/actingAsClient";
 import { ArgusChatbot } from "./argus/ArgusChatbot";
 import { EmergencyActAsBanner } from "./EmergencyActAsBanner";
@@ -71,15 +72,25 @@ const CONSULTING_FOUNDER_ONLY = new Set<string>([
   "consulting_tickets",
 ]);
 
+/**
+ * Two different questions, and they used to share one answer.
+ *
+ * `isFounder` — the founder-side CONSULTING keys. Internal tooling; correct.
+ * `leadgenAllowed` — may THIS BUSINESS run a lead search? SPARK pack 1 moved
+ *   that to a server allow-list (LEADGEN_TENANT_ALLOWLIST), because "the founder
+ *   is the only one who may" is what stopped a real client verifying a real
+ *   paid search. Unresolved hides the entries; see useLeadgenAccess.
+ */
 function applyConsultingNavFilter(
   config: SubNavConfig,
   isFounder: boolean,
+  leadgenAllowed: boolean,
 ): SubNavConfig {
-  if (isFounder) return config;
-  // Hotfix B (2026-09-03): Lead Gen keys are founder-only until Brandon has
-  // verified real searches on the IA tenant. Same filter, second key set.
+  if (isFounder && leadgenAllowed) return config;
   const filteredGroups = config.groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => !CONSULTING_FOUNDER_ONLY.has(i.key) && !LEADGEN_LOCKED_KEYS.includes(i.key)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) =>
+      (isFounder || !CONSULTING_FOUNDER_ONLY.has(i.key))
+      && (leadgenAllowed || !LEADGEN_LOCKED_KEYS.includes(i.key))) }))
     .filter((g) => g.items.length > 0);
   return { ...config, groups: filteredGroups };
 }
@@ -242,6 +253,9 @@ export function AppShell() {
     appState.bootstrap?.homeTenantId
   );
   const effectiveIsFounder = isFounder && !actingAsClient;
+  // May THIS BUSINESS run a lead search? The server's allow-list answers, and
+  // `null` (unresolved) hides the entries — see useLeadgenAccess.
+  const leadgenAllowed = useLeadgenAccess().allowed === true;
 
   const handleProductSelect = useCallback(
     (key: ProductKey) => {
@@ -299,10 +313,10 @@ export function AppShell() {
     if (activeProduct === "consulting") {
       // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders
       // 4.03 — also hidden when view-as'ing a client
-      return applyConsultingNavFilter(rawSubNavConfig, effectiveIsFounder);
+      return applyConsultingNavFilter(rawSubNavConfig, effectiveIsFounder, leadgenAllowed);
     }
     return rawSubNavConfig;
-  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, effectiveIsFounder, onClientConsultingSurface]);
+  }, [rawSubNavConfig, activeProduct, roleInfo.allowedServiceKeys, effectiveIsFounder, leadgenAllowed, onClientConsultingSurface]);
 
   return (
     // h-screen (not min-h-screen) locks the shell to exactly 100vh so the nav row's

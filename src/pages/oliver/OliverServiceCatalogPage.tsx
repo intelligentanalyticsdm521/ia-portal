@@ -58,7 +58,7 @@ function fmtPrice(p: PriceVariant): string {
 }
 
 export function OliverServiceCatalogPage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, patch, del, ready } = useOliverApi();
   const [categories, setCategories] = useState<Category[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);

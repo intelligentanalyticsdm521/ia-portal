@@ -1,7 +1,7 @@
 import { NavLink } from "react-router-dom";
 import { useAppState } from "../app/AppState";
-import { useIsFounder } from "../hooks/useIsFounder";
 import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
+import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
 import {
   LAYER_LABELS,
   SERVICE_CATALOG,
@@ -34,9 +34,12 @@ function navItemClass(isActive: boolean): string {
 
 export function SidebarNav() {
   const { enabledServices } = useAppState();
-  const isFounder = useIsFounder();
-  // Hotfix B (2026-09-03): Lead Gen entries are founder-only until verified.
-  const catalog = isFounder ? SERVICE_CATALOG : SERVICE_CATALOG.filter((s) => !LEADGEN_LOCKED_KEYS.includes(s.key));
+  // SPARK pack 1: the Lead Gen search entries are shown when the SERVER says this
+  // business may run a search (LEADGEN_TENANT_ALLOWLIST), not when the person
+  // signed in happens to be the founder. Unresolved hides them — see
+  // useLeadgenAccess on why this one gate fails closed.
+  const leadgen = useLeadgenAccess();
+  const catalog = leadgen.allowed ? SERVICE_CATALOG : SERVICE_CATALOG.filter((s) => !LEADGEN_LOCKED_KEYS.includes(s.key));
 
   // Shared "overview" item (top of nav)
   const overview = catalog.find((s) => s.key === "portal_overview");

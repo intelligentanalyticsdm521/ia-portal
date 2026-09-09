@@ -122,7 +122,7 @@ function fmtDate(d?: string | null) {
 }
 
 export function OliverProposalsPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, ready } = useOliverApi();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);

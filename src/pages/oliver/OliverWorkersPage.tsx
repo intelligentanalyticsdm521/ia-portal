@@ -59,7 +59,7 @@ const FILTER_PILLS = [
 ];
 
 export function OliverWorkersPage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, patch, put, ready } = useOliverApi();
   const loc = useOliverLocations();
   const [workers, setWorkers] = useState<Worker[]>([]);

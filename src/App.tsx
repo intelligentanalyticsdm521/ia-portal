@@ -106,6 +106,10 @@ import { ConsultantWorkspaceEntry } from './app/ConsultantWorkspaceEntry';
 // non-founders (see ServiceRouter consulting dispatch). RequireFounderRoute
 // gates every child so clients who land here directly get bounced to /overview.
 import { RequireFounderRoute } from './app/RequireFounderRoute';
+// Lead Gen's SEARCH surfaces are gated by the server's allow-list, not by who
+// you are (SPARK pack 1). The founder's Lead Gen ADMIN below keeps
+// RequireFounderRoute — that one really is internal tooling.
+import { RequireLeadgenRoute } from './app/RequireLeadgenRoute';
 import { lazy, Suspense } from 'react';
 // Each page file exports a default that matches the named export; using the
 // default keeps these lazy() calls minimal and tree-shaker-friendly.
@@ -411,8 +415,12 @@ export function App() {
             {/* Lead Gen LOCKED 2026-07-27 (LEADGEN_ENABLED=false) — taxonomy
                 produces garbage keyword expansions. Direct-URL access shows a
                 paused notice; nav entries are filtered in serviceCatalog. */}
-            {/* Hotfix B (2026-09-03): founder-only until verified — see admin/leadgen note. */}
-            <Route path="spark/leadgen" element={<RequireFounderRoute />}>
+            {/* SPARK pack 1 (2026-09-08): Hotfix B's "the IA tenant only" became an
+                ALLOW-LIST on the server (LEADGEN_TENANT_ALLOWLIST), so one real
+                client can run one real paid search while the blast radius stays
+                one business. RequireLeadgenRoute asks LUMEN; LUMEN 403s the job
+                routes independently, so a direct API call cannot bypass it. */}
+            <Route path="spark/leadgen" element={<RequireLeadgenRoute />}>
               {/* 2026-09-04: "new" → "b2b_new" (there will be several lead gens: B2B, inbound, B2C, premium).
                   The old path redirects so bookmarks and the guided tour keep working. */}
               <Route path="new" element={<Navigate to="/app/spark/leadgen/b2b_new" replace />} />

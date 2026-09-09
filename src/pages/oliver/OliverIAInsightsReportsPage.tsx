@@ -42,7 +42,7 @@ const ANSWERS: Record<string, string> = {
 };
 
 export function OliverIAInsightsReportsPage() {
-  const payload = useProductInsightsPayload("oliver");
+  const payload = useProductInsightsPayload("oliver").payload;
   return (
     <div className="p-1">
       <InsightsReportsCatalog

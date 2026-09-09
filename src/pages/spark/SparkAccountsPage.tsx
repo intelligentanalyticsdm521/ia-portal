@@ -89,7 +89,7 @@ interface SparkAccountsPageProps {
 }
 
 export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps = {}) {
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
   const { get, post, put, del, ready } = useSparkApi();
 
   // List state

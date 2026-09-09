@@ -315,18 +315,32 @@ export default function SparkLifecyclePage() {
 
           {isDetailed && (
             <>
+              {/* "Auto when they reply with changes (Coming soon)" was REMOVED
+                  2026-09-08 (SPARK pack 1). It was a greyed-out radio button, and
+                  a greyed-out option a client cannot pick is a screen advertising
+                  something we have not built.
+
+                  It was weighed against wiring it. The signal exists — the
+                  Conversations store records an inbound reply — but the
+                  transition itself belongs to the lifecycle state machine in
+                  oliver-api, which would need the reply forwarded to it, a way to
+                  know the reply is about a PROPOSAL rather than anything else, and
+                  a rule for what "with changes" means. That is a scoped piece of
+                  work across two services, not an afternoon, so the honest move
+                  today is to stop offering it. Nothing is lost: moving a proposal
+                  to Negotiation by hand is the option that remains, and it is the
+                  one every business used anyway. */}
               <h2 className="text-sm font-semibold text-slate-700 pt-2">When does a Proposal move to Negotiation?</h2>
               <div className="space-y-1.5">
                 {[
-                  { id: "manual",           label: "I'll move it manually  (recommended)" },
-                  { id: "on_counter_reply", label: "Auto when they reply with changes  (Coming soon)", disabled: true },
+                  { id: "manual", label: "I'll move it manually" },
                 ].map((opt) => (
                   <label key={opt.id} className="flex items-start gap-2 text-sm">
                     <input type="radio" name="negotiation_trigger"
                            checked={(draft.negotiation_trigger || "manual") === opt.id}
                            onChange={() => setDraft({ ...draft, negotiation_trigger: opt.id as LifecycleConfig["negotiation_trigger"] })}
-                           className="mt-1" disabled={opt.disabled} />
-                    <span className={opt.disabled ? "text-slate-400" : ""}>{opt.label}</span>
+                           className="mt-1" />
+                    <span>{opt.label}</span>
                   </label>
                 ))}
               </div>

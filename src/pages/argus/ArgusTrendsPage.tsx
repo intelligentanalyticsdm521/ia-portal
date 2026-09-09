@@ -23,8 +23,8 @@ export function ArgusTrendsPage() {
   const { activeTenantId } = useAppState();
   // Real payloads so every roll-up matches the product pages exactly.
   const arionPayload = useArionInsightsPayload();
-  const sparkPayload = useProductInsightsPayload("spark");
-  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkPayload = useProductInsightsPayload("spark").payload;
+  const oliverPayload = useProductInsightsPayload("oliver").payload;
 
   const dashboards = useMemo(() => {
     const seed = activeTenantId || "argus";

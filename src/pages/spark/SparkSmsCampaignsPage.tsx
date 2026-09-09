@@ -7,7 +7,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { ComingSoonBanner } from "../../components/ComingSoonBanner";
+// One sentence, from the gate that stops the send. The amber "ACS SMS dispatch is
+// still being wired up" banner that was here named a version instead of a reason.
+import { TextingOffNotice } from "../../components/spark/TextingOffNotice";
 import {
   MessageSquare,
   Send,
@@ -427,10 +429,7 @@ export function SparkSmsCampaignsPage() {
       loading={loading}
       error={error}
     >
-      <ComingSoonBanner
-        feature="SMS Campaigns"
-        detail="SMS sending is in Beta. You can draft and queue campaigns today, but ACS SMS dispatch is still being wired up. Sends may go to a stub until v1.1."
-      />
+      <TextingOffNotice />
       {(creating || editing) && (
         <CampaignFormCard
           mode={editing ? "edit" : "create"}
@@ -803,9 +802,14 @@ function SendLog({
                     </td>
                     <td className="px-3 py-1.5">
                       {s.contact_id != null ? (
+                        // Contact 360, not `spark_contacts?id=` — that URL was a
+                        // link to a LIST page that ignores an ?id, so a recipient
+                        // row offered "#1234" and landed on every contact the
+                        // business has (SPARK pack 1, 2026-09-08).
                         <a
-                          href={`/app/services/spark_contacts?id=${s.contact_id}`}
+                          href={`/app/services/spark_contact_360?id=${s.contact_id}`}
                           className="text-[#EF6C33] hover:underline"
+                          title="See everything about this person"
                         >
                           #{s.contact_id}
                         </a>

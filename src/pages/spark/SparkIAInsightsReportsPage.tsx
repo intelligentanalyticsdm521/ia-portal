@@ -40,13 +40,16 @@ const ANSWERS: Record<string, string> = {
 };
 
 export function SparkIAInsightsReportsPage() {
-  const payload = useProductInsightsPayload("spark");
+  // This page is a CATALOGUE — it lists the reports we produce and shows the real
+  // ones this business has. It never generated a demo set, so the state change is
+  // only that "loading" now means loading rather than "loading, failed, or empty".
+  const state = useProductInsightsPayload("spark");
   return (
     <div className="p-1">
       <InsightsReportsCatalog
         product="spark"
-        detail={payload?.detail}
-        loading={!payload}
+        detail={state.payload?.detail}
+        loading={state.status === "loading"}
         dashboards={SPARK_DASHBOARDS}
         featureLabel={FEATURE_LABEL}
         answers={ANSWERS}

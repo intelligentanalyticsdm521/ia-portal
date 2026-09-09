@@ -470,7 +470,6 @@ const SPARK_NAV: SubNavConfig = {
         // the move is documented.
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
         { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
-        { key: "spark_sms_inbox", label: "SMS Inbox", route: "/app/services/spark_sms_inbox", minTier: "pro", hidden: true },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", merged: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
@@ -521,8 +520,14 @@ const SPARK_NAV: SubNavConfig = {
         // It's a library used by other features — configuration-like, not
         // an active send surface.
         { key: "spark_templates", label: "Templates", route: "/app/services/spark_templates", merged: true /* merged: reachable from Campaigns -> Templates. Already unified Email+SMS+Translations into one library (F-91) */ },
-        // Phase 3A (2026-06-16) — Webhooks pulled from nav until our own
-        // implementation ships in SPARK v1.5 (page shows Coming Soon banner).
+        // BACK IN NAV 2026-09-08 (SPARK pack 1). Phase 3A pulled Webhooks "until
+        // our own implementation ships in SPARK v1.5" and left a Coming Soon
+        // banner — but the implementation was already there (LUMEN
+        // routes/webhookSubscriptions: CRUD, reveal-once signing secret, test
+        // fire, per-subscription delivery log, tenant-wide log, one-click retry).
+        // The page is that API now, so the nav entry is honest.
+        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks", minTier: "pro" /* PRO: an integration surface, same rung as the rest of this group */},
+        { key: "spark_webhook_deliveries", label: "Webhook deliveries", route: "/app/services/spark_webhook_deliveries", merged: true /* merged: reached from the Webhooks page's "every delivery" link */},
         { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", minTier: "business" /* BUSINESS: ad-platform audience push */},
         // Lead Suppression + Lead Territories used to live here as separate
         // entries; both were absorbed into the unified Lead Inbox page
@@ -540,12 +545,20 @@ const SPARK_NAV: SubNavConfig = {
         // (Lead Inbox, Suppressed Domains, Territories). Legacy routes
         // /spark_leads, /spark_lead_suppression, /spark_lead_territories
         // still resolve and pre-select the correct tab.
-        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", addon: "leadgen" },
-        // Intake connectors (G-2, 2026-09-04). Directly under the Inbox,
-        // because the only reason to connect a source is to fill that inbox.
-        // Same `leadgen` add-on gate — the number of sources a business may
-        // connect is a Leads-package question the API answers at runtime.
-        { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources", addon: "leadgen" },
+        // UNIVERSAL, 2026-09-08 (SPARK pack 1). Both rows carried
+        // `addon: "leadgen"`, which hid the Lead Inbox from every SPARK business
+        // that had not bought the Leads package — including their OWN leads. A
+        // web-chat conversation, a text, a missed call and a website form all
+        // become rows in this inbox and none of them was purchased from us; the
+        // add-on is about leads we FIND and sell, and the API already masks those
+        // (services/leadgen/billing/mask + leadTierView) for a business that has
+        // not paid for them. So the gate was hiding a business's own mail.
+        //
+        // The same applies to Lead sources: how MANY sources a business may
+        // connect is a Leads-package question the API answers at runtime, and
+        // connecting the first one is how the inbox fills at all.
+        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
+        { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
       ],
@@ -562,11 +575,15 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "AI Tools", icon: Sparkles, collapsible: true, sectionId: "spark_intelligence",
       items: [
-        // D-12 (2026-05-28): AI Writer dropped from nav. It's a 121-LOC
-        // "coming with v2" placeholder, no API calls, all static copy.
-        // Surfacing it as a nav item misleads users into thinking it
-        // works. Page route remains so deep-links don't 404 and the
-        // marketing/coming-soon preview is still reachable.
+        // AI Writer is BACK IN NAV, 2026-09-08 (SPARK pack 1). D-12 (2026-05-28)
+        // pulled it for exactly the right reason — "it's a 121-LOC 'coming with
+        // v2' placeholder, no API calls, all static copy. Surfacing it as a nav
+        // item misleads users into thinking it works." The page is now four real
+        // calls against the metered endpoints that had been live all along, with
+        // its prices read from the one price list, so the reason is gone.
+        // BUSINESS tier per the canonical matrix ("Business add-on … AI Writer
+        // (full)"), which is also what the metering charges against.
+        { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer", minTier: "business" },
         { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
@@ -1091,7 +1108,7 @@ function getDefaultSection(path: string): string | null {
   // F-93 — Email Templates / SMS Templates / Translations all live under
   // the SPARK_NAV "Templates" entry (Outreach group) now. They collapse
   // into a single feature with channel tabs.
-  if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_sms_inbox") || path.includes("/spark_deliverability")) return "spark_outreach";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_deliverability")) return "spark_outreach";
   // F-89 + F-93 — Workflow & Automations contains everything that fires on
   // its own. Webhooks + Audience Sync moved here from Settings.
   // F-93 + rules consolidation (2026-05-28): spark_rules replaces the 3

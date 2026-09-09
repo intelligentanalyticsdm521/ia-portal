@@ -76,7 +76,7 @@ function describeFilters(raw?: string): string {
 }
 
 export function SparkSegmentsPage() {
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
   // put/del are needed to edit and delete segments from the builder.
   const { get, post, put, del, ready } = useSparkApi();
   const [segments, setSegments] = useState<Segment[]>([]);

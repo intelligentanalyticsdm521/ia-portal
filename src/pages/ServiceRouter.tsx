@@ -4,6 +4,7 @@ import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
+import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
 import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
 import { useNavAddons } from '../hooks/useNavAddons';
@@ -210,7 +211,6 @@ const SparkAnalyticsReportsPage = lazyNamed(() => import('./spark/SparkAnalytics
 const SparkContactBulkPage = lazyNamed(() => import('./spark/SparkContactBulkPage'), 'SparkContactBulkPage');
 // SPARK v1.0 additions
 const SparkApprovalsPage = lazyNamed(() => import('./spark/SparkApprovalsPage'), 'SparkApprovalsPage');
-const SparkSmsInboxPage = lazyNamed(() => import('./spark/SparkSmsInboxPage'), 'SparkSmsInboxPage');
 const SparkSmsCampaignsPage = lazyNamed(() => import('./spark/SparkSmsCampaignsPage'), 'SparkSmsCampaignsPage');
 const SparkDeliverabilityPage = lazyNamed(() => import('./spark/SparkDeliverabilityPage'), 'SparkDeliverabilityPage');
 const SparkAbTestsPage = lazyNamed(() => import('./spark/SparkAbTestsPage'), 'SparkAbTestsPage');
@@ -426,6 +426,7 @@ function ServiceRouterInner() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
   const { enabledServices } = useAppState();
   const isFounder = useIsFounder();
+  const leadgenAccess = useLeadgenAccess();
   const { pathname } = useLocation();
   const actingAsClient = /^\/c\/[0-9a-f-]{8,}/i.test(pathname);
   const effectiveIsFounder = isFounder && !actingAsClient;
@@ -453,12 +454,27 @@ function ServiceRouterInner() {
     return <Navigate to="/app/services/spark_ia_insights_trends" replace />;
   }
 
-  // Hotfix B (2026-09-03) — Lead Gen is live for the IA tenant ONLY until
-  // Brandon has verified real searches. /app/services/spark_search_profiles
-  // is the one Lead Gen page served through the catalog router, so it takes
-  // the same bounce as the dedicated /app/spark/leadgen/* routes.
-  if (serviceKey && LEADGEN_LOCKED_KEYS.includes(serviceKey) && !effectiveIsFounder) {
-    return <Navigate to="/app/overview" replace />;
+  // SPARK pack 1 (2026-09-08) — ONE inbox. The SPARK SMS Inbox page is DELETED:
+  // it read lumen.sms_inbound, which stopped receiving new messages the day
+  // inbound texts started routing to the Conversations thread store, so it was a
+  // frozen archive calling itself an inbox. Texts now arrive in the Lead Inbox
+  // with the whole thread on the lead.
+  //
+  // A REDIRECT, not a removal, for the same reason spark_attribution has one: a
+  // bookmark, an old alert email and the ARGUS assistant all navigate by route,
+  // and "Service not found" is a worse answer than the right page.
+  if (serviceKey === 'spark_sms_inbox') {
+    return <Navigate to="/app/services/spark_lead_inbox" replace />;
+  }
+
+  // SPARK pack 1 — /app/services/spark_search_profiles is the one Lead Gen page
+  // served through the catalog router, so it takes the same answer as the
+  // dedicated /app/spark/leadgen/* routes: the server's allow-list, not who you
+  // are. `null` is unresolved and holds the frame rather than bouncing somebody
+  // off a page they are allowed to be on (see RequireLeadgenRoute).
+  if (serviceKey && LEADGEN_LOCKED_KEYS.includes(serviceKey)) {
+    if (leadgenAccess.allowed === null) return null;
+    if (!leadgenAccess.allowed) return <Navigate to="/app/overview" replace />;
   }
 
   const service: PortalService | null = useMemo(
@@ -862,7 +878,6 @@ function ServiceRouterInner() {
       case 'spark_contact_bulk': sparkPage = <SparkContactBulkPage />; break;
       // v1.0 additions
       case 'spark_approvals': sparkPage = <SparkApprovalsPage />; break;
-      case 'spark_sms_inbox': sparkPage = <SparkSmsInboxPage />; break;
       // SP-6 — orphaned pre-unification routes redirect to their canonical
       // replacements (unified Templates page + Workflow & Automations page) so
       // old deep links land somewhere sensible instead of a dead page. The

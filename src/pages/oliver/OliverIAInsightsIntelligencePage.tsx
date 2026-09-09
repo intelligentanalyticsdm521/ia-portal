@@ -15,7 +15,7 @@ export function OliverIAInsightsIntelligencePage() {
   const { activeTenantId } = useAppState();
   // Real monthly series when the tenant has rows (same endpoint as Trends);
   // line-item detail stays demo until dimensioned capture lands.
-  const payload = useProductInsightsPayload("oliver");
+  const payload = useProductInsightsPayload("oliver").payload;
   const built = useMemo(() => {
     const seed = activeTenantId || "oliver";
     const metrics = payload || demoOliverMetrics(seed);

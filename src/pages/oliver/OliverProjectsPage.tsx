@@ -60,7 +60,7 @@ const FILTER_PILLS = [
 ];
 
 export function OliverProjectsPage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, ready } = useOliverApi();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);

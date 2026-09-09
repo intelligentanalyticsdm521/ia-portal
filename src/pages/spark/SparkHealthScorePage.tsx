@@ -57,7 +57,7 @@ const TIER_META: Record<Tier, { label: string; color: string; icon: LucideIcon; 
 const TIER_ORDER: Tier[] = ["champion", "engaged", "warm", "cold", "at_risk"];
 
 export function SparkHealthScorePage() {
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
   const { get, ready } = useSparkApi();
   const [dist, setDist] = useState<DistributionResponse["data"] | null>(null);
   const [loading, setLoading] = useState(true);

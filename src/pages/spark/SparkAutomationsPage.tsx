@@ -24,7 +24,7 @@ interface Automation {
 export function SparkAutomationsPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
 
   const { get, put, del, ready } = useSparkApi();
   const [automations, setAutomations] = useState<Automation[]>([]);

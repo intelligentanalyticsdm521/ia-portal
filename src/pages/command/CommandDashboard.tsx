@@ -81,8 +81,8 @@ export function CommandDashboard() {
   // the platform-api /argus/business-pulse endpoint once the monthly snapshot
   // jobs land. Sparkline history returns with the snapshot jobs too.
   const arionPayload = useArionInsightsPayload();
-  const sparkPayload = useProductInsightsPayload("spark");
-  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkPayload = useProductInsightsPayload("spark").payload;
+  const oliverPayload = useProductInsightsPayload("oliver").payload;
   const pulse = useMemo<PulseData | null>(() => {
     if (!activeTenantId) return null;
     const bp = demoBusinessPulse(activeTenantId, { arionPayload, sparkPayload, oliverPayload });

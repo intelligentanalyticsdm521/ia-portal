@@ -230,10 +230,6 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "Schedule posts across your channels and see what's queued versus shipped. Batching a month in one sitting is the only approach that survives a busy week.",
   },
-  spark_sms_inbox: {
-    body:
-      "Two-way texting — replies land here and you answer inline. Text gets read within minutes where email waits hours, so save it for things that are genuinely time-sensitive or you'll train people to ignore it.",
-  },
   spark_deliverability: {
     title: "Deliverability — check this before your first send",
     body:

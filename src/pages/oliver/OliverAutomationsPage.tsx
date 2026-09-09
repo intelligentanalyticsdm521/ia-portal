@@ -74,7 +74,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 const CATEGORY_ORDER = ["customer_comms", "billing", "orchestration", "lifecycle"];
 
 export function OliverAutomationsPage() {
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, patch, post, del, ready } = useOliverApi();
   const [tab, setTab] = useState<"rules" | "templates" | "runs">("rules");
   const [rules, setRules] = useState<AutomationRule[]>([]);

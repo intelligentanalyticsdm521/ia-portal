@@ -122,7 +122,7 @@ function rangeToQuery(r: TimeRange): string {
 export function OliverInsightsPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, ready } = useOliverApi();
   const loc = useOliverLocations();

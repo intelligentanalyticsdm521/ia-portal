@@ -32,8 +32,8 @@ export function ArionIAInsightsHealthPage() {
 
   const [payload, setPayload] = useState<MetricsPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const sparkPayload = useProductInsightsPayload("spark");
-  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkPayload = useProductInsightsPayload("spark").payload;
+  const oliverPayload = useProductInsightsPayload("oliver").payload;
 
   useEffect(() => {
     if (!activeSiteId) return;

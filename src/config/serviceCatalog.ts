@@ -330,7 +330,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_landing_pages', displayName: 'Landing Pages', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_landing_pages', description: 'Hosted landing page builder with submission capture (Business).' },
   { key: 'spark_reviews', displayName: 'Reputation Hub', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_reviews', description: 'Aggregated reviews across Google/Yelp/Facebook + response workflow (Business).' },
   { key: 'spark_accounts', displayName: 'Companies', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_accounts', description: 'Group contacts under company entities with auto-domain matching + health scoring.' },
-  { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Anthropic-powered marketing copy assistant (Business).' },
+  { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Write an email, five subject lines, or improve copy you already have. Each one shows what it costs before you press it.' },
   // Cross-platform
   { key: 'spark_insights', displayName: 'Insights', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_insights', description: 'Cross-platform SPARK insights — 7 categories with ARGUS observation boxes.' },
   { key: 'spark_activity_stream', displayName: 'Activity Stream', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_activity_stream', description: 'Unified contact activity timeline across SPARK, OLIVER, and ARION with filterable feed and 30-day summary.' },
@@ -340,7 +340,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_contact_bulk', displayName: 'Bulk Operations', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contact_bulk', description: 'Apply the same change to many contacts at once: locale, tag, list, opt-out, soft-delete.' },
   // v1.0 additions — shared platform + Business-tier admin
   { key: 'spark_approvals', displayName: 'Approvals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_approvals', description: 'Business-tier approval workflow queue (campaigns, posts, large sends).' },
-  { key: 'spark_sms_inbox', displayName: 'SMS Inbox', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_inbox', description: '2-way SMS inbox — replies from shared IADM toll-free number, with auto-STOP handling.' },
+  // spark_sms_inbox REMOVED 2026-09-08 (SPARK pack 1): one inbox, and it is the
+  // Lead Inbox. ServiceRouter redirects the old route so bookmarks land somewhere.
   { key: 'spark_email_templates', displayName: 'Email Templates', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_email_templates', description: 'Transactional + marketing email template library with visual block builder.' },
   { key: 'spark_automation_builder', displayName: 'Automation Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_automation_builder', description: 'Visual multi-step automation builder with email/SMS/wait/tag/branch steps + run log.' },
   { key: 'spark_deliverability', displayName: 'Deliverability', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_deliverability', description: 'Open/click/bounce/complaint dashboard, suppression list, SPF/DKIM/DMARC verifier (Pro).' },
@@ -385,7 +386,9 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_api_keys', displayName: 'API Keys', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_api_keys', description: 'Issue API keys for Zapier / n8n / custom integrations. Scoped + revocable.' },
   // Phase 3A (2026-06-16) — UI now shows a Coming Soon banner pending our
   // own webhook stack in v1.5. Pulled from main nav.
-  { key: 'spark_webhooks', displayName: 'Webhooks', section: 'LUMEN', defaultStatus: 'coming_soon', route: '/app/services/spark_webhooks', description: 'Outbound webhook subscriptions — Coming Soon. Our own implementation lands in SPARK v1.5.' },
+  // 'coming_soon' → 'not_subscribed' 2026-09-08 (SPARK pack 1): the page is real
+  // now, and coming_soon also kept it out of the global search box.
+  { key: 'spark_webhooks', displayName: 'Webhooks', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_webhooks', description: 'Tell another system when something happens here — signed, retried, with a log of every message we sent.' },
   { key: 'spark_sms_templates', displayName: 'SMS Templates', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_templates', description: 'Reusable SMS templates with {{vars}}. System templates (review request, appointment reminder, etc.) included.' },
   { key: 'spark_sms_campaigns', displayName: 'SMS Campaigns', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_sms_campaigns', description: 'Bulk SMS broadcasts to lists/segments/tags with scheduling, audience preview, and delivery log.' },
   { key: 'spark_contact_import', displayName: 'Import Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contact_import', description: '4-step CSV import wizard: upload, map columns, preview, commit with optional list + tags.' },

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 // Banners everywhere (LOCKED 2026-09-04): the same 60/75/90 component the Lead
@@ -18,6 +18,7 @@ import { SparkTooltip } from "../../components/spark/SparkTooltip";
 import {
   Users, Plus, Upload, Download, Mail, Phone, Building2, Sparkles, Trash2,
   Rows3, Tag as TagIcon, ListPlus, Send, MoreHorizontal, AlertTriangle, ChevronUp, ChevronDown, Activity,
+  UserSearch,
   LayoutList, Columns3,
 } from "lucide-react";
 // F5 (Brandon 2026-06-25) — Kanban view of lumen.contact rows grouped by
@@ -87,7 +88,7 @@ const PAGE_SIZE = 25;
 export function SparkContactsPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
 
   // put/del are needed by the Tags modal, which manages tags from this page.
   const { get, post, put, del, ready } = useSparkApi();
@@ -731,13 +732,27 @@ export function SparkContactsPage() {
           columns={columns}
           totalCount={filtered.length}
           rowActions={c => (
-            // The hook goes ONLY on the contact created in this session, so the
-            // walkthrough opens the record it just made — never "whatever is in
-            // the first row", which would walk the user into deleting a real
-            // customer if the create had failed.
-            <button data-tour={c.id === justCreatedId ? "contact-open" : undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1">
+              {/* The hook goes ONLY on the contact created in this session, so the
+                  walkthrough opens the record it just made — never "whatever is in
+                  the first row", which would walk the user into deleting a real
+                  customer if the create had failed. */}
+              <button data-tour={c.id === justCreatedId ? "contact-open" : undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+                <MoreHorizontal className="h-4 w-4" />
+              </button>
+              {/* Contact 360 deep link (SPARK pack 1, 2026-09-08). The 360 page's
+                  only way in used to be typing a database id into a box; this row
+                  already knows the id. `stopPropagation` because the row itself
+                  opens the drawer. */}
+              <Link
+                to={`/app/services/spark_contact_360?id=${c.id}`}
+                onClick={(e) => e.stopPropagation()}
+                className="spark-btn-icon"
+                title="See everything about this person"
+              >
+                <UserSearch className="h-4 w-4" />
+              </Link>
+            </div>
           )}
           emptyState={search ? <span>No contacts match "{search}".</span> : "No contacts in this filter."}
         />

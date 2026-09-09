@@ -60,7 +60,7 @@ const fmtMoney = (n?: number | null) =>
   `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export function OliverQuotesProposalsPage() {
-  const insightsPayload = useProductInsightsPayload("oliver");
+  const insightsPayload = useProductInsightsPayload("oliver").payload;
   const { get, post, patch, del, ready } = useOliverApi();
   const api = useMemo(() => ({ get, post, patch, del }), [get, post, patch, del]);
 

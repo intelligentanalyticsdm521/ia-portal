@@ -54,16 +54,21 @@ const SEO_ADDON_RANK: Record<SeoAddonTier, number> = {
 
 /**
  * Add-ons sold separately from the subscription tiers.
- *   leadgen — SPARK Lead Gen (Lead Inbox).
- *   seo     — ARION SEO add-on (Starter / Essentials / Growth / Authority).
- *             Resolved from the selected ARION site's `seoAddonTier`, which is
- *             the same column arion-api gates its SE Ranking calls on.
+ *   seo — ARION SEO add-on (Starter / Essentials / Growth / Authority).
+ *         Resolved from the selected ARION site's `seoAddonTier`, which is the
+ *         same column arion-api gates its SE Ranking calls on.
+ *
+ * `leadgen` WAS a member here and is gone (SPARK pack 1, 2026-09-08). It gated
+ * the Lead Inbox and Lead sources rows, which hid a SPARK business's OWN leads —
+ * a web chat, a text, a missed call, a website form — behind an add-on that is
+ * about leads we FIND and sell. The API already masks the purchased ones for a
+ * business that has not paid. With no row declaring it, keeping the member would
+ * be a gate with nothing behind it.
  */
-export type NavAddon = "leadgen" | "seo";
+export type NavAddon = "seo";
 
 /** Customer-facing name of each add-on, for lock tooltips + FeatureLocked. */
 export const ADDON_LABELS: Record<NavAddon, string> = {
-  leadgen: "the Lead Gen add-on",
   seo: "the ARION SEO add-on",
 };
 
@@ -125,10 +130,9 @@ export interface VisibilityContext {
 /**
  * Add-ons that resolve WITHOUT a network call.
  *
- * Lead Gen is LOCKED per the map ("Currently LOCKED until the taxonomy is
- * fixed"), so this never includes it. The SEO add-on needs the tenant's ARION
- * site and is resolved in hooks/useNavAddons — this stays the synchronous
- * baseline that hook starts from.
+ * There are none: the SEO add-on needs the tenant's ARION site and is resolved in
+ * hooks/useNavAddons. This stays the synchronous baseline that hook starts from,
+ * so adding a purchase-resolved add-on later has one obvious home.
  */
 export function activeAddons(): NavAddon[] {
   return [];
