@@ -684,25 +684,26 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
       <div>
         <h3 className="text-sm font-semibold text-slate-900">Domain</h3>
         <p className="text-xs text-slate-600">
-          Default subdomain on <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">.{portalKind}.ia-dm.com</code>, or bring your own custom domain (Pro+).
+          Your portal address is <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">{portalKind}.ia-dm.com/your-business/</code>, or bring your own custom domain (Pro+).
         </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-xs">
+        {/* OLD ADDRESS, LABELLED AS OLD (OLIVER pack 1).
+            This card used to sit beside the correct one showing
+            `{slug}.{kind}.ia-dm.com` under the words "Auto-bound. No DNS
+            required." Neither half was true: there is no wildcard binding for
+            these hosts, Azure Static Web Apps binds roughly five custom domains
+            per app, and an owner reading two addresses for one portal prints the
+            one that claims it needs no setup. It stays visible because links in
+            that shape were handed out and are 301'd, and it now says which it is. */}
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
-          <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Default subdomain</div>
-          <div className="font-mono text-slate-900 text-sm">{status.subdomain_slug || "(not set)"}<span className="text-slate-400">.{portalKind}.ia-dm.com</span></div>
-          <div className="text-[10px] text-slate-500 mt-1">Auto-bound. No DNS required.</div>
-          {status.subdomain_slug && (
-            <a
-              href={`https://${status.subdomain_slug}.${portalKind}.ia-dm.com`}
-              target="_blank"
-              rel="noreferrer"
-              className="text-[10px] text-blue-600 hover:underline inline-flex items-center gap-1 mt-1"
-            >
-              Open portal in new tab →
-            </a>
-          )}
+          <div className="text-[10px] uppercase font-semibold text-slate-500 mb-1">Older address (still redirects)</div>
+          <div className="font-mono text-slate-500 text-sm line-through">{status.subdomain_slug || "(not set)"}<span className="text-slate-400">.{portalKind}.ia-dm.com</span></div>
+          <div className="text-[10px] text-slate-500 mt-1">
+            Links already handed out in this shape keep working, they redirect to the address
+            above. Don't print this one on anything new.
+          </div>
         </div>
         <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
           <div className="flex items-center justify-between">

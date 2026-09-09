@@ -2,14 +2,32 @@
  * OliverBookingPage — `OLIVER > Customers > Booking`
  *
  * Single config page where tenants configure their public booking
- * experience. The actual booking page LAYOUT is hardcoded in the
- * oliver-ops SWA (`{slug}.book.ia-dm.com`). This portal page only
- * controls the data behind it: subdomain + what's being booked +
- * availability + (read-only) branding pulled from the business profile.
+ * experience. The booking page itself is the oliver-ops SWA, served at
+ * `book.ia-dm.com/<business>/<page>` — the BUSINESS IS IN THE PATH
+ * (Q-APPS-PWA / SEAM-5-A). This portal page controls the data behind it.
  *
  * One settings row per tenant for Standard tier. The DB schema supports
  * multiple booking pages — that's the Pro tier upgrade. Standard
  * tenants get a dead-simple single-page UX.
+ *
+ * ── WHAT OLIVER PACK 1 ADDED HERE (2026-09-08) ──────────────────────────────
+ * Five things were configurable on the API and invisible or unwritable here, so
+ * a client could set them up and never see them on their own booking page:
+ *
+ *   · the business's TIME ZONE, and where the hours come from. The slot engine
+ *     read "08:00" as 08:00 UTC, so a Central-time plumber's page offered 3am
+ *     appointments. ONE home for the hours now: typed once in the business
+ *     profile, inherited here, overridden only on purpose.
+ *   · WHICH SERVICES the page sells (services_json — read by the public API
+ *     since F-48, never written by this editor).
+ *   · whether the guest is asked for the SERVICE ADDRESS. Without it every
+ *     booked job had none, and the crew app's address and map link were blank
+ *     for exactly the jobs booked online.
+ *   · the owner's own EXTRA QUESTIONS (form_fields — this page overwrote the
+ *     column with `[]` on every save).
+ *   · the booking URL itself: this page built `<slug>.book.ia-dm.com`, a shape
+ *     with no DNS binding that has never resolved. It reads the API's URL now,
+ *     and shows OUR OWN QR of it.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -41,7 +59,8 @@ interface BookingPage {
   advance_notice_hours: number;
   max_days_ahead: number;
   availability_windows: AvailabilityWindow[] | string;
-  form_fields: unknown;
+  // form_fields was `unknown` — the type of a column nothing could read. It is
+  // typed and editable now (OLIVER pack 1); see the BookingFormField block below.
   confirmation_message: string | null;
   brand_color: string | null;
   logo_url: string | null;
@@ -57,6 +76,41 @@ interface BookingPage {
   capacity_mode: "auto" | "fixed" | "group";
   capacity_count: number | null;
   url?: string;
+  // ── OLIVER pack 1 (migration 205) ─────────────────────────────────────────
+  /** IANA zone this page's hours are written in. NULL = follow the business's
+   *  location, which is where the zone lives. */
+  timezone?: string | null;
+  /** 'inherit' = use the hours from Settings; 'override' = this page has its
+   *  own, narrower hours. ONE home for the hours: the owner types them once. */
+  hours_source?: "inherit" | "override";
+  /** Does the public form ask where the work is? ON for field service. */
+  collect_service_address?: boolean;
+  /** The owner's own questions on the booking form. */
+  form_fields?: BookingFormField[];
+  /** service_offering_id[] the page sells. The editor round-trips this. */
+  services?: string[];
+  // Read-only, computed by the API — what is actually IN FORCE right now.
+  effective_availability_windows?: AvailabilityWindow[];
+  effective_hours_source?: "override" | "settings" | "default";
+  effective_timezone?: string;
+}
+
+/** One question the owner asks on the booking form. */
+interface BookingFormField {
+  name: string;
+  label: string;
+  type: "text" | "textarea" | "tel" | "email" | "number" | "checkbox" | "select";
+  required?: boolean;
+  options?: string[];
+}
+
+/** A service from the catalog, for the picker. */
+interface CatalogOffering {
+  offering_id: string;
+  name: string;
+  default_duration_minutes?: number | null;
+  is_active?: boolean;
+  offering_type?: string | null;
 }
 
 interface AvailabilityWindow {
@@ -65,9 +119,25 @@ interface AvailabilityWindow {
   end_time: string;      // "17:00"
 }
 
-// Hostname pattern lives here. If we ever move to path-based tenant
-// resolution, this is the single place that changes.
+// THE BUSINESS IS IN THE PATH: `book.ia-dm.com/<business>/<page>`.
+//
+// This page used to build `https://<slug>.book.ia-dm.com` and show it to the
+// owner as "your booking link". There is NO `*.book.ia-dm.com` binding in DNS —
+// the code merely reserved the pattern — so the address the owner copied onto a
+// flyer has never resolved for any client, while oliver-api's own builder has
+// returned the correct path form all along. The URL now comes from the API
+// (`page.url`, built by oliver-api lib/bookingLinks.js, the one home for it) and
+// the suffix below is only used to render the shape in the help text.
 const BOOKING_HOST_SUFFIX = "book.ia-dm.com";
+
+/** The zones a US/Canada field-service business actually operates in, plus UTC.
+ *  A datalist, not a closed select: an owner in another country types theirs and
+ *  the API validates it with Intl (routes/booking.js normalizeTimeZone). */
+const COMMON_TIMEZONES = [
+  "America/New_York", "America/Chicago", "America/Denver", "America/Phoenix",
+  "America/Los_Angeles", "America/Anchorage", "Pacific/Honolulu",
+  "America/Toronto", "America/Vancouver", "America/Halifax", "UTC",
+];
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
@@ -91,6 +161,10 @@ export function OliverBookingPage() {
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [bookingPage, setBookingPage] = useState<BookingPage | null>(null);
   const [draft, setDraft] = useState<BookingPage | null>(null);
+  // OLIVER pack 1 — the services the owner can put on the page, and the QR of
+  // the (correct) URL.
+  const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  const [qrSvg, setQrSvg] = useState<string | null>(null);
   const [slugDraft, setSlugDraft] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -112,20 +186,53 @@ export function OliverBookingPage() {
       setOrgSettings(settings);
       setSlugDraft(settings.slug || "");
 
+      // The services this business sells, so the owner can choose which appear
+      // on the booking page. services_json has existed since F-48 and this
+      // editor never wrote it — a multi-service page could only be built by
+      // hand against the API.
+      try {
+        // useOliverApi already strips the { data: … } envelope — declaring it here
+        // and reading `.data` is the portal's most repeated bug
+        // (test/no-double-unwrap.test.mjs).
+        const offs = await get<CatalogOffering[]>("/catalog/offerings");
+        setOfferings((offs || []).filter((o) =>
+          o.is_active !== false && (o.offering_type ?? "service") === "service"));
+      } catch {
+        // A catalog read failure must not stop the owner editing their hours.
+        setOfferings([]);
+      }
+
       // List booking pages — we pick the first (Standard tier = one).
       // If none exist, leave bookingPage null and present a "Start" form.
       const pagesRes = await get<{ data?: BookingPage[] } | BookingPage[]>("/booking/pages");
       const pages = Array.isArray(pagesRes) ? pagesRes : ((pagesRes as any).data ?? []);
-      const first = pages[0] || null;
+      const listed = pages[0] || null;
+      // GET /booking/pages/:id carries the parsed questions, the service list and
+      // the EFFECTIVE hours + zone (what is actually in force, and where they
+      // came from). The list endpoint carries neither.
+      let first = listed;
+      if (listed) {
+        try {
+          first = await get<BookingPage>(`/booking/pages/${listed.booking_page_id}`);
+        } catch { /* fall back to the list row */ }
+      }
       if (first) {
         const hydrated: BookingPage = {
           ...first,
           availability_windows: typeof first.availability_windows === "string"
             ? JSON.parse(first.availability_windows || "[]")
             : (first.availability_windows || []),
+          form_fields: Array.isArray(first.form_fields) ? first.form_fields : [],
+          services: Array.isArray(first.services) ? first.services : [],
         };
         setBookingPage(hydrated);
         setDraft(hydrated);
+        // OUR OWN QR of the correct URL. The old card showed a URL that never
+        // resolved, so a printed QR of it led nowhere.
+        try {
+          const qr = await get<{ qr_svg?: string | null }>(`/booking/pages/${first.booking_page_id}/qr-code`);
+          setQrSvg(qr?.qr_svg ?? null);
+        } catch { setQrSvg(null); }
       } else {
         setBookingPage(null);
         setDraft(defaultBookingPage());
@@ -140,10 +247,16 @@ export function OliverBookingPage() {
   useEffect(() => { load(); }, [load]);
 
   // ── Derived values ──────────────────────────────────────────────────────────
+  // THE URL THE OWNER COPIES. From the API when there is a page (oliver-api
+  // lib/bookingLinks.js, the ONE builder), else the path shape the page WILL have
+  // once it is saved. Never the subdomain form, which has no DNS binding and has
+  // never resolved for a client.
   const bookingUrl = useMemo(() => {
+    if (bookingPage?.url) return bookingPage.url;
     if (!slugDraft) return null;
-    return `https://${slugDraft}.${BOOKING_HOST_SUFFIX}`;
-  }, [slugDraft]);
+    const pageSlug = draft?.slug || "book";
+    return `https://${BOOKING_HOST_SUFFIX}/${slugDraft}/${pageSlug}`;
+  }, [bookingPage?.url, slugDraft, draft?.slug]);
 
   const slugChanged = (orgSettings?.slug || "") !== slugDraft;
   const bookingChanged = useMemo(() => {
@@ -174,7 +287,20 @@ export function OliverBookingPage() {
         advance_notice_hours: draft.advance_notice_hours,
         max_days_ahead: draft.max_days_ahead,
         availability_windows: draft.availability_windows,
-        form_fields: [],
+        // ── OLIVER pack 1 ────────────────────────────────────────────────────
+        // This line was `form_fields: []`. The column has existed since
+        // migration 054 and this editor overwrote it with an empty array on
+        // EVERY save, so the owner's own questions were unreachable from both
+        // ends: unwritable here and unrendered on the booking page.
+        form_fields: draft.form_fields ?? [],
+        // Which of the business's services the page sells. services_json has
+        // been read by the public API since F-48 and never written by this page.
+        services: draft.services ?? [],
+        // The business's clock (null = follow the location), where the hours come
+        // from, and whether the guest is asked where the work is.
+        timezone: draft.timezone ?? null,
+        hours_source: draft.hours_source ?? "inherit",
+        collect_service_address: !!draft.collect_service_address,
         confirmation_message: draft.confirmation_message,
         require_confirmation: draft.require_confirmation,
         is_active: draft.is_active,
@@ -203,13 +329,20 @@ export function OliverBookingPage() {
     setDraft((d) => (d ? { ...d, [key]: value } : d));
   }
 
+  // EDITING THE HOURS HERE IS WHAT "OVERRIDE" MEANS.
+  //
+  // ONE HOME for the hours: the owner types them once in Settings and this page
+  // inherits them. Touching a day or a time on THIS page is the deliberate act of
+  // narrowing them, so it flips hours_source to 'override' — nothing is copied
+  // behind the owner's back, and nothing drifts silently the way two independent
+  // stores did.
   function setWindow(day: number, key: "start_time" | "end_time", value: string) {
     setDraft((d) => {
       if (!d) return d;
       const windows = (d.availability_windows as AvailabilityWindow[]).map((w) =>
         w.day_of_week === day ? { ...w, [key]: value } : w
       );
-      return { ...d, availability_windows: windows };
+      return { ...d, availability_windows: windows, hours_source: "override" };
     });
   }
 
@@ -219,8 +352,52 @@ export function OliverBookingPage() {
       const windows = (d.availability_windows as AvailabilityWindow[]).filter((w) => w.day_of_week !== day);
       if (on) windows.push({ day_of_week: day, start_time: "09:00", end_time: "17:00" });
       windows.sort((a, b) => a.day_of_week - b.day_of_week);
-      return { ...d, availability_windows: windows };
+      return { ...d, availability_windows: windows, hours_source: "override" };
     });
+  }
+
+  /** Back to the hours the owner typed in Settings. The page stops carrying its
+   *  own, so a later change in Settings reaches the booking page. */
+  function useSettingsHours() {
+    setDraft((d) => (d ? {
+      ...d,
+      hours_source: "inherit",
+      availability_windows: (d.effective_availability_windows as AvailabilityWindow[]) ?? [],
+    } : d));
+  }
+
+  function toggleService(offeringId: string, on: boolean) {
+    setDraft((d) => {
+      if (!d) return d;
+      const cur = new Set(d.services ?? []);
+      if (on) cur.add(offeringId); else cur.delete(offeringId);
+      return { ...d, services: Array.from(cur) };
+    });
+  }
+
+  function addQuestion() {
+    setDraft((d) => (d ? {
+      ...d,
+      form_fields: [...(d.form_fields ?? []), { name: "", label: "", type: "text", required: false }],
+    } : d));
+  }
+
+  function updateQuestion(i: number, patch: Partial<BookingFormField>) {
+    setDraft((d) => {
+      if (!d) return d;
+      const fields = [...(d.form_fields ?? [])];
+      fields[i] = { ...fields[i], ...patch };
+      // The key is derived from the label so the owner never types one, and the
+      // answers land on the job card under the words they actually asked.
+      if (patch.label !== undefined) {
+        fields[i].name = patch.label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
+      }
+      return { ...d, form_fields: fields };
+    });
+  }
+
+  function removeQuestion(i: number) {
+    setDraft((d) => (d ? { ...d, form_fields: (d.form_fields ?? []).filter((_, j) => j !== i) } : d));
   }
 
   function copyUrl() {
@@ -265,12 +442,12 @@ export function OliverBookingPage() {
                 maxLength={63}
               />
               <div className="flex items-center px-3 bg-slate-50 border-l border-slate-300 text-sm text-slate-600">
-                .{BOOKING_HOST_SUFFIX}
+                {BOOKING_HOST_SUFFIX}/…
               </div>
             </div>
             <p className="mt-1 text-xs text-slate-500">
-              Lowercase letters, numbers, hyphens. Drives your booking, customer portal,
-              and team portal subdomains.
+              Lowercase letters, numbers, hyphens. This is your business's name in every
+              OLIVER address: your booking page, your customer portal and your team portal.
             </p>
           </div>
           <div className="flex items-end gap-2">
@@ -294,8 +471,24 @@ export function OliverBookingPage() {
         </div>
 
         {bookingUrl && (
-          <div className="mt-3 rounded-md bg-slate-50 border border-slate-200 px-3 py-2 font-mono text-sm text-slate-700">
-            {bookingUrl}
+          <div className="mt-3 flex flex-wrap items-center gap-4">
+            <div className="flex-1 min-w-[240px] rounded-md bg-slate-50 border border-slate-200 px-3 py-2 font-mono text-sm text-slate-700 break-all">
+              {bookingUrl}
+            </div>
+            {/* OUR OWN QR, not a vendor's image URL. This route used to return
+                api.qrserver.com — a third party on a client-facing asset, against
+                the standing no-third-party rule — and a QR of an address that
+                never resolved. */}
+            {qrSvg && (
+              <div className="flex flex-col items-center gap-1">
+                <div
+                  className="h-24 w-24 [&>svg]:h-full [&>svg]:w-full"
+                  aria-label="QR code for your booking page"
+                  dangerouslySetInnerHTML={{ __html: qrSvg }}
+                />
+                <span className="text-[10px] uppercase tracking-wide text-slate-500">Scan to book</span>
+              </div>
+            )}
           </div>
         )}
 
@@ -380,7 +573,11 @@ export function OliverBookingPage() {
               }}
               className={inputCls}
             >
-              <option value="auto">Auto — based on worker availability</option>
+              {/* Was "Auto — based on worker availability" and, until OLIVER pack 1,
+                  a straight lie: the public slots reader never looked at a worker.
+                  It does now — the active crew count — so the label can say what it
+                  actually means. */}
+              <option value="auto">One job per crew member on shift</option>
               <option value="fixed">Fixed — set attendees per slot</option>
               <option value="group">Group — unlimited attendees per slot</option>
             </select>
@@ -421,6 +618,160 @@ export function OliverBookingPage() {
             placeholder="Custom thank-you shown after booking. Defaults to a generic confirmation."
           />
         </Field>
+
+        {/* Which services are on the page (OLIVER pack 1).
+            services_json has been read by the public booking API since F-48 and
+            was never writable here, so a page selling more than one thing could
+            only be built by hand against the API. Each service brings its own
+            duration and its own price to the booking page. */}
+        <div className="mt-5 pt-4 border-t border-slate-200">
+          <div className="flex items-baseline justify-between">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Services customers can pick
+            </label>
+            <span className="text-xs text-slate-500">
+              {(draft?.services?.length ?? 0)} selected
+            </span>
+          </div>
+          {offerings.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              No services in your catalog yet. Add one in Service Catalog and it will appear here.
+              Until then the page books one generic appointment at the length above.
+            </p>
+          ) : (
+            <>
+              <p className="mt-1 text-xs text-slate-500">
+                Tick the ones customers should be able to choose. Each brings its own length and
+                price. Leave them all unticked to book one generic appointment.
+              </p>
+              <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                {offerings.map((o) => {
+                  const on = (draft?.services ?? []).includes(o.offering_id);
+                  return (
+                    <label key={o.offering_id} className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2">
+                      <input type="checkbox" checked={on} className="mt-0.5 h-4 w-4"
+                             onChange={(e) => toggleService(o.offering_id, e.target.checked)} />
+                      <span className="text-sm">
+                        <span className="font-medium">{o.name}</span>
+                        {o.default_duration_minutes ? (
+                          <span className="block text-xs text-slate-500">{o.default_duration_minutes} min</span>
+                        ) : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Do we ask where the work is (OLIVER pack 1).
+            Before this the public form collected first/last/email/phone and
+            nothing else, so every booked job had NO address — and the crew app
+            renders its address and its map link off exactly that column. Blank,
+            for precisely the jobs where nobody had spoken to the customer and
+            could ask. */}
+        <div className="mt-5 pt-4 border-t border-slate-200">
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
+              checked={draft?.collect_service_address ?? false}
+              onChange={(e) => setDraftField("collect_service_address", e.target.checked)}
+              className="mt-1 h-4 w-4"
+            />
+            <span className="text-sm">
+              <span className="font-medium">Ask customers for the address</span>
+              <span className="block text-xs text-slate-500">
+                On for work you travel to — the address and any access notes land on the job, and
+                your crew gets a map link. Off for phone or video calls, where asking is intrusive.
+              </span>
+            </span>
+          </label>
+        </div>
+      </SectionCard>
+
+      {/* Extra questions (OLIVER pack 1) */}
+      <SectionCard
+        icon={<CalendarIcon className="h-4 w-4" />}
+        title="Anything else you need to know?"
+        subtitle="Extra questions on your booking form. Answers appear on the job your crew sees."
+      >
+        {(draft?.form_fields ?? []).length === 0 && (
+          <p className="text-xs text-slate-500">
+            Nothing extra yet. Common ones: gate code, is there a dog in the yard, which unit,
+            where should we park.
+          </p>
+        )}
+        <div className="space-y-3">
+          {(draft?.form_fields ?? []).map((f, i) => (
+            <div key={i} className="rounded-md border border-slate-200 p-3">
+              <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto]">
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Question
+                  </label>
+                  <input
+                    type="text"
+                    value={f.label}
+                    onChange={(e) => updateQuestion(i, { label: e.target.value })}
+                    className={inputCls}
+                    placeholder="Is there a gate code?"
+                    maxLength={120}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Answer type
+                  </label>
+                  <select
+                    value={f.type}
+                    onChange={(e) => updateQuestion(i, { type: e.target.value as BookingFormField["type"] })}
+                    className={inputCls}
+                  >
+                    <option value="text">Short text</option>
+                    <option value="textarea">Long text</option>
+                    <option value="tel">Phone number</option>
+                    <option value="email">Email</option>
+                    <option value="number">Number</option>
+                    <option value="checkbox">Yes / no</option>
+                    <option value="select">Pick from a list</option>
+                  </select>
+                </div>
+                <div className="flex items-end gap-3 pb-1">
+                  <label className="flex items-center gap-1.5 text-xs text-slate-600">
+                    <input type="checkbox" checked={!!f.required} className="h-4 w-4"
+                           onChange={(e) => updateQuestion(i, { required: e.target.checked })} />
+                    Required
+                  </label>
+                  <button type="button" onClick={() => removeQuestion(i)}
+                          className="text-xs text-red-700 underline hover:text-red-900">
+                    Remove
+                  </button>
+                </div>
+              </div>
+              {f.type === "select" && (
+                <div className="mt-2">
+                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Choices (one per line)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={(f.options ?? []).join("\n")}
+                    onChange={(e) => updateQuestion(i, {
+                      options: e.target.value.split("\n").map((o) => o.trim()).filter(Boolean),
+                    })}
+                    className={inputCls}
+                    placeholder={"Front door\nSide gate\nBack alley"}
+                  />
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        <button type="button" onClick={addQuestion}
+                className="mt-3 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
+          + Add a question
+        </button>
       </SectionCard>
 
       {/* ─── Section: Price visibility (F-52) ───────────────────────────────── */}
@@ -465,11 +816,78 @@ export function OliverBookingPage() {
       <SectionCard
         icon={<CalendarIcon className="h-4 w-4" />}
         title="When you're available"
-        subtitle="Weekly schedule. Customers can book any open slot within these windows."
+        subtitle="Your opening hours come from your business profile. Narrow them here only if this booking page should be tighter."
       >
+        {/* THE BUSINESS'S CLOCK.
+            Until OLIVER pack 1 the slot engine read "08:00" as 08:00 UTC, so a
+            Central-time business that set 8-to-5 offered a customer appointments
+            from 3am to noon. The zone lives on the business's location; this is
+            the per-page override for the rare page that sells into another one. */}
+        <div className="mb-4 rounded-md border border-slate-200 bg-slate-50 p-3">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Time zone these hours are in
+          </label>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              list="oliver-booking-timezones"
+              value={draft?.timezone ?? ""}
+              onChange={(e) => setDraftField("timezone", e.target.value.trim() || null)}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+              placeholder={bookingPage?.effective_timezone || "America/Chicago"}
+            />
+            <datalist id="oliver-booking-timezones">
+              {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz} />)}
+            </datalist>
+            {!draft?.timezone && (
+              <span className="text-xs text-slate-600">
+                Using <strong>{bookingPage?.effective_timezone || "America/Chicago"}</strong> — your
+                location's time zone. Change it under Locations and every product follows.
+              </span>
+            )}
+            {draft?.timezone && (
+              <button type="button" onClick={() => setDraftField("timezone", null)}
+                      className="text-xs underline text-slate-600 hover:text-slate-900">
+                Use my location's time zone instead
+              </button>
+            )}
+          </div>
+          <p className="mt-1.5 text-xs text-slate-500">
+            Customers always see these times in your time zone, with the zone named — so somebody
+            booking from another state cannot misread 2pm.
+          </p>
+        </div>
+
+        {/* ONE HOME FOR THE HOURS. Inheriting is the default; editing a day below
+            is the deliberate act of overriding. */}
+        {(draft?.hours_source ?? "inherit") === "inherit" ? (
+          <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+            These are your opening hours from <a href="/app/settings" className="underline">your business profile</a> —
+            change them there and this page follows. Editing a day below makes this page keep its own,
+            narrower hours instead.
+          </div>
+        ) : (
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span>
+              This booking page has its OWN hours. Changes to your business profile won't reach it.
+            </span>
+            <button type="button" onClick={useSettingsHours}
+                    className="underline font-semibold hover:text-amber-950">
+              Go back to my business hours
+            </button>
+          </div>
+        )}
+
         <div className="space-y-2">
           {Array.from({ length: 7 }, (_, day) => {
-            const window = (draft?.availability_windows as AvailabilityWindow[] || []).find((w) => w.day_of_week === day);
+            // While inheriting, show what is ACTUALLY IN FORCE (the API computes
+            // it) rather than this page's empty list — an owner looking at seven
+            // "Closed" rows under "your hours come from your profile" would
+            // reasonably conclude the page was broken.
+            const shown = (draft?.hours_source ?? "inherit") === "inherit"
+              ? ((bookingPage?.effective_availability_windows as AvailabilityWindow[]) ?? [])
+              : ((draft?.availability_windows as AvailabilityWindow[]) ?? []);
+            const window = shown.find((w) => w.day_of_week === day);
             const enabled = !!window;
             return (
               <div key={day} className="flex items-center gap-3 py-1">
@@ -661,22 +1079,31 @@ function defaultBookingPage(): BookingPage {
   return {
     booking_page_id: "",
     slug: "book",
-    title: "Book a call",
+    // OLIVER is field service. "Book a call" / "project" / "discovery_call" were
+    // the founder's OWN booking page written in as everybody's default, so a
+    // plumber's first booking page called itself a discovery call and did not ask
+    // where the work was. lib/seedBookingPage.js on the API side names the page
+    // after the business's own first service; this is the manual-create fallback.
+    title: "Book an Appointment",
     description: null,
-    job_category: "project",
-    job_type: "discovery_call",
-    duration_minutes: 30,
+    job_category: "field_service",
+    job_type: "appointment",
+    duration_minutes: 60,
     buffer_minutes: 15,
     advance_notice_hours: 24,
     max_days_ahead: 60,
-    availability_windows: [
-      { day_of_week: 1, start_time: "09:00", end_time: "17:00" },
-      { day_of_week: 2, start_time: "09:00", end_time: "17:00" },
-      { day_of_week: 3, start_time: "09:00", end_time: "17:00" },
-      { day_of_week: 4, start_time: "09:00", end_time: "17:00" },
-      { day_of_week: 5, start_time: "09:00", end_time: "17:00" },
-    ],
+    // EMPTY, and hours_source 'inherit'. A brand-new page takes the hours the
+    // owner already typed in their business profile rather than inventing a
+    // Mon-Fri 9-5 that then drifts away from it — the two-store problem this pack
+    // closes. The grid below renders the inherited hours so it never looks empty.
+    availability_windows: [],
+    hours_source: "inherit",
+    timezone: null,
+    // ON by default: OLIVER exists for work you travel to, and a job with no
+    // address is a crew with no map link.
+    collect_service_address: true,
     form_fields: [],
+    services: [],
     confirmation_message: null,
     brand_color: null,
     logo_url: null,
