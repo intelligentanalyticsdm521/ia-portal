@@ -1,14 +1,25 @@
-// SparkDashboardsPage — Saved dashboards with widget layouts.
+// SparkDashboardsPage — Saved dashboards, with widgets that read real numbers.
 //
-// Lets a user save named collections of widgets (any JSON-serializable
-// layout) for personal or shared use. The widget renderer is intentionally
-// minimal here — the layout itself is opaque JSON. A future Phase will plug
-// each widget type into a real chart/table component.
-import { useCallback, useEffect, useState } from "react";
+// SPARK pack 2: THE WIDGETS RENDER DATA NOW. Until today every widget on every
+// dashboard drew its own title, its own type, the URL it WOULD have called and
+// the words "Widget renderer pending" — under a banner promising v1.1. Every
+// one of those endpoints had been live for months.
+//
+// Each widget reads through components/spark/dashboardWidgets, which pairs a
+// source with a reader that knows the shape of that endpoint's answer. A saved
+// layout naming a source we have no reader for says so plainly; it does not
+// draw a number.
+//
+// LOADING, ERROR AND EMPTY ARE THREE DIFFERENT THINGS, and each looks
+// different. A business with no contacts has zero contacts and sees 0. A
+// request that FAILED says it failed. The two were the same state on the IA
+// Insights pages until SPARK pack 1, and they invented a year of charts.
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
-import { Plus, Trash2, Star, Share2, Pencil, LayoutDashboard, Check, X } from "lucide-react";
-import { ComingSoonBanner } from "../../components/ComingSoonBanner";
+import { Plus, Trash2, Star, Share2, Pencil, LayoutDashboard, Check, X, AlertTriangle } from "lucide-react";
+import { readerFor, DEFAULT_WIDGET_SOURCES, WIDGET_SOURCES } from "../../components/spark/dashboardWidgets";
+import type { WidgetValue } from "../../components/spark/dashboardWidgets";
 
 interface Widget {
   type: string;
@@ -35,14 +46,19 @@ interface Dashboard {
   created_by: string | null;
 }
 
-// Default widget palette — a sensible starting layout the user can edit.
-const DEFAULT_WIDGETS: Widget[] = [
-  { type: "metric", title: "Total Contacts", size: "sm", source: "/api/v1/contacts/count" },
-  { type: "metric", title: "Active Campaigns", size: "sm", source: "/api/v1/campaigns/count" },
-  { type: "metric", title: "Average Health Score", size: "sm", source: "/api/v1/health-score/distribution" },
-  { type: "chart", title: "Activity (30d)", size: "lg", source: "/api/v1/activity/summary?days=30", chart: "bar" },
-  { type: "list", title: "Recent Activity", size: "md", source: "/api/v1/activity?limit=10" },
-];
+// The starting layout. Built FROM the catalogue rather than typed out beside
+// it, so a default widget cannot name an endpoint that has no reader — which is
+// exactly what two of the old five did (`/contacts/count` and
+// `/campaigns/count` have never existed).
+const DEFAULT_WIDGETS: Widget[] = DEFAULT_WIDGET_SOURCES.map((source) => {
+  const w = WIDGET_SOURCES.find((x) => x.source === source)!;
+  return {
+    type: w.kind,
+    title: w.title,
+    size: w.kind === "metric" ? "sm" : w.kind === "chart" ? "lg" : "md",
+    source: w.source,
+  };
+});
 
 export function SparkDashboardsPage() {
   const { get, post, patch, del, ready } = useSparkApi();
@@ -151,18 +167,6 @@ export function SparkDashboardsPage() {
       loading={loading}
       error={error}
     >
-      <ComingSoonBanner
-        feature="Dashboard Widgets"
-        detail={
-          <>
-            You can create + save dashboard layouts today, but the individual widget
-            renderers (metric tiles, charts, lists) are stubbed — they show the layout
-            shape and source endpoint, not live data. Real widget rendering ships with
-            v1.1 once the underlying data APIs settle.
-          </>
-        }
-        eta="v1.1"
-      />
       {creating && (
         <CreateModal
           form={form}
@@ -326,32 +330,124 @@ function DashboardDetail(props: {
 }
 
 function WidgetCard({ widget }: { widget: Widget }) {
+  const { get, ready } = useSparkApi();
   const size = widget.size || "md";
   const span = size === "sm" ? "col-span-12 sm:col-span-6 md:col-span-3" :
                size === "md" ? "col-span-12 md:col-span-6" :
                size === "lg" ? "col-span-12 md:col-span-8" :
                               "col-span-12";
-  const typeColors: Record<string, string> = {
-    metric: "#0F766E",
-    chart: "#2563EB",
-    list: "#7C3AED",
-    table: "#0EA5E9",
-  };
-  const c = typeColors[widget.type] || "#64748B";
+
+  const reader = useMemo(() => readerFor(widget.source), [widget.source]);
+  const [state, setState] = useState<"loading" | "ready" | "error" | "unsupported">(
+    reader ? "loading" : "unsupported"
+  );
+  const [value, setValue] = useState<WidgetValue | null>(null);
+
+  useEffect(() => {
+    if (!reader || !ready) return;
+    let cancelled = false;
+    setState("loading");
+    get<unknown>(reader.source)
+      .then((payload) => {
+        if (cancelled) return;
+        setValue(reader.read(payload));
+        setState("ready");
+      })
+      .catch(() => {
+        // An error is NOT an empty dashboard. A widget that renders 0 because a
+        // request failed is a number somebody could repeat in a meeting.
+        if (!cancelled) setState("error");
+      });
+    return () => { cancelled = true; };
+  }, [reader, ready, get]);
+
+  const title = widget.title || reader?.title || "(untitled)";
+
   return (
-    <div className={`${span} rounded border border-slate-200 bg-slate-50 p-3 min-h-[120px]`}>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-semibold text-slate-700 truncate">{widget.title || "(untitled)"}</span>
-        <span className="text-[9px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded text-white" style={{ background: c }}>
-          {widget.type}
-        </span>
-      </div>
-      <div className="text-[10px] text-slate-500 font-mono break-all">
-        {typeof widget.source === "string" ? widget.source : "—"}
-      </div>
-      <div className="mt-2 text-[10px] text-slate-400 italic">
-        Widget renderer pending — layout shape preserved.
-      </div>
+    <div className={`${span} rounded border border-slate-200 bg-white p-3 min-h-[120px]`}>
+      <div className="text-xs font-semibold text-slate-700 truncate">{title}</div>
+
+      {state === "unsupported" && (
+        <div className="mt-3 text-[11px] text-slate-500">
+          This widget points at something we do not have a reader for, so there is nothing
+          to show. Remove it and add one from the list.
+          <div className="mt-1 font-mono text-[10px] text-slate-400 break-all">
+            {typeof widget.source === "string" ? widget.source : "no source"}
+          </div>
+        </div>
+      )}
+
+      {state === "loading" && (
+        <div className="mt-4 h-6 w-24 animate-pulse rounded bg-slate-100" aria-label="loading" />
+      )}
+
+      {state === "error" && (
+        <div className="mt-3 flex items-start gap-1.5 text-[11px] text-amber-800">
+          <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+          <span>We could not read this number just now. That is a problem on our side, not with your account.</span>
+        </div>
+      )}
+
+      {state === "ready" && value && reader && (
+        <>
+          {reader.kind === "metric" && (
+            value.metric == null ? (
+              <div className="mt-3 text-[11px] text-slate-500">
+                {value.emptyNote || "Nothing to show yet."}
+              </div>
+            ) : (
+              <>
+                <div className="mt-2 text-3xl font-bold tabular-nums text-slate-900">
+                  {value.metric.toLocaleString()}
+                  {value.suffix ? <span className="ml-0.5 text-base font-semibold text-slate-400">{value.suffix}</span> : null}
+                </div>
+                <div className="mt-0.5 text-[10px] text-slate-500">{reader.caption}</div>
+              </>
+            )
+          )}
+
+          {reader.kind === "chart" && (
+            (value.series || []).length === 0 ? (
+              <div className="mt-3 text-[11px] text-slate-500">{value.emptyNote || "Nothing to show yet."}</div>
+            ) : (
+              <ul className="mt-2 space-y-1.5">
+                {(value.series || []).map((pt) => {
+                  const max = Math.max(...(value.series || []).map((x) => x.value), 1);
+                  return (
+                    <li key={pt.label} className="text-[11px]">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <span className="truncate capitalize text-slate-600">{pt.label}</span>
+                        <span className="tabular-nums font-semibold text-slate-900">{pt.value.toLocaleString()}</span>
+                      </div>
+                      <div className="mt-0.5 h-1.5 w-full rounded bg-slate-100">
+                        <div className="h-1.5 rounded bg-[#EF6C33]" style={{ width: `${Math.round((pt.value / max) * 100)}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )
+          )}
+
+          {reader.kind === "list" && (
+            (value.rows || []).length === 0 ? (
+              <div className="mt-3 text-[11px] text-slate-500">{value.emptyNote || "Nothing to show yet."}</div>
+            ) : (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {(value.rows || []).map((row) => (
+                  <li key={row.id} className="py-1.5">
+                    <div className="truncate text-[11px] font-medium text-slate-800">{row.title}</div>
+                    {row.detail && <div className="truncate text-[10px] text-slate-500">{row.detail}</div>}
+                    {row.at && (
+                      <div className="text-[10px] text-slate-400">{new Date(row.at).toLocaleString()}</div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )
+          )}
+        </>
+      )}
     </div>
   );
 }

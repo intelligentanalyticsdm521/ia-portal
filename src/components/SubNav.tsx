@@ -469,7 +469,6 @@ const SPARK_NAV: SubNavConfig = {
         // campaigns rather than alongside them. Keeping reference here so
         // the move is documented.
         { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
-        { key: "spark_social", label: "Social & Calendar", route: "/app/services/spark_social", hidden: true /* cut: moved to ARION -> My Brand */ },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", merged: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
@@ -558,6 +557,12 @@ const SPARK_NAV: SubNavConfig = {
         // connect is a Leads-package question the API answers at runtime, and
         // connecting the first one is how the inbox fills at all.
         { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
+        // SPARK pack 2 (2026-09-09). Every text, call, voicemail and website
+        // chat was reachable only THROUGH a lead, and both "is this a lead"
+        // decisions refuse a greeting — so a live chat, or a text that had not
+        // got to the point yet, had no screen anywhere. Beside the Lead Inbox
+        // because they are the same job: somebody is trying to reach you.
+        { key: "spark_conversations", label: "Conversations", route: "/app/services/spark_conversations" },
         { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources" },
         { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
         { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
@@ -568,7 +573,13 @@ const SPARK_NAV: SubNavConfig = {
       items: [
         { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", minTier: "business" /* BUSINESS: customer-success suite */},
         { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", minTier: "business" /* BUSINESS: customer-success suite */},
-        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews", hidden: true /* cut: reviews live in ARION My Business/GBP */ },
+        // BACK IN NAV, 2026-09-09 (SPARK pack 2). It was cut with the note
+        // "reviews live in ARION My Business/GBP", which left a business that
+        // has SPARK and not ARION with no reputation surface at all — and the
+        // reply box here saved text and stamped a "posted" date without ever
+        // posting anything. Replies go to Google through ARION's publisher now,
+        // and a business with no Google connection is told so in a sentence.
+        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
         { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", minTier: "business" /* BUSINESS: customer-success suite */},
       ],
     },
@@ -1108,7 +1119,7 @@ function getDefaultSection(path: string): string | null {
   // F-93 — Email Templates / SMS Templates / Translations all live under
   // the SPARK_NAV "Templates" entry (Outreach group) now. They collapse
   // into a single feature with channel tabs.
-  if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_social") || path.includes("/spark_deliverability")) return "spark_outreach";
+  if (path.includes("/spark_campaigns") || path.includes("/spark_templates") || path.includes("/spark_email_templates") || path.includes("/spark_sms_templates") || path.includes("/spark_template_i18n") || path.includes("/spark_newsletter") || path.includes("/spark_deliverability")) return "spark_outreach";
   // F-89 + F-93 — Workflow & Automations contains everything that fires on
   // its own. Webhooks + Audience Sync moved here from Settings.
   // F-93 + rules consolidation (2026-05-28): spark_rules replaces the 3

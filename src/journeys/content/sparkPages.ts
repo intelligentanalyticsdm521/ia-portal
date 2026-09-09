@@ -226,9 +226,10 @@ export const SPARK_PAGES: PageContentMap = {
     body:
       "A long-form recurring newsletter with its own calendar and per-issue numbers. Different rhythm from campaigns: a newsletter is a habit your audience expects, which is what makes it the most durable channel you own.",
   },
-  spark_social: {
+  spark_conversations: {
+    title: "Conversations — the ones that never became a lead",
     body:
-      "Schedule posts across your channels and see what's queued versus shipped. Batching a month in one sitting is the only approach that survives a busy week.",
+      "Somebody texting “hi”, or opening the chat bubble and typing before they say what they want, is not a lead yet — and until this page existed there was nowhere they showed up. Everything is here: texts, calls, voicemails and website chats, whether or not they turned into anything.",
   },
   spark_deliverability: {
     title: "Deliverability — check this before your first send",

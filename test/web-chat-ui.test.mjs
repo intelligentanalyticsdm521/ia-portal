@@ -86,7 +86,13 @@ test("Lead sources separates Inbound from Intake, in the locked words", () => {
   const text = visibleText(sources);
   assert.match(text, /Inbound — your own website/);
   assert.match(text, /Intake — platforms you connect/);
-  assert.match(text, /No key, nothing to paste/);
+  // SPARK pack 2 (2026-09-09): "No key, nothing to paste" was TRUE only for a
+  // website we host, and web chat existed only for those — a business whose
+  // site we do not host had no site row, so no key, so nothing to switch on.
+  // There IS something to paste now, for exactly those businesses, so the
+  // sentence changed rather than becoming a lie.
+  assert.match(text, /A website we host needs nothing pasted/);
+  assert.match(text, /Add a website we do not host/);
   assert.match(sources, /`\/api\/v1\/chat\/sites\/\$\{site\.site_id\}`/);
   assert.match(sources, /get<\{ data: ChatSiteRow\[\]; meta: ChatMeta \}>\("\/api\/v1\/chat\/sites"\)/);
 });
