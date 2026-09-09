@@ -592,12 +592,6 @@ export const SPARK_QUICK_TOUR: TourDef = {
       placement: "right",
     },
     {
-      title: "Outreach — SMS Inbox",
-      body: "Two-way SMS — see customer replies, respond inline.",
-      targetSelector: "a[href='/app/services/spark_sms_inbox']",
-      placement: "right",
-    },
-    {
       title: "Outreach — Deliverability",
       body: "Sender reputation, bounce rates, complaint feedback. Catches problems before they tank your domain.",
       targetSelector: "a[href='/app/services/spark_deliverability']",

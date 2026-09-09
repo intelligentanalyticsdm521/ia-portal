@@ -28,8 +28,8 @@ const INTEL_ROUTE = "/app/services/oliver_ia_insights_intelligence";
 export function OliverIAInsightsHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
-  const oliverPayload = useProductInsightsPayload("oliver");
-  const sparkPayload = useProductInsightsPayload("spark");
+  const oliverPayload = useProductInsightsPayload("oliver").payload;
+  const sparkPayload = useProductInsightsPayload("spark").payload;
 
   const headerData: IAInsightsHeaderData = useMemo(() => {
     const seed = activeTenantId || "oliver";

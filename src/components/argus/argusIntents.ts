@@ -164,9 +164,12 @@ export const ARGUS_INTENTS: ArgusIntent[] = [
   { id: "spark_sms_unsubscribes", keywords: ["sms unsubscribes", "sms opt out", "sms suppression", "stop list", "text opt out"],
     reply: "The Suppressed Domains tab on the Lead Inbox page holds every email + phone that's opted out (STOP replies and unsubscribes are merged in here). Anyone on this list is excluded from outbound sends.",
     cta: { label: "Open Suppressed Domains", to: "/app/services/spark_lead_inbox?tab=suppressed" } },
-  { id: "spark_sms_log", keywords: ["sms log", "text log", "sms history", "sent texts", "sms inbox"],
-    reply: "SMS Inbox shows every inbound + outbound text — replies, delivery status, and the conversation thread per contact.",
-    cta: { label: "Open SMS Inbox", to: "/app/services/spark_sms_inbox" } },
+  // The separate SMS Inbox page is gone (SPARK pack 1): a text arrives as a lead
+  // in the Lead Inbox with its whole thread attached, which is where somebody
+  // asking "where are my texts" should be sent.
+  { id: "spark_sms_log", keywords: ["sms log", "text log", "sms history", "sent texts", "sms inbox", "text replies"],
+    reply: "Texts land in your Lead Inbox. Open the lead and the whole conversation is on it — what they sent, what went back, and when.",
+    cta: { label: "Open Lead Inbox", to: "/app/services/spark_lead_inbox" } },
 
   // ── ARION routes ─────────────────────────────────────────────────────────
   { id: "arion_analytics", keywords: ["ga4", "google analytics", "site traffic", "visitors"],

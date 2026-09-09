@@ -35,7 +35,7 @@ interface SparkForm {
 }
 
 export function SparkFormsPage() {
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
   const { get, post, put, ready } = useSparkApi();
   const [searchParams, setSearchParams] = useSearchParams();
   const [forms, setForms] = useState<SparkForm[]>([]);

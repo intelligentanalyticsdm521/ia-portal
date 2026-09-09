@@ -32,8 +32,8 @@ const INTEL_ROUTE = "/app/services/argus_cross_platform";
 export function ArgusHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
-  const sparkPayload = useProductInsightsPayload("spark");
-  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkPayload = useProductInsightsPayload("spark").payload;
+  const oliverPayload = useProductInsightsPayload("oliver").payload;
 
   const { headerData, activeProducts } = useMemo(() => {
     const seed = activeTenantId || "argus";

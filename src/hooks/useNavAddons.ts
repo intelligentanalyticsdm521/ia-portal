@@ -128,11 +128,14 @@ export function useNavAddons(product: GatedProduct | undefined): NavAddonsResult
   }, [wantsArion, activeTenantId, inOwnTenant, scope, getToken]);
 
   return useMemo<NavAddonsResult>(() => {
-    // Hotfix B (2026-09-03): Lead Gen is live for the founder's OWN tenant
-    // (Intelligent Analytics) while Brandon verifies real searches. The
-    // product-wide lock in activeAddons() stays for every other tenant and
-    // for view-as — inOwnTenant is already false there.
-    const base = inOwnTenant ? [...activeAddons(), "leadgen" as NavAddon] : activeAddons();
+    // The `leadgen` add-on injection that used to be here is GONE (SPARK pack 1,
+    // 2026-09-08). It was Hotfix B's founder gate wearing the add-on mechanism:
+    // "the founder's own tenant gets the Lead Gen add-on". Two things replaced it
+    // — the Lead Inbox and Lead sources rows dropped `addon: "leadgen"` because a
+    // business's own leads are not an add-on, and the SEARCH surfaces ask the
+    // server's allow-list (useLeadgenAccess). Nothing declares that add-on now, so
+    // handing it out is dead code and dead code is where the next bug hides.
+    const base = activeAddons();
     if (!wantsArion) return { addons: base, seoAddonTier: null };
     if (inOwnTenant) return { addons: [...base, "seo"], seoAddonTier: OWNER_DEFAULTS.arion.addon };
     if (!state || state.scope !== scope || state.sites == null) return { addons: null, seoAddonTier: null }; // unresolved

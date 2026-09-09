@@ -176,10 +176,12 @@ test("every screen a suggested move can open actually exists", () => {
   // landed on nothing. If this list and that file disagree, one of them is
   // wrong and the walk will find it.
   //
-  // Every one is a screen a CLIENT can open. The Lead Gen search screens are
-  // founder-only today (App.tsx puts RequireFounderRoute on /app/spark/leadgen,
-  // Hotfix B 2026-09-03), so no play may link there — a monthly report that
-  // hands a client a link into a 403 is worse than no link.
+  // Every one is a screen a CLIENT can open UNCONDITIONALLY. The Lead Gen search
+  // screens are behind the server's allow-list (App.tsx puts RequireLeadgenRoute
+  // on /app/spark/leadgen — SPARK pack 1, 2026-09-08, replacing Hotfix B's
+  // founder-only gate), so no play may link there: a monthly report that hands a
+  // client a link into a bounce is worse than no link, and whether THIS business
+  // is on the allow-list is not something a stored play can know.
   const TARGETS = [
     "/app/services/spark_contacts",   // ask_for_referrals
     "/app/services/spark_leads",      // lean_into_source, review_paid_source, work_the_hot_ones
@@ -199,10 +201,13 @@ test("every screen a suggested move can open actually exists", () => {
   }
 });
 
-test("no suggested move links into a founder-only area", () => {
-  // The mirror of the list above: /app/spark/leadgen is behind
-  // RequireFounderRoute, so it must not appear as a play target.
+test("no suggested move links into a gated area", () => {
+  // The mirror of the list above: /app/spark/leadgen is behind a gate not every
+  // business passes, so it must not appear as a play target. The GATE changed on
+  // 2026-09-08 (founder-only → the server's allow-list); what this test is for
+  // did not — if the guard on that route is ever removed, re-check the play
+  // targets in LUMEN services/il/playbooks.js.
   const app = read("App.tsx");
-  assert.match(app, /<Route path="spark\/leadgen" element=\{<RequireFounderRoute \/>\}>/,
-    "the founder gate on Lead Gen moved — re-check the play targets in LUMEN services/il/playbooks.js");
+  assert.match(app, /<Route path="spark\/leadgen" element=\{<RequireLeadgenRoute \/>\}>/,
+    "the gate on Lead Gen moved — re-check the play targets in LUMEN services/il/playbooks.js");
 });

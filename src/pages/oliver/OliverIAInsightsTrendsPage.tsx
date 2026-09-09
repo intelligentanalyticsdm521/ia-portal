@@ -14,7 +14,7 @@ import { TrendDashboardView } from "../../components/insights/TrendDashboardView
 
 export function OliverIAInsightsTrendsPage() {
   const { activeTenantId } = useAppState();
-  const payload = useProductInsightsPayload("oliver");
+  const payload = useProductInsightsPayload("oliver").payload;
   const dashboards = useMemo(
     () => buildOliverDashboards(payload || demoOliverMetrics(activeTenantId || "oliver")),
     [payload, activeTenantId],

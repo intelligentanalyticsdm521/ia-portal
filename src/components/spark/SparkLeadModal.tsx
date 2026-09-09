@@ -22,10 +22,11 @@
 // Contact quota is spent by PROMOTED contacts only. The modal says so where the
 // client decides, because that is the moment the question comes up.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Building2, Phone, MapPin, Mail, ExternalLink, FileText, Activity as ActivityIcon,
   Zap, Users, ShieldCheck, ShieldX, ShieldAlert, Plus, Star, Lock, CheckCircle2, Sparkles,
-  MessageSquare,
+  MessageSquare, User,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
@@ -407,6 +408,22 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                   <CheckCircle2 className="inline h-3.5 w-3.5 mr-1 -mt-0.5" />
                   In your CRM as the business <strong>{lead.account.name}</strong>.
                 </div>
+              )}
+
+              {/* Contact 360 deep link (SPARK pack 1, 2026-09-08). That page shows
+                  everything the platform knows about one person across SPARK,
+                  OLIVER and ARION, and its only way in used to be typing a
+                  database id into a box. This modal already knows the id — so it
+                  links, and only once the lead has actually become a contact,
+                  because there is nothing to show before that. */}
+              {lead.contact_id != null && (
+                <Link
+                  to={`/app/services/spark_contact_360?id=${lead.contact_id}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:border-[#EF6C33] hover:text-[#EF6C33]"
+                >
+                  <User className="h-3.5 w-3.5" />
+                  See everything about this person
+                </Link>
               )}
 
               {lead.tasks?.length > 0 && (

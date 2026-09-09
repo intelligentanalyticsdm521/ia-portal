@@ -85,7 +85,7 @@ const METHOD_COLORS = ["#1A7DB5", "#0C4A60", "#10B981", "#F59E0B", "#9333EA", "#
 export function OliverBillingOverviewPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('oliver');
+  const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, ready } = useOliverApi();
   // Multi-location: the header picker scopes the feed.

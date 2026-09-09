@@ -41,7 +41,7 @@ interface Campaign {
 export function SparkCampaignsPage() {
   // Reports covering THIS function (Brandon 2026-08-14). Above any early
   // return — a hook below one runs on some renders only.
-  const insightsPayload = useProductInsightsPayload('spark');
+  const insightsPayload = useProductInsightsPayload('spark').payload;
 
   const { get, ready } = useSparkApi();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);

@@ -10,8 +10,23 @@
 //   Business Pulse     = client-side roll-up across ARION/SPARK/OLIVER —
 //                        reverts to platform-api /argus/business-pulse once
 //                        the monthly snapshot jobs land.
-// Series are client-generated per tenant for review (the SPARK metrics
-// endpoint is the documented follow-up, same as the Trends page).
+//
+// NO DEMO FALLBACK FOR A REAL BUSINESS (SPARK pack 1, 2026-09-08). Two invented
+// things used to reach this screen and neither said so:
+//
+//   · `sparkPayload || demoSparkMetrics(seed)` — the Trend, Intelligence and
+//     Platform gauges, all four breakdown bars, drawn from a seed derived from
+//     the business's own tenant id whenever the metrics fetch failed or the
+//     business had nothing to measure.
+//   · `demoBusinessPulse(seed, {...})` — which invents ARION and OLIVER series
+//     internally for any product whose payload is null, so the Business Pulse and
+//     Cross-Platform gauges were a cross-product score across products that had
+//     reported nothing.
+//
+// A gauge is the most quotable thing on the platform: it is one number with a
+// colour, and somebody reads it out. Both are gone. An unresolved score is now an
+// `unknown` gauge with a sentence (the header already renders that state), and the
+// seeded generators run only behind a dev-only flag that labels the page SAMPLE.
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { useAppState } from "../../app/AppState";
@@ -20,6 +35,9 @@ import type { IAInsightsHeaderData } from "../../components/iainsights/types";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
 import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { insightsDemoAllowed } from "../../components/insights/insightsDemo";
+import { InsightsEmpty, InsightsError, InsightsLoading, SampleDataBadge } from "../../components/insights/InsightsStateView";
+import { SPARK_INSIGHT_SOURCES } from "../../components/insights/sparkInsightSources";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 import { SparkLeadPoolCard } from "../../components/spark/SparkLeadPoolCard";
 import { WhatWorkedCard } from "../../components/spark/WhatWorkedCard";
@@ -31,38 +49,64 @@ const INTEL_ROUTE = "/app/services/spark_ia_insights_intelligence";
 export function SparkIAInsightsHealthPage() {
   const { activeTenantId } = useAppState();
   const arionPayload = useArionInsightsPayload();
-  const sparkPayload = useProductInsightsPayload("spark");
-  const oliverPayload = useProductInsightsPayload("oliver");
+  const sparkState = useProductInsightsPayload("spark");
+  const oliverState = useProductInsightsPayload("oliver");
+  const demo = insightsDemoAllowed();
 
-  const headerData: IAInsightsHeaderData = useMemo(() => {
-    const seed = activeTenantId || "spark";
-    const payload = sparkPayload || demoSparkMetrics(seed);
-    const trendDs = buildSparkDashboards(payload);
-    const intelDs = buildIntelligenceMirror(payload, SPARK_MIRROR).dashboards;
+  // The metrics the gauges are built from: this business's own, or — in a dev
+  // build with the flag on — the seeded sample set. Never a silent substitute.
+  const metrics = sparkState.payload || (demo ? demoSparkMetrics(activeTenantId || "spark") : null);
+
+  const headerData: IAInsightsHeaderData | null = useMemo(() => {
+    if (!metrics) return null;
+    const trendDs = buildSparkDashboards(metrics);
+    const intelDs = buildIntelligenceMirror(metrics, SPARK_MIRROR).dashboards;
     const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
-    const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
+
+    // CROSS-PRODUCT: only when we have real numbers from the other products too.
+    // demoBusinessPulse invents a series for any payload that is null, which made
+    // "Business Pulse" a score across products that had reported nothing. An
+    // unknown gauge with a sentence is the honest version — and it is the same
+    // shape the header already renders for an insufficient-data gauge.
+    const crossProductReal = !!(arionPayload && sparkState.payload && oliverState.payload);
+    const bp = (crossProductReal || demo)
+      ? demoBusinessPulse(activeTenantId || "spark", {
+          arionPayload, sparkPayload: sparkState.payload, oliverPayload: oliverState.payload,
+        })
+      : null;
+
     return {
       product: "spark",
-      overall: gaugeOf(bp.pulse, bp.prior, {
-        message: "Cross-product Business Pulse — ARION, SPARK and OLIVER platform scores combined.",
-        drillTo: "/app/services/argus_health",
-      }),
+      overall: bp
+        ? gaugeOf(bp.pulse, bp.prior, {
+            message: "Cross-product Business Pulse — ARION, SPARK and OLIVER platform scores combined.",
+            drillTo: "/app/services/argus_health",
+          })
+        : gaugeOf(null, null, {
+            message: "This one needs numbers from your other products too. It appears once ARION and OLIVER have a month behind them.",
+            drillTo: "/app/services/argus_health",
+          }),
       platform: gaugeOf(h.platformScore, h.platformPrior, { message: "50/50 Trend + Intelligence." }),
       trend: gaugeOf(h.trendScore, h.trendPrior, { drillTo: TRENDS_ROUTE }),
       intelligence: gaugeOf(h.intelScore, h.intelPrior, {
         message: "Modelled: churn risk, campaign payoff and where your list is heading.",
         drillTo: INTEL_ROUTE,
       }),
-      crossChannel: gaugeOf(bp.argus.score, bp.argus.prior, {
-        message: "ARGUS cross-platform intelligence across your active products.",
-        drillTo: "/app/services/argus_cross_platform",
-      }),
+      crossChannel: bp
+        ? gaugeOf(bp.argus.score, bp.argus.prior, {
+            message: "ARGUS cross-platform intelligence across your active products.",
+            drillTo: "/app/services/argus_cross_platform",
+          })
+        : gaugeOf(null, null, {
+            message: "Cross-platform intelligence compares your products against each other, so it waits until more than one of them has data.",
+            drillTo: "/app/services/argus_cross_platform",
+          }),
       trendBreakdown: h.trendBreakdown,
       intelligenceBreakdown: h.intelligenceBreakdown,
       banners: [],
       meta: { generatedAt: new Date().toISOString(), tier: "pro" },
     };
-  }, [activeTenantId, arionPayload, sparkPayload, oliverPayload]);
+  }, [metrics, activeTenantId, arionPayload, sparkState.payload, oliverState.payload, demo]);
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
@@ -70,7 +114,18 @@ export function SparkIAInsightsHealthPage() {
         <h1 className="text-2xl font-bold text-slate-900">SPARK IA Insights — Health</h1>
         <p className="text-sm text-slate-500 mt-0.5">Composite snapshot of your SPARK marketing platform. Drill into Trends or Intelligence for the full dashboards and detail reports.</p>
       </div>
-      <IAInsightsHeader data={headerData} />
+      {demo && !sparkState.payload && <SampleDataBadge />}
+
+      {!headerData && sparkState.status === "loading" && <InsightsLoading />}
+      {!headerData && sparkState.status === "error" && <InsightsError />}
+      {!headerData && sparkState.status === "empty" && (
+        <InsightsEmpty
+          title="No scores yet"
+          lead="A score compares this month with the last one, so the gauges stay blank until there is something to compare. These are what move them:"
+          sources={SPARK_INSIGHT_SOURCES}
+        />
+      )}
+      {headerData && <IAInsightsHeader data={headerData} />}
 
       {/* "Lead pool this month" — the section the monthly overnight re-score
           produces (L16). Same payload as the monthly email, so the page and

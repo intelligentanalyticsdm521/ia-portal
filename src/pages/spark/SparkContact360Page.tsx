@@ -4,10 +4,18 @@
 // ARION via GET /api/v1/contacts/:id/360. Read-only — meant as a fast
 // glance/diagnostic page; mutations happen on the source-of-truth pages.
 //
-// URL accepts ?id=<contactId> for direct linking; otherwise the user enters
-// a contact ID in the lookup field.
+// THE ID COMES FROM THE URL. Nothing else (SPARK pack 1, 2026-09-08).
+//
+// This page used to open on a box asking for a "Contact ID" — a database primary
+// key, typed in by hand, on a page whose whole purpose is "show me everything
+// about this person". Nobody knows a contact id. It was the only way in, so the
+// most useful page in SPARK was effectively unreachable.
+//
+// It reads ?id= and the places that KNOW the id link here: the Lead Inbox lead
+// modal, the Contacts list, and a campaign's recipient list. With no id, the page
+// says where to open it from rather than demanding a number.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import {
@@ -19,7 +27,6 @@ import {
   Activity,
   Briefcase,
   StickyNote,
-  Search,
   MapPin,
   Hash,
 } from "lucide-react";
@@ -63,10 +70,12 @@ const PRODUCT_COLORS: Record<string, string> = {
 
 export function SparkContact360Page() {
   const { get, ready } = useSparkApi();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const urlId = searchParams.get("id") || "";
-  const [input, setInput] = useState(urlId);
-  const [contactId, setContactId] = useState<number | null>(urlId ? parseInt(urlId) : null);
+  // The URL is the single source of truth for WHO this page is about. Derived, not
+  // copied into state: a link from another page changes the URL, and the page must
+  // follow it rather than keep showing whoever it was opened with first.
+  const contactId = /^\d+$/.test(urlId) ? parseInt(urlId, 10) : null;
   const [data, setData] = useState<Response360["data"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -82,56 +91,42 @@ export function SparkContact360Page() {
   }, [get, ready, contactId]);
   useEffect(() => { fetch360(); }, [fetch360]);
 
-  function lookup() {
-    const v = input.trim();
-    if (!/^\d+$/.test(v)) return;
-    const n = parseInt(v);
-    setContactId(n);
-    setSearchParams({ id: v });
-  }
-
   const profile = data?.profile;
   const fullName = useMemo(() => {
     if (!profile) return "";
     return [profile.first_name, profile.last_name].filter(Boolean).join(" ").trim() || profile.email || `Contact #${profile.id}`;
   }, [profile]);
 
-  const filters = (
-    <div className="flex items-center gap-2">
-      <label className="flex items-center gap-1.5 text-xs text-slate-600">
-        <span className="text-[10px] uppercase font-semibold tracking-wide text-slate-500">Contact ID</span>
-        <input
-          type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          value={input}
-          onChange={(e) => setInput(e.target.value.replace(/[^\d]/g, ""))}
-          onKeyDown={(e) => { if (e.key === "Enter") lookup(); }}
-          placeholder="e.g. 1234"
-          className="w-32 text-xs border border-slate-300 rounded px-2 py-1 focus:border-[#EF6C33] focus:ring-1 focus:ring-[#EF6C33]"
-        />
-      </label>
-      <button onClick={lookup} disabled={!/^\d+$/.test(input.trim())} className="text-xs px-3 py-1.5 rounded bg-[#EF6C33] text-white flex items-center gap-1 disabled:opacity-50">
-        <Search className="h-3.5 w-3.5" /> View 360
-      </button>
-    </div>
-  );
-
   return (
     <SparkPageShell
       title="Contact 360°"
       subtitle={profile ? fullName : "Cross-product unified view"}
       help="Aggregated view of everything the platform knows about a contact across SPARK, OLIVER, and ARION. Read-only — go to source-of-truth pages to make changes."
-      filters={filters}
       loading={loading}
       error={error}
     >
-      {!data ? (
-        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 py-12 text-center">
+      {contactId == null ? (
+        <div className="rounded-lg border border-dashed border-slate-300 bg-slate-50 py-12 px-6 text-center">
           <User className="h-8 w-8 mx-auto text-slate-300 mb-2" />
-          <div className="text-sm font-medium text-slate-700">Look up a contact</div>
-          <div className="text-xs text-slate-500 mt-1">Enter a contact ID above to see a unified cross-product timeline.</div>
+          <div className="text-sm font-medium text-slate-700">Open this from a person</div>
+          <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+            This page shows everything the platform knows about one person. Open it
+            from the person you want to see:
+          </p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs">
+            <Link to="/app/services/spark_contacts" className="rounded border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-[#EF6C33] hover:text-[#EF6C33]">
+              Contacts
+            </Link>
+            <Link to="/app/services/spark_lead_inbox" className="rounded border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-[#EF6C33] hover:text-[#EF6C33]">
+              Lead Inbox
+            </Link>
+            <Link to="/app/services/spark_campaigns" className="rounded border border-slate-300 bg-white px-3 py-1.5 font-medium text-slate-700 hover:border-[#EF6C33] hover:text-[#EF6C33]">
+              Campaigns
+            </Link>
+          </div>
         </div>
+      ) : !data ? (
+        <div className="text-xs text-slate-500">Loading…</div>
       ) : !profile ? (
         <div className="text-xs text-slate-500">No data.</div>
       ) : (

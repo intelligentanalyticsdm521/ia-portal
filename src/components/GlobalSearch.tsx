@@ -13,7 +13,7 @@ import { IadmModal } from "./IadmModal";
 import { useAppState } from "../app/AppState";
 import { SERVICE_CATALOG, type PortalService } from "../config/serviceCatalog";
 import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
-import { useIsFounder } from "../hooks/useIsFounder";
+import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
 
 interface SearchableRoute {
   key: string;
@@ -42,7 +42,7 @@ const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = 
   MY_BRAND: null,
 };
 
-function buildSearchableRoutes(_activeServices: Set<string>, isFounder: boolean): SearchableRoute[] {
+function buildSearchableRoutes(_activeServices: Set<string>, leadgenAllowed: boolean): SearchableRoute[] {
   // 2026-05-31 — F-127 fix: show ALL non-coming-soon routes regardless of
   // the tenant's active services. Earlier we filtered by active.services
   // but that returned only OLIVER for tenants whose session-verify hadn't
@@ -52,8 +52,9 @@ function buildSearchableRoutes(_activeServices: Set<string>, isFounder: boolean)
   // for products the tenant doesn't have). Better to be permissive here.
   return SERVICE_CATALOG
     .filter((s) => s.defaultStatus !== "coming_soon")
-    // Hotfix B (2026-09-03): Lead Gen is founder-only until verified — keep it out of search too.
-    .filter((s) => isFounder || !LEADGEN_LOCKED_KEYS.includes(s.key))
+    // SPARK pack 1: the Lead Gen search pages are in the search box for the
+    // businesses the server allows to run a search, and nobody else.
+    .filter((s) => leadgenAllowed || !LEADGEN_LOCKED_KEYS.includes(s.key))
     .map((s) => ({
       key: s.key,
       label: s.displayName,
@@ -97,8 +98,13 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
     return s;
   }, [active]);
 
-  const isFounder = useIsFounder();
-  const routes = useMemo(() => buildSearchableRoutes(activeServices, isFounder), [activeServices, isFounder]);
+  // `allowed === null` is unresolved and behaves as not-allowed here: a search
+  // result that 403s on click is worse than one that appears a moment later.
+  const leadgen = useLeadgenAccess();
+  const routes = useMemo(
+    () => buildSearchableRoutes(activeServices, leadgen.allowed === true),
+    [activeServices, leadgen.allowed],
+  );
 
   const results = useMemo(() => {
     if (!query.trim()) {
