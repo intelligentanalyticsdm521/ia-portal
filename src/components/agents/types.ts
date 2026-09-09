@@ -47,6 +47,13 @@ export interface AgentActivityRow {
     intent?: string | null;
     source_agent?: string;
     rules?: unknown;
+    /** ARION content agent: the copy is written, the slides are not. */
+    needs_manual_render?: boolean;
+    agent_original?: string | null;
+    confidence_note?: string | null;
+    url_slug?: string | null;
+    published_at?: string | null;
+    wordpress_post_id?: number | null;
   } | null;
   status: AgentStatus;
   status_label: string;
@@ -57,6 +64,12 @@ export interface AgentActivityRow {
   cost_note: string;
   /** True only where THIS page owns the decision. */
   can_decide: boolean;
+  /**
+   * ARION content agent only: approved, and putting it on the website is a
+   * SECOND press (AC8). Approval never schedules anything, so "approved" and
+   * "live" are different states and the page must be able to tell them apart.
+   */
+  can_publish?: boolean;
   /** Where the decision lives when it is not on this page (the lead card). */
   decide_href?: string | null;
   attribution: string;
@@ -82,6 +95,66 @@ export interface AgentActivityPayload {
   };
 }
 
+/**
+ * One agent RUN, as opposed to one proposal.
+ *
+ * ARGUS pack 1. Produced server-side by oliver-api lib/agents/runs.js, LUMEN
+ * src/lib/agentActivity/sparkRuns.js and arion-api lib/agents/runs.js — three
+ * normalisers, one row shape, so the Portal learns one vocabulary.
+ *
+ * NO cost_usd, deliberately, on any of the three: it is IA's provider cost basis
+ * and this is a client surface (AG-1). The founder's dollars live on the founder
+ * rollup, where the whole page is internal.
+ */
+export interface AgentRunRow {
+  agent: string;
+  agent_label: string;
+  product: string;
+  run_id: string;
+  started_at: string | null;
+  finished_at: string | null;
+  trigger: string | null;
+  trigger_label: string;
+  status: string;
+  /** worked | nothing_due | escalated | halted | failed | running | skipped | blocked */
+  outcome: string;
+  outcome_label: string;
+  drafted: number | null;
+  jobs_considered?: number | null;
+  keywords?: string[];
+  cost_note: string;
+  /** Why it skipped what it skipped, in plain words. Never an empty promise. */
+  notes: string[];
+  failure: { reason: string } | null;
+  rung?: string | null;
+  intent?: string | null;
+}
+
+/** What the oversight layer itself has been doing, per registered agent. */
+export interface AgentOversightRow {
+  agent_key: string;
+  display_name: string;
+  product: string;
+  active: boolean;
+  last_checked_at: string | null;
+  healthy: boolean;
+  problem: string | null;
+}
+
+export interface AgentRunsPayload {
+  rows: AgentRunRow[];
+  meta: {
+    total: number;
+    limit: number;
+    failed: number;
+    held: number;
+    halted: number;
+    last_run_at: string | null;
+    oversight?: AgentOversightRow[] | null;
+    degraded: Array<{ agent: string; error: string }>;
+  };
+}
+
 export interface AgentSummary {
   key: string;
   label: string;
@@ -95,7 +168,19 @@ export interface AgentSummary {
   paused_reason?: string | null;
   /** The Responder keeps its own settings page; this row points at it. */
   settings_href?: string;
-  settings: Record<string, number | string | boolean>;
+  settings: Record<string, number | string | boolean | null>;
+  /**
+   * The 60% rule for this business, where the server computes it (the content
+   * agent). `price_not_set` is a real answer and a finding, not an error.
+   */
+  margin?: {
+    verdict: string;
+    costUsd: number;
+    priceUsdMonthly: number | null;
+    ratio: number | null;
+    windowDays: number;
+    message: string;
+  } | null;
 }
 
 export interface AgentSettingsResponse {
