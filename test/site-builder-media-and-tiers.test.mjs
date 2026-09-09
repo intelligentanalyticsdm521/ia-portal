@@ -38,6 +38,10 @@ const BUILDER_UI = [
   'components/MediaPicker.tsx',
   'components/AskArgus.tsx',
   'utils/siteBuilderCopy.ts',
+  // ARION pack 1 — held to the same rules as everything else a client reads:
+  // 44px targets, 16px inputs, no vendor's name, and never the word "tenant".
+  'components/PageSettingsSheet.tsx',
+  'components/SwapLookSheet.tsx',
 ];
 
 const node = (id, kind = 'hero') => ({

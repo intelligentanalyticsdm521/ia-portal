@@ -7,10 +7,12 @@ import { SectionEditSheet } from '../../components/SectionEditSheet';
 import { SectionPicker } from '../../components/SectionPicker';
 import { AskArgusBox, DiffRows } from '../../components/AskArgus';
 import { AdoptSectionSheet, AdoptReviewList } from '../../components/AdoptSectionSheet';
+import { PageSettingsSheet } from '../../components/PageSettingsSheet';
+import { SwapLookSheet } from '../../components/SwapLookSheet';
 import { smallButton } from '../../components/SectionFieldInputs';
 import type {
   ArionSitePage, SectionCatalogEntry, SectionDiffRow, SectionProposal, PageProposal, AiPricing,
-  AdoptPreview,
+  AdoptPreview, SitePageSettings, SitePageSeo,
 } from '../../../lib/arionApi';
 import type { FieldContext } from '../../components/SectionFieldInputs';
 import {
@@ -19,6 +21,7 @@ import {
   setSectionField, setSectionFields, setListItemField, setListItemFields,
   addListItem, removeListItem,
   setParagraph, addParagraph, removeParagraph, removeSection, appendSection,
+  swapSectionLayout,
   sectionSummary, proposalIdsOf, applyProposal, applyPageProposal,
   insertProposedSection, acceptProposedSections, dropProposedSections,
   replaceAdoptedSection, customSectionRows, customSectionCount,
@@ -41,6 +44,15 @@ import { splitPages } from '../../utils/siteBuilderCopy';
  *
  * Safety: preview before save, a snapshot on every write, one-tap Undo, and
  * new pages born as drafts (decision W-3). No per-page staging.
+ *
+ * ARION pack 1 (2026-09-08) adds the jobs that had no home here at all and sent
+ * a client to wp-admin for them: the page's address and layout, which page is
+ * the home page, deleting and restoring a page, its three search-engine fields,
+ * and changing a section's look without retyping it. Preview is now WORDPRESS
+ * rendering the page (D-ARION-B) rather than our own approximation of it, and
+ * the editor asks the website whether it actually has Elementor before it lets
+ * anybody save (D-ARION-E) — that save used to answer 200 and leave the page
+ * blank.
  *
  * Phase 1B adds the third way in — "Ask ARGUS to change it", per section and
  * per page. It always PROPOSES: what comes back is shown as a before/after,
@@ -124,13 +136,28 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   const [askFor, setAskFor] = useState<ArionSitePage | null>(null);
   const [askText, setAskText] = useState('');
   const [asked, setAsked] = useState<string | null>(null);
+  const [restored, setRestored] = useState<string | null>(null);
 
   const { data, loading, error: loadError, refetch } = useArionData(
     () => (activeSiteId ? arionApi.listSitePages(activeSiteId) : Promise.resolve(null)),
     [activeSiteId],
   );
   const pages: ArionSitePage[] = (data as any)?.data?.pages || [];
-  const { drafts, live } = useMemo(() => splitPages(pages), [pages]);
+  const { drafts, live, deleted } = useMemo(() => splitPages(pages), [pages]);
+
+  const restore = async (p: ArionSitePage) => {
+    if (!activeSiteId) return;
+    setBusy(true); setError(null);
+    try {
+      await arionApi.restoreSitePage(activeSiteId, p.pageId);
+      setRestored(p.title || 'That page');
+      refetch();
+    } catch (e: any) {
+      setError(messageFrom(e, 'We could not bring that page back.'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const create = async () => {
     if (!activeSiteId || !newTitle.trim()) return;
@@ -250,6 +277,11 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           Request sent about “{asked}”. You can follow it under Website → Support.
         </Banner>
       )}
+      {restored && (
+        <Banner tone="good" onClose={() => setRestored(null)}>
+          “{restored}” is back, as a draft. Publish it when you are ready.
+        </Banner>
+      )}
 
       {drafts.length > 0 && (
         <Card
@@ -315,6 +347,35 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
         )}
       </Card>
 
+      {deleted.length > 0 && (
+        <Card
+          title="Deleted pages"
+          subtitle="Your website keeps these for 30 days. Nobody can see them."
+          style={{ marginTop: 12 }}
+        >
+          {deleted.map((p) => (
+            <div key={p.pageId} style={{
+              borderTop: '1px solid var(--border)', padding: '14px 0',
+              display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ minWidth: 220, flex: '1 1 240px' }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{p.title || '(no title)'}</span>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  Deleted{p.modified ? ` · ${whenText(p.modified)}` : ''}
+                </div>
+              </div>
+              <button
+                type="button" style={{ ...smallButton, minHeight: 44 }}
+                disabled={busy} onClick={() => restore(p)}
+              >
+                Put it back
+              </button>
+            </div>
+          ))}
+        </Card>
+      )}
+
       {askFor && (
         <Card title={`Ask us to change “${askFor.title}”`} style={{ marginTop: 12 }}>
           <textarea
@@ -357,7 +418,9 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [openUid, setOpenUid] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [addingKind, setAddingKind] = useState<string | null>(null);
-  const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  // The WordPress preview link (D-ARION-B). A URL, not HTML: the site renders
+  // the page with its own theme and its own Elementor, behind a one-hour key.
+  const [preview, setPreview] = useState<{ url: string; expiresAt: string | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Array<{ field: string; message: string }>>([]);
@@ -383,6 +446,24 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [adoptError, setAdoptError] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
 
+  /* Page settings + the three search fields (ARION pack 1). Loaded when the
+     sheet is opened, not on every page open: they are two more round trips to
+     the website and most visits to this screen are about the words. */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<SitePageSettings | null>(null);
+  const [seo, setSeo] = useState<SitePageSeo | null>(null);
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+
+  /* "Change the look" — the same words in a different layout (D-ARION-F). */
+  const [swapUid, setSwapUid] = useState<string | null>(null);
+  const [swapBusy, setSwapBusy] = useState<string | null>(null);
+  const [swapError, setSwapError] = useState<string | null>(null);
+
+  /* What the WEBSITE says it can draw pages with. `active: false` and the editor
+     stops offering Save, because that save would leave the page blank. */
+  const [pageEngine, setPageEngine] = useState<{ known: boolean; active: boolean | null; reason: string | null } | null>(null);
+
   const load = useCallback(async () => {
     if (!activeSiteId) return;
     setLoading(true); setLoadError(null);
@@ -402,6 +483,13 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
       setBookingHref(String(lib?.data?.bookingHref || ''));
       setAiLocked(lib?.data?.ai?.available === false ? (lib?.data?.ai?.reason || null) : null);
       setPricing(price?.data || null);
+      setPageEngine(lib?.data?.pageEngine
+        ? {
+          known: !!lib.data.pageEngine.known,
+          active: lib.data.pageEngine.active,
+          reason: lib.data.pageEngine.reason || null,
+        }
+        : null);
     } catch (e: any) {
       setLoadError(messageFrom(e, 'We could not read that page from your website.'));
     } finally {
@@ -476,6 +564,35 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
       describe: async (attachmentId: number, alt: string) => {
         if (!activeSiteId) throw new Error('No website selected.');
         await arionApi.setSiteMediaAlt(activeSiteId, attachmentId, alt);
+      },
+      // Looking after a picture, not only choosing one (ARION pack 1). Delete
+      // is offered only when `usage` says nowhere; the website checks again on
+      // the way in, because a client's screen can be minutes old.
+      usage: async (attachmentId: number) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        const res: any = await arionApi.getSiteMediaUsage(activeSiteId, attachmentId);
+        return res?.data;
+      },
+      remove: async (attachmentId: number) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        await arionApi.deleteSiteMedia(activeSiteId, attachmentId);
+      },
+      replace: async (attachmentId: number, file: File) => {
+        if (!activeSiteId) throw new Error('No website selected.');
+        const dataBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = () => reject(new Error('That file could not be read.'));
+          reader.onload = () => {
+            const result = String(reader.result || '');
+            const comma = result.indexOf(',');
+            resolve(comma >= 0 ? result.slice(comma + 1) : result);
+          };
+          reader.readAsDataURL(file);
+        });
+        const res: any = await arionApi.replaceSiteMedia(activeSiteId, attachmentId, { dataBase64 });
+        const url = res?.data?.url;
+        if (!url) throw new Error('Your website took the picture but did not say where it went.');
+        return { url, usedOn: Number(res?.data?.usedOn || 0) };
       },
     },
   }), [activeSiteId, arionApi, bookingHref]);
@@ -558,6 +675,123 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const customRows = useMemo(() => customSectionRows(sections), [sections]);
   const customCount = useMemo(() => customSectionCount(sections), [sections]);
 
+  /* ── page settings, the three search fields, and deleting the page ──────
+   * All three were wp-admin-only jobs. The sheet loads both reads at once when
+   * it opens; each half saves on its own, because changing a page's address and
+   * fixing a typo in its search description are different decisions.
+   * -------------------------------------------------------------------- */
+
+  const openSettings = useCallback(async () => {
+    if (!activeSiteId) return;
+    setSettingsOpen(true);
+    setSettingsError(null);
+    setSettingsLoading(true);
+    try {
+      const [st, sq]: any[] = await Promise.all([
+        arionApi.getSitePageSettings(activeSiteId, pageId),
+        arionApi.getSitePageSeo(activeSiteId, pageId),
+      ]);
+      setSettings(st?.data || null);
+      setSeo(sq?.data || null);
+    } catch (e: any) {
+      setSettingsError(messageFrom(e, 'We could not read this page’s settings from your website.'));
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [activeSiteId, pageId, arionApi]);
+
+  const saveSettings = useCallback(async (params: {
+    slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+  }) => {
+    if (!activeSiteId) return;
+    setBusy('settings'); setSettingsError(null);
+    try {
+      const res: any = await arionApi.saveSitePageSettings(activeSiteId, pageId, params);
+      const next: SitePageSettings | null = res?.data || null;
+      // A 200 with nothing in it is a failed save wearing a success.
+      if (!next) throw new Error('Your website said it saved that but did not say what to.');
+      setSettings(next);
+      setOk(params.makeHomePage
+        ? 'This is your home page now.'
+        : next.slugAdjusted
+          ? `Saved. That address was taken, so your website used “${next.slug}”.`
+          : 'Saved.');
+      await load();
+    } catch (e: any) {
+      setSettingsError(messageFrom(e, 'Your website would not take that change. Nothing was saved.'));
+    } finally {
+      setBusy(null);
+    }
+  }, [activeSiteId, pageId, arionApi, load]);
+
+  const saveSeo = useCallback(async (params: {
+    title: string; description: string; focusKeyword: string;
+  }) => {
+    if (!activeSiteId) return;
+    setBusy('seo'); setSettingsError(null);
+    try {
+      const res: any = await arionApi.saveSitePageSeo(activeSiteId, pageId, params);
+      const next: SitePageSeo | null = res?.data || null;
+      if (!next) throw new Error('Your website said it saved that but did not say what to.');
+      setSeo(next);
+      setOk(next.seoPluginActive
+        ? 'Saved. Search engines will pick these up the next time they look.'
+        : 'Saved on your website.');
+    } catch (e: any) {
+      setSettingsError(messageFrom(e, 'Your website would not take that change. Nothing was saved.'));
+    } finally {
+      setBusy(null);
+    }
+  }, [activeSiteId, pageId, arionApi]);
+
+  const trashThisPage = useCallback(async () => {
+    if (!activeSiteId) return;
+    if (!window.confirm(
+      'Delete this page? It comes off your website straight away and goes in your website’s bin, '
+      + 'where you can put it back for 30 days.',
+    )) return;
+    setBusy('trash'); setSettingsError(null);
+    try {
+      await arionApi.trashSitePage(activeSiteId, pageId);
+      setSettingsOpen(false);
+      onBack();
+    } catch (e: any) {
+      setSettingsError(messageFrom(e, 'Your website would not delete that page. Nothing was changed.'));
+    } finally {
+      setBusy(null);
+    }
+  }, [activeSiteId, pageId, arionApi, onBack]);
+
+  /* ── change the look, keeping the words (D-ARION-F) ─────────────────── */
+
+  const doSwap = useCallback(async (blueprintId: string) => {
+    if (!activeSiteId || !swapUid) return;
+    const row = sections.find((x) => x.uid === swapUid);
+    if (!row || !row.kind) return;
+    setSwapBusy(blueprintId); setSwapError(null);
+    try {
+      const res: any = await arionApi.swapSectionLook(activeSiteId, {
+        kind: row.kind,
+        blueprintId,
+        fields: row.fields || {},
+      });
+      const swapped = res?.data?.section;
+      if (!swapped) throw new Error('We could not build that layout.');
+      setSections((cur) => swapSectionLayout(cur, swapUid, swapped));
+      const dropped: string[] = res?.data?.dropped || [];
+      setOk(dropped.length
+        ? `New layout in the editor. It has no place for ${dropped.length} `
+          + `${dropped.length === 1 ? 'thing' : 'things'} that were on the old one, so `
+          + `${dropped.length === 1 ? 'it is' : 'they are'} not on it. Save when you are happy.`
+        : 'New layout in the editor, with your wording on it. Save when you are happy with it.');
+      setSwapUid(null);
+    } catch (e: any) {
+      setSwapError(messageFrom(e, 'We could not change that section’s look. Nothing was changed.'));
+    } finally {
+      setSwapBusy(null);
+    }
+  }, [activeSiteId, arionApi, swapUid, sections]);
+
   const runPreview = async () => {
     if (!activeSiteId) return;
     setBusy('preview'); setError(null); setFieldErrors([]);
@@ -566,7 +800,10 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         sections: toSavePayload(sections),
         title: detail?.title,
       });
-      setPreviewHtml(res?.data?.html || '');
+      const url = res?.data?.previewUrl;
+      // A preview with no link is a failed preview wearing a success.
+      if (!url) throw new Error('Your website built the preview but did not say where it is.');
+      setPreview({ url, expiresAt: res?.data?.expiresAt || null });
     } catch (e: any) {
       setError(messageFrom(e, 'We could not build a preview just now.'));
     } finally {
@@ -738,6 +975,9 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
 
   const isDraft = detail?.status === 'draft';
   const isLive = detail?.status === 'publish';
+  // Only a website that TOLD us it cannot draw these pages stops the Save
+  // button. "We could not ask" is a third answer and must not lock anybody out.
+  const cannotPublish = !!pageEngine?.known && pageEngine.active === false;
 
   return (
     <div>
@@ -763,6 +1003,16 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         </Banner>
       )}
 
+      {/* The website itself says it cannot draw pages built here. Saving would
+          leave the page blank, so the editor says why instead of letting
+          somebody type a page they cannot publish (D-ARION-E). */}
+      {pageEngine?.known && pageEngine.active === false && (
+        <Banner tone="bad">
+          {pageEngine.reason
+            || 'This website cannot show pages built here at the moment. Ask us and we will put it right.'}
+        </Banner>
+      )}
+
       <Card
         title={detail?.title || 'Page'}
         subtitle={
@@ -770,7 +1020,12 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
             ? 'This page is a draft — nobody can see it until you publish it.'
             : 'This page is live. Anything you publish here shows on your website straight away.'
         }
-        action={<button type="button" style={smallButton} onClick={leave}>Back to pages</button>}
+        action={
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" style={smallButton} onClick={openSettings}>Page settings</button>
+            <button type="button" style={smallButton} onClick={leave}>Back to pages</button>
+          </div>
+        }
       >
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14, alignItems: 'center' }}>
           <StatusChip status={detail?.status || 'draft'} />
@@ -922,6 +1177,16 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
                   Edit
                 </button>
               )}
+              {/* The same words, a different layout. Only where there are other
+                  layouts to move to, so the button never opens an empty list. */}
+              {s.editable && !s.isProposed && (catalogFor(s.kind)?.variants?.length || 0) > 0 && (
+                <button
+                  type="button" style={smallButton}
+                  onClick={() => { setSwapError(null); setSwapUid(s.uid); }}
+                >
+                  Change the look
+                </button>
+              )}
               <button
                 type="button" style={smallButton} disabled={s.isProposed}
                 onClick={() => {
@@ -999,7 +1264,8 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         </button>
         <button
           type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
-          disabled={busy !== null || (!dirty && !isDraft)}
+          disabled={busy !== null || (!dirty && !isDraft) || cannotPublish}
+          title={cannotPublish ? (pageEngine?.reason || undefined) : undefined}
           onClick={() => (isDraft ? save('draft') : setConfirmPublish(true))}
         >
           {busy === 'save' ? 'Saving…' : isDraft ? 'Save draft' : 'Save and publish'}
@@ -1081,34 +1347,84 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
         </div>
       )}
 
-      {previewHtml !== null && (
+      {/* PREVIEW: your website renders it, so this is the real thing — your
+          theme, your fonts, your colours (D-ARION-B). The link carries a
+          one-hour key, so it opens without signing in to WordPress, and the
+          page itself has not been touched. The button is always there in case
+          the site refuses to be shown inside a frame. */}
+      {preview !== null && (
         <div
           role="dialog" aria-modal="true" aria-label="Preview"
           style={{
             position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(15,23,42,0.55)',
             display: 'flex', flexDirection: 'column',
           }}
-          onClick={(e) => { if (e.target === e.currentTarget) setPreviewHtml(null); }}
+          onClick={(e) => { if (e.target === e.currentTarget) setPreview(null); }}
         >
           <div style={{
-            background: 'var(--surface, #fff)', margin: 'auto', width: '100%', maxWidth: 960,
+            background: 'var(--surface, #fff)', margin: 'auto', width: '100%', maxWidth: 1100,
             height: '92vh', display: 'flex', flexDirection: 'column', borderRadius: 12, overflow: 'hidden',
           }}>
             <div style={{
               padding: '12px 16px', borderBottom: '1px solid var(--border)',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              gap: 12, flexWrap: 'wrap',
             }}>
-              <strong style={{ fontSize: 14 }}>Preview — nothing has been saved</strong>
-              <button type="button" style={smallButton} onClick={() => setPreviewHtml(null)}>Close</button>
+              <div style={{ minWidth: 0 }}>
+                <strong style={{ fontSize: 14 }}>Preview — nothing has been saved</strong>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  This is your website drawing the page, so it is exactly what publishing looks like.
+                  Your live page has not changed.
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <a
+                  className="abtn"
+                  style={{ ...smallButton, display: 'inline-flex', alignItems: 'center', textDecoration: 'none', minHeight: 44 }}
+                  href={preview.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open in a new tab
+                </a>
+                <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setPreview(null)}>
+                  Close
+                </button>
+              </div>
             </div>
             <iframe
               title="Page preview"
-              sandbox=""
-              srcDoc={previewHtml}
+              src={preview.url}
               style={{ border: 0, flex: 1, width: '100%', background: '#fff' }}
             />
           </div>
         </div>
+      )}
+
+      {settingsOpen && (
+        <PageSettingsSheet
+          settings={settings}
+          seo={seo}
+          loading={settingsLoading}
+          busy={busy === 'settings' || busy === 'seo' || busy === 'trash' ? busy : null}
+          error={settingsError}
+          onSaveSettings={saveSettings}
+          onSaveSeo={saveSeo}
+          onTrash={trashThisPage}
+          onClose={() => { setSettingsOpen(false); setSettingsError(null); }}
+        />
+      )}
+
+      {swapUid && (
+        <SwapLookSheet
+          sectionLabel={sections.find((x) => x.uid === swapUid)?.label || 'this section'}
+          catalog={catalogFor(sections.find((x) => x.uid === swapUid)?.kind || null)}
+          currentBlueprintId={sections.find((x) => x.uid === swapUid)?.blueprintId || null}
+          busyBlueprint={swapBusy}
+          error={swapError}
+          onSwap={doSwap}
+          onClose={() => { setSwapUid(null); setSwapError(null); }}
+        />
       )}
 
       {pickerOpen && (

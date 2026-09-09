@@ -4,59 +4,32 @@ import { useArionContext } from '../../useArionContext';
 import { Card, Loading, EmptyPanel } from '../../components/Ui';
 import { AiBlockGenerator } from '../../components/AiBlockGenerator';
 import { AiPageAssembler } from '../../components/AiPageAssembler';
-import type { AiBlockKind } from '../../../lib/arionApi';
+import type { AiBlockKind, AiPricing } from '../../../lib/arionApi';
 import * as arionApi from '../../../lib/arionApi';
 import { useAppState } from '../../../app/AppState';
 import { useAccessToken } from '../../../auth/useAccessToken';
 
-// Section build cost model (Brandon-locked 2026-06-28).
-// Cost = base + extraParagraphs + columns×3 + items×2 + images×(std?8:hd?16) + form?5
-// Real AI cost-basis is tracked per-call in lumen.ai_call_audit (input_tokens,
-// output_tokens, image_count, cost_basis_usd) so credit prices can be reviewed
-// quarterly against actual spend.
-// TODO F-Onb-D10: move COSTS + BLOCK_DEFAULTS into a GET /arion/ai-builder/pricing
-// endpoint so DB is source of truth.
-export const SECTION_COSTS = {
-  base: 2,
-  extraParagraph: 1,
-  perColumn: 3,
-  perItem: 2,
-  imageStd: 8,
-  imageHd: 16,
-  form: 5,
-} as const;
-
-interface BlockDefaults {
-  paragraphs: number; // 1 = single paragraph (base), 2+ adds extraParagraph
-  columns: number;
-  items: number;
-  images: number;
-  imageQuality: 'std' | 'hd';
-  form: boolean;
-}
-
-export const BLOCK_DEFAULTS: Record<string, BlockDefaults> = {
-  hero:         { paragraphs: 1, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
-  services:     { paragraphs: 1, columns: 3, items: 0, images: 0, imageQuality: 'std', form: false },
-  testimonials: { paragraphs: 1, columns: 0, items: 3, images: 0, imageQuality: 'std', form: false },
-  cta:          { paragraphs: 1, columns: 2, items: 0, images: 0, imageQuality: 'std', form: true },
-  about:        { paragraphs: 3, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
-  faq:          { paragraphs: 1, columns: 0, items: 5, images: 0, imageQuality: 'std', form: false },
-  gallery:      { paragraphs: 1, columns: 0, items: 0, images: 6, imageQuality: 'std', form: false },
-  contact:      { paragraphs: 1, columns: 1, items: 0, images: 0, imageQuality: 'std', form: true },
-};
-
-export function computeSectionCost(cfg: BlockDefaults): number {
-  let c = SECTION_COSTS.base;
-  c += Math.max(0, cfg.paragraphs - 1) * SECTION_COSTS.extraParagraph;
-  c += cfg.columns * SECTION_COSTS.perColumn;
-  c += cfg.items * SECTION_COSTS.perItem;
-  c += cfg.images * (cfg.imageQuality === 'hd' ? SECTION_COSTS.imageHd : SECTION_COSTS.imageStd);
-  if (cfg.form) c += SECTION_COSTS.form;
-  return c;
-}
-
-const MIN_BLOCK_COST = SECTION_COSTS.base; // cheapest possible section if user strips everything
+/* ── THE PRICE COMES FROM THE SERVER (P18, 2026-09-08) ────────────────────
+ *
+ * What used to be here: a `SECTION_COSTS` table (base 2, +3 a column, +2 an
+ * item, +8 or +16 an image, +5 for a form), a `BLOCK_DEFAULTS` map, a
+ * `computeSectionCost` function, and this TODO:
+ *
+ *     // TODO F-Onb-D10: move COSTS + BLOCK_DEFAULTS into a
+ *     //                 GET /arion/ai-builder/pricing endpoint so DB is
+ *     //                 source of truth.
+ *
+ * The server charged NONE of it. `grep meterAndAudit routes/arion/blocks.js`
+ * was zero hits: generating a section quoted "from 8 credits" and debited
+ * nothing at all, while a dollar ceiling nobody was shown did the actual
+ * limiting. A price a client reads and a price we take have to be the same
+ * number (memory: feedback_no_fabricated_catalog).
+ *
+ * They are now: both actions are rows in `argus.action_pricing`, the server
+ * charges through the one metering path, and this page reads
+ * `GET /arion/sites/:siteId/ai-pricing` — the endpoint that TODO asked for. A
+ * price we cannot read is a price we do not quote.
+ * ---------------------------------------------------------------------- */
 
 /**
  * Website AI Builder — F-AI-WB Phase 1 (2026-06-20)
@@ -76,7 +49,9 @@ const MIN_BLOCK_COST = SECTION_COSTS.base; // cheapest possible section if user 
  *   - Wire actual Elementor preview render (currently shows JSON shape).
  */
 export function WebsiteAiBuilder() {
-  const { selectedSite, activeSiteId, loading } = useArionContext();
+  // `ctxApi` and not `arionApi`: the module import of the same name is right
+  // above, and shadowing it here silently broke the balance read.
+  const { selectedSite, activeSiteId, loading, arionApi: ctxApi } = useArionContext();
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
   const [generatorOpen, setGeneratorOpen] = useState(false);
@@ -84,6 +59,34 @@ export function WebsiteAiBuilder() {
   const [assemblerOpen, setAssemblerOpen] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [balance, setBalance] = useState<number | null>(null);
+  const [pricing, setPricing] = useState<AiPricing | null>(null);
+
+  // The one price list. Best effort: a price we cannot read is a price we do not
+  // quote, and the page still works — it just does not promise a number.
+  useEffect(() => {
+    if (!activeSiteId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await ctxApi.getSiteAiPricing(activeSiteId);
+        if (!cancelled) setPricing(res?.data || null);
+      } catch { /* leave null */ }
+    })();
+    return () => { cancelled = true; };
+  }, [activeSiteId, ctxApi, refreshKey]);
+
+  const generateCredits = pricing?.actions?.generate?.credits ?? null;
+  const assembleCredits = pricing?.actions?.assemble?.credits ?? null;
+  const priceLine = generateCredits == null
+    ? 'Generate a section'
+    : generateCredits === 0
+      ? 'Generate a section · included'
+      : `Generate a section · ${generateCredits} ${generateCredits === 1 ? 'credit' : 'credits'}`;
+  const assembleLine = assembleCredits == null
+    ? 'Publish accepted sections to my site'
+    : assembleCredits === 0
+      ? 'Publish accepted sections to my site (free)'
+      : `Publish accepted sections to my site · ${assembleCredits} credits`;
 
   useEffect(() => {
     if (!activeTenantId) return;
@@ -102,7 +105,9 @@ export function WebsiteAiBuilder() {
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, refreshKey]);
 
-  const canAffordBlockGen = balance == null || balance >= MIN_BLOCK_COST;
+  // Unknown price, or a free action, means nothing to be short of.
+  const canAffordBlockGen = balance == null || generateCredits == null
+    || balance >= generateCredits;
 
   if (loading) return <Loading />;
   if (!selectedSite) return <EmptyPanel message="No site selected." />;
@@ -138,23 +143,28 @@ export function WebsiteAiBuilder() {
             display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
           }}>
             <span style={{ fontSize: 11, color: '#5A7A8A', fontWeight: 500 }}>Credits</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: balance != null && balance < MIN_BLOCK_COST ? '#D85A30' : '#0B1C24' }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: canAffordBlockGen ? '#0B1C24' : '#D85A30' }}>
               {balance == null ? '—' : balance.toLocaleString()}
             </span>
             <Link to="/app/services/arion_usage" style={{ fontSize: 11, color: '#2563eb', textDecoration: 'none', fontWeight: 600, marginLeft: 4 }}>
-              {balance != null && balance < MIN_BLOCK_COST ? 'Top up →' : 'Manage'}
+              {canAffordBlockGen ? 'Manage' : 'Top up →'}
             </Link>
           </div>
         </div>
 
-        {/* Insufficient credits banner */}
-        {balance != null && balance < MIN_BLOCK_COST && (
+        {/* Short of credits — with the number the SERVER will charge. */}
+        {!canAffordBlockGen && generateCredits != null && (
           <div style={{
             background: '#FEF3C7', border: '1px solid #FCD34D',
             borderRadius: 6, padding: '10px 14px', marginBottom: 14,
             fontSize: 12, color: '#92400E',
           }}>
-            You need at least <strong>{MIN_BLOCK_COST} credits</strong> to generate even the simplest section. <Link to="/app/services/arion_usage" style={{ color: '#92400E', fontWeight: 700 }}>Top up your credits →</Link>
+            Writing a section uses <strong>{generateCredits} {generateCredits === 1 ? 'credit' : 'credits'}</strong> and you have {balance}. <Link to="/app/services/arion_usage" style={{ color: '#92400E', fontWeight: 700 }}>Top up your credits →</Link>
+          </div>
+        )}
+        {pricing?.libraryNote && (
+          <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 14 }}>
+            {pricing.libraryNote}
           </div>
         )}
 
@@ -164,13 +174,15 @@ export function WebsiteAiBuilder() {
             onClick={() => openGeneratorForKind(undefined)}
             style={{ ...primaryBtn, opacity: (canAffordBlockGen && activeSiteId) ? 1 : 0.5, cursor: (canAffordBlockGen && activeSiteId) ? 'pointer' : 'not-allowed' }}
             disabled={!activeSiteId || !canAffordBlockGen}
-            title={!canAffordBlockGen ? `Need ${MIN_BLOCK_COST}+ credits to generate` : 'Configure your section in the next step'}
-          >Generate a section · from {MIN_BLOCK_COST} credits</button>
+            title={!canAffordBlockGen && generateCredits != null
+              ? `This uses ${generateCredits} credits and you have ${balance}`
+              : 'Configure your section in the next step'}
+          >{priceLine}</button>
           <button
             onClick={() => setAssemblerOpen(true)}
             style={ghostBtn}
             disabled={!activeSiteId}
-          >Publish accepted sections to my site (free)</button>
+          >{assembleLine}</button>
         </div>
 
         {/* Block kind quick-launch grid */}
@@ -185,7 +197,9 @@ export function WebsiteAiBuilder() {
                 key={b.kind}
                 onClick={() => openGeneratorForKind(b.kind)}
                 disabled={!canAffordBlockGen}
-                title={!canAffordBlockGen ? `Need ${MIN_BLOCK_COST}+ credits to generate` : ''}
+                title={!canAffordBlockGen && generateCredits != null
+                  ? `This uses ${generateCredits} credits and you have ${balance}`
+                  : ''}
                 style={{
                   textAlign: 'left',
                   background: '#fff',
@@ -201,8 +215,15 @@ export function WebsiteAiBuilder() {
               >
                 <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1C24' }}>{b.label}</div>
+                  {/* One price for writing a section, whatever its shape. The
+                      old per-kind arithmetic here was invented in the browser
+                      and the server never charged it. */}
                   <div style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', whiteSpace: 'nowrap' }}>
-                    from {computeSectionCost(BLOCK_DEFAULTS[b.kind] || BLOCK_DEFAULTS.hero)} credits
+                    {generateCredits == null
+                      ? ''
+                      : generateCredits === 0
+                        ? 'included'
+                        : `${generateCredits} ${generateCredits === 1 ? 'credit' : 'credits'}`}
                   </div>
                 </div>
                 <div style={{ fontSize: 11, color: '#5A7A8A', lineHeight: 1.4 }}>{b.description}</div>
@@ -215,7 +236,7 @@ export function WebsiteAiBuilder() {
         <div style={{ marginTop: 14 }}>
           <Card title="How it works">
             <ol style={{ paddingLeft: 18, margin: 0, fontSize: 12, color: '#0B1C24', lineHeight: 1.7 }}>
-              <li><strong>Generate.</strong> Pick a block kind. IL drafts copy + layout using your site context (brand, services, location).</li>
+              <li><strong>Generate.</strong> Pick a block kind. We draft the copy and the layout from your own business details. Ready-made layouts from our library cost nothing; writing something new uses credits, and the number above is what we charge.</li>
               <li><strong>Accept.</strong> Each generated draft persists to <code>arion.site_block_draft</code>. Accept the ones you want; discard the rest.</li>
               <li><strong>Assemble.</strong> Open the assembler, order accepted drafts, optionally pick a target page (blank = new).</li>
               <li><strong>Publish.</strong> The WP injector pushes Elementor JSON to the site and returns an edit URL.</li>
