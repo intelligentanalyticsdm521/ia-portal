@@ -17,9 +17,11 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { AgentActivityPanel } from "../../components/agents/AgentActivityPanel";
 import { AgentSettingsRow } from "../../components/agents/AgentSettingsRow";
+import { AgentRunHistoryPanel } from "../../components/agents/AgentRunHistoryPanel";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import type {
-  AgentActivityPayload, AgentActivityRow, AgentKnob, AgentSettingsResponse,
+  AgentActivityPayload, AgentActivityRow, AgentKnob, AgentRunsPayload,
+  AgentSettingsResponse,
 } from "../../components/agents/types";
 
 const KNOBS: Record<string, AgentKnob[]> = {
@@ -42,6 +44,15 @@ const KNOBS: Record<string, AgentKnob[]> = {
       hint: "Too small a group is not worth a campaign — it skips and says so.",
       min: 1, max: 500, suffix: "customers",
     },
+    {
+      // ARGUS pack 1. Without this, a business that invoices without sending a
+      // crew out — an agency, a consultancy, a dentist — had an empty win-back
+      // group for ever and the agent honestly refused every round.
+      field: "winback_cohort_source",
+      label: "Count quiet time from",
+      hint: "auto works it out: finished jobs if you have them, otherwise the last invoice they paid. Or type job or invoice.",
+      type: "text", placeholder: "auto",
+    },
   ],
 };
 
@@ -54,9 +65,11 @@ const APPROVE_LABELS: Record<string, string> = {
 export function SparkAgentsPage() {
   const { get, post, put, ready } = useSparkApi();
   const [activity, setActivity] = useState<AgentActivityPayload | null>(null);
+  const [runs, setRuns] = useState<AgentRunsPayload | null>(null);
   const [settings, setSettings] = useState<AgentSettingsResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -68,11 +81,13 @@ export function SparkAgentsPage() {
     try {
       // sparkApi deliberately does NOT strip the envelope, so reading `.data`
       // here is correct — the opposite of the OLIVER page one file over.
-      const [a, s] = await Promise.all([
+      const [a, r, s] = await Promise.all([
         get<{ data: AgentActivityPayload }>("/api/v1/agents/activity?product=spark"),
+        get<{ data: AgentRunsPayload }>("/api/v1/agents/runs?limit=20"),
         get<{ data: AgentSettingsResponse }>("/api/v1/agents/settings?product=spark"),
       ]);
       setActivity(a.data);
+      setRuns(r.data);
       setSettings(s.data);
     } catch (err) {
       setError(err);
@@ -126,6 +141,40 @@ export function SparkAgentsPage() {
     }
   };
 
+  /**
+   * "Run it now" for the campaign agent.
+   *
+   * It calls POST /campaign-agent/draft, the endpoint that already exists — and
+   * that endpoint REQUIRES a one-line brief, because calendar-driven drafting is
+   * banned by the agent's own design principle 3. So this asks for one rather
+   * than inventing it, which is the honest version of the button.
+   *
+   * The Responder gets no button: it runs when an inquiry arrives, and there is
+   * nothing to trigger by hand that would not be a fake inquiry.
+   */
+  const runNow = async () => {
+    const brief = window.prompt(
+      "What should this campaign be about? One line is enough.",
+    );
+    if (!brief || !brief.trim()) return;
+    setRunning("campaign");
+    setNotice(null);
+    try {
+      const out = await post<{ data?: { drafted?: number; outcome?: string } }>(
+        "/api/v1/campaign-agent/draft", { brief: brief.trim() },
+      );
+      const drafted = Number(out?.data?.drafted ?? 0);
+      setNotice(drafted > 0
+        ? "It has written a draft. It is waiting for you above."
+        : `It had a look and wrote nothing (${out?.data?.outcome || "nothing due"}). The history below says why.`);
+      await load();
+    } catch (err) {
+      setNotice(apiErrorMessage(err));
+    } finally {
+      setRunning(null);
+    }
+  };
+
   return (
     <SparkPageShell
       title="Agents"
@@ -158,6 +207,12 @@ export function SparkAgentsPage() {
           emptyBody="When an agent drafts a campaign or a reply, it lands here first."
         />
 
+        <AgentRunHistoryPanel
+          runs={runs}
+          loading={loading}
+          emptyBody="Neither of them has run yet. The Responder runs when an inquiry arrives; press Run it now on the campaign agent to watch one work."
+        />
+
         <section>
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Your agents</h3>
           <div className="space-y-3">
@@ -167,9 +222,11 @@ export function SparkAgentsPage() {
                 agent={agent}
                 knobs={KNOBS[agent.key]}
                 saving={saving}
+                running={running === agent.key}
                 onToggle={agent.read_only ? undefined : (enabled) => saveAgent(agent.key, { enabled })}
                 onKnob={agent.read_only ? undefined : (field, value) => saveAgent(agent.key, { [field]: value })}
                 onResume={agent.paused ? () => saveAgent(agent.key, { paused: false }) : undefined}
+                onRunNow={agent.key === "campaign" ? runNow : undefined}
               />
             ))}
           </div>

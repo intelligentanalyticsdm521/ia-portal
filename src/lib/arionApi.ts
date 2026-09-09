@@ -1,5 +1,8 @@
 import { emergencyActAsHeaders } from './emergencyActAs';
 import { getCurrentTenantOverride } from './tenantContext';
+import type {
+  AgentActivityPayload, AgentRunsPayload, AgentSettingsResponse,
+} from '../components/agents/types';
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -3076,5 +3079,140 @@ export async function getSiteAiPricing(p: {
   return requestJson<{ data: AiPricing }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/ai-pricing`,
+  });
+}
+
+// ─── ARGUS pack 1 — the ARION Content & Social Agent's Portal surface ────────
+//
+// Before this the ARION Agents page was an honest "coming" row: the agent was
+// real, tested and merged, and there was no screen for any of it. These are the
+// four reads and four writes that page needs.
+//
+// requestJson does NOT strip a `{ data: … }` envelope (unlike lib/oliverApi.ts),
+// so every type here is the envelope and the page reads `.data`. Getting that
+// backwards is the double-unwrap bug the no-double-unwrap test exists for.
+
+/** The queue, plus the escalated units kept visibly apart (AC2). */
+export interface ArionAgentActivityEnvelope {
+  data: AgentActivityPayload & {
+    escalated: AgentActivityPayload['rows'];
+    meta: AgentActivityPayload['meta'] & { approved_awaiting_publish: number };
+  };
+}
+
+export async function getArionAgentActivity(params: { baseUrl: string; bearerToken: string; tenantId: string; limit?: number }) {
+  const q = params.limit ? `?limit=${params.limit}` : '';
+  return requestJson<ArionAgentActivityEnvelope>({ ...params, path: `/arion/agents/activity${q}` });
+}
+
+export async function getArionAgentRuns(params: { baseUrl: string; bearerToken: string; tenantId: string; limit?: number }) {
+  const q = params.limit ? `?limit=${params.limit}` : '';
+  return requestJson<{ data: AgentRunsPayload }>({ ...params, path: `/arion/agents/runs${q}` });
+}
+
+export async function getArionAgentSettings(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ data: AgentSettingsResponse }>({ ...params, path: '/arion/agents/settings' });
+}
+
+/**
+ * Switch the agent on for this business, set what it costs and how many posts a
+ * week it writes.
+ *
+ * This is the write that did not exist. `arion.content_agent_tenant_config` IS
+ * the product — no row, no runs, no cost — and until now nothing in the codebase
+ * could create one, so the agent could not be sold to anybody and the 60% margin
+ * rule reported "price not set" for every real business.
+ */
+export async function putArionAgentSettings(params: {
+  baseUrl: string; bearerToken: string; tenantId: string;
+  patch: Record<string, unknown>;
+}) {
+  return requestJson<{ data: AgentSettingsResponse }>({
+    ...params, path: '/arion/agents/settings', method: 'PUT', body: { content: params.patch },
+  });
+}
+
+/** "Run it now" — this business only, never the fleet. */
+export async function postArionAgentRun(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ data: unknown }>({ ...params, path: '/arion/agents/run', method: 'POST', body: {}, timeoutMs: 120_000 });
+}
+
+/** Approve, optionally with YOUR wording — which is then what publishes (AC3). */
+export async function approveArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string;
+  edits?: { title?: string; body_markdown?: string };
+}) {
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/approve`,
+    method: 'POST', body: params.edits || {},
+  });
+}
+
+/** A rejection with no reason teaches the agent nothing, so the reason is required. */
+export async function rejectArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string; reason: string;
+}) {
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/reject`,
+    method: 'POST', body: { reason: params.reason },
+  });
+}
+
+/** Publishing is a SEPARATE press. Approval never schedules anything (AC8). */
+export async function publishArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string;
+}) {
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/publish`,
+    method: 'POST', body: {}, timeoutMs: 60_000,
+  });
+}
+
+/** What the agent has learned about this business's voice. */
+export interface ArionLearnedVoice {
+  data: {
+    version: number;
+    evidence_count: number;
+    confidence: number | null;
+    formatting: { measured?: Record<string, unknown> | null } | null;
+    vocabulary_banned_count: number;
+    exemplar_count: number;
+    learned_through: string | null;
+  } | null;
+  meta?: { message?: string };
+}
+
+export async function getArionLearnedVoice(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<ArionLearnedVoice>({ ...params, path: '/arion/content-agent/style' });
+}
+
+/** The propose-only code queue. Nothing here is ever applied automatically. */
+export interface ArionCodeProposal {
+  proposal_id: string;
+  run_id: string | null;
+  proposal_kind: string;
+  target_repo: string | null;
+  target_path: string | null;
+  diff_text: string | null;
+  rationale: string | null;
+  risk_note: string | null;
+  review_status: string;
+  created_at: string;
+}
+
+export async function getArionCodeProposals(params: { baseUrl: string; bearerToken: string; tenantId: string; status?: string }) {
+  const q = params.status ? `?status=${encodeURIComponent(params.status)}` : '';
+  return requestJson<{ data: ArionCodeProposal[]; meta: { total: number; note: string } }>({
+    ...params, path: `/arion/content-agent/proposals${q}`,
+  });
+}
+
+export async function decideArionCodeProposal(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; proposalId: string;
+  decision: 'approve' | 'reject';
+}) {
+  return requestJson<{ data: { applied: boolean; note: string } }>({
+    ...params, path: `/arion/content-agent/proposals/${params.proposalId}/${params.decision}`,
+    method: 'POST', body: {},
   });
 }

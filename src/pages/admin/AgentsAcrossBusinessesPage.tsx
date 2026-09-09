@@ -15,11 +15,21 @@ import { useMsal } from "@azure/msal-react";
 import { Bot, RefreshCw, AlertTriangle } from "lucide-react";
 import { useActiveAccount } from "../../auth/useAccessToken";
 import { lumenGet } from "../../lib/lumenApi";
+import { AgentControlsCard } from "./AgentControlsCard";
+import { AgentCodeProposalsCard } from "./AgentCodeProposalsCard";
 
 interface AgentCell {
   agent: string;
   agent_label: string;
   product: string;
+  /**
+   * "agent" or "oversight". ARGUS pack 1 added the Governance layer itself as a
+   * source, and its numbers are deliberately NOT runs and NOT cost: the rows it
+   * reads ARE the other agents' runs, each already carrying that agent's own
+   * cost, so counting them again would double every total on this page. It
+   * reports `checked` and `flagged` instead.
+   */
+  kind?: string;
   runs: number;
   failed: number;
   cost_usd: number;
@@ -28,6 +38,8 @@ interface AgentCell {
   approved: number;
   declined: number;
   other: number;
+  checked?: number;
+  flagged?: number;
 }
 
 interface BusinessRow {
@@ -39,6 +51,8 @@ interface BusinessRow {
   approved: number;
   declined: number;
   cost_usd: number;
+  checked?: number;
+  flagged?: number;
 }
 
 /**
@@ -50,8 +64,11 @@ interface Rollup {
   window_days: number;
   businesses: BusinessRow[];
   by_agent: Array<Omit<AgentCell, "last_run_at" | "failed"> & { businesses: number }>;
-  totals: { runs: number; failed: number; waiting: number; approved: number; declined: number; cost_usd: number };
-  agents: Array<{ agent: string; agent_label: string; product: string }>;
+  totals: {
+    runs: number; failed: number; waiting: number; approved: number;
+    declined: number; cost_usd: number; checked?: number; flagged?: number;
+  };
+  agents: Array<{ agent: string; agent_label: string; product: string; kind?: string }>;
   unavailable: Array<{ agent: string; error: string }>;
   note: string;
 }
@@ -143,14 +160,23 @@ export default function AgentsAcrossBusinessesPage() {
         </div>
       )}
 
+      {/* ARGUS pack 1 - the switches and the limits, on a screen instead of in a
+          query window. Placed above the numbers because when you need a kill
+          switch you are not reading a table first. */}
+      <AgentControlsCard onChanged={() => void load()} />
+
       {totals && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
           {[
             { label: "Runs", value: String(totals.runs) },
             { label: "Failed runs", value: String(totals.failed) },
             { label: "Waiting on a client", value: String(totals.waiting) },
             { label: "Approved", value: String(totals.approved) },
             { label: `Our cost, ${rollup?.window_days}d`, value: usd(totals.cost_usd) },
+            {
+              label: "Runs oversight checked",
+              value: `${totals.checked ?? 0}${(totals.flagged ?? 0) > 0 ? ` · ${totals.flagged} flagged` : ""}`,
+            },
           ].map((c) => (
             <div key={c.label} className="rounded-lg border border-slate-200 bg-white p-3">
               <div className="text-[11px] uppercase tracking-wide text-slate-500">{c.label}</div>
@@ -185,11 +211,23 @@ export default function AgentsAcrossBusinessesPage() {
                   <td className="px-3 py-2 text-slate-800">{a.agent_label}</td>
                   <td className="px-3 py-2 text-slate-500">{a.product}</td>
                   <td className="px-3 py-2 text-right">{a.businesses}</td>
-                  <td className="px-3 py-2 text-right">{a.runs}</td>
-                  <td className="px-3 py-2 text-right">{a.waiting}</td>
-                  <td className="px-3 py-2 text-right">{a.approved}</td>
-                  <td className="px-3 py-2 text-right">{a.declined}</td>
-                  <td className="px-3 py-2 text-right font-medium">{usd(a.cost_usd)}</td>
+                  {/* The oversight layer runs no cycles of its own and spends
+                      nothing. Printing "0 runs / $0" would read as broken; what
+                      it actually did is a count of other agents' runs checked. */}
+                  {a.kind === "oversight" ? (
+                    <td colSpan={5} className="px-3 py-2 text-right text-slate-600">
+                      checked {a.checked ?? 0} runs
+                      {(a.flagged ?? 0) > 0 ? `, flagged ${a.flagged}` : ", none flagged"}
+                    </td>
+                  ) : (
+                    <>
+                      <td className="px-3 py-2 text-right">{a.runs}</td>
+                      <td className="px-3 py-2 text-right">{a.waiting}</td>
+                      <td className="px-3 py-2 text-right">{a.approved}</td>
+                      <td className="px-3 py-2 text-right">{a.declined}</td>
+                      <td className="px-3 py-2 text-right font-medium">{usd(a.cost_usd)}</td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -226,7 +264,16 @@ export default function AgentsAcrossBusinessesPage() {
               </summary>
               <table className="w-full border-t border-slate-100 text-xs">
                 <tbody>
-                  {b.agents.map((a) => (
+                  {b.agents.map((a) => a.kind === "oversight" ? (
+                    <tr key={a.agent} className="border-t border-slate-50">
+                      <td className="px-3 py-1.5 text-slate-700">{a.agent_label}</td>
+                      <td colSpan={6} className="px-3 py-1.5 text-right text-slate-500">
+                        checked {a.checked ?? 0} runs{(a.flagged ?? 0) > 0 ? `, flagged ${a.flagged}` : ", none flagged"}
+                        {" \u00b7 last "}{when(a.last_run_at)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-slate-400">no spend</td>
+                    </tr>
+                  ) : (
                     <tr key={a.agent} className="border-t border-slate-50">
                       <td className="px-3 py-1.5 text-slate-700">{a.agent_label}</td>
                       <td className="px-3 py-1.5 text-right text-slate-500">{a.runs} runs</td>
@@ -244,6 +291,8 @@ export default function AgentsAcrossBusinessesPage() {
           ))}
         </div>
       </section>
+
+      <AgentCodeProposalsCard />
 
       {rollup && <p className="text-[11px] text-slate-400">{rollup.note}</p>}
     </div>

@@ -12,7 +12,7 @@
 // "Created by Intelligent Analytics — <Agent>", written by the server so the
 // name of the agent is never re-spelled in the Portal.
 import { Link } from "react-router-dom";
-import { Sparkles, ChevronRight, AlertTriangle } from "lucide-react";
+import { Sparkles, ChevronRight, AlertTriangle, Play } from "lucide-react";
 import type { AgentKnob, AgentSummary } from "./types";
 
 interface Props {
@@ -23,11 +23,22 @@ interface Props {
   onToggle?: (enabled: boolean) => void;
   onKnob?: (field: string, value: number | string) => void;
   onResume?: () => void;
+  /**
+   * "Run it now". ARGUS pack 1 — the POC cannot wait for a weekly cron, and
+   * Brandon cannot demo an agent whose only trigger is a Monday morning timer.
+   * Omit it and no button renders (the oversight row has nothing to run by hand
+   * that is not already the reindex).
+   */
+  onRunNow?: () => void;
+  /** True while THIS row's run is in flight, so the button cannot be double-fired. */
+  running?: boolean;
   /** Extra facts under the blurb (oversight: what it checked, when). */
   footnote?: string | null;
 }
 
-export function AgentSettingsRow({ agent, knobs, saving, onToggle, onKnob, onResume, footnote }: Props) {
+export function AgentSettingsRow({
+  agent, knobs, saving, onToggle, onKnob, onResume, onRunNow, running, footnote,
+}: Props) {
   const on = !!agent.enabled;
 
   return (
@@ -51,18 +62,51 @@ export function AgentSettingsRow({ agent, knobs, saving, onToggle, onKnob, onRes
             Its settings<ChevronRight className="h-3 w-3" />
           </Link>
         ) : agent.read_only ? (
-          <span className="flex-shrink-0 rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">Always on</span>
+          <div className="flex flex-shrink-0 items-center gap-3">
+            {/* The oversight layer has no switch, but it still has something to do
+                by hand - a reindex - and before ARGUS pack 1 it had neither a
+                timer nor a button, so its footnote read "nothing to check yet"
+                for ever. */}
+            {onRunNow && (
+              <button
+                type="button"
+                onClick={onRunNow}
+                disabled={saving || running}
+                className="inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-40"
+              >
+                <Play className="h-3 w-3" />
+                {running ? "Checking..." : "Check now"}
+              </button>
+            )}
+            <span className="rounded bg-slate-100 px-2 py-1 text-[11px] text-slate-600">Always on</span>
+          </div>
         ) : (
-          <label className="flex flex-shrink-0 items-center gap-2 text-xs text-slate-700">
-            <input
-              type="checkbox"
-              checked={on}
-              disabled={saving || !onToggle}
-              onChange={(e) => onToggle?.(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            {on ? "On" : "Off"}
-          </label>
+          <div className="flex flex-shrink-0 items-center gap-3">
+            {/* Only while it is ON and not paused. Running an agent that is
+                switched off would either do nothing (confusing) or run it anyway
+                (worse than confusing). */}
+            {onRunNow && on && !agent.paused && (
+              <button
+                type="button"
+                onClick={onRunNow}
+                disabled={saving || running}
+                className="inline-flex items-center gap-1 rounded border border-violet-300 bg-white px-2 py-1 text-[11px] font-medium text-violet-700 hover:bg-violet-50 disabled:opacity-40"
+              >
+                <Play className="h-3 w-3" />
+                {running ? "Running…" : "Run it now"}
+              </button>
+            )}
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={saving || !onToggle}
+                onChange={(e) => onToggle?.(e.target.checked)}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              {on ? "On" : "Off"}
+            </label>
+          </div>
         )}
       </div>
 
@@ -82,6 +126,18 @@ export function AgentSettingsRow({ agent, knobs, saving, onToggle, onKnob, onRes
         </div>
       )}
 
+      {on && agent.margin && (
+        <div className={`mt-2 rounded border p-2 text-[11px] ${
+          agent.margin.verdict === "cost_exceeds_60pct_of_price"
+            ? "border-rose-200 bg-rose-50 text-rose-900"
+            : agent.margin.verdict === "price_not_set"
+              ? "border-slate-200 bg-slate-50 text-slate-700"
+              : "border-slate-200 bg-slate-50 text-slate-600"
+        }`}>
+          {agent.margin.message}
+        </div>
+      )}
+
       {on && knobs && knobs.length > 0 && (
         <div className="mt-3 grid gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
           {knobs.map((k) => (
@@ -92,7 +148,7 @@ export function AgentSettingsRow({ agent, knobs, saving, onToggle, onKnob, onRes
                 {k.type === "text" ? (
                   <input
                     type="text"
-                    value={String(agent.settings[k.field] ?? "")}
+                    value={agent.settings[k.field] == null ? "" : String(agent.settings[k.field])}
                     placeholder={k.placeholder}
                     disabled={saving || !onKnob}
                     onChange={(e) => onKnob?.(k.field, e.target.value)}
