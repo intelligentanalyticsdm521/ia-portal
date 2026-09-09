@@ -67,7 +67,11 @@ test("the export period is derived from the SAME state the fetch uses", () => {
   // at September, and nothing on the file would say so.
   assert.match(reportsPage, /const exportTarget/);
   assert.match(reportsPage, /const \{ from, to \} = monthRange\(month\);\s*\n\s*return \{ path: `\/ledger\/pnl\?from=\$\{from\}&to=\$\{to\}`/);
-  assert.match(reportsPage, /sales-tax\?year=\$\{year\}/);
+  // Pack 2: the sales-tax return carries the BASIS as well as the year, and
+  // the export path is still built from the same two pieces of state the
+  // fetch above uses — which is the property this test exists to pin.
+  assert.match(reportsPage, /sales-tax\?basis=\$\{basis\}&year=\$\{year\}/);
+  assert.match(reportsPage, /cash-flow\?basis=\$\{basis\}&from=\$\{year\}-01-01&to=\$\{year\}-12-31/);
 });
 
 test("Export is off when there is nothing to export", () => {
