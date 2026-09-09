@@ -24,10 +24,14 @@ export const ARION_PAGES: PageContentMap = {
         placement: "bottom",
       },
       {
-        title: "WP Admin — the door into your actual website",
-        body: "This logs you straight into WordPress, already signed in, in a new tab. That's where you edit page text, upload images and publish posts. ARION measures and protects; WP Admin is where hands-on editing happens. If you remember one button here, make it this one.",
-        targetSelector: '[data-tour="wp-admin"]',
-        placement: "left",
+        // ARION pack 2 (D-ARION-G) replaced this step. It used to point at a
+        // WP Admin button and say "if you remember one button here, make it
+        // this one" — and that button is IA staff only now, so the step was
+        // about to point a client at something they cannot see.
+        title: "Where you actually change your website",
+        body: "Everything you edit lives under Website. Pages is where you write and publish a page or a blog post, Menus is what people click to get around, and Brand & layout holds your colours, fonts, header and footer. You never sign in anywhere else — this is the whole of it.",
+        targetSelector: "a[href='/app/services/arion_website_pages']",
+        placement: "right",
       },
     ],
   },

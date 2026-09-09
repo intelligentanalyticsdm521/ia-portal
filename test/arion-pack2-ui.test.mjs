@@ -340,3 +340,13 @@ test('the deep link is asked for by name, not built by hand', () => {
   assert.match(api, /dest\?: string/);
   assert.match(api, /dest=\$\{encodeURIComponent\(params\.dest\)\}/);
 });
+
+test('the guided tour no longer points a client at the WP Admin button', () => {
+  const tour = fs.readFileSync(path.resolve('src/journeys/content/arionPages.ts'), 'utf8');
+  const body = stripComments(tour);
+  assert.equal(/data-tour="wp-admin"/.test(body), false,
+    'the tour still walks a client to a button only IA staff can see');
+  // And it was replaced with where the work actually happens, not deleted.
+  assert.match(body, /arion_website_pages/);
+  assert.match(body, /Brand & layout/);
+});
