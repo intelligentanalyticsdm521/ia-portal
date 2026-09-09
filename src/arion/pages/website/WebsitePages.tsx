@@ -13,7 +13,7 @@ import { SwapLookSheet } from '../../components/SwapLookSheet';
 import { smallButton } from '../../components/SectionFieldInputs';
 import type {
   ArionSitePage, SectionCatalogEntry, SectionDiffRow, SectionProposal, PageProposal, AiPricing,
-  AdoptPreview, SitePageSettings, SitePageSeo,
+  AdoptPreview, SitePageSettings, SitePageSeo, SectionRoleReview,
 } from '../../../lib/arionApi';
 import type { FieldContext } from '../../components/SectionFieldInputs';
 import {
@@ -827,6 +827,37 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
     }
   }, [activeSiteId, arionApi, swapUid, sections]);
 
+  /**
+   * "Check this" answered: swap the two roles over on every card of the list.
+   *
+   * The server does the swap, because the Portal never invents Elementor JSON
+   * — it holds the section and hands it back, exactly as the look-swap above
+   * does. Nothing reaches the website until the next Save.
+   */
+  const [roleSwapBusy, setRoleSwapBusy] = useState(false);
+  const swapRoles = useCallback(async (uid: string, review: SectionRoleReview) => {
+    if (!activeSiteId) return;
+    const row = sections.find((x) => x.uid === uid);
+    if (!row || !row.kind) return;
+    setRoleSwapBusy(true); setError(null);
+    try {
+      const res: any = await arionApi.swapSectionRoles(activeSiteId, {
+        kind: row.kind,
+        list: review.list,
+        roles: [review.roles[0], review.roles[1]],
+        node: row.node,
+      });
+      const swapped = res?.data?.section;
+      if (!swapped) throw new Error('We could not swap those two over.');
+      setSections((cur) => swapSectionLayout(cur, uid, swapped));
+      setOk('Swapped over. Check the boxes read right, then Save when you are happy.');
+    } catch (e: any) {
+      setError(messageFrom(e, 'We could not swap those two over. Nothing was changed.'));
+    } finally {
+      setRoleSwapBusy(false);
+    }
+  }, [activeSiteId, arionApi, sections]);
+
   const runPreview = async () => {
     if (!activeSiteId) return;
     setBusy('preview'); setError(null); setFieldErrors([]);
@@ -1543,6 +1574,8 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
             onApprove: approveSection,
             onDiscard: discardSection,
           }}
+          onSwapRoles={(review) => swapRoles(openSection.uid, review)}
+          swapBusy={roleSwapBusy}
         />
       )}
     </div>

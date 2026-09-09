@@ -1,5 +1,7 @@
 import React from 'react';
-import type { SectionCatalogEntry, SectionFieldSpec, SectionDiffRow } from '../../lib/arionApi';
+import type {
+  SectionCatalogEntry, SectionFieldSpec, SectionDiffRow, SectionRoleReview,
+} from '../../lib/arionApi';
 import type { EditorSection } from '../utils/sectionListState';
 import {
   ScalarField, ParagraphsField, ListField, blankItem, smallButton, isHiddenSpec,
@@ -33,9 +35,56 @@ export interface SectionAskArgus {
   onDiscard: () => void;
 }
 
+/**
+ * "Check this" — the one thing a hand-drawn card cannot tell us.
+ *
+ * A curated layout draws a price card as a name, a price, two blocks of text
+ * and a button. Which block is "how often" and which is "what is included" is
+ * usually obvious from the content — a bullet list is a list — and when it is,
+ * nothing is shown here at all. When it is not, the server says so, and this
+ * is the row that lets a client put it right in one tap instead of finding out
+ * on their published page.
+ */
+function RoleReviewNote({ review, fields, busy, onSwap }: {
+  review: SectionRoleReview;
+  /** The two field specs, so the boxes are named the way the sheet names them. */
+  fields: SectionFieldSpec[];
+  busy: boolean;
+  onSwap: () => void;
+}) {
+  const names = fields.map((f) => f.label);
+  return (
+    <div
+      style={{
+        border: '1px solid #FDE68A', background: '#FFFBEB', borderRadius: 10,
+        padding: 12, marginBottom: 12,
+      }}
+    >
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#92400E', marginBottom: 6 }}>
+        Check this
+      </div>
+      <div style={{ fontSize: 13, marginBottom: 10 }}>
+        {review.why}
+        {names.length === 2
+          ? ` If “${names[0]}” and “${names[1]}” are the wrong way round below, swap them.`
+          : ''}
+      </div>
+      <button
+        type="button"
+        style={{ ...smallButton, minHeight: 44 }}
+        disabled={busy}
+        onClick={onSwap}
+      >
+        {busy ? 'Swapping…' : 'Swap them over'}
+      </button>
+    </div>
+  );
+}
+
 export function SectionEditSheet({
   section, catalog, ctx, onClose, onField, onFields, onListItem, onListItemPatch,
   onListAdd, onListRemove, onParagraph, onParagraphAdd, onParagraphRemove, ask,
+  onSwapRoles, swapBusy = false,
 }: {
   section: EditorSection;
   catalog: SectionCatalogEntry | null;
@@ -54,8 +103,25 @@ export function SectionEditSheet({
   onParagraphRemove: (key: string, index: number) => void;
   /** Omitted on a sheet with no AI at all — the box simply does not render. */
   ask?: SectionAskArgus;
+  /** Answering a "check this". Omitted where there is nothing to check. */
+  onSwapRoles?: (review: SectionRoleReview) => void;
+  swapBusy?: boolean;
 }) {
   const fields: SectionFieldSpec[] = (catalog?.fields || []).filter((f) => !isHiddenSpec(f));
+  const itemFields = section.itemFields || null;
+  const reviews = section.roleReview || [];
+
+  /**
+   * A hand-drawn card only has room for what its author drew. The server says
+   * which sub-fields have somewhere to go on THIS layout, and anything else is
+   * left out — a box you can type into that saves nothing is the failure this
+   * codebase keeps finding, not a feature.
+   */
+  const specForList = (spec: SectionFieldSpec): SectionFieldSpec => {
+    const allowed = itemFields?.[spec.key];
+    if (!allowed || !spec.item) return spec;
+    return { ...spec, item: spec.item.filter((sub) => allowed.includes(sub.key)) };
+  };
 
   return (
     <div
@@ -102,17 +168,29 @@ export function SectionEditSheet({
           {fields.map((spec) => {
             const value = section.fields?.[spec.key];
             if (spec.type === 'list') {
+              const shown = specForList(spec);
+              const review = reviews.find((r) => r.list === spec.key) || null;
               return (
+                <React.Fragment key={spec.key}>
+                  {review && onSwapRoles && (
+                    <RoleReviewNote
+                      review={review}
+                      fields={(spec.item || []).filter((sub) => review.fields.includes(sub.key))}
+                      busy={swapBusy}
+                      onSwap={() => onSwapRoles(review)}
+                    />
+                  )}
                 <ListField
                   key={spec.key}
-                  spec={spec}
+                  spec={shown}
                   value={Array.isArray(value) ? value : []}
                   onItemChange={(i, key, v) => onListItem(spec.key, i, key, v)}
                   onItemPatch={(i, patch) => onListItemPatch(spec.key, i, patch)}
-                  onAdd={() => onListAdd(spec.key, blankItem(spec))}
+                  onAdd={() => onListAdd(spec.key, blankItem(shown))}
                   onRemove={(i) => onListRemove(spec.key, i)}
                   ctx={ctx}
                 />
+                </React.Fragment>
               );
             }
             if (spec.type === 'paragraphs') {

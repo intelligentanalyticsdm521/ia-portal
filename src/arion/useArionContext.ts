@@ -1174,6 +1174,15 @@ export function useArionContext() {
         return swapSectionLook({ ...b, siteId, ...params });
       },
 
+      async swapSectionRoles(
+        siteId: string,
+        params: { kind: string; list: string; roles: string[]; node: any },
+      ) {
+        const b = await base();
+        const { swapSectionRoles } = await import('../lib/arionApi');
+        return swapSectionRoles({ ...b, siteId, ...params });
+      },
+
       async getSiteMediaUsage(siteId: string, attachmentId: number) {
         const b = await base();
         const { getSiteMediaUsage } = await import('../lib/arionApi');
