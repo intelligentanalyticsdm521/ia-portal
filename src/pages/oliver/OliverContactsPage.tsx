@@ -11,17 +11,43 @@ import {
   StatusBadge, Button, type Column,
 } from "../../components/oliver/ui";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+import {
+  BulkActionBar, TagModal, TagChip, InviteResultPanel, SavedViews, DuplicatesModal,
+  type CustomerFilters, type TagRow, type InviteResult,
+} from "../../components/oliver/customer/CustomerListActions";
 import { PhoneInput } from "../../components/PhoneInput";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 
+// The pills are the FINANCIAL half of the one filter vocabulary
+// (lib/customerViews.js FINANCIAL_FILTERS). They are sent to the server now
+// rather than applied to whichever rows the browser happened to have: the list
+// fetches one page, so filtering in the browser meant "has overdue" showed the
+// overdue customers among the first fifty people, and called it all of them.
 const CUSTOMER_PILLS = [
   { key: "", label: "All" },
-  { key: "f:overdue", label: "Has overdue" },
-  { key: "f:outstanding", label: "Has outstanding" },
-  { key: "f:paying", label: "Active paying" },
-  { key: "f:new", label: "New (no invoices)" },
+  { key: "overdue", label: "Has overdue" },
+  { key: "outstanding", label: "Has outstanding" },
+  { key: "paying", label: "Active paying" },
+  { key: "new", label: "New (no invoices)" },
 ];
+
+const PORTAL_STATUS_LABEL: Record<string, string> = {
+  never_invited: "Never invited",
+  invited: "Invited",
+  signed_in: "Signed in",
+};
+
+interface ListSummary {
+  total: number;
+  outstanding: number;
+  overdue: number;
+  with_overdue: number;
+  active_paying: number;
+  signed_in: number;
+  invited: number;
+  never_invited: number;
+}
 
 interface Contact {
   contact_id: string;
@@ -35,6 +61,12 @@ interface Contact {
   overdue_count?: number;
   total_paid?: number;
   last_payment_at?: string | null;
+  // OLIVER pack 2 — a fact from oliver.portal_invite, not an inference.
+  portal_status?: "never_invited" | "invited" | "signed_in";
+  invited_at?: string | null;
+  first_signin_at?: string | null;
+  last_seen_at?: string | null;
+  tags?: string[];
 }
 
 interface FinancialSnapshot {
@@ -93,18 +125,6 @@ export function OliverContactsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  async function exportCsv() {
-    const account = activeAccount;
-    if (!account) return;
-    setExporting(true);
-    try {
-      await oliverDownload(instance, account, "/exports/contacts.csv", `contacts-${new Date().toISOString().slice(0, 10)}.csv`);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setExporting(false);
-    }
-  }
 
   const [filter, setFilter] = useState("");
   const [syncing, setSyncing] = useState(false);
@@ -135,39 +155,127 @@ export function OliverContactsPage() {
     }
   }
 
+  // ── OLIVER pack 2 — the filter is the SERVER's, not the browser's ─────────
+  //
+  // This page fetched `/contacts` (one page, fifty rows) and then filtered and
+  // totalled that page in JavaScript. On any business with more than fifty
+  // customers every pill, every search and all four stat cards were answers
+  // about the first fifty people, presented as answers about the business. The
+  // filter object below is the one vocabulary the API, the CSV export, the bulk
+  // actions and a saved view all speak, so they cannot select different people.
+  const [portalStatus, setPortalStatus] = useState("");
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [summary, setSummary] = useState<ListSummary | null>(null);
+  const [tags, setTags] = useState<TagRow[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState<string | null>(null);
+  const [showTagModal, setShowTagModal] = useState(false);
+  const [showDuplicates, setShowDuplicates] = useState(false);
+  const [inviteResults, setInviteResults] = useState<InviteResult[] | null>(null);
+  const [invitePortalUrl, setInvitePortalUrl] = useState<string | null>(null);
+  const PER_PAGE = 100;
+
+  const filters: CustomerFilters = useMemo(() => {
+    const f: CustomerFilters = {};
+    if (search.trim()) f.search = search.trim();
+    if (filter) f.financial = filter;
+    if (portalStatus) f.portal_status = portalStatus;
+    if (tagFilter.length) f.tags_any = tagFilter;
+    return f;
+  }, [search, filter, portalStatus, tagFilter]);
+
+  const queryString = useMemo(() => {
+    const q = new URLSearchParams();
+    if (filters.search) q.set("search", filters.search);
+    if (filters.financial) q.set("financial", filters.financial);
+    if (filters.portal_status) q.set("portal_status", filters.portal_status);
+    if (filters.tags_any?.length) q.set("tags_any", filters.tags_any.join(","));
+    return q.toString();
+  }, [filters]);
+
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<Contact[]>("/contacts");
-      setContacts(data || []);
+      const q = new URLSearchParams(queryString);
+      q.set("page", String(page));
+      q.set("per_page", String(PER_PAGE));
+      const [rows, sum] = await Promise.all([
+        get<Contact[]>(`/contacts?${q.toString()}`),
+        get<ListSummary>(`/contacts/summary${queryString ? `?${queryString}` : ""}`),
+      ]);
+      setContacts(rows || []);
+      setSummary(sum || null);
+      setTotal(sum?.total ?? (rows?.length || 0));
     } catch (e) { setError(e); }
     finally { setLoading(false); }
-  }, [get]);
+  }, [get, queryString, page]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
-  const filtered = useMemo(() => {
-    let list = contacts;
-    if (filter === "f:overdue") list = list.filter((c) => (c.overdue_count ?? 0) > 0);
-    else if (filter === "f:outstanding") list = list.filter((c) => (c.outstanding_balance ?? 0) > 0);
-    else if (filter === "f:paying") list = list.filter((c) => (c.total_paid ?? 0) > 0);
-    else if (filter === "f:new") list = list.filter((c) => (c.total_paid ?? 0) === 0 && (c.outstanding_balance ?? 0) === 0);
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      list = list.filter((c) =>
-        contactName(c).toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        c.phone?.includes(q) ||
-        c.company_name?.toLowerCase().includes(q)
-      );
-    }
-    return list;
-  }, [contacts, search, filter]);
+  // The tag catalogue, once. It changes when somebody tags, and reload() is
+  // called then too.
+  const loadTags = useCallback(async () => {
+    try { setTags(await get<TagRow[]>("/contacts/tags")); } catch { /* the list must not die for a chip */ }
+  }, [get]);
+  useEffect(() => { if (ready) void loadTags(); }, [ready, loadTags]);
 
-  const totalOutstanding = contacts.reduce((s, c) => s + Number(c.outstanding_balance || 0), 0);
-  const totalOverdue = contacts.reduce((s, c) => s + Number(c.overdue_balance || 0), 0);
-  const withOverdue = contacts.filter((c) => (c.overdue_count ?? 0) > 0).length;
-  const activePaying = contacts.filter((c) => (c.total_paid ?? 0) > 0).length;
+  // Changing a filter starts at the first page. Otherwise a narrower filter on
+  // page 4 shows an empty table and looks like a bug.
+  useEffect(() => { setPage(1); setSelected(new Set()); }, [queryString]);
+
+  const filtered = contacts;
+
+  const totalOutstanding = summary?.outstanding ?? 0;
+  const totalOverdue = summary?.overdue ?? 0;
+  const withOverdue = summary?.with_overdue ?? 0;
+  const activePaying = summary?.active_paying ?? 0;
+
+  // ── the three bulk actions ────────────────────────────────────────────────
+  const selectedIds = useMemo(() => [...selected], [selected]);
+
+  async function bulkTag(add: string[], remove: string[]) {
+    setBulkBusy("tag");
+    try {
+      await post("/contacts/bulk/tag", { contact_ids: selectedIds, add, remove });
+      await Promise.all([reload(), loadTags()]);
+    } finally { setBulkBusy(null); }
+  }
+
+  async function bulkInvite() {
+    setBulkBusy("invite");
+    setInviteResults(null);
+    try {
+      const r = await post<{ results: InviteResult[]; portal_url: string | null }>(
+        "/contacts/bulk/invite", { contact_ids: selectedIds },
+      );
+      setInviteResults(r.results || []);
+      setInvitePortalUrl(r.portal_url || null);
+      await reload();
+    } catch (e) {
+      setError(e);
+    } finally { setBulkBusy(null); }
+  }
+
+  async function exportFiltered() {
+    const account = activeAccount;
+    if (!account) return;
+    setExporting(true);
+    try {
+      // The SAME filter the list is showing, through the same parser. The old
+      // export ignored the filter entirely and handed over everybody.
+      await oliverDownload(
+        instance, account,
+        `/contacts/export${queryString ? `?${queryString}` : ""}`,
+        `customers-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function fmtMoneyShort(n?: number | null) {
     return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
@@ -209,6 +317,32 @@ export function OliverContactsPage() {
         ? <span style={{ fontFamily: "monospace", color: "#059669", fontWeight: 600 }}>{fmtMoneyShort(c.total_paid)}</span>
         : <span style={{ color: "#94A3B8" }}>—</span>,
     },
+    {
+      key: "tags", header: "Tags",
+      render: (c) => (c.tags?.length
+        ? <span style={{ display: "inline-flex", gap: 4, flexWrap: "wrap" }}>
+            {c.tags.slice(0, 3).map((t) => <TagChip key={t} name={t} />)}
+            {c.tags.length > 3 && <span style={{ fontSize: 11, color: "#64748B" }}>+{c.tags.length - 3}</span>}
+          </span>
+        : <span style={{ color: "#94A3B8" }}>—</span>),
+    },
+    {
+      // OLIVER pack 2. "Never invited" and "we have no idea" used to be the
+      // same blank space; they are different facts and the owner needs both.
+      key: "portal_status", header: "Portal", sortable: true,
+      sortAccessor: (c) => c.portal_status ?? "never_invited",
+      render: (c) => {
+        const st = c.portal_status ?? "never_invited";
+        const tone = st === "signed_in" ? "#059669" : st === "invited" ? "#B45309" : "#94A3B8";
+        const when = st === "signed_in" ? c.last_seen_at : st === "invited" ? c.invited_at : null;
+        return (
+          <span style={{ fontSize: 12, color: tone, fontWeight: st === "never_invited" ? 400 : 600 }}>
+            {PORTAL_STATUS_LABEL[st]}
+            {when && <span style={{ color: "#94A3B8", fontWeight: 400 }}> · {fmtDate(when)}</span>}
+          </span>
+        );
+      },
+    },
   ];
 
   return (
@@ -224,7 +358,8 @@ export function OliverContactsPage() {
             <Button variant="secondary" onClick={syncFromStripe} disabled={syncing}>
               {syncing ? "Syncing from Stripe…" : "Sync from Stripe"}
             </Button>
-            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !contacts.length}>
+            <Button variant="secondary" onClick={() => setShowDuplicates(true)}>Find duplicates</Button>
+            <Button variant="secondary" onClick={exportFiltered} disabled={exporting || !total}>
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
             <Button variant="primary" data-tour="new-customer" onClick={() => setShowCreate(true)}>+ New customer</Button>
@@ -253,15 +388,30 @@ export function OliverContactsPage() {
             syncResult.subscriptions.relinked === 0 && <>Everything was already up to date.</>}
         </div>
       )}
-      {!contacts.length ? (
-        <EmptyState title="No customers yet" description="Customers appear here as soon as you create a job, quote, or invoice for them — or when they sign up via the customer portal." />
+      {inviteResults && (
+        <InviteResultPanel results={inviteResults} portalUrl={invitePortalUrl} onClose={() => setInviteResults(null)} />
+      )}
+      {!contacts.length && !queryString ? (
+        <EmptyState
+          title="No customers yet"
+          description="Add one with the button above, import a list, or let them arrive from a job, a quote or your booking page. Once they are here you can tag them, group them, and invite each of them into their own portal."
+        />
       ) : (
         <>
           <div className="stat-row">
             <div className="stat-card">
-              <div className="stat-lbl">Total customers</div>
-              <div className="stat-val">{contacts.length}</div>
-              <div className="stat-delta neu">in your database</div>
+              <div className="stat-lbl">{queryString ? "Customers matching" : "Total customers"}</div>
+              <div className="stat-val">{total}</div>
+              <div className="stat-delta neu">{queryString ? "this filter" : "in your database"}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-lbl">Using their portal</div>
+              <div className="stat-val" style={{ color: (summary?.signed_in ?? 0) > 0 ? "#059669" : undefined }}>
+                {summary?.signed_in ?? 0}
+              </div>
+              <div className="stat-delta neu">
+                {summary?.invited ?? 0} invited, {summary?.never_invited ?? 0} never asked
+              </div>
             </div>
             <div className="stat-card">
               <div className="stat-lbl">Active paying</div>
@@ -287,18 +437,95 @@ export function OliverContactsPage() {
             search={search}
             onSearchChange={setSearch}
             searchPlaceholder="Search by name, email, phone, or company…"
+            rightSlot={
+              <select
+                value={portalStatus}
+                onChange={(e) => setPortalStatus(e.target.value)}
+                aria-label="Portal status"
+                style={{ padding: "6px 10px", border: "1px solid rgba(45,156,219,0.22)", borderRadius: 6, fontSize: 12 }}
+              >
+                <option value="">Portal: anyone</option>
+                <option value="never_invited">Never invited</option>
+                <option value="invited">Invited, not signed in</option>
+                <option value="signed_in">Signed in</option>
+              </select>
+            }
           />
+
+          {tags.length > 0 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: "#64748B" }}>Tags:</span>
+              {tags.map((t) => (
+                <TagChip
+                  key={t.id}
+                  name={t.name}
+                  color={t.color}
+                  active={tagFilter.includes(t.name)}
+                  onClick={() => setTagFilter((prev) => prev.includes(t.name) ? prev.filter((n) => n !== t.name) : [...prev, t.name])}
+                />
+              ))}
+              {tagFilter.length > 0 && (
+                <button onClick={() => setTagFilter([])} style={{ background: "none", border: "none", color: "#1D4ED8", fontSize: 12, cursor: "pointer" }}>
+                  clear
+                </button>
+              )}
+            </div>
+          )}
+
+          <SavedViews api={{ get, post, del }} current={filters} onApply={(f) => {
+            setSearch(f.search ?? "");
+            setFilter(f.financial ?? "");
+            setPortalStatus(f.portal_status ?? "");
+            setTagFilter(f.tags_any ?? []);
+          }} />
+
+          <BulkActionBar
+            count={selected.size}
+            busy={bulkBusy}
+            onTag={() => setShowTagModal(true)}
+            onInvite={bulkInvite}
+            onExport={exportFiltered}
+            onClear={() => setSelected(new Set())}
+          />
+
           <DataTable
             rows={filtered}
             columns={columns}
             rowKey={(c) => c.contact_id}
             onRowClick={(c) => setPickedId(c.contact_id)}
             initialSort={{ key: "outstanding_balance", direction: "desc" }}
-            emptyMessage="No customers match this search."
+            emptyMessage="No customers match this filter."
+            selectedIds={selected}
+            onSelectionChange={setSelected}
           />
+
+          {total > PER_PAGE && (
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 12, fontSize: 13 }}>
+              <Button variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>Previous</Button>
+              <span style={{ color: "#64748B" }}>
+                {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)} of {total}
+              </span>
+              <Button variant="secondary" disabled={page * PER_PAGE >= total} onClick={() => setPage((p) => p + 1)}>Next</Button>
+            </div>
+          )}
         </>
       )}
 
+      {showTagModal && (
+        <TagModal
+          count={selected.size}
+          tags={tags}
+          onClose={() => setShowTagModal(false)}
+          onApply={bulkTag}
+        />
+      )}
+      {showDuplicates && (
+        <DuplicatesModal
+          api={{ get, post, del }}
+          onClose={() => setShowDuplicates(false)}
+          onMerged={() => { void reload(); setSelected(new Set()); }}
+        />
+      )}
       {pickedId && <CustomerModal customerId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch, del }} onChanged={reload} />}
       {showCreate && (
         <NewContactModal
