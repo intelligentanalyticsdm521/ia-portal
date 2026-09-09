@@ -149,12 +149,12 @@ export function ContentSeoOverview() {
       <div>
         <InfoCard title="Content SEO">
           <p style={{ margin: 0, fontSize: 13 }}>
-            Content SEO intelligence is powered by Rank Math SEO inside the IA Plugin. Make sure the IA Plugin is connected and Rank Math is active on your WordPress site to see per-page SEO scores, focus keywords, and meta-completeness tracking.
+            Content SEO reads the search settings on your own website, through the IA Plugin. Once the plugin is connected and your site's search settings are switched on, this page shows a score for every page and post, the keyword each one is written for, and how much of the description work is done.
           </p>
         </InfoCard>
         <div style={{ marginTop: 14, padding: 40, background: '#F8FAFC', borderRadius: 10, textAlign: 'center', border: '1px dashed #d5e0e8' }}>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>
-            {!pluginConnected ? 'Waiting on the IA Plugin' : 'Rank Math not detected'}
+            {!pluginConnected ? 'Waiting on the IA Plugin' : "Your site's search settings are not on"}
           </div>
           <div style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 550, margin: '0 auto', lineHeight: 1.6 }}>
             {!pluginConnected
@@ -278,7 +278,7 @@ export function ContentSeoOverview() {
             {coveragePct >= 80 ? (
               <>You're analyzing <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces. Focus on lifting scores on the remaining low-score posts.</>
             ) : (
-              <>Only <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces have Rank Math scores. Adding focus keywords + meta descriptions to the uncovered posts is the fastest way to improve overall SEO health.</>
+              <>Only <strong>{postsWithScore}</strong> of <strong>{totalPublished}</strong> published pieces have a search score. Adding focus keywords + meta descriptions to the uncovered posts is the fastest way to improve overall SEO health.</>
             )}
           </div>
         </div>
@@ -427,7 +427,7 @@ export function ContentSeoOverview() {
           {hardToReadCount > 0 ? (
             <div style={{ padding: '12px 14px', background: '#FEF3C7', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 12, color: '#0B1C24', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <strong style={{ color: '#78350F' }}>{hardToReadCount} post{hardToReadCount === 1 ? '' : 's'} hard to read</strong> — Rank Math readability score below 40. Hard-to-read content loses engagement + rankings faster than thin content.
+                <strong style={{ color: '#78350F' }}>{hardToReadCount} post{hardToReadCount === 1 ? '' : 's'} hard to read</strong> — a reading-ease score below 40. Hard-to-read content loses engagement + rankings faster than thin content.
               </div>
               <button
                 onClick={() => { setDrillDownType('readability'); setModalOpen(true); }}
@@ -456,7 +456,7 @@ export function ContentSeoOverview() {
 
       <ConsultingUpsell
         headline="Struggling to lift SEO scores? IA's content team specializes in on-page optimization."
-        subtext="We rewrite underperforming pages with Rank Math's recommendations baked in — typical lift: 40-60 points per page."
+        subtext="We rewrite underperforming pages with your site's own search recommendations baked in — typical lift: 40-60 points per page."
         serviceType="Content Writing"
         triggerPage="content-seo-overview"
       />
@@ -687,13 +687,13 @@ function ReadabilityTab({ detailRows }: { detailRows: any[] }) {
   const hardRows = scored.filter((r: any) => r.readability < 40).sort((a, b) => a.readability - b.readability);
 
   if (scored.length === 0) {
-    return <div style={{ padding: 30, color: '#5A7A8A', textAlign: 'center', fontSize: 13 }}>No readability scores yet. Rank Math generates readability scores when posts are saved or analyzed.</div>;
+    return <div style={{ padding: 30, color: '#5A7A8A', textAlign: 'center', fontSize: 13 }}>No reading-ease scores yet. Your website works that score out when a post is saved or analysed.</div>;
   }
 
   return (
     <div>
       <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12, lineHeight: 1.5 }}>
-        Rank Math readability measures how easy your content is to read based on sentence length, word complexity, and structure. Higher scores = more accessible content. Aim for 60+ on all published pieces.
+        Reading ease measures how easy your content is to read, from sentence length, word complexity and structure. Higher scores = more accessible content. Aim for 60+ on all published pieces.
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16, marginBottom: 16 }}>
         <div style={{ background: '#F8FAFC', padding: 16, borderRadius: 6 }}>

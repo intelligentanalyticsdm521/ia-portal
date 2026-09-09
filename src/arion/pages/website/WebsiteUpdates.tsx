@@ -115,11 +115,11 @@ export function WebsiteUpdates() {
 
   const handleUpdateCore = useCallback(async () => {
     if (!activeSiteId) return;
-    if (!window.confirm('Updating WordPress core can take 1-2 minutes. Continue?')) return;
+    if (!window.confirm("Updating your website's core software can take 1-2 minutes. Continue?")) return;
     setBusyFor('core', true);
     try {
       const r: any = await arionApi.updateWpCore(activeSiteId);
-      if (r.data?.success) flashNotice('success', 'WordPress core updated');
+      if (r.data?.success) flashNotice('success', "Your website's core software was updated");
       else flashNotice('error', r.errors?.[0] || 'Core update failed');
       refetchAll();
     } catch (err: any) {
@@ -183,7 +183,7 @@ export function WebsiteUpdates() {
   if (updates?.core_update) {
     allItems.push({
       kind: 'core',
-      name: 'WordPress Core',
+      name: 'Core website software',
       current_version: updates.core_update.current_version,
       new_version: updates.core_update.new_version,
     });
@@ -231,7 +231,7 @@ export function WebsiteUpdates() {
       {/* Master auto-update toggles */}
       <Card title="Auto-update defaults">
         <div style={{ fontSize: 12, color: '#5A7A8A', marginBottom: 12 }}>
-          Enable auto-updates to let WordPress apply routine security + maintenance updates without manual action. IA-managed updates remain available as a safer alternative for high-traffic sites.
+          Enable auto-updates to let your website apply routine security + maintenance updates on its own. IA-managed updates remain available as a safer alternative for high-traffic sites.
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
           <ToggleRow
@@ -382,7 +382,7 @@ export function WebsiteUpdates() {
 
         const coreRow = updates?.core_update ? [{
           kind: 'core' as const,
-          name: 'WordPress Core',
+          name: 'Core website software',
           current_version: updates.core_update.current_version,
           new_version: updates.core_update.new_version,
           active: true,
