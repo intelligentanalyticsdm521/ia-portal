@@ -2500,6 +2500,25 @@ export interface ArionSitePage {
 /** Why a section cannot be edited in the Portal. `null` means it can. */
 export type SectionLockReason = 'custom' | 'no_field_markers' | null;
 
+/**
+ * "We could not tell which of these two boxes is which, so check this."
+ *
+ * A curated layout draws a card by hand and nothing in it says which text is
+ * the period and which is the list of what is included. The server reaches for
+ * a marker first (a currency sign, a bullet, a quotation mark) and only falls
+ * back to "the longer one" when there is none — and when it does, it says so
+ * here rather than letting a guess look like a decision.
+ */
+export interface SectionRoleReview {
+  /** The list it is about: "plans", "members", "stats", "testimonials". */
+  list: string;
+  /** The two roles that might be the wrong way round. */
+  roles: [string, string] | string[];
+  /** The field keys those two roles fill, so the sheet can name them. */
+  fields: string[];
+  why: string;
+}
+
 export interface ArionPageSection {
   index: number;
   handle: string | null;
@@ -2512,6 +2531,14 @@ export interface ArionPageSection {
   fields: Record<string, any> | null;
   /** The Elementor node. Carried untouched so a save preserves everything. */
   node: any;
+
+  /* ── pack 2b: a section whose list is one CARD per item ──────────── */
+  /** Which sub-fields of each list this layout actually has room for. A
+      hand-drawn testimonial card has no star rating, so the box for one is
+      not offered rather than offered and quietly ignored. null = all of them. */
+  itemFields?: Record<string, string[]> | null;
+  /** Role assignments the server had to guess at, so the sheet can ask. */
+  roleReview?: SectionRoleReview[] | null;
 
   /* ── Phase 3: adoption ─────────────────────────────────────────────── */
   /** A greyed row we could offer to make editable. */
@@ -3580,6 +3607,24 @@ export async function swapSectionLook(p: {
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/sections/swap`,
     body: { kind: p.kind, blueprintId: p.blueprintId, fields: p.fields },
     timeoutMs: 45_000,
+  });
+}
+
+/**
+ * Swap two roles over on a hand-drawn card — the one tap behind "check this".
+ * Writes nothing; the section comes back with the two markers exchanged and
+ * reaches the website on the next Save like any other edit.
+ */
+export async function swapSectionRoles(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  kind: string; list: string; roles: string[]; node: any;
+}) {
+  return requestJson<{ data: { section: ArionPageSection; swapped: number } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/sections/roles/swap`,
+    body: { kind: p.kind, list: p.list, roles: p.roles, node: p.node },
+    timeoutMs: 30_000,
   });
 }
 
