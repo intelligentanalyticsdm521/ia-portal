@@ -194,7 +194,6 @@ const SparkDealsPage = lazyNamed(() => import('./spark/SparkDealsPage'), 'SparkD
 const SparkNpsPage = lazyNamed(() => import('./spark/SparkNpsPage'), 'SparkNpsPage');
 const SparkQrCodesPage = lazyNamed(() => import('./spark/SparkQrCodesPage'), 'SparkQrCodesPage');
 const SparkReferralsPage = lazyNamed(() => import('./spark/SparkReferralsPage'), 'SparkReferralsPage');
-const SparkSocialPage = lazyNamed(() => import('./spark/SparkSocialPage'), 'SparkSocialPage');
 const SparkNewsletterPage = lazyNamed(() => import('./spark/SparkNewsletterPage'), 'SparkNewsletterPage');
 const SparkCalendarPage = lazyNamed(() => import('./spark/SparkCalendarPage'), 'SparkCalendarPage');
 // SPARK Business
@@ -207,6 +206,7 @@ const SparkInsightsPage = lazyNamed(() => import('./spark/SparkInsightsPage'), '
 const SparkActivityStreamPage = lazyNamed(() => import('./spark/SparkActivityStreamPage'), 'SparkActivityStreamPage');
 const SparkHealthScorePage = lazyNamed(() => import('./spark/SparkHealthScorePage'), 'SparkHealthScorePage');
 const SparkDashboardsPage = lazyNamed(() => import('./spark/SparkDashboardsPage'), 'SparkDashboardsPage');
+const SparkConversationsPage = lazyNamed(() => import('./spark/SparkConversationsPage'), 'SparkConversationsPage');
 const SparkAnalyticsReportsPage = lazyNamed(() => import('./spark/SparkAnalyticsReportsPage'), 'SparkAnalyticsReportsPage');
 const SparkContactBulkPage = lazyNamed(() => import('./spark/SparkContactBulkPage'), 'SparkContactBulkPage');
 // SPARK v1.0 additions
@@ -471,6 +471,19 @@ function ServiceRouterInner() {
   // and "Service not found" is a worse answer than the right page.
   if (serviceKey === 'spark_sms_inbox') {
     return <Navigate to="/app/services/spark_lead_inbox" replace />;
+  }
+
+  // SPARK pack 2 (2026-09-09) — the SPARK Social Scheduler is DELETED. It stored
+  // posts nothing would ever publish: no dispatcher has ever read
+  // lumen.social_post, and the real publisher runs over My Brand's queue. The
+  // page was nav-hidden with a note saying the feature had moved; hiding a page
+  // does not stop it storing posts, and the route stayed reachable by bookmark.
+  // The table is gone (migration 177) and so is the page.
+  //
+  // A REDIRECT to where the feature actually lives, for the same reason
+  // spark_sms_inbox has one.
+  if (serviceKey === 'spark_social') {
+    return <Navigate to="/app/services/my_brand_calendar" replace />;
   }
 
   // SPARK pack 1 — /app/services/spark_search_profiles is the one Lead Gen page
@@ -875,7 +888,6 @@ function ServiceRouterInner() {
       case 'spark_nps': sparkPage = <SparkNpsPage />; break;
       case 'spark_qr_codes': sparkPage = <SparkQrCodesPage />; break;
       case 'spark_referrals': sparkPage = <SparkReferralsPage />; break;
-      case 'spark_social': sparkPage = <SparkSocialPage />; break;
       case 'spark_newsletter': sparkPage = <SparkNewsletterPage />; break;
       case 'spark_calendar': sparkPage = <SparkCalendarPage />; break;
       // SPARK Business
@@ -888,6 +900,7 @@ function ServiceRouterInner() {
       case 'spark_activity_stream': sparkPage = <SparkActivityStreamPage />; break;
       case 'spark_health_score': sparkPage = <SparkHealthScorePage />; break;
       case 'spark_dashboards': sparkPage = <SparkDashboardsPage />; break;
+      case 'spark_conversations': sparkPage = <SparkConversationsPage />; break;
       case 'spark_analytics_reports': sparkPage = <SparkAnalyticsReportsPage />; break;
       case 'spark_contact_bulk': sparkPage = <SparkContactBulkPage />; break;
       // v1.0 additions

@@ -76,6 +76,11 @@ interface Connection {
   event_count: number;
   lead_count: number;
   created_at: string;
+  /** SPARK pack 2 — a source that arrives as EMAIL has a forwarding address
+   *  instead of a key. It is ROUTING, not a secret (it lives in the client's
+   *  Bark account and in every forwarded header), so it is shown every time
+   *  rather than once. */
+  inbound_address: string | null;
 }
 
 interface InstructionCard {
@@ -89,18 +94,30 @@ interface CreateResponse {
   data: Connection;
   key: string | null;
   webhook_url: string | null;
+  inbound_address?: string | null;
   instructions: InstructionCard | null;
 }
 
-/** One of the client's own websites, and whether the chat bubble is on there. */
+/** One of the client's own websites, and whether the chat bubble is on there.
+ *
+ *  SPARK pack 2: TWO KINDS OF ROW. `arion_site` is a website we host — the
+ *  plugin injects the bubble and there is nothing to paste. `chat_property` is
+ *  a website the business added themselves, which is the case web chat did not
+ *  exist for at all until today: no site row meant no key, so a capability sold
+ *  as included from Essentials was unavailable to anyone whose website we do
+ *  not host. Everything downstream is the same code. */
 interface ChatSiteRow {
   site_id: string;
+  kind?: "arion_site" | "chat_property";
+  label?: string | null;
   domain: string | null;
   status: string | null;
   enabled: boolean;
   greeting: string | null;
   updated_at: string | null;
   updated_by: string | null;
+  /** The one line the client pastes into a website we do not host. */
+  snippet?: string | null;
 }
 
 /** The business's own phone line, and this month's texting allowance. */
@@ -247,6 +264,9 @@ export function SparkLeadSourcesPage() {
   const [chatSites, setChatSites] = useState<ChatSiteRow[]>([]);
   const [chatMeta, setChatMeta] = useState<ChatMeta | null>(null);
   const [chatBusy, setChatBusy] = useState<string | null>(null);
+  const [addingSite, setAddingSite] = useState(false);
+  const [newSite, setNewSite] = useState({ label: "", domain: "" });
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
   const [line, setLine] = useState<PhoneLineRow | null>(null);
   const [lineMeta, setLineMeta] = useState<PhoneLineMeta | null>(null);
   const [lineBusy, setLineBusy] = useState(false);
@@ -356,6 +376,52 @@ export function SparkLeadSourcesPage() {
     }
   }
 
+  /** Issue a chat key for a website we do NOT host. */
+  async function addChatSite() {
+    if (!newSite.label.trim()) return;
+    setChatBusy("new");
+    try {
+      await post("/api/v1/chat/sites", { label: newSite.label.trim(), domain: newSite.domain.trim() || null });
+      setAddingSite(false);
+      setNewSite({ label: "", domain: "" });
+      await load();
+      setNotice("Added. Copy the one line below into your website and the bubble appears on the next page load.");
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setChatBusy(null);
+    }
+  }
+
+  /** Stop serving the bubble on a website the business added. The
+   *  CONVERSATIONS ARE KEPT — they are the business's own record of who talked
+   *  to them, and they stay readable in the Conversations inbox. */
+  async function removeChatSite(site: ChatSiteRow) {
+    if (!confirm(`Stop showing the chat bubble on ${site.label || site.domain || "that website"}?\n\nThe conversations you have already had are kept.`)) return;
+    setChatBusy(site.site_id);
+    try {
+      await del(`/api/v1/chat/sites/${site.site_id}`);
+      await load();
+      setNotice("Removed. The bubble stops appearing within a minute.");
+    } catch (err) {
+      alert(friendlyApiError(err).message);
+    } finally {
+      setChatBusy(null);
+    }
+  }
+
+  async function copySnippet(site: ChatSiteRow) {
+    if (!site.snippet) return;
+    try {
+      await navigator.clipboard.writeText(site.snippet);
+      setCopiedSnippet(site.site_id);
+      setTimeout(() => setCopiedSnippet(null), 2500);
+    } catch {
+      // A browser that refuses the clipboard is not an error worth a dialog —
+      // the snippet is on screen and selectable.
+    }
+  }
+
   async function requestLine() {
     if (!confirm(
       `Ask us to set up a phone number for your business?
@@ -399,7 +465,7 @@ export function SparkLeadSourcesPage() {
     setBusy(true);
     try {
       const r = await post<CreateResponse>(`/api/v1/intake/connections/${c.id}/rotate-key`, {});
-      setIssued({ data: c, key: r.key, webhook_url: r.webhook_url, instructions: r.instructions });
+      setIssued({ data: c, key: r.key, webhook_url: r.webhook_url, inbound_address: r.inbound_address ?? null, instructions: r.instructions });
       await load();
     } catch (err) {
       alert(friendlyApiError(err).message);
@@ -409,12 +475,26 @@ export function SparkLeadSourcesPage() {
   }
 
   async function sendTest(c: Connection) {
-    if (!confirm(`Send a sample lead through “${c.label}”?\n\nA test lead will appear in your Lead Inbox, tagged “test”. A new key is issued, so you will need to paste it into the platform afterwards.`)) return;
+    // An EMAIL source's credential is held on our side and its ADDRESS does not
+    // change, so its test rotates nothing — and the confirmation must not warn
+    // about a key that is not being reissued. A webhook source's test does
+    // reissue, exactly as it always has.
+    const isEmail = c.kind === "email_forward";
+    const warning = isEmail
+      ? `Send a sample lead through “${c.label}”?\n\nA test lead will appear in your Lead Inbox, tagged “test”. Your forwarding address does not change.`
+      : `Send a sample lead through “${c.label}”?\n\nA test lead will appear in your Lead Inbox, tagged “test”. A new key is issued, so you will need to paste it into the platform afterwards.`;
+    if (!confirm(warning)) return;
     setBusy(true);
     try {
-      const r = await post<CreateResponse & { result?: string; key?: string }>(`/api/v1/intake/connections/${c.id}/test`, {});
-      setNotice(`Sample lead sent — the Lead Inbox shows it as “${c.label}”. Paste the new key below into the platform.`);
-      setIssued({ data: c, key: r.key ?? null, webhook_url: r.webhook_url ?? null, instructions: r.instructions ?? null });
+      const r = await post<CreateResponse & { result?: string; key?: string; message?: string; error?: string }>(
+        `/api/v1/intake/connections/${c.id}/test`, {}
+      );
+      setNotice(r.message
+        || `Sample lead sent — the Lead Inbox shows it as “${c.label}”.`);
+      // Nothing to re-copy for an email source, so no modal is opened over it.
+      if (!isEmail) {
+        setIssued({ data: c, key: r.key ?? null, webhook_url: r.webhook_url ?? null, instructions: r.instructions ?? null });
+      }
       await load();
     } catch (err) {
       alert(friendlyApiError(err).message);
@@ -484,7 +564,8 @@ export function SparkLeadSourcesPage() {
             <div>
               <h2 className="font-semibold text-slate-900">Inbound — your own website</h2>
               <p className="mt-0.5 text-xs text-slate-600">
-                No key, nothing to paste. These are already yours; you just switch them on.
+                A website we host needs nothing pasted. For any other website, add it below and
+                copy one line into it.
               </p>
             </div>
           </div>
@@ -500,35 +581,136 @@ export function SparkLeadSourcesPage() {
               {chatMeta?.engine ? ` Powered by ${chatMeta.engine}.` : ""}
             </p>
 
-            {chatSites.length === 0 ? (
-              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
-                We do not manage a website for this business yet, so there is nowhere to put the bubble.
+            {chatSites.length === 0 && !addingSite ? (
+              <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5 text-[11px] text-slate-600">
+                Nowhere to put the bubble yet. If we host your website it appears here on its own;
+                if we do not, add your website below and paste one line into it.
               </div>
             ) : (
               <ul className="mt-3 space-y-2">
-                {chatSites.map((site) => (
-                  <li key={site.site_id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2">
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-medium text-slate-900">{site.domain || "Your website"}</div>
-                      <div className="text-[10px] text-slate-500">
-                        {site.enabled ? "The bubble is on" : "The bubble is off"}
-                        {site.updated_by ? ` · last changed by ${site.updated_by}` : ""}
+                {chatSites.map((site) => {
+                  const hosted = site.kind !== "chat_property";
+                  const name = site.label || site.domain || "Your website";
+                  return (
+                    <li key={site.site_id} className="rounded-lg bg-slate-50 px-3 py-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-slate-900">
+                            {name}
+                            {hosted && (
+                              <span className="ml-2 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-slate-600">
+                                We host this
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            {site.enabled ? "The bubble is on" : "The bubble is off"}
+                            {site.updated_by ? ` · last changed by ${site.updated_by}` : ""}
+                          </div>
+                        </div>
+                        <div className="flex flex-shrink-0 items-center gap-3">
+                          <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+                            <input
+                              type="checkbox"
+                              checked={site.enabled}
+                              disabled={chatBusy === site.site_id}
+                              onChange={(e) => toggleChat(site, e.target.checked)}
+                              className="h-4 w-4 rounded border-slate-300"
+                              aria-label={`Website chat on ${name}`}
+                            />
+                            {site.enabled ? "On" : "Off"}
+                          </label>
+                          {!hosted && (
+                            <button
+                              onClick={() => removeChatSite(site)}
+                              disabled={chatBusy === site.site_id}
+                              className="text-[11px] font-semibold text-slate-500 underline hover:text-rose-700"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
-                      <input
-                        type="checkbox"
-                        checked={site.enabled}
-                        disabled={chatBusy === site.site_id}
-                        onChange={(e) => toggleChat(site, e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                        aria-label={`Website chat on ${site.domain || "your website"}`}
-                      />
-                      {site.enabled ? "On" : "Off"}
-                    </label>
-                  </li>
-                ))}
+
+                      {/* The one line to paste. Shown for a website we do not
+                          host — and for one we do, because a client who moves
+                          their site off our hosting should not lose the bubble
+                          in the move. */}
+                      {site.snippet && (
+                        <div className="mt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                            {hosted ? "If you move this website elsewhere, paste this" : "Paste this into your website, just before </body>"}
+                          </div>
+                          <div className="mt-1 flex items-start gap-2">
+                            <code className="min-w-0 flex-1 break-all rounded bg-white px-2 py-1.5 font-mono text-[10px] text-slate-700 ring-1 ring-slate-200">
+                              {site.snippet}
+                            </code>
+                            <button
+                              onClick={() => copySnippet(site)}
+                              className="flex-shrink-0 rounded bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
+                            >
+                              {copiedSnippet === site.site_id ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
+            )}
+
+            {addingSite ? (
+              <div className="mt-3 rounded-lg border-2 border-[#EF6C33] bg-orange-50 p-3">
+                <div className="text-xs font-bold text-slate-900">Add a website</div>
+                <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  <label className="text-xs">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                      What do you call it? *
+                    </div>
+                    <input
+                      value={newSite.label}
+                      onChange={(e) => setNewSite({ ...newSite, label: e.target.value })}
+                      placeholder="Main website"
+                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33]"
+                      autoFocus
+                    />
+                  </label>
+                  <label className="text-xs">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                      Its address (optional)
+                    </div>
+                    <input
+                      value={newSite.domain}
+                      onChange={(e) => setNewSite({ ...newSite, domain: e.target.value })}
+                      placeholder="fernbrook.com"
+                      className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-[#EF6C33]"
+                    />
+                  </label>
+                </div>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={addChatSite}
+                    disabled={chatBusy === "new" || !newSite.label.trim()}
+                    className="rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
+                  >
+                    {chatBusy === "new" ? "Adding…" : "Add it"}
+                  </button>
+                  <button
+                    onClick={() => { setAddingSite(false); setNewSite({ label: "", domain: "" }); }}
+                    className="text-xs font-semibold text-slate-600 underline"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setAddingSite(true)}
+                className="mt-3 rounded border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                + Add a website we do not host
+              </button>
             )}
 
             {/* What a visitor is actually told, and where the words come from. */}
@@ -796,13 +978,44 @@ export function SparkLeadSourcesPage() {
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-slate-900 truncate">{c.label}</div>
                           <div className="text-[10px] text-slate-500">
-                            {c.key_prefix ? `Key ${c.key_prefix}…` : "No key"} · {c.lead_count} lead{c.lead_count === 1 ? "" : "s"} · last delivery {when(c.last_event_at)}
+                            {c.inbound_address
+                              ? "Arrives by email"
+                              : (c.key_prefix ? `Key ${c.key_prefix}…` : "No key")}
+                            {" · "}{c.lead_count} lead{c.lead_count === 1 ? "" : "s"} · last delivery {when(c.last_event_at)}
                           </div>
                         </div>
                         <span className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ring-1 ${chip.cls}`}>
                           {chip.label}
                         </span>
                       </div>
+
+                      {/* A forwarding address is routing, not a secret, so it
+                          is on the card — a client who has to ask support for
+                          their own address has a feature they cannot use. */}
+                      {c.inbound_address && (
+                        <div className="mt-2">
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                            Send your {c.provider_label} leads to
+                          </div>
+                          <div className="mt-1 flex items-start gap-2">
+                            <code className="min-w-0 flex-1 break-all rounded bg-slate-50 px-2 py-1.5 font-mono text-[11px] text-slate-700 ring-1 ring-slate-200">
+                              {c.inbound_address}
+                            </code>
+                            <button
+                              onClick={() => {
+                                navigator.clipboard?.writeText(c.inbound_address as string).then(
+                                  () => setCopiedSnippet(`conn-${c.id}`),
+                                  () => undefined
+                                );
+                                setTimeout(() => setCopiedSnippet(null), 2500);
+                              }}
+                              className="flex-shrink-0 rounded bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white"
+                            >
+                              {copiedSnippet === `conn-${c.id}` ? "Copied" : "Copy"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
 
                       {c.last_error && (
                         <div className="mt-2 flex items-start gap-1.5 rounded bg-rose-50 px-2 py-1.5 text-[11px] text-rose-900">
@@ -878,7 +1091,9 @@ export function SparkLeadSourcesPage() {
         product="spark"
         eyebrow="SPARK · LEAD SOURCES"
         title={issued?.instructions?.title || "Your webhook details"}
-        subtitle="Copy both of these into the platform now — the key is not shown again."
+        subtitle={issued?.inbound_address
+          ? "Copy this address into the platform. It does not change, so you can come back for it."
+          : "Copy both of these into the platform now — the key is not shown again."}
         size="lg"
         footer={
           <div className="flex justify-end">
@@ -889,6 +1104,7 @@ export function SparkLeadSourcesPage() {
         <div className="p-4 space-y-4">
           {issued?.webhook_url && <CopyField label="Webhook URL" value={issued.webhook_url} />}
           {issued?.key && <CopyField label="Key" value={issued.key} once />}
+          {issued?.inbound_address && <CopyField label="Your forwarding address" value={issued.inbound_address} />}
 
           {issued?.instructions && (
             <div>

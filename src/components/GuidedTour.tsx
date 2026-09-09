@@ -586,12 +586,6 @@ export const SPARK_QUICK_TOUR: TourDef = {
       placement: "right",
     },
     {
-      title: "Outreach — Social & Calendar",
-      body: "Schedule posts across channels; see what's queued and what's already shipped.",
-      targetSelector: "a[href='/app/services/spark_social']",
-      placement: "right",
-    },
-    {
       title: "Outreach — Deliverability",
       body: "Sender reputation, bounce rates, complaint feedback. Catches problems before they tank your domain.",
       targetSelector: "a[href='/app/services/spark_deliverability']",

@@ -213,7 +213,21 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
     <SparkPageShell
       title="Lead Inbox"
       subtitle="B2B leads, suppression list, and territories — all in one place"
-      actions={<LeadGenTermsLink />}
+      actions={
+        <div className="flex items-center gap-3">
+          {/* SPARK pack 2: the way through to everything that has NOT become a
+              lead. Somebody texting "hi", or opening the chat bubble and typing
+              before they say what they want, never appears in this inbox — and
+              until Conversations existed they appeared nowhere at all. */}
+          <a
+            href="/app/services/spark_conversations"
+            className="text-xs font-semibold text-slate-600 underline hover:text-[#EF6C33]"
+          >
+            Conversations
+          </a>
+          <LeadGenTermsLink />
+        </div>
+      }
     >
       {/* Tab strip. Brandon's locked SPARK pattern: orange underline for the
           active tab, slate text for inactive, with a small (?) info button

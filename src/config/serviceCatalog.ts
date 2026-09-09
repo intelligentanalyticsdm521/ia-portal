@@ -328,12 +328,15 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_nps', displayName: 'NPS', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_nps', description: 'Net Promoter Score tracking, promoters/detractors, review routing (Pro).' },
   { key: 'spark_qr_codes', displayName: 'QR Codes', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_qr_codes', description: 'Dynamic QR generator with UTM + scan analytics (Pro).' },
   { key: 'spark_referrals', displayName: 'Referrals', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_referrals', description: 'Customer referral programs, tracking, rewards, leaderboard (Pro).' },
-  { key: 'spark_social', displayName: 'Social Scheduler', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_social', description: 'Schedule + analyze posts across FB/IG/LI/X/GBP (Pro).' },
+  // spark_social DELETED 2026-09-09 (SPARK pack 2): it scheduled posts nothing
+  // would ever publish. The row stays out of the catalog entirely; the route
+  // redirects to My Brand, which has the composer that actually sends.
+  { key: 'spark_conversations', displayName: 'Conversations', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_conversations', description: 'Every text, call, voicemail and website chat, including the ones that have not become a lead yet.' },
   { key: 'spark_newsletter', displayName: 'Newsletter Studio', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_newsletter', description: 'Newsletter editions with auto-publish to WordPress (Pro).' },
   { key: 'spark_calendar', displayName: 'Content Calendar', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_calendar', description: 'Unified content calendar: campaigns, social, newsletters (Pro).' },
   // SPARK Business tier
   { key: 'spark_landing_pages', displayName: 'Landing Pages', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_landing_pages', description: 'Hosted landing page builder with submission capture (Business).' },
-  { key: 'spark_reviews', displayName: 'Reputation Hub', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_reviews', description: 'Aggregated reviews across Google/Yelp/Facebook + response workflow (Business).' },
+  { key: 'spark_reviews', displayName: 'Reputation Hub', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_reviews', description: 'Your reviews in one place, and a reply we post on Google for you.' },
   { key: 'spark_accounts', displayName: 'Companies', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_accounts', description: 'Group contacts under company entities with auto-domain matching + health scoring.' },
   { key: 'spark_ai_writer', displayName: 'AI Writer', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_ai_writer', description: 'Write an email, five subject lines, or improve copy you already have. Each one shows what it costs before you press it.' },
   // Cross-platform
@@ -496,18 +499,18 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // (ARION > Your Brand), now routed to MyBrandLandingPage; these rows register
   // the 9 sub-page routes the hub tiles deep-link to. Backend access is
   // fail-closed via MY_BRAND_LAUNCHED (LUMEN lib/myBrand/tierCheck.js) until launch.
-  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.', tierGate: 'Standard' },
-  { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_voice', description: 'Capture your voice profile and check any copy for drift before you publish.' },
+  { key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_image_studio', description: 'Generate on-brand images from a prompt — uses your brand colors, fonts, and logo.', tierGate: 'Standard' },
+  { key: 'my_brand_voice', displayName: 'Brand Voice', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_voice', description: 'Capture your voice profile and check any copy for drift before you publish.' },
   // Renames 2026-07-22 (Brandon's re-cut, MY_BRAND_RECUT doc): Template
   // Studio → Design Studio, Asset Library → Media Library, Calendar+Composer
   // → Social Hub. Keys stay stable — routes and deep links are unchanged.
-  { key: 'my_brand_templates', displayName: 'Design Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_templates', description: 'Design social posts, ads, and email banners from brand-locked templates.', tierGate: 'Standard' },
-  { key: 'my_brand_assets', displayName: 'Media Library', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
-  { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube, and Google Business.', tierGate: 'Standard' },
-  { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once, publish to every connected channel with per-channel preview.', tierGate: 'Standard' },
-  { key: 'my_brand_calendar', displayName: 'Social Hub', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Compose, schedule, and re-arrange posts across every connected channel.', tierGate: 'Standard' },
-  { key: 'my_brand_social_content', displayName: 'Social Content', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_content', description: 'Every published and scheduled post with per-post metrics, filters, and the full social report.', tierGate: 'Standard' },
-  { key: 'my_brand_social_report', displayName: 'Social Report', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_report', description: 'Totals and daily trends across connected platforms. Reached from Social Content, not the nav.', tierGate: 'Standard' },
+  { key: 'my_brand_templates', displayName: 'Design Studio', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_templates', description: 'Design social posts, ads, and email banners from brand-locked templates.', tierGate: 'Standard' },
+  { key: 'my_brand_assets', displayName: 'Media Library', section: 'MY_BRAND', defaultStatus: 'enabled', route: '/app/services/my_brand_assets', description: 'Central library for logos, photos, generated images, and finished designs.' },
+  { key: 'my_brand_social_channels', displayName: 'Social Channels', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_channels', description: 'Connect Facebook, Instagram, LinkedIn, X, TikTok, YouTube and Google Business. Each platform has to approve our app for your business before we can connect it, and those reviews are with them.', tierGate: 'Standard' },
+  { key: 'my_brand_compose', displayName: 'Composer', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_compose', description: 'Compose once and publish to every connected channel. Waiting on the same platform approvals as Social Channels — until they land, finished posts download for you to put up yourself.', tierGate: 'Standard' },
+  { key: 'my_brand_calendar', displayName: 'Social Hub', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_calendar', description: 'Compose, schedule and re-arrange posts across every connected channel. Waiting on the same platform approvals as Social Channels.', tierGate: 'Standard' },
+  { key: 'my_brand_social_content', displayName: 'Social Content', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_content', description: 'Every published and scheduled post with its numbers. Fills up once channels can connect.', tierGate: 'Standard' },
+  { key: 'my_brand_social_report', displayName: 'Social Report', section: 'MY_BRAND', defaultStatus: 'coming_soon', route: '/app/services/my_brand_social_report', description: 'Totals and daily trends across connected platforms. Fills up once channels can connect.', tierGate: 'Standard' },
   // IA re-cut 2026-07-21 (Brandon): my_brand_analytics REMOVED — social
   // reporting lives in ARION IA Insights (Trends/Intelligence); the router
   // redirects the old key. my_brand_approvals REMOVED — the approval queue is
