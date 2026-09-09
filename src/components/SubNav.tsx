@@ -271,6 +271,14 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_website_ai_builder", label: "AI Builder", route: "/app/services/arion_website_ai_builder", tag: { label: "IL", color: "#38BDF8" } },
         { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },
         { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
+        // Pre-walk pass 3b, 2026-09-09. ARION pack 2 put the website chat
+        // bubble and the "Book now" button on this page — the two switches that
+        // used to exist ONLY on a WordPress settings screen — and the pack's
+        // walk rows all begin "Website → Settings". There was no such entry:
+        // the pinned Settings gear that used to reach it was removed in the
+        // nav restructure (f11cc50), long before pack 2, so the page has had no
+        // door at all since. Reachable only by typing the URL is not reachable.
+        { key: "arion_website_settings", label: "Settings", route: "/app/services/arion_website_settings" },
       ],
     },
     {

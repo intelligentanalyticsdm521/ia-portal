@@ -404,7 +404,12 @@ export function WebsiteDesign() {
       {/* ── Header ────────────────────────────────────────────────────── */}
       <Card
         title="The top of every page"
-        subtitle={chrome ? `Set through your website’s design (${chrome.theme}).` : undefined}
+        // No vendor's name on a client's screen (walk rows A2-14, A2-54, and
+        // feedback_no_third_party_product_surface): this said
+        // "…(Hello Elementor)" and printed the theme vendor's brand on the one
+        // page the pack exists to make vendor-free. `chrome.theme` is still on
+        // the payload for our own diagnostics; it is not for a client to read.
+        subtitle={chrome ? 'Set through your website’s design.' : undefined}
         style={{ marginTop: 12 }}
       >
         {headerFields.map(renderField)}
