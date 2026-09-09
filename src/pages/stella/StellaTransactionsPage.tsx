@@ -22,12 +22,16 @@
 // reimbursable pill below).
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
+import { Lock } from "lucide-react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, type Column } from "../../components/oliver/ui";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 import type { CoaAccount } from "./RecordTransactionModal";
 import { TransactionDetailModal } from "./TransactionDetailModal";
 import { RecurringTab } from "./RecurringTab";
+// STELLA pack 2, item 5 — several payments, one bank line. The panel shows
+// itself only when there IS money waiting to be banked.
+import { DepositGroupingPanel } from "./DepositGroupingPanel";
 
 // GET /ledger/transactions returns stella.[transaction] rows (t.*).
 interface StellaTransaction {
@@ -49,6 +53,14 @@ interface StellaTransaction {
   job_title?: string | null;
   // Split lines (pack 1, item 9) — the API returns the count on every row.
   split_count?: number | null;
+  // STELLA pack 2, item 11a. period_locked has been stamped by period close
+  // since the double-entry migration and NOTHING has ever read it — a column
+  // that was written and never believed. The register reads it now, to show a
+  // padlock. It is NOT the refusal: refusing an edit is decided server-side
+  // from the period's dates, which stays the one mechanism.
+  in_closed_period?: boolean | number | null;
+  // Which bank deposit this payment was banked in, if any (pack 2, item 5).
+  deposit_id?: string | null;
 }
 
 // Month money-bar slice of GET /ledger/overview (envelope unwrapped).
@@ -330,8 +342,22 @@ export function StellaTransactionsPage() {
         const key = r.status || "needs_categorization";
         const p = STATUS_PILL[key] || STATUS_PILL.needs_categorization;
         return (
-          <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 99, background: p.bg, color: p.color, fontSize: 11, fontWeight: 600 }}>
-            {key.replace(/_/g, " ")}
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ display: "inline-block", padding: "3px 9px", borderRadius: 99, background: p.bg, color: p.color, fontSize: 11, fontWeight: 600 }}>
+              {key.replace(/_/g, " ")}
+            </span>
+            {/* The padlock the closed-period column exists for. Opening the row
+                still works — reading a closed month is fine; it is CHANGING it
+                that is refused, and the refusal names the month and the way to
+                reopen it. */}
+            {!!r.in_closed_period && (
+              <span
+                title="This month is closed. You can look at this line; changing it is refused until the month is reopened under Settings → Period Close."
+                style={{ display: "inline-flex", alignItems: "center", color: "#64748B" }}
+              >
+                <Lock size={11} />
+              </span>
+            )}
           </span>
         );
       },
@@ -389,6 +415,14 @@ export function StellaTransactionsPage() {
           {moneyTile("Net", toNum(money.net), "all", toNum(money.net) >= 0 ? "#047857" : "#B91C1C")}
         </div>
       )}
+
+      {/* Money taken in and not yet banked (STELLA pack 2, item 5). The panel
+          renders nothing at all when there is none, which is the normal state
+          for a business that takes cards. */}
+      <DepositGroupingPanel
+        accounts={coa}
+        onDeposited={(msg) => { flashMsg(msg); reload(); }}
+      />
 
       <StellaTabs tabs={TABS} active={tab} onChange={setTab} dataTour="stella-txn-tabs" />
 

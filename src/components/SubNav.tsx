@@ -5,6 +5,7 @@ import {
   Search as SearchIcon, MapPin, Star, ChevronDown, Settings,
   Users, Megaphone, Briefcase, Heart, Target, Sparkles,
   Wrench, UserCircle, CreditCard, MessageSquare, LineChart, Zap, Palette, Lock,
+  Wallet,
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 import {
@@ -751,6 +752,17 @@ const STELLA_NAV: SubNavConfig = {
       ],
     },
     {
+      // STELLA pack 2 — a group of its own rather than a ninth item in Ledger:
+      // the Ledger group is at the 8-item cap, and these three are read as a
+      // set (what you owe · what you own · what you planned).
+      label: "Bills, Assets & Budgets", icon: Wallet, collapsible: true, sectionId: "stella_books",
+      items: [
+        { key: "stella_bills", label: "Bills", route: "/app/services/stella_bills" },
+        { key: "stella_assets", label: "Assets", route: "/app/services/stella_assets" },
+        { key: "stella_budgets", label: "Budgets", route: "/app/services/stella_budgets" },
+      ],
+    },
+    {
       label: "Unit Economics", icon: LineChart, collapsible: true, sectionId: "stella_ue",
       items: [
         { key: "stella_ue_margins", label: "Margins", route: "/app/services/stella_ue_margins" },
@@ -925,6 +937,7 @@ const SETTINGS_NAV: SubNavConfig = {
         // hijacking the STELLA SubNav — the stella_settings_coming trap).
         { key: "stella_settings_bank", label: "Bank and card accounts", route: "/app/services/stella_settings_bank" },
         { key: "stella_settings_period_close", label: "Period Close", route: "/app/services/stella_settings_period_close" },
+        { key: "stella_settings_sales_tax", label: "Sales tax", route: "/app/services/stella_settings_sales_tax" },
       ],
     },
     {
@@ -1081,7 +1094,9 @@ function getDefaultSection(path: string): string | null {
     path.includes("/spark_service_category") ||
     path.includes("/spark_config_backup")
   ) return "settings_spark";
-  if (path.includes("/stella_settings_bank") || path.includes("/stella_settings_period_close")) return "settings_stella";
+  if (path.includes("/stella_settings_bank") || path.includes("/stella_settings_period_close")
+      || path.includes("/stella_settings_sales_tax")) return "settings_stella";
+  if (path.includes("/stella_bills") || path.includes("/stella_assets") || path.includes("/stella_budgets")) return "stella_books";
 
   // STELLA sections (Ledger / Unit Economics / IA Insights / Database Manager / Custom Reporting)
   // Reports moved under IA Insights (2026-07-30) — check it BEFORE the

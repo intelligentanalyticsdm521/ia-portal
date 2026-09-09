@@ -1,7 +1,15 @@
 /**
- * useOliverRole — Loads the caller's OLIVER role + capability flags from
- * GET /overview/me. Cached in module-scoped state so every consumer shares
- * one network round-trip per session.
+ * useOliverRole — Loads the caller's role + capability flags for THIS business.
+ * Cached in module-scoped state so every consumer shares one round trip.
+ *
+ * TWO DOORS ONTO ONE PERSON (STELLA pack 2, item 11c). GET /overview/me sits
+ * behind the field-service entitlement, so a business that bought the
+ * bookkeeping and not OLIVER could never resolve an accountant: the role row
+ * could be written and nothing could read it back, and "invite my accountant"
+ * is an easy thing to promise on a call. When that door is shut, this asks the
+ * bookkeeping one — GET /ledger/me — which returns the SAME payload from the
+ * same shared module on the server, so the two can never describe one person
+ * differently.
  *
  * Returned shape mirrors the API:
  *   role: 'admin' | 'accountant'
@@ -14,6 +22,7 @@
 
 import { useEffect, useState } from "react";
 import { useOliverApi } from "./useOliverApi";
+import { useStellaApi } from "./useStellaApi";
 
 export interface OliverRoleInfo {
   role: "admin" | "accountant";
@@ -46,6 +55,7 @@ let inflight: Promise<OliverRoleInfo> | null = null;
 
 export function useOliverRole(): { roleInfo: OliverRoleInfo; ready: boolean } {
   const { get, ready } = useOliverApi();
+  const stella = useStellaApi();
   const [roleInfo, setRoleInfo] = useState<OliverRoleInfo>(
     cachedRoleInfo ?? DEFAULT_ROLE_INFO,
   );
@@ -61,9 +71,17 @@ export function useOliverRole(): { roleInfo: OliverRoleInfo; ready: boolean } {
           cachedRoleInfo = r;
           return r;
         })
+        // The field-service door is not open to this business. Try the
+        // bookkeeping one before giving up — a STELLA-only business has an
+        // accountant too. One extra request, and only for those businesses.
+        .catch(() => stella.get<OliverRoleInfo>("/ledger/me")
+          .then((r) => {
+            cachedRoleInfo = r;
+            return r;
+          }))
         .catch(() => {
-          // On error, default to admin so we never lock out a real user
-          // because of a transient network glitch.
+          // Neither door answered. Default to admin so we never lock out a
+          // real user over a transient network glitch.
           cachedRoleInfo = DEFAULT_ROLE_INFO;
           return DEFAULT_ROLE_INFO;
         })
@@ -81,7 +99,7 @@ export function useOliverRole(): { roleInfo: OliverRoleInfo; ready: boolean } {
     return () => {
       cancelled = true;
     };
-  }, [ready, get]);
+  }, [ready, get, stella]);
 
   return { roleInfo, ready: resolved };
 }

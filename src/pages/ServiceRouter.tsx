@@ -340,6 +340,12 @@ const StellaCoaPage = lazyNamed(() => import('./stella/StellaCoaPage'), 'StellaC
 const StellaVendorsPage = lazyNamed(() => import('./stella/StellaVendorsPage'), 'StellaVendorsPage');
 const StellaReportsPage = lazyNamed(() => import('./stella/StellaReportsPage'), 'StellaReportsPage');
 const StellaComingSoonPage = lazyNamed(() => import('./stella/StellaComingSoonPage'), 'StellaComingSoonPage');
+// STELLA pack 2 — what you owe, what you own, what you planned, and the tax you
+// charge. All four are real pages over real routes; none of them is a sheet.
+const StellaBillsPage = lazyNamed(() => import('./stella/StellaBillsPage'), 'StellaBillsPage');
+const StellaAssetsPage = lazyNamed(() => import('./stella/StellaAssetsPage'), 'StellaAssetsPage');
+const StellaBudgetsPage = lazyNamed(() => import('./stella/StellaBudgetsPage'), 'StellaBudgetsPage');
+const StellaSalesTaxPage = lazyNamed(() => import('./stella/StellaSalesTaxPage'), 'StellaSalesTaxPage');
 // Database Manager (Layer 3a) — real as of the STELLA Layer 3 build.
 const StellaViewRegistryPage = lazyNamed(() => import('./stella/dbmanager/ViewRegistryPage'), 'StellaViewRegistryPage');
 const StellaManualEntryPage = lazyNamed(() => import('./stella/dbmanager/ManualEntryPage'), 'StellaManualEntryPage');
@@ -645,6 +651,11 @@ function ServiceRouterInner() {
       case 'stella_ledger_reports': stellaPage = <StellaReportsPage />; break;
       case 'stella_ledger_receipts': stellaPage = <StellaReceiptsPage />; break;
       case 'stella_ledger_accounting': stellaPage = <StellaAccountingPage />; break;
+      // STELLA pack 2 — bills (accounts payable), the asset register and the
+      // budget. Daily-work nav, beside the ledger.
+      case 'stella_bills': stellaPage = <StellaBillsPage />; break;
+      case 'stella_assets': stellaPage = <StellaAssetsPage />; break;
+      case 'stella_budgets': stellaPage = <StellaBudgetsPage />; break;
       // Unit Economics (Layer 2 — live)
       case 'stella_ue_margins': stellaPage = <StellaMarginsPage />; break;
       case 'stella_ue_allocations': stellaPage = <StellaAllocationsPage />; break;
@@ -654,6 +665,9 @@ function ServiceRouterInner() {
       // pages themselves stay STELLA-branded.
       case 'stella_settings_bank': stellaPage = <StellaBankPage />; break;
       case 'stella_settings_period_close': stellaPage = <StellaPeriodCloseRealPage />; break;
+      // Rates and what they apply to are SETTINGS; the return itself is a
+      // report (Reports → Sales Tax).
+      case 'stella_settings_sales_tax': stellaPage = <StellaSalesTaxPage />; break;
       // IA Insights — Trends + Intelligence build AFTER the Aug-6 insights
       // redesign, following that structure (founder direction 2026-07-30).
       // Reports (stella_ledger_reports) is the live financial-statements page.

@@ -39,6 +39,21 @@ interface InboxItem {
   trust_flags?: string[] | null;
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
+  // STELLA pack 2, item 3 — what the ledger LEARNED from the owner correcting
+  // rows like this one before. A suggestion, never an answer: nothing is
+  // applied until somebody presses Categorize, because setting the account is
+  // what puts the line in the books.
+  suggestion?: {
+    coa_account_id: string;
+    coa_code: string | null;
+    account_name: string | null;
+    confidence: number;
+    matched_on: string;
+    matched_value: string;
+    hit_count: number;
+    source: string;
+    why: string;
+  } | null;
 }
 
 const STATUS_PILL: Record<string, { bg: string; color: string; label: string }> = {
@@ -237,6 +252,16 @@ export function StellaLedgerInboxPage() {
     try {
       const data = await get<InboxItem[]>("/ledger/inbox");
       setRows(data || []);
+      // Pre-select what we learned, so accepting a suggestion is ONE press and
+      // disagreeing with it is a normal change of the same picker. A suggestion
+      // that had to be typed out again would teach nobody anything.
+      setPicks((prev) => {
+        const next = { ...prev };
+        for (const r of data || []) {
+          if (r.suggestion && !next[r.transaction_id]) next[r.transaction_id] = r.suggestion.coa_account_id;
+        }
+        return next;
+      });
     } catch (e) {
       setError(e);
     } finally {
@@ -377,6 +402,24 @@ export function StellaLedgerInboxPage() {
           </span>
         );
       },
+    },
+    {
+      key: "suggestion",
+      header: "What we think",
+      render: (r) =>
+        r.suggestion ? (
+          <span
+            title={`${r.suggestion.why}. Nothing is saved until you press Categorize.`}
+            style={{ display: "inline-flex", flexDirection: "column", gap: 1 }}
+          >
+            <span style={{ fontSize: 11, fontWeight: 600, color: STELLA_INDIGO }}>
+              {r.suggestion.account_name || "—"}
+            </span>
+            <span style={{ fontSize: 10, color: "#94A3B8" }}>{r.suggestion.why}</span>
+          </span>
+        ) : (
+          <span style={{ fontSize: 11, color: "#CBD5E1" }}>—</span>
+        ),
     },
     {
       key: "categorize",

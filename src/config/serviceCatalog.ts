@@ -166,7 +166,11 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'stella_ledger_mileage_materials', displayName: 'Mileage & Materials', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_mileage_materials', description: 'Job-cost capture — business miles at the IRS deduction rate, and job materials that feed per-job margin.' },
   { key: 'stella_ledger_receipts', displayName: 'Receipts', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_receipts', description: 'Snap or upload a receipt, type the vendor, date, amount and tax, and book it — the file stays attached to the transaction.' },
   { key: 'stella_ledger_accounting', displayName: 'Accounting', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_accounting', description: 'Journal entries, bank reconciliation with CSV statement import, and a record of who changed what.' },
-  { key: 'stella_ledger_reports', displayName: 'Reports', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_reports', description: 'Financial statements in one place — P&L, Balance Sheet, Cash Flow, AR/AP Aging, Sales Tax, the 1099 worksheet, and the accountant hand-off pack.' },
+  { key: 'stella_ledger_reports', displayName: 'Reports', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_reports', description: 'Financial statements in one place — P&L, Balance Sheet, Statement of Cash Flows, AR and AP Aging, the sales-tax return, 1099-NEC forms, and the accountant hand-off pack.' },
+  // STELLA pack 2 — the three surfaces that close the QuickBooks gap.
+  { key: 'stella_bills', displayName: 'Bills', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_bills', description: 'What you owe your suppliers — record a bill when it arrives, pay it in part or in full, and see what is overdue.' },
+  { key: 'stella_assets', displayName: 'Assets', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_assets', description: 'Vehicles, machines and tools the business owns, and the slice of their cost that belongs to each month.' },
+  { key: 'stella_budgets', displayName: 'Budgets', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_budgets', description: 'What you planned to earn and spend, beside what actually happened — from your books, on either basis.' },
   // UNIT ECONOMICS (Layer 2 — LIVE). Allocation Rules + Runs merged into one
   // two-tab Allocations page in the same consolidation.
   { key: 'stella_ue_margins', displayName: 'Margins', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ue_margins', description: 'Profitability per job, per customer, per employee, and per service line.' },
@@ -200,6 +204,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // stella_settings_coming placeholder.)
   { key: 'stella_settings_bank', displayName: 'Bank and card accounts', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_settings_bank', description: 'Link the accounts your business runs on — bank and card feeds, plus the personal-card business-use designation.' },
   { key: 'stella_settings_period_close', displayName: 'Period Close', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_settings_period_close', description: 'Close a month, lock prior periods, and post adjusting entries.' },
+  { key: 'stella_settings_sales_tax', displayName: 'Sales tax', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_settings_sales_tax', description: 'The sales-tax rates you charge and which of your services are taxable. You keep the rates current — automatic rate updates are a 2027 decision.' },
   // Back-compat aliases for the retired 0.1.0 MLP deep links. Not shown in any
   // nav (coming_soon keeps them out of GlobalSearch); ServiceRouter redirects
   // them to the live Ledger equivalents so old bookmarks / email CTAs don't 404.
