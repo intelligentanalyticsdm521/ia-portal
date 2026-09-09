@@ -1532,9 +1532,11 @@ export async function runPageSpeed(params: { baseUrl: string; bearerToken: strin
   return requestJson<any>({ ...params, method: 'POST', path: `/arion/hosting/pagespeed?siteId=${encodeURIComponent(params.siteId)}`, body });
 }
 
-export async function updateContentSeo(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; postId: string; fields: Record<string, string> }) {
-  return requestJson<any>({ ...params, method: 'PUT', path: `/arion/sites/${encodeURIComponent(params.siteId)}/content-seo/${encodeURIComponent(params.postId)}`, body: params.fields });
-}
+// updateContentSeo is DELETED (2026-09-08, ARION pack 1). It PUT to a route
+// that needed a WP application password nothing has ever written, so it could
+// not have worked on any client site, and no component called it. The three
+// search-engine fields live in the page-settings sheet now and go through
+// saveSitePageSeo, which rides the same site token as every other write.
 
 export async function submitConsultingInquiry(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; serviceType: string; description: string; triggerPage: string; contactPref?: string }) {
   return requestJson<any>({ ...params, method: 'POST', path: `/arion/sites/${encodeURIComponent(params.siteId)}/consulting-inquiry`, body: { service_type: params.serviceType, description: params.description, trigger_page: params.triggerPage, contact_pref: params.contactPref || 'email' } });

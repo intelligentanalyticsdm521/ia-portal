@@ -80,7 +80,6 @@ import {
   deleteDnsRecords as portalDeleteDnsRecords,
   runPageSpeed as portalRunPageSpeed,
   getContentSeo as portalGetContentSeo,
-  updateContentSeo as portalUpdateContentSeo,
   getVulnerabilities as portalGetVulnerabilities,
   submitConsultingInquiry as portalSubmitConsultingInquiry,
   getPagespeedHistory as portalGetPagespeedHistory,
@@ -776,11 +775,6 @@ export function useArionContext() {
       async getContentSeo(siteId: string) {
         const b = await base();
         return portalGetContentSeo({ ...b, siteId });
-      },
-
-      async updateContentSeo(siteId: string, postId: string, fields: Record<string, string>) {
-        const b = await base();
-        return portalUpdateContentSeo({ ...b, siteId, postId, fields });
       },
 
       async getVulnerabilities(siteId: string) {
