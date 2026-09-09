@@ -28,6 +28,14 @@ interface Worker {
   skills?: string[] | string | null;
   /** Multi-location — locations this worker serves (GET/PATCH /workers/:id). */
   location_ids?: string[] | string | null;
+  // OLIVER pack 2 — has this person ever been handed the address of the crew
+  // app, and have they used it? A fact from oliver.portal_invite. Creating a
+  // worker used to send them nothing at all, so the crew app went unused
+  // because nobody had been told it existed.
+  portal_status?: "never_invited" | "invited" | "signed_in";
+  invited_at?: string | null;
+  first_signin_at?: string | null;
+  last_seen_at?: string | null;
 }
 
 // F-74 — formal categories (drawn from oliver.service_category) the worker
@@ -61,6 +69,31 @@ const FILTER_PILLS = [
 export function OliverWorkersPage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
   const { get, post, patch, put, ready } = useOliverApi();
+  // OLIVER pack 2 — the crew invite. One person at a time, from the row: a
+  // business has a handful of crew, and "invite everybody" is not an act
+  // anybody needs.
+  const [inviting, setInviting] = useState<string | null>(null);
+  const [inviteNote, setInviteNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function inviteWorker(w: Worker) {
+    setInviting(w.id);
+    setInviteNote(null);
+    try {
+      const r = await post<{ ok: boolean; status: string; reason: string | null; email: string | null; portalUrl: string | null }>(
+        `/workers/${w.id}/invite`, {},
+      );
+      // What actually happened, per person, in words. "Invited" over a message
+      // the gate suppressed is the failure this platform keeps rediscovering.
+      setInviteNote(r.ok
+        ? { ok: true, text: `Sent to ${r.email}. It carries ${r.portalUrl} — the same address every time, and it does not expire.` }
+        : { ok: false, text: `Not sent to ${w.first_name}: ${workerInviteReason(r.reason, r.status)}` });
+      await reload();
+    } catch (e) {
+      setInviteNote({ ok: false, text: e instanceof Error ? e.message : "The invitation was not sent." });
+    } finally {
+      setInviting(null);
+    }
+  }
   const loc = useOliverLocations();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -126,6 +159,36 @@ export function OliverWorkersPage() {
         : <span style={{ color: "#94A3B8", fontSize: 12 }}>—</span>,
     },
     { key: "status", header: "Status", render: (w) => <StatusBadge status={w.status} /> },
+    {
+      key: "portal", header: "Crew app", sortable: true,
+      sortAccessor: (w) => w.portal_status ?? "never_invited",
+      render: (w) => {
+        const st = w.portal_status ?? "never_invited";
+        if (st === "signed_in") {
+          return <span style={{ fontSize: 12, fontWeight: 600, color: "#059669" }}>
+            Signed in{w.last_seen_at ? ` · ${new Date(w.last_seen_at).toLocaleDateString()}` : ""}
+          </span>;
+        }
+        return (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 12, color: st === "invited" ? "#B45309" : "#94A3B8", fontWeight: st === "invited" ? 600 : 400 }}>
+              {st === "invited" ? "Invited" : "Never invited"}
+            </span>
+            <button
+              onClick={(e) => { e.stopPropagation(); void inviteWorker(w); }}
+              disabled={inviting === w.id || w.status !== "active"}
+              title={w.status !== "active" ? "Only an active crew member can be invited" : "Send them the address of the crew app"}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 999, cursor: "pointer",
+                border: "1px solid rgba(45,156,219,0.35)", background: "#FFFFFF", color: "#1D4ED8",
+              }}
+            >
+              {inviting === w.id ? "Sending…" : st === "invited" ? "Send again" : "Invite"}
+            </button>
+          </span>
+        );
+      },
+    },
     ...(loc.multi ? [{
       key: "locations", header: "Locations",
       render: (w: Worker) => {
@@ -145,6 +208,22 @@ export function OliverWorkersPage() {
         subtitle="Manage your workers and their weekly availability"
         actions={<Button variant="primary" onClick={() => setEditingId("new")}>+ Add worker</Button>}
       />
+
+      {inviteNote && (
+        <div
+          data-testid="crew-invite-note"
+          style={{
+            padding: 12, margin: "8px 0", borderRadius: 8, fontSize: 13,
+            background: inviteNote.ok ? "#F0FDF4" : "#FFFBEB",
+            border: `1px solid ${inviteNote.ok ? "#BBF7D0" : "#FDE68A"}`,
+            color: inviteNote.ok ? "#15803D" : "#92400E",
+            display: "flex", gap: 12, alignItems: "start",
+          }}
+        >
+          <span style={{ flex: 1 }}>{inviteNote.text}</span>
+          <button onClick={() => setInviteNote(null)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 16, color: "#64748B" }}>×</button>
+        </div>
+      )}
 
       {!workers.length ? (
         <EmptyState
@@ -667,4 +746,24 @@ function CalendarSyncPanel({ workerId, api }: {
       )}
     </div>
   );
+}
+
+/**
+ * The words a person reads when an invitation did not go out.
+ *
+ * Never a status key: "suppressed" means this crew member has asked us to stop
+ * emailing them, and the owner needs to hear that rather than a word from a
+ * database column.
+ */
+function workerInviteReason(reason: string | null, status: string): string {
+  switch (reason) {
+    case "no_email_on_file": return "there is no email address on their record.";
+    case "worker_not_active": return "they are not an active crew member.";
+    case "worker_not_found": return "we could not find their record.";
+    case "no_business_slug": return "your business has no web address yet, so there is nowhere to send them.";
+    case "enqueue_failed": return "the message could not be queued. Try again.";
+    default:
+      if (status === "suppressed") return "they have asked not to receive messages from you.";
+      return reason || "it was not sent.";
+  }
 }
