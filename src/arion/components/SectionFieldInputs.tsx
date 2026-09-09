@@ -76,6 +76,11 @@ export interface FieldContext {
     list: (params: { page: number; perPage: number; search: string }) => Promise<any>;
     upload: (file: File) => Promise<{ url: string; attachmentId: number | null }>;
     describe: (attachmentId: number, alt: string) => Promise<void>;
+    /* Looking after a picture, not only choosing one (ARION pack 1). Optional
+       so a screen that only picks does not have to supply them. */
+    usage?: (attachmentId: number) => Promise<any>;
+    remove?: (attachmentId: number) => Promise<void>;
+    replace?: (attachmentId: number, file: File) => Promise<{ url: string; usedOn: number }>;
   };
 }
 

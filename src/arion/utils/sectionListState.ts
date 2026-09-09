@@ -250,6 +250,30 @@ export function appendSection(sections: EditorSection[], added: ArionPageSection
   return next.map((s, i) => ({ ...s, index: i }));
 }
 
+/**
+ * Swap a section's LAYOUT, keeping its words (D-ARION-F).
+ *
+ * The server built the new node from the chosen curated layout and wrote this
+ * section's own field values onto it, so what arrives is the same content in a
+ * different shape. It is an UNSAVED edit — `dirty: true` — because nothing has
+ * reached the website: it goes out with the next Save like any other change, and
+ * Undo covers it exactly the same way.
+ *
+ * The row keeps its `uid` so the list does not re-mount and its position does
+ * not move; the client asked for a different look, not a different page.
+ */
+export function swapSectionLayout(
+  sections: EditorSection[],
+  uid: string,
+  swapped: ArionPageSection,
+): EditorSection[] {
+  return sections.map((s) => (
+    s.uid === uid
+      ? { ...swapped, index: s.index, uid: s.uid, dirty: true, isNew: s.isNew, isProposed: false }
+      : s
+  ));
+}
+
 /** How the row reads in the list: the section's name, then its headline. */
 export function sectionSummary(s: EditorSection): string {
   const headline = typeof s.fields?.headline === 'string' ? s.fields.headline.trim() : '';

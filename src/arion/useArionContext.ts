@@ -1028,6 +1028,86 @@ export function useArionContext() {
         const { getSiteAiPricing } = await import('../lib/arionApi');
         return getSiteAiPricing({ ...b, siteId });
       },
+
+      /* ARION pack 1 — the jobs that had no Portal home at all: a page's
+         address and layout, which page is the home page, deleting a page, its
+         SEO fields, swapping a section's look, and the two picture jobs. All of
+         them go through the plugin on the site token; none of them spend
+         credits. */
+      async getSitePageSettings(siteId: string, pageId: number) {
+        const b = await base();
+        const { getSitePageSettings } = await import('../lib/arionApi');
+        return getSitePageSettings({ ...b, siteId, pageId });
+      },
+
+      async saveSitePageSettings(
+        siteId: string,
+        pageId: number,
+        params: { slug?: string; template?: string; parentId?: number; makeHomePage?: boolean },
+      ) {
+        const b = await base();
+        const { saveSitePageSettings } = await import('../lib/arionApi');
+        return saveSitePageSettings({ ...b, siteId, pageId, ...params });
+      },
+
+      async trashSitePage(siteId: string, pageId: number) {
+        const b = await base();
+        const { trashSitePage } = await import('../lib/arionApi');
+        return trashSitePage({ ...b, siteId, pageId });
+      },
+
+      async restoreSitePage(siteId: string, pageId: number) {
+        const b = await base();
+        const { restoreSitePage } = await import('../lib/arionApi');
+        return restoreSitePage({ ...b, siteId, pageId });
+      },
+
+      async getSitePageSeo(siteId: string, pageId: number) {
+        const b = await base();
+        const { getSitePageSeo } = await import('../lib/arionApi');
+        return getSitePageSeo({ ...b, siteId, pageId });
+      },
+
+      async saveSitePageSeo(
+        siteId: string,
+        pageId: number,
+        params: { title?: string; description?: string; focusKeyword?: string },
+      ) {
+        const b = await base();
+        const { saveSitePageSeo } = await import('../lib/arionApi');
+        return saveSitePageSeo({ ...b, siteId, pageId, ...params });
+      },
+
+      async swapSectionLook(
+        siteId: string,
+        params: { kind: string; blueprintId: string; fields: Record<string, any> },
+      ) {
+        const b = await base();
+        const { swapSectionLook } = await import('../lib/arionApi');
+        return swapSectionLook({ ...b, siteId, ...params });
+      },
+
+      async getSiteMediaUsage(siteId: string, attachmentId: number) {
+        const b = await base();
+        const { getSiteMediaUsage } = await import('../lib/arionApi');
+        return getSiteMediaUsage({ ...b, siteId, attachmentId });
+      },
+
+      async deleteSiteMedia(siteId: string, attachmentId: number) {
+        const b = await base();
+        const { deleteSiteMedia } = await import('../lib/arionApi');
+        return deleteSiteMedia({ ...b, siteId, attachmentId });
+      },
+
+      async replaceSiteMedia(
+        siteId: string,
+        attachmentId: number,
+        params: { dataBase64?: string; url?: string; alt?: string },
+      ) {
+        const b = await base();
+        const { replaceSiteMedia } = await import('../lib/arionApi');
+        return replaceSiteMedia({ ...b, siteId, attachmentId, ...params });
+      },
     };
   }, [activeTenantId, apiBaseUrl, getToken]);
 

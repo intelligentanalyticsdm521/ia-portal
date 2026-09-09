@@ -239,11 +239,29 @@ test('drafts are their own list, and everything else is live', () => {
     { pageId: 4, status: 'pending', title: 'Waiting' },
     { pageId: 5, status: 'future', title: 'Scheduled' },
   ];
-  const { drafts, live } = splitPages(pages);
+  const { drafts, live, deleted } = splitPages(pages);
   assert.deepEqual(drafts.map((p) => p.pageId), [2, 4]);
   assert.deepEqual(live.map((p) => p.pageId), [1, 3, 5]);
+  assert.deepEqual(deleted, []);
   assert.equal(drafts.length + live.length, pages.length, 'no page falls between the two lists');
-  assert.deepEqual(splitPages([]), { drafts: [], live: [] });
+  assert.deepEqual(splitPages([]), { drafts: [], live: [], deleted: [] });
+});
+
+test('a deleted page is its own list, not a draft and not live', () => {
+  // ARION pack 1: WordPress keeps a deleted page for 30 days, which is only
+  // useful if a client can see it is there and put it back. Grouping it with the
+  // drafts would put a page somebody deleted in among the work they are doing.
+  const pages = [
+    { pageId: 1, status: 'publish', title: 'Home' },
+    { pageId: 2, status: 'draft', title: 'Autumn offer' },
+    { pageId: 6, status: 'trash', title: 'Old offer' },
+  ];
+  const { drafts, live, deleted } = splitPages(pages);
+  assert.deepEqual(deleted.map((p) => p.pageId), [6]);
+  assert.deepEqual(drafts.map((p) => p.pageId), [2]);
+  assert.deepEqual(live.map((p) => p.pageId), [1]);
+  assert.equal(drafts.length + live.length + deleted.length, pages.length,
+    'no page falls between the three lists');
 });
 
 test('publishing asks first, and unpublishing goes back to a draft', () => {

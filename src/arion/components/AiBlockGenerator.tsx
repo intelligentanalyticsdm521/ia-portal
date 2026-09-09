@@ -6,7 +6,11 @@ import type { AiBlockKind } from '../../lib/arionApi';
 import * as arionApiLib from '../../lib/arionApi';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
-import { BLOCK_DEFAULTS, computeSectionCost } from '../pages/website/WebsiteAiBuilder';
+/* The credit arithmetic that used to be imported here is GONE (P18): the price
+   of writing a section is one row in argus.action_pricing, read from
+   GET /arion/sites/:siteId/ai-pricing, and the server charges exactly it. The
+   configurator's defaults are now what a section LOOKS like, not what it
+   costs. */
 
 /**
  * AiBlockGenerator — F-AI-WB Phase 1 (2026-06-20)
@@ -45,6 +49,21 @@ const BLOCK_KINDS: BlockKindMeta[] = [
 ];
 
 type Step = 'pick' | 'context' | 'generating' | 'result';
+
+/** What a section of each kind normally looks like. Not a price. */
+const SHAPE_DEFAULTS: Record<string, {
+  paragraphs: number; columns: number; items: number; images: number;
+  imageQuality: 'std' | 'hd'; form: boolean;
+}> = {
+  hero:         { paragraphs: 1, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
+  services:     { paragraphs: 1, columns: 3, items: 0, images: 0, imageQuality: 'std', form: false },
+  testimonials: { paragraphs: 1, columns: 0, items: 3, images: 0, imageQuality: 'std', form: false },
+  cta:          { paragraphs: 1, columns: 2, items: 0, images: 0, imageQuality: 'std', form: true },
+  about:        { paragraphs: 3, columns: 0, items: 0, images: 1, imageQuality: 'std', form: false },
+  faq:          { paragraphs: 1, columns: 0, items: 5, images: 0, imageQuality: 'std', form: false },
+  gallery:      { paragraphs: 1, columns: 0, items: 0, images: 6, imageQuality: 'std', form: false },
+  contact:      { paragraphs: 1, columns: 1, items: 0, images: 0, imageQuality: 'std', form: true },
+};
 
 interface GenResult {
   block_json: Record<string, any>;
@@ -90,10 +109,13 @@ export function AiBlockGenerator({
   const [accepting, setAccepting] = useState(false);
   const [accepted, setAccepted] = useState(false);
 
-  // Apply BLOCK_DEFAULTS whenever the user picks a kind.
+  // A sensible SHAPE for each kind of section — how many columns, how many
+  // items, whether it has a picture. These used to double as a price list and
+  // that is what made them a defect: the numbers were multiplied into a credit
+  // cost the server never charged.
   useEffect(() => {
     if (!kind) return;
-    const def = BLOCK_DEFAULTS[kind];
+    const def = SHAPE_DEFAULTS[kind];
     if (!def) return;
     setParagraphs(def.paragraphs);
     setColumns(def.columns);
@@ -121,15 +143,28 @@ export function AiBlockGenerator({
     return () => { cancelled = true; };
   }, [open, activeTenantId, getToken]);
 
-  // Live cost preview based on current configurator state.
-  const liveCost = useMemo(() => computeSectionCost({
-    paragraphs, columns, items,
-    images: withImage ? 1 : 0,
-    imageQuality,
-    form: withForm,
-  }), [paragraphs, columns, items, withImage, imageQuality, withForm]);
+  // THE price, from the server (P18). It used to be computed here from the
+  // configurator's own coefficients — a number the server never charged. It is
+  // one row in argus.action_pricing now, and writing a section costs the same
+  // whatever shape it is. `null` means we could not read it, and a price we
+  // cannot read is a price we do not quote.
+  const [price, setPrice] = useState<number | null>(null);
+  useEffect(() => {
+    if (!open || !activeSiteId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res: any = await arionApi.getSiteAiPricing(activeSiteId);
+        if (!cancelled) {
+          const c = res?.data?.actions?.generate?.credits;
+          setPrice(typeof c === 'number' ? c : null);
+        }
+      } catch { /* leave null */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, activeSiteId, arionApi]);
 
-  const canAfford = balance == null || balance >= liveCost;
+  const canAfford = balance == null || price == null || balance >= price;
 
   // Elapsed-time timer while generating
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -188,8 +223,9 @@ export function AiBlockGenerator({
       if (imagePrompt.trim()) ctx.image_prompt = imagePrompt.trim();
     }
     ctx.with_form = withForm;
-    // Credits the client expects to spend (server enforces actual debit).
-    ctx.client_estimated_cost = liveCost;
+    // Nothing about the price travels with the request any more: the server
+    // reads argus.action_pricing and charges it. A client-side estimate in the
+    // body was only ever a second opinion about a number we do not own.
     return ctx;
   }
 
@@ -280,7 +316,7 @@ export function AiBlockGenerator({
               imageQuality={imageQuality} setImageQuality={setImageQuality}
               imagePrompt={imagePrompt} setImagePrompt={setImagePrompt}
               withForm={withForm} setWithForm={setWithForm}
-              liveCost={liveCost}
+              price={price}
               balance={balance}
               canAfford={canAfford}
             />
@@ -332,9 +368,13 @@ export function AiBlockGenerator({
               style={canAfford ? primary : { ...primary, opacity: 0.55, cursor: 'not-allowed' }}
               onClick={runGenerate}
               disabled={!activeSiteId || !kind || !canAfford}
-              title={!canAfford ? `Need ${liveCost} credits — you have ${balance ?? 0}` : ''}
+              title={!canAfford && price != null ? `This uses ${price} credits — you have ${balance ?? 0}` : ''}
             >
-              {canAfford ? `Generate · ${liveCost} credits` : `Need ${liveCost} credits`}
+              {price == null
+                ? 'Generate'
+                : canAfford
+                  ? (price === 0 ? 'Generate · included' : `Generate · ${price} credits`)
+                  : `Need ${price} credits`}
             </button>
           </div>
         </div>
@@ -539,7 +579,7 @@ function SectionConfigurator({
   imageQuality, setImageQuality,
   imagePrompt, setImagePrompt,
   withForm, setWithForm,
-  liveCost,
+  price,
   balance,
   canAfford,
 }: {
@@ -552,7 +592,8 @@ function SectionConfigurator({
   imageQuality: 'std' | 'hd'; setImageQuality: (v: 'std' | 'hd') => void;
   imagePrompt: string; setImagePrompt: (v: string) => void;
   withForm: boolean; setWithForm: (v: boolean) => void;
-  liveCost: number;
+  /** From argus.action_pricing. `null` means we could not read it. */
+  price: number | null;
   balance: number | null;
   canAfford: boolean;
 }) {
@@ -661,7 +702,7 @@ function SectionConfigurator({
             This section will cost
           </div>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24' }}>
-            {liveCost} credits
+            {price == null ? 'we will tell you' : price === 0 ? 'nothing' : `${price} credits`}
           </div>
         </div>
         {balance != null && (

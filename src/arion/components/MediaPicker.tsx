@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import type { SiteMediaItem } from '../../lib/arionApi';
+import type { SiteMediaItem, SiteMediaUsage } from '../../lib/arionApi';
 import { smallButton } from './SectionFieldInputs';
 
 /**
@@ -27,6 +27,19 @@ import { smallButton } from './SectionFieldInputs';
  * Phone first: one column under 560px, 44px tap targets, 16px inputs so iOS
  * does not zoom on focus, and a sticky bar that clears the floating ARGUS
  * button in the bottom-right corner.
+ *
+ * ── ARION pack 1 (2026-09-08): LOOKING AFTER a picture, not only choosing one
+ *
+ * Delete was deliberately left out of Phase 2, because a picture may be used by
+ * a page the editor cannot see and deleting it would break that page silently.
+ * That is answerable now: "Where is this used?" asks the website, drafts
+ * included, and Delete is offered ONLY when the answer is nowhere AND the scan
+ * finished. A partial scan is not permission.
+ *
+ * Replace keeps the same picture and swaps the file underneath it, so every
+ * page using it updates at once with no edit and no publish — which is the
+ * whole reason it is worth having. The one honest caveat, said out loud, is
+ * that the client's own browser may hold the old file for a while.
  */
 
 export interface PickedImage {
@@ -70,6 +83,12 @@ export function MediaPicker({
     }>;
     upload: (file: File) => Promise<{ url: string; attachmentId: number | null }>;
     describe: (attachmentId: number, alt: string) => Promise<void>;
+    /** Where is this picture used — drafts included. */
+    usage?: (attachmentId: number) => Promise<SiteMediaUsage>;
+    /** Only ever called after `usage` said nowhere; the website checks again. */
+    remove?: (attachmentId: number) => Promise<void>;
+    /** New file, same picture, so every page using it updates at once. */
+    replace?: (attachmentId: number, file: File) => Promise<{ url: string; usedOn: number }>;
   };
 }) {
   const [tab, setTab] = useState<Tab>('library');
@@ -90,6 +109,14 @@ export function MediaPicker({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
+
+  // Looking after the chosen picture: where it is used, replacing it, deleting
+  // it. `usage` is null until somebody asks — the scan reads every page on the
+  // website, so it is not something to run on every tap of a thumbnail.
+  const replaceRef = useRef<HTMLInputElement | null>(null);
+  const [usage, setUsage] = useState<SiteMediaUsage | null>(null);
+  const [usageBusy, setUsageBusy] = useState(false);
+  const [manageNote, setManageNote] = useState<string | null>(null);
 
   const load = useCallback(async (p: number, q: string) => {
     setLoading(true); setListError(null);
@@ -113,6 +140,9 @@ export function MediaPicker({
 
   const chooseExisting = (item: SiteMediaItem) => {
     setError(null);
+    // The answer belongs to the picture that was showing, not to this one.
+    setUsage(null);
+    setManageNote(null);
     setSelected({
       url: item.url,
       attachmentId: item.attachmentId,
@@ -147,6 +177,62 @@ export function MediaPicker({
       return;
     }
     setSelected({ url, attachmentId: null, alt: selected.alt || '' });
+  };
+
+  const askUsage = async () => {
+    if (!api.usage || !selected.attachmentId) return;
+    setUsageBusy(true); setError(null); setManageNote(null);
+    try {
+      setUsage(await api.usage(selected.attachmentId));
+    } catch (e: any) {
+      setError(e?.message || 'We could not check where that picture is used.');
+    } finally {
+      setUsageBusy(false);
+    }
+  };
+
+  const removeSelected = async () => {
+    if (!api.remove || !selected.attachmentId) return;
+    if (!window.confirm(
+      'Delete this picture from your website for good? '
+      + 'We have checked and it is not used on any page, but this cannot be undone.',
+    )) return;
+    setUsageBusy(true); setError(null);
+    try {
+      await api.remove(selected.attachmentId);
+      setManageNote('That picture is gone from your website.');
+      setUsage(null);
+      setSelected({ url: '', attachmentId: null, alt: '' });
+      await load(1, query);
+    } catch (e: any) {
+      // The website re-checks on the way in, so this is where "actually, it IS
+      // used" arrives — and it must read as the answer, not as a failure.
+      setError(e?.message || 'That picture was not deleted.');
+    } finally {
+      setUsageBusy(false);
+    }
+  };
+
+  const replaceSelected = async (file: File | undefined) => {
+    if (!api.replace || !file || !selected.attachmentId) return;
+    setUsageBusy(true); setError(null); setManageNote(null);
+    try {
+      const res = await api.replace(selected.attachmentId, file);
+      setSelected((cur) => ({ ...cur, url: res.url }));
+      setManageNote(
+        res.usedOn > 0
+          ? `Done — the ${res.usedOn} ${res.usedOn === 1 ? 'page' : 'pages'} using this picture now show `
+            + 'the new one. Your own browser may hold the old one for a while; reload to see it.'
+          : 'Done — that picture has been replaced everywhere it is used.',
+      );
+      setUsage(null);
+      await load(page, query);
+    } catch (e: any) {
+      setError(e?.message || 'That picture was not replaced.');
+    } finally {
+      setUsageBusy(false);
+      if (replaceRef.current) replaceRef.current.value = '';
+    }
   };
 
   const altMissing = needsAlt && !selected.alt.trim();
@@ -379,6 +465,84 @@ export function MediaPicker({
                 {selected.attachmentId
                   ? 'On your website — it will load at the right size for each screen.'
                   : 'Kept somewhere else — it will load at one size on every screen.'}
+              </div>
+            )}
+
+            {/* Looking after a picture that is already on the website. */}
+            {selected.attachmentId && (api.usage || api.replace) && (
+              <div style={{
+                marginTop: 12, paddingTop: 12, borderTop: '1px dashed var(--border)',
+              }}>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {api.usage && (
+                    <button
+                      type="button" style={{ ...smallButton, minHeight: 44 }}
+                      disabled={usageBusy} onClick={askUsage}
+                    >
+                      {usageBusy && !usage ? 'Checking…' : 'Where is this used?'}
+                    </button>
+                  )}
+                  {api.replace && (
+                    <>
+                      <button
+                        type="button" style={{ ...smallButton, minHeight: 44 }}
+                        disabled={usageBusy} onClick={() => replaceRef.current?.click()}
+                      >
+                        Replace this picture
+                      </button>
+                      <input
+                        ref={replaceRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/gif,image/webp"
+                        style={{ display: 'none' }}
+                        onChange={(e) => replaceSelected(e.target.files?.[0])}
+                      />
+                    </>
+                  )}
+                  {api.remove && usage?.canDelete && (
+                    <button
+                      type="button"
+                      style={{ ...smallButton, minHeight: 44, borderColor: '#FCA5A5', color: '#991B1B' }}
+                      disabled={usageBusy} onClick={removeSelected}
+                    >
+                      Delete it
+                    </button>
+                  )}
+                </div>
+
+                {manageNote && (
+                  <div style={{ fontSize: 12, color: '#166534', marginTop: 8 }}>{manageNote}</div>
+                )}
+
+                {usage && (
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                    {!usage.complete ? (
+                      'Your website has too many pages for us to check them all, so we will not offer '
+                      + 'to delete this picture.'
+                    ) : usage.used ? (
+                      <>
+                        <div style={{ marginBottom: 4 }}>
+                          Used on {usage.places.length} {usage.places.length === 1 ? 'page' : 'pages'}
+                          {usage.notes.length > 0 ? ', and:' : ':'}
+                        </div>
+                        <ul style={{ margin: '0 0 0 16px', padding: 0 }}>
+                          {usage.places.map((pl) => (
+                            <li key={pl.pageId ?? pl.title}>
+                              {pl.title}{pl.status !== 'publish' ? ' (draft)' : ''}
+                            </li>
+                          ))}
+                          {usage.notes.map((n) => <li key={n}>{n}</li>)}
+                        </ul>
+                        <div style={{ marginTop: 4 }}>
+                          Replacing it changes it on all of them at once. It cannot be deleted while it
+                          is in use.
+                        </div>
+                      </>
+                    ) : (
+                      'This picture is not used on any page, so it is safe to delete.'
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

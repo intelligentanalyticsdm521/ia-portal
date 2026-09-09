@@ -2746,12 +2746,28 @@ export interface PageProposal {
   poweredBy: string;
 }
 
+export interface AiPricingAction {
+  actionType: string;
+  credits: number | null;
+  available: boolean;
+}
+
+/**
+ * ONE price surface (P18). All four builder actions, every number from
+ * argus.action_pricing. The AI Builder page used to compute its own from a
+ * hand-written coefficient table while the server charged nothing at all.
+ */
 export interface AiPricing {
   actions: {
-    section: { actionType: string; credits: number | null; available: boolean };
-    page: { actionType: string; credits: number | null; available: boolean };
+    section: AiPricingAction;
+    page: AiPricingAction;
+    /** Writing one section from scratch. */
+    generate: AiPricingAction;
+    /** Putting accepted sections on a page. Ships at 0 credits — a ROW, not a word. */
+    assemble: AiPricingAction;
   };
   ai: { available: boolean; reason: string | null };
+  libraryNote?: string;
   poweredBy: string;
 }
 
@@ -2795,11 +2811,31 @@ export async function saveSitePageSections(p: {
   });
 }
 
+/**
+ * Preview: WORDPRESS renders it (D-ARION-B).
+ *
+ * The answer is a link, not HTML. arion-api used to render the section list to
+ * its own approximate HTML and say so — the client saw their words, but not
+ * their theme, their fonts or their colours. The plugin now puts the candidate
+ * sections on a companion draft, WordPress renders it with the real Elementor,
+ * and the link carries a one-hour key so a client with no WordPress account can
+ * open it. The page being previewed is not touched: `saved` is false and the
+ * screen says so.
+ */
 export async function previewSitePage(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
   sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>; title?: string;
 }) {
-  return requestJson<{ data: { html: string; sectionCount: number; saved: boolean } }>({
+  return requestJson<{
+    data: {
+      pageId: number;
+      previewUrl: string;
+      expiresAt: string | null;
+      ttlSeconds: number;
+      sectionCount: number;
+      saved: boolean;
+    };
+  }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/preview`,
@@ -2946,6 +2982,25 @@ export async function getSectionLibrary(p: {
       sections: SectionCatalogEntry[];
       elementorProAvailable: boolean;
       ai: { available: boolean; reason: string | null };
+      /**
+       * What the website itself says it can draw pages with (D-ARION-E).
+       * `active: false` means the editor must show the banner and stop offering
+       * Save: a save there would leave the page blank, which is exactly what
+       * used to happen behind a green toast. `known: false` means we could not
+       * ask — a different fact, and not a reason to stop anybody working.
+       *
+       * Named for what it does, not for who makes it: no vendor's name reaches
+       * a screen a client reads (feedback_no_third_party_product_surface).
+       */
+      pageEngine: {
+        known: boolean;
+        active: boolean | null;
+        version: string | null;
+        addOnActive: boolean | null;
+        addOnVersion: string | null;
+        addOnSource: 'detected' | 'tier';
+        reason: string | null;
+      };
       /** The business's own booking page, or '' — what "Link to your booking page" uses. */
       bookingHref: string;
       /** The inbox a form's read-only recipient shows, from the business details. */
@@ -3062,6 +3117,215 @@ export async function discardSiteProposal(p: {
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/proposals/${encodeURIComponent(p.proposalId)}/discard`,
+  });
+}
+
+/* ── ARION pack 1: the jobs that had no Portal home ────────────────────────
+   Page settings, per-page SEO, delete and restore, swap-the-look and the two
+   media jobs. Every one of them goes through the plugin on the site token —
+   the core-WordPress-REST path they would otherwise use needs an application
+   password, which is NULL on all five production sites. */
+
+export interface PageTemplateOption {
+  file: string;
+  /** Plain words, from arion-api. A theme template we have no words for keeps
+      the theme's own label rather than being dropped. */
+  label: string;
+}
+
+export interface SitePageSettings {
+  pageId: number;
+  title: string;
+  slug: string;
+  /**
+   * What the address will BECOME when a draft is published. WordPress only makes
+   * a slug unique against PUBLISHED pages, so a draft is allowed to hold an
+   * address that is already in use and is quietly renamed at publish time — a
+   * client's page address changing with nobody telling them. Equal to `slug`
+   * when there is nothing to change.
+   */
+  slugOnPublish: string;
+  status: string;
+  type: string;
+  permalink: string | null;
+  template: string;
+  templates: PageTemplateOption[];
+  parentId: number;
+  parents: Array<{ pageId: number; title: string; status: string }>;
+  isHomePage: boolean;
+  homePageId: number;
+  blogPageId: number;
+  /** WordPress had to make the address unique, so it is not what was typed. */
+  slugAdjusted?: boolean;
+  changed?: string[];
+  cachePurged?: boolean;
+}
+
+export interface SitePageSeo {
+  pageId: number;
+  title: string;
+  description: string;
+  focusKeyword: string;
+  recommended: { title: number; description: number };
+  /** False means we stored them and nothing on the site will render them yet. */
+  seoPluginActive: boolean;
+  seoPluginNote: string | null;
+  changed?: string[];
+  cachePurged?: boolean;
+}
+
+export interface SiteMediaUsage {
+  attachmentId: number | null;
+  filename: string;
+  used: boolean;
+  /** False when the scan stopped early. Not permission to delete. */
+  complete: boolean;
+  places: Array<{
+    pageId: number | null; title: string; status: string; type: string; permalink: string | null;
+  }>;
+  notes: string[];
+  canDelete: boolean;
+}
+
+export async function getSitePageSettings(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{ data: SitePageSettings }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/settings`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSitePageSettings(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+}) {
+  return requestJson<{ data: SitePageSettings }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/settings`,
+    body: {
+      slug: p.slug, template: p.template, parentId: p.parentId, makeHomePage: p.makeHomePage,
+    },
+    timeoutMs: 90_000,
+  });
+}
+
+/** Into WordPress's own bin, which keeps it for 30 days. */
+export async function trashSitePage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{ data: { pageId: number; status: string; title: string; cachePurged: boolean } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/trash`,
+    timeoutMs: 90_000,
+  });
+}
+
+/** Back out of the bin, as a draft — never straight back onto the website. */
+export async function restoreSitePage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{
+    data: { pageId: number; status: string; title: string; permalink: string | null; cachePurged: boolean };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/restore`,
+    timeoutMs: 90_000,
+  });
+}
+
+export async function getSitePageSeo(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{ data: SitePageSeo }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/seo`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSitePageSeo(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  title?: string; description?: string; focusKeyword?: string;
+}) {
+  return requestJson<{ data: SitePageSeo }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/seo`,
+    body: { title: p.title, description: p.description, focusKeyword: p.focusKeyword },
+    timeoutMs: 90_000,
+  });
+}
+
+/**
+ * The same words in a different layout (D-ARION-F). Writes nothing: the swapped
+ * section reaches the website on the next Save, so Undo covers it.
+ */
+export async function swapSectionLook(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  kind: string; blueprintId: string; fields: Record<string, any>;
+}) {
+  return requestJson<{
+    data: {
+      section: ArionPageSection;
+      blueprintId: string;
+      /** Fields the new layout had no place for. Named, never lost quietly. */
+      dropped: string[];
+      warning: string;
+    };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/sections/swap`,
+    body: { kind: p.kind, blueprintId: p.blueprintId, fields: p.fields },
+    timeoutMs: 45_000,
+  });
+}
+
+/** Where a picture is used — drafts included, because deleting breaks those too. */
+export async function getSiteMediaUsage(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; attachmentId: number;
+}) {
+  return requestJson<{ data: SiteMediaUsage }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media/${p.attachmentId}/usage`,
+    timeoutMs: 60_000,
+  });
+}
+
+/** Only offered when the usage answer is nowhere; the website re-checks. */
+export async function deleteSiteMedia(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; attachmentId: number;
+}) {
+  return requestJson<{ data: { attachmentId: number; deleted: boolean; filename: string } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'DELETE',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media/${p.attachmentId}`,
+    timeoutMs: 90_000,
+  });
+}
+
+/** New file, same picture: every page using it updates at once. */
+export async function replaceSiteMedia(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; attachmentId: number;
+  dataBase64?: string; url?: string; alt?: string;
+}) {
+  return requestJson<{
+    data: {
+      attachmentId: number; url: string; filename: string;
+      width: number | null; height: number | null; bytes: number | null;
+      sizeCount: number; usedOn: number; alt: string; cachePurged: boolean; note: string;
+    };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/media/${p.attachmentId}/replace`,
+    body: { dataBase64: p.dataBase64, url: p.url, alt: p.alt },
+    timeoutMs: 120_000,
   });
 }
 
