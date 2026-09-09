@@ -1,5 +1,6 @@
 import { useArionContext } from '../useArionContext';
 import { useArionData } from '../useArionData';
+import { useIsFounder } from '../../hooks/useIsFounder';
 
 interface ArionPageHeaderProps {
   section: string;
@@ -17,6 +18,24 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
   // getAdminLink (already correct) — but the fallback now uses the
   // selected site's wp_admin_url, not a guessed path off the domain.
   const { selectedSite, activeSiteId, sites, setSelectedSiteId, arionApi, loading, error } = useArionContext();
+
+  /**
+   * THE FINISH LINE (ARION pack 2, D-ARION-G). This button is now IA staff
+   * only.
+   *
+   * Everything it used to be needed for has a home in the Portal: the words
+   * and pictures on a page, its address, layout, parent and whether it is the
+   * home page, deleting and restoring it, the search-engine fields, the
+   * pictures, the menus, the brand colours and fonts, the header and footer,
+   * the two site switches, and writing a blog post. Leaving a door open to a
+   * WordPress admin screen for a client is how they end up in a place we
+   * cannot support them in — and taking it away BEFORE those jobs had a home
+   * would have stranded every one of them, which is why this is the last
+   * change in the pack rather than the first.
+   *
+   * `isFounder`, never `isSuperUser` (memory: reference_role_access_model).
+   */
+  const isFounder = useIsFounder();
 
   const domain = selectedSite?.primaryDomain || null;
   const created = selectedSite?.createdAt ? new Date(selectedSite.createdAt).toLocaleDateString() : '--';
@@ -112,18 +131,21 @@ export function ArionPageHeader({ section, page }: ArionPageHeaderProps) {
         <span style={{ color: '#0B1C24', fontWeight: 500 }}>{page}</span>
       </div>
 
-      {/* RIGHT: WP Admin button */}
-      <button
-        data-tour="wp-admin"
-        onClick={handleWpAdmin}
-        style={{
-          background: '#0C4A60', color: '#fff', border: 'none',
-          padding: '7px 14px', borderRadius: 6, fontSize: 12,
-          fontWeight: 600, cursor: 'pointer',
-        }}
-      >
-        WP Admin
-      </button>
+      {/* RIGHT: WP Admin button — IA staff only (D-ARION-G) */}
+      {isFounder && (
+        <button
+          data-tour="wp-admin"
+          onClick={handleWpAdmin}
+          title="IA staff only — clients do everything from the Portal."
+          style={{
+            background: '#0C4A60', color: '#fff', border: 'none',
+            padding: '7px 14px', borderRadius: 6, fontSize: 12,
+            fontWeight: 600, cursor: 'pointer',
+          }}
+        >
+          WP Admin
+        </button>
+      )}
     </div>
   );
 }

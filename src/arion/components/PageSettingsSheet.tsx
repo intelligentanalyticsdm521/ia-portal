@@ -51,6 +51,7 @@ function Note({ tone, children }: { tone: 'good' | 'bad' | 'warn'; children: Rea
 
 export function PageSettingsSheet({
   settings, seo, loading, busy, error, onSaveSettings, onSaveSeo, onTrash, onClose,
+  onPickFeaturedImage,
 }: {
   settings: SitePageSettings | null;
   seo: SitePageSeo | null;
@@ -60,7 +61,10 @@ export function PageSettingsSheet({
   error: string | null;
   onSaveSettings: (params: {
     slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+    excerpt?: string; categories?: string[]; tags?: string[]; featuredImageId?: number;
   }) => Promise<void>;
+  /** Only supplied on a blog post: choosing the picture that goes with it. */
+  onPickFeaturedImage?: () => void;
   onSaveSeo: (params: { title: string; description: string; focusKeyword: string }) => Promise<void>;
   onTrash: () => void;
   onClose: () => void;
@@ -71,12 +75,21 @@ export function PageSettingsSheet({
   const [seoTitle, setSeoTitle] = useState('');
   const [seoDesc, setSeoDesc] = useState('');
   const [seoKeyword, setSeoKeyword] = useState('');
+  // A blog post's own four (ARION pack 2, D-ARION-C). Categories and tags are
+  // typed and read as plain comma-separated names, because that is how a
+  // person thinks about them — a name that does not exist yet is created.
+  const [excerpt, setExcerpt] = useState('');
+  const [categories, setCategories] = useState('');
+  const [tags, setTags] = useState('');
 
   useEffect(() => {
     if (!settings) return;
     setSlug(settings.slug || '');
     setTemplate(settings.template || '');
     setParentId(settings.parentId || 0);
+    setExcerpt(settings.postFields?.excerpt || '');
+    setCategories((settings.postFields?.categories || []).join(', '));
+    setTags((settings.postFields?.tags || []).join(', '));
   }, [settings]);
 
   useEffect(() => {
@@ -87,6 +100,13 @@ export function PageSettingsSheet({
   }, [seo]);
 
   const isDraft = settings?.status === 'draft' || settings?.status === 'pending';
+  const post = settings?.postFields || null;
+  const asList = (v: string) => v.split(',').map((t) => t.trim()).filter(Boolean);
+  const postDirty = !!post && (
+    excerpt !== (post.excerpt || '')
+    || asList(categories).join('|') !== (post.categories || []).join('|')
+    || asList(tags).join('|') !== (post.tags || []).join('|')
+  );
   const settingsDirty = !!settings && (
     slug !== (settings.slug || '')
     || template !== (settings.template || '')
@@ -217,6 +237,78 @@ export function PageSettingsSheet({
                 )}
               </div>
 
+              {/* ── a blog post's own four (D-ARION-C) ───────────────────── */}
+              {post && (
+                <div style={{ marginTop: 26, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>About this post</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    Where it is filed, and the picture that goes with it in your blog list.
+                  </div>
+
+                  <label style={labelStyle} htmlFor="post-excerpt">The short version</label>
+                  <textarea
+                    id="post-excerpt" rows={3}
+                    style={{ ...inputStyle, minHeight: 88, resize: 'vertical' }}
+                    value={excerpt} onChange={(e) => setExcerpt(e.target.value)}
+                    placeholder="One or two lines, shown in the list of posts."
+                  />
+
+                  <label style={labelStyle} htmlFor="post-categories">Filed under</label>
+                  <input
+                    id="post-categories" style={inputStyle} value={categories}
+                    onChange={(e) => setCategories(e.target.value)}
+                    list="post-category-options"
+                    placeholder="Lawn care, Seasonal"
+                  />
+                  <datalist id="post-category-options">
+                    {(post.allCategories || []).map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                  <div style={helpStyle}>
+                    Separate them with commas. Anything new is created for you.
+                  </div>
+
+                  <label style={labelStyle} htmlFor="post-tags">Tags</label>
+                  <input
+                    id="post-tags" style={inputStyle} value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    placeholder="mowing, autumn"
+                  />
+
+                  <label style={labelStyle}>The picture that goes with it</label>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    {post.featuredImage.url
+                      ? <img src={post.featuredImage.url} alt="" style={{ maxHeight: 56, maxWidth: 120, borderRadius: 6 }} />
+                      : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>None chosen.</span>}
+                    {onPickFeaturedImage && (
+                      <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={onPickFeaturedImage}>
+                        {post.featuredImage.url ? 'Change it' : 'Choose a picture'}
+                      </button>
+                    )}
+                    {post.featuredImage.id > 0 && (
+                      <button
+                        type="button" style={{ ...smallButton, minHeight: 44 }}
+                        disabled={busy !== null}
+                        onClick={() => onSaveSettings({ featuredImageId: 0 })}
+                      >
+                        Take it off
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ marginTop: 16 }}>
+                    <button
+                      type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
+                      disabled={busy !== null || !postDirty}
+                      onClick={() => onSaveSettings({
+                        excerpt, categories: asList(categories), tags: asList(tags),
+                      })}
+                    >
+                      {busy === 'settings' ? 'Saving…' : 'Save these details'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ── search engines ───────────────────────────────────────── */}
               <div style={{ marginTop: 26, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 14, fontWeight: 700 }}>How this page looks in search results</div>
@@ -271,7 +363,9 @@ export function PageSettingsSheet({
 
               {/* ── delete ───────────────────────────────────────────────── */}
               <div style={{ marginTop: 26, paddingTop: 18, borderTop: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 14, fontWeight: 700 }}>Delete this page</div>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>
+                  Delete this {settings.type === 'post' ? 'post' : 'page'}
+                </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, marginBottom: 10 }}>
                   It comes off your website and goes in your website’s bin, where you can put it back
                   for 30 days.
@@ -285,7 +379,7 @@ export function PageSettingsSheet({
                     : undefined}
                   onClick={onTrash}
                 >
-                  {busy === 'trash' ? 'Deleting…' : 'Delete this page'}
+                  {busy === 'trash' ? 'Deleting…' : `Delete this ${settings.type === 'post' ? 'post' : 'page'}`}
                 </button>
               </div>
             </>

@@ -59,6 +59,10 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // causing the URL to render "Service not found". Scope: overnight-report/
   // 38_AI_WEBSITE_BUILDER_v2_SCOPE.md + FEATURE_AI_BUILDER.md.
   { key: 'arion_website_ai_builder', displayName: 'AI Builder', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_ai_builder', description: 'AI Website Builder — spend ARGUS Data Credits to generate pages, rewrite sections, generate media, or rebuild whole sites.' },
+  // Site builder pack 2 (2026-09-09) — the two jobs that are the same on every
+  // page and could only be done by signing into WordPress. Every ARION tier.
+  { key: 'arion_website_menus', displayName: 'Menus', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_menus', description: 'What people click to get around your website. Add a page you just built, reorder it, and choose where it shows.' },
+  { key: 'arion_website_design', displayName: 'Brand & layout', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_design', description: 'Your colours and fonts, and what sits at the top and bottom of every page.' },
   { key: 'arion_website_content_seo_overview', displayName: 'Content SEO', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content_seo_overview', description: 'Rank Math SEO coverage — per-page and per-post scores, focus keywords, schema, and top optimization opportunities.' },
   { key: 'arion_website_security_overview', displayName: 'Security Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_security_overview', description: 'Shield Security scan results, threat level, and overall security posture.' },
   { key: 'arion_website_security_vulnerabilities', displayName: 'Security Vulnerabilities', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_security_vulnerabilities', description: 'Known plugin and theme vulnerabilities with severity and patch status.' },
