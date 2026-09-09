@@ -81,6 +81,21 @@ interface Connection {
    *  Bark account and in every forwarded header), so it is shown every time
    *  rather than once. */
   inbound_address: string | null;
+  /** D-69 — what this source reported that is NOT a lead. Google tells us how
+   *  many people tapped Call each day and never who they were, so those taps
+   *  are a COUNT on the card. Null for every source that reports no such
+   *  thing, which is all of them except Google Business Profile. */
+  stats: SourceStats | null;
+}
+
+interface SourceStats {
+  call_clicks?: number;
+  website_clicks?: number;
+  window_days?: number;
+  questions_available?: boolean;
+  questions_unavailable_reason?: string | null;
+  note?: string;
+  updated_at?: string;
 }
 
 interface InstructionCard {
@@ -988,6 +1003,34 @@ export function SparkLeadSourcesPage() {
                           {chip.label}
                         </span>
                       </div>
+
+                      {/* Numbers this source reported that are NOT leads
+                          (D-69). Google reports how many people tapped Call
+                          each day and never who they were. Showing them as a
+                          count beside the lead count is the honest shape; a
+                          lead row per tap would be an inbox nobody can act on. */}
+                      {c.stats && (
+                        <div className="mt-2 rounded-lg bg-slate-50 ring-1 ring-slate-200 px-3 py-2">
+                          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                            <div className="text-[11px] text-slate-700">
+                              <span className="text-sm font-bold text-slate-900">{c.stats.call_clicks ?? 0}</span>
+                              {" "}tapped Call
+                            </div>
+                            <div className="text-[11px] text-slate-700">
+                              <span className="text-sm font-bold text-slate-900">{c.stats.website_clicks ?? 0}</span>
+                              {" "}tapped your website link
+                            </div>
+                            {!!c.stats.window_days && (
+                              <div className="text-[10px] text-slate-500">
+                                last {c.stats.window_days} day{c.stats.window_days === 1 ? "" : "s"}
+                              </div>
+                            )}
+                          </div>
+                          {c.stats.note && (
+                            <p className="mt-1 text-[10px] leading-snug text-slate-600">{c.stats.note}</p>
+                          )}
+                        </div>
+                      )}
 
                       {/* A forwarding address is routing, not a secret, so it
                           is on the card — a client who has to ask support for
