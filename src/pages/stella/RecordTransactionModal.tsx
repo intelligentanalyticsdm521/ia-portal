@@ -20,7 +20,7 @@ import { useEffect, useState } from "react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
-import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./stellaTheme";
 // STELLA pack 1, item 9 — one charge, several accounts.
 import { SplitEditor, emptySplit, splitsReady, splitsForApi, type SplitLine } from "./SplitEditor";
 

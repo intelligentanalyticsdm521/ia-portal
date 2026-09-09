@@ -16,14 +16,15 @@ import { useState, type ReactNode } from "react";
 import { ChevronDown, Plus } from "lucide-react";
 import { RecordTransactionModal } from "./RecordTransactionModal";
 
-export const STELLA_INDIGO = "#4C5BD4";
-export const STELLA_LAVENDER = "#E8E9FA";
-
-export function fmtMoney(n: number | string | null | undefined): string {
-  const v = typeof n === "string" ? Number(n) : n ?? 0;
-  const num = Number.isFinite(v as number) ? (v as number) : 0;
-  return num.toLocaleString(undefined, { style: "currency", currency: "USD" });
-}
+// The palette and the money formatter live in a LEAF module (stellaTheme.ts)
+// and are re-exported here so every existing `from "./StellaShell"` import
+// keeps working. They cannot live in THIS file: this file imports
+// RecordTransactionModal, which imports them back, and a `const` inside an
+// import cycle is in its temporal dead zone until its own module has run —
+// which is what killed every STELLA page with "Cannot access
+// 'STELLA_LAVENDER' before initialization". See stellaTheme.ts.
+import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./stellaTheme";
+export { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney };
 
 export function StellaShell({
   title,

@@ -17,7 +17,7 @@
 // button is refused until it is zero. "Split evenly" and "Put the rest here"
 // exist because those are the two things people actually want to do.
 import { Plus, Trash2, Split as SplitIcon } from "lucide-react";
-import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./stellaTheme";
 import { jobOptionLabel, type CoaAccount, type JobLite } from "./RecordTransactionModal";
 
 export interface SplitLine {
