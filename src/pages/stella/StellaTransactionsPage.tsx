@@ -47,6 +47,8 @@ interface StellaTransaction {
   job_id?: string | null;
   job_number?: string | null;
   job_title?: string | null;
+  // Split lines (pack 1, item 9) — the API returns the count on every row.
+  split_count?: number | null;
 }
 
 // Month money-bar slice of GET /ledger/overview (envelope unwrapped).
@@ -261,11 +263,34 @@ export function StellaTransactionsPage() {
     {
       key: "account",
       header: "Account",
-      render: (r) => (
-        <span style={{ fontSize: 11, color: "#5A7A8A" }}>
-          {coaNameById.get(r.coa_account_id || "") || "Uncategorized"}
-        </span>
-      ),
+      render: (r) => {
+        const n = Number(r.split_count || 0);
+        // A split charge must NOT read as one account. Naming only the largest
+        // category on a three-category charge is the register lying quietly.
+        if (n >= 2) {
+          return (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <span
+                title="This charge is split across several accounts — open it to see the lines."
+                style={{
+                  fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 99,
+                  background: `${STELLA_INDIGO}14`, color: STELLA_INDIGO, whiteSpace: "nowrap",
+                }}
+              >
+                Split × {n}
+              </span>
+              <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+                {coaNameById.get(r.coa_account_id || "") || "Uncategorized"} + {n - 1} more
+              </span>
+            </span>
+          );
+        }
+        return (
+          <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+            {coaNameById.get(r.coa_account_id || "") || "Uncategorized"}
+          </span>
+        );
+      },
     },
     {
       key: "amount_signed",

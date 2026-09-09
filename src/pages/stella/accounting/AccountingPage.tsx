@@ -1,13 +1,20 @@
-// AccountingPage — Journal Entries · Bank Reconciliation · Audit Log.
+// AccountingPage — Opening Balances · Journal Entries · Bank Reconciliation ·
+// Audit Log.
 //
-// Three surfaces, one nav slot, three in-page tabs. The STELLA Ledger sub-nav
-// has a hard 8-child cap with no headroom, and these are all "the bookkeeper's
+// Four surfaces, one nav slot, four in-page tabs. The STELLA Ledger sub-nav has
+// a hard 8-child cap with no headroom, and these are all "the bookkeeper's
 // drawer" rather than daily-work pages, so they belong together.
+//
+// Opening Balances (STELLA pack 1, item 8) is FIRST because it is chronologically
+// first: it is where a business that existed before STELLA tells it where the
+// books start. It is a journal entry like the others, which is why it lives here
+// rather than in a nav slot of its own.
 import { useCallback, useEffect, useState } from "react";
 import { Plus, Trash2, Check } from "lucide-react";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
 import { useStellaApi } from "../../../hooks/useStellaApi";
 import { BankStatementImport } from "./BankStatementImport";
+import { OpeningBalances } from "./OpeningBalances";
 import {
   DbCard, DbError, DbLoading, DbButton, DbInput, DbSelect, DbField, DbTable,
   DbEmpty, DbNotice, useNotice, Pill, DbModal,
@@ -25,16 +32,18 @@ export function StellaAccountingPage() {
   return (
     <StellaShell
       title="Accounting"
-      subtitle="The bookkeeper's drawer — journal entries, bank reconciliation, and a record of who changed what."
+      subtitle="The bookkeeper's drawer — opening balances, journal entries, bank reconciliation, and a record of who changed what."
     >
       <StellaTabs
         tabs={[
+          { key: "opening", label: "Opening Balances" },
           { key: "journal", label: "Journal Entries" },
           { key: "reconcile", label: "Bank Reconciliation" },
           { key: "audit", label: "Audit Log" },
         ]}
         active={tab} onChange={setTab}
       />
+      {tab === "opening" && <OpeningBalances />}
       {tab === "journal" && <JournalTab />}
       {tab === "reconcile" && <ReconcileTab />}
       {tab === "audit" && <AuditTab />}

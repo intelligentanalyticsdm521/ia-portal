@@ -21,6 +21,8 @@ import { useStellaApi } from "../../hooks/useStellaApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+// STELLA pack 1, item 9 — one charge, several accounts.
+import { SplitEditor, emptySplit, splitsReady, splitsForApi, type SplitLine } from "./SplitEditor";
 
 export interface CoaAccount {
   coa_account_id: string;
@@ -101,26 +103,49 @@ export function RecordTransactionModal({
   const [reimbursable, setReimbursable] = useState(false);
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Splitting is off until asked for. Most entries are one account, and a split
+  // grid on every entry would make the common case slower to serve the rare one.
+  const [splitting, setSplitting] = useState(false);
+  const [splits, setSplits] = useState<SplitLine[]>([emptySplit(), emptySplit()]);
 
   const amountNum = Number(amount);
-  const valid = counterparty.trim().length > 0 && coaAccountId && Number.isFinite(amountNum) && amountNum > 0 && !!postedDate;
+  const baseValid = counterparty.trim().length > 0 && Number.isFinite(amountNum) && amountNum > 0 && !!postedDate;
+  // When splitting, the split lines carry the accounts; the single Account
+  // select is what the register row shows, and it is set from the largest split
+  // so nothing reading the register sees a blank category.
+  const valid = splitting
+    ? baseValid && splitsReady(splits, amountNum)
+    : baseValid && !!coaAccountId;
 
   async function submit() {
     if (!valid) return;
     setErr(null);
     setSaving(true);
     try {
+      const apiSplits = splitting ? splitsForApi(splits) : null;
+      // The register row's own account: the LARGEST split. It is what the
+      // register list and any reader of stella.[transaction] sees, and leaving
+      // it null would put a fully categorised charge in the Inbox.
+      const primary = apiSplits
+        ? apiSplits.slice().sort((a, b) => b.amount - a.amount)[0].coa_account_id
+        : coaAccountId;
       const created = await post<{ transaction_id?: string }>("/ledger/transactions", {
         direction,
-        coa_account_id: coaAccountId,
+        coa_account_id: primary,
         counterparty_name: counterparty.trim(),
         amount: amountNum,
         posted_date: postedDate,
         memo: memo.trim() || null,
         is_reimbursable: !isIncome && reimbursable,
         job_id: jobId || null,
+        ...(apiSplits ? { splits: apiSplits } : {}),
       });
-      onCreated(`Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`, created?.transaction_id);
+      onCreated(
+        apiSplits
+          ? `Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}, split across ${apiSplits.length} accounts.`
+          : `Recorded ${isIncome ? "income" : "expense"} of ${fmtMoney(amountNum)}.`,
+        created?.transaction_id,
+      );
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to record the transaction. Please try again.");
     } finally {
@@ -155,14 +180,16 @@ export function RecordTransactionModal({
               autoFocus
             />
           </label>
-          <label>
-            <span style={mLabel}>Account</span>
-            <select data-tour="stella-record-account" style={mInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)}>
-              <option value="">Select an account…</option>
-              {preferred.length > 0 && <optgroup label={isIncome ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>}
-              {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
-            </select>
-          </label>
+          {!splitting && (
+            <label>
+              <span style={mLabel}>Account</span>
+              <select data-tour="stella-record-account" style={mInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)}>
+                <option value="">Select an account…</option>
+                {preferred.length > 0 && <optgroup label={isIncome ? "Revenue" : "Expenses"}>{preferred.map(optionFor)}</optgroup>}
+                {others.length > 0 && <optgroup label="Other accounts">{others.map(optionFor)}</optgroup>}
+              </select>
+            </label>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
             <label>
               <span style={mLabel}>Amount</span>
@@ -173,6 +200,41 @@ export function RecordTransactionModal({
               <input type="date" style={mInput} value={postedDate} onChange={(e) => setPostedDate(e.target.value)} />
             </label>
           </div>
+          <div>
+            <button
+              type="button"
+              data-tour="stella-record-split"
+              onClick={() => {
+                // Seed the first split line from whatever account was already
+                // chosen — retyping a choice the person just made is rude.
+                if (!splitting && coaAccountId) {
+                  setSplits([{ ...emptySplit(), coa_account_id: coaAccountId }, emptySplit()]);
+                }
+                setSplitting(!splitting);
+              }}
+              style={{
+                padding: "5px 9px", fontSize: 11, fontWeight: 600,
+                color: STELLA_INDIGO, background: "#fff",
+                border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, cursor: "pointer",
+              }}
+            >
+              {splitting ? "Use one account instead" : "Split across accounts"}
+            </button>
+            <span style={{ display: "block", fontSize: 10, color: "#94A3B8", marginTop: 4, lineHeight: 1.4 }}>
+              One charge, several accounts — a hardware-store run that was part materials and part a tool.
+              It stays one line on your register so it still matches your statement.
+            </span>
+          </div>
+          {splitting && (
+            <SplitEditor
+              lines={splits}
+              onChange={setSplits}
+              target={amountNum}
+              accounts={accounts}
+              jobs={jobs}
+              disabled={saving}
+            />
+          )}
           <label>
             <span style={mLabel}>Job (optional)</span>
             <select style={mInput} value={jobId} onChange={(e) => setJobId(e.target.value)}>

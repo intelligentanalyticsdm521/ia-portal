@@ -8,6 +8,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useStellaApi } from "../../../hooks/useStellaApi";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
 import { DbCard, DbError, DbLoading, DbSelect, DbField, DbInput, DbTable, Pill, DbEmpty } from "../dbmanager/DbManagerKit";
+// STELLA pack 1, item 4 — the Balance Sheet export states `balanced` in words,
+// because a reader holding the CSV cannot see the badge on this screen.
+import { StatementExportBar } from "../StatementExportBar";
 
 export type Basis = "cash" | "accrual";
 
@@ -92,6 +95,11 @@ export function BalanceSheetReport({ basis, onBasis }: { basis: Basis; onBasis: 
           <div style={{ width: 150 }}>
             <DbField label="As of"><DbInput type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></DbField>
           </div>
+          <StatementExportBar
+            path={`/ledger/balance-sheet?basis=${basis}&as_of=${asOf}`}
+            fileBase={`balance-sheet-${asOf}`}
+            disabled={!data}
+          />
         </div>
       }
     >

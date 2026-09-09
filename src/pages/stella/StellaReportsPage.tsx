@@ -17,6 +17,10 @@ import { useStellaApi } from "../../hooks/useStellaApi";
 import { BalanceSheetReport, TrialBalanceReport, GeneralLedgerReport, type Basis } from "./accounting/AccountingReports";
 import { AccountantPack } from "./accounting/AccountantPack";
 import { StellaShell, StellaScaffoldCard, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
+// STELLA pack 1, item 4: Export (CSV / Excel / PDF) and Print on every
+// statement. The export calls THIS statement's endpoint with ?format=, so the
+// file is generated from the same payload that drew the screen.
+import { StatementExportBar, StellaPrintStyles } from "./StatementExportBar";
 
 // GET /ledger/pnl response (oliver-api routes/stellaLedger.js).
 interface PnlLine {
@@ -198,6 +202,22 @@ export function StellaReportsPage() {
   const yearNow = new Date().getFullYear();
   const yearOptions = [yearNow, yearNow - 1, yearNow - 2, yearNow - 3, yearNow - 4];
 
+  // The endpoint for whatever is on screen — derived from the SAME state the
+  // fetch above uses, so an export can never be of a different period than the
+  // numbers the person is looking at. Null = this tab is not exportable
+  // (placeholders, and the journal-backed reports which carry their own bar).
+  const exportTarget: { path: string; file: string } | null = (() => {
+    if (report === "pnl") {
+      const { from, to } = monthRange(month);
+      return { path: `/ledger/pnl?from=${from}&to=${to}`, file: `profit-and-loss-${month}` };
+    }
+    if (report === "cash_flow") return { path: "/ledger/cash-flow?months=6", file: "cash-flow" };
+    if (report === "ar_aging") return { path: "/ledger/ar-aging", file: "ar-aging" };
+    if (report === "sales_tax") return { path: `/ledger/sales-tax?year=${year}`, file: `sales-tax-${year}` };
+    if (report === "1099") return { path: `/ledger/ten99?year=${year}`, file: `1099-worksheet-${year}` };
+    return null;
+  })();
+
   return (
     <StellaShell
       title="Reports"
@@ -205,28 +225,35 @@ export function StellaReportsPage() {
       showRecord
       onRecorded={() => reload()}
       actions={
-        report === "pnl" ? (
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            style={{ padding: "6px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
-          />
-        ) : report === "sales_tax" || report === "1099" ? (
-          <select
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            style={{ padding: "6px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24", background: "#fff" }}
-          >
-            {yearOptions.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        ) : undefined
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          {report === "pnl" && (
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              style={{ padding: "6px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
+            />
+          )}
+          {(report === "sales_tax" || report === "1099") && (
+            <select
+              value={year}
+              onChange={(e) => setYear(Number(e.target.value))}
+              style={{ padding: "6px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24", background: "#fff" }}
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          )}
+          {exportTarget && (
+            <StatementExportBar path={exportTarget.path} fileBase={exportTarget.file} disabled={!hasData} />
+          )}
+        </div>
       }
       error={!placeholder && !isJournalReport ? error : undefined}
       loading={!placeholder && !isJournalReport && loading && !hasData}
     >
+      <StellaPrintStyles />
       <StellaTabs tabs={REPORTS} active={report} onChange={setReport} dataTour="stella-reports-tabs" />
 
       {report === "balance_sheet" && <BalanceSheetReport basis={basis} onBasis={setBasis} />}

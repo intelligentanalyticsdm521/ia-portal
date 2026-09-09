@@ -19,10 +19,16 @@ import { ConsultantModeBanner } from "./consulting/ConsultantModeBanner";
 import { WalkthroughPanel } from "./walkthroughs/WalkthroughPanel";
 import { PageHelpButton } from "./PageHelpButton";
 
-// Strip OLIVER nav items that aren't in allowedServiceKeys, and drop any
-// group that becomes empty. Returns the original config when no filter
-// applies (admin users / null allowedServiceKeys).
-function applyOliverNavFilter(
+// Strip nav items that aren't in allowedServiceKeys, and drop any group that
+// becomes empty. Returns the original config when no filter applies (admin
+// users / null allowedServiceKeys).
+//
+// STELLA pack 1, item 6: this runs for STELLA as well as OLIVER now. The server
+// list (oliver-api routes/overview.js ACCOUNTANT_SERVICE_KEYS) gained the
+// stella_* keys, and applying the filter to only one of the two products would
+// have meant an accountant either saw no STELLA nav at all or saw all of it
+// including the bank-link settings — neither of which is the answer.
+function applyRoleNavFilter(
   config: SubNavConfig,
   allowedServiceKeys: string[] | null,
 ): SubNavConfig {
@@ -268,8 +274,8 @@ export function AppShell() {
   const subNavConfig = useMemo(() => {
     if (onClientConsultingSurface) return clientConsultingSubNav;
     if (!rawSubNavConfig) return null;
-    if (activeProduct === "oliver") {
-      return applyOliverNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
+    if (activeProduct === "oliver" || activeProduct === "stella") {
+      return applyRoleNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
     }
     if (activeProduct === "consulting") {
       // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders

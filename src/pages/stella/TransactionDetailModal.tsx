@@ -22,6 +22,9 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 import { jobOptionLabel, type CoaAccount, type JobLite } from "./RecordTransactionModal";
+// STELLA pack 1, item 9 — split an existing register line (this modal is also
+// what the Inbox opens, so splitting works from the review queue too).
+import { SplitEditor, emptySplit, splitsReady, splitsForApi, type SplitLine } from "./SplitEditor";
 
 /** Minimal row shape the modal needs — Transactions rows satisfy it directly;
  *  Inbox items are mapped into it by the caller. */
@@ -120,6 +123,42 @@ export function TransactionDetailModal({
   // Track "did anything PATCH" so backdrop/Esc close still reloads the list.
   const changedRef = useRef(false);
 
+  // Splits (pack 1, item 9). Loaded from the row's own detail endpoint, which
+  // returns them with the transaction — a second round trip here is how a
+  // three-category charge ends up displayed as one category.
+  const [splitting, setSplitting] = useState(false);
+  const [splits, setSplits] = useState<SplitLine[]>([emptySplit(), emptySplit()]);
+  const [loadedSplitCount, setLoadedSplitCount] = useState(0);
+  // What the splits were when they arrived, so "dirty" means CHANGED and not
+  // merely "a split exists". Without it the Save button is lit on every open of
+  // an already-split row.
+  const initialSplitsJson = useRef("[]");
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    get<{ splits?: { coa_account_id: string; amount: number; job_id: string | null; memo: string | null }[] }>(
+      `/ledger/transactions/${txn.transaction_id}`,
+    )
+      .then((r) => {
+        if (cancelled) return;
+        const rows = r?.splits || [];
+        setLoadedSplitCount(rows.length);
+        if (rows.length >= 2) {
+          const mapped = rows.map((x) => ({
+            coa_account_id: x.coa_account_id,
+            amount: String(Number(x.amount)),
+            job_id: x.job_id || "",
+            memo: x.memo || "",
+          }));
+          setSplits(mapped);
+          initialSplitsJson.current = JSON.stringify(splitsForApi(mapped));
+          setSplitting(true);
+        }
+      })
+      .catch(() => { /* the modal still works without the split detail */ });
+    return () => { cancelled = true; };
+  }, [get, ready, txn.transaction_id]);
+
   const amount = toNum(txn.amount_signed);
   const isExpense = amount < 0;
   const isVoid = status === "void";
@@ -128,12 +167,20 @@ export function TransactionDetailModal({
   // business books" action reverses it.
   const isPersonal = status === "personal";
   const locked = isVoid || isPersonal;
+  // Splitting counts as a change even when no other field moved: it changes what
+  // the journal says about this charge.
+  const splitDirty = splitting !== loadedSplitCount >= 2
+    || (splitting && JSON.stringify(splitsForApi(splits)) !== initialSplitsJson.current);
   const dirty =
     coaAccountId !== (txn.coa_account_id || "") ||
     jobId !== (txn.job_id || "") ||
     memo !== (txn.memo || "") ||
     postedDate !== (txn.posted_date ? String(txn.posted_date).slice(0, 10) : "") ||
-    isReimbursable !== !!txn.is_reimbursable;
+    isReimbursable !== !!txn.is_reimbursable ||
+    splitDirty;
+  // Save is refused while a split does not add up, rather than sending it and
+  // letting the database refuse — the person needs to see WHICH number is wrong.
+  const saveBlocked = splitting && !splitsReady(splits, amount);
 
   const close = () => onClose(changedRef.current);
 
@@ -141,12 +188,20 @@ export function TransactionDetailModal({
     setBusy("save");
     setErr(null);
     try {
+      const apiSplits = splitting ? splitsForApi(splits) : [];
+      // The register row's account follows the largest split, so the list never
+      // shows a blank category for a fully split charge. An empty array UN-splits.
+      const primary = apiSplits.length
+        ? apiSplits.slice().sort((a, b) => b.amount - a.amount)[0].coa_account_id
+        : coaAccountId || null;
       await patch(`/ledger/transactions/${txn.transaction_id}`, {
-        coa_account_id: coaAccountId || null,
+        coa_account_id: primary,
         job_id: jobId || null,
         memo: memo.trim() || null,
         posted_date: postedDate || null,
         is_reimbursable: isReimbursable,
+        // Sent whenever the split state changed at all — including [] to clear.
+        ...(splitDirty ? { splits: apiSplits } : {}),
       });
       changedRef.current = true;
       onClose(true);
@@ -329,8 +384,19 @@ export function TransactionDetailModal({
             </button>
           )}
           <IadmButton variant="primary" onClick={close} disabled={busy != null}>Close</IadmButton>
-          <IadmButton variant="accent" product="stella" onClick={save} disabled={busy != null || !dirty || locked}>
-            {busy === "save" ? "Saving…" : !dirty && savedNote ? "Saved ✓" : "Save changes"}
+          {/* The reason Save is off is TEXT beside the button, not a tooltip: a
+              tooltip on a disabled button often never fires, and "greyed out
+              with no explanation" is the complaint that follows. */}
+          {saveBlocked && (
+            <span style={{ fontSize: 11, color: "#B91C1C", alignSelf: "center", marginRight: 4 }}>
+              The split lines have to add up to the charge.
+            </span>
+          )}
+          <IadmButton
+            variant="accent" product="stella" onClick={save}
+            disabled={busy != null || !dirty || locked || saveBlocked}
+          >
+            {busy === "save" ? "Saving…" : saveBlocked ? "Split does not add up" : !dirty && savedNote ? "Saved ✓" : "Save changes"}
           </IadmButton>
         </>
       }
@@ -360,10 +426,15 @@ export function TransactionDetailModal({
           </label>
           <label>
             <span style={fLabel}>Account</span>
-            <select style={fInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)} disabled={locked}>
+            <select style={fInput} value={coaAccountId} onChange={(e) => setCoaAccountId(e.target.value)} disabled={locked || splitting}>
               <option value="">Uncategorized</option>
               {activeAccounts.map(optionFor)}
             </select>
+            {splitting && (
+              <span style={{ display: "block", fontSize: 10, color: "#94A3B8", marginTop: 3, lineHeight: 1.4 }}>
+                This charge is split — the accounts are on the split lines below.
+              </span>
+            )}
           </label>
           <div>
             <div style={fLabel}>Source</div>
@@ -391,6 +462,47 @@ export function TransactionDetailModal({
             </span>
           </label>
         </div>
+        <div style={{ marginBottom: 12 }}>
+          <button
+            type="button"
+            data-tour="stella-detail-split"
+            disabled={locked}
+            onClick={() => {
+              if (!splitting) {
+                // Seed line one with the account and amount already on the row,
+                // so the first thing to type is the SECOND category.
+                setSplits([
+                  { coa_account_id: coaAccountId, amount: String(Math.abs(amount)), job_id: jobId, memo: "" },
+                  { coa_account_id: "", amount: "", job_id: "", memo: "" },
+                ]);
+              }
+              setSplitting(!splitting);
+            }}
+            style={{
+              padding: "5px 9px", fontSize: 11, fontWeight: 600,
+              color: locked ? "#94A3B8" : STELLA_INDIGO, background: "#fff",
+              border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6,
+              cursor: locked ? "not-allowed" : "pointer",
+            }}
+          >
+            {splitting ? "Use one account instead" : "Split across accounts"}
+          </button>
+          <span style={{ display: "block", fontSize: 10, color: "#94A3B8", marginTop: 4, lineHeight: 1.4 }}>
+            One charge, several accounts. It stays one line on your register, so it still matches your statement.
+          </span>
+        </div>
+        {splitting && (
+          <div style={{ marginBottom: 12 }}>
+            <SplitEditor
+              lines={splits}
+              onChange={setSplits}
+              target={amount}
+              accounts={accounts}
+              jobs={jobs || []}
+              disabled={locked || busy != null}
+            />
+          </div>
+        )}
         <label>
           <span style={fLabel}>Memo</span>
           <textarea rows={2} style={{ ...fInput, resize: "vertical" }} placeholder="Optional note" value={memo} onChange={(e) => setMemo(e.target.value)} disabled={locked} />
