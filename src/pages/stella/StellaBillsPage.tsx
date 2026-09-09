@@ -428,6 +428,23 @@ function BillForm({
         + Add another line
       </button>
 
+      {/* Said on the page rather than only in the posting engine: a bill's
+          lines are what you were CHARGED, tax included, and there is no
+          separate tax line because sales tax you PAY on a purchase is part of
+          the cost of the thing you bought. That is a US assumption — in a VAT
+          country the tax you pay is reclaimable and would need its own
+          account — and it is written down here so nobody has to guess whether
+          the box is missing or deliberate. (§4d, STELLA pack 2.) */}
+      <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 8, background: "#F8FAFC", border: "1px solid #E2E8F0" }}>
+        <div style={{ fontSize: 11, fontWeight: 700, color: "#0B1C24" }}>Enter each line with the tax included</div>
+        <p style={{ margin: "4px 0 0", fontSize: 11, lineHeight: 1.5, color: "#475569" }}>
+          There is no separate tax box, on purpose. Sales tax you pay a supplier is part of what the
+          thing cost you — in the US there is nothing to claim back — so the tax belongs in the line
+          it was charged on. (Sales tax you <em>collect</em> from your own customers is different:
+          that one is money you owe the state, and STELLA keeps it out of your income.)
+        </p>
+      </div>
+
       <div style={{ marginTop: 14 }}>
         <label style={label}>Note (optional)</label>
         <input value={memo} onChange={(e) => setMemo(e.target.value)} style={input} placeholder="Anything you want to remember about this bill" />
