@@ -161,9 +161,12 @@ export function ContentSeoOverview() {
               ? 'The IA Plugin is not currently reachable. Visit Website → Overview for connection status.'
               : (
                 <>
-                  We checked for Rank Math (free + Pro) and the global <code>RANK_MATH_VERSION</code> constant — none are present on this site. Install it via WP Admin → Plugins → Add New → search "Rank Math SEO", activate it, then refresh this page.
+                  The search-engine tool your website needs for this page is not switched on. It is
+                  part of what we look after, so there is nothing for you to install — tell us and
+                  we will put it on, usually the same day.
                   <div style={{ marginTop: 12, fontSize: 11, color: '#94A3B8' }}>
-                    If Rank Math is installed but you're still seeing this message, the plugin folder might be renamed. Reinstall from the WP Plugins directory and it should auto-detect.
+                    If you have had it turned on already and still see this, tell us anyway: it
+                    means your website is answering us with something we did not expect.
                   </div>
                 </>
               )}
@@ -439,9 +442,10 @@ export function ContentSeoOverview() {
             </div>
           ) : noReadabilityCount > 0 ? (
             <div style={{ padding: '12px 14px', background: '#EFF6FF', borderLeft: '3px solid #0284c7', borderRadius: 4, fontSize: 12, color: '#0B1C24', lineHeight: 1.6 }}>
-              <strong style={{ color: '#0C4A60' }}>Readability scores not yet generated.</strong> Rank Math only creates readability scores when posts are opened + saved in the WordPress editor. Your {noReadabilityCount} existing posts haven't been re-saved since Rank Math was installed, so they don't have scores yet.
+              <strong style={{ color: '#0C4A60' }}>How easy your writing is to read has not been worked out yet.</strong> Your website only works that score out when a post is saved again, and your {noReadabilityCount} existing posts have not been saved since we switched the scoring on.
               <div style={{ marginTop: 6, fontSize: 11, color: '#5A7A8A' }}>
-                Fix: open each post in WP admin and click Update (no content changes needed) — Rank Math analyzes and stores the score. OR use bulk regeneration via Rank Math → Status &amp; Tools → Database Tools → Update Keywords/Scores.
+                Opening a post under Website → Pages and saving it gives that post its score. To
+                have all {noReadabilityCount} done in one go, tell us and we will run it for you.
               </div>
             </div>
           ) : (

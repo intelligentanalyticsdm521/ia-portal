@@ -44,7 +44,8 @@ export function HostingBackups() {
             </div>
           )}
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>
-            To restore from a backup, use the WP Admin panel or contact support.
+            Putting a backup back is something we do for you — tell us the day you want and we
+            will restore it.
           </div>
         </div>
       </Card>

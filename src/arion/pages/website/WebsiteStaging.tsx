@@ -1,15 +1,25 @@
 import { Card, InfoCard, AccessButton, Loading, EmptyPanel, ConsultingUpsell, StatCard } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
+import { useIsFounder } from '../../../hooks/useIsFounder';
 
 /**
- * Website Staging — shows staging status and provides direct access to the
- * staging WP admin (no bouncing through Hostinger's hPanel). The "Manage
- * Staging" link opens Hostinger only for actions the Portal can't perform
- * (create/delete/publish).
+ * Website Staging — a practice copy of the website.
+ *
+ * ARION pack 2 (D-ARION-G): the two doors on this page that open somebody
+ * else's admin screen — the staging WordPress admin and the host's own control
+ * panel — are IA STAFF ONLY, for the same reason the WP Admin button in the
+ * topbar is. A client who lands in either of them is somewhere we cannot
+ * support them, and neither is a normal client job: making a practice copy,
+ * changing it and publishing it are all things we do.
+ *
+ * Rebuilding staging as a Portal surface is parked to 2027 (per-site staging
+ * needs the host's paid plan tier), and ARION 2.0 takes this page off the
+ * client's navigation entirely.
  */
 export function WebsiteStaging() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
+  const isFounder = useIsFounder();
 
   const { data: hosting, loading: hostingLoading } = useArionData(
     () => activeSiteId ? arionApi.getHosting(activeSiteId) : Promise.resolve(null),
@@ -26,9 +36,15 @@ export function WebsiteStaging() {
 
   const stagingExists = staging.exists === true;
   const stagingFrontend = staging.url || (domain ? 'https://staging.' + domain : null);
-  const stagingAdmin = stagingFrontend ? `${stagingFrontend.replace(/\/$/, '')}/wp-admin` : null;
+  // IA STAFF ONLY (D-ARION-G), and gated where the VALUE is made rather than
+  // where it is drawn: a client simply never has these two addresses, so no
+  // future edit to the markup below can put one back on their screen by
+  // accident. Both open an admin screen we cannot support a client inside.
+  const stagingAdmin = isFounder && stagingFrontend ? `${stagingFrontend.replace(/\/$/, '')}/wp-admin` : null;
   // Hostinger hPanel staging management (only used for create/delete/publish)
-  const manageUrl = staging.manageUrl || (domain ? `https://hpanel.hostinger.com/websites/${domain}/wordpress/staging/${domain}` : null);
+  const manageUrl = isFounder
+    ? (staging.manageUrl || (domain ? `https://hpanel.hostinger.com/websites/${domain}/wordpress/staging/${domain}` : null))
+    : null;
 
   return (
     <div>
@@ -66,7 +82,7 @@ export function WebsiteStaging() {
                   <th>Site</th>
                   <th>Status</th>
                   <th>Frontend URL</th>
-                  <th>Admin URL</th>
+                  {isFounder && <th>Admin URL</th>}
                 </tr>
               </thead>
               <tbody>
@@ -80,43 +96,53 @@ export function WebsiteStaging() {
                       </a>
                     ) : '—'}
                   </td>
-                  <td>
-                    {stagingAdmin ? (
-                      <a href={stagingAdmin} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 11, fontFamily: 'monospace' }}>
-                        {stagingAdmin}
-                      </a>
-                    ) : '—'}
-                  </td>
+                  {isFounder && (
+                    <td>
+                      {stagingAdmin ? (
+                        <a href={stagingAdmin} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--arion-sky)', fontSize: 11, fontFamily: 'monospace' }}>
+                          {stagingAdmin}
+                        </a>
+                      ) : '—'}
+                    </td>
+                  )}
                 </tr>
               </tbody>
             </table>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-              {stagingAdmin && (
-                <AccessButton variant="sky" label="Open Staging WP Admin →" href={stagingAdmin} />
-              )}
               {stagingFrontend && (
-                <AccessButton variant="outline" label="View Staging Site" href={stagingFrontend} />
+                <AccessButton variant="sky" label="View the practice copy" href={stagingFrontend} />
               )}
-              {manageUrl && (
-                <AccessButton variant="outline" label="Sync / Publish (Hostinger)" href={manageUrl} />
+              {/* IA staff only (D-ARION-G) — both of these open an admin screen
+                  we cannot support a client inside. */}
+              {isFounder && stagingAdmin && (
+                <AccessButton variant="outline" label="Staging WP Admin (IA staff)" href={stagingAdmin} />
+              )}
+              {isFounder && manageUrl && (
+                <AccessButton variant="outline" label="Sync / Publish (IA staff)" href={manageUrl} />
               )}
             </div>
 
             <div style={{ marginTop: 14, padding: 12, background: '#F8FAFC', borderRadius: 6, fontSize: 11, color: '#5A7A8A', lineHeight: 1.6 }}>
-              <strong>Workflow:</strong> Make your changes in the staging WP admin → test them on the staging frontend → use Hostinger's "Publish" action to push the staging database + files to production. Direct file edits or custom code changes should always flow staging → production, never the reverse.
+              <strong>How this is used:</strong> the practice copy is where we try a bigger change
+              before it goes anywhere near the website your customers see. Look at it, tell us what
+              you think, and we publish it across for you when you are happy. Nothing you do in the
+              Portal touches this copy — your pages, menus, colours and posts are edited on your
+              real website and published from there.
             </div>
           </>
         ) : (
           <>
-            <InfoCard title="No staging environment">
+            <InfoCard title="You have no practice copy yet">
               <p style={{ margin: 0, fontSize: 13 }}>
-                Create a staging environment to test changes before publishing to your live site. Staging is a free Hostinger feature — it copies your site to a subdomain (staging.yourdomain.com) where you can test safely.
+                A practice copy is a second, private copy of your website where a bigger change can
+                be tried out before anybody else sees it. It costs nothing on your plan. Ask us and
+                we will make you one.
               </p>
             </InfoCard>
-            {manageUrl && (
+            {isFounder && manageUrl && (
               <div style={{ marginTop: 14 }}>
-                <AccessButton variant="sky" label="Create Staging (Hostinger) →" href={manageUrl} />
+                <AccessButton variant="outline" label="Create staging (IA staff)" href={manageUrl} />
               </div>
             )}
           </>

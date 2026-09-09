@@ -8,6 +8,7 @@ import { SectionPicker } from '../../components/SectionPicker';
 import { AskArgusBox, DiffRows } from '../../components/AskArgus';
 import { AdoptSectionSheet, AdoptReviewList } from '../../components/AdoptSectionSheet';
 import { PageSettingsSheet } from '../../components/PageSettingsSheet';
+import { MediaPicker } from '../../components/MediaPicker';
 import { SwapLookSheet } from '../../components/SwapLookSheet';
 import { smallButton } from '../../components/SectionFieldInputs';
 import type {
@@ -131,6 +132,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [creating, setCreating] = useState(false);
   const [newTitle, setNewTitle] = useState('');
+  const [newKind, setNewKind] = useState<'page' | 'post'>('page');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [askFor, setAskFor] = useState<ArionSitePage | null>(null);
@@ -144,6 +146,11 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   );
   const pages: ArionSitePage[] = (data as any)?.data?.pages || [];
   const { drafts, live, deleted } = useMemo(() => splitPages(pages), [pages]);
+  // Blog posts are their own list. A post is not a page: it is dated writing
+  // that appears in a blog list, and mixing the two makes a client hunt for
+  // the difference in a chip (ARION pack 2, D-ARION-C).
+  const livePages = useMemo(() => live.filter((p) => p.type !== 'post'), [live]);
+  const livePosts = useMemo(() => live.filter((p) => p.type === 'post'), [live]);
 
   const restore = async (p: ArionSitePage) => {
     if (!activeSiteId) return;
@@ -165,7 +172,9 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     try {
       const res: any = await arionApi.createSitePage(activeSiteId, {
         title: newTitle.trim(),
-        sections: [{ kind: 'hero' }],
+        // A post opens on a headline and a paragraph; a page opens on a banner.
+        sections: [{ kind: newKind === 'post' ? 'about' : 'hero' }],
+        type: newKind,
       });
       setCreating(false); setNewTitle('');
       refetch();
@@ -301,9 +310,20 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
             : `Every page on ${selectedSite?.primaryDomain || 'your website'}, drafts included.`
         }
         action={
-          <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} onClick={() => setCreating(true)}>
-            New page
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
+              onClick={() => { setNewKind('page'); setCreating(true); }}
+            >
+              New page
+            </button>
+            <button
+              type="button" style={{ ...smallButton, minHeight: 44 }}
+              onClick={() => { setNewKind('post'); setCreating(true); }}
+            >
+              Write a post
+            </button>
+          </div>
         }
       >
         {creating && (
@@ -312,7 +332,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
             background: 'var(--surface-2, #F8FAFC)',
           }}>
             <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }} htmlFor="new-page-title">
-              What is the page called?
+              What is the {newKind === 'post' ? 'post' : 'page'} called?
             </label>
             <input
               id="new-page-title"
@@ -325,7 +345,8 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
               }}
             />
             <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 10px' }}>
-              It starts as a draft with one banner section, so nothing appears on your website until you publish it.
+              It starts as a draft with one section, so nothing appears on your website until you publish it.
+              {newKind === 'post' && ' You can set what it is filed under, and its picture, in its settings.'}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !newTitle.trim()} onClick={create}>
@@ -336,16 +357,26 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           </div>
         )}
 
-        {live.length === 0 ? (
+        {livePages.length === 0 ? (
           <EmptyPanel message={
             drafts.length > 0
               ? 'Nothing is live on this website yet.'
               : 'We could not find any pages on this website yet.'
           } />
         ) : (
-          <div>{live.map(row)}</div>
+          <div>{livePages.map(row)}</div>
         )}
       </Card>
+
+      {livePosts.length > 0 && (
+        <Card
+          title="Blog posts"
+          subtitle="Written here, in the same editor as your pages."
+          style={{ marginTop: 12 }}
+        >
+          {livePosts.map(row)}
+        </Card>
+      )}
 
       {deleted.length > 0 && (
         <Card
@@ -454,6 +485,9 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
   const [seo, setSeo] = useState<SitePageSeo | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  // The picture that goes with a blog post (ARION pack 2, D-ARION-C). Same
+  // library, same picker as everything else — one mechanism.
+  const [pickingFeatured, setPickingFeatured] = useState(false);
 
   /* "Change the look" — the same words in a different layout (D-ARION-F). */
   const [swapUid, setSwapUid] = useState<string | null>(null);
@@ -702,6 +736,7 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
 
   const saveSettings = useCallback(async (params: {
     slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+    excerpt?: string; categories?: string[]; tags?: string[]; featuredImageId?: number;
   }) => {
     if (!activeSiteId) return;
     setBusy('settings'); setSettingsError(null);
@@ -1411,7 +1446,31 @@ function PageEditor({ pageId, onBack }: { pageId: number; onBack: () => void }) 
           onSaveSettings={saveSettings}
           onSaveSeo={saveSeo}
           onTrash={trashThisPage}
+          onPickFeaturedImage={settings?.type === 'post' ? () => setPickingFeatured(true) : undefined}
           onClose={() => { setSettingsOpen(false); setSettingsError(null); }}
+        />
+      )}
+
+      {pickingFeatured && (
+        <MediaPicker
+          title="The picture for this post"
+          currentUrl={settings?.postFields?.featuredImage.url || ''}
+          currentAlt=""
+          needsAlt={false}
+          altLabel="Describe the picture"
+          api={fieldCtx.media}
+          onClose={() => setPickingFeatured(false)}
+          onChoose={(picked) => {
+            setPickingFeatured(false);
+            // WordPress stores this one by attachment id, so a picture that is
+            // not in this website's own library cannot be it. Say so rather
+            // than storing a 0, which reads as "no picture".
+            if (!picked.attachmentId) {
+              setSettingsError('That picture is not in your website’s own library, so it cannot be the post’s picture. Upload it here first.');
+              return;
+            }
+            void saveSettings({ featuredImageId: picked.attachmentId });
+          }}
         />
       )}
 

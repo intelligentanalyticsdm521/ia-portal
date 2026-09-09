@@ -1317,8 +1317,23 @@ export async function getPagespeedHistory(params: { baseUrl: string; bearerToken
   });
 }
 
-export async function getAdminLink(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
-  return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/admin-link` });
+/**
+ * IA STAFF ONLY since ARION pack 2 (D-ARION-G) — the button that calls this is
+ * gated on `isFounder`.
+ *
+ * `dest` is an OPTIONAL WordPress admin screen so support lands where they were
+ * asked to look rather than on the dashboard. It is validated at BOTH ends (a
+ * bare admin file, optionally with a query string) and made absolute by the
+ * website itself, so it cannot send anybody anywhere else.
+ */
+export async function getAdminLink(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; dest?: string;
+}) {
+  const qs = params.dest ? `?dest=${encodeURIComponent(params.dest)}` : '';
+  return requestJson<any>({
+    ...params,
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/admin-link${qs}`,
+  });
 }
 
 export async function getEditorLink(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
@@ -2952,14 +2967,19 @@ export async function listSectionAdoptions(p: {
 export async function createSitePage(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
   title: string; sections: Array<{ kind: string }>;
+  /** 'post' composes a BLOG POST in the same editor (ARION pack 2, D-ARION-C). */
+  type?: 'page' | 'post';
 }) {
   return requestJson<{
-    data: { pageId: number; title: string; status: string; permalink: string | null; previewUrl: string | null };
+    data: {
+      pageId: number; title: string; status: string; type?: string;
+      permalink: string | null; previewUrl: string | null;
+    };
   }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages`,
-    body: { title: p.title, sections: p.sections },
+    body: { title: p.title, sections: p.sections, type: p.type || 'page' },
     timeoutMs: 90_000,
   });
 }
@@ -3162,8 +3182,23 @@ export interface SitePageSettings {
   blogPageId: number;
   /** WordPress had to make the address unique, so it is not what was typed. */
   slugAdjusted?: boolean;
+  /**
+   * A blog post's own four. `null` on a page, so the sheet shows the card
+   * only where it means something (ARION pack 2, D-ARION-C).
+   */
+  postFields: SitePostFields | null;
   changed?: string[];
   cachePurged?: boolean;
+}
+
+export interface SitePostFields {
+  excerpt: string;
+  /** By NAME, because that is what a person types. New ones are created. */
+  categories: string[];
+  tags: string[];
+  featuredImage: { id: number; url: string };
+  /** What this website already files posts under, to offer first. */
+  allCategories: string[];
 }
 
 export interface SitePageSeo {
@@ -3205,6 +3240,7 @@ export async function getSitePageSettings(p: {
 export async function saveSitePageSettings(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
   slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+  excerpt?: string; categories?: string[]; tags?: string[]; featuredImageId?: number;
 }) {
   return requestJson<{ data: SitePageSettings }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
@@ -3212,6 +3248,7 @@ export async function saveSitePageSettings(p: {
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/settings`,
     body: {
       slug: p.slug, template: p.template, parentId: p.parentId, makeHomePage: p.makeHomePage,
+      excerpt: p.excerpt, categories: p.categories, tags: p.tags, featuredImageId: p.featuredImageId,
     },
     timeoutMs: 90_000,
   });
@@ -3240,6 +3277,261 @@ export async function restoreSitePage(p: {
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/restore`,
     timeoutMs: 90_000,
+  });
+}
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+ * ARION pack 2 — the site itself: menus, brand, header and footer, switches.
+ *
+ * Everything here was a job that could only be done by signing into
+ * WordPress. All of it goes through the plugin on the site token, and the
+ * website reads every value back before it answers, so a success here means
+ * the site is holding what was asked for.
+ * ════════════════════════════════════════════════════════════════════════ */
+
+export interface SiteMenuItem {
+  itemId: number;
+  title: string;
+  /** 'page' | 'post' | 'custom' | a taxonomy. 'custom' is a typed-in link. */
+  kind: string;
+  objectId: number;
+  url: string;
+  /** 0 for a top-level entry; otherwise the itemId it sits under. */
+  parentItemId: number;
+}
+
+export interface SiteMenu {
+  menuId: number;
+  name: string;
+  /** The theme positions this menu is currently in. */
+  locations: string[];
+  canUndo: boolean;
+  items: SiteMenuItem[];
+}
+
+export interface SiteMenus {
+  menus: SiteMenu[];
+  locations: Array<{ location: string; label: string; menuId: number }>;
+  addable: Array<{ objectId: number; kind: string; title: string; status: string; url: string }>;
+  booking: { url: string; label: string };
+  theme: string;
+  pluginVersion: string;
+  restored?: boolean;
+}
+
+/** What the Portal sends back: the WHOLE ordered list, every time. */
+export interface SiteMenuItemInput {
+  itemId?: number;
+  kind: string;
+  objectId?: number;
+  title?: string;
+  url?: string;
+  /** Index in THIS list of the entry it sits under, or null for top level. */
+  parentIndex?: number | null;
+}
+
+export async function getSiteMenus(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: SiteMenus }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/menus`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function createSiteMenu(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; name: string;
+}) {
+  return requestJson<{ data: SiteMenus }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/menus`,
+    body: { name: p.name },
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSiteMenu(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; menuId: number;
+  name?: string; items?: SiteMenuItemInput[]; locations?: string[];
+}) {
+  return requestJson<{ data: SiteMenus }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'PUT',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/menus/${p.menuId}`,
+    body: {
+      name: p.name,
+      locations: p.locations,
+      items: p.items?.map((i) => ({
+        item_id: i.itemId,
+        kind: i.kind,
+        object_id: i.objectId,
+        title: i.title,
+        url: i.url,
+        parent_index: i.parentIndex ?? null,
+      })),
+    },
+    timeoutMs: 90_000,
+  });
+}
+
+export async function undoSiteMenu(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; menuId: number;
+}) {
+  return requestJson<{ data: SiteMenus }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/menus/${p.menuId}/undo`,
+    timeoutMs: 90_000,
+  });
+}
+
+export interface SiteKitColour { id: string; title: string; color: string }
+export interface SiteKitFont { id: string; title: string; fontFamily: string; fontWeight: string }
+
+export interface SiteKit {
+  kitId: number;
+  colors: SiteKitColour[];
+  typography: SiteKitFont[];
+  /**
+   * What your business identity says your brand is — offered as a starting
+   * point, never applied on its own. `hasBrandColour:false` means we have no
+   * recorded colour and are NOT going to invent one.
+   */
+  suggested: {
+    hasBrandColour: boolean;
+    colors: Array<{ id: string; title: string; color: string }>;
+    typography: Array<{ id: string; fontFamily: string; fontWeight: string }>;
+  } | null;
+  pluginVersion: string;
+}
+
+export async function getSiteKit(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: SiteKit }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/kit`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSiteKit(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  colors?: Array<{ id: string; color: string }>;
+  typography?: Array<{ id: string; fontFamily: string; fontWeight?: string }>;
+}) {
+  return requestJson<{ data: SiteKit }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/kit`,
+    body: { colors: p.colors, typography: p.typography },
+    timeoutMs: 90_000,
+  });
+}
+
+export interface SiteChromeField {
+  key: string;
+  group: 'header' | 'footer' | string;
+  label: string;
+  type: 'text' | 'textarea' | 'switch' | 'choice' | 'image' | string;
+  /** False means this website's theme does not offer it — `reason` says so. */
+  supported: boolean;
+  reason: string | null;
+  value: string | number | boolean | null;
+  options?: string[];
+  help?: string;
+  imageUrl?: string;
+}
+
+export interface SiteChrome {
+  theme: string;
+  themeFamily: string;
+  fields: SiteChromeField[];
+  menuLocations: Array<{ location: string; label: string; menuId: number; menuName: string }>;
+  booking: { url: string; inHeader: boolean; label: string };
+  suggested: {
+    businessName: string; tagline: string; footerText: string; logoUrl: string; bookingUrl: string;
+  } | null;
+  pluginVersion: string;
+}
+
+export async function getSiteChrome(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: SiteChrome }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/chrome`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSiteChrome(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  values: Record<string, string | number | boolean>;
+}) {
+  return requestJson<{ data: SiteChrome }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/chrome`,
+    body: p.values,
+    timeoutMs: 90_000,
+  });
+}
+
+export interface SiteOptions {
+  chat: { enabled: boolean; fallbackUrl: string };
+  booking: { url: string; inHeader: boolean; label: string; tierAllows: boolean };
+  pluginVersion: string;
+}
+
+export async function getSiteOptions(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: SiteOptions }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/options`,
+    timeoutMs: 45_000,
+  });
+}
+
+export async function saveSiteOptions(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+  chatEnabled?: boolean; chatFallbackUrl?: string; bookingInHeader?: boolean; bookingLabel?: string;
+}) {
+  const body: Record<string, unknown> = {};
+  if (p.chatEnabled !== undefined) body.chatEnabled = p.chatEnabled;
+  if (p.chatFallbackUrl !== undefined) body.chatFallbackUrl = p.chatFallbackUrl;
+  if (p.bookingInHeader !== undefined) body.bookingInHeader = p.bookingInHeader;
+  if (p.bookingLabel !== undefined) body.bookingLabel = p.bookingLabel;
+  return requestJson<{ data: SiteOptions }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'POST',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/site/options`,
+    body,
+    timeoutMs: 90_000,
+  });
+}
+
+/** THE ONE PRICE SOURCE: your services and prices, for a pricing section. */
+export interface SitePricingCatalogue {
+  available: boolean;
+  reason: string | null;
+  services: Array<{
+    offeringId: string; name: string; description: string;
+    durationMinutes: number | null; price: string; period: string; features: string[];
+  }>;
+}
+
+export async function getSitePricingCatalogue(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
+}) {
+  return requestJson<{ data: SitePricingCatalogue }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pricing-catalogue`,
+    timeoutMs: 45_000,
   });
 }
 

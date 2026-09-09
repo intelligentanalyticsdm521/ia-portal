@@ -371,9 +371,9 @@ export function useArionContext() {
         return portalGetEditorLink({ ...b, siteId });
       },
 
-      async getAdminLink(siteId: string) {
+      async getAdminLink(siteId: string, dest?: string) {
         const b = await base();
-        return portalGetAdminLink({ ...b, siteId });
+        return portalGetAdminLink({ ...b, siteId, dest });
       },
 
       async createSeoProject(siteId: string, projectName?: string) {
@@ -913,7 +913,7 @@ export function useArionContext() {
         return undoSitePage({ ...b, siteId, pageId });
       },
 
-      async createSitePage(siteId: string, params: { title: string; sections: Array<{ kind: string }> }) {
+      async createSitePage(siteId: string, params: { title: string; sections: Array<{ kind: string }>; type?: 'page' | 'post' }) {
         const b = await base();
         const { createSitePage } = await import('../lib/arionApi');
         return createSitePage({ ...b, siteId, ...params });
@@ -1037,7 +1037,10 @@ export function useArionContext() {
       async saveSitePageSettings(
         siteId: string,
         pageId: number,
-        params: { slug?: string; template?: string; parentId?: number; makeHomePage?: boolean },
+        params: {
+          slug?: string; template?: string; parentId?: number; makeHomePage?: boolean;
+          excerpt?: string; categories?: string[]; tags?: string[]; featuredImageId?: number;
+        },
       ) {
         const b = await base();
         const { saveSitePageSettings } = await import('../lib/arionApi');
@@ -1054,6 +1057,96 @@ export function useArionContext() {
         const b = await base();
         const { restoreSitePage } = await import('../lib/arionApi');
         return restoreSitePage({ ...b, siteId, pageId });
+      },
+
+      /* ARION pack 2 — the site itself. Menus, the brand colours and fonts,
+         the header and footer through the theme's own options, the two site
+         switches, and the one price list a pricing section fills itself from.
+         Every one of these was a reason to sign into WordPress. */
+      async getSiteMenus(siteId: string) {
+        const b = await base();
+        const { getSiteMenus } = await import('../lib/arionApi');
+        return getSiteMenus({ ...b, siteId });
+      },
+
+      async createSiteMenu(siteId: string, name: string) {
+        const b = await base();
+        const { createSiteMenu } = await import('../lib/arionApi');
+        return createSiteMenu({ ...b, siteId, name });
+      },
+
+      async saveSiteMenu(
+        siteId: string,
+        menuId: number,
+        params: {
+          name?: string;
+          items?: import('../lib/arionApi').SiteMenuItemInput[];
+          locations?: string[];
+        },
+      ) {
+        const b = await base();
+        const { saveSiteMenu } = await import('../lib/arionApi');
+        return saveSiteMenu({ ...b, siteId, menuId, ...params });
+      },
+
+      async undoSiteMenu(siteId: string, menuId: number) {
+        const b = await base();
+        const { undoSiteMenu } = await import('../lib/arionApi');
+        return undoSiteMenu({ ...b, siteId, menuId });
+      },
+
+      async getSiteKit(siteId: string) {
+        const b = await base();
+        const { getSiteKit } = await import('../lib/arionApi');
+        return getSiteKit({ ...b, siteId });
+      },
+
+      async saveSiteKit(
+        siteId: string,
+        params: {
+          colors?: Array<{ id: string; color: string }>;
+          typography?: Array<{ id: string; fontFamily: string; fontWeight?: string }>;
+        },
+      ) {
+        const b = await base();
+        const { saveSiteKit } = await import('../lib/arionApi');
+        return saveSiteKit({ ...b, siteId, ...params });
+      },
+
+      async getSiteChrome(siteId: string) {
+        const b = await base();
+        const { getSiteChrome } = await import('../lib/arionApi');
+        return getSiteChrome({ ...b, siteId });
+      },
+
+      async saveSiteChrome(siteId: string, values: Record<string, string | number | boolean>) {
+        const b = await base();
+        const { saveSiteChrome } = await import('../lib/arionApi');
+        return saveSiteChrome({ ...b, siteId, values });
+      },
+
+      async getSiteOptions(siteId: string) {
+        const b = await base();
+        const { getSiteOptions } = await import('../lib/arionApi');
+        return getSiteOptions({ ...b, siteId });
+      },
+
+      async saveSiteOptions(
+        siteId: string,
+        params: {
+          chatEnabled?: boolean; chatFallbackUrl?: string;
+          bookingInHeader?: boolean; bookingLabel?: string;
+        },
+      ) {
+        const b = await base();
+        const { saveSiteOptions } = await import('../lib/arionApi');
+        return saveSiteOptions({ ...b, siteId, ...params });
+      },
+
+      async getSitePricingCatalogue(siteId: string) {
+        const b = await base();
+        const { getSitePricingCatalogue } = await import('../lib/arionApi');
+        return getSitePricingCatalogue({ ...b, siteId });
       },
 
       async getSitePageSeo(siteId: string, pageId: number) {
