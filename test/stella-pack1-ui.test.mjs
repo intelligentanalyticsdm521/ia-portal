@@ -219,6 +219,30 @@ test("the role nav filter covers STELLA as well as OLIVER", () => {
   assert.match(appShell, /if \(!allowedServiceKeys\) return config;/);
 });
 
+test("Period Close and the bank page live under SETTINGS, and that hub is filtered too", () => {
+  // Period Close is a stella_settings_* key, so deriveProduct sends it to the
+  // "settings" product — not "stella". Filtering only the two product hubs
+  // would have left an accountant able to walk into the bank-link page from
+  // Settings, which the server list deliberately withholds.
+  assert.match(appShell, /if \(activeProduct === "settings"\)/);
+  assert.match(appShell, /applyRoleNavFilter\(rawSubNavConfig, roleInfo\.allowedServiceKeys, \["stella_", "oliver_"\]\)/);
+});
+
+test("account settings are NOT product-gated, so the Settings filter is prefix-scoped", () => {
+  // reference_account_settings_not_product_gated: tenant-level settings belong
+  // to every member of a business whatever their product role. Filtering the
+  // whole hub against a PRODUCT allowlist would have stripped them.
+  assert.match(appShell, /prefixes: string\[\] \| null = null/);
+  assert.match(appShell, /const inScope = \(key: string\) => !prefixes \|\| prefixes\.some\(\(p\) => key\.startsWith\(p\)\)/);
+  assert.match(appShell, /items: g\.items\.filter\(\(i\) => !inScope\(i\.key\) \|\| allowSet\.has\(i\.key\)\)/);
+
+  // And the three product-settings keys are on the right sides of the line.
+  const subNav = read("components/SubNav.tsx");
+  for (const k of ["oliver_settings", "stella_settings_bank", "stella_settings_period_close"]) {
+    assert.match(subNav, new RegExp(`key: "${k}"`), `${k} is not in the Settings nav any more`);
+  }
+});
+
 /* ── House rules ─────────────────────────────────────────────────────────── */
 
 test('no STELLA surface built here says "tenant" to a human', () => {

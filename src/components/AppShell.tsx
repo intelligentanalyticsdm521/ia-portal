@@ -28,14 +28,27 @@ import { PageHelpButton } from "./PageHelpButton";
 // stella_* keys, and applying the filter to only one of the two products would
 // have meant an accountant either saw no STELLA nav at all or saw all of it
 // including the bank-link settings — neither of which is the answer.
+//
+// `prefixes` is what makes this safe to point at the SETTINGS hub as well. The
+// Settings SubNav mixes PRODUCT settings (stella_settings_bank,
+// stella_settings_period_close, oliver_settings_*) with TENANT-level account
+// settings that every member of a business is entitled to see whatever their
+// product role is (reference_account_settings_not_product_gated). Filtering the
+// whole hub against a product allowlist would strip the account settings too;
+// filtering nothing would leave an accountant able to reach the bank-link page,
+// which the server list deliberately withholds. So only items whose key starts
+// with one of `prefixes` are subject to the allowlist, and everything else is
+// left exactly as it was.
 function applyRoleNavFilter(
   config: SubNavConfig,
   allowedServiceKeys: string[] | null,
+  prefixes: string[] | null = null,
 ): SubNavConfig {
   if (!allowedServiceKeys) return config;
   const allowSet = new Set(allowedServiceKeys);
+  const inScope = (key: string) => !prefixes || prefixes.some((p) => key.startsWith(p));
   const filteredGroups = config.groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => allowSet.has(i.key)) }))
+    .map((g) => ({ ...g, items: g.items.filter((i) => !inScope(i.key) || allowSet.has(i.key)) }))
     .filter((g) => g.items.length > 0);
   return { ...config, groups: filteredGroups };
 }
@@ -276,6 +289,12 @@ export function AppShell() {
     if (!rawSubNavConfig) return null;
     if (activeProduct === "oliver" || activeProduct === "stella") {
       return applyRoleNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys);
+    }
+    if (activeProduct === "settings") {
+      // Product settings are role-filtered; account settings are not. Period
+      // Close IS on the accountant's list and stays; the bank-and-card page is
+      // not and goes.
+      return applyRoleNavFilter(rawSubNavConfig, roleInfo.allowedServiceKeys, ["stella_", "oliver_"]);
     }
     if (activeProduct === "consulting") {
       // F1.9 — Onboard Client (and other founder-tools) hidden for non-founders
