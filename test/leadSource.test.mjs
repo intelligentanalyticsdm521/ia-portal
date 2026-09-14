@@ -78,8 +78,18 @@ test("a source with no channel shows the source alone, never a dangling separato
 test("an unknown row degrades to a dash, never to \"undefined\"", () => {
   assert.equal(rowSourceAndChannel(null), "—");
   assert.equal(rowSourceAndChannel({}), "—");
-  assert.equal(rowSourceLabel({ source: "some_future_source" }), "some_future_source",
-    "an unmapped key shows itself rather than pretending to be something else");
+  // POST-PLAN FIX PACK 1 (2026-09-14). This used to assert the opposite — "an
+  // unmapped key shows itself rather than pretending to be something else" —
+  // and that is the defect, not the design: every unmapped key we actually
+  // have is a discovery ENGINE's name, so "showing itself" means putting
+  // "brave_search" in a client's Source cell (platform rule D-90, no vendor
+  // name on a client screen). An unrecognised MACHINE key now degrades to a
+  // neutral phrase; words a person typed still pass through untouched, which
+  // is the case that rule was really protecting.
+  assert.equal(rowSourceLabel({ source: "some_future_source" }), "Other source");
+  assert.equal(rowSourceLabel({ source: "some_future_search" }), "Web search");
+  assert.equal(rowSourceLabel({ source: "Yard Sign" }), "Yard Sign",
+    "a client's own words are still theirs");
 });
 
 test("the Source facet groups by the LABEL, not by what the client named it", () => {

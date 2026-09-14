@@ -18,17 +18,29 @@
 //
 // This is the ONE place those labels live — the inbox row, the source facet and
 // the lead modal all read it, so they can never drift apart.
+//
+// THE SERVER'S HALF is LUMEN-API/src/lib/leadSourceLabels.js. It builds the two
+// client-facing artefacts the browser cannot label for itself: the Lead Inbox
+// spreadsheet and the lead card's "Where this lead came from" endpoint. Same
+// keys, same words, asserted on both sides — add an engine to one and the other
+// repo's test fails. (Until 2026-09-14 the attribution endpoint kept a third
+// table of eight keys and title-cased the rest, so that card showed clients
+// "Brave Search", "You Search", "Exa Search" and "Google Cse".)
 
 const SOURCE_LABELS: Record<string, string> = {
   spark_leadgen: "SPARK Lead Gen",
   hunter_discover: "SPARK Lead Gen",
   data_axle: "SPARK Lead Gen",
+  data_axle_consumer: "SPARK Lead Gen",
   brave_search: "SPARK Lead Gen",
   you_search: "SPARK Lead Gen",
   mojeek_search: "SPARK Lead Gen",
   exa_search: "SPARK Lead Gen",
   company_directory: "SPARK Lead Gen",
   google_cse: "SPARK Lead Gen",
+  pdl: "SPARK Lead Gen",
+  leadgen: "SPARK Lead Gen",
+  referral: "Referral",
   linkedin: "LinkedIn",
   arion_form: "Website form",
   spark_form: "Website form",
@@ -110,10 +122,50 @@ function firstSource(raw: string | null | undefined): string | null {
   return first || null;
 }
 
+/**
+ * The words that may never reach a client screen, whatever shape the key
+ * arrives in (platform rule D-90). This is the backstop: a new engine added to
+ * the server's `sources/` and forgotten in the table above still cannot
+ * introduce itself to a client by name.
+ */
+const VENDOR_WORDS =
+  /(brave|mojeek|\bexa\b|hunter|axle|\bpdl\b|people\s*data|\bcse\b|serpapi|\bserp\b|clearbit|zoominfo|apollo|\bbing\b|you[\s._-]?com|you_search)/i;
+
+/** A key our own code wrote, rather than words a client typed. */
+function machineShaped(key: string): boolean {
+  return /^[a-z0-9]+(?:[_-][a-z0-9]+)+$/.test(key);
+}
+
+/**
+ * A neutral phrase for a key we will not show, shaped by what the key is FOR,
+ * so the sentence stays true even though the name is gone.
+ */
+export function neutralSourceLabel(key: string): string {
+  if (/(search|cse|serp|engine)/i.test(key)) return "Web search";
+  if (/(directory|listing|data|axle|pdl)/i.test(key)) return "Directory";
+  if (/(form|leadform)/i.test(key)) return "Website form";
+  if (/(chat|message|sms|text)/i.test(key)) return "Website chat";
+  if (/(call|phone|voice)/i.test(key)) return "Phone call";
+  return "Other source";
+}
+
+/**
+ * A raw key → the words a client reads.
+ *
+ * A key we do not recognise used to be rendered RAW, so an engine added on the
+ * server and not here put "brave_search" on a client's screen. Now an
+ * unrecognised key is only shown when a PERSON could have written it — "Yard
+ * Sign", "Nextdoor", "Referral" are all real values a client typed. A
+ * machine-shaped key, or anything carrying a vendor word, gets a neutral
+ * phrase instead.
+ */
 export function sourceLabel(raw: string | null | undefined): string {
   const first = firstSource(raw);
   if (!first) return "—";
-  return SOURCE_LABELS[first] ?? first;
+  const known = SOURCE_LABELS[first.toLowerCase()];
+  if (known) return known;
+  if (VENDOR_WORDS.test(first) || machineShaped(first.toLowerCase())) return neutralSourceLabel(first);
+  return first;
 }
 
 export function channelLabel(raw: string | null | undefined): string | null {
@@ -172,7 +224,9 @@ export function sourceFacetKey(row: LeadSourceRow | null | undefined): string {
   if (!row) return "Unknown";
   const key = firstSource(row.source || row.sources_found);
   if (!key) return "Unknown";
-  return SOURCE_LABELS[key] ?? key;
+  // sourceLabel, not the bare table: the chip a client picks has to read the
+  // same as the cell they picked it from, unrecognised keys included.
+  return sourceLabel(key);
 }
 
 /**
@@ -182,5 +236,5 @@ export function sourceFacetKey(row: LeadSourceRow | null | undefined): string {
  */
 export function sourceFacetLabel(key: string): string {
   if (!key || key.toLowerCase() === "unknown") return "Unknown";
-  return SOURCE_LABELS[key] ?? key;
+  return sourceLabel(key);
 }

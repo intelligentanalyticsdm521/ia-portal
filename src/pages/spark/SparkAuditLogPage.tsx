@@ -119,7 +119,7 @@ function prettyMetadata(raw: string | null): string {
 // ── Page ─────────────────────────────────────────────────────────────
 
 export function SparkAuditLogPage() {
-  const { get, ready } = useSparkApi();
+  const { get, download, ready } = useSparkApi();
 
   // Filters
   const [days, setDays] = useState<DaysWindow>(30);
@@ -152,6 +152,9 @@ export function SparkAuditLogPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
+
+  // Export state — the button says what it is doing and cannot be pressed twice.
+  const [exporting, setExporting] = useState(false);
 
   // Summary
   const [summary, setSummary] = useState<AuditSummaryResponse | null>(null);
@@ -437,6 +440,41 @@ export function SparkAuditLogPage() {
     return items;
   }, [summary]);
 
+  // Export — the entries you are looking at, as a spreadsheet.
+  //
+  // THIS USED TO BE `window.open`, and it could not work in production. An
+  // anchor or a new tab sends no headers, and /api/v1/audit-log/export.csv is
+  // behind authVerify() and requireHeaders — so the request arrived with no
+  // bearer token and no business, and the client got a 401 in a blank tab
+  // instead of a file. The code's own comment admitted it ("the user will need
+  // to add a download token mechanism in a follow-up").
+  //
+  // `download` is that mechanism, and it already existed: the same helper the
+  // Lead Inbox export uses, which fetches with the real Authorization header
+  // and the business header, honours the server's Content-Disposition name and
+  // hands the blob to the browser. One download mechanism, not two.
+  const onExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const params = new URLSearchParams();
+      params.set("days", String(days));
+      if (productFilter !== "all") params.set("product", productFilter);
+      if (debouncedAction) params.set("action", debouncedAction);
+      if (debouncedEntityType) params.set("entity_type", debouncedEntityType);
+      if (debouncedUserEmail) params.set("user_id", debouncedUserEmail);
+      params.set("max", "10000");
+      await download(
+        `/api/v1/audit-log/export.csv?${params.toString()}`,
+        `audit-log-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+    } catch (err) {
+      alert((err as Error)?.message || "The export didn't finish. Try again in a moment.");
+    } finally {
+      setExporting(false);
+    }
+  }, [download, exporting, days, productFilter, debouncedAction, debouncedEntityType, debouncedUserEmail]);
+
   return (
     <SparkPageShell
       title="Audit Log"
@@ -446,27 +484,13 @@ export function SparkAuditLogPage() {
       filters={filters}
       actions={
         <button
-          onClick={() => {
-            // Trigger CSV download in a new tab — the browser handles auth via cookies
-            // for the LUMEN-API. For bearer-auth setups, fall back to fetching the
-            // CSV and creating a blob URL.
-            const params = new URLSearchParams();
-            params.set("days", String(days));
-            if (productFilter !== "all") params.set("product", productFilter);
-            if (debouncedAction) params.set("action", debouncedAction);
-            if (debouncedEntityType) params.set("entity_type", debouncedEntityType);
-            if (debouncedUserEmail) params.set("user_id", debouncedUserEmail);
-            params.set("max", "10000");
-            // Best-effort: open in new tab. If the server requires Authorization
-            // header (most likely), the user will need to add a download token
-            // mechanism in a follow-up — for now this surfaces the right URL.
-            const url = `/api/v1/audit-log/export.csv?${params.toString()}`;
-            window.open(url, "_blank");
-          }}
-          className="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 flex items-center gap-1"
-          title="Export current filter as CSV (up to 10,000 rows)"
+          type="button"
+          onClick={onExport}
+          disabled={exporting}
+          className="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 flex items-center gap-1"
+          title={exporting ? "Building your file…" : "Export current filter as CSV (up to 10,000 rows)"}
         >
-          <Download className="h-4 w-4" /> Export CSV
+          <Download className="h-4 w-4" /> {exporting ? "Exporting…" : "Export CSV"}
         </button>
       }
       loading={loading}
