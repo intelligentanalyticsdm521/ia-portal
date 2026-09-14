@@ -22,5 +22,6 @@ test("the Lead Use Terms link and the Start Search notice open the public websit
 test("the in-app canonical page stays routed (the parity test pins its text to the markdown)", () => {
   assert.match(src, /export const LEADGEN_TERMS_ROUTE = "\/app\/spark\/leadgen\/terms"/);
   const app = readFileSync(new URL("../src/App.tsx", import.meta.url), "utf8");
-  assert.match(app, /LEADGEN_TERMS_ROUTE|spark\/leadgen\/terms/, "App.tsx still routes the terms page");
+  assert.match(app, /import SparkLeadGenTermsPage from/, "App.tsx still imports the terms page");
+  assert.match(app, /<Route path="terms" element=\{<SparkLeadGenTermsPage \/>\} \/>/, "App.tsx still routes the terms page under spark/leadgen");
 });
