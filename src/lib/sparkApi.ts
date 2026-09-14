@@ -46,15 +46,21 @@ function readActiveTenantId(): string {
   }
 }
 
-async function sparkFetch<T>(
+/**
+ * The auth + tenant headers every SPARK call carries.
+ *
+ * Pulled out of sparkFetch so the file download below sends EXACTLY the same
+ * ones. A second copy of this is how a download ends up on the founder tenant
+ * while the page it was clicked from is looking at a client's data.
+ *
+ * Precedence: explicit override > view-as tenant > active tenant > JWT default.
+ */
+async function sparkHeaders(
   msal: IPublicClientApplication,
   account: AccountInfo,
-  path: string,
-  init?: RequestInit,
   tenantOverride?: string | null
-): Promise<T> {
+): Promise<Record<string, string>> {
   const token = await getToken(msal, account);
-  // Precedence: explicit override > view-as tenant > JWT default.
   const viewAsTid = getCurrentTenantOverride();
   const tenantId =
     (tenantOverride && tenantOverride.trim()) ||
@@ -62,17 +68,29 @@ async function sparkFetch<T>(
     readActiveTenantId() ||
     getTenantId(token);
 
+  return {
+    Authorization: `Bearer ${token}`,
+    "x-tenant-id": tenantId,
+    // Founder emergency act-as — no-op outside an active 30-min emergency
+    // session. LUMEN-API does NOT yet have the read-only middleware
+    // (followup). Sending the header now is forward-compat so backend can
+    // start enforcing without another Portal release.
+    ...emergencyActAsHeaders(),
+  };
+}
+
+async function sparkFetch<T>(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  init?: RequestInit,
+  tenantOverride?: string | null
+): Promise<T> {
   const res = await fetch(`${SPARK_API_BASE}${path}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${token}`,
-      "x-tenant-id": tenantId,
+      ...(await sparkHeaders(msal, account, tenantOverride)),
       "Content-Type": "application/json",
-      // Founder emergency act-as — no-op outside an active 30-min emergency
-      // session. LUMEN-API does NOT yet have the read-only middleware
-      // (followup). Sending the header now is forward-compat so backend can
-      // start enforcing without another Portal release.
-      ...emergencyActAsHeaders(),
       ...(init?.headers as Record<string, string>),
     },
   });
@@ -127,4 +145,55 @@ export function sparkPatch<T>(msal: IPublicClientApplication, account: AccountIn
 
 export function sparkDelete<T>(msal: IPublicClientApplication, account: AccountInfo, path: string, tenantOverride?: string | null) {
   return sparkFetch<T>(msal, account, path, { method: "DELETE" }, tenantOverride);
+}
+
+/**
+ * A SPARK endpoint that returns a FILE, not JSON — fetch it with the same auth
+ * and the same business, then hand it to the browser as a download.
+ *
+ * It cannot go through sparkFetch (which parses JSON) and it cannot be a plain
+ * <a href> either, because the endpoint is behind an Authorization header — an
+ * anchor sends no headers, which is why the Audit Log's window.open export
+ * cannot work against an authenticated route. Same shape as oliverDownload and
+ * stellaExportDownload: fetch, blob, object URL, click, revoke.
+ *
+ * Throws with the API's own message on a non-2xx, so a caller can show the
+ * client what actually went wrong (the export's over-the-cap refusal, say)
+ * instead of a status code.
+ */
+export async function sparkDownload(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string,
+  fallbackName: string,
+  tenantOverride?: string | null
+): Promise<void> {
+  const res = await fetch(`${SPARK_API_BASE}${path}`, {
+    method: "GET",
+    headers: await sparkHeaders(msal, account, tenantOverride),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let msg = `Download failed (${res.status})`;
+    try {
+      const body = JSON.parse(text);
+      msg = body.message || body.details || body.error || msg;
+    } catch { /* not a JSON error body */ }
+    throw new Error(msg);
+  }
+
+  // The API names the file in Content-Disposition; honour it rather than
+  // inventing a second name for the same download.
+  const cd = res.headers.get("content-disposition") || "";
+  const named = /filename="([^"]+)"/.exec(cd)?.[1];
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = named || fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

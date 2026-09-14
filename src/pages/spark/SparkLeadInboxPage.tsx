@@ -27,7 +27,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX,
   ShieldAlert, ArrowUpDown, Plus, ShieldOff, Trash2, Pencil, MapPin, HelpCircle,
-  Lock, ExternalLink, Receipt,
+  Lock, ExternalLink, Receipt, Download,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
@@ -428,7 +428,7 @@ const TIER_BADGE: Record<Tier, string> = {
 };
 
 function LeadInboxTab() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, download, ready } = useSparkApi();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [meta, setMeta] = useState<LeadListResponse["meta"] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -471,6 +471,7 @@ function LeadInboxTab() {
     const id = raw == null ? NaN : Number.parseInt(raw, 10);
     if (Number.isFinite(id) && id > 0) setOpenLeadId(id);
   }, []);
+  const [exporting, setExporting] = useState(false);
   const [coldOpen, setColdOpen] = useState(false);
   const [coldCount, setColdCount] = useState<number | null>(null);
   const [coldBusy, setColdBusy] = useState<"move_to_contacts" | "remove" | null>(null);
@@ -487,24 +488,33 @@ function LeadInboxTab() {
     return out;
   }, [meta]);
 
+  // The chips the client has picked, as query parameters. ONE builder, used by
+  // the list and by Export — the file has to be the list they were looking at,
+  // and two copies of this stop agreeing the first time a chip is added.
+  //
+  // The Source chip filters the INBOX, not the fifty rows on screen. We send
+  // the RAW source keys behind the chosen label — seven of them read "SPARK
+  // Lead Gen" — so the label map stays here and the server never needs a second
+  // copy of it.
+  const filterParams = useCallback(() => {
+    const qs = new URLSearchParams();
+    if (tierFilter !== "all") qs.set("temperature", tierFilter);
+    if (verifiedFilter !== "all") qs.set("verified", verifiedFilter);
+    if (sourceFilter !== "all" && sourceKeysByLabel[sourceFilter]?.length) {
+      qs.set("source", sourceKeysByLabel[sourceFilter].join(","));
+    }
+    return qs;
+  }, [tierFilter, verifiedFilter, sourceFilter, sourceKeysByLabel]);
+
   const load = useCallback(async () => {
     if (!ready) return;
     setLoading(true);
     setError(null);
     try {
-      const qs = new URLSearchParams();
+      const qs = filterParams();
       qs.set("page", String(page));
       qs.set("limit", "50");
-      if (tierFilter !== "all") qs.set("temperature", tierFilter);
-      if (verifiedFilter !== "all") qs.set("verified", verifiedFilter);
       if (sortMode !== "newest") qs.set("sort", sortMode);
-      // The Source chip filters the INBOX now, not the fifty rows on screen.
-      // We send the RAW source keys behind the chosen label — seven of them
-      // read "SPARK Lead Gen" — so the label map stays here and the server
-      // never needs a second copy of it.
-      if (sourceFilter !== "all" && sourceKeysByLabel[sourceFilter]?.length) {
-        qs.set("source", sourceKeysByLabel[sourceFilter].join(","));
-      }
       const r = await get<LeadListResponse>(`/api/v1/leads?${qs.toString()}`);
       setLeads(r.data || []);
       setMeta(r.meta || null);
@@ -519,7 +529,7 @@ function LeadInboxTab() {
     } finally {
       setLoading(false);
     }
-  }, [get, ready, page, tierFilter, verifiedFilter, sortMode, sourceFilter, sourceKeysByLabel]);
+  }, [get, ready, page, filterParams, sortMode]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -569,6 +579,34 @@ function LeadInboxTab() {
       (l.email || "").toLowerCase().includes(q)
     ));
   }, [leads, search]);
+
+  // Export — the leads you are looking at, as a spreadsheet.
+  //
+  // The server builds the file, not the browser: this page holds fifty rows of
+  // an inbox that can run to hundreds, so a browser-side CSV would quietly
+  // export page one and call it "your leads". The filters go up with it, the
+  // search box included — so a client who has typed something gets the matches
+  // from their WHOLE inbox rather than the ones that happened to be on screen.
+  const onExport = useCallback(async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      const qs = filterParams();
+      if (search.trim()) qs.set("q", search.trim());
+      const query = qs.toString();
+      await download(
+        `/api/v1/leads/export.csv${query ? `?${query}` : ""}`,
+        `spark-leads-${new Date().toISOString().slice(0, 10)}.csv`,
+      );
+    } catch (err) {
+      // The server's refusal already reads like a sentence (over the cap it
+      // says how many leads there are and what to narrow), so show it as-is
+      // rather than wrapping it in a second layer of our own words.
+      alert((err as Error)?.message || "The export didn't finish. Try again in a moment.");
+    } finally {
+      setExporting(false);
+    }
+  }, [download, exporting, filterParams, search]);
 
   // The facet only appears when there is something to choose BETWEEN — a
   // client with one source does not need a filter that says "all" and "the one".
@@ -887,6 +925,25 @@ function LeadInboxTab() {
               </button>
             )}
           </div>
+          {/* Export — the leads you are looking at, as a spreadsheet. Sits with
+              the filters because that is what it exports: whatever they say.
+              Disabled with a reason when there is nothing to put in a file. */}
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={exporting || !leads.length}
+            title={
+              !leads.length
+                ? "Nothing to export yet — there are no leads matching these filters."
+                : exporting
+                  ? "Building your file…"
+                  : "Download these leads as a spreadsheet (CSV), with the filters above applied."
+            }
+            className="ml-2 max-md:ml-0 inline-flex shrink-0 items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? "Exporting…" : "Export"}
+          </button>
         </div>
         <a
           href="/app/spark/leadgen/b2b_new"
