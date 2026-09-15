@@ -20,7 +20,7 @@ import {
 // lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
 // (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
 import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
-import { SparkAccountsPage } from "./SparkAccountsPage";
+import { SparkAccountsPage, BackBar } from "./SparkAccountsPage";
 import { readSpreadsheet, parseDelimited, gridToRows, toContact } from "../../lib/sheetImport";
 import { PhoneInput } from "../../components/PhoneInput";
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -121,6 +121,15 @@ export function SparkContactsPage() {
     // ?company belongs to the Companies view only — leaving it behind would
     // re-open a company the next time Companies is picked.
     if (next !== "companies") params.delete("company");
+    setSearchParams(params);
+  }, [searchParams, setSearchParams]);
+
+  // "← Back" for the Companies view sits TOP-LEFT of the page header (Brandon
+  // 2026-09-15: "that's generally where the back buttons would be located").
+  // One level per press: a company → the companies list → the full list.
+  const goBackOneLevel = useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    if (params.has("company")) params.delete("company"); else params.delete("view");
     setSearchParams(params);
   }, [searchParams, setSearchParams]);
 
@@ -519,6 +528,7 @@ export function SparkContactsPage() {
     <SparkPageShell
       title="Contacts"
       subtitle="Everyone in your CRM — auto-scored and segmented"
+      leading={view === "companies" ? <BackBar onBack={goBackOneLevel} /> : undefined}
       help={
         <>
           <strong className="block mb-1">What you can do here:</strong>
