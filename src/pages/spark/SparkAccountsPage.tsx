@@ -6,6 +6,7 @@ import { SparkDrawer } from "../../components/spark/SparkDrawer";
 import { SparkTable, type SparkTableColumn } from "../../components/spark/SparkTable";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { SparkSearchBox } from "../../components/spark/SparkSearchBox";
+import { SparkContactModal } from "../../components/spark/SparkContactModal";
 import { Building2, Users, ExternalLink, Plus, ArrowLeft, Edit3, Save, Trash2, X } from "lucide-react";
 
 import { ReportBar } from '../../components/insights/ReportBar';
@@ -109,6 +110,13 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   const [selectedContacts, setSelectedContacts] = useState<AccountContact[]>([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
 
+  // 2026-09-15 (prod defect, Brandon) — "Contacts at this company" rows were
+  // inert: the only way into a contact record was the Contacts list, and the
+  // detail view's Edit button edits the COMPANY. Rows now open the same
+  // SparkContactModal the Contacts list uses, via SparkTable's onRowClick —
+  // the exact mechanism the Companies list row uses to open a company.
+  const [contactModalId, setContactModalId] = useState<number | null>(null);
+
   // #255-A2 (2026-07-03) — edit + delete on the Companies detail view.
   // Previously the detail view was read-only with no way to fix a bad
   // name / delete a duplicate — the SPARK CRM edit/delete gap Brandon
@@ -135,14 +143,21 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   useEffect(() => { load(); }, [load]);
 
   // ─ Load contacts when an account is selected ────────────────────────────
-  useEffect(() => {
+  // Extracted from the effect so the contact modal can re-run it on
+  // close/change (a rename or delete in the modal must show up here).
+  const loadSelectedContacts = useCallback(async () => {
     if (!selected || !ready) return;
     setSelectedLoading(true);
-    get<{ data: AccountContact[] }>(`/api/v1/lumen-accounts/${selected.id}/contacts`)
-      .then(r => setSelectedContacts(r.data || []))
-      .catch(() => setSelectedContacts([]))
-      .finally(() => setSelectedLoading(false));
+    try {
+      const r = await get<{ data: AccountContact[] }>(`/api/v1/lumen-accounts/${selected.id}/contacts`);
+      setSelectedContacts(r.data || []);
+    } catch {
+      setSelectedContacts([]);
+    } finally {
+      setSelectedLoading(false);
+    }
   }, [get, ready, selected]);
+  useEffect(() => { loadSelectedContacts(); }, [loadSelectedContacts]);
 
   // ─ Filters ───────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -360,6 +375,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
             <SparkTable<AccountContact>
               rows={selectedContacts}
               getRowKey={c => c.id}
+              onRowClick={c => setContactModalId(c.id)}
               columns={[
                 { key: "name", header: "Name", cell: c => <span className="font-medium">{c.first_name} {c.last_name}</span> },
                 { key: "title", header: "Title", cell: c => c.title || "—" },
@@ -369,6 +385,17 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
             />
           )}
         </div>
+
+        {/* Same modal, same props as the Contacts list (SparkContactsPage) —
+            full detail + inline edit. Closing or changing reloads this
+            company's contacts; a change also reloads the list so the
+            company's contact count stays honest. */}
+        <SparkContactModal
+          contactId={contactModalId}
+          open={contactModalId !== null}
+          onClose={() => { setContactModalId(null); loadSelectedContacts(); }}
+          onChanged={() => { loadSelectedContacts(); load(); }}
+        />
       </Frame>
     );
   }
