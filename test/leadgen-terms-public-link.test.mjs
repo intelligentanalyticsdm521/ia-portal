@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 const src = readFileSync(new URL("../src/components/spark/LeadGenTermsLink.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 
 test("the Lead Use Terms link and the Start Search notice open the public website copy in a new tab", () => {
-  assert.match(src, /LEAD_USE_TERMS_PUBLIC_URL = "https:\/\/intelligentanalyticsdm\.com\/lead-use-terms\/"/);
+  assert.match(src, /LEAD_USE_TERMS_PUBLIC_URL = "https:\/\/intelligentanalyticsdm\.com\/terms-and-conditions\/#lead-use-terms"/);
   const anchors = src.match(/<a\s[^>]*href=\{LEAD_USE_TERMS_PUBLIC_URL\}[^>]*>/g) || [];
   assert.equal(anchors.length, 2, "both the link and the notice use the public URL");
   for (const a of anchors) {
