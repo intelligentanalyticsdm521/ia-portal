@@ -14,6 +14,7 @@
 // Scope guard: AGENCY side only. The client Service Requests surface and the
 // server-validated stage machine are untouched.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal } from "../../components/IadmModal";
 import { Plus, AlertCircle, LayoutGrid, List as ListIcon, ChevronDown, ChevronRight, Search, Settings } from "lucide-react";
@@ -126,6 +127,24 @@ export function ConsultingWorkBoardPage() {
   }, [getFounder, ready, fRelease, fPriority, fTag, fAssignee, openOnly, intakeOnly, debounced, mode, page]);
 
   useEffect(() => { load(); }, [load]);
+
+  // ?open=<id> — every agency email about a request links straight to it
+  // ("Approved by Rolling In It: Website Mockup — open it on your board"). Open
+  // that card once the rows are in, then drop the param so closing the modal
+  // doesn't reopen it. A request hidden by "open only" is looked for again with
+  // the filter off: this effect re-runs when those rows arrive.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openParam = searchParams.get("open");
+  useEffect(() => {
+    if (!openParam || loading) return;
+    const hit = rows.find((r) => String(r.id).toUpperCase() === openParam.toUpperCase());
+    if (!hit && openOnly) { setOpenOnly(false); return; }
+    if (hit) setOpenRow(hit);
+    const next = new URLSearchParams(searchParams);
+    next.delete("open");
+    setSearchParams(next, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openParam, loading, rows]);
 
   const loadRefs = useCallback(async () => {
     if (!ready) return;
