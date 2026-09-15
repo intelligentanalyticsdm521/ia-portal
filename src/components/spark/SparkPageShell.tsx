@@ -14,6 +14,11 @@ interface SparkPageShellProps {
   /** Plain-English explanation of what this page is and when to use it.
    *  Renders as a (?) icon next to the subtitle that shows a tooltip on hover. */
   help?: ReactNode;
+  /** Top-LEFT slot in the sticky header, before the title.
+   *  Back buttons live here (standing convention 2026-09-15, Brandon): the way
+   *  back is always the first thing in the header, never mixed into the
+   *  right-hand action group with Edit / Delete. */
+  leading?: ReactNode;
   /** Right-side actions in the sticky header (e.g. primary "+ New" button) */
   actions?: ReactNode;
   /** Optional inline horizontal stat strip directly under the header */
@@ -40,12 +45,12 @@ interface SparkPageShellProps {
  * Use this instead of OliverPageWrapper on all interactive SPARK pages.
  */
 export function SparkPageShell({
-  title, subtitle, help, actions, stats, filters, children, error, loading,
+  title, subtitle, help, leading, actions, stats, filters, children, error, loading,
 }: SparkPageShellProps) {
   if (isTierGateError(error)) {
     return (
       <div className="spark-page">
-        <SparkPageHeader title={title} subtitle={subtitle} />
+        <SparkPageHeader title={title} subtitle={subtitle} leading={leading} />
         <div className="spark-page-body">
           <OliverUpgradeGate
             tierRequired={(error as TierGateError).tierRequired}
@@ -61,7 +66,7 @@ export function SparkPageShell({
     <div className="spark-page">
       <NewLeadsBanner />
       <NewLeadsToast />
-      <SparkPageHeader title={title} subtitle={subtitle} help={help} actions={actions} />
+      <SparkPageHeader title={title} subtitle={subtitle} help={help} leading={leading} actions={actions} />
       {stats && <div className="spark-stat-strip-wrap">{stats}</div>}
       {filters && <div className="spark-filter-row">{filters}</div>}
       <div className="spark-page-body">
@@ -123,11 +128,14 @@ interface SparkPageHeaderProps {
   title: string;
   subtitle?: string;
   help?: ReactNode;
+  leading?: ReactNode;
   actions?: ReactNode;
 }
-function SparkPageHeader({ title, subtitle, help, actions }: SparkPageHeaderProps) {
+function SparkPageHeader({ title, subtitle, help, leading, actions }: SparkPageHeaderProps) {
   return (
     <div className="spark-page-header">
+      {/* Top-left slot — the way back, before the title. */}
+      {leading && <div className="flex items-center gap-2 flex-shrink-0">{leading}</div>}
       <div className="min-w-0">
         <h1 className="text-xl font-semibold text-slate-900 truncate">{title}</h1>
         {subtitle && (

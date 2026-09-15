@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 // Banners everywhere (LOCKED 2026-09-04): the same 60/75/90 component the Lead
@@ -107,17 +107,27 @@ export function SparkContactsPage() {
 
   // F5 — view toggle [List | Kanban]. Default 'list' (Brandon LOCK 2026-06-25).
   // Kanban hits GET /api/v1/lifecycle/kanban; List hits the existing
-  // /contacts endpoint. Persisted in localStorage so the user's pick sticks
-  // across navigation.
-  const [view, setView] = useState<"list" | "kanban" | "companies">(() => {
-    try {
-      const v = localStorage.getItem("spark.contacts.view");
-      return v === "kanban" || v === "companies" ? v : "list";
-    } catch { return "list"; }
-  });
-  useEffect(() => {
-    try { localStorage.setItem("spark.contacts.view", view); } catch { /* ignore */ }
-  }, [view]);
+  // /contacts endpoint.
+  //
+  // 2026-09-15 (prod defect, Brandon — "I can't get back to the full contacts
+  // list"): the pick used to live in localStorage, so clicking Contacts in the
+  // left nav re-landed on whatever view you last used — with no way out, since
+  // the same route does not remount. The view now lives in the URL
+  // (?view=kanban|companies, absent = list), which makes the nav link, the
+  // browser Back button, a refresh and a deep link all agree.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const viewParam = searchParams.get("view");
+  const view: "list" | "kanban" | "companies" =
+    viewParam === "kanban" || viewParam === "companies" ? viewParam : "list";
+  // Push (never replace) so Back walks list → companies → a company.
+  const setView = useCallback((next: "list" | "kanban" | "companies") => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "list") params.delete("view"); else params.set("view", next);
+    // ?company belongs to the Companies view only — leaving it behind would
+    // re-open a company the next time Companies is picked.
+    if (next !== "companies") params.delete("company");
+    setSearchParams(params);
+  }, [searchParams, setSearchParams]);
 
   // Selection state (bulk actions)
   const [selected, setSelected] = useState<Set<number>>(new Set());

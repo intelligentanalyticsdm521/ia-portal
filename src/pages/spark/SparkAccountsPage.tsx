@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
@@ -51,15 +52,19 @@ const HEALTH_COLORS: Record<string, string> = {
  * action, the stat strip) and drops the duplicated chrome.
  */
 function Frame({
-  embedded, title, subtitle, actions, stats, filters, error, loading, children,
+  embedded, title, subtitle, showTitle = false, leading, actions, stats, filters, error, loading, children,
 }: {
   embedded: boolean; title: string; subtitle?: string;
+  /** Embedded only — render the title line (the company name on the detail view). */
+  showTitle?: boolean;
+  /** Top-LEFT of the header row: the way back. Never mixed in with `actions`. */
+  leading?: React.ReactNode;
   actions?: React.ReactNode; stats?: React.ReactNode; filters?: React.ReactNode;
   error?: unknown; loading?: boolean; children: React.ReactNode;
 }) {
   if (!embedded) {
     return (
-      <SparkPageShell title={title} subtitle={subtitle} actions={actions} stats={stats} filters={filters} error={error} loading={loading}>
+      <SparkPageShell title={title} subtitle={subtitle} leading={leading} actions={actions} stats={stats} filters={filters} error={error} loading={loading}>
         {children}
       </SparkPageShell>
     );
@@ -67,13 +72,45 @@ function Frame({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">{subtitle}</p>
+        <div className="flex items-center gap-2 min-w-0">
+          {leading}
+          <div className="min-w-0">
+            {showTitle && <div className="text-sm font-semibold text-slate-900 truncate">{title}</div>}
+            <p className="text-xs text-slate-500 truncate">{subtitle}</p>
+          </div>
+        </div>
         {actions}
       </div>
       {stats}
       {filters}
       {children}
     </div>
+  );
+}
+
+/**
+ * The way back — top-left of the header, always (standing convention
+ * 2026-09-15, Brandon: back buttons are top-left, never mixed into the
+ * right-hand action group with Edit and Delete).
+ *
+ * "← Back" pops exactly ONE level wherever it is shown — a company → the
+ * companies list → the full contacts list — so the button means the same
+ * thing on every screen. "All contacts" is the one-click way straight out.
+ */
+function BackBar({ onBack }: { onBack: () => void }) {
+  return (
+    <>
+      <button type="button" onClick={onBack} className="spark-btn spark-btn-secondary" title="Back one step">
+        <ArrowLeft className="h-3.5 w-3.5" /> Back
+      </button>
+      <Link
+        to="/app/services/spark_contacts"
+        className="spark-btn spark-btn-secondary"
+        title="Go to the full contacts list"
+      >
+        <Users className="h-3.5 w-3.5" /> All contacts
+      </Link>
+    </>
   );
 }
 
@@ -99,16 +136,67 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
+  // One successful list load has happened — the point after which "no account
+  // with this id" means the id is dead, not that the list is still coming.
+  const [loaded, setLoaded] = useState(false);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState({ name: "", domain: "", industry: "", website: "" });
   const [saving, setSaving] = useState(false);
 
-  // Detail state — when a row is clicked, drill into one account
-  const [selected, setSelected] = useState<Account | null>(null);
+  // Detail state — when a row is clicked, drill into one account.
+  //
+  // 2026-09-15 (prod defect, Brandon — "I'm stuck on the Midwest Ag page"):
+  // the open company used to be component state. Embedded inside Contacts the
+  // route never remounts, so clicking Contacts in the nav left the company
+  // open with no way back. The open company now lives in the URL as
+  // ?company=<id> — for the embedded view AND standalone — so the nav link,
+  // the Back button, a refresh and a deep link all agree.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const companyParam = searchParams.get("company");
+  const selectedId = companyParam && /^\d+$/.test(companyParam) ? Number(companyParam) : null;
   const [selectedContacts, setSelectedContacts] = useState<AccountContact[]>([]);
   const [selectedLoading, setSelectedLoading] = useState(false);
+  // The list endpoint returns every (non-archived) account for the business,
+  // so the detail resolves out of the list result — including on a cold deep
+  // link. There is no GET /lumen-accounts/:id to fetch one by id.
+  const selected = useMemo(
+    () => (selectedId == null ? null : accounts.find(a => a.id === selectedId) ?? null),
+    [accounts, selectedId],
+  );
+
+  /** Open a company: push ?company=<id> (keeps ?view=companies). */
+  const openCompany = useCallback((id: number) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("company", String(id));
+    setSearchParams(params);
+  }, [searchParams, setSearchParams]);
+
+  /**
+   * One "← Back" that pops exactly one level, wherever it sits:
+   *  - on a company  → drop ?company  (back to the companies list)
+   *  - on the list   → drop ?view     (back to the full contacts list)
+   * Standalone there is no ?view to drop, so it goes to Contacts — Companies
+   * is a view of your contacts, so one level up is the contacts list either
+   * way. Pushes (never replaces) so the browser Back button walks the same
+   * path.
+   */
+  const goBack = useCallback(() => {
+    const params = new URLSearchParams(searchParams);
+    if (params.has("company")) {
+      params.delete("company");
+      setSearchParams(params);
+      return;
+    }
+    if (embedded) {
+      params.delete("view");
+      setSearchParams(params);
+      return;
+    }
+    navigate("/app/services/spark_contacts");
+  }, [embedded, navigate, searchParams, setSearchParams]);
 
   // 2026-09-15 (prod defect, Brandon) — "Contacts at this company" rows were
   // inert: the only way into a contact record was the Contacts list, and the
@@ -138,25 +226,42 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
       if (search) params.set("search", search);
       const r = await get<{ data: Account[] }>(`/api/v1/lumen-accounts${params.toString() ? "?" + params : ""}`);
       setAccounts(r.data || []);
+      setLoaded(true);
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready, search]);
   useEffect(() => { load(); }, [load]);
 
+  // A ?company id that is not in the list (deleted, or a stale link) heals
+  // itself back to the companies list instead of showing an empty detail.
+  // replace: true — a dead id should not become a history stop.
+  useEffect(() => {
+    if (!loaded || selectedId == null || selected) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete("company");
+    setSearchParams(params, { replace: true });
+  }, [loaded, selected, selectedId, searchParams, setSearchParams]);
+
+  // Leaving a company (or opening a different one) drops that company's
+  // edit-in-progress; otherwise the form would reopen on the next company.
+  useEffect(() => { setEditing(false); setDetailErr(null); setContactModalId(null); }, [selectedId]);
+
   // ─ Load contacts when an account is selected ────────────────────────────
   // Extracted from the effect so the contact modal can re-run it on
   // close/change (a rename or delete in the modal must show up here).
+  // Keyed on the id, not the Account object: the object is re-derived from
+  // every list reload, and depending on it would re-fetch in a loop.
   const loadSelectedContacts = useCallback(async () => {
-    if (!selected || !ready) return;
+    if (selectedId == null || !ready) return;
     setSelectedLoading(true);
     try {
-      const r = await get<{ data: AccountContact[] }>(`/api/v1/lumen-accounts/${selected.id}/contacts`);
+      const r = await get<{ data: AccountContact[] }>(`/api/v1/lumen-accounts/${selectedId}/contacts`);
       setSelectedContacts(r.data || []);
     } catch {
       setSelectedContacts([]);
     } finally {
       setSelectedLoading(false);
     }
-  }, [get, ready, selected]);
+  }, [get, ready, selectedId]);
   useEffect(() => { loadSelectedContacts(); }, [loadSelectedContacts]);
 
   // ─ Filters ───────────────────────────────────────────────────────────────
@@ -221,9 +326,10 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
       } else {
         payload.annual_revenue = null;
       }
-      const r = await put<{ data: Account }>(`/api/v1/lumen-accounts/${selected.id}`, payload);
-      setSelected(r?.data || selected);
+      await put<{ data: Account }>(`/api/v1/lumen-accounts/${selected.id}`, payload);
       setEditing(false);
+      // The detail is derived from the list, so reloading the list IS the
+      // refresh of the company header.
       await load();
     } catch (err) {
       setDetailErr((err as Error).message || "Save failed");
@@ -237,12 +343,27 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
     setDetailErr(null);
     try {
       await del(`/api/v1/lumen-accounts/${selected.id}`);
-      setSelected(null);
       setEditing(false);
+      // Deleted — drop ?company so the deleted company is not a place the
+      // Back button can land on.
+      const params = new URLSearchParams(searchParams);
+      params.delete("company");
+      setSearchParams(params, { replace: true });
       await load();
     } catch (err) {
       setDetailErr((err as Error).message || "Delete failed");
     }
+  }
+
+  // Deep link / refresh on ?company=<id>: hold the detail frame while the
+  // list (the only source of the Account record) is still in flight, rather
+  // than flashing the companies list first.
+  if (selectedId != null && !selected && !loaded) {
+    return (
+      <Frame embedded={embedded} title="Company" showTitle subtitle="Loading…" leading={<BackBar onBack={goBack} />}>
+        <div className="py-6 text-center text-sm text-slate-500">Loading…</div>
+      </Frame>
+    );
   }
 
   // ─ Render: DETAIL view when an account is selected ──────────────────────
@@ -250,12 +371,11 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
     return (
       <Frame embedded={embedded}
         title={selected.name}
+        showTitle
         subtitle={selected.domain || selected.industry || "Company detail"}
+        leading={<BackBar onBack={goBack} />}
         actions={
           <div className="flex items-center gap-2">
-            <button onClick={() => { setSelected(null); setEditing(false); }} className="spark-btn spark-btn-secondary">
-              <ArrowLeft className="h-3.5 w-3.5" /> Back to list
-            </button>
             {!editing && (
               <>
                 <button onClick={startEdit} className="spark-btn spark-btn-secondary">
@@ -443,6 +563,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
     <Frame embedded={embedded}
       title="Companies"
       subtitle="Group contacts by company — auto-matched by email domain"
+      leading={<BackBar onBack={goBack} />}
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New company
@@ -479,7 +600,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
         rows={filtered}
         getRowKey={a => a.id}
         columns={columns}
-        onRowClick={setSelected}
+        onRowClick={a => openCompany(a.id)}
         totalCount={filtered.length}
         emptyState={
           search ? (
