@@ -5,10 +5,12 @@ import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { AccountMenu } from './AccountMenu';
 import { ArgusBalanceBadge } from './ArgusBalanceBadge';
+import { DevBusinessPicker } from './DevBusinessPicker';
 import { FounderTenantPicker } from './FounderTenantPicker';
 import { GlobalSearch } from './GlobalSearch';
 import { GuidedTourLauncher } from './GuidedTourLauncher';
 import { LocationPicker } from './oliver/LocationPicker';
+import { DEV_AUTH } from '../lib/devAuth';
 
 export function HeaderBar() {
   const { active, bootstrap } = useAppState();
@@ -74,6 +76,23 @@ export function HeaderBar() {
           ) : (
             <div className="hidden md:block iadm-header-tenant" aria-label="Tenant greeting">
               <span className="text-white/70">Welcome,</span> <span className="font-medium text-white">{tenantLabel}</span>
+            </div>
+          )}
+
+          {/* LOCAL DEV ONLY, and only where the founder picker is not. Under
+              VITE_DEV_AUTH=1 the backend resolves the dev user from the business
+              in the x-dev-tenant header, and most fixture businesses resolve to
+              somebody with no platform role — no founder picker, and no way out
+              of that business but editing .env.local and restarting Vite. This
+              switches the same per-tab key the founder picker writes
+              (lib/actAsSession.ts), so there is one mechanism either way.
+
+              DEV_AUTH is inlined by Vite at build time, so a production build
+              folds this to `false && …` and rollup drops the component.
+              See components/DevBusinessPicker.tsx. */}
+          {DEV_AUTH && !isSuperUser && (
+            <div className="hidden md:block">
+              <DevBusinessPicker />
             </div>
           )}
 

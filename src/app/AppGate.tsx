@@ -201,7 +201,18 @@ export function AppGate({ children }: { children: React.ReactNode }) {
         // name was typed here and nowhere else, so an explicit pick was undone
         // by the picker's own hard navigation.
         const sessionActAs = getActAsTenantId();
-        const sessionMatch = sessionActAs ? tenants.find((t) => t.tenantId === sessionActAs) : null;
+        // CASE-INSENSITIVE, and that is not tidiness. `v.tenants[].tenantId`
+        // comes back from SQL upper-cased; every allow-list, every dev seam and
+        // every id typed in source is lower-case. An exact-equality match found
+        // nothing whenever the writer of the key spelled it the other way, and
+        // the resolver fell through to the HOME business while the request
+        // headers went on naming the picked one — the app showing one business
+        // and the data coming from another. Measured 2026-09-15 with the dev
+        // business picker, which writes the lower-case fixture id.
+        const wanted = (sessionActAs || '').toLowerCase();
+        const sessionMatch = wanted
+          ? tenants.find((t) => String(t.tenantId).toLowerCase() === wanted)
+          : null;
 
         // One-time migration: nuke any stale long-term pin from before this
         // fix so it can't override the home-tenant default on next boot.

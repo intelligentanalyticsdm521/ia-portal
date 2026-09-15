@@ -24,6 +24,16 @@
  *   1. Vite statically replaces import.meta.env at BUILD time. A production
  *      build has no VITE_DEV_AUTH set, so DEV_AUTH is the literal `false` and
  *      the whole module tree-shakes out. This code cannot ship.
+ *
+ *      THE SPELLING OF THAT FLAG DOES REAL WORK — measured 2026-09-15. It was
+ *      `String(import.meta.env.VITE_DEV_AUTH || '') === '1'`; a function call is
+ *      opaque to the bundler, so DEV_AUTH stayed a RUNTIME false and everything
+ *      gated on it was still emitted. The dev business picker's markup and
+ *      labels shipped in the production bundle — never rendered, but there to
+ *      read. As a direct comparison of the inlined literal it folds to `false`
+ *      at build time and rollup drops the guarded components: rebuilt and
+ *      grepped, `dist/` has none of the picker's strings. Do not wrap it up
+ *      again. test/dev-business-picker.test.mjs pins the spelling.
  *   2. It only rewrites requests to loopback origins. A request to any
  *      *.azurewebsites.net is passed through untouched — the header is never
  *      attached to a prod URL even if someone forces the flag on.
@@ -35,8 +45,10 @@
  * Three independent locks. Any one of them alone is sufficient.
  */
 import { FOUNDER_TENANT_ID_DEFAULT } from "./founderTenant";
+import { getActAsTenantId } from "./actAsSession";
+import { resolveDevTenantId } from "./devBusinesses";
 
-export const DEV_AUTH = String(import.meta.env.VITE_DEV_AUTH || '') === '1';
+export const DEV_AUTH = import.meta.env.VITE_DEV_AUTH === '1';
 export const DEV_TENANT = String(import.meta.env.VITE_DEV_TENANT || '').trim();
 
 // The backend dev seam hard-blocks the founder tenant; sending it would 401
@@ -57,23 +69,45 @@ const FOUNDER_TENANT = FOUNDER_TENANT_ID_DEFAULT;
  * reads it fresh, so switching tenants in the UI switches the data too.
  * Falls back to VITE_DEV_TENANT when unset or when the founder tenant is
  * selected (the seam refuses it by design).
+ *
+ * 2026-09-15 — and it now reads the SAME per-tab key AppGate resolves the active
+ * business from (lib/actAsSession.ts), which both business pickers write: the
+ * founder one for a super user, and the dev-only one
+ * (components/DevBusinessPicker.tsx) for a dev user who is not. One mechanism,
+ * one answer, and the header switches business at the same instant the app does
+ * instead of a page load later. Reading only `activeTenantId` could not do that:
+ * AppGate rewrites it on every bootstrap and deletes it outright for a super
+ * user, which is the fault the per-tab key was added to fix on 2026-09-14.
  */
-function resolveDevTenant(): string {
+export function resolveDevTenant(): string {
+  // 1) Emergency act-as targets a client tenant while activeTenantId stays the
+  //    founder's own — honor the TARGET so acting-as works in dev. Expiry is
+  //    checked HERE because only this side knows the clock.
+  let emergencyTarget: string | null = null;
   try {
-    // 1) Founder act-as session targets a client tenant while activeTenantId
-    //    stays the founder's own — honor the TARGET so acting-as works in dev.
     const raw = sessionStorage.getItem('iadm.portal.emergencyActAs.v1');
     if (raw) {
       const s = JSON.parse(raw) as { tenantId?: string; expiresAt?: string };
-      const t = (s.tenantId || '').trim().toLowerCase();
-      if (t && t !== FOUNDER_TENANT && s.expiresAt && Date.parse(s.expiresAt) > Date.now()) return t;
+      if (s.expiresAt && Date.parse(s.expiresAt) > Date.now()) emergencyTarget = s.tenantId || null;
     }
   } catch { /* fall through */ }
+
+  // 2) The business THIS TAB was switched to, by either picker.
+  const actAsTenantId = getActAsTenantId();
+
+  // 3) AppState's persisted active business.
+  let activeTenantId: string | null = null;
   try {
-    const active = (localStorage.getItem('iadm.portal.activeTenantId') || '').trim().toLowerCase();
-    if (active && active !== FOUNDER_TENANT) return active;
+    activeTenantId = localStorage.getItem('iadm.portal.activeTenantId');
   } catch { /* storage denied — env pin still works */ }
-  return DEV_TENANT;
+
+  // The ORDER lives in lib/devBusinesses.ts as a pure function so
+  // test/dev-business-picker.test.mjs can prove it without a browser — this
+  // module reads `import.meta.env` and the test runner cannot import it.
+  return resolveDevTenantId(
+    { emergencyTarget, actAsTenantId, activeTenantId, envPin: DEV_TENANT },
+    FOUNDER_TENANT,
+  );
 }
 
 /** Loopback only. Anything else — notably *.azurewebsites.net — is left alone. */
@@ -129,8 +163,11 @@ export function installDevAuthFetch(): void {
     return original(input as any, { ...init, headers });
   };
 
+  // The RESOLVED business, not the env pin: with a business picker in the header
+  // those two differ the moment you switch, and a banner naming the wrong
+  // business is worse than no banner.
   console.info(
-    `%c[devAuth] LOCAL DEV — MSAL bypassed. x-dev-tenant: ${DEV_TENANT}. Loopback requests only.`,
+    `%c[devAuth] LOCAL DEV — MSAL bypassed. x-dev-tenant: ${resolveDevTenant()}. Loopback requests only.`,
     'color:#ef6c33;font-weight:bold'
   );
 }
