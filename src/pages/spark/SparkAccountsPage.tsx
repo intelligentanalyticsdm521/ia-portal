@@ -97,7 +97,7 @@ function Frame({
  * companies list → the full contacts list — so the button means the same
  * thing on every screen. "All contacts" is the one-click way straight out.
  */
-function BackBar({ onBack }: { onBack: () => void }) {
+export function BackBar({ onBack }: { onBack: () => void }) {
   return (
     <>
       <button type="button" onClick={onBack} className="spark-btn spark-btn-secondary" title="Back one step">
@@ -360,7 +360,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   // than flashing the companies list first.
   if (selectedId != null && !selected && !loaded) {
     return (
-      <Frame embedded={embedded} title="Company" showTitle subtitle="Loading…" leading={<BackBar onBack={goBack} />}>
+      <Frame embedded={embedded} title="Company" showTitle subtitle="Loading…" leading={embedded ? undefined : <BackBar onBack={goBack} />}>
         <div className="py-6 text-center text-sm text-slate-500">Loading…</div>
       </Frame>
     );
@@ -373,7 +373,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
         title={selected.name}
         showTitle
         subtitle={selected.domain || selected.industry || "Company detail"}
-        leading={<BackBar onBack={goBack} />}
+        leading={embedded ? undefined : <BackBar onBack={goBack} />}
         actions={
           <div className="flex items-center gap-2">
             {!editing && (
@@ -563,7 +563,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
     <Frame embedded={embedded}
       title="Companies"
       subtitle="Group contacts by company — auto-matched by email domain"
-      leading={<BackBar onBack={goBack} />}
+      leading={embedded ? undefined : <BackBar onBack={goBack} />}
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New company
