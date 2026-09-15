@@ -12,7 +12,7 @@ import { ScrollText } from "lucide-react";
 
 export const LEADGEN_TERMS_ROUTE = "/app/spark/leadgen/terms";
 /** The public copy of the same terms on the marketing site (one document, two doors). */
-export const LEAD_USE_TERMS_PUBLIC_URL = "https://intelligentanalyticsdm.com/lead-use-terms/";
+export const LEAD_USE_TERMS_PUBLIC_URL = "https://intelligentanalyticsdm.com/terms-and-conditions/#lead-use-terms";
 
 export function LeadGenTermsLink({ className = "" }: { className?: string }) {
   return (
