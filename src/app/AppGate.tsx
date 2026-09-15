@@ -11,6 +11,7 @@ import {
   setEmergencyActAsState,
   getEmergencyActAsState,
 } from '../lib/emergencyActAs';
+import { getActAsTenantId } from '../lib/actAsSession';
 
 /**
  * Clear stale MSAL interaction-tracking flags from session/local storage.
@@ -195,11 +196,11 @@ export function AppGate({ children }: { children: React.ReactNode }) {
           ? tenants.find((t) => t.tenantId === v.homeTenantId)
           : null;
         const isSuperUser = !!v.user?.isSuperUser;
-        const SESSION_ACT_AS_KEY = 'iadm.portal.actAsTenantId.v1';
-        const sessionActAs = (() => {
-          try { return typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(SESSION_ACT_AS_KEY) : null; }
-          catch { return null; }
-        })();
+        // Read through lib/actAsSession so the picker cannot write a key this
+        // resolver does not read. It did exactly that until 2026-09-14: the
+        // name was typed here and nowhere else, so an explicit pick was undone
+        // by the picker's own hard navigation.
+        const sessionActAs = getActAsTenantId();
         const sessionMatch = sessionActAs ? tenants.find((t) => t.tenantId === sessionActAs) : null;
 
         // One-time migration: nuke any stale long-term pin from before this

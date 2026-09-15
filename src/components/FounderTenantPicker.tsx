@@ -10,6 +10,7 @@ import {
   type FounderTenant,
 } from "../lib/founderApi";
 import { selectTenant } from "../lib/platformApi";
+import { setActAsTenantId } from "../lib/actAsSession";
 import {
   getEmergencyActAsState,
   setEmergencyActAsState,
@@ -163,6 +164,14 @@ export function FounderTenantPicker() {
 
       appState.setActive(selected);
       appState.setActiveTenantId(targetTenantId);
+
+      // REMEMBER THE PICK FOR THIS TAB, before the navigation below throws the
+      // whole app state away. AppGate re-runs on that navigation and, for a
+      // super user, deliberately deletes the long-term localStorage pin; the
+      // per-tab key is the only thing it then honours ahead of the home
+      // business. Nothing wrote it, so every pick except "my own business"
+      // bounced straight back. See lib/actAsSession.ts.
+      setActAsTenantId(targetTenantId);
       setOpen(false);
 
       // Hard navigate to the overview so per-page caches/data fetched under
