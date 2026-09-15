@@ -1,0 +1,244 @@
+// test/builder-registry.test.mjs — ONE widget registry
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §3.2, step 0).
+//
+// What this pins, in the scope doc's words: "every registered widget has label,
+// description, picture and at least one adapter; the pane renders them
+// grouped".
+//
+// The acceptance row behind it is SD-010's: "could a client build this without
+// reading anything?" — which is won or lost in the one-line description, so
+// these tests check that the sentence is real prose a business owner could
+// read, not a restatement of the kind.
+//
+// Mutation check: blank any widget's description and the first block goes red;
+// delete `title=` from the pane's button and the tooltip test goes red.
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import {
+  WIDGETS,
+  WIDGETS_BY_KIND,
+  WIDGET_CATEGORIES,
+  BUILDER_ADAPTERS,
+  widgetsFor,
+  groupForPane,
+  widgetTooltip,
+  pictureFrom,
+} from "../src/builder/registry.ts";
+
+const SRC = path.join(process.cwd(), "src");
+
+describe("every registered widget is complete", () => {
+  for (const w of WIDGETS) {
+    test(`${w.kind} has a label, a description, a picture and an adapter`, () => {
+      assert.ok(w.label && w.label.trim().length > 0, "no label");
+      assert.ok(w.description && w.description.trim().length > 0, "no description");
+      assert.ok(w.picture && w.picture.startsWith("data:image/svg+xml,"), "no picture");
+      assert.ok(Array.isArray(w.adapters) && w.adapters.length > 0, "no adapter");
+      assert.ok(w.icon && w.icon.trim().length > 0, "no icon");
+      assert.ok(WIDGET_CATEGORIES.includes(w.category), `category "${w.category}" is not in the pane`);
+      assert.ok(w.defaults && typeof w.defaults === "object", "no defaults");
+      assert.ok(Array.isArray(w.controls) && w.controls.length > 0, "no controls");
+    });
+  }
+
+  test("kinds are unique", () => {
+    const kinds = WIDGETS.map((w) => w.kind);
+    assert.equal(new Set(kinds).size, kinds.length, "two widgets share a kind");
+  });
+
+  test("every adapter named is a real adapter", () => {
+    for (const w of WIDGETS) {
+      for (const a of w.adapters) {
+        assert.ok(BUILDER_ADAPTERS.includes(a), `${w.kind} claims unknown adapter "${a}"`);
+      }
+    }
+  });
+
+  test("WIDGETS_BY_KIND covers the whole list", () => {
+    assert.equal(Object.keys(WIDGETS_BY_KIND).length, WIDGETS.length);
+  });
+});
+
+describe("the description is a sentence a business owner could read", () => {
+  for (const w of WIDGETS) {
+    test(`${w.kind}: one line, plain words`, () => {
+      const d = w.description;
+      assert.ok(!d.includes("\n"), "a description is ONE line");
+      assert.ok(d.length >= 25, `"${d}" is too short to explain anything`);
+      assert.ok(d.length <= 140, `"${d}" will not fit beside a picture in a 320px pane`);
+      // Not a restatement of the label ("Heading — a heading").
+      assert.ok(d.toLowerCase().trim() !== w.label.toLowerCase().trim(), "the description repeats the label");
+      // No developer vocabulary. The inventory's finding was five vocabularies
+      // and no explanations; this is the line that has to fix it.
+      for (const jargon of ["json", "blocks_json", "elementor", "widget tree", "flex", "schema", "payload", "adapter", "div"]) {
+        assert.ok(!d.toLowerCase().includes(jargon), `"${d}" says "${jargon}" to a business owner`);
+      }
+    });
+  }
+
+  test("the tooltip carries both the name and the sentence", () => {
+    const w = WIDGETS[0];
+    assert.equal(widgetTooltip(w), `${w.label} — ${w.description}`);
+  });
+});
+
+describe("§3.2's union is registered", () => {
+  // The candidate list from the scope doc, by the kind we settled on.
+  const REQUIRED = [
+    "heading", "paragraph", "image", "button", "divider", "spacer", "list",
+    "key_value_table", "data_table", "priced_line", "comparison_cards",
+    "callout", "totals", "signature", "footer_note", "merge_field", "form",
+    "map", "video", "social_links", "countdown", "testimonial", "logo_strip",
+    "pricing_table", "gallery",
+  ];
+
+  for (const kind of REQUIRED) {
+    test(`${kind} is defined`, () => {
+      assert.ok(WIDGETS_BY_KIND[kind], `§3.2 lists ${kind} and the registry has no definition for it`);
+    });
+  }
+
+  test("nothing extra crept in without being scoped", () => {
+    const extra = WIDGETS.map((w) => w.kind).filter((k) => !REQUIRED.includes(k));
+    assert.deepEqual(extra, [], `unscoped widget(s): ${extra.join(", ")}`);
+  });
+});
+
+describe("adapters keep a widget out of a builder that cannot render it", () => {
+  test("a countdown is an email/landing trick, never a proposal", () => {
+    assert.ok(!WIDGETS_BY_KIND.countdown.adapters.includes("proposal"));
+  });
+
+  test("a priced line and a signature belong to documents only", () => {
+    assert.deepEqual(WIDGETS_BY_KIND.priced_line.adapters, ["proposal"]);
+    assert.deepEqual(WIDGETS_BY_KIND.signature.adapters, ["proposal"]);
+  });
+
+  test("a form is a web thing — a proposal cannot host one", () => {
+    assert.ok(!WIDGETS_BY_KIND.form.adapters.includes("proposal"));
+    assert.ok(!WIDGETS_BY_KIND.form.adapters.includes("email"));
+  });
+
+  test("every adapter gets a usable set, not an empty pane", () => {
+    for (const a of BUILDER_ADAPTERS) {
+      assert.ok(widgetsFor(a).length >= 5, `the ${a} builder would open with ${widgetsFor(a).length} widgets`);
+    }
+  });
+
+  test("the text basics are available everywhere", () => {
+    for (const kind of ["heading", "paragraph", "image", "button", "divider", "spacer"]) {
+      assert.deepEqual(
+        [...WIDGETS_BY_KIND[kind].adapters].sort(),
+        [...BUILDER_ADAPTERS].sort(),
+        `${kind} should be offered by every builder`,
+      );
+    }
+  });
+});
+
+describe("guided counts — SD-010's \"how many cards?\"", () => {
+  test("comparison cards ask, and the range is 2 to 6", () => {
+    const c = WIDGETS_BY_KIND.comparison_cards.count;
+    assert.ok(c, "comparison cards must ask how many");
+    assert.equal(c.min, 2);
+    assert.equal(c.max, 6);
+    assert.ok(c.default >= c.min && c.default <= c.max);
+    assert.match(c.label, /how many/i);
+  });
+
+  test("every count is a sane range with a default inside it, asked in words", () => {
+    for (const w of WIDGETS.filter((x) => x.count)) {
+      const c = w.count;
+      assert.ok(c.min >= 1 && c.max > c.min, `${w.kind} has a nonsense range`);
+      assert.ok(c.default >= c.min && c.default <= c.max, `${w.kind}'s default is outside its range`);
+      assert.match(c.label, /\?$/, `${w.kind}'s count prompt is not a question`);
+    }
+  });
+
+  test("a widget that does not repeat asks nothing", () => {
+    assert.equal(WIDGETS_BY_KIND.paragraph.count, undefined);
+    assert.equal(WIDGETS_BY_KIND.divider.count, undefined);
+  });
+});
+
+describe("the pane groups them", () => {
+  test("groupForPane returns categories in pane order, empties dropped", () => {
+    const groups = groupForPane("proposal");
+    const names = groups.map((g) => g.category);
+    assert.deepEqual(names, WIDGET_CATEGORIES.filter((c) => names.includes(c)));
+    for (const g of groups) assert.ok(g.widgets.length > 0, `${g.category} came back empty`);
+  });
+
+  test("a group only contains widgets that builder may use", () => {
+    for (const g of groupForPane("email")) {
+      for (const w of g.widgets) {
+        assert.ok(w.adapters.includes("email"), `${w.kind} is offered to the email builder and cannot render there`);
+        assert.equal(w.category, g.category);
+      }
+    }
+  });
+
+  test("search matches the DESCRIPTION, not just the label", () => {
+    // Nothing is called "Recommended"; the comparison-card sentence says it.
+    const hits = groupForPane("proposal", "recommended").flatMap((g) => g.widgets.map((w) => w.kind));
+    assert.ok(hits.includes("comparison_cards"), "searching the words people actually use must work");
+  });
+
+  test("an unmatched search returns nothing rather than everything", () => {
+    assert.deepEqual(groupForPane("proposal", "zzzzz"), []);
+  });
+
+  test("a picture is a real SVG data URI that decodes", () => {
+    const uri = pictureFrom('<rect x="1" y="1" width="2" height="2"/>');
+    assert.ok(uri.startsWith("data:image/svg+xml,"));
+    const decoded = decodeURIComponent(uri.slice("data:image/svg+xml,".length));
+    assert.match(decoded, /^<svg /);
+    assert.match(decoded, /viewBox="0 0 64 40"/);
+    assert.match(decoded, /<\/svg>$/);
+  });
+
+  test("every widget's picture decodes to a drawing with at least one shape", () => {
+    for (const w of WIDGETS) {
+      const decoded = decodeURIComponent(w.picture.slice("data:image/svg+xml,".length));
+      assert.match(decoded, /<(rect|circle|path)/, `${w.kind}'s picture draws nothing`);
+    }
+  });
+});
+
+describe("WidgetPane honours SD-010", () => {
+  const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
+
+  test("it reads the registry and keeps no list of its own", () => {
+    assert.match(pane, /from "\.\/registry"/);
+    assert.match(pane, /groupForPane\(adapter, query\)/);
+  });
+
+  test("every widget button carries a tooltip AND an accessible name", () => {
+    assert.match(pane, /title=\{widgetTooltip\(w\)\}/);
+    assert.match(pane, /aria-label=\{widgetTooltip\(w\)\}/);
+  });
+
+  test("it renders the picture, the label and the one line", () => {
+    assert.match(pane, /src=\{w\.picture\}/);
+    assert.match(pane, /\{w\.label\}/);
+    assert.match(pane, /\{w\.description\}/);
+  });
+
+  test("it groups by category with a heading", () => {
+    assert.match(pane, /\{group\.category\}/);
+    assert.match(pane, /groups\.map\(\(group\)/);
+  });
+
+  test("it has a search box", () => {
+    assert.match(pane, /type="search"/);
+    assert.match(pane, /aria-label="Search widgets"/);
+  });
+
+  test("a widget with a count is ASKED before it is inserted", () => {
+    assert.match(pane, /if \(w\.count\) \{/);
+    assert.match(pane, /\{w\.count\.label\}/);
+    assert.match(pane, /onInsert\(w, asking\.value\)/);
+  });
+});

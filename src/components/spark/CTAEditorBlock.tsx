@@ -21,13 +21,17 @@
 // block. "type: 'other'" serializes as a button block too (same renderer)
 // but the editor labels it as a generic CTA for future flexibility.
 //
-// brandPrimaryColor / brandSecondaryColor / brandAccentColor should be
-// fetched once by the parent from the business profile (brandColor,
-// brandColorSecondary, brandColorAccent) and passed in. The button
-// defaults to the ACCENT color, and the picker offers three labeled
-// chips (Primary / Secondary / Accent) plus a Custom override. Falls
-// back to "#1A3A4A" (IA primary navy) when no brand colors are set —
-// NEVER the deprecated "#EF6C33" hardcode.
+// COLOURS COME FROM THE BRAND KIT (BUILDER_PLATFORM_SCOPE_2026-09-15 §2,
+// step 0). useBrandKit() is one fetch for the whole shell, so the three chips
+// (Primary / Secondary / Accent) and the default button colour are the
+// business's own, and they repaint the moment Brand Identity saves.
+//
+// The brandPrimaryColor / brandSecondaryColor / brandAccentColor props survive
+// as OVERRIDES for a caller that genuinely has a different palette (a preview
+// of somebody else's document). They used to be the only source, fetched
+// separately by each composer from oliver /settings, with a last resort of
+// Intelligent Analytics' own navy on a client's button. There is no hardcoded
+// colour in this file any more.
 //
 // Merge tags use user-friendly names per the locked 2026-06-24
 // "Merge tags user-friendly naming" convention — the picker inserts
@@ -36,6 +40,8 @@
 import { useMemo, useRef } from "react";
 import { Link as LinkIcon, MousePointerClick, Square } from "lucide-react";
 import { MergeTagPicker, type MergeTag } from "./MergeTagPicker";
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import { NEUTRAL_BRAND_KIT, readableOn, type BrandKit } from "../../lib/brandKit";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -52,9 +58,9 @@ export interface CTAValue {
   type: CTAType;
   label: string;
   url: string;
-  /** Button background color. Defaults to brandAccentColor or #1A3A4A. */
+  /** Button background color. Defaults to the brand kit accent. */
   buttonColor?: string;
-  /** Button text color. Defaults to auto-contrast (white or #1A3A4A). */
+  /** Button text color. Defaults to auto-contrast against the background. */
   textColor?: string;
   /** Border radius in px. 9999 == pill. Defaults to 6. */
   borderRadius?: number;
@@ -67,11 +73,11 @@ export interface CTAValue {
 export interface CTAEditorBlockProps {
   value: CTAValue;
   onChange: (next: CTAValue) => void;
-  /** Primary brand color from the business profile (brandColor). */
+  /** OVERRIDE the kit's primary. Omit and the brand kit supplies it. */
   brandPrimaryColor?: string;
-  /** Secondary brand color from the business profile (brandColorSecondary). */
+  /** OVERRIDE the kit's secondary. */
   brandSecondaryColor?: string;
-  /** Accent brand color from the business profile (brandColorAccent). Default for new CTAs. */
+  /** OVERRIDE the kit's accent. The default for a new CTA either way. */
   brandAccentColor?: string;
   /** Override the default merge-tag catalog (campaign vs. welcome-email surfaces). */
   mergeTagCatalog?: MergeTag[];
@@ -81,25 +87,16 @@ export interface CTAEditorBlockProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-const DEFAULT_BG_FALLBACK = "#1A3A4A";
-
 /**
- * Compute a readable text color (#FFFFFF or #1A3A4A) for a given background.
- * Uses YIQ luminance — same heuristic as OliverPortalsHubPage's accent
- * contrast check.
+ * Compute a readable text colour for a given background, by YIQ luminance.
+ *
+ * The dark option used to be Intelligent Analytics' navy, written out — our
+ * ink on somebody else's button. It is the brand kit's own text colour now, so
+ * a business that chose its ink gets it. Pass the kit; the neutral one is the
+ * default so a pure caller (the serializer below, a test) still works.
  */
-export function autoContrastColor(bg: string): string {
-  const hex = (bg || "").replace("#", "");
-  if (hex.length !== 6 && hex.length !== 3) return "#FFFFFF";
-  const expand = hex.length === 3
-    ? hex.split("").map((c) => c + c).join("")
-    : hex;
-  const r = parseInt(expand.slice(0, 2), 16);
-  const g = parseInt(expand.slice(2, 4), 16);
-  const b = parseInt(expand.slice(4, 6), 16);
-  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return "#FFFFFF";
-  const yiq = (r * 299 + g * 587 + b * 114) / 1000;
-  return yiq >= 160 ? "#1A3A4A" : "#FFFFFF";
+export function autoContrastColor(bg: string, kit: BrandKit = NEUTRAL_BRAND_KIT): string {
+  return readableOn(bg, kit);
 }
 
 /** Catalog used when no parent override is provided. Includes the link tokens
@@ -135,17 +132,23 @@ export function CTAEditorBlock({
 }: CTAEditorBlockProps) {
   // Stable URL input ref so MergeTagPicker can insert at the caret.
   const urlRef = useRef<HTMLInputElement>(null);
+  // THE brand kit — one fetch for the whole shell, live on save.
+  const { kit } = useBrandKit();
+  const primary = brandPrimaryColor || kit.colours.primary;
+  const secondary = brandSecondaryColor || kit.colours.secondary;
+  const accent = brandAccentColor || kit.colours.accent;
 
-  // Effective colors — fall back to brand accent, then IA navy, then auto-contrast.
+  // Effective colours — the author's own override, then the brand accent. No
+  // literal behind them: the kit is already the neutral when nothing is set.
   const effectiveBg = useMemo(() => {
     if (value.type === "link") return "transparent";
-    return value.buttonColor || brandAccentColor || DEFAULT_BG_FALLBACK;
-  }, [value.type, value.buttonColor, brandAccentColor]);
+    return value.buttonColor || accent;
+  }, [value.type, value.buttonColor, accent]);
 
   const effectiveText = useMemo(() => {
-    if (value.type === "link") return value.textColor || (brandAccentColor || DEFAULT_BG_FALLBACK);
-    return value.textColor || autoContrastColor(effectiveBg);
-  }, [value.type, value.textColor, brandAccentColor, effectiveBg]);
+    if (value.type === "link") return value.textColor || accent;
+    return value.textColor || autoContrastColor(effectiveBg, kit);
+  }, [value.type, value.textColor, accent, effectiveBg, kit]);
 
   const align = value.align || "center";
   const width = value.width || "fit";
@@ -185,7 +188,7 @@ export function CTAEditorBlock({
             onClick={() => setType(v)}
             className={`text-xs px-2.5 py-1 rounded-full border flex items-center gap-1 ${
               value.type === v
-                ? "bg-[#1A3A4A] text-white border-[#1A3A4A]"
+                ? "bg-slate-800 text-white border-slate-800"
                 : "border-slate-300 text-slate-700 hover:bg-slate-50"
             }`}
           >
@@ -205,7 +208,7 @@ export function CTAEditorBlock({
           value={value.label}
           onChange={(e) => setLabel(e.target.value)}
           placeholder={value.type === "link" ? "Read the welcome email" : "Get started"}
-          className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5 focus:border-[#1A3A4A] focus:ring-1 focus:ring-[#1A3A4A]"
+          className="w-full text-sm border border-slate-300 rounded p-1.5 mt-0.5 focus:border-slate-400 focus:ring-1 focus:ring-slate-300"
         />
       </div>
 
@@ -230,7 +233,7 @@ export function CTAEditorBlock({
           value={value.url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://example.com  or  {{welcome link}}"
-          className="w-full text-sm border border-slate-300 rounded p-1.5 focus:border-[#1A3A4A] focus:ring-1 focus:ring-[#1A3A4A] font-mono"
+          className="w-full text-sm border border-slate-300 rounded p-1.5 focus:border-slate-400 focus:ring-1 focus:ring-slate-300 font-mono"
         />
         <div className="text-[10px] text-slate-400 mt-0.5">
           Paste a URL or click "Insert link tag" to drop in an automatic
@@ -245,9 +248,9 @@ export function CTAEditorBlock({
              override is set. Custom reveals the hex/color inputs. */}
           {(() => {
             const brandChips = [
-              { key: "primary",   label: "Primary",   hex: brandPrimaryColor   },
-              { key: "secondary", label: "Secondary", hex: brandSecondaryColor },
-              { key: "accent",    label: "Accent",    hex: brandAccentColor    },
+              { key: "primary",   label: "Primary",   hex: primary   },
+              { key: "secondary", label: "Secondary", hex: secondary },
+              { key: "accent",    label: "Accent",    hex: accent    },
             ].filter((c) => !!c.hex);
             const matchedBrand = brandChips.find((c) => c.hex && c.hex.toLowerCase() === effectiveBg.toLowerCase());
             // Custom = user has explicitly set buttonColor AND it doesn't match any brand chip.
@@ -268,7 +271,7 @@ export function CTAEditorBlock({
                           onClick={() => setButtonColor(c.hex!)}
                           title={`${c.label}: ${c.hex}`}
                           className={`flex items-center gap-1.5 text-[11px] px-2 py-1 rounded border ${
-                            active ? "border-[#1A3A4A] bg-[#1A3A4A] text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                            active ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
                           }`}
                         >
                           <span className="inline-block h-3 w-3 rounded-sm border border-slate-300" style={{ background: c.hex }} />
@@ -278,9 +281,9 @@ export function CTAEditorBlock({
                     })}
                     <button
                       type="button"
-                      onClick={() => setButtonColor(value.buttonColor || effectiveBg || DEFAULT_BG_FALLBACK)}
+                      onClick={() => setButtonColor(value.buttonColor || effectiveBg)}
                       className={`text-[11px] px-2 py-1 rounded border ${
-                        isCustom ? "border-[#1A3A4A] bg-[#1A3A4A] text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
+                        isCustom ? "border-slate-800 bg-slate-800 text-white" : "border-slate-300 text-slate-700 hover:bg-slate-50"
                       }`}
                     >
                       Custom
@@ -302,14 +305,11 @@ export function CTAEditorBlock({
                       />
                     </div>
                   )}
-                  {!value.buttonColor && brandAccentColor && brandChips.length > 0 && (
+                  {!value.buttonColor && (
                     <div className="text-[10px] text-slate-400 mt-0.5">
-                      Using your brand accent ({brandAccentColor}).
-                    </div>
-                  )}
-                  {brandChips.length === 0 && (
-                    <div className="text-[10px] text-slate-400 mt-0.5">
-                      No brand colors set yet — set them under Business Profile → Brand Identity.
+                      {kit.sources?.accent === "tenant"
+                        ? `Using your brand accent (${accent}).`
+                        : "No brand colour set yet — pick one under Settings → Brand Identity and every builder follows."}
                     </div>
                   )}
                 </div>
@@ -349,7 +349,7 @@ export function CTAEditorBlock({
                   onClick={() => setRadius(r.value)}
                   className={`text-[11px] px-2 py-1 rounded border ${
                     radius === r.value
-                      ? "bg-[#1A3A4A] text-white border-[#1A3A4A]"
+                      ? "bg-slate-800 text-white border-slate-800"
                       : "border-slate-300 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -375,7 +375,7 @@ export function CTAEditorBlock({
                   onClick={() => setWidth(w.v)}
                   className={`text-[11px] px-2 py-1 rounded border ${
                     width === w.v
-                      ? "bg-[#1A3A4A] text-white border-[#1A3A4A]"
+                      ? "bg-slate-800 text-white border-slate-800"
                       : "border-slate-300 text-slate-700 hover:bg-slate-50"
                   }`}
                 >
@@ -400,7 +400,7 @@ export function CTAEditorBlock({
               onClick={() => setAlign(a)}
               className={`text-[11px] px-2 py-1 rounded border capitalize ${
                 align === a
-                  ? "bg-[#1A3A4A] text-white border-[#1A3A4A]"
+                  ? "bg-slate-800 text-white border-slate-800"
                   : "border-slate-300 text-slate-700 hover:bg-slate-50"
               }`}
             >
@@ -432,7 +432,13 @@ export function CTAEditorBlock({
  * same thing the inbox will render. If you change the renderer, update this
  * preview to match.
  */
-export function CTAPreview({ value }: { value: CTAValue }) {
+/**
+ * The preview takes the kit so a CTA with no explicit colour previews in the
+ * BUSINESS's accent — which is what the inbox will show. It previewed in IA
+ * navy before, so the editor and the sent email disagreed for every tenant
+ * who had not overridden the colour.
+ */
+export function CTAPreview({ value, kit = NEUTRAL_BRAND_KIT }: { value: CTAValue; kit?: BrandKit }) {
   const align = value.align || "center";
   const radius = value.borderRadius ?? 6;
   const width = value.width || "fit";
@@ -446,7 +452,7 @@ export function CTAPreview({ value }: { value: CTAValue }) {
           href="#"
           onClick={(e) => e.preventDefault()}
           style={{
-            color: value.textColor || "#1A3A4A",
+            color: value.textColor || kit.colours.accent,
             textDecoration: "underline",
             fontWeight: 600,
             fontSize: 16,
@@ -463,8 +469,8 @@ export function CTAPreview({ value }: { value: CTAValue }) {
       <span
         style={{
           display: "inline-block",
-          background: value.buttonColor || "#1A3A4A",
-          color: value.textColor || "#FFFFFF",
+          background: value.buttonColor || kit.colours.accent,
+          color: value.textColor || readableOn(value.buttonColor || kit.colours.accent, kit),
           padding: "12px 24px",
           borderRadius: `${radius}px`,
           fontWeight: 600,
@@ -493,10 +499,16 @@ export function CTAPreview({ value }: { value: CTAValue }) {
  *   stays meaningful.
  * - type "button"/"other" emits a "button" block.
  */
-export function ctaToBlock(value: CTAValue): Record<string, unknown> {
+/**
+ * ...and the serializer takes it too, because this is where the colour gets
+ * BAKED into the saved block. A CTA saved with no explicit colour used to
+ * write IA navy into the tenant's template forever; it writes their accent
+ * now, and the neutral only when they have chosen nothing at all.
+ */
+export function ctaToBlock(value: CTAValue, kit: BrandKit = NEUTRAL_BRAND_KIT): Record<string, unknown> {
   const align = value.align || "center";
   if (value.type === "link") {
-    const color = value.textColor || "#1A3A4A";
+    const color = value.textColor || kit.colours.accent;
     const url = value.url || "#";
     const label = value.label || "Click here";
     // Plain text mirrors label so the text fallback isn't an empty paragraph.
@@ -512,8 +524,8 @@ export function ctaToBlock(value: CTAValue): Record<string, unknown> {
     type: "button",
     text: value.label || "Click here",
     url: value.url || "#",
-    background: value.buttonColor || "#1A3A4A",
-    color: value.textColor || autoContrastColor(value.buttonColor || "#1A3A4A"),
+    background: value.buttonColor || kit.colours.accent,
+    color: value.textColor || autoContrastColor(value.buttonColor || kit.colours.accent, kit),
     align,
     border_radius: value.borderRadius ?? 6,
     width: value.width || "fit",

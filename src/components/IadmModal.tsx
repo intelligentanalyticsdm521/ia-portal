@@ -15,39 +15,22 @@
 //     pattern OLIVER's DetailDrawer already used).
 import { useEffect, type ReactNode } from "react";
 import { X } from "lucide-react";
+// The size table lives in its own module so a test can drive it without a DOM
+// (the Portal runner is `node --test` over pure modules). One table, one home.
+import {
+  MODAL_SIZES, BUILDER_PANE_WIDTH, BUILDER_INSPECTOR_WIDTH,
+  type IadmModalSize,
+} from "./iadmModalSizes";
 
 export type IadmModalProduct = "spark" | "oliver" | "arion" | "argus" | "stella" | "forge";
 
 /**
- * IadmModalSize — F-107 modal size standards (LOCKED 2026-05-29).
- *
- * Pick the size that matches what the modal IS, not how much content it has
- * (fixed-canvas rule still applies — whitespace is expected on lightly
- * populated records). One prop, one decision:
- *
- *   "nav"     → 560 × 50vh — selection / picker / "what do you want to
- *                create?". Use for short option grids, channel pickers,
- *                kind pickers, filter chip selectors. Step 1 of a multi-step
- *                composer.
- *
- *   "info"    → 1200 × 80vh — THE STANDARD. Forms, customer info, templates,
- *                rule/list/contact editors, anything view-or-edit. Matches the
- *                OLIVER CustomerModal pattern the founder locked.
- *
- *   "report"  → 1400 × 90vh — IA Insights drilldowns, Intelligence / Trends,
- *                dashboards-in-modal. Anything with KPI tiles + charts +
- *                multi-section observations.
- *
- *   "confirm" → 420 × auto — destructive confirms ("Delete this list?"),
- *                short decisions. Replaces window.confirm().
- *
- * Deprecated aliases retained for back-compat:
- *   "md" → maps to "info"
- *   "lg" → maps to "info"
- *
- * See Global/Modal_Standards.md for the full decision tree.
+ * IadmModalSize — F-107 modal size standards, plus the 2026-09-15 "builder"
+ * surface. The table, every dimension and the reasoning now live in
+ * ./iadmModalSizes.ts; this re-export keeps the 102 call sites importing the
+ * type from where they always have.
  */
-export type IadmModalSize = "nav" | "info" | "report" | "confirm" | "md" | "lg" | "xl";
+export type { IadmModalSize } from "./iadmModalSizes";
 
 interface Props {
   open: boolean;
@@ -63,7 +46,9 @@ interface Props {
   /** Footer area. Caller is responsible for button order (Core Blue first,
    *  Platform color second). Sticky to bottom. */
   footer?: ReactNode;
-  /** "md" = 800px × 70vh.  "lg" (default) = 1200px × 80vh.  "xl" = 90vw × 90vh (consultant workspace). */
+  /** Which surface this is. See ./iadmModalSizes.ts for the table and the
+   *  reasoning. "builder" is the full-viewport three-pane shell every builder
+   *  gets (SD-010 addendum, 2026-09-15). */
   size?: IadmModalSize;
   /**
    * Raise the modal above a same-layer element. The backdrop is z-50, which
@@ -75,24 +60,6 @@ interface Props {
   z?: number;
   children: ReactNode;
 }
-
-// F-107 — Canvas dimensions per size standard. "confirm" uses an auto height
-// (the only non-fixed size — short content, no body scroll, no whitespace).
-const FIXED: Record<IadmModalSize, { w: number | "xl"; h: number | "auto" }> = {
-  nav:     { w: 560,  h: 50 },
-  info:    { w: 1200, h: 80 },
-  report:  { w: 1400, h: 90 },
-  confirm: { w: 420,  h: "auto" },
-  // Deprecated aliases — both legacy names map to the new "info" standard.
-  // Existing call sites keep working; new code should reach for nav/info/
-  // report/confirm directly.
-  md: { w: 1200, h: 80 },
-  lg: { w: 1200, h: 80 },
-  // 2026-06-27 — consultant workspace size: an XL surface that fills 90% of
-  // the screen, used by ClientTenantModal to embed the client's full Portal
-  // via iframe. Width sentinel "xl" maps to `90vw` in the style block below.
-  xl: { w: "xl", h: 90 },
-};
 
 export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
   spark:  "#EF6C33",
@@ -139,7 +106,12 @@ export function IadmModal({
 
   const accent = PRODUCT_ACCENT[product];
   const eyebrowText = eyebrow ?? product.toUpperCase();
-  const dims = FIXED[size];
+  const dims = MODAL_SIZES[size];
+  // The one size whose width changes with the screen: on a wide monitor a
+  // gutter buys nothing and the inspector is what gets squeezed.
+  const wide = dims.widthAtWide !== undefined && dims.wideFrom !== undefined
+    && typeof window !== "undefined" && window.innerWidth >= dims.wideFrom;
+  const width = wide ? dims.widthAtWide! : dims.width;
 
   return (
     <div
@@ -154,11 +126,11 @@ export function IadmModal({
         onMouseDown={(e) => e.stopPropagation()}
         className="flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
         style={{
-          width:  dims.w === "xl" ? "90vw" : `min(${dims.w}px, 94vw)`,
+          width,
           // "auto" height (confirm only) lets the modal size to its content
           // — no body scroll, no fixed canvas. Every other size is fixed.
-          height: dims.h === "auto" ? "auto" : `${dims.h}vh`,
-          maxHeight: dims.h === "auto" ? "90vh" : undefined,
+          height: dims.height,
+          maxHeight: dims.height === "auto" ? "90vh" : undefined,
         }}
       >
         {/* Ink gradient header */}
@@ -254,6 +226,85 @@ export function IadmButton({
     <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}>
       {icon}{children}
     </button>
+  );
+}
+
+/**
+ * IadmBuilderPanes — the three-pane frame every builder gets.
+ *
+ * SD-010: "a side pane of widgets/blocks … sections on a canvas … tooltips on
+ * every button". The frame is part of the SHELL, not per-builder furniture,
+ * because the inventory found sixteen authoring surfaces and no two of them
+ * laid themselves out the same way: the form builder has a 260px palette, the
+ * Template Studio a 240px insert rail, the OLIVER signup builder three equal
+ * columns, and the other thirteen have no pane at all. One frame ends that.
+ *
+ * Put it directly inside an IadmModal size="builder" body. It fills the height
+ * it is given and scrolls each pane independently — the canvas must be able to
+ * scroll without taking the widget list with it, which is the single most
+ * common complaint about a builder in a modal.
+ *
+ *   <IadmModal open onClose={…} product="oliver" title="Proposal" size="builder">
+ *     <IadmBuilderPanes
+ *       pane={<WidgetPane adapter="proposal" onInsert={…} />}
+ *       inspector={selected ? <SectionInspector … /> : null}
+ *     >
+ *       <Canvas … />
+ *     </IadmBuilderPanes>
+ *   </IadmModal>
+ *
+ * `inspector` is optional and the column disappears when it is null, so a
+ * builder with nothing selected gives the canvas the whole width instead of
+ * holding 320px of empty grey — the Template Studio holds it today.
+ */
+export function IadmBuilderPanes({
+  pane, children, inspector = null, paneWidth = BUILDER_PANE_WIDTH,
+  inspectorWidth = BUILDER_INSPECTOR_WIDTH, canvasBackground = "#F1F5F9",
+}: {
+  /** LEFT — the widget pane. Picture + label + one line per widget. */
+  pane: ReactNode;
+  /** CENTRE — the canvas. Sections, edited in place. */
+  children: ReactNode;
+  /** RIGHT — the inspector for whatever is selected. null hides the column. */
+  inspector?: ReactNode;
+  paneWidth?: number;
+  inspectorWidth?: number;
+  /** The paper the canvas sits on. A document builder may want white. */
+  canvasBackground?: string;
+}) {
+  return (
+    <div className="flex h-full min-h-0 w-full">
+      {/* LEFT pane — fixed width, its own scroll. On a phone the panes stack,
+          so the widget list sits above the canvas rather than beside it. */}
+      <aside
+        data-builder-slot="pane"
+        className="flex-shrink-0 overflow-y-auto border-r border-slate-200 bg-white max-md:hidden"
+        style={{ width: paneWidth }}
+      >
+        {pane}
+      </aside>
+
+      {/* CENTRE — the canvas. min-w-0 is what stops a wide section from
+          pushing the inspector off the modal instead of scrolling. */}
+      <main
+        data-builder-slot="canvas"
+        className="min-w-0 flex-1 overflow-y-auto"
+        style={{ background: canvasBackground }}
+      >
+        {children}
+      </main>
+
+      {/* RIGHT inspector — only when something is selected. */}
+      {inspector === null ? null : (
+        <aside
+          data-builder-slot="inspector"
+          className="flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white max-lg:hidden"
+          style={{ width: inspectorWidth }}
+        >
+          {inspector}
+        </aside>
+      )}
+    </div>
   );
 }
 

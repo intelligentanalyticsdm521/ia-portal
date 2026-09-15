@@ -49,6 +49,18 @@ import {
   ZoomIn, ZoomOut,
 } from "lucide-react";
 import { IadmModal, IadmButton } from "../IadmModal";
+// THE brand kit. The swatch defaults and every compound-element preset read
+// it; LUMEN resolves the same object server-side for the export, so the
+// editor and the downloaded PNG finally agree.
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import { NEUTRAL_BRAND_KIT } from "../../lib/brandKit";
+
+// Several helpers in this file are pure (they render an SVG string outside
+// React) and cannot call the hook. They used to write Intelligent Analytics'
+// navy and gold straight into a CLIENT's design as the default fill, stroke,
+// outline, tint and gradient. They use the ONE neutral now — and every
+// default INSIDE the component prefers the resolved brand palette first.
+const FALLBACK = NEUTRAL_BRAND_KIT.colours;
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { useProductTier } from "../../hooks/useProductTier";
 import { tierMeets } from "../../lib/tierRank";
@@ -180,8 +192,8 @@ function fabricGradient(g: GradientSpec): fabric.Gradient<"linear"> {
     gradientUnits: "percentage",
     coords: GRADIENT_COORDS[g.dir] || GRADIENT_COORDS.d1,
     colorStops: [
-      { offset: 0, color: g.from || "#1A3A4A" },
-      { offset: 1, color: g.to || "#FEC82C" },
+      { offset: 0, color: g.from || FALLBACK.primary },
+      { offset: 1, color: g.to || FALLBACK.secondary },
     ],
   });
 }
@@ -245,7 +257,7 @@ function iconToSvg(layer: ShapeLayer): string {
   const d = ICON_PATHS[layer.icon || ""] || ICON_PATHS.star;
   const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
   let defs = "";
-  let fill = layer.fill && layer.fill !== "none" ? layer.fill : "#1A3A4A";
+  let fill = layer.fill && layer.fill !== "none" ? layer.fill : FALLBACK.primary;
   if (layer.gradient) {
     const c = GRADIENT_COORDS[layer.gradient.dir] || GRADIENT_COORDS.d1;
     defs = `<defs><linearGradient id="g" x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}">` +
@@ -451,7 +463,9 @@ export function smartResize(doc: CanvasDoc, newW: number, newH: number): CanvasD
 // resulting image. New charts default to the IA palette cycle in the
 // editor; the server export resolves the cycle against the tenant's real
 // brand palette, so exports are always brand-true.
-const CHART_DEFAULT_CYCLE = ["#1A3A4A", "#FEC82C", "#64748B", "#94A3B8", "#CBD5E1", "#475569"];
+// A new chart cycles the brand pair first, then neutrals. The first two used
+// to be IA navy and IA gold written out, on a CLIENT's chart.
+const CHART_DEFAULT_CYCLE = [FALLBACK.primary, FALLBACK.secondary, "#64748B", "#94A3B8", "#CBD5E1", "#475569"];
 
 export function chartToSvg(layer: ChartLayer): string {
   const w = layer.w, h = layer.h;
@@ -575,8 +589,11 @@ export function TemplateStudioEditorModal({
   // "⋯ more" catalog pickers for the rail (elements | icons).
   const [moreOpen, setMoreOpen] = useState<"elements" | "icons" | null>(null);
 
-  // Tenant brand palette for the color swatches — same resolved palette the
-  // exporter uses, so what you pick is what ships.
+  // Tenant brand palette for the colour swatches — the same palette the
+  // EXPORTER resolves, so what you pick is what ships. LUMEN resolves it from
+  // the one brand kit now, which is why it finally carries five slots
+  // (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+  const { kit } = useBrandKit();
   const [brandPalette, setBrandPalette] = useState<Record<string, string> | null>(null);
   useEffect(() => {
     if (!open || !ready || brandPalette) return;
@@ -970,7 +987,7 @@ export function TemplateStudioEditorModal({
       y: Math.round(canvasDoc.height / 2 - side / 2),
       w: side,
       h: side,
-      fill: "#1A3A4A",
+      fill: brandPalette?.primary || FALLBACK.primary,
       stroke: "none",
       strokeWidth: 0,
       rotation: 0,
@@ -989,8 +1006,8 @@ export function TemplateStudioEditorModal({
       y: Math.round(canvasDoc.height / 2 - 100),
       w: 200,
       h: shape === "line" ? 0 : 200,
-      fill: shape === "line" ? "none" : "#FEC82C",
-      stroke: shape === "line" ? "#1A3A4A" : "none",
+      fill: shape === "line" ? "none" : (brandPalette?.secondary || FALLBACK.secondary),
+      stroke: shape === "line" ? (brandPalette?.primary || FALLBACK.primary) : "none",
       strokeWidth: shape === "line" ? 4 : 0,
       rotation: 0,
       visible: true,
@@ -1129,7 +1146,11 @@ export function TemplateStudioEditorModal({
     const W = canvasDoc.width, H = canvasDoc.height;
     const s = Math.max(0.3, Math.min(W, H) / 1080);
     const cx = W / 2, cy = H / 2;
-    const P = brandPalette || { primary: "#1A3A4A", secondary: "#FEC82C", text: "#111827", background: "#FFFFFF" };
+    // The kit is a complete palette already — it is the platform neutral when
+    // the business has chosen nothing — so there is no literal behind it. This
+    // line used to insert Intelligent Analytics' navy and gold into a CLIENT's
+    // design whenever the palette fetch had not landed yet.
+    const P = brandPalette || kit.colours;
     const F = DEFAULT_FONTS[0];
     let layers: Layer[] = [];
     if (key === "cta") {
@@ -1178,7 +1199,7 @@ export function TemplateStudioEditorModal({
     if (!layers.length) return;
     mutateCanvas((prev) => ({ ...prev, layers: [...prev.layers, ...layers] }));
     setSelectedId(layers[layers.length - 1].id);
-  }, [canvasDoc.width, canvasDoc.height, brandPalette, mutateCanvas]);
+  }, [canvasDoc.width, canvasDoc.height, brandPalette, kit, mutateCanvas]);
 
   // Place from Media Library (bucket 1): existing brand assets — including
   // AI-generated and background-removed ones — straight onto the canvas.
@@ -1240,9 +1261,14 @@ export function TemplateStudioEditorModal({
   // Brand Sync (Pro+, deterministic): remap every color in the design to
   // the nearest tenant brand color. One undo step reverses it.
   const applyBrandSync = useCallback(() => {
+    // ACCENT is in the list now: the kit carries five slots and Brand Sync
+    // only ever remapped to four, so an accent a business had chosen could
+    // never be snapped to.
     const swatches = brandPalette
-      ? [brandPalette.primary, brandPalette.secondary, brandPalette.text, brandPalette.background]
-      : ["#1A3A4A", "#FEC82C", "#111827", "#FFFFFF"];
+      ? [brandPalette.primary, brandPalette.secondary, brandPalette.accent,
+         brandPalette.text, brandPalette.background].filter(Boolean)
+      : [kit.colours.primary, kit.colours.secondary, kit.colours.accent,
+         kit.colours.text, kit.colours.background];
     const remap = (c: string | undefined | null) =>
       c && c !== "none" && !c.startsWith("{{") ? nearestBrandColor(c, swatches) : c;
     mutateCanvas((prev) => ({
@@ -1259,7 +1285,7 @@ export function TemplateStudioEditorModal({
         return next as Layer;
       }),
     }));
-  }, [brandPalette, mutateCanvas]);
+  }, [brandPalette, kit, mutateCanvas]);
 
   // Fix contrast (Standard, deterministic): pick white or near-black for a
   // text layer based on the luminance of whatever sits behind its center.
@@ -1588,7 +1614,11 @@ export function TemplateStudioEditorModal({
       product="spark"
       eyebrow="MY BRAND · DESIGN STUDIO"
       title={isEdit ? "Edit design" : "New design"}
-      size="xl"
+      // SD-010 addendum (Brandon 2026-09-15): every builder opens as the
+      // largest surface we have. "xl" is 90vw, which on a 2560px screen
+      // discards 256px — a whole inspector column. "builder" is 96vw, and
+      // the FULL width from 1400px up, with the three-pane shell.
+      size="builder"
       headerActions={
         <>
           {saving ? (
@@ -2451,7 +2481,7 @@ function ColorField({
 }) {
   const swatches = palette
     ? [palette.primary, palette.secondary, palette.text, palette.background]
-    : ["#1A3A4A", "#FEC82C", "#111827", "#FFFFFF"];
+    : [FALLBACK.primary, FALLBACK.secondary, FALLBACK.text, FALLBACK.background];
   const current = value && value !== "none" ? value : fallback;
   return (
     <div>
@@ -2689,7 +2719,7 @@ function LayerPropertiesPanel({
                 if (v === "shadow") onUpdate({ ...reset, shadow: true } as Partial<Layer>);
                 else if (v === "lift") onUpdate({ ...reset, effect: "lift" } as Partial<Layer>);
                 else if (v === "hollow") onUpdate({ ...reset, effect: "hollow" } as Partial<Layer>);
-                else if (v === "outline") onUpdate({ ...reset, outline: (palette?.primary || "#1A3A4A") } as Partial<Layer>);
+                else if (v === "outline") onUpdate({ ...reset, outline: (palette?.primary || FALLBACK.primary) } as Partial<Layer>);
                 else onUpdate(reset);
               }}
               className="ml-auto rounded border border-slate-200 px-1.5 py-1 text-[11px]"
@@ -2728,7 +2758,7 @@ function LayerPropertiesPanel({
           />
           {(layer as TextLayer).outline && (
             <ColorField
-              label="Outline color" value={(layer as TextLayer).outline} fallback="#1A3A4A"
+              label="Outline color" value={(layer as TextLayer).outline} fallback={palette?.primary || FALLBACK.primary}
               palette={palette} onChange={(c) => onUpdate({ outline: c } as Partial<Layer>)}
             />
           )}
@@ -2792,7 +2822,7 @@ function LayerPropertiesPanel({
                 onChange={(e) => onUpdate({
                   filters: {
                     ...((layer as ImageLayer).filters || {}),
-                    tint: e.target.checked ? (palette?.primary || "#1A3A4A") : undefined,
+                    tint: e.target.checked ? (palette?.primary || FALLBACK.primary) : undefined,
                   },
                 } as Partial<Layer>)}
               />
@@ -2867,7 +2897,7 @@ function LayerPropertiesPanel({
                       type="button"
                       onClick={() => onUpdate(
                         m === "gradient"
-                          ? { gradient: (layer as ShapeLayer).gradient || { from: palette?.primary || "#1A3A4A", to: palette?.secondary || "#FEC82C", dir: "d1" } } as Partial<Layer>
+                          ? { gradient: (layer as ShapeLayer).gradient || { from: palette?.primary || FALLBACK.primary, to: palette?.secondary || FALLBACK.secondary, dir: "d1" } } as Partial<Layer>
                           : { gradient: undefined } as Partial<Layer>,
                       )}
                       className={`flex-1 rounded px-1.5 py-0.5 capitalize ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
@@ -2880,12 +2910,12 @@ function LayerPropertiesPanel({
               {(layer as ShapeLayer).gradient ? (
                 <>
                   <ColorField
-                    label="From" value={(layer as ShapeLayer).gradient!.from} fallback="#1A3A4A"
+                    label="From" value={(layer as ShapeLayer).gradient!.from} fallback={palette?.primary || FALLBACK.primary}
                     palette={palette}
                     onChange={(c) => onUpdate({ gradient: { ...(layer as ShapeLayer).gradient!, from: c } } as Partial<Layer>)}
                   />
                   <ColorField
-                    label="To" value={(layer as ShapeLayer).gradient!.to} fallback="#FEC82C"
+                    label="To" value={(layer as ShapeLayer).gradient!.to} fallback={palette?.secondary || FALLBACK.secondary}
                     palette={palette}
                     onChange={(c) => onUpdate({ gradient: { ...(layer as ShapeLayer).gradient!, to: c } } as Partial<Layer>)}
                   />
@@ -2906,14 +2936,14 @@ function LayerPropertiesPanel({
                 </>
               ) : (
                 <ColorField
-                  label="Fill" value={(layer as ShapeLayer).fill} fallback="#FEC82C"
+                  label="Fill" value={(layer as ShapeLayer).fill} fallback={palette?.secondary || FALLBACK.secondary}
                   palette={palette} onChange={(c) => onUpdate({ fill: c })}
                 />
               )}
             </>
           )}
           <ColorField
-            label="Stroke" value={(layer as ShapeLayer).stroke} fallback="#1A3A4A"
+            label="Stroke" value={(layer as ShapeLayer).stroke} fallback={palette?.primary || FALLBACK.primary}
             palette={palette} onChange={(c) => onUpdate({ stroke: c })}
           />
           <div className="grid grid-cols-2 gap-1.5">
@@ -3204,7 +3234,7 @@ function layerToFabricObject(
       return new fabric.Line(
         [s.x, s.y, s.x + s.w, s.y + s.h],
         {
-          stroke: stroke || "#1A3A4A",
+          stroke: stroke || FALLBACK.primary,
           strokeWidth: strokeWidth || 2,
           selectable: true,
           opacity: layer.opacity ?? 1,

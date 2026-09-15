@@ -7,6 +7,11 @@ import { SparkLandingPageEditor, type Block } from "../../components/spark/Spark
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, FileText, Eye, Send, ExternalLink } from "lucide-react";
+// THE brand kit. A landing page has exactly one brand hook — theme_json.accent
+// — and until 2026-09-15 nothing ever set it, so LUMEN's default applied and
+// every published page carried #EF6C33, the orange Intelligent Analytics
+// itself retired (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+import { useBrandKit } from "../../brand/BrandKitProvider";
 
 interface LandingPage {
   id: number; slug: string; name: string; title: string | null;
@@ -17,6 +22,7 @@ interface LandingPage {
 
 export function SparkLandingPagesPage() {
   const { get, post, put, ready } = useSparkApi();
+  const { kit } = useBrandKit();
   const [list, setList] = useState<LandingPage[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +50,10 @@ export function SparkLandingPagesPage() {
       name: form.name.trim(),
       title: form.title.trim() || null,
       blocks_json: [],
+      // Stamp the business's own accent at creation. LUMEN reads the kit too,
+      // so an existing page with no theme still renders in their colour; this
+      // makes the value visible in the row rather than implied.
+      theme_json: { accent: kit.colours.accent },
     });
     setForm({ slug: "", name: "", title: "" });
     setDrawerOpen(false);

@@ -20,12 +20,22 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
+// THE brand kit — one fetch for the whole shell, shared with every other
+// builder on screen and live the moment Brand Identity saves. This surface
+// used to fetch brandColor/Secondary/Accent from oliver /settings for itself
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import type { BrandKit } from "../../lib/brandKit";
 
 // Render a CTAValue into the inline HTML that gets appended to the
 // template body. Mirrors LUMEN-API emailBuilder button block output so
 // what the writer previews matches what recipients see in their inbox.
-function ctaValueToHtml(v: CTAValue): string {
-  const block = ctaToBlock(v) as Record<string, unknown>;
+// `kit` is threaded in rather than read from a hook: this is a pure string
+// builder, and the colour it bakes into the saved body must be the BUSINESS's
+// accent. It used to fall back to Intelligent Analytics' navy
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+function ctaValueToHtml(v: CTAValue, kit: BrandKit): string {
+  const block = ctaToBlock(v, kit) as Record<string, unknown>;
   if (block.type === "paragraph") {
     const align = (v.align || "center") as string;
     return `<p style="text-align:${align};">${block.html as string}</p>`;
@@ -34,8 +44,8 @@ function ctaValueToHtml(v: CTAValue): string {
   const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
   const radius = v.borderRadius ?? 6;
   const width = v.width || "fit";
-  const bg = v.buttonColor || "#1A3A4A";
-  const color = v.textColor || autoContrastColor(bg);
+  const bg = v.buttonColor || kit.colours.accent;
+  const color = v.textColor || autoContrastColor(bg, kit);
   const label = (v.label || "Click here")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const url = (v.url || "#").replace(/"/g, "&quot;");
@@ -143,7 +153,14 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
   // template carries a verified sender by default. Free-text from_name +
   // reply_to remain so per-template overrides still work.
   const [senders, setSenders] = useState<Sender[]>([]);
-  const [brandColors, setBrandColors] = useState<{ primary?: string; secondary?: string; accent?: string }>({});
+  // The three chips on the CTA editor, straight off the kit. No local fetch,
+  // no undefined-means-no-brand branch: the kit is always a complete palette.
+  const { kit } = useBrandKit();
+  const brandColors = {
+    primary: kit.colours.primary,
+    secondary: kit.colours.secondary,
+    accent: kit.colours.accent,
+  };
   const [ctaOpen, setCtaOpen] = useState(false);
   const [ctaValue, setCtaValue] = useState<CTAValue>({
     type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
@@ -165,15 +182,6 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     get<{ data: Sender[] }>("/api/v1/senders")
       .then((r) => setSenders(r?.data || []))
       .catch(() => setSenders([]));
-    // Brand colors → primary / secondary / accent chips on the CTA editor.
-    oliverApi
-      .get<{ brandColor?: string | null; brandColorSecondary?: string | null; brandColorAccent?: string | null }>("/settings")
-      .then((r) => setBrandColors({
-        primary: r?.brandColor || undefined,
-        secondary: r?.brandColorSecondary || undefined,
-        accent: r?.brandColorAccent || undefined,
-      }))
-      .catch(() => setBrandColors({}));
     if (templateId == null) {
       // Create-new
       setEmail(DEFAULT_EMAIL);
@@ -508,7 +516,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
                 variant="accent"
                 product="spark"
                 onClick={() => {
-                  const html = ctaValueToHtml(ctaValue);
+                  const html = ctaValueToHtml(ctaValue, kit);
                   const nextBody = email.body_html ? `${email.body_html}\n${html}` : html;
                   setEmail({ ...email, body_html: nextBody });
                   setCtaOpen(false);
