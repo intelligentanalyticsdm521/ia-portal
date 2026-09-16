@@ -341,8 +341,8 @@ export function blankPreview(): TemplatePreview {
  * sample, or in a picture of one (D-146 item 1; the denylist test).
  */
 export const SAMPLE_MERGE: Record<string, string> = {
-  "customer.name": "Harbourview Office Park",
-  "customer.legal_name": "Harbourview Office Park LLC",
+  "customer.name": "Prairie View Office Park",
+  "customer.legal_name": "Prairie View Office Park LLC",
   "customer.contact_name": "Dana Whitfield",
   "customer.email": "dana@harbourviewpark.example",
   "customer.phone": "(555) 0147",
