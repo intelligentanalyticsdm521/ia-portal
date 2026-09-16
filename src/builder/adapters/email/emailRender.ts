@@ -62,6 +62,81 @@ const FALLBACK_STACK = "Helvetica, Arial, sans-serif";
 /** Layout properties no mail client can be trusted with. */
 export const FORBIDDEN_CSS = ["display:flex", "display:grid", "flex-direction", "grid-template", "position:absolute", "position:fixed"];
 
+/**
+ * The gap between two things that sit beside each other. One number.
+ *
+ * Delivered as PADDING inside each column rather than as a spacer cell,
+ * because a spacer cell has to become nothing when the columns stack and a
+ * padding already is nothing extra.
+ */
+const GUTTER = 16;
+
+/**
+ * THE fluid-hybrid row — the ONLY way this renderer puts two things beside
+ * each other.
+ *
+ * BUILDER_PLATFORM_SCOPE_2026-09-15 §13.1 rule 3 said 600px and never wider;
+ * it did not say what happens at 390, and until 2026-09-16 the answer was
+ * "nothing". A two-column section, an article beside its picture and a row of
+ * product cards were `<td style="width:48%">`, and a percentage of a phone is
+ * still a phone: two 150px columns of 14px text, which is the shape of an
+ * email most people delete.
+ *
+ * Container queries do not exist in a mailbox and half of them strip <style>,
+ * so a media query cannot be relied on either. The pattern that has worked
+ * everywhere since 2015 is this one:
+ *
+ *   · each column is an inline-block DIV with `width:100%` and its own
+ *     `max-width` in px. Side by side while they fit; wrapped — which is to
+ *     say STACKED — as soon as they do not. No query of any kind;
+ *   · the wrapping cell is `font-size:0` so the whitespace between two
+ *     inline-blocks is not a visible gap, and each div sets its own size back;
+ *   · Outlook on Windows ignores inline-block, so a `[if mso]` GHOST TABLE
+ *     holds the same columns in a real table for it alone. Every other client
+ *     sees the ghost table as a comment.
+ *
+ * The result is fluid all the way down with no breakpoint to get wrong, which
+ * is why this is the one mechanism and there is no second one.
+ */
+export interface FluidCell {
+  /** How wide this column may get, in px. The sum should be the content width. */
+  max: number;
+  html: string;
+  /** Editor markers (`data-col`), and only in the editor. */
+  attrs?: string;
+  /** Chrome for the column itself — a card's border, padding and background. */
+  cellStyle?: string;
+}
+
+export function fluidRow(cells: FluidCell[], opts: { margin?: string; gutter?: number } = {}): string {
+  const gutter = opts.gutter ?? GUTTER;
+  const pad = Math.round(gutter / 2);
+  const margin = opts.margin ?? "";
+  const ghostOpen = (c: FluidCell) => `<!--[if mso]><td width="${c.max}" valign="top"><![endif]-->`;
+  const body = cells.map((c, i) => {
+    const open = i === 0
+      ? `<!--[if mso]><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td width="${c.max}" valign="top"><![endif]-->`
+      : ghostOpen(c);
+    const close = i === cells.length - 1 ? "" : `<!--[if mso]></td><![endif]-->`;
+    return open
+      + `<div${c.attrs || ""} style="display:inline-block;width:100%;max-width:${c.max}px;vertical-align:top;box-sizing:border-box;padding:0 ${pad}px;font-size:15px;line-height:1.6;text-align:left;">`
+      + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td valign="top"${c.cellStyle ? ` style="${c.cellStyle}"` : ""}>${c.html}</td></tr></table>`
+      + `</div>`
+      + close;
+  }).join("");
+  // align="left" and not "center": side by side the columns fill the row
+  // exactly, so the two are identical there — but a column narrower than the
+  // row (an article's 180px picture) is STACKED on a phone, and a picture
+  // floating in the middle of a left-aligned email reads as a mistake.
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${margin}"><tr><td align="left" style="font-size:0;line-height:0;">`
+    + body
+    + `<!--[if mso]></td></tr></table><![endif]-->`
+    + `</td></tr></table>`;
+}
+
+/** How wide the words are inside a normal section. The widgets' own assumption. */
+export const CONTENT_WIDTH = EMAIL_WIDTH - 48;
+
 /* ── One escaper. Same rules as the document renderer's. ─────────────────── */
 export function esc(s: unknown): string {
   return String(s ?? "")
@@ -380,6 +455,9 @@ function emDivider(p: any, c: EmailRenderContext): string {
 }
 
 /** Articles — the shape a newsletter is mostly made of. */
+/** How wide an article's picture is when it sits beside the words. */
+const ARTICLE_PIC = 180;
+
 function emArticles(p: any, c: EmailRenderContext): string {
   const items: any[] = Array.isArray(p.items) ? p.items : [];
   const stacked = String(p.layout || "").toLowerCase().includes("above");
@@ -392,13 +470,20 @@ function emArticles(p: any, c: EmailRenderContext): string {
       ? `<a href="${esc(a.url)}" style="font-family:${bodyStack(c)};font-size:14px;font-weight:600;color:${c.accent};text-decoration:none;">${t(a?.linkLabel || "Read it", c)} &rarr;</a>`
       : "";
     const pic = a?.image
-      ? `<img src="${esc(a.image)}" alt="${esc(altTextFor({ alt: a?.alt, caption: a?.title, src: a?.image }))}" width="${stacked ? EMAIL_WIDTH - 48 : 180}" style="display:block;width:100%;max-width:${stacked ? EMAIL_WIDTH - 48 : 180}px;height:auto;border:0;border-radius:6px;" />`
+      ? `<img src="${esc(a.image)}" alt="${esc(altTextFor({ alt: a?.alt, caption: a?.title, src: a?.image }))}" width="${stacked ? CONTENT_WIDTH : ARTICLE_PIC}" style="display:block;width:100%;max-width:${stacked ? CONTENT_WIDTH : ARTICLE_PIC}px;height:auto;border:0;border-radius:6px;" />`
       : "";
     const words = `${title}${excerpt}${link}`;
-    const inner = !pic || stacked
-      ? `<tr><td style="padding:0 0 10px 0;">${pic}</td></tr><tr><td>${words}</td></tr>`
-      : `<tr><td width="180" valign="top" style="padding:0 16px 0 0;width:180px;">${pic}</td><td valign="top">${words}</td></tr>`;
-    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px 0;">${inner}</table>`;
+    // Beside the picture on a screen wide enough to hold both, UNDER it on a
+    // phone — the same fluid row a two-column section uses, so there is one
+    // stacking rule in this file and not two.
+    if (!pic || stacked) {
+      return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 22px 0;">`
+        + `<tr><td style="padding:0 0 10px 0;">${pic}</td></tr><tr><td>${words}</td></tr></table>`;
+    }
+    return fluidRow(
+      [{ max: ARTICLE_PIC, html: pic }, { max: CONTENT_WIDTH - ARTICLE_PIC, html: words }],
+      { margin: "margin:0 0 22px 0;" },
+    );
   }).join("");
 }
 
@@ -414,7 +499,8 @@ function emProducts(p: any, c: EmailRenderContext): string {
   const shown = c.mode === "edit" ? items : items.filter((x) => String(x?.name ?? "").trim());
   if (!shown.length) return "";
   const sideBySide = !String(p.layout || "").toLowerCase().includes("under") && shown.length > 1;
-  const cell = (x: any, i: number, width: string) => {
+  const CARD = "padding:14px;border:1px solid #E5E7EB;border-radius:8px;background:" + c.paper + ";";
+  const cardBody = (x: any, i: number) => {
     const pic = x?.image
       ? `<img src="${esc(x.image)}" alt="${esc(altTextFor({ alt: x?.alt, caption: x?.name, src: x?.image }))}" width="240" style="display:block;width:100%;max-width:240px;height:auto;border:0;border-radius:6px;margin:0 0 10px 0;" />`
       : "";
@@ -425,20 +511,26 @@ function emProducts(p: any, c: EmailRenderContext): string {
     const cta = x?.url
       ? `<a href="${esc(x.url)}" style="display:inline-block;font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.accent};text-decoration:none;">${t(x?.ctaLabel || "See it", c)} &rarr;</a>`
       : "";
-    return `<td valign="top" style="width:${width};padding:14px;border:1px solid #E5E7EB;border-radius:8px;background:${c.paper};">`
-      + pic
+    return pic
       + `<div style="font-family:${headStack(c)};font-size:15px;font-weight:700;color:${c.ink};margin:0 0 4px 0;"${edit(`items.${i}.name`, c, "What it is")}>${t(x?.name, c)}</div>`
       + `<div style="font-family:${bodyStack(c)};font-size:13px;line-height:1.55;color:#374151;margin:0 0 8px 0;"${edit(`items.${i}.blurb`, c, "Why it is worth having")}>${t(x?.blurb, c)}</div>`
-      + price + cad + cta
-      + `</td>`;
+      + price + cad + cta;
   };
   if (!sideBySide) {
     return shown.map((x, i) =>
-      `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px 0;"><tr>${cell(x, i, "100%")}</tr></table>`).join("");
+      `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 14px 0;"><tr>`
+      + `<td valign="top" style="width:100%;${CARD}">${cardBody(x, i)}</td></tr></table>`).join("");
   }
-  const width = `${Math.floor(100 / shown.length)}%`;
-  const cells = shown.map((x, i) => cell(x, i, width)).join(`<td style="width:14px;font-size:0;line-height:0;">&nbsp;</td>`);
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>${cells}</tr></table>`;
+  // Two or three cards beside each other on a screen, one above the other on
+  // a phone — three 184px cards of 13px prose is a row nobody reads.
+  return fluidRow(
+    shown.map((x, i) => ({
+      max: Math.floor(CONTENT_WIDTH / shown.length),
+      html: cardBody(x, i),
+      cellStyle: CARD,
+    })),
+    { margin: "margin:0 0 16px 0;" },
+  );
 }
 
 function emSocial(p: any, c: EmailRenderContext, align: string): string {
@@ -560,19 +652,29 @@ export function renderEmailSection(s: Section, c: EmailRenderContext): string {
   const ink = s.theme === "dark" ? "#FFFFFF" : c.ink;
   const inner: EmailRenderContext = { ...c, ink };
 
-  const contentWidth = s.width === "narrow" ? 420 : s.width === "full" ? EMAIL_WIDTH : EMAIL_WIDTH - 48;
+  const contentWidth = s.width === "narrow" ? 420 : s.width === "full" ? EMAIL_WIDTH : CONTENT_WIDTH;
   const cols = s.columns;
-  const gutter = cols.length > 1 ? 16 : 0;
-  const each = cols.length > 1
-    ? `${Math.floor((100 - (cols.length - 1) * 3) / cols.length)}%`
-    : "100%";
 
   // Editor markers, and only in the editor: a sent email carries no hooks for
   // a canvas that is not there.
   const mark = c.mode === "edit";
-  const cells = cols.map((col, i) =>
-    `<td valign="top"${mark ? ` data-col="${i}"` : ""} style="width:${each};">${col.widgets.map((w) => renderEmailWidget(w, inner)).join("")}</td>`)
-    .join(gutter ? `<td style="width:3%;font-size:0;line-height:0;">&nbsp;</td>` : "");
+
+  // ONE column is a cell; MORE than one is the fluid-hybrid row, which stacks
+  // on a phone by wrapping rather than by any query. A single column is left
+  // exactly as it was — most emails are one column and their HTML must not
+  // grow a ghost table it has no use for.
+  const drawn = cols.map((col, i) => ({
+    i,
+    html: col.widgets.map((w) => renderEmailWidget(w, inner)).join(""),
+  }));
+  const each = Math.floor(contentWidth / Math.max(1, cols.length));
+  const body = cols.length > 1
+    ? `<tr><td>${fluidRow(drawn.map((d) => ({
+        max: each,
+        html: d.html,
+        attrs: mark ? ` data-col="${d.i}"` : "",
+      })))}</td></tr>`
+    : `<tr><td valign="top"${mark ? ` data-col="0"` : ""} style="width:100%;">${drawn[0]?.html ?? ""}</td></tr>`;
 
   const label = s.numbered && s.label
     ? `<div style="font-family:${bodyStack(c)};font-size:11px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;color:${c.accent};margin:0 0 8px 0;">${esc(s.label)}</div>`
@@ -583,7 +685,7 @@ export function renderEmailSection(s: Section, c: EmailRenderContext): string {
     + ` style="${bg ? `background:${bg};` : ""}"><tr><td align="center" style="padding:${pad}px 24px;">`
     + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:${contentWidth}px;">`
     + (label ? `<tr><td>${label}</td></tr>` : "")
-    + `<tr>${cells}</tr>`
+    + body
     + `</table></td></tr></table>`;
 }
 
@@ -742,6 +844,18 @@ export function checkEmailSafe(html: string): EmailSafetyProblem[] {
   for (const m of String(html).matchAll(/<img\b[^>]*>/gi)) {
     if (!/\balt="[^"]+"/i.test(m[0])) {
       problems.push({ rule: "alt text", detail: "a picture has no description, so a reader with images off sees nothing" });
+    }
+  }
+  // RULE 5, added 2026-09-16: COLUMNS STACK.
+  //
+  // A column pinned to a fraction of the width is a column at every width: 48%
+  // of a 390px phone is 187px, and two of those beside each other is the email
+  // a customer deletes. `fluidRow` is the one way this renderer puts two
+  // things side by side and it never emits a fractional width, so any
+  // percentage that is not 100% is something that has gone round it.
+  for (const m of String(html).matchAll(/style="[^"]*?width:\s*(\d+)%/g)) {
+    if (m[1] !== "100") {
+      problems.push({ rule: "columns stack", detail: `a column is pinned at ${m[1]}% of the width, so it stays a column on a phone; use fluidRow` });
     }
   }
   return problems;

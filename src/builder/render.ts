@@ -37,6 +37,7 @@ import type { BuilderDocument, Section, Widget } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
 import { documentTotals, money, type DocumentTotals } from "./totals";
+import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 
 /* ── One escaper. The inventory found three. ─────────────────────────────── */
 export function esc(s: unknown): string {
@@ -259,7 +260,11 @@ function dataTable(p: any, ctx: RenderContext): string {
     ? `<thead><tr style="background:${esc(ctx.accent)}">${cols.map((c, i) => `<th data-edit="columns.${i}">${t(c, ctx)}</th>`).join("")}</tr></thead>` : "";
   const body = rs.map((r, ri) => {
     const cells: string[] = Array.isArray(r) ? r : Array.isArray(r?.cells) ? r.cells : [];
-    return `<tr>${cells.map((c, ci) => `<td data-edit="rows.${ri}.${Array.isArray(r) ? ci : `cells.${ci}`}">${t(c, ctx)}</td>`).join("")}</tr>`;
+    // data-label carries the column heading INTO the cell, because the phone
+    // stylesheet drops the header row and prints it above the value instead.
+    // Emitted for every surface, so the customer page, the canvas and a
+    // printed copy are one document — see DOCUMENT_CSS's phone block.
+    return `<tr>${cells.map((c, ci) => `<td data-label="${esc(cols[ci] ?? "")}" data-edit="rows.${ri}.${Array.isArray(r) ? ci : `cells.${ci}`}">${t(c, ctx)}</td>`).join("")}</tr>`;
   }).join("");
   return `<table class="bx-table">${head}<tbody>${body}</tbody></table>`;
 }
@@ -314,16 +319,22 @@ function pricingTable(p: any, ctx: RenderContext): string {
   const head = p.heading || ctx.mode === "edit"
     ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
   const intro = p.intro || ctx.mode === "edit" ? paras(p.intro, ctx, "intro") : "";
+  const lService = String(p.labelService || "Service");
+  const lBasis = String(p.labelBasis || "Basis");
+  const lRate = String(p.labelRate || "Customer rate");
   const th = [
-    cols.service !== false ? `<th>${esc(p.labelService || "Service")}</th>` : "",
-    cols.basis !== false ? `<th>${esc(p.labelBasis || "Basis")}</th>` : "",
-    cols.rate !== false ? `<th class="bx-right">${esc(p.labelRate || "Customer rate")}</th>` : "",
+    cols.service !== false ? `<th>${esc(lService)}</th>` : "",
+    cols.basis !== false ? `<th>${esc(lBasis)}</th>` : "",
+    cols.rate !== false ? `<th class="bx-right">${esc(lRate)}</th>` : "",
   ].join("");
+  // Each cell carries its own column heading: at 390px the header row is
+  // dropped and the label is printed above the value instead of the customer
+  // scrolling the page sideways to find out what a number means.
   const body = rows.map((r, i) => `
     <tr>
-      ${cols.service !== false ? `<td class="bx-strong" data-edit="rows.${i}.name">${t(r?.name, ctx)}</td>` : ""}
-      ${cols.basis !== false ? `<td data-edit="rows.${i}.basis">${t(r?.basis, ctx)}</td>` : ""}
-      ${cols.rate !== false ? `<td class="bx-right" data-edit="rows.${i}.rate">${t(r?.rate, ctx)}</td>` : ""}
+      ${cols.service !== false ? `<td class="bx-strong" data-label="${esc(lService)}" data-edit="rows.${i}.name">${t(r?.name, ctx)}</td>` : ""}
+      ${cols.basis !== false ? `<td data-label="${esc(lBasis)}" data-edit="rows.${i}.basis">${t(r?.basis, ctx)}</td>` : ""}
+      ${cols.rate !== false ? `<td class="bx-right" data-label="${esc(lRate)}" data-edit="rows.${i}.rate">${t(r?.rate, ctx)}</td>` : ""}
     </tr>`).join("");
   // A rate card, deliberately with no total: "$185 per push" does not add up
   // to anything until it snows. See totals.ts rule 1.
@@ -437,10 +448,10 @@ function propertyBlock(p: any, ctx: RenderContext, widgetId: string): string {
     const qty = Number(it?.quantity) || 1;
     const unit = Number(it?.unit_price) || 0;
     return `<tr>
-      <td data-edit="items.${i}.description">${t(it?.description, ctx)}</td>
-      <td class="bx-right">${esc(String(qty))}</td>
-      <td class="bx-right">${esc(money(unit, ctx.currency))}</td>
-      <td class="bx-right bx-strong">${esc(money(qty * unit, ctx.currency))}</td>
+      <td data-label="Service" data-edit="items.${i}.description">${t(it?.description, ctx)}</td>
+      <td class="bx-right" data-label="Qty">${esc(String(qty))}</td>
+      <td class="bx-right" data-label="Rate">${esc(money(unit, ctx.currency))}</td>
+      <td class="bx-right bx-strong" data-label="Amount">${esc(money(qty * unit, ctx.currency))}</td>
     </tr>`;
   }).join("");
   return `<div class="bx-site" data-site="${esc(widgetId)}">
@@ -484,7 +495,11 @@ function image(p: any, ctx: RenderContext): string {
   if (!p.src) {
     return ctx.mode === "edit" ? `<div class="bx-imgdrop">Choose a picture in the panel on the right.</div>` : "";
   }
-  const w = p.width ? ` style="max-width:${Number(p.width)}px"` : "";
+  // `width:Npx;max-width:100%` and NOT `max-width:Npx`: an inline max-width
+  // beats the stylesheet, so a 900px picture in a 390px document used to push
+  // the whole page sideways. The picture is still at most N wide, and never
+  // wider than the page it is on.
+  const w = p.width ? ` style="width:${Number(p.width)}px;max-width:100%"` : "";
   return `<figure class="bx-figure"><img src="${esc(p.src)}" alt="${esc(p.alt || "")}"${w}/>${
     p.caption ? `<figcaption data-edit="caption">${t(p.caption, ctx)}</figcaption>` : ""}</figure>`;
 }
@@ -545,7 +560,10 @@ export function renderDocument(doc: BuilderDocument, ctx: RenderContext): string
  * consumer has to remember to import is a stylesheet a consumer will forget.
  */
 export const DOCUMENT_CSS = `
-.bx-doc { font-family: var(--bx-body, Inter), system-ui, sans-serif; color: #0B1C24; font-size: 13px; line-height: 1.55; background: #FFFFFF; }
+/* The container every rule below asks about. See responsive.ts: the canvas's
+   phone preview is a 390px sheet inside a 1600px window, so a media query
+   there is always false and the preview would lie. */
+.bx-doc { font-family: var(--bx-body, Inter), system-ui, sans-serif; color: #0B1C24; font-size: 13px; line-height: 1.55; background: #FFFFFF; ${CONTAINER_ROOT_CSS} }
 .bx-sec { position: relative; }
 .bx-sec.bx-internal { outline: 2px dashed #F59E0B; outline-offset: -2px; }
 .bx-grid { display: grid; gap: 24px; }
@@ -635,5 +653,49 @@ export const DOCUMENT_CSS = `
 .bx-attrib { font-size: 11px; color: #5A7A8A; margin-top: 4px; }
 .bx-unknown { border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px; color: #94A3B8; font-size: 11px; }
 @media print { .bx-break { break-before: page; } .bx-internal { display: none; } }
-@media (max-width: 640px) { .bx-cols-2 .bx-grid, .bx-cols-3 .bx-grid, .bx-panels-2, .bx-sign { grid-template-columns: 1fr; } }
+
+/* ── THE PHONE ─────────────────────────────────────────────────────────────
+   Customers open a proposal to SIGN it on a phone, so this is not a courtesy
+   pass. Every rule here answers one of three failures at 390px: a grid that
+   keeps its columns, a table that pushes the page sideways, or a padding
+   written in the HTML that eats 80 of the 390.
+
+   A CONTAINER query, not a media query — see responsive.ts. The same
+   stylesheet is therefore true on the customer's phone AND in the builder's
+   phone preview, which is the whole point of one renderer. */
+${STACK_QUERY} {
+  /* 1. Everything laid out in columns becomes one column. */
+  .bx-cols-2 .bx-grid, .bx-cols-3 .bx-grid { grid-template-columns: 1fr; }
+  .bx-panels, .bx-panels-2, .bx-sign, .bx-facts, .bx-cards { grid-template-columns: 1fr; }
+  .bx-grid { gap: 16px; }
+  .bx-w-narrow .bx-grid, .bx-w-contained .bx-grid { max-width: none; }
+
+  /* 2. The section's 40px side padding is written INTO the HTML by
+        renderSection, so only !important can reach it. 20px each side leaves
+        350 of a 390px phone for the document itself. */
+  .bx-sec { padding-left: 20px !important; padding-right: 20px !important; }
+  .bx-band { margin-left: -20px; margin-right: -20px; padding-left: 20px; padding-right: 20px; flex-wrap: wrap; }
+
+  /* 3. TABLES STACK. A pricing schedule is four columns; at 390px the choice
+        is a sideways scrollbar or label-above-value rows, and a customer who
+        has to scroll sideways to read a price does not sign. Every cell the
+        renderer emits carries data-label, so the header row can go. */
+  .bx-table, .bx-table thead, .bx-table tbody, .bx-table tr, .bx-table th, .bx-table td { display: block; width: auto; }
+  .bx-table thead { display: none; }
+  .bx-table { margin: 6px 0 12px; }
+  .bx-table tr { border-bottom: 1px solid #E2E8F0; padding: 8px 0; }
+  .bx-table tbody tr:nth-child(even) td { background: transparent; }
+  .bx-table td { border-bottom: none; padding: 2px 0; text-align: left; }
+  .bx-table td.bx-right { text-align: left; }
+  .bx-table td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #5A7A8A; font-weight: 700; }
+
+  /* 4. Two-up rows that are flex, not grid. */
+  .bx-priced-head, .bx-site-sub, .bx-total-row, .bx-fact { flex-wrap: wrap; }
+  .bx-plan-row { flex-wrap: wrap; gap: 0; }
+  .bx-plan-v { text-align: left; flex: 1 1 100%; }
+
+  /* 5. Nothing may be wider than the page. */
+  .bx-doc img, .bx-figure img { max-width: 100%; height: auto; }
+  .bx-h1, .bx-title { font-size: 22px; }
+}
 `;

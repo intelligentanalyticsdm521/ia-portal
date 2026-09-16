@@ -285,11 +285,17 @@ export function IadmBuilderPanes({
 }) {
   return (
     <div className="flex h-full min-h-0 w-full">
-      {/* LEFT pane — fixed width, its own scroll. On a phone the panes stack,
-          so the widget list sits above the canvas rather than beside it. */}
+      {/* LEFT pane — fixed width, its own scroll.
+          NO responsive class of its own (2026-09-16 phone pass): this frame is
+          the WIDE layout and nothing else. `max-md:hidden` used to make the
+          widget list disappear below 768 with no way to reach it, and
+          `max-lg:hidden` did the same to the inspector below 1024 — two more
+          breakpoints, neither of them the one the builder actually changes at.
+          BuilderFrame now decides, once, off responsive.ts, and swaps this
+          whole frame for drawers. */}
       <aside
         data-builder-slot="pane"
-        className="flex-shrink-0 overflow-y-auto border-r border-slate-200 bg-white max-md:hidden"
+        className="flex-shrink-0 overflow-y-auto border-r border-slate-200 bg-white"
         style={{ width: paneWidth }}
       >
         {pane}
@@ -309,7 +315,7 @@ export function IadmBuilderPanes({
       {inspector === null ? null : (
         <aside
           data-builder-slot="inspector"
-          className="flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white max-lg:hidden"
+          className="flex-shrink-0 overflow-y-auto border-l border-slate-200 bg-white"
           style={{ width: inspectorWidth }}
         >
           {inspector}

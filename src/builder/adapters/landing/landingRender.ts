@@ -37,6 +37,7 @@ import {
   type BuilderDocument, type Section, type Widget,
 } from "../../model";
 import { fill, type MergeContext } from "../../merge";
+import { STACK_QUERY } from "../../responsive";
 
 export function esc(s: unknown): string {
   return String(s ?? "")
@@ -339,7 +340,12 @@ export const LANDING_CSS = `
 :root{--accent:__ACCENT__}
 *{box-sizing:border-box}
 body{margin:0;font:16px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif;color:#0f172a;background:#fff}
-.lp-page{max-width:760px;margin:0 auto}
+/* The container the phone block below asks about: .bx-doc as well as
+   .lp-page, because the canvas host carries the engine's class and the
+   published page carries this one — one stylesheet, both surfaces, so the
+   phone preview cannot show a layout the visitor never gets. */
+.lp-page,.bx-doc{container-type:inline-size}
+.lp-page{max-width:760px;margin:0 auto;padding:0 20px}
 .lp-sec{position:relative}
 .lp-grid{display:grid;gap:24px;max-width:720px;margin:0 auto}
 .lp-cols-2 .lp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -377,7 +383,12 @@ h2.lp-h{font-size:1.4rem}h3.lp-h{font-size:1.1rem}
 .lp-unknown{border:1px dashed #cbd5e1;border-radius:6px;padding:10px;color:#94a3b8;font-size:.8rem}
 .lp-empty:empty::before{content:attr(data-placeholder);color:#94a3b8}
 [data-placeholder]:empty::before{content:attr(data-placeholder);color:#cbd5e1}
-@media(max-width:640px){.lp-cols-2 .lp-grid,.lp-cols-3 .lp-grid{grid-template-columns:1fr}.lp-hero h1{font-size:1.5rem}.lp-page{padding:0}}
+/* The phone. NOTE: .lp-page is itself the container, and a container query
+   never matches the element it is asked about — so the page's own gutter is
+   the base rule above (20px at every width) and everything here is a
+   DESCENDANT of it. Measured, not assumed: the first version put
+   .lp-page{padding:0 16px} in here and the browser reported 20px. */
+${STACK_QUERY}{.lp-cols-2 .lp-grid,.lp-cols-3 .lp-grid{grid-template-columns:1fr}.lp-hero h1{font-size:1.5rem}.lp-grid{gap:18px}.lp-gal{grid-template-columns:repeat(2,minmax(0,1fr))}.lp-form{padding:1.1rem}.lp-page img{max-width:100%;height:auto}.lp-social a{display:inline-block;margin:0 1rem .4rem 0}}
 `;
 
 /* ══════════════════════════════════════════════════════════════════════════

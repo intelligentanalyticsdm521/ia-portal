@@ -391,7 +391,12 @@ describe("the canvas draws the page, not a form", () => {
 
   test("the stylesheet travels with the renderers", () => {
     assert.match(SITE_CSS, /\.sw-band/);
-    assert.match(SITE_CSS, /@media \(max-width: 720px\)/, "a website preview has to fold on a phone");
+    // Was `@media (max-width: 720px)` until the phone pass (2026-09-16). A
+    // media query asks the VIEWPORT, so it was never true in the canvas — the
+    // phone preview folds nothing while the phone folds everything, which is
+    // the one thing a shared renderer exists to prevent. Same number, asked of
+    // the container instead. See src/builder/responsive.ts.
+    assert.match(SITE_CSS, /@container \(max-width: 720px\)/, "a website preview has to fold on a phone");
   });
 
   test("the site's header and footer are drawn as chrome, and nothing on them is editable", () => {
