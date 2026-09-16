@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../../auth/useAccessToken";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -18,6 +18,11 @@ import {
 import { PhoneInput } from "../../components/PhoneInput";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+// The MIXED customer list (spec section 7 point 2). LUMEN owns it, and
+// useSparkApi is what a LUMEN client is called here.
+import { Building2 } from "lucide-react";
+import { useSparkApi } from "../../hooks/useSparkApi";
+import { type MixedCustomerRow, hasMoney } from "../../lib/customerModel";
 
 // The pills are the FINANCIAL half of the one filter vocabulary
 // (lib/customerViews.js FINANCIAL_FILTERS). They are sent to the server now
@@ -112,16 +117,57 @@ export function OliverContactsPage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, post, patch, del, ready } = useOliverApi();
+  const lumen = useSparkApi();
   const { instance } = useMsal();
   // useActiveAccount, NOT useMsal().accounts[0]: under VITE_DEV_AUTH=1 there
   // is no MSAL session, so accounts[0] is undefined and every `if (!account)`
   // guard below it turns the control into a button that does nothing.
   const activeAccount = useActiveAccount();
   const [contacts, setContacts] = useState<Contact[]>([]);
+  // ── THE MIXED LIST, and why this page reads TWO things ──────────────────
+  //
+  // Spec section 7 point 2 asks OLIVER's Customers list to be the same mixed
+  // list SPARK's is: companies as rows in their own right, with their people
+  // and location counts, the open balance and the last job. That list is
+  // GET /customers?view=mixed&scope=oliver, and its `scope=oliver` half is the
+  // SAME predicate this page's own /contacts list uses (is_oliver_customer=1),
+  // so the two cannot disagree about who is a customer.
+  //
+  // It does NOT replace /contacts here, because everything that makes this
+  // page useful hangs off an OLIVER contact and has no meaning for a company:
+  // the tags, the portal status, the financial pills, the saved views, the
+  // bulk invite, the duplicate finder and the CSV export. Swapping the source
+  // would have taken all of them out to gain two columns. So: companies come
+  // from the mixed list, people come from /contacts as they always have, and
+  // the location count each person's row shows comes from the mixed list too.
+  const [mixed, setMixed] = useState<MixedCustomerRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
+  /** A company has no OLIVER contact id, so it is opened by {kind, LUMEN id}. */
+  const [pickedCompany, setPickedCompany] = useState<{ kind: "company"; id: string } | null>(null);
+  /**
+   * ?customer=company:2018&location=<guid> — the deep link SPARK's Companies
+   * page uses to open a site. The location PAGE is OLIVER's (it carries the
+   * job history and the fields the crew reads), so SPARK links here rather
+   * than growing a second one that would show the same site with half the
+   * facts. Read once and cleared, so Back does not re-open the modal.
+   */
+  const [linkParams, setLinkParams] = useSearchParams();
+  const [focusLocationId, setFocusLocationId] = useState<string | null>(null);
+  useEffect(() => {
+    const raw = linkParams.get("customer");
+    if (!raw) return;
+    const [kind, id] = raw.split(":");
+    if (kind === "company" && id) {
+      setPickedCompany({ kind: "company", id });
+      setFocusLocationId(linkParams.get("location"));
+    }
+    const next = new URLSearchParams(linkParams);
+    next.delete("customer"); next.delete("location");
+    setLinkParams(next, { replace: true });
+  }, [linkParams, setLinkParams]);
   const [showCreate, setShowCreate] = useState(false);
   const [exporting, setExporting] = useState(false);
 
@@ -201,16 +247,25 @@ export function OliverContactsPage() {
       const q = new URLSearchParams(queryString);
       q.set("page", String(page));
       q.set("per_page", String(PER_PAGE));
-      const [rows, sum] = await Promise.all([
+      const mixedQ = new URLSearchParams({ view: "mixed", scope: "oliver", limit: String(PER_PAGE) });
+      if (filters.search) mixedQ.set("search", filters.search);
+      const [rows, sum, mix] = await Promise.all([
         get<Contact[]>(`/contacts?${q.toString()}`),
         get<ListSummary>(`/contacts/summary${queryString ? `?${queryString}` : ""}`),
+        // The search here matches a LOCATION's name, street, city and postcode
+        // as well as the customer's own fields, which is how typing a street
+        // finds the company that owns the building.
+        lumen.ready
+          ? lumen.get<{ data: MixedCustomerRow[] }>(`/api/v1/customers?${mixedQ}`).catch(() => ({ data: [] }))
+          : Promise.resolve({ data: [] as MixedCustomerRow[] }),
       ]);
       setContacts(rows || []);
       setSummary(sum || null);
       setTotal(sum?.total ?? (rows?.length || 0));
+      setMixed(mix.data || []);
     } catch (e) { setError(e); }
     finally { setLoading(false); }
-  }, [get, queryString, page]);
+  }, [get, lumen, queryString, page, filters.search]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
@@ -224,6 +279,29 @@ export function OliverContactsPage() {
   // Changing a filter starts at the first page. Otherwise a narrower filter on
   // page 4 shows an empty table and looks like a bug.
   useEffect(() => { setPage(1); setSelected(new Set()); }, [queryString]);
+
+  /**
+   * The COMPANY rows, and the location count for each person.
+   *
+   * A company is dropped the moment any person-level filter is on — a tag, a
+   * portal status or a financial pill are all facts about a PERSON, and a
+   * company row sitting inside "has overdue" would be claiming something
+   * nobody computed for it. The same rule SPARK's list follows.
+   */
+  const peopleFilterActive = !!(filter || portalStatus || tagFilter.length);
+  const companyRows = useMemo(
+    () => (peopleFilterActive ? [] : mixed.filter((m) => m.customer_kind === "company")),
+    [mixed, peopleFilterActive],
+  );
+  const locationCountByOliverId = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const m of mixed) {
+      if (m.customer_kind === "person" && m.oliver_contact_id) {
+        map[m.oliver_contact_id.toUpperCase()] = m.location_count;
+      }
+    }
+    return map;
+  }, [mixed]);
 
   const filtered = contacts;
 
@@ -302,6 +380,20 @@ export function OliverContactsPage() {
     { key: "email",   header: "Email",   render: (c) => c.email || "—" },
     { key: "phone",   header: "Phone",   render: (c) => c.phone ? formatPhone(c.phone) : "—" },
     {
+      // From the mixed list, joined on the OLIVER contact id. A person whose
+      // row is not on this page of the mixed list shows "—", not 0: the count
+      // is unknown, and 0 would be a claim.
+      key: "locations", header: "Locations",
+      render: (c) => {
+        const n = locationCountByOliverId[(c.contact_id || "").toUpperCase()];
+        return n === undefined
+          ? <span style={{ color: "#94A3B8" }}>—</span>
+          : n === 0
+            ? <span style={{ color: "#94A3B8" }}>none yet</span>
+            : <span>{n}</span>;
+      },
+    },
+    {
       key: "outstanding_balance", header: "Outstanding", align: "right", sortable: true,
       sortAccessor: (c) => Number(c.outstanding_balance ?? 0),
       render: (c) => (c.outstanding_balance ?? 0) > 0
@@ -352,7 +444,7 @@ export function OliverContactsPage() {
       ]} />
       <PageHeader
         title="Customers"
-        subtitle="Search any customer to see all their jobs, quotes, invoices, and payments"
+        subtitle="Companies and people. Search a name, an email — or a street, and it finds the customer whose building it is."
         actions={
           <>
             <Button variant="secondary" onClick={syncFromStripe} disabled={syncing}>
@@ -488,6 +580,58 @@ export function OliverContactsPage() {
             onClear={() => setSelected(new Set())}
           />
 
+          {companyRows.length > 0 && (
+            <div style={{ marginBottom: 16 }} data-testid="oliver-company-rows">
+              <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A", margin: "0 0 6px" }}>
+                Companies
+              </div>
+              <DataTable
+                rows={companyRows}
+                rowKey={(c) => c.customer_id}
+                onRowClick={(c) => setPickedCompany({ kind: "company", id: c.customer_id })}
+                emptyMessage="No companies yet."
+                columns={[
+                  {
+                    key: "name", header: "Name", sortable: true,
+                    sortAccessor: (c) => c.name.toLowerCase(),
+                    render: (c) => (
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                        <Building2 size={14} color="#0C4A60" />
+                        <strong style={{ color: "#0B1C24" }}>{c.name}</strong>
+                        {c.domain && <span style={{ fontSize: 11, color: "#5A7A8A" }}>{c.domain}</span>}
+                      </span>
+                    ),
+                  },
+                  { key: "people", header: "People", render: (c) => c.contact_count || "—" },
+                  {
+                    key: "locations", header: "Locations",
+                    render: (c) => c.location_count > 0
+                      ? <span>{c.location_count}</span>
+                      : <span style={{ color: "#94A3B8" }}>none yet</span>,
+                  },
+                  {
+                    key: "open_balance", header: "Open balance", align: "right",
+                    sortable: true, sortAccessor: (c) => Number(c.open_balance ?? 0),
+                    // NULL means nobody computed it, which is not $0.00. Printing
+                    // zero there tells an owner their customer is square when
+                    // nothing looked.
+                    render: (c) => !hasMoney(c)
+                      ? <span style={{ color: "#94A3B8" }}>—</span>
+                      : (c.open_balance ?? 0) > 0
+                        ? <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{fmtMoneyShort(c.open_balance)}</span>
+                        : <span style={{ color: "#94A3B8" }}>—</span>,
+                  },
+                  {
+                    key: "last_job", header: "Last job",
+                    render: (c) => c.last_job_at
+                      ? <span>{fmtDate(c.last_job_at)}</span>
+                      : <span style={{ color: "#94A3B8" }}>never</span>,
+                  },
+                ]}
+              />
+            </div>
+          )}
+
           <DataTable
             rows={filtered}
             columns={columns}
@@ -527,6 +671,16 @@ export function OliverContactsPage() {
         />
       )}
       {pickedId && <CustomerModal customerId={pickedId} onClose={() => setPickedId(null)} api={{ get, post, patch, del }} onChanged={reload} />}
+      {pickedCompany && (
+        <CustomerModal
+          customerKind={pickedCompany.kind}
+          customerLumenId={pickedCompany.id}
+          focusLocationId={focusLocationId ?? undefined}
+          onClose={() => { setPickedCompany(null); setFocusLocationId(null); }}
+          api={{ get, post, patch, del }}
+          onChanged={reload}
+        />
+      )}
       {showCreate && (
         <NewContactModal
           onClose={() => setShowCreate(false)}

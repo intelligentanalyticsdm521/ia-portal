@@ -35,8 +35,16 @@ import {
 import { PaymentMethodsCard } from "./PaymentMethodsCard";
 import { formatPhone } from "../../../lib/formatPhone";
 import { PhoneInput } from "../../PhoneInput";
+// The customer model: the five cards, the location page and the LUMEN client
+// they all read. The SAME components SPARK's Companies page uses — one answer
+// to "who is the billing contact" on both screens (spec section 7 point 2).
+import { useSparkApi } from "../../../hooks/useSparkApi";
+import { BillingCard, LocationsCard, NotesCard, ActivityCard, type LocationRow } from "../../customers/CustomerCards";
+import { RolesCard } from "../../customers/RolesCard";
+import { LocationPanel } from "../../customers/LocationPanel";
+import type { PersonRole, BillingProfile } from "../../../lib/customerModel";
 
-type Tab = "overview" | "jobs" | "quotes" | "invoices" | "payments" | "subscriptions";
+type Tab = "overview" | "jobs" | "quotes" | "proposals" | "invoices" | "payments" | "subscriptions";
 
 interface ContactDetail {
   contact_id: string;
@@ -76,11 +84,32 @@ interface ContactDetail {
   spark_only?: boolean;
   spark_contact_id?: number;
   lifecycle_stage?: string | null;
+  /** Customer-model facts, from GET /customers/:kind/:id. */
+  customer_kind?: "company" | "person";
+  lumen_id?: string;
+  account_id?: number | null;
+  domain?: string | null;
+  oliver_contact_ids?: string[];
+}
+
+/** What GET /customers/:kind/:id returns. */
+interface CustomerRecord {
+  kind: "company" | "person";
+  lumen_id: number;
+  account_id: number | null;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  domain: string | null;
+  oliver_contact_ids: string[];
+  financial_snapshot: ContactDetail["financial_snapshot"];
 }
 
 interface Activity {
   jobs: Array<{ job_id: string; job_number?: string; title?: string; status: string; scheduled_start?: string | null; completed_by?: string | null }>;
   quotes: Array<{ quote_id: string; status: string; total: number; valid_until?: string | null; created_at: string }>;
+  /** Added 2026-09-16 — the company page's tabs include Proposals (spec 7.2). */
+  proposals?: Array<{ proposal_id: string; title?: string | null; status: string; total: number; created_at: string }>;
   invoices: Array<{ invoice_id: string; invoice_number: string; status: string; total: number; amount_paid: number; balance_due: number; source?: string; created_at: string }>;
   payments: Array<{ payment_id: string; paid_at: string; invoice_number?: string; type: string; amount: number; status: string }>;
   subscriptions?: Array<{
@@ -112,6 +141,21 @@ export interface CustomerModalProps {
   customerId?: string;
   focusJobId?: string;
   focusSubscriptionId?: string;
+  /**
+   * The customer as the MIXED LIST names them: a kind and a LUMEN id. This is
+   * how OLIVER's Customers page opens a record, and the only way to open a
+   * COMPANY — a company has no OLIVER contact id, because nothing in oliver
+   * knows what a company is.
+   *
+   * Everything else still opens with `customerId` (an OLIVER contact UUID), and
+   * that resolves to the same {kind, id} through GET /customers/oliver/:uuid.
+   * ONE page either way: two would have been two versions of one person's
+   * record, and the one nobody opens from the list is the one that rots.
+   */
+  customerKind?: "company" | "person";
+  customerLumenId?: string;
+  /** Open straight onto a location (the Companies page links here). */
+  focusLocationId?: string;
   /** Optional — open straight to invoices/payments section. */
   initialSection?: Tab;
   /** Optional — open the section's "+ New X" panel immediately. Used by the
@@ -140,6 +184,9 @@ export function CustomerModal({
   customerId: initialCustomerId,
   focusJobId,
   focusSubscriptionId,
+  customerKind: initialKind,
+  customerLumenId: initialLumenId,
+  focusLocationId,
   initialSection,
   initialCreating,
   prefillJob,
@@ -161,7 +208,7 @@ export function CustomerModal({
   const tabStorageKey = `oliverCustomerModalTab:${initialCustomerId || focusJobId || focusSubscriptionId || "unset"}`;
   const [tab, setTab] = useState<Tab>(() => {
     const stored = typeof window !== "undefined" ? window.sessionStorage.getItem(tabStorageKey) : null;
-    if (stored && ["overview","jobs","quotes","invoices","payments","subscriptions"].includes(stored)) {
+    if (stored && ["overview","jobs","quotes","proposals","invoices","payments","subscriptions"].includes(stored)) {
       return stored as Tab;
     }
     return initialSection
@@ -196,6 +243,27 @@ export function CustomerModal({
   const [activity, setActivity] = useState<Activity | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
 
+  // ── the customer model (spec section 7 point 2) ──────────────────────────
+  // LUMEN owns WHO the customer is; OLIVER owns WHAT WAS DONE. This modal
+  // reads both, and it reads LUMEN through the SPARK client because that is
+  // what a LUMEN client is called here.
+  const lumen = useSparkApi();
+  /** {kind, id} as the mixed list names them. Resolved once, however we opened. */
+  const [subject, setSubject] = useState<{ kind: "company" | "person"; id: string } | null>(
+    initialKind && initialLumenId ? { kind: initialKind, id: initialLumenId } : null,
+  );
+  const [locations, setLocations] = useState<LocationRow[]>([]);
+  const [roles, setRoles] = useState<PersonRole[]>([]);
+  const [customerProfile, setCustomerProfile] = useState<BillingProfile | null>(null);
+  const [focusedLocationId, setFocusedLocationId] = useState<string | null>(focusLocationId || null);
+  /**
+   * "Show: all locations" on the tab strip. It narrows the six lists to one
+   * site; each document reaches a site by its OWN road, which is why the
+   * filter is a server parameter rather than six browser-side predicates that
+   * would each have to know a different join (lib/customerAggregate.js).
+   */
+  const [locationFilter, setLocationFilter] = useState<string>("");
+
   // If we were given a job/sub id but no customerId, fetch the entity first to
   // resolve its contactId. This keeps callers from having to know who the
   // customer is before opening the modal.
@@ -221,30 +289,101 @@ export function CustomerModal({
     })();
   }, [customerId, focusJobId, focusSubscriptionId, api]);
 
-  // Load the customer + activity once we have an id.
-  const reload = useCallback(async () => {
+  // An OLIVER contact UUID resolves to the same {kind, id} the list uses, so
+  // everything below runs ONE path however the modal was opened.
+  useEffect(() => {
+    if (subject) return;
     if (!customerId) return;
+    let live = true;
+    api.get<{ data?: { kind?: "company" | "person"; lumen_id?: number } }>(`/customers/oliver/${customerId}`)
+      .then((r) => {
+        const d = (r as { data?: { kind?: "company" | "person"; lumen_id?: number } })?.data;
+        if (live && d?.kind && d?.lumen_id != null) setSubject({ kind: d.kind, id: String(d.lumen_id) });
+      })
+      .catch((e) => {
+        // Saying so beats an empty page: a customer OLIVER cannot resolve is a
+        // fact the user needs, not a blank record that looks like "no work".
+        if (live) setLoadErr((e as Error)?.message || "Could not resolve this customer.");
+      });
+    return () => { live = false; };
+  }, [subject, customerId, api]);
+
+  // Load the customer + activity once we know who they are.
+  const reload = useCallback(async () => {
+    if (!subject) return;
     setLoadErr(null);
     try {
+      const path = `/customers/${subject.kind}/${subject.id}`;
       const [d, a] = await Promise.all([
-        api.get<ContactDetail>(`/contacts/${customerId}`),
-        api.get<Activity>(`/contacts/${customerId}/activity`),
+        api.get<{ data: CustomerRecord } | CustomerRecord>(path),
+        api.get<Activity>(`${path}/activity${locationFilter ? `?location_id=${locationFilter}` : ""}`),
       ]);
-      setDetail(d);
+      const rec = ((d as { data?: CustomerRecord })?.data ?? d) as CustomerRecord;
+      setDetail({
+        contact_id: rec.oliver_contact_ids?.[0] ?? "",
+        display_name: rec.name,
+        first_name: null,
+        last_name: null,
+        email: rec.email,
+        phone: rec.phone,
+        company_name: rec.kind === "company" ? rec.name : null,
+        addresses: [],
+        financial_snapshot: rec.financial_snapshot,
+        customer_kind: rec.kind,
+        lumen_id: String(rec.lumen_id),
+        account_id: rec.account_id ?? null,
+        domain: rec.domain ?? null,
+        oliver_contact_ids: rec.oliver_contact_ids || [],
+      });
       setActivity(a);
     } catch (e) {
       setLoadErr((e as Error)?.message || "Failed to load this customer.");
     }
-  }, [customerId, api]);
+  }, [subject, locationFilter, api]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  /** The sites, the roles and the billing profile — once per customer. */
+  const reloadModel = useCallback(async () => {
+    if (!subject || !lumen.ready) return;
+    const base = `/api/v1/customers/${subject.kind}/${subject.id}`;
+    try {
+      const [ls, ps, bp] = await Promise.all([
+        lumen.get<{ data: LocationRow[] }>(`${base}/locations`),
+        lumen.get<{ data: PersonRole[] }>(`${base}/people`).catch(() => ({ data: [] })),
+        lumen.get<{ data: BillingProfile | null }>(`${base}/billing-profile`).catch(() => ({ data: null })),
+      ]);
+      setLocations(ls.data || []);
+      setRoles(ps.data || []);
+      setCustomerProfile(bp.data || null);
+    } catch {
+      setLocations([]); setRoles([]); setCustomerProfile(null);
+    }
+  }, [subject, lumen]);
+  useEffect(() => { reloadModel(); }, [reloadModel]);
 
   // Title + subtitle for the drawer header. While we're resolving job→customer
   // these stay placeholder so the modal still opens.
   const title = detail ? contactName(detail) : (resolveErr ? "Couldn't load" : "Loading customer…");
   const subtitle = detail
-    ? [detail.email, detail.phone].filter(Boolean).join(" · ")
+    ? [
+        detail.email,
+        detail.phone,
+        locations.length ? `${locations.length} ${locations.length === 1 ? "location" : "locations"}` : null,
+      ].filter(Boolean).join(" · ")
     : "";
+
+  /** Jobs per site, so the Locations card can say how much has happened where. */
+  const jobCountsByLocation = (activity?.jobs || []).reduce<Record<string, number>>((acc, j) => {
+    const id = (j as { service_address_id?: string | null }).service_address_id;
+    if (id) acc[id] = (acc[id] || 0) + 1;
+    return acc;
+  }, {});
+
+  /** Jobs at the open location, for the location page's "Jobs here" card. */
+  const jobsAtFocusedLocation = (activity?.jobs || []).filter(
+    (j) => (j as { service_address_id?: string }).service_address_id === focusedLocationId,
+  );
 
   return (
     <DetailDrawer
@@ -322,18 +461,55 @@ export function CustomerModal({
               </a>
             </div>
           )}
+          {/* Section tabs. "Show: <location>" narrows all six lists (spec
+              section 7 point 2: "tabs Jobs / Quotes / Proposals / Invoices /
+              Payments / Subscriptions filterable by location"). Only shown
+              when there is more than one site — the degeneracy rule again. */}
+          {locations.length > 1 && (
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 8, marginBottom: 8, fontSize: 12, color: "#5A7A8A" }}>
+              Show:
+              <select
+                aria-label="Filter by location"
+                data-testid="location-filter"
+                value={locationFilter}
+                onChange={(e) => setLocationFilter(e.target.value)}
+                style={{ padding: "5px 8px", border: "1px solid rgba(45,156,219,0.22)", borderRadius: 6, fontSize: 12 }}
+              >
+                <option value="">All locations</option>
+                {locations.map((l) => <option key={l.location_id} value={l.location_id}>{l.name}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Section tabs */}
           <div className="ptabs" style={{ marginBottom: 16 }}>
             <button className={`ptab${tab === "overview" ? " active" : ""}`} onClick={() => { setTab("overview"); setFocusedJobId(null); setFocusedSubId(null); }}>Overview</button>
             <button className={`ptab${tab === "jobs" ? " active" : ""}`} onClick={() => { setTab("jobs"); setFocusedJobId(null); }}>Jobs ({activity.jobs.length})</button>
             <button className={`ptab${tab === "quotes" ? " active" : ""}`} onClick={() => setTab("quotes")}>Quotes ({activity.quotes.length})</button>
+            <button className={`ptab${tab === "proposals" ? " active" : ""}`} onClick={() => setTab("proposals")}>Proposals ({activity.proposals?.length ?? 0})</button>
             <button className={`ptab${tab === "invoices" ? " active" : ""}`} onClick={() => setTab("invoices")}>Invoices ({activity.invoices.length})</button>
             <button className={`ptab${tab === "payments" ? " active" : ""}`} onClick={() => setTab("payments")}>Payments ({activity.payments.length})</button>
             <button className={`ptab${tab === "subscriptions" ? " active" : ""}`} onClick={() => { setTab("subscriptions"); setFocusedSubId(null); }}>Subscriptions ({activity.subscriptions?.length ?? 0})</button>
           </div>
 
-          {/* ── Overview ── */}
-          {tab === "overview" && (
+          {/* ── Overview: the location page, or the five cards ── */}
+          {tab === "overview" && focusedLocationId && subject && (
+            <LocationPanel
+              customerKind={subject.kind}
+              customerId={subject.id}
+              customerName={contactName(detail)}
+              locationId={focusedLocationId}
+              location={locations.find((l) => l.location_id === focusedLocationId) || null}
+              roles={roles}
+              jobs={jobsAtFocusedLocation}
+              customerProfile={customerProfile}
+              onBack={() => setFocusedLocationId(null)}
+              onChanged={() => { reloadModel(); reload(); onChanged?.(); }}
+              onOpenJob={(jobId) => { setFocusedLocationId(null); setTab("jobs"); setFocusedJobId(jobId); }}
+            />
+          )}
+
+          {tab === "overview" && !focusedLocationId && (
             <>
               {detail.financial_snapshot && (
                 <div className="stat-row" style={{ gridTemplateColumns: "repeat(4,1fr)" }}>
@@ -359,51 +535,92 @@ export function CustomerModal({
                 </div>
               )}
 
-              <CustomerInfoCard
-                detail={detail}
-                api={api}
-                onSaved={() => { reload(); onChanged?.(); }}
-              />
-
-              {/* F-66 — Preferred crew picker (primary + ordered backups). */}
-              <PreferredCrewCard
-                detail={detail}
-                api={api}
-                onSaved={() => { reload(); onChanged?.(); }}
-              />
-
-              {customerId && api.del && (
-                <PaymentMethodsCard
-                  customerId={customerId}
-                  api={{
-                    get: api.get,
-                    post: api.post,
-                    del: api.del,
-                  }}
-                />
+              {/* The five cards, the SAME components SPARK's Companies page
+                  renders. "Service addresses" is gone: it listed the very rows
+                  the Locations card now shows, read-only and with no way to
+                  open one — two views of one thing, and the weaker one was the
+                  only one the crew could reach. */}
+              {subject && (
+                <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", marginTop: 12 }}>
+                  <BillingCard
+                    customerKind={subject.kind}
+                    customerId={subject.id}
+                    people={roles}
+                    accent="#2D9CDB"
+                    onChanged={() => { reloadModel(); }}
+                  />
+                  <RolesCard
+                    customerKind={subject.kind}
+                    customerId={subject.id}
+                    locations={locations}
+                    accent="#2D9CDB"
+                    onChanged={() => { reloadModel(); }}
+                  />
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <LocationsCard
+                      customerKind={subject.kind}
+                      customerId={subject.id}
+                      customerName={contactName(detail)}
+                      locations={locations}
+                      roles={roles}
+                      jobCounts={jobCountsByLocation}
+                      /* A person with one location gets the card COLLAPSED,
+                         not hidden: a homeowner still has an address, and
+                         hiding it is how the gate code becomes unreachable. */
+                      collapsedWhenSingle={subject.kind === "person"}
+                      accent="#2D9CDB"
+                      onOpenLocation={(id) => setFocusedLocationId(id)}
+                      onChanged={() => { reloadModel(); onChanged?.(); }}
+                    />
+                  </div>
+                  <NotesCard
+                    path={`/api/v1/customers/${subject.kind}/${subject.id}/notes`}
+                    accent="#2D9CDB"
+                  />
+                  <ActivityCard customerKind={subject.kind} customerId={subject.id} />
+                </div>
               )}
 
-              <div className="card">
-                <div className="card-ttl">Service addresses</div>
-                <div className="card-sub">{(detail.addresses || []).length ? `${(detail.addresses || []).length} on file` : "None on file"}</div>
-                {(detail.addresses || []).length === 0 ? (
-                  <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "4px 0" }}>
-                    No addresses yet. Add one from the customer's record to assign jobs to a location.
-                  </div>
-                ) : (detail.addresses || []).map((a, i) => (
-                  <div key={a.address_id} style={{ padding: "8px 0", fontSize: 12, color: "#0B1C24", borderTop: i > 0 ? "1px solid #f0f4f6" : "none" }}>
-                    {a.address_line_1}, {a.city}, {a.state} {a.postal_code}
-                  </div>
-                ))}
-              </div>
+              {/* Person-only, and only when OLIVER actually knows this person:
+                  the record to edit, the crew they prefer and the cards on
+                  file all hang off an OLIVER contact, which a company has
+                  none of. */}
+              {detail.customer_kind === "person" && customerId && (
+                <>
+                  <CustomerInfoCard
+                    detail={detail}
+                    api={api}
+                    onSaved={() => { reload(); onChanged?.(); }}
+                  />
+
+                  {/* F-66 — Preferred crew picker (primary + ordered backups). */}
+                  <PreferredCrewCard
+                    detail={detail}
+                    api={api}
+                    onSaved={() => { reload(); onChanged?.(); }}
+                  />
+
+                  {api.del && (
+                    <PaymentMethodsCard
+                      customerId={customerId}
+                      api={{
+                        get: api.get,
+                        post: api.post,
+                        del: api.del,
+                      }}
+                    />
+                  )}
+                </>
+              )}
             </>
           )}
 
           {/* ── Jobs (list / focused detail / create panel — all inline) ── */}
           {tab === "jobs" && (
-            creating === "job" && customerId ? (
+            creating === "job" && customerId && subject ? (
               <JobCreatePanel
                 customerId={customerId}
+                subject={subject}
                 api={api}
                 prefillJob={prefillJob}
                 onCancel={() => setCreating(null)}
@@ -463,9 +680,10 @@ export function CustomerModal({
 
           {/* ── Quotes (list / create panel) ── */}
           {tab === "quotes" && (
-            creating === "quote" && customerId ? (
+            creating === "quote" && customerId && subject ? (
               <QuoteCreatePanel
                 customerId={customerId}
+                subject={subject}
                 api={api}
                 onCancel={() => setCreating(null)}
                 onCreated={() => { setCreating(null); reload(); onChanged?.(); }}
@@ -494,11 +712,33 @@ export function CustomerModal({
             )
           )}
 
+          {/* ── Proposals (read-only here; the builder owns creating one) ── */}
+          {tab === "proposals" && (
+            <table className="tbl">
+              <thead><tr><th>Title</th><th>Status</th><th style={{ textAlign: "right" }}>Total</th><th>Created</th></tr></thead>
+              <tbody>
+                {(activity.proposals?.length ?? 0) === 0 ? (
+                  <tr><td colSpan={4} style={{ textAlign: "center", padding: "20px 0", color: "#5A7A8A" }}>
+                    No proposals yet. Build one from Quotes &amp; Proposals — a proposal can cover several of this customer's locations.
+                  </td></tr>
+                ) : (activity.proposals || []).map((p) => (
+                  <tr key={p.proposal_id}>
+                    <td><strong>{p.title || p.proposal_id.slice(0, 8)}</strong></td>
+                    <td><StatusBadge status={p.status} /></td>
+                    <td style={{ textAlign: "right" }}>{fmtMoney(p.total)}</td>
+                    <td>{fmtDate(p.created_at)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
           {/* ── Invoices (list / create panel) ── */}
           {tab === "invoices" && (
-            creating === "invoice" && customerId ? (
+            creating === "invoice" && customerId && subject ? (
               <InvoiceCreatePanel
                 customerId={customerId}
+                subject={subject}
                 api={api}
                 onCancel={() => setCreating(null)}
                 onCreated={() => { setCreating(null); reload(); onChanged?.(); }}
@@ -570,9 +810,10 @@ export function CustomerModal({
 
           {/* ── Subscriptions (list / focused detail / create — all inline) ── */}
           {tab === "subscriptions" && (
-            creating === "subscription" && customerId ? (
+            creating === "subscription" && customerId && subject ? (
               <SubscriptionCreatePanel
                 customerId={customerId}
+                subject={subject}
                 api={api}
                 onCancel={() => setCreating(null)}
                 onCreated={(newId) => {

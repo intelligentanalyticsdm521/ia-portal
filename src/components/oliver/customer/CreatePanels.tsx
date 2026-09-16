@@ -18,18 +18,75 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui";
 import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
 import { useOliverLocations } from "../../../hooks/useOliverLocations";
+// WHERE the work happens — the customer's site, not the business's branch.
+// (`useOliverLocations` above is the branch; they are different things and
+// oliver's schema keeps them apart for exactly this reason.)
+import { CustomerLocationPicker } from "../../customers/CustomerLocationPicker";
 
 type Api = {
   get: <T>(p: string) => Promise<T>;
   post: <T>(p: string, b?: unknown) => Promise<T>;
 };
 
+/** The customer as the mixed list names them — what LUMEN's routes want. */
+export interface PanelSubject {
+  kind: "company" | "person";
+  /** The LUMEN id: lumen.account.id for a company, lumen.contact.id otherwise. */
+  id: string;
+}
+
 interface BasePanelProps {
+  /** The OLIVER contact UUID the document is written against. */
   customerId: string;
+  /**
+   * The same customer, addressed the way LUMEN addresses one. REQUIRED, so a
+   * caller cannot quietly render a create panel with no way to ask where the
+   * work is — which is how a job ends up with no service address, the defect
+   * hotfixed on 2026-09-15.
+   */
+  subject: PanelSubject;
   api: Api;
   onCancel: () => void;
   onCreated: (newId: string) => void;
   topSlot?: React.ReactNode;
+}
+
+/**
+ * WHERE this document is for — the forced location picker, in the one place
+ * all four create panels reach for it.
+ *
+ * Spec section 7 point 2: "then the location if more than one (forced
+ * picker)". The customer is already known inside their own record, so this is
+ * the second half of CustomerLocationPicker with `lockedCustomer` set. Written
+ * once rather than four times because the >1 gate IS the feature: four copies
+ * is four chances for one to become ">= 1" and start asking a homeowner which
+ * of their one address they meant.
+ */
+function WhereFor({
+  subject, customerName, value, onChange, multi = false, title = "Where",
+}: {
+  subject: PanelSubject;
+  customerName?: string;
+  value: string[];
+  onChange: (ids: string[]) => void;
+  multi?: boolean;
+  title?: string;
+}) {
+  return (
+    <div className="card" data-testid="where-for">
+      <div className="card-ttl">{title}</div>
+      <div className="card-sub" style={{ marginBottom: 10 }}>
+        The site this is for. A customer with one location fills itself in, and never asks.
+      </div>
+      <CustomerLocationPicker
+        lockedCustomer={{ kind: subject.kind, id: subject.id, name: customerName || "This customer", oliverContactId: null }}
+        value={{ customer: null, locationIds: value }}
+        onChange={(next) => onChange(next.locationIds)}
+        multi={multi}
+        showSummary
+      />
+    </div>
+  );
 }
 
 const inputS: React.CSSProperties = {
@@ -72,7 +129,7 @@ function ErrBox({ msg }: { msg: string | null }) {
 //   and the parent CustomerModal jumps to the first job.
 // ─────────────────────────────────────────────────────────────────────────────
 export function JobCreatePanel({
-  customerId, api, onCancel, onCreated, topSlot, onRecurringCreated, prefillJob,
+  customerId, subject, api, onCancel, onCreated, topSlot, onRecurringCreated, prefillJob,
 }: BasePanelProps & {
   /** When the Recurring toggle is ON and submit succeeds, this callback
    *  fires with the new subscription + first job. Parent CustomerModal
@@ -95,6 +152,10 @@ export function JobCreatePanel({
     setLocationId(loc.selectedLocationId !== "all" ? loc.selectedLocationId : (loc.defaultLocation?.location_id ?? ""));
   }, [loc.multi, loc.selectedLocationId, loc.defaultLocation, locationId]);
   const locationBody = loc.multi && locationId ? { location_id: locationId } : {};
+  // The customer's SITE. One per job (spec section 7 point 4: "a job = one
+  // location"), and the server resolves the bill-to from it exactly once.
+  const [serviceLocationIds, setServiceLocationIds] = useState<string[]>([]);
+  const serviceLocationBody = serviceLocationIds[0] ? { service_address_id: serviceLocationIds[0] } : {};
   const [scheduledStart, setScheduledStart] = useState(prefillJob?.scheduled_start || "");
   const [scheduledEnd, setScheduledEnd] = useState(prefillJob?.scheduled_end || "");
   const [teamNotes, setTeamNotes] = useState("");
@@ -189,6 +250,7 @@ export function JobCreatePanel({
         customer_notes: customerNotes.trim() || null,
         source: "manual",
         ...locationBody,
+        ...serviceLocationBody,
       });
       const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
       if (!newId) throw new Error("Draft saved but no id returned.");
@@ -287,6 +349,7 @@ export function JobCreatePanel({
         customer_notes: customerNotes.trim() || null,
         source: "manual",
         ...locationBody,
+        ...serviceLocationBody,
       });
       const newId = (jobRes as any)?.job_id || (jobRes as any)?.id || (jobRes as any)?.data?.job_id;
       if (!newId) throw new Error("Job created but no id returned.");
@@ -321,6 +384,7 @@ export function JobCreatePanel({
       {topSlot}
       {backLink(onCancel, "jobs")}
       <ErrBox msg={err} />
+      <WhereFor subject={subject} value={serviceLocationIds} onChange={setServiceLocationIds} />
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
@@ -499,7 +563,10 @@ export function JobCreatePanel({
 // QuoteCreatePanel — title + valid-until + catalog line items. Posts to
 // /quotes with this customer + items.
 // ─────────────────────────────────────────────────────────────────────────────
-export function QuoteCreatePanel({ customerId, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+export function QuoteCreatePanel({ customerId, subject, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+  // A quote may cover SEVERAL of the customer's sites (spec section 7 point 4);
+  // accepting it opens one job per location.
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [validUntil, setValidUntil] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
@@ -516,6 +583,7 @@ export function QuoteCreatePanel({ customerId, api, onCancel, onCreated, topSlot
       // oliver-api/routes/quotes.js line 17.
       const res = await api.post<{ quote_id?: string; id?: string }>("/quotes", {
         contact_id: customerId,
+        location_ids: locationIds,
         valid_until: validUntil ? new Date(validUntil).toISOString() : null,
         notes: notes.trim() || null,
         line_items: items.map((it, i) => ({
@@ -536,6 +604,8 @@ export function QuoteCreatePanel({ customerId, api, onCancel, onCreated, topSlot
       {topSlot}
       {backLink(onCancel, "quotes")}
       <ErrBox msg={err} />
+      <WhereFor subject={subject} value={locationIds} onChange={setLocationIds} multi
+        title="Which sites" />
 
       <div className="card">
         <div className="card-ttl">New quote</div>
@@ -571,7 +641,10 @@ export function QuoteCreatePanel({ customerId, api, onCancel, onCreated, topSlot
 // InvoiceCreatePanel — title + due date + catalog line items. Posts to
 // /invoices with this customer.
 // ─────────────────────────────────────────────────────────────────────────────
-export function InvoiceCreatePanel({ customerId, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+export function InvoiceCreatePanel({ customerId, subject, api, onCancel, onCreated, topSlot }: BasePanelProps) {
+  // Every line on this invoice belongs to the site picked here, which is what
+  // makes the printed invoice group its lines by building (spec section 9.4).
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<LineItem[]>([]);
@@ -597,6 +670,7 @@ export function InvoiceCreatePanel({ customerId, api, onCancel, onCreated, topSl
           line_total: Math.round(Number(it.quantity || 1) * Number(it.unit_price || 0) * 100) / 100,
           sort_order: i,
           service_offering_id: it.service_offering_id || null,
+          service_location_id: locationIds[0] || null,
         })),
       });
       onCreated((res as any)?.invoice_id || (res as any)?.id || "");
@@ -609,6 +683,7 @@ export function InvoiceCreatePanel({ customerId, api, onCancel, onCreated, topSl
       {topSlot}
       {backLink(onCancel, "invoices")}
       <ErrBox msg={err} />
+      <WhereFor subject={subject} value={locationIds} onChange={setLocationIds} />
 
       <div className="card">
         <div className="card-ttl">New invoice</div>
@@ -679,7 +754,7 @@ function defaultStartDate(): string {
 type RecurringCreatedFn = (args: { subscriptionId: string; firstJobId?: string | null }) => void;
 
 export function SubscriptionCreatePanel({
-  customerId, api, onCancel, onCreated, topSlot,
+  customerId, subject, api, onCancel, onCreated, topSlot,
   onRecurringCreated,
 }: BasePanelProps & {
   /** When provided, called instead of onCreated so the parent can route to
@@ -687,6 +762,9 @@ export function SubscriptionCreatePanel({
    *  via fallback so legacy callers don't break. */
   onRecurringCreated?: RecurringCreatedFn;
 }) {
+  // A subscription carries the site it is for, and the bill-to resolved from
+  // it (spec section 7 point 4, item 9). Every visit it generates lands there.
+  const [locationIds, setLocationIds] = useState<string[]>([]);
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [lines, setLines] = useState<RecurringLine[]>([]);
@@ -750,6 +828,7 @@ export function SubscriptionCreatePanel({
         auto_create_first_job_error?: string | null;
       }>("/subscriptions", {
         contact_id: customerId,
+        service_location_id: locationIds[0] || null,
         items: lines.map((l) => ({ price_id: l.price_id, quantity: l.quantity })),
         trial_days: trialDays ? Number(trialDays) : undefined,
         start_date: new Date(startDate).toISOString(),
@@ -787,6 +866,7 @@ export function SubscriptionCreatePanel({
       {topSlot}
       {backLink(onCancel, "subscriptions")}
       <ErrBox msg={err} />
+      <WhereFor subject={subject} value={locationIds} onChange={setLocationIds} />
 
       <div className="card">
         <div className="card-ttl">New subscription</div>
