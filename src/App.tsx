@@ -12,6 +12,7 @@ import { AuthCallbackPage } from './pages/AuthCallbackPage';
 // F3 — Scope Change Revisions public surface (no auth, token IS the auth).
 import { PublicRevisionPage } from './pages/public/PublicRevisionPage';
 import { PublicFormPage } from './pages/public/PublicFormPage';
+import { PublicProposalPage } from './pages/public/PublicProposalPage';
 import { BusinessCardPublicPage } from './pages/public/BusinessCardPublicPage';
 
 import { AppGate } from './app/AppGate';
@@ -198,6 +199,13 @@ export function App() {
               string (NVARCHAR(80)) issued by oliver-api when the founder
               creates a draft revision.  No auth needed. */}
           <Route path="/p/revisions/:token" element={<PublicRevisionPage />} />
+
+          {/* The customer's copy of a proposal or agreement. It renders the
+              document with src/builder/render.ts — the SAME renderer the author
+              edits on — so the page the customer signs is the page that was
+              built. blocks_json used to be stored and served with no route
+              anywhere in the Portal that read it. */}
+          <Route path="/p/proposals/:token" element={<PublicProposalPage />} />
 
           {/* Public consulting form fill — no auth, public_token IS the auth.
               A prospect who isn't a tenant yet opens the emailed link, fills the
