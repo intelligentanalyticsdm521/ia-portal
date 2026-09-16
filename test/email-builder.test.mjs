@@ -475,9 +475,11 @@ describe("everything that was an email before this builder still opens", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("the email builder never opens on a blank page", () => {
-  test("the four newsletter templates §7 asks for are all here", () => {
-    assert.deepEqual(EMAIL_TEMPLATES.map((t) => t.key).sort(),
-      ["announcement", "event", "monthly_update", "promo"]);
+  test("the four §7 asks for are here, and D-146’s four more beside them", () => {
+    assert.deepEqual(EMAIL_TEMPLATES.map((t) => t.key).sort(), [
+      "announcement", "event", "monthly_update", "new_service",
+      "promo", "review_request", "seasonal_reminder", "winback",
+    ]);
   });
 
   for (const t of EMAIL_TEMPLATES) {

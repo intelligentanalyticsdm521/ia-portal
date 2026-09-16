@@ -421,7 +421,8 @@ describe("never a blank page", () => {
       for (const k of t.kinds) {
         assert.ok(ARION_KINDS.includes(k), `${t.key} names "${k}", which the website cannot build`);
       }
-      assert.ok(t.description.length > 12, `${t.key} has no line a business owner can read`);
+      assert.ok(t.useCase.length > 40, `${t.key} has no line a business owner can read`);
+      assert.ok(t.purpose.length > 3, `${t.key} has no purpose badge`);
     }
   });
 

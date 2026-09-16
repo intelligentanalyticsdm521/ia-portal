@@ -21,67 +21,211 @@
  *
  * Pure: no React, no fetch.
  */
+import { DOCUMENT_CSS, makeContext, renderDocument } from "../../render";
+import { toDocument } from "./siteModel";
+import { SITE_CSS, renderSiteWidget } from "./siteRender";
+import type { TemplateEntry, TemplatePreview } from "../../templateLibraryModel";
 
 export interface SitePageTemplate {
   key: string;
   name: string;
-  /** One line, in a business owner's words. */
-  description: string;
   /** ARION section kinds, in page order. */
   kinds: string[];
-  /** What the gallery card draws. */
-  tag: string;
+  /** The badge — what kind of page this is. */
+  purpose: string;
+  businessTypes: string[];
+  tags: string[];
+  useCase: string;
+  bestFor: string;
+  featured?: boolean;
+  /** The "start from almost nothing" card, which is always offered last. */
+  last?: boolean;
+  /**
+   * Words for the GALLERY PICTURE ONLY, per ARION kind.
+   *
+   * §12's rule stands: a page template is a list of kinds and arion-api fills
+   * each one from the business's own details. Nothing here is ever sent to
+   * `createSitePage` — it exists so the card can show a lawn company's home
+   * page looking like a lawn company's home page instead of a grey box.
+   */
+  preview?: Record<string, Record<string, unknown>>;
 }
 
 /**
- * The five pages a small business actually has.
+ * The pages a small business actually has, plus one per trade.
  *
- * Chosen from what the five live ARION sites are made of, not invented: every
- * one of them has a home page with a hero and services, an about page, a
- * services page and a contact page, and landing pages are what SPARK sends
- * traffic to.
+ * Chosen from what the live ARION sites are made of, not invented. The
+ * per-trade homes carry the SAME sections in a DIFFERENT ORDER, because the
+ * order is the argument: a snow or heating customer is in a hurry and wants
+ * the call-to-action under the banner, a landscaper sells on photographs, and
+ * a cleaner sells on price.
  */
 export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
   {
     key: "home",
-    name: "Home page",
-    description: "Banner, what you do, why people trust you, and how to reach you.",
-    tag: "Pages",
+    name: "Service business home",
+    purpose: "Home page",
+    businessTypes: ["Any business"],
+    tags: ["home", "front page", "landing", "main"],
+    useCase: "The front page every service business needs: a banner saying what you do, the services themselves, why people trust you, and how to get hold of you. Everything on it is filled in from your own business details.",
+    bestFor: "Any trade that has not got a home page yet, or has one that does not say what it does.",
+    featured: true,
     kinds: ["hero", "services", "stats", "testimonials", "cta", "contact"],
   },
   {
+    key: "home_lawn",
+    name: "Lawn & landscape home",
+    purpose: "Home page",
+    businessTypes: ["Lawn & landscape"],
+    tags: ["lawn", "garden", "landscaping", "grounds", "mowing", "home"],
+    useCase: "A home page that sells on the work you can see: the banner, what you do, then a gallery of finished jobs before the prices and the reviews. Photographs win landscaping work, so they come early.",
+    bestFor: "Lawn care rounds, landscaping and grounds maintenance — anyone whose best argument is a picture of a finished garden.",
+    kinds: ["hero", "services", "gallery", "testimonials", "pricing", "cta", "contact"],
+    preview: {
+      hero: {
+        headline: "Lawns and gardens, kept the way you want them",
+        subheadline: "Weekly cuts, seasonal tidy-ups and full landscaping, from a crew that turns up when it says it will.",
+        cta_text: "Get a price",
+      },
+      services: {
+        headline: "What we do",
+        services: [
+          { title: "Weekly lawn care", description: "Cut, edged and cleared, on the same day every week.", icon_name: "🌿" },
+          { title: "Seasonal tidy-ups", description: "Beds cleared, hedges cut back, everything taken away.", icon_name: "🍂" },
+          { title: "Landscaping", description: "Patios, planting and turfing, designed with you first.", icon_name: "🧱" },
+        ],
+      },
+    },
+  },
+  {
+    key: "home_snow",
+    name: "Snow & ice home",
+    purpose: "Home page",
+    businessTypes: ["Snow & ice"],
+    tags: ["snow", "plowing", "ice", "winter", "gritting", "home"],
+    useCase: "Built for the week it snows: the banner, then the call-to-action band straight underneath, because somebody reading this at six in the morning wants a number, not your story.",
+    bestFor: "Snow plowing and ice management, commercial or residential, where contracts are signed in a hurry.",
+    kinds: ["hero", "cta", "services", "faq", "stats", "testimonials", "contact"],
+    preview: {
+      hero: {
+        headline: "Clear lots and safe walkways, all winter",
+        subheadline: "Plowing, salting and sidewalk clearing on a contract, with a crew on call the moment it starts.",
+        cta_text: "Get a winter quote",
+      },
+      cta: {
+        headline: "Snow on the way?",
+        subheadline: "Contracts signed before the first storm get first call-out. Tell us your site and we will price it.",
+        primary_cta_text: "Request a quote",
+        secondary_cta_text: "Call us",
+      },
+    },
+  },
+  {
+    key: "home_cleaning",
+    name: "Cleaning services home",
+    purpose: "Home page",
+    businessTypes: ["Cleaning"],
+    tags: ["cleaning", "janitorial", "housekeeping", "office", "home"],
+    useCase: "A home page that answers the two questions a cleaning customer has — what does it include and what does it cost — before anything else. Prices sit high up, with the questions people ask underneath.",
+    bestFor: "Domestic and commercial cleaning rounds, end-of-tenancy work, office contracts.",
+    kinds: ["hero", "services", "pricing", "testimonials", "faq", "cta", "contact"],
+    preview: {
+      hero: {
+        headline: "A clean you do not have to check",
+        subheadline: "Homes and offices, cleaned by the same vetted team every visit. Weekly, fortnightly or one-off.",
+        cta_text: "See prices",
+      },
+      pricing: {
+        headline: "Straightforward prices",
+        plans: [
+          { name: "Weekly", price: "$95", period: "per visit", summary: "Two to three hours, everything on the checklist.", features: ["Same cleaner each week", "Products included", "Key held securely"], cta_text: "Book weekly" },
+          { name: "Fortnightly", price: "$120", period: "per visit", summary: "The same clean, every other week.", features: ["Same cleaner", "Products included", "Easy to pause"], cta_text: "Book fortnightly" },
+          { name: "One-off deep clean", price: "$280", period: "one-off", summary: "Top to bottom, for a move or a fresh start.", features: ["Inside cupboards and appliances", "Windows inside", "Two cleaners"], cta_text: "Book a deep clean" },
+        ],
+      },
+    },
+  },
+  {
+    key: "home_hvac",
+    name: "HVAC & plumbing home",
+    purpose: "Home page",
+    businessTypes: ["HVAC & plumbing"],
+    tags: ["heating", "plumbing", "hvac", "boiler", "emergency", "home"],
+    useCase: "An emergency-first home page: banner, then how to get somebody out today, then the services, how long you have been doing it and what customers say. The questions section catches the ones that ring up to ask.",
+    bestFor: "Heating, cooling and plumbing firms who win work on how fast they answer.",
+    kinds: ["hero", "cta", "services", "stats", "faq", "testimonials", "contact"],
+    preview: {
+      hero: {
+        headline: "Heating and plumbing, fixed properly",
+        subheadline: "Repairs, servicing and installation by engineers who tidy up after themselves.",
+        cta_text: "Book an engineer",
+      },
+      cta: {
+        headline: "No heating? No hot water?",
+        subheadline: "Call before noon and we will do our best to be with you the same day.",
+        primary_cta_text: "Call now",
+        secondary_cta_text: "Book online",
+      },
+    },
+  },
+  {
     key: "services",
-    name: "Services page",
-    description: "Everything you do, what it costs, and the questions people ask.",
-    tag: "Pages",
+    name: "Services overview",
+    purpose: "Services page",
+    businessTypes: ["Any business"],
+    tags: ["services", "what we do", "prices", "packages"],
+    useCase: "Everything you do on one page, with what each thing costs and the questions people ask before they book. The page you send somebody who asks 'do you also do…?'.",
+    bestFor: "Any business with more than two services and a habit of explaining them over the phone.",
+    featured: true,
     kinds: ["hero", "services", "pricing", "faq", "cta"],
   },
   {
     key: "about",
-    name: "About page",
-    description: "Your story, the people, the numbers, and what customers say.",
-    tag: "Pages",
+    name: "About the business",
+    purpose: "About page",
+    businessTypes: ["Any business"],
+    tags: ["about", "story", "team", "history", "values"],
+    useCase: "Your story, the people who do the work, the numbers that prove it and what customers say. It is the page people read just before they call, and the one most small sites never get round to writing.",
+    bestFor: "Any business where who you are is part of why they choose you — which is most of them.",
     kinds: ["hero", "about", "team", "stats", "testimonials", "cta"],
   },
   {
     key: "contact",
-    name: "Contact page",
-    description: "How to reach you, next to a form that lands in your inbox.",
-    tag: "Pages",
+    name: "Contact and booking",
+    purpose: "Contact page",
+    businessTypes: ["Any business"],
+    tags: ["contact", "booking", "enquiry", "form", "phone"],
+    useCase: "How to reach you, next to a form that lands in your inbox, with the questions people always ask underneath so the easy ones never become a phone call.",
+    bestFor: "Every website. It is the page your adverts and your email signature should point at.",
+    featured: true,
     kinds: ["hero", "contact", "faq"],
   },
   {
     key: "landing",
-    name: "Landing page",
-    description: "One offer, one form. For an advert or a campaign to point at.",
-    tag: "Pages",
+    name: "Seasonal offer landing page",
+    purpose: "Landing page",
+    businessTypes: ["Any business"],
+    tags: ["offer", "campaign", "advert", "seasonal", "promotion", "landing"],
+    useCase: "One offer and one form, with nothing else to click. Point an advert, an email or a postcard at it and you can tell exactly what it brought in.",
+    bestFor: "A seasonal push — winter contracts, spring tidy-ups, a launch — that should not live on your home page.",
     kinds: ["hero", "content", "testimonials", "contact"],
+    preview: {
+      hero: {
+        headline: "Book your autumn tidy-up",
+        subheadline: "Beds cleared, hedges cut and everything taken away — booked in before the leaves are down.",
+        cta_text: "Get my price",
+      },
+    },
   },
   {
     key: "blank",
     name: "Start from one section",
-    description: "A banner and nothing else. Add what you want from the panel.",
-    tag: "Pages",
+    purpose: "Almost empty",
+    businessTypes: ["Any business"],
+    tags: ["blank", "empty", "one section", "from scratch"],
+    useCase: "A banner and nothing else. You add every other section yourself from the panel, which is the long way round unless you already know exactly what this page is.",
+    bestFor: "A page that is nothing like the others — a policy page, a one-off notice, something you are rebuilding by hand.",
+    last: true,
     kinds: ["hero"],
   },
 ];
@@ -182,4 +326,159 @@ export function withCount(fields: Record<string, any>, kind: string, n: number):
   if (current.length === n) return fields;
   const next = Array.from({ length: n }, (_, i) => current[i] ?? blankRow(kind));
   return { ...fields, [key]: next };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The library (§11.9, D-146)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** A page preview is drawn at desktop width and scaled down by the card. */
+export const SITE_PREVIEW_WIDTH = 1100;
+
+/**
+ * Trade-neutral words for the GALLERY PICTURE, one set per ARION kind.
+ *
+ * Not content. §12's rule is that arion-api builds every section from the
+ * business's own details, and nothing in this map is ever sent to the server —
+ * `createSitePage` still posts `{ kind }` and only `{ kind }`. This exists so a
+ * card can show a page rather than a stack of empty bands, and a template with
+ * words of its own (`preview`) layers over the top.
+ */
+export const PREVIEW_DEFAULTS: Record<string, Record<string, unknown>> = {
+  hero: {
+    headline: "Work done properly, when we said we would",
+    subheadline: "Serving the area for years, with a crew that turns up, tidies up and answers the phone.",
+    cta_text: "Get a price",
+  },
+  services: {
+    headline: "What we do",
+    services: [
+      { title: "Regular service", description: "The work you book in and forget about, on a schedule that suits you.", icon_name: "✓" },
+      { title: "One-off jobs", description: "Priced before we start, with no surprises at the end.", icon_name: "✦" },
+      { title: "Emergencies", description: "When something has gone wrong and it cannot wait until next week.", icon_name: "!" },
+    ],
+  },
+  pricing: {
+    headline: "What it costs",
+    plans: [
+      { name: "Standard", price: "$95", period: "per visit", summary: "The regular job, done properly.", features: ["Booked in advance", "Same crew each time"], cta_text: "Book it" },
+      { name: "Full service", price: "$160", period: "per visit", summary: "Everything in standard, plus the extras.", features: ["Priority booking", "Everything taken away"], cta_text: "Book it" },
+      { name: "Contract", price: "$79", period: "per month", summary: "Spread over the year, cancel any time.", features: ["Two visits a year", "No call-out charge"], cta_text: "Ask us" },
+    ],
+  },
+  testimonials: {
+    headline: "What customers say",
+    testimonials: [
+      { quote: "Turned up on time, did exactly what was quoted and left the place spotless.", attribution: "A customer", role: "Regular since last year", rating: 5 },
+      { quote: "Straight answer on the phone and a price the same day. Rare these days.", attribution: "A customer", role: "One-off job", rating: 5 },
+      { quote: "We have used them across three sites now and never had to chase them once.", attribution: "A property manager", role: "Commercial contract", rating: 5 },
+    ],
+  },
+  stats: {
+    headline: "The numbers",
+    stats: [
+      { value: "17", suffix: "", label: "Years in business" },
+      { value: "2,400", suffix: "+", label: "Jobs completed" },
+      { value: "2", suffix: "h", label: "Average time to answer" },
+      { value: "98", suffix: "%", label: "Customers who book again" },
+    ],
+  },
+  faq: {
+    headline: "Questions people ask",
+    faqs: [
+      { question: "How quickly can you come out?", answer: "Most jobs within a week; emergencies the same day where we can." },
+      { question: "Do you give a fixed price?", answer: "Yes. We price before we start and that is what you pay unless you change the job." },
+      { question: "Are you insured?", answer: "Fully, and we will send the certificates before the first visit." },
+    ],
+  },
+  about: {
+    headline: "About us",
+    subheadline: "A family business, still run by the people who started it",
+    story_paragraphs: [
+      "We started with one van and a list of neighbours. The list got longer, the vans multiplied, and the way we work never changed: turn up when we say we will, do it properly, and leave the place tidy.",
+      "Everyone who works here is trained, insured and known to us. There are no subcontractors on your property that we have not met.",
+    ],
+    values: [
+      { title: "We turn up", description: "A time we give you is a time we keep." },
+      { title: "We price first", description: "Nothing gets added to your bill without a yes." },
+      { title: "We tidy up", description: "You should not be able to tell we were there, except for the work." },
+    ],
+  },
+  team: {
+    headline: "The people",
+    members: [
+      { name: "The owner", role: "Runs the jobs and answers the phone" },
+      { name: "Crew lead", role: "On site, every day" },
+      { name: "Office", role: "Bookings, quotes and invoices" },
+    ],
+  },
+  gallery: {
+    headline: "Recent work",
+    images: [{ caption: "Before and after" }, { caption: "A finished job" }, { caption: "On site" }],
+  },
+  cta: {
+    headline: "Ready when you are",
+    subheadline: "Tell us what you need and we will come back with a price.",
+    primary_cta_text: "Get a quote",
+    secondary_cta_text: "Call us",
+  },
+  contact: {
+    headline: "Get in touch",
+    contact_methods: [
+      { label: "Phone", value: "(555) 0192" },
+      { label: "Email", value: "office@example.test" },
+      { label: "Hours", value: "Monday to Friday, 7am to 6pm" },
+    ],
+    form_fields: ["Name", "Email", "Phone", "What do you need?"],
+    submit_text: "Send it",
+    email_to: "office@example.test",
+  },
+  content: {
+    headline: "A bit more detail",
+    subheadline: "The free section: headings, words, pictures and buttons, in one to three columns.",
+  },
+};
+
+/** The sample fields one section of a template is drawn with. */
+export function previewFieldsFor(template: SitePageTemplate, kind: string): Record<string, unknown> {
+  return { ...(PREVIEW_DEFAULTS[kind] || {}), ...(template.preview?.[kind] || {}) };
+}
+
+/**
+ * One page template's picture: the real page, through THE renderer.
+ *
+ * The same `toDocument` the builder itself uses, rendered by `render.ts` with
+ * the website adapter plugged in at `ctx.extra` — exactly as the canvas does
+ * it, so the card cannot show a layout the builder would not.
+ */
+export function sitePagePreview(
+  template: SitePageTemplate,
+  accent = "#0C4A60",
+): TemplatePreview {
+  const doc = toDocument(template.kinds.map((kind, index) => ({
+    index, handle: null, kind, editable: true,
+    label: kind, fields: previewFieldsFor(template, kind), node: null,
+  })));
+  const ctx = makeContext(doc, { mode: "view", accent, extra: renderSiteWidget });
+  return {
+    html: renderDocument(doc, ctx),
+    css: `${DOCUMENT_CSS}\n${SITE_CSS}`,
+    width: SITE_PREVIEW_WIDTH,
+  };
+}
+
+/** Every page template as a library entry, with "one section" last. */
+export function siteLibrary(accent = "#0C4A60"): TemplateEntry[] {
+  return SITE_PAGE_TEMPLATES.map((t) => ({
+    id: t.key,
+    title: t.name,
+    purpose: t.purpose,
+    businessTypes: t.businessTypes,
+    tags: t.tags,
+    useCase: t.useCase,
+    bestFor: t.bestFor,
+    featured: t.featured,
+    last: t.last,
+    preview: () => sitePagePreview(t, accent),
+  }));
 }

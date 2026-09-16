@@ -26,8 +26,14 @@ import {
   makeSection, makeWidget, emptyDocument,
   type BuilderDocument, type Section, type Widget,
 } from "../../model";
-import { makeFooterProps, type EmailBusiness } from "./emailRender";
+import {
+  EMAIL_WIDTH, makeEmailContext, makeFooterProps, renderEmailDocument, type EmailBusiness,
+} from "./emailRender";
+import { fill } from "../../merge";
 import type { PremadeSection } from "../../templates";
+import {
+  SAMPLE_MERGE, blankEntry, type TemplateEntry, type TemplatePreview,
+} from "../../templateLibraryModel";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Building blocks
@@ -190,10 +196,22 @@ function premade(key: string): Section {
    The shipped templates
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * A shipped email template, as the library (§11.9, D-146) shows it.
+ *
+ * `description` is gone, for the reason D-146 gives: the picture says what it
+ * looks like, so the words say what it is FOR and who should send it.
+ */
 export interface EmailTemplate {
   key: string;
   name: string;
-  description: string;
+  /** The badge — what kind of send this is, in the client's words. */
+  purpose: string;
+  businessTypes: string[];
+  tags: string[];
+  useCase: string;
+  bestFor: string;
+  featured?: boolean;
   /** The subject line the template suggests, merge tags and all. */
   subject: string;
   preheader: string;
@@ -203,11 +221,66 @@ export interface EmailTemplate {
   build: (business: EmailBusiness, accent: string) => BuilderDocument;
 }
 
+/**
+ * A pre-made section carrying THIS template's own words.
+ *
+ * §11.9/D-146 wanted a picture of every template, and a picture of an email
+ * whose every slot is empty is a picture of a masthead and a footer. So the
+ * shipped templates arrive with trade-typical words already in them — generic,
+ * true of any business, and editable in place like everything else. No client
+ * of ours is named in any of it.
+ */
+function say(section: Section, props: Record<string, unknown>, widgetIndex = 0): Section {
+  const w = section.columns[0].widgets[widgetIndex];
+  if (w) w.props = { ...w.props, ...props };
+  return section;
+}
+
+/** Three stories in the shape a small business actually writes them. */
+function sampleArticles() {
+  return [
+    {
+      title: "A job we finished this month",
+      excerpt: "A few lines about the work, what made it interesting, and how it turned out. A photograph does most of the work here.",
+      image: "", alt: "", url: "", linkLabel: "See the pictures",
+    },
+    {
+      title: "The question we are asked most",
+      excerpt: "Answer the thing customers always ring up about. It saves you the call and it shows you know your trade.",
+      image: "", alt: "", url: "", linkLabel: "Read it",
+    },
+    {
+      title: "What to look out for this season",
+      excerpt: "One useful tip for the time of year, ending with what to do if they spot it. Helpful first, selling second.",
+      image: "", alt: "", url: "", linkLabel: "Read it",
+    },
+  ];
+}
+
+/** Two things off the shelf, priced the way a customer asks about them. */
+function sampleProducts() {
+  return [
+    {
+      name: "Standard visit", blurb: "The regular job, done properly, by the crew you already know.",
+      price: "$120", cadence: "per visit", image: "", alt: "", url: "", ctaLabel: "Book it",
+    },
+    {
+      name: "Full service", blurb: "Everything in the standard visit, plus the extras people usually ask for afterwards.",
+      price: "$195", cadence: "per visit", image: "", alt: "", url: "", ctaLabel: "Book it",
+    },
+  ];
+}
+
 export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     key: "monthly_update",
     name: "Monthly update",
-    description: "A note from you, then your stories with pictures and links. The newsletter most businesses send.",
+    purpose: "Newsletter",
+    businessTypes: ["Any business"],
+    tags: ["newsletter", "monthly", "update", "stories", "articles"],
+    useCase: "The regular email that keeps you in front of people who already know you: a short note from you, then your recent stories with a picture and a link each. If your website is with us the articles come in at the press of a button.",
+    bestFor: "Any business sending something once a month — and anyone who keeps meaning to start.",
+    featured: true,
     subject: "{{business name}} — what's new this month",
     preheader: "A short note, and what we've been up to.",
     askArticles: true,
@@ -215,10 +288,13 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
       const doc = emptyDocument({ style: "newsletter", accent });
       doc.sections = [
         headerSection(business, accent),
-        sec([makeWidget("heading", { text: "", level: "Page title", align: "Left" })], { label: "Title" }),
-        premade("email_note"),
+        sec([makeWidget("heading", { text: "What we have been up to", level: "Page title", align: "Left" })], { label: "Title" }),
+        say(premade("email_note"), {
+          text: "A quick round-up of the month — what we have been working on, and one or two things worth knowing if you have a job coming up.",
+          signoff: "Thanks for reading,",
+        }),
         sec([makeWidget("divider", { style: "Line" })], { label: "Divider", padding: 4 }),
-        premade("email_articles"),
+        say(premade("email_articles"), { items: sampleArticles() }),
         premade("email_social"),
         footerSection(business),
       ];
@@ -228,17 +304,29 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     key: "promo",
     name: "Promotion",
-    description: "One offer, said once, with the price and a button. For a sale, a seasonal deal or a new service.",
+    purpose: "Promotion",
+    businessTypes: ["Any business"],
+    tags: ["offer", "sale", "discount", "deal", "promotion"],
+    useCase: "One offer, said once, with the price and a button. Everything on the page points at the same thing, which is why it sells better than a newsletter with an offer buried halfway down it.",
+    bestFor: "A seasonal deal, a clearance, a new price, or a limited run you want gone this month.",
+    featured: true,
     subject: "{{first name}}, this one's for you",
     preheader: "A limited offer from us.",
     askProducts: true,
     build: (business, accent) => {
       const doc = emptyDocument({ style: "newsletter", accent });
+      const offer = premade("email_offer");
+      say(offer, { text: "Ten per cent off, this month only" }, 0);
+      say(offer, { text: "Book anything before the end of the month and we will take ten per cent off the bill. No code to remember — the price comes off when we quote." }, 1);
+      say(offer, { label: "Claim the offer" }, 2);
       doc.sections = [
         headerSection(business, accent),
-        premade("email_offer"),
-        premade("email_products"),
-        premade("email_review"),
+        offer,
+        say(premade("email_products"), { items: sampleProducts() }),
+        say(premade("email_review"), {
+          quote: "They turned up when they said they would, did the job properly and left the place tidy. I have already booked them again.",
+          attribution: "A customer, this year",
+        }),
         footerSection(business),
       ];
       return doc;
@@ -247,7 +335,11 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     key: "event",
     name: "Event invitation",
-    description: "What it is, when and where, and a button to say you're coming. With a date to count down to.",
+    purpose: "Event",
+    businessTypes: ["Any business", "Non-profit", "Retail & hospitality"],
+    tags: ["invite", "event", "rsvp", "date", "countdown"],
+    useCase: "What it is, when and where, and a button to say you are coming — with a countdown so the date does not sink to the bottom of the inbox and get forgotten.",
+    bestFor: "An open day, a fundraiser, a demonstration evening, a customer thank-you.",
     subject: "You're invited — {{business name}}",
     preheader: "The date, the place, and how to let us know.",
     build: (business, accent) => {
@@ -255,11 +347,20 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
       doc.sections = [
         headerSection(business, accent),
         sec([
-          makeWidget("heading", { text: "", level: "Page title", align: "Centre" }),
-          makeWidget("paragraph", { text: "", align: "Centre" }),
+          makeWidget("heading", { text: "You are invited", level: "Page title", align: "Centre" }),
+          makeWidget("paragraph", {
+            text: "We are opening the doors for the afternoon and we would like you there. Come and see how the work is done, meet the crew, and stay for something to eat.",
+            align: "Centre",
+          }),
         ], { label: "The invitation", padding: 28 }),
         sec([makeWidget("countdown", { ends_at: "" })], { label: "When", padding: 8 }),
-        premade("email_details"),
+        say(premade("email_details"), {
+          items: [
+            "Saturday afternoon, from two until five",
+            "At our yard — parking on site, follow the signs",
+            "Bring the family; there is something for the children",
+          ],
+        }, 1),
         sec([makeWidget("button", { label: "Count me in", url: "", style: "Solid", align: "Centre" })], { label: "Reply", padding: 8 }),
         footerSection(business),
       ];
@@ -269,17 +370,162 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
   {
     key: "announcement",
     name: "Announcement",
-    description: "One thing you need people to know — a change of hours, a new location, a price change.",
+    purpose: "Announcement",
+    businessTypes: ["Any business"],
+    tags: ["news", "change", "hours", "notice", "closure"],
+    useCase: "One thing people need to know — new hours, a new address, a price change, a holiday closure. Short and plain, with a button only if they actually have to do something.",
+    bestFor: "Any business with news that is not an offer and should not be dressed up as one.",
     subject: "A quick note from {{business name}}",
     preheader: "Something we want you to know about.",
     build: (business, accent) => {
       const doc = emptyDocument({ style: "newsletter", accent });
       doc.sections = [
         headerSection(business, accent),
-        sec([makeWidget("heading", { text: "", level: "Page title" })], { label: "Title" }),
-        premade("email_note"),
-        sec([makeWidget("list", { items: ["", "", ""] })], { label: "What changes" }),
+        sec([makeWidget("heading", { text: "A change you should know about", level: "Page title" })], { label: "Title" }),
+        say(premade("email_note"), {
+          text: "Nothing dramatic, but it affects how you book with us, so we would rather you heard it from us than found out on the day.",
+          signoff: "",
+        }),
+        sec([makeWidget("list", {
+          items: [
+            "What is changing, in one line",
+            "When it starts",
+            "What you need to do, if anything",
+          ],
+        })], { label: "What changes" }),
         sec([makeWidget("button", { label: "", url: "", style: "Outline", align: "Left" })], { label: "If they need to act", padding: 8 }),
+        footerSection(business),
+      ];
+      return doc;
+    },
+  },
+  {
+    key: "seasonal_reminder",
+    name: "Seasonal reminder",
+    purpose: "Seasonal",
+    businessTypes: ["Lawn & landscape", "Snow & ice", "HVAC & plumbing", "Cleaning", "Home services"],
+    tags: ["season", "book early", "reminder", "diary", "weather"],
+    useCase: "The email you send a few weeks before the season turns, to fill the diary before the phone starts ringing. It says why booking now is worth it and gives one button to do it.",
+    bestFor: "Anyone whose work has a season — heating checks before the cold, the first cut of spring, a snow contract before November.",
+    subject: "Book before the season turns",
+    preheader: "The diary fills up fast once the weather changes.",
+    build: (business, accent) => {
+      const doc = emptyDocument({ style: "newsletter", accent });
+      doc.sections = [
+        headerSection(business, accent),
+        sec([makeWidget("heading", { text: "Book before the season turns", level: "Page title", align: "Left" })], { label: "Title" }),
+        sec([makeWidget("personal_note", {
+          greeting: "Hi {{first name}},",
+          text: "Every year the same thing happens: the weather turns overnight and the diary fills in a week. If you would like your usual slot, now is the moment to say so — we book in the order people ask.",
+          signoff: "Thanks for being a customer,",
+          align: "Left",
+        })], { label: "A note from you" }),
+        sec([makeWidget("list", {
+          items: [
+            "Pick the week that suits you, before the good ones go",
+            "The same crew who were here last time",
+            "Nothing to pay until the work is done",
+          ],
+        })], { label: "Why book now" }),
+        sec([makeWidget("button", { label: "Book my visit", url: "", style: "Solid", align: "Centre" })], { label: "Book", padding: 8 }),
+        premade("email_review"),
+        footerSection(business),
+      ];
+      return doc;
+    },
+  },
+  {
+    key: "review_request",
+    name: "Review request",
+    purpose: "Reviews",
+    businessTypes: ["Any business"],
+    tags: ["review", "rating", "feedback", "reputation", "stars"],
+    useCase: "Sent a day or two after a job is finished, while it is still fresh. One question, one button, and a quiet line offering to put things right instead if it did not go well.",
+    bestFor: "Any trade that lives on local reputation and wants more recent reviews without chasing people by phone.",
+    subject: "How did we do?",
+    preheader: "Two minutes, and it helps us more than you know.",
+    build: (business, accent) => {
+      const doc = emptyDocument({ style: "newsletter", accent });
+      doc.sections = [
+        headerSection(business, accent),
+        sec([makeWidget("personal_note", {
+          greeting: "Hi {{first name}},",
+          text: "Thank you for having us out. If you were happy with the work, a short review helps other people nearby decide who to call — it takes about two minutes and it makes a real difference to a small business.",
+          signoff: "Thank you,",
+          align: "Left",
+        })], { label: "The ask" }),
+        sec([makeWidget("button", { label: "Leave a review", url: "", style: "Solid", align: "Centre" })], { label: "Review", padding: 8 }),
+        sec([makeWidget("paragraph", {
+          text: "And if something was not right, please reply to this email instead of leaving a review. We would far rather hear it from you and fix it.",
+          align: "Left",
+        })], { label: "If it went wrong" }),
+        footerSection(business),
+      ];
+      return doc;
+    },
+  },
+  {
+    key: "winback",
+    name: "We miss you",
+    purpose: "Win-back",
+    businessTypes: ["Any business"],
+    tags: ["win-back", "lapsed", "re-engagement", "come back", "offer"],
+    useCase: "For customers who used you once and have gone quiet. It admits it has been a while, gives them one reason to come back, and does not pretend nothing happened.",
+    bestFor: "Any business with a list of past customers who have not booked in a year — the cheapest work you will ever win.",
+    subject: "It has been a while",
+    preheader: "Something to bring you back.",
+    build: (business, accent) => {
+      const doc = emptyDocument({ style: "newsletter", accent });
+      doc.sections = [
+        headerSection(business, accent),
+        sec([makeWidget("heading", { text: "It has been a while", level: "Page title", align: "Centre" })], { label: "Title" }),
+        sec([makeWidget("personal_note", {
+          greeting: "Hi {{first name}},",
+          text: "We have not seen you for a bit, and we would like to change that. Nothing has changed about how we work — same people, same standard — and if something went wrong last time, tell us and we will make it right.",
+          signoff: "Hope to see you soon,",
+          align: "Left",
+        })], { label: "A note from you" }),
+        sec([
+          makeWidget("paragraph", { text: "Book anything in the next thirty days and we will take ten per cent off the bill. No code to remember — just reply or use the button.", align: "Centre" }),
+          makeWidget("button", { label: "Book again", url: "", style: "Solid", align: "Centre" }),
+        ], { label: "The offer", padding: 24 }),
+        premade("email_review"),
+        footerSection(business),
+      ];
+      return doc;
+    },
+  },
+  {
+    key: "new_service",
+    name: "New service announcement",
+    purpose: "Announcement",
+    businessTypes: ["Lawn & landscape", "Snow & ice", "Cleaning", "HVAC & plumbing", "Home services", "Retail & hospitality"],
+    tags: ["new service", "launch", "now offering", "expanded", "price"],
+    useCase: "For telling your existing customers you now do something you did not do before. It says what it is, who it suits and what it costs, and asks for the booking in the same breath.",
+    bestFor: "A trade adding a line — gutter clearing, a maintenance plan, a second van, an extra season.",
+    subject: "Something new from us",
+    preheader: "A new service, what it is for, and what it costs.",
+    askProducts: true,
+    build: (business, accent) => {
+      const doc = emptyDocument({ style: "newsletter", accent });
+      doc.sections = [
+        headerSection(business, accent),
+        sec([makeWidget("heading", { text: "We do this now too", level: "Page title", align: "Left" })], { label: "Title" }),
+        sec([makeWidget("personal_note", {
+          greeting: "Hi {{first name}},",
+          text: "Enough of you have asked that we have gone and set it up properly — trained, equipped and insured for it, not doing it as a favour on the side. Here is what it is and what it costs.",
+          signoff: "",
+          align: "Left",
+        })], { label: "A note from you" }),
+        premade("email_products"),
+        sec([makeWidget("list", {
+          items: [
+            "Booked the same way as everything else you have from us",
+            "The same crew you already know",
+            "Priced up front, before we start",
+          ],
+        })], { label: "Who it suits" }),
+        sec([makeWidget("button", { label: "Ask about it", url: "", style: "Solid", align: "Centre" })], { label: "Get in touch", padding: 8 }),
         footerSection(business),
       ];
       return doc;
@@ -370,4 +616,75 @@ export function ensureFooter(doc: BuilderDocument, business: EmailBusiness): Bui
   const has = doc.sections.some((s) => s.columns.some((c) => c.widgets.some((w) => w.kind === "email_footer")));
   if (has) return doc;
   return { ...doc, sections: [...doc.sections, footerSection(business)] };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The library (§11.9, D-146)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** An email preview is rendered at the width a mailbox gives it. */
+export const EMAIL_PREVIEW_WIDTH = EMAIL_WIDTH;
+
+/**
+ * One template's picture: the REAL email, through the email renderer.
+ *
+ * `renderEmailDocument` already returns a whole HTML document — tables,
+ * doctype, the locked footer and all — so the card shows the thing a mailbox
+ * would show and not an impression of it. `previewSrcDoc` passes a document
+ * through untouched, which is why this returns one.
+ */
+export function emailPreview(
+  doc: BuilderDocument,
+  business: EmailBusiness,
+  accent: string,
+  subject = "",
+  preheader = "",
+): TemplatePreview {
+  // The unsubscribe link is minted per recipient at send time; in a PICTURE it
+  // is a dead "#" rather than the {{unsubscribe_url}} token, because a card
+  // showing a raw merge tag is exactly what §11.9 exists to stop.
+  const ctx = makeEmailContext(doc, {
+    mode: "view", merge: SAMPLE_MERGE, accent, business, unsubscribeUrl: "#",
+  });
+  return {
+    // The subject reaches the <title>; it is filled here rather than escaped
+    // raw, so a picture never carries {{business name}} in it either.
+    html: renderEmailDocument(doc, ctx, {
+      subject: fill(subject, SAMPLE_MERGE), preheader: fill(preheader, SAMPLE_MERGE),
+    }),
+    width: EMAIL_PREVIEW_WIDTH,
+  };
+}
+
+/**
+ * Every email template as a library entry, with the basics last.
+ *
+ * The "empty page" card is not empty here and says so: the smallest email it
+ * is legal to send is a masthead, a note and the unsubscribe footer
+ * (`startingEmail`), so that is what the card offers and what its picture
+ * shows.
+ */
+export function emailLibrary(business: EmailBusiness, accent: string): TemplateEntry[] {
+  const entries: TemplateEntry[] = EMAIL_TEMPLATES.map((t) => ({
+    id: t.key,
+    title: t.name,
+    purpose: t.purpose,
+    businessTypes: t.businessTypes,
+    tags: t.tags,
+    useCase: t.useCase,
+    bestFor: t.bestFor,
+    featured: t.featured,
+    preview: () => emailPreview(t.build(business, accent), business, accent, t.subject, t.preheader),
+  }));
+  return [
+    ...entries,
+    blankEntry({
+      title: "Just the basics",
+      purpose: "Start simple",
+      tags: ["blank", "empty", "basic", "plain", "from scratch"],
+      useCase: "Your masthead, a note from you, and the unsubscribe footer the law asks for. The smallest email it is legal to send, and the right start when you only want to say one thing in your own words.",
+      bestFor: "A quick note to the list when none of the shapes above is what you mean.",
+      preview: () => emailPreview(startingEmail(business, accent), business, accent, "", ""),
+    }),
+  ];
 }

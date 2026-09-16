@@ -26,6 +26,7 @@ import { IadmModal, IadmButton } from "../../../components/IadmModal";
 import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { apiErrorMessage } from "../../../lib/apiErrorMessage";
 import { BuilderShell } from "../../BuilderShell";
+import { TemplateLibrary } from "../../TemplateLibrary";
 import { patchWidget, setPropPath, type BuilderDocument, type Widget } from "../../model";
 import type { RenderContext } from "../../render";
 import {
@@ -33,7 +34,7 @@ import {
   LANDING_CSS, FORM_FIELDS, defaultFormFields, type LandingContext,
 } from "./landingRender";
 import {
-  LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, LANDING_PREMADE_TAGS,
+  LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, LANDING_PREMADE_TAGS, landingLibrary,
   landingTemplateByKey, applyLandingBrand, type LandingBusiness,
 } from "./landingTemplates";
 
@@ -115,10 +116,15 @@ export function LandingBuilder(p: LandingBuilderProps) {
     business,
   }), [doc, kit, p.page, business]);
 
+  /** The library’s list — §11.9. Three shapes, each with a real render. */
+  const libraryEntries = useMemo(
+    () => landingLibrary(business, kit.colours.accent),
+    [business, kit]);
+
   const start = useCallback((key: string | null) => {
     const accent = kit.colours.accent;
     const t = key ? landingTemplateByKey(key) : null;
-    const built = t ? t.build(business, accent) : LANDING_TEMPLATES[0].build(business, accent);
+    const built = (t || LANDING_TEMPLATES[0]).build(business, accent);
     setDoc(applyLandingBrand(built, brandDefaults(kit)));
     setPicking(false);
     setResetKey((k) => k + 1);
@@ -159,46 +165,29 @@ export function LandingBuilder(p: LandingBuilderProps) {
 
   if (picking || !doc) {
     return (
-      <IadmModal
+      <TemplateLibrary
         open
         onClose={p.onClose}
         product="spark"
         eyebrow="SPARK · Landing page"
         title={`Start ${p.page.name}`}
-        subtitle="Each of these opens with a headline, some copy and a form — the shape that actually converts. Change anything on it."
-        size="info"
-        footer={<IadmButton variant="ghost" onClick={p.onClose} title="Close without building anything">Cancel</IadmButton>}
-      >
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-          {p.arionSitePath && (
-            <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "10px 12px", fontSize: 12, lineHeight: 1.5 }}>
-              <Globe size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
-              You have a website with us — <strong>build this as a page on your own site instead</strong> and it will live at your own address, with your own navigation around it.
-              {" "}
-              <Link to={p.arionSitePath} style={{ color: "#1D4ED8", fontWeight: 600 }}>Open the website builder</Link>.
-              <div style={{ color: "#475569", marginTop: 4 }}>
-                A hosted page here still works, and is the right answer for a one-off campaign you do not want on your site.
-              </div>
+        subtitle="Each of these opens with a headline, some copy and a form — the shape that actually converts. Pick one and change anything on it."
+        entries={libraryEntries}
+        onPick={start}
+        notice={p.arionSitePath ? (
+          <div style={{ background: "#EFF6FF", border: "1px solid #BFDBFE", borderRadius: 8, padding: "10px 12px", fontSize: 12, lineHeight: 1.5 }}>
+            <Globe size={13} style={{ verticalAlign: -2, marginRight: 6 }} />
+            You have a website with us — <strong>build this as a page on your own site instead</strong> and it will live at your own address, with your own navigation around it.
+            {" "}
+            <Link to={p.arionSitePath} style={{ color: "#1D4ED8", fontWeight: 600 }}>Open the website builder</Link>.
+            <div style={{ color: "#475569", marginTop: 4 }}>
+              A hosted page here still works, and is the right answer for a one-off campaign you do not want on your site.
             </div>
-          )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
-            {LANDING_TEMPLATES.map((t) => (
-              <button key={t.key} type="button" title={`${t.name} — ${t.description}`}
-                onClick={() => start(t.key)}
-                style={{ textAlign: "left", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 10, padding: 0, cursor: "pointer", overflow: "hidden" }}>
-                <PageThumb kind={t.key} />
-                <span style={{ display: "block", padding: "10px 12px" }}>
-                  <span style={{ display: "block", fontSize: 12, fontWeight: 600 }}>{t.name}</span>
-                  <span style={{ display: "block", fontSize: 11, color: "#5A7A8A", lineHeight: 1.35, marginTop: 3 }}>{t.description}</span>
-                </span>
-              </button>
-            ))}
           </div>
-        </div>
-      </IadmModal>
+        ) : undefined}
+      />
     );
   }
-
   const published = p.page.status === "published" && !!p.page.published_url;
 
   return (
@@ -372,24 +361,6 @@ function LandingExtras({ widget, sectionId, doc, onChange }: {
 /* ══════════════════════════════════════════════════════════════════════════
    Chrome
    ══════════════════════════════════════════════════════════════════════════ */
-
-function PageThumb({ kind }: { kind: string }) {
-  const bar = (w: string, h = 6, bg = "#E2E8F0") => <div style={{ height: h, width: w, background: bg, borderRadius: 2 }} />;
-  const wrap: React.CSSProperties = { height: 108, background: "#F2F6F9", padding: 12, display: "flex", flexDirection: "column", gap: 5 };
-  const form = <div style={{ marginTop: "auto", height: 22, border: "1px dashed #A8CDD8", borderRadius: 4, background: "#fff" }} />;
-  if (kind === "showcase") {
-    return <div style={wrap}>{bar("70%", 10, "#CBD5E1")}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 4 }}>
-        {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} style={{ height: 12, background: "#94A3B8", borderRadius: 2 }} />)}</div>
-      {form}</div>;
-  }
-  if (kind === "offer") {
-    return <div style={wrap}>{bar("80%", 12, "#CBD5E1")}{bar("100%", 4)}{bar("90%", 4)}
-      <div style={{ height: 12, width: "45%", background: "#EF6C33", borderRadius: 999, margin: "2px auto" }} />{form}</div>;
-  }
-  return <div style={wrap}><div style={{ height: 20, background: "#94A3B8", borderRadius: 3 }} />
-    {bar("70%", 8, "#CBD5E1")}{bar("100%", 4)}{bar("80%", 4)}{form}</div>;
-}
 
 const ghostBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid rgba(255,255,255,0.3)",

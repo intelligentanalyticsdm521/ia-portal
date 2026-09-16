@@ -13,9 +13,9 @@
  *
  * ── WHERE THE WORDS LIVE ──────────────────────────────────────────────────
  * Structure here; CLAUSE TEXT in the business's own clause library
- * (oliver.clause_library), referenced by key. A template that carried the
- * Rolling In It clause bodies inline would be a second copy of them, and the
- * day a business edits a clause the templates would still send the old one.
+ * (oliver.clause_library), referenced by key. A template that carried a
+ * business's clause bodies inline would be a second copy of them, and the
+ * day they edited a clause the templates would still send the old one.
  * `hydrateClauses()` fills the slots from whatever the library holds.
  *
  * Pure: no React, no fetch. The adapter supplies the brand kit and the library.
@@ -23,7 +23,10 @@
 import {
   makeSection, makeWidget, emptyDocument, type BuilderDocument, type Section, type Widget,
 } from "./model";
-import { DEFAULT_CONSENT } from "./render";
+import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "./render";
+import {
+  SAMPLE_MERGE, blankEntry, type TemplateEntry, type TemplatePreview,
+} from "./templateLibraryModel";
 
 export interface PremadeSection {
   key: string;
@@ -35,10 +38,28 @@ export interface PremadeSection {
   build: () => Section;
 }
 
+/**
+ * A shipped document template, as the library (§11.9, D-146) shows it.
+ *
+ * `description` is GONE. It said what the template looked like — "dark title
+ * band", "light header with an accent rule" — which is the thing D-146 asked
+ * us to stop doing: the picture shows what it looks like, and the words say
+ * what it is FOR and who it is for.
+ */
 export interface ShippedTemplate {
   key: string;
   name: string;
-  description: string;
+  /** The badge: what kind of document this is, in the client's words. */
+  purpose: string;
+  /** From templateLibrary.BUSINESS_TYPES. "Any business" answers every chip. */
+  businessTypes: string[];
+  /** Extra words the search should find — a trade, a synonym, a situation. */
+  tags: string[];
+  /** Two or three sentences: what it is for and when you would send it. */
+  useCase: string;
+  /** The trades and situations it suits, as one line. */
+  bestFor: string;
+  featured?: boolean;
   build: () => BuilderDocument;
 }
 
@@ -53,7 +74,7 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
   {
     key: "title_dark",
     name: "Title page — dark band",
-    description: "Your logo on a dark strip, customer and property filled in. The Rolling In It look.",
+    description: "Your logo on a dark strip, with the customer and the property already filled in.",
     tags: ["Title pages"],
     build: () => sec([
       makeWidget("doc_header", {
@@ -75,7 +96,7 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
   {
     key: "title_light",
     name: "Title page — light with accent rule",
-    description: "Slim header, big title, one accent line. The MS Moments look.",
+    description: "A slim header, a big title and one accent line under it.",
     tags: ["Title pages"],
     build: () => sec([
       makeWidget("doc_header", {
@@ -260,8 +281,13 @@ const AGREEMENT_CLAUSE_SLOTS: Record<string, string[]> = {
 export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
   {
     key: "service_agreement",
-    name: "Service agreement (Rolling In It style)",
-    description: "Dark title band, numbered clauses from your library, a rate-card pricing schedule, a property plan and e-signature.",
+    name: "Seasonal service agreement",
+    purpose: "Recurring service agreement",
+    businessTypes: ["Snow & ice", "Lawn & landscape", "Cleaning"],
+    tags: ["contract", "season", "rate card", "recurring", "signature"],
+    useCase: "The agreement a customer signs before a season of recurring work starts. It carries your numbered terms, a rate card the customer can check a storm invoice against, the service plan for that property, and an electronic signature.",
+    bestFor: "Snow and ice contracts, seasonal lawn care, recurring cleaning rounds — anywhere the work repeats and the rate is per visit.",
+    featured: true,
     build: () => {
       const doc = fromKeys(["title_dark", "at_a_glance"]);
       for (const [label, keys] of Object.entries(AGREEMENT_CLAUSE_SLOTS)) {
@@ -288,16 +314,43 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
   },
   {
     key: "platform_proposal",
-    name: "Platform proposal (MS Moments style)",
-    description: "Light header with an accent rule, a recommended path, tier cards per product and a total.",
+    name: "Software platform proposal",
+    purpose: "Tiered plans",
+    businessTypes: ["Agencies & software", "Professional services"],
+    tags: ["tiers", "plans", "recommended", "subscription", "software"],
+    useCase: "For selling a product or a service in tiers, where the customer picks one. Three plans sit side by side with one marked Recommended, and only what they choose is added to the total.",
+    bestFor: "Agencies, software and anyone quoting good / better / best rather than one number.",
+    featured: true,
     build: () => {
       const doc = fromKeys(["title_light"], { style: "light" });
       const path = sec([
         makeWidget("heading", { text: "Your recommended path", level: 2 }),
-        makeWidget("paragraph", { text: "" }),
+        makeWidget("paragraph", {
+          text: "Here is what we would start with, and what we would leave until later. Every plan below can be moved up or down at any time — nothing here locks you in for a year.",
+        }),
       ], { numbered: true, label: "Your recommended path" });
       doc.sections.push(path);
-      doc.sections.push(premadeByKey("cards")!.build());
+      const cards = premadeByKey("cards")!.build();
+      (cards.columns[0].widgets[0].props as any) = {
+        heading: "Choose your plan",
+        intro: "Pick one. The total below counts only the plan you choose.",
+        cards: [
+          {
+            name: "Essentials", pitch: "Everything you need to get going", price: "$249", per: "per month",
+            features: ["One workspace, up to five people", "Email support, next business day", "Monthly summary of what happened"],
+          },
+          {
+            name: "Growth", pitch: "For a team that is already busy", price: "$549", per: "per month",
+            features: ["Everything in Essentials", "Up to twenty people", "Priority support, same business day", "A quarterly review with us"],
+            recommended: true,
+          },
+          {
+            name: "Full service", pitch: "We run it with you", price: "$1,150", per: "per month",
+            features: ["Everything in Growth", "Unlimited people", "A named contact who knows your account", "We do the setup and the changes for you"],
+          },
+        ],
+      };
+      doc.sections.push(cards);
       doc.sections.push(premadeByKey("totals")!.build());
       doc.sections.push(premadeByKey("acceptance")!.build());
       doc.sections.push(premadeByKey("footer_notes")!.build());
@@ -307,7 +360,12 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
   {
     key: "simple_proposal",
     name: "Simple proposal",
-    description: "A title, what you will do, what it costs, and a signature. Four sections.",
+    purpose: "Simple quote",
+    businessTypes: ["Any business"],
+    tags: ["quote", "short", "one page", "fast"],
+    useCase: "A title, what you will do, what it costs and a signature. Four sections and nothing else, for the job you could have quoted in an email but want signed for.",
+    bestFor: "Any trade, any one-off job small enough to describe in a paragraph.",
+    featured: true,
     build: () => {
       const doc = fromKeys(["title_light"]);
       doc.sections.push(sec([
@@ -319,6 +377,361 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
       ], { numbered: true, label: "What it costs" }));
       doc.sections.push(premadeByKey("totals")!.build());
       doc.sections.push(premadeByKey("acceptance")!.build());
+      return doc;
+    },
+  },
+  {
+    key: "project_proposal",
+    name: "One-off project proposal",
+    purpose: "One-off project",
+    businessTypes: ["Lawn & landscape", "Home services", "HVAC & plumbing"],
+    tags: ["project", "install", "timeline", "one-off", "deposit"],
+    useCase: "For a job with a start and an end: what is being built, what happens in what order, what it costs and when you need paying. The timeline table is the part that stops the phone calls asking how long it will take.",
+    bestFor: "A landscaping install, a remodel, a replacement or any quoted project measured in days rather than months.",
+    build: () => {
+      const doc = fromKeys(["title_light"]);
+      (doc.sections[0].columns[0].widgets[0].props as any) = {
+        style: "light_rule",
+        title: "Project Proposal",
+        subtitle: "Prepared for {{customer.name}} · {{property.address}}",
+        bandRight: "Valid until {{contract.valid_until}}",
+      };
+      doc.sections.push(sec([
+        makeWidget("key_facts", {
+          rows: [
+            { label: "Site", value: "{{property.name}}" },
+            { label: "Prepared by", value: "{{business.name}}" },
+            { label: "Questions to", value: "{{business.email}} · {{business.phone}}" },
+            { label: "Price holds until", value: "{{contract.valid_until}}" },
+          ],
+        }),
+      ], { padding: 12 }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "What we will build", level: 2 }),
+        makeWidget("paragraph", {
+          text: "Everything below is included in the price. If something is found once we open the ground up — a buried line, a failed base, water where it should not be — we stop, photograph it and price the extra work before we carry on. Nothing is added to your bill without a yes from you first.",
+        }),
+        makeWidget("list", {
+          items: [
+            "Site protection, and the lawn and drive made good when we leave",
+            "Excavation, base preparation and removal of everything we take out",
+            "Supply and installation of the materials listed in the pricing below",
+            "A final walk round with you before we load up",
+          ],
+        }),
+      ], { numbered: true, label: "What we will build" }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "How the work will run", level: 2 }),
+        makeWidget("data_table", {
+          columns: ["Stage", "What happens", "How long"],
+          rows: [
+            ["1 · Before we start", "We confirm the date, mark out the area with you and arrange access", "1 day"],
+            ["2 · Groundwork", "Excavation, spoil taken away, base laid and compacted", "2 days"],
+            ["3 · Installation", "The work itself, built to the drawing you signed off", "3 days"],
+            ["4 · Finishing", "Clean down, photographs, and your walk round", "1 day"],
+          ],
+        }),
+      ], { numbered: true, label: "How the work will run" }));
+      doc.sections.push(sec([
+        makeWidget("priced_line", {
+          name: "Groundwork and base preparation",
+          description: "Excavation to depth, spoil removed from site, compacted sub-base laid and levelled.",
+          features: ["Skip and disposal included", "Ground left level and clean"],
+          quantity: 1, unit_price: 2850,
+        }),
+        makeWidget("priced_line", {
+          name: "Supply and installation",
+          description: "All materials, labour and plant hire for the installation described above.",
+          features: ["Materials guaranteed for ten years", "Workmanship guaranteed for two"],
+          quantity: 1, unit_price: 6400,
+        }),
+      ], { numbered: true, label: "What it costs" }));
+      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(sec([
+        makeWidget("callout", {
+          heading: "",
+          panels: [
+            { title: "Payment", tone: "accent", body: "A third on the day we start, a third at the end of the groundwork, and the balance within seven days of your walk round." },
+            { title: "Weather", tone: "warn", body: "Heavy rain or frozen ground can move a stage by a day or two. We will tell you the same day it happens, not afterwards." },
+          ],
+        }),
+      ], { label: "Payment and weather" }));
+      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(premadeByKey("footer_notes")!.build());
+      return doc;
+    },
+  },
+  {
+    key: "consulting_engagement",
+    name: "Consulting engagement",
+    purpose: "Consulting engagement",
+    businessTypes: ["Professional services", "Agencies & software"],
+    tags: ["consulting", "milestones", "goals", "retainer", "scope"],
+    useCase: "For selling thinking rather than materials. It opens on what the client is trying to achieve, sets out how you will work with them, then puts the milestones and the fees where they can be read together.",
+    bestFor: "Consultants, accountants, agencies and anyone billing for an engagement with stages rather than a product.",
+    build: () => {
+      const doc = fromKeys(["title_light"]);
+      (doc.sections[0].columns[0].widgets[0].props as any) = {
+        style: "light_rule",
+        title: "Consulting Engagement",
+        subtitle: "Prepared for {{customer.name}}",
+        bandRight: "Valid until {{contract.valid_until}}",
+      };
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "What you are trying to achieve", level: 2 }),
+        makeWidget("paragraph", {
+          text: "This is what we heard when we spoke. If any of it is wrong, tell us before you sign — the plan below is built on it and it is much cheaper to change here than halfway through.",
+        }),
+        makeWidget("list", {
+          items: [
+            "A clear picture of where the time and the money are going today",
+            "One way of working that the whole team can follow",
+            "Something that keeps running after we leave",
+          ],
+        }),
+      ], { numbered: true, label: "What you are trying to achieve" }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "How we will work", level: 2 }),
+        makeWidget("paragraph", {
+          text: "We work in short stages with something to look at after each one. You get a named person, not a rota, and a standing half hour each week to ask anything. Everything we produce is yours, in a format you can open without us.",
+        }),
+      ], { numbered: true, label: "How we will work" }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "Milestones", level: 2 }),
+        makeWidget("data_table", {
+          columns: ["Milestone", "What you get", "By"],
+          rows: [
+            ["Discovery", "Interviews, a look at your numbers, and a written summary of what we found", "End of week 2"],
+            ["Recommendations", "A short document with the options, the cost of each and what we would do", "End of week 4"],
+            ["Implementation support", "We work alongside your team while the change beds in", "Weeks 5 to 10"],
+            ["Handover", "Written guidance, a session with the team, and thirty days of questions answered", "End of week 12"],
+          ],
+        }),
+      ], { numbered: true, label: "Milestones" }));
+      doc.sections.push(sec([
+        makeWidget("priced_line", {
+          name: "Discovery and recommendations",
+          description: "Weeks one to four, fixed price. Paid on delivery of the written recommendations.",
+          features: ["Interviews and review", "Written findings", "Options with costs"],
+          quantity: 1, unit_price: 6500,
+        }),
+        makeWidget("priced_line", {
+          name: "Implementation support",
+          description: "Weeks five to twelve, two days a week.",
+          features: ["A named consultant", "Weekly working session", "Handover materials"],
+          quantity: 8, unit_price: 1600,
+        }),
+      ], { numbered: true, label: "Fees" }));
+      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(premadeByKey("acceptance")!.build());
+      return doc;
+    },
+  },
+  {
+    key: "maintenance_plan",
+    name: "Maintenance plan",
+    purpose: "Maintenance plan",
+    businessTypes: ["HVAC & plumbing", "Cleaning", "Lawn & landscape", "Snow & ice", "Home services"],
+    tags: ["maintenance", "subscription", "monthly", "visits", "priority"],
+    useCase: "For the plan a customer pays for every month whether they call you or not. It says what is included, when you will visit, what it costs a month and what still gets charged separately.",
+    bestFor: "Heating and plumbing cover, cleaning contracts, grounds maintenance, gutter and roof rounds — any agreement billed monthly.",
+    build: () => {
+      const doc = fromKeys(["title_light"]);
+      (doc.sections[0].columns[0].widgets[0].props as any) = {
+        style: "light_rule",
+        title: "Maintenance Plan",
+        subtitle: "Prepared for {{customer.name}} · {{property.name}}",
+        bandRight: "Starts {{contract.start_date}}",
+      };
+      doc.sections.push(sec([
+        makeWidget("key_facts", {
+          rows: [
+            { label: "Property", value: "{{property.address}}" },
+            { label: "Plan starts", value: "{{contract.start_date}}" },
+            { label: "Billed", value: "Monthly, in advance" },
+            { label: "Cancel", value: "Any time, with 30 days' notice" },
+          ],
+        }),
+      ], { padding: 12 }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "What is included", level: 2 }),
+        makeWidget("list", {
+          items: [
+            "Two full service visits a year, booked in with you a fortnight ahead",
+            "A written check of everything we look at, sent the same day",
+            "Priority booking — plan customers go to the front of the queue",
+            "No call-out charge during working hours",
+            "Ten per cent off any parts or extra work we quote",
+          ],
+        }),
+      ], { numbered: true, label: "What is included" }));
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "Your visit schedule", level: 2 }),
+        makeWidget("data_table", {
+          columns: ["When", "Visit", "What we do"],
+          rows: [
+            ["Spring", "Full service", "Everything checked, cleaned and tested, with a written report"],
+            ["Autumn", "Pre-season check", "The check that stops a breakdown in the first cold week"],
+            ["Any time", "Priority call-out", "Same or next working day, no call-out charge in hours"],
+          ],
+        }),
+      ], { numbered: true, label: "Your visit schedule" }));
+      doc.sections.push(sec([
+        makeWidget("priced_line", {
+          name: "Maintenance plan",
+          description: "Billed monthly in advance. Cancel with thirty days' notice; nothing to pay after that.",
+          features: ["Two service visits a year", "Priority booking", "No call-out charge in hours"],
+          quantity: 12, unit_price: 39,
+          cadence: "per year",
+        }),
+      ], { numbered: true, label: "What it costs" }));
+      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(sec([
+        makeWidget("callout", {
+          heading: "",
+          panels: [
+            { title: "Not included", tone: "warn", body: "Parts, and any repair we quote separately. Work outside working hours is charged at the out-of-hours rate, less your plan discount." },
+            { title: "If you move", tone: "accent", body: "Tell us and the plan moves with you, or stops at the end of the month you move — whichever you prefer." },
+          ],
+        }),
+      ], { label: "The small print" }));
+      doc.sections.push(premadeByKey("acceptance")!.build());
+      return doc;
+    },
+  },
+  {
+    key: "commercial_bid",
+    name: "Commercial services bid",
+    purpose: "Recurring service agreement",
+    businessTypes: ["Snow & ice", "Cleaning", "Lawn & landscape"],
+    tags: ["multi-site", "bid", "tender", "per site", "commercial"],
+    useCase: "For bidding on more than one property at once. Each site gets its own block with its own line items and its own subtotal, and the document ends with one total for the lot.",
+    bestFor: "Property managers, retail groups, housing associations and anyone asking you to price a portfolio rather than a building.",
+    build: () => {
+      const doc = fromKeys(["title_dark"]);
+      (doc.sections[0].columns[0].widgets[0].props as any) = {
+        style: "dark_band",
+        title: "Commercial Services Bid",
+        subtitle: "Prepared for {{customer.name}}. Pricing below is per site and holds for the full term.",
+        bandRight: "Term {{contract.start_date}} – {{contract.end_date}}",
+      };
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "Scope of work", level: 2 }),
+        makeWidget("paragraph", {
+          text: "One crew, one schedule and one invoice across every site listed below. Each property is priced on its own so you can add or drop a site without re-pricing the rest.",
+        }),
+        makeWidget("list", {
+          items: [
+            "A named supervisor for the account, reachable directly",
+            "Photographs of every completed visit, filed by site and date",
+            "One monthly invoice with a per-site breakdown",
+            "Cover arranged by us when someone is off — never a missed visit",
+          ],
+        }),
+      ], { numbered: true, label: "Scope of work" }));
+      const siteA = premadeByKey("multisite")!.build();
+      (siteA.columns[0].widgets[0].props as any) = {
+        locationId: "", heading: "Site 1 — Main building",
+        items: [
+          { description: "Scheduled service visit", quantity: 24, unit_price: 185 },
+          { description: "Entrances, walkways and steps", quantity: 24, unit_price: 65 },
+        ],
+      };
+      doc.sections.push(siteA);
+      const siteB = premadeByKey("multisite")!.build();
+      (siteB.columns[0].widgets[0].props as any) = {
+        locationId: "", heading: "Site 2 — Car park and service yard",
+        items: [
+          { description: "Scheduled service visit", quantity: 24, unit_price: 240 },
+          { description: "Materials applied as needed", quantity: 12, unit_price: 110 },
+        ],
+      };
+      doc.sections.push(siteB);
+      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(sec([
+        makeWidget("clauses", {
+          heading: "Terms",
+          items: [
+            { title: "Term and renewal", body: "The term runs from the start date to the end date above and renews only if both of us agree in writing. Either of us may end it with sixty days' notice." },
+            { title: "Adding or removing a site", body: "A site can be added or dropped with thirty days' notice. The price for every other site is unchanged." },
+            { title: "Invoicing", body: "One invoice a month, in arrears, with a per-site breakdown and the visit photographs attached. Payment is due thirty days from the invoice date." },
+            { title: "Insurance", body: "We carry public liability and employer's liability cover and will send certificates before the first visit and at every renewal." },
+          ],
+        }),
+      ], { numbered: true, label: "Terms" }));
+      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(premadeByKey("footer_notes")!.build());
+      return doc;
+    },
+  },
+  {
+    key: "partnership_proposal",
+    name: "Community partnership proposal",
+    purpose: "Sponsorship & partnership",
+    businessTypes: ["Non-profit"],
+    tags: ["sponsorship", "partnership", "donation", "community", "charity"],
+    useCase: "For asking a business to support your work. It opens on what you do and who it reaches, then offers two or three levels of support side by side so the reader chooses rather than decides whether.",
+    bestFor: "Charities, churches, clubs and community groups approaching a local business or a returning supporter.",
+    build: () => {
+      const doc = fromKeys(["title_light"]);
+      (doc.sections[0].columns[0].widgets[0].props as any) = {
+        style: "light_rule",
+        title: "Community Partnership",
+        subtitle: "An invitation to {{customer.name}} from {{business.name}}",
+        bandRight: "For the coming year",
+      };
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "Why we are writing", level: 2 }),
+        makeWidget("paragraph", {
+          text: "We run programmes that people in this town rely on every week, and we do it on a budget that only works because local businesses stand behind it. We are asking you to be one of them for the coming year.",
+        }),
+        makeWidget("key_facts", {
+          rows: [
+            { label: "People we reached last year", value: "1,240" },
+            { label: "Volunteers giving their time", value: "86" },
+            { label: "Of every pound given, spent on the work", value: "92p" },
+            { label: "Years we have been here", value: "17" },
+          ],
+        }),
+      ], { numbered: true, label: "Why we are writing" }));
+      const levels = premadeByKey("cards")!.build();
+      (levels.columns[0].widgets[0].props as any) = {
+        heading: "How you could help",
+        intro: "Choose the level that suits you. Every one of them is acknowledged, and none of them commits you beyond the year.",
+        cards: [
+          {
+            name: "Supporter", pitch: "Keeps the lights on", price: "$500", per: "for the year",
+            features: ["Your name on our supporters page", "A thank you in our annual report", "An invitation to the summer open day"],
+          },
+          {
+            name: "Partner", pitch: "Funds a programme for a term", price: "$2,500", per: "for the year",
+            features: ["Everything in Supporter", "Your logo at the programme itself", "A short piece about you in our newsletter", "Two places at the annual dinner"],
+            recommended: true,
+          },
+          {
+            name: "Principal partner", pitch: "Puts your name beside the work", price: "$7,500", per: "for the year",
+            features: ["Everything in Partner", "Named on the programme for the full year", "A team volunteering day arranged for you", "A visit and a photograph for your own channels"],
+          },
+        ],
+      };
+      doc.sections.push(levels);
+      doc.sections.push(sec([
+        makeWidget("heading", { text: "What your support pays for", level: 2 }),
+        makeWidget("list", {
+          items: [
+            "$500 runs a week of after-school sessions for twenty children",
+            "$2,500 keeps the food programme stocked for a full term",
+            "$7,500 funds a part-time coordinator for the year",
+          ],
+        }),
+      ], { numbered: true, label: "What your support pays for" }));
+      doc.sections.push(sec([
+        makeWidget("paragraph", {
+          text: "If none of these is quite right, say so and we will find something that is. A partnership that works for you is worth far more to us than a number on a page.",
+        }),
+      ], { label: "One more thing", padding: 16 }));
+      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(premadeByKey("footer_notes")!.build());
       return doc;
     },
   },
@@ -380,4 +793,106 @@ export function applyBrandDefaults(
       bodyFont: doc.settings.bodyFont || kit.bodyFont,
     },
   };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The library (§11.9, D-146)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** What the gallery needs to draw a real picture of a proposal template. */
+export interface ProposalLibraryOptions {
+  /** The business's own clause library, so the agreement's terms show filled. */
+  clauses?: ClauseRow[];
+  accent?: string;
+  headingFont?: string;
+  bodyFont?: string;
+  business?: { name: string; tagline?: string; logoUrl?: string | null; contactLine?: string };
+}
+
+/** The page width a document preview is rendered at, before it is scaled. */
+export const PROPOSAL_PREVIEW_WIDTH = 760;
+
+/**
+ * One template's picture: the REAL document through THE renderer.
+ *
+ * Rendered in "view" mode with `SAMPLE_MERGE`, so the card reads like a
+ * finished proposal instead of a page of `__________` where merge fields go.
+ * Nothing here ever reaches a customer: the adapter builds the template again,
+ * unfilled, when the author picks it.
+ */
+export function proposalPreview(doc: BuilderDocument, o: ProposalLibraryOptions = {}): TemplatePreview {
+  const ctx = makeContext(doc, {
+    mode: "view",
+    merge: SAMPLE_MERGE,
+    accent: o.accent || doc.settings.accent,
+    headingFont: o.headingFont,
+    bodyFont: o.bodyFont,
+    business: o.business || {
+      name: SAMPLE_MERGE["business.name"],
+      contactLine: `${SAMPLE_MERGE["business.email"]} · ${SAMPLE_MERGE["business.phone"]}`,
+    },
+  });
+  return { html: renderDocument(doc, ctx), css: DOCUMENT_CSS, width: PROPOSAL_PREVIEW_WIDTH };
+}
+
+/**
+ * Every proposal template as a library entry, with the empty page last.
+ *
+ * The adapter passes its clause library and brand kit; it gets back a list it
+ * hands straight to `TemplateLibrary` and a key it hands straight back to
+ * `templateByKey`. No adapter draws a grid of its own any more.
+ */
+export function proposalLibrary(o: ProposalLibraryOptions = {}): TemplateEntry[] {
+  const entries: TemplateEntry[] = SHIPPED_TEMPLATES.map((t) => ({
+    id: t.key,
+    title: t.name,
+    purpose: t.purpose,
+    businessTypes: t.businessTypes,
+    tags: t.tags,
+    useCase: t.useCase,
+    bestFor: t.bestFor,
+    featured: t.featured,
+    preview: () => proposalPreview(hydrateClauses(t.build(), o.clauses || []), o),
+  }));
+  return [...entries, blankEntry()];
+}
+
+/**
+ * A business's OWN saved templates, in the same library.
+ *
+ * "Save as template" browsing is not a second screen: a saved row is an entry
+ * like any other, badged so it is obvious whose it is, with a picture rendered
+ * from the document that was actually saved.
+ */
+export interface SavedTemplateRow {
+  id: string;
+  name: string;
+  description?: string | null;
+  document?: unknown;
+}
+
+export const SAVED_PURPOSE = "Your templates";
+
+export function savedTemplateEntries(
+  rows: SavedTemplateRow[],
+  open: (row: SavedTemplateRow) => BuilderDocument,
+  o: ProposalLibraryOptions = {},
+): TemplateEntry[] {
+  return rows.map((r) => ({
+    id: `saved:${r.id}`,
+    title: r.name,
+    purpose: SAVED_PURPOSE,
+    businessTypes: ["Any business"],
+    tags: ["saved", "mine", "my templates"],
+    useCase: r.description?.trim()
+      ? r.description.trim()
+      : "One of your own saved templates. It opens exactly as you saved it, and anything on it can still be changed.",
+    bestFor: "Whatever you saved it for — your own wording, your own order, already agreed.",
+    preview: () => proposalPreview(open(r), o),
+  }));
+}
+
+/** The id a saved entry carries, back to the row it came from. */
+export function savedIdOf(entryId: string): string | null {
+  return entryId.startsWith("saved:") ? entryId.slice("saved:".length) : null;
 }
