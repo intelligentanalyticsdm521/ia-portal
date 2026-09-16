@@ -1,0 +1,203 @@
+{
+  "_comment": [
+    "SHARED FIXTURE — byte-identical in Portal-septa and oliver-api-septa.",
+    "",
+    "The Portal runs these through src/builder/totals.ts + merge.ts; oliver-api",
+    "runs the same cases through lib/documentModel.js. Each repo asserts the",
+    "SAME expected numbers, so the two implementations cannot drift: change the",
+    "arithmetic in one and the other goes red.",
+    "",
+    "The discipline is SEAM-6-A's, which blesses the three byte-identical copies",
+    "of renderTemplate.js kept honest by test/fixtures/merge-tag-cases.json.",
+    "",
+    "Copy this file whole when you change it. Do not edit one copy."
+  ],
+  "cases": [
+    {
+      "name": "a rate card has no total — comparison cards and pricing tables never sum",
+      "document": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          {
+            "id": "s1", "label": "Pricing schedule", "numbered": true, "layout": 1,
+            "width": "contained", "background": "", "padding": 24, "theme": "light",
+            "visibility": "customer",
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "pricing_table", "props": { "heading": "Pricing schedule", "rows": [
+                { "name": "Per-push Plowing", "basis": "Each 2\" trigger", "rate": "$185.00 / push" },
+                { "name": "Ice Control", "basis": "Per application", "rate": "$210.00 / application" }
+              ] } },
+              { "id": "w2", "kind": "comparison_cards", "props": { "heading": "Choose your plan", "cards": [
+                { "name": "Standard", "price": "$8.00", "per": "/mo", "features": ["CRM"] },
+                { "name": "Pro", "price": "$32.00", "per": "/mo", "features": ["Everything in Standard"], "recommended": true }
+              ] } }
+            ] }]
+          }
+        ]
+      },
+      "options": { "taxRate": 0, "discount": 0 },
+      "merge": {},
+      "expect": {
+        "subtotal": 0,
+        "tax": 0,
+        "total": 0,
+        "line_count": 0,
+        "sites": []
+      }
+    },
+    {
+      "name": "priced lines sum once, with tax and a discount",
+      "document": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          {
+            "id": "s1", "layout": 1, "width": "contained", "background": "", "padding": 24,
+            "theme": "light", "visibility": "customer",
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "priced_line", "props": { "name": "Seasonal Plow Contract", "quantity": 1, "unit_price": 4200 } },
+              { "id": "w2", "kind": "priced_line", "props": { "name": "Ice Melt Application", "quantity": 3, "unit_price": 95.5 } }
+            ] }]
+          }
+        ]
+      },
+      "options": { "taxRate": 0.07, "discount": 100 },
+      "merge": {},
+      "expect": {
+        "subtotal": 4486.5,
+        "tax": 314.06,
+        "total": 4700.56,
+        "line_count": 2,
+        "sites": []
+      }
+    },
+    {
+      "name": "multi-site: a subtotal per property and ONE total",
+      "document": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          {
+            "id": "s1", "layout": 1, "width": "contained", "background": "", "padding": 24,
+            "theme": "light", "visibility": "customer",
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "property_block", "props": {
+                "locationId": "aaaaaaaa-0000-4000-8000-000000000001", "heading": "Des Moines campus",
+                "items": [
+                  { "description": "Per-push Plowing", "quantity": 12, "unit_price": 185 },
+                  { "description": "Sidewalk Shoveling", "quantity": 12, "unit_price": 95 }
+                ] } },
+              { "id": "w2", "kind": "property_block", "props": {
+                "locationId": "aaaaaaaa-0000-4000-8000-000000000002", "heading": "Waukee",
+                "items": [
+                  { "description": "Per-push Plowing", "quantity": 8, "unit_price": 145 }
+                ] } },
+              { "id": "w3", "kind": "totals", "props": { "heading": "Your total" } }
+            ] }]
+          }
+        ]
+      },
+      "options": { "taxRate": 0, "discount": 0 },
+      "merge": {},
+      "expect": {
+        "subtotal": 4520,
+        "tax": 0,
+        "total": 4520,
+        "line_count": 3,
+        "sites": [
+          { "name": "Des Moines campus", "subtotal": 3360 },
+          { "name": "Waukee", "subtotal": 1160 }
+        ]
+      }
+    },
+    {
+      "name": "an internal section is priced out of the document and out of the customer's copy",
+      "document": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          {
+            "id": "s1", "layout": 1, "width": "contained", "background": "", "padding": 24,
+            "theme": "light", "visibility": "customer",
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "priced_line", "props": { "name": "Plowing", "quantity": 1, "unit_price": 500 } }
+            ] }]
+          },
+          {
+            "id": "s2", "layout": 1, "width": "contained", "background": "", "padding": 24,
+            "theme": "light", "visibility": "internal",
+            "columns": [{ "id": "c2", "widgets": [
+              { "id": "w2", "kind": "priced_line", "props": { "name": "Our cost", "quantity": 1, "unit_price": 320 } }
+            ] }]
+          }
+        ]
+      },
+      "options": { "taxRate": 0, "discount": 0 },
+      "merge": {},
+      "expect": {
+        "subtotal": 500,
+        "tax": 0,
+        "total": 500,
+        "line_count": 1,
+        "sites": []
+      }
+    },
+    {
+      "name": "a recurring price carries its cadence into the line description",
+      "document": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          {
+            "id": "s1", "layout": 1, "width": "contained", "background": "", "padding": 24,
+            "theme": "light", "visibility": "customer",
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "priced_line", "props": { "name": "ARION Standard", "quantity": 1, "unit_price": 29.99, "cadence": "billed monthly" } }
+            ] }]
+          }
+        ]
+      },
+      "options": { "taxRate": 0, "discount": 0 },
+      "merge": {},
+      "expect": {
+        "subtotal": 29.99,
+        "tax": 0,
+        "total": 29.99,
+        "line_count": 1,
+        "first_line_description": "ARION Standard (billed monthly)",
+        "sites": []
+      }
+    }
+  ],
+  "merge_cases": [
+    {
+      "name": "a filled token becomes the value",
+      "text": "Customer: {{customer.name}}",
+      "context": { "customer.name": "Hope Ministries" },
+      "view": "Customer: Hope Ministries",
+      "unfilled": []
+    },
+    {
+      "name": "an UNFILLED token becomes a blank line — it never reaches the customer as a token",
+      "text": "The trigger is {{snow_trigger}} of accumulation.",
+      "context": {},
+      "view": "The trigger is __________ of accumulation.",
+      "unfilled": ["snow_trigger"]
+    },
+    {
+      "name": "a token whose value is blank counts as unfilled",
+      "text": "Property: {{property.name}}",
+      "context": { "property.name": "   " },
+      "view": "Property: __________",
+      "unfilled": ["property.name"]
+    },
+    {
+      "name": "several tokens in one run, some filled and some not",
+      "text": "{{customer.name}} at {{property.address}} from {{contract.start_date}}",
+      "context": { "customer.name": "Hope Ministries", "contract.start_date": "November 1, 2026" },
+      "view": "Hope Ministries at __________ from November 1, 2026",
+      "unfilled": ["property.address"]
+    }
+  ]
+}

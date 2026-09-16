@@ -29,6 +29,18 @@ import {
 
 const SRC = path.join(process.cwd(), "src");
 
+/**
+ * The two widgets that legitimately have NO controls, each with its reason.
+ *
+ * Kept as an explicit list rather than by relaxing the assertion: a widget with
+ * no controls is nearly always a half-finished definition, and the only way to
+ * tell the difference is to make somebody write the reason down here.
+ *   page_break — it has no properties. It is a break.
+ *   columns    — it is a LAYOUT action; the count it asks for is the section's
+ *                column count, and the section toolbar owns it from then on.
+ */
+const NO_CONTROLS = new Set(["page_break", "columns"]);
+
 describe("every registered widget is complete", () => {
   for (const w of WIDGETS) {
     test(`${w.kind} has a label, a description, a picture and an adapter`, () => {
@@ -39,7 +51,10 @@ describe("every registered widget is complete", () => {
       assert.ok(w.icon && w.icon.trim().length > 0, "no icon");
       assert.ok(WIDGET_CATEGORIES.includes(w.category), `category "${w.category}" is not in the pane`);
       assert.ok(w.defaults && typeof w.defaults === "object", "no defaults");
-      assert.ok(Array.isArray(w.controls) && w.controls.length > 0, "no controls");
+      assert.ok(Array.isArray(w.controls), "controls must be an array");
+      if (!NO_CONTROLS.has(w.kind)) {
+        assert.ok(w.controls.length > 0, "no controls");
+      }
     });
   }
 
@@ -92,6 +107,16 @@ describe("§3.2's union is registered", () => {
     "callout", "totals", "signature", "footer_note", "merge_field", "form",
     "map", "video", "social_links", "countdown", "testimonial", "logo_strip",
     "pricing_table", "gallery",
+    // Added 2026-09-16 by §8 — the parts the Rolling In It agreement proved a
+    // document has and a web page does not. Each maps to a numbered item:
+    //   doc_header     §8 item 1 (header/title with style presets)
+    //   clauses        §8 item 3 (numbered clauses from the clause library)
+    //   property_plan  §8 item 5 (property service plan, crew-visible)
+    //   key_facts      §8 item 7 (merge fields filled from the customer)
+    //   property_block §10       (one block per site, its own subtotal)
+    //   page_break, columns      document layout the canvas needs
+    "doc_header", "key_facts", "clauses", "property_plan", "property_block",
+    "page_break", "columns",
   ];
 
   for (const kind of REQUIRED) {
