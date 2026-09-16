@@ -504,7 +504,14 @@ export function CustomerModal({
               jobs={jobsAtFocusedLocation}
               customerProfile={customerProfile}
               onBack={() => setFocusedLocationId(null)}
-              onChanged={() => { reloadModel(); reload(); onChanged?.(); }}
+              /* The MODAL's own two reloads, and deliberately NOT the page's.
+                 OliverPageWrapper swaps its children for a spinner while the
+                 list refetches, which unmounts this modal and takes the open
+                 location with it — so editing a gate code bounced the user
+                 back to the customer's Overview. Nothing on this panel changes
+                 what the list shows; adding or archiving a location does, and
+                 that call still tells the page. */
+              onChanged={() => { reloadModel(); reload(); }}
               onOpenJob={(jobId) => { setFocusedLocationId(null); setTab("jobs"); setFocusedJobId(jobId); }}
             />
           )}
