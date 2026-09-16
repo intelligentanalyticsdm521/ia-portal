@@ -62,6 +62,15 @@ export interface Section {
   width: SectionWidth;
   /** A CSS colour, or "" for the page's own paper. */
   background?: string;
+  /**
+   * This section's own heading font, or "" for the document's.
+   *
+   * A section-level property rather than a document one because a web page's
+   * band can legitimately differ from the rest — and because it has to reach
+   * the WEBSITE (arion-api writes it onto the section's own heading widgets as
+   * Elementor typography), not just change what the author sees.
+   */
+  headingFont?: string;
   padding: number;
   theme: SectionTheme;
   /** The Recommended badge, per §3.3. */
@@ -70,6 +79,16 @@ export interface Section {
   pageBreakBefore?: boolean;
   visibility: SectionVisibility;
   columns: Column[];
+  /**
+   * THE ADAPTER'S OWN DATA, travelling with the section.
+   *
+   * The website adapter keeps a section's Elementor node here, because every
+   * save sends `{ fields, node }` and the node has to survive undo, redo,
+   * reordering and duplication. A `Map` keyed by section id would not: a
+   * duplicate is a NEW id, so the copy would have no node and could not be
+   * published. Opaque to the engine — carried, never read.
+   */
+  meta?: Record<string, unknown>;
 }
 
 export interface DocumentSettings {
@@ -147,12 +166,14 @@ export function makeSection(partial: Partial<Section> = {}): Section {
     layout,
     width: partial.width ?? "contained",
     background: partial.background ?? "",
+    headingFont: partial.headingFont ?? "",
     padding: partial.padding ?? 24,
     theme: partial.theme ?? "light",
     recommended: partial.recommended ?? false,
     pageBreakBefore: partial.pageBreakBefore ?? false,
     visibility: partial.visibility ?? "customer",
     columns,
+    ...(partial.meta ? { meta: partial.meta } : {}),
   };
 }
 
@@ -215,12 +236,14 @@ export function deserialise(raw: unknown): BuilderDocument {
       layout,
       width: (["full", "contained", "narrow"].includes(s?.width) ? s.width : "contained") as SectionWidth,
       background: typeof s?.background === "string" ? s.background : "",
+      headingFont: typeof s?.headingFont === "string" ? s.headingFont : "",
       padding: Number.isFinite(Number(s?.padding)) ? Number(s.padding) : 24,
       theme: s?.theme === "dark" ? "dark" : "light",
       recommended: !!s?.recommended,
       pageBreakBefore: !!s?.pageBreakBefore,
       visibility: s?.visibility === "internal" ? "internal" : "customer",
       columns,
+      ...(s?.meta && typeof s.meta === "object" ? { meta: s.meta } : {}),
     });
   });
 
@@ -294,6 +317,10 @@ export function cloneSection(s: Section): Section {
   return {
     ...s,
     id: newId("s"),
+    // Deep, so a duplicated website section does not share its Elementor node
+    // with the original — the save path re-mints its ids, and it cannot do
+    // that to an object two sections point at.
+    ...(s.meta ? { meta: JSON.parse(JSON.stringify(s.meta)) } : {}),
     columns: s.columns.map((c) => ({
       id: newId("c"),
       widgets: c.widgets.map((w) => ({ id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) })),

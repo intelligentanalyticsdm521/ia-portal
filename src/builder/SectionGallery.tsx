@@ -15,7 +15,7 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { IadmModal } from "../components/IadmModal";
 import { groupForPane, widgetTooltip, type BuilderAdapter, type WidgetDef } from "./registry";
-import { PREMADE_TAGS, searchPremade, type PremadeSection } from "./templates";
+import { PREMADE_TAGS, PREMADE_SECTIONS, searchPremade, type PremadeSection } from "./templates";
 
 export interface SavedTemplate { id: string; name: string; description?: string | null }
 
@@ -27,6 +27,12 @@ export interface SectionGalleryProps {
   onPlaceWidget: (widget: WidgetDef, count?: number) => void;
   onOpenTemplate?: (t: SavedTemplate) => void;
   savedTemplates?: SavedTemplate[];
+  /** The adapter's own pre-made sections. Defaults to the document ones. */
+  premade?: PremadeSection[];
+  /** The filter chips over those sections. */
+  tags?: string[];
+  /** A drawing of one pre-made section, when the adapter has its own. */
+  thumb?: (key: string) => React.ReactNode;
 }
 
 type Tab = "sections" | "widgets" | "templates";
@@ -37,7 +43,9 @@ export function SectionGallery(p: SectionGalleryProps) {
   const [tag, setTag] = useState("All");
   const [picked, setPicked] = useState<string | null>(null);
 
-  const sections = useMemo(() => searchPremade(query, tag), [query, tag]);
+  const pool = p.premade ?? PREMADE_SECTIONS;
+  const tagList = p.tags ?? PREMADE_TAGS;
+  const sections = useMemo(() => searchPremade(query, tag, pool), [query, tag, pool]);
   const widgets = useMemo(() => groupForPane(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
   const templates = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -95,7 +103,7 @@ export function SectionGallery(p: SectionGalleryProps) {
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>Filter</span>
-              {PREMADE_TAGS.map((t) => (
+              {tagList.map((t) => (
                 <button key={t} type="button" title={`Show ${t.toLowerCase()}`} onClick={() => setTag(t)}
                   style={{
                     fontSize: 10, fontWeight: 600, borderRadius: 999, padding: "3px 9px", cursor: "pointer",
@@ -114,7 +122,7 @@ export function SectionGallery(p: SectionGalleryProps) {
                     border: "1px solid " + (picked === s.key ? "#0C4A60" : "#E2E8F0"),
                     boxShadow: picked === s.key ? "0 8px 24px rgba(0,0,0,0.08)" : "none",
                   }}>
-                  <SectionThumb kind={s.key} />
+                  {p.thumb ? p.thumb(s.key) : <SectionThumb kind={s.key} />}
                   <div style={{ padding: "10px 12px" }}>
                     <div style={{ fontSize: 12, fontWeight: 600 }}>{s.name}</div>
                     <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.3, marginTop: 3 }}>{s.description}</div>

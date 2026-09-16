@@ -39,6 +39,8 @@ export interface InspectorProps extends InspectorSlots {
   /** Any colour, any font — the brand kit only supplies the swatches. */
   swatches: string[];
   fonts: string[];
+  /** What "no font of its own" is called here. The website says "your website's". */
+  defaultFontLabel?: string;
 }
 
 const L: React.CSSProperties = {
@@ -188,6 +190,23 @@ export function Inspector(p: InspectorProps) {
             <Swatches value={section.background || ""} swatches={p.swatches}
               onPick={(v) => p.onPatchSection(section.id, { background: v })} />
           </div>
+          {/* THE SECTION'S OWN TYPE. Any font we carry, the brand kit's first
+              — Q4 — and empty means "whatever the document or the site uses",
+              which is the right default and the one most sections keep. */}
+          {p.fonts.length > 0 && (
+            <div style={FIELD}>
+              <span style={{ ...L, textTransform: "none", letterSpacing: 0, fontWeight: 500, color: "#5A7A8A" }}>Heading font</span>
+              <select
+                style={INPUT}
+                value={section.headingFont || ""}
+                title="The font the headings in this section are set in. Any font we carry."
+                onChange={(e) => p.onPatchSection(section.id, { headingFont: e.target.value })}
+              >
+                <option value="">{p.defaultFontLabel || "The document's own font"}</option>
+                {p.fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </div>
+          )}
           <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
             title="Start a new page here when the document is printed or saved as a PDF">
             <input type="checkbox" checked={!!section.pageBreakBefore}

@@ -30,7 +30,7 @@ import {
 const SRC = path.join(process.cwd(), "src");
 
 /**
- * The two widgets that legitimately have NO controls, each with its reason.
+ * The widgets that legitimately have NO controls, each with its reason.
  *
  * Kept as an explicit list rather than by relaxing the assertion: a widget with
  * no controls is nearly always a half-finished definition, and the only way to
@@ -38,8 +38,15 @@ const SRC = path.join(process.cwd(), "src");
  *   page_break — it has no properties. It is a break.
  *   columns    — it is a LAYOUT action; the count it asks for is the section's
  *                column count, and the section toolbar owns it from then on.
+ *   site_*     — a WEBSITE section's properties are the ARION field spec, which
+ *                arion-api sends with the section catalogue so there is ONE
+ *                description of a section and it lives in sectionSchema.js.
+ *                Copying it here would be the second copy this whole rebuild
+ *                exists to delete. `SiteInspectorExtras` renders from the
+ *                server's spec; the registry only says what the SECTION is.
  */
 const NO_CONTROLS = new Set(["page_break", "columns"]);
+const isSiteSection = (kind) => kind.startsWith("site_");
 
 describe("every registered widget is complete", () => {
   for (const w of WIDGETS) {
@@ -52,7 +59,7 @@ describe("every registered widget is complete", () => {
       assert.ok(WIDGET_CATEGORIES.includes(w.category), `category "${w.category}" is not in the pane`);
       assert.ok(w.defaults && typeof w.defaults === "object", "no defaults");
       assert.ok(Array.isArray(w.controls), "controls must be an array");
-      if (!NO_CONTROLS.has(w.kind)) {
+      if (!NO_CONTROLS.has(w.kind) && !isSiteSection(w.kind)) {
         assert.ok(w.controls.length > 0, "no controls");
       }
     });
@@ -124,6 +131,13 @@ describe("§3.2's union is registered", () => {
     // callout), which is what stops the studio inventing a ninth vocabulary.
     "brand_logo", "shape", "icon", "colour_block", "background", "qr_code",
     "social_handle",
+    // Added 2026-09-16 by §4 step 3 — the WEBSITE adapter. One per ARION
+    // section kind (arion-api sectionSchema.js SECTION_KINDS), pinned against
+    // that list by website-builder.test.mjs through the shared fixture, plus
+    // `site_custom` for a section built on the website itself.
+    "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
+    "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
+    "site_content", "site_custom",
   ];
 
   for (const kind of REQUIRED) {
@@ -153,6 +167,12 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     assert.ok(!WIDGETS_BY_KIND.form.adapters.includes("email"));
   });
 
+  test("a website section is offered to the website builder and nowhere else", () => {
+    for (const w of WIDGETS.filter((x) => x.kind.startsWith("site_"))) {
+      assert.deepEqual(w.adapters, ["website"], `${w.kind} is offered somewhere it cannot render`);
+    }
+  });
+
   test("every adapter gets a usable set, not an empty pane", () => {
     for (const a of BUILDER_ADAPTERS) {
       assert.ok(widgetsFor(a).length >= 5, `the ${a} builder would open with ${widgetsFor(a).length} widgets`);
@@ -179,10 +199,26 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
         !WIDGETS_BY_KIND[kind].adapters.includes("brand"),
         `${kind} means nothing on an absolute-pixel canvas`,
       );
+    }
+    // Space and columns ARE what a flow is, so all four flow builders keep them.
+    for (const kind of ["spacer", "columns"]) {
       assert.deepEqual(
         [...WIDGETS_BY_KIND[kind].adapters].sort(),
         ["email", "landing", "proposal", "website"],
         `${kind} should still be offered to every FLOW builder`,
+      );
+    }
+    // The two small tables lose "website" as well — §4 step 3: on an ARION
+    // site that job is a whole SECTION the server builds (site_stats for a
+    // details list, content for a plain table), and offering both would be
+    // the two-mechanisms-for-one-job this rebuild exists to end. The list
+    // itself lives in registry.ts as WEBSITE_USES_A_SECTION_INSTEAD, which
+    // website-builder.test.mjs reads; here we pin what is LEFT.
+    for (const kind of ["key_value_table", "data_table"]) {
+      assert.deepEqual(
+        [...WIDGETS_BY_KIND[kind].adapters].sort(),
+        ["email", "landing", "proposal"],
+        `${kind} should be offered to every flow builder that is not a website`,
       );
     }
   });

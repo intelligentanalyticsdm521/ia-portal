@@ -3,8 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell, meetsMinTier } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
-import { AiBlockGenerator } from '../../components/AiBlockGenerator';
-import { AiPageAssembler } from '../../components/AiPageAssembler';
 import { ReportButton } from '../../../components/insights/ReportButton';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import {
@@ -21,9 +19,6 @@ import {
 export function WebsiteContent() {
   const { selectedSite, activeSiteId, arionApi, loading } = useArionContext();
   const navigate = useNavigate();
-  const [genOpen, setGenOpen] = useState(false);
-  const [asmOpen, setAsmOpen] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
   // This page is the high-level view of the content library. The BUTTON is the
   // depth: every page reviewed the way a consultant would — thin, stale, no
   // meta description, competing focus keywords. Same report the Trends
@@ -124,33 +119,24 @@ export function WebsiteContent() {
           </div>
           <div style={{ fontSize: 12, color: '#0B1C24', marginTop: 2 }}>
             {ilEnabled
-              ? 'Generate Elementor blocks with IL and assemble them into a page.'
-              : 'Upgrade to Pro to generate Elementor blocks with IL.'}
+              ? 'Write and publish a page in the builder. Ask ARGUS is inside it.'
+              : 'Write and publish a page in the builder. Ask ARGUS needs a plan above Lite.'}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+          {/* ONE way in (2026-09-16). The two IL drawers — "Generate with IL"
+              into a JSON preview, and "Assemble & publish" into a hand-typed
+              WordPress page id — are deleted. Ask ARGUS lives inside the
+              builder now, where what it writes lands on the canvas. */}
           <button
-            onClick={() => ilEnabled ? setGenOpen(true) : navigate('/app/services/arion_website_ai_builder')}
-            disabled={!activeSiteId}
+            onClick={() => navigate('/app/services/arion_website_pages')}
+            title="Open a page in the builder. Ask ARGUS is the gold button inside it."
             style={{
-              background: ilEnabled ? '#38BDF8' : '#fff',
-              color: ilEnabled ? '#fff' : '#0B1C24',
-              border: ilEnabled ? 'none' : '1px solid #CBD5E1',
+              background: '#38BDF8', color: '#fff', border: 'none',
               borderRadius: 6, padding: '8px 14px',
-              fontSize: 12, fontWeight: 600, cursor: activeSiteId ? 'pointer' : 'not-allowed',
-              opacity: activeSiteId ? 1 : 0.5,
+              fontSize: 12, fontWeight: 600, cursor: 'pointer',
             }}
-          >Generate with IL</button>
-          <button
-            onClick={() => ilEnabled ? setAsmOpen(true) : navigate('/app/services/arion_website_ai_builder')}
-            disabled={!activeSiteId}
-            style={{
-              background: '#fff', color: '#0B1C24',
-              border: '1px solid #CBD5E1', borderRadius: 6, padding: '8px 14px',
-              fontSize: 12, fontWeight: 600, cursor: activeSiteId ? 'pointer' : 'not-allowed',
-              opacity: activeSiteId ? 1 : 0.5,
-            }}
-          >Assemble & publish</button>
+          >Open the builder</button>
         </div>
       </div>
 
@@ -304,21 +290,6 @@ export function WebsiteContent() {
         triggerPage="website-content"
       />
 
-      {/* F-AI-WB Phase 1 (2026-06-20) — IL drawers mount once, opened from the header CTA. */}
-      {ilEnabled && (
-        <>
-          <AiBlockGenerator
-            open={genOpen}
-            onClose={() => setGenOpen(false)}
-            onAccepted={() => setRefreshKey((k) => k + 1)}
-          />
-          <AiPageAssembler
-            open={asmOpen}
-            onClose={() => setAsmOpen(false)}
-            refreshKey={refreshKey}
-          />
-        </>
-      )}
     </div>
   );
 }

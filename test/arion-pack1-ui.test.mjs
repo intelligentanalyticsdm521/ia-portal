@@ -26,6 +26,14 @@ import { splitPages } from '../src/arion/utils/siteBuilderCopy.ts';
 
 const ROOT = path.resolve('src/arion');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
+/**
+ * 2026-09-16: the section-list editor these rows were written against is GONE
+ * (BUILDER_PLATFORM_SCOPE §4 step 3). Every rule below still holds; the code
+ * moved to the WEBSITE ADAPTER of the one builder, so the rows read it there.
+ * Nothing has been relaxed.
+ */
+const BUILDER = path.resolve('src/builder/adapters/website');
+const readBuilder = (p) => fs.readFileSync(path.join(BUILDER, p), 'utf8');
 const stripComments = (src) => src
   .replace(/\/\*[\s\S]*?\*\//g, '')
   .replace(/^\s*\/\/.*$/gm, '')
@@ -38,10 +46,10 @@ const node = (id, kind = 'hero') => ({
 /* ══════════════════════ 1. the preview is the website's ═══════════════════ */
 
 test('the preview opens the WEBSITE, and always offers a real tab', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readBuilder('WebsiteBuilder.tsx');
   // The link, not HTML we made up.
   assert.match(src, /previewUrl/);
-  assert.match(src, /src=\{preview\.url\}/, 'the frame loads the website itself');
+  assert.match(src, /src=\{previewUrl \|\| undefined\}/, 'the frame loads the website itself');
   assert.doesNotMatch(src, /srcDoc/, 'our own approximation of the page is gone');
   // A site that refuses to be framed would otherwise show a blank preview, and
   // a blank preview is the exact failure this replaced.
@@ -50,24 +58,24 @@ test('the preview opens the WEBSITE, and always offers a real tab', () => {
 });
 
 test('a preview with no link is a failure, not a blank frame', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readBuilder('WebsiteBuilder.tsx');
   assert.match(src, /if \(!url\) throw new Error\('Your website built the preview but did not say where it is\.'\)/);
 });
 
 /* ═════════════ 2. a website that cannot draw the page stops Save ══════════ */
 
 test('Save is refused when the website said it cannot draw these pages', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readBuilder('WebsiteBuilder.tsx');
   assert.match(src, /const cannotPublish = !!pageEngine\?\.known && pageEngine\.active === false;/,
     'only a website that TOLD us stops the button');
   assert.match(src, /\|\| cannotPublish/, 'the Save button is disabled by it');
-  // ...and the client is told why, in words, above the editor.
-  assert.match(src, /pageEngine\?\.known && pageEngine\.active === false && \(/);
+  // ...and the client is told why, in words, in the builder's own pane.
+  assert.match(src, /\{cannotPublish && \(/);
   assert.match(src, /cannot show pages built here/);
 });
 
 test('"we could not ask the website" never locks the editor', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readBuilder('WebsiteBuilder.tsx');
   // `known: false` must not appear on the disabling path. The only test of
   // `active` is against the literal false, never a falsy check.
   assert.doesNotMatch(src, /!pageEngine\?\.active/,
@@ -78,7 +86,7 @@ test('"we could not ask the website" never locks the editor', () => {
 
 test('page settings, the search fields and delete all have a home', () => {
   const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /Page settings/);
+  assert.match(readBuilder('WebsiteBuilder.tsx'), /Page settings/);
   assert.match(src, /getSitePageSettings/);
   assert.match(src, /getSitePageSeo/);
   assert.match(src, /saveSitePageSettings/);
@@ -146,10 +154,12 @@ test('a swapped section keeps its place, its id and its words, and is unsaved', 
 });
 
 test('"Change the look" is offered only where there are other layouts', () => {
-  const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /\(catalogFor\(s\.kind\)\?\.variants\?\.length \|\| 0\) > 0/,
+  const src = readBuilder('SiteInspectorExtras.tsx');
+  assert.match(src, /\{others\.length > 0 && \(/,
     'a button that opens an empty list is a control that lies');
   assert.match(src, /Change the look/);
+  // "Others" is the layouts of this kind MINUS the one it is already wearing.
+  assert.match(src, /variants\.filter\(\(v\) => v\.blueprintId !== blueprintId\)/);
 });
 
 test('the swap sheet says the layout is replaced and that nothing is saved yet', () => {
@@ -193,35 +203,34 @@ test('replacing a picture says the browser may hold the old one', () => {
 
 /* ══════════════════ 6. the AI Builder quotes the server ═════════════════ */
 
-test('the invented credit table is GONE from the AI Builder', () => {
-  const page = read('pages/website/WebsiteAiBuilder.tsx');
-  const gen = read('components/AiBlockGenerator.tsx');
-  for (const [name, src] of [['WebsiteAiBuilder', page], ['AiBlockGenerator', gen]]) {
-    const live = stripComments(src);
-    assert.doesNotMatch(live, /SECTION_COSTS/, `${name} still carries its own price table`);
-    assert.doesNotMatch(live, /computeSectionCost/, `${name} still computes a price`);
-    assert.doesNotMatch(live, /imageHd|perColumn|extraParagraph/, `${name} still has price coefficients`);
-    assert.doesNotMatch(live, /TODO F-Onb-D10/, `${name} still has the TODO the endpoint answers`);
+test('the AI Builder is GONE — configurator, generator and assembler', () => {
+  // BUILDER_PLATFORM_SCOPE §6 Q1: "In ARION it REPLACES the generate-and-accept
+  // configurator; Ask ARGUS lives inside the builder." Replace means delete, so
+  // the strongest form of "the invented credit table is gone" is that the three
+  // files that carried it are gone.
+  for (const gone of [
+    'src/arion/pages/website/WebsiteAiBuilder.tsx',
+    'src/arion/components/AiBlockGenerator.tsx',
+    'src/arion/components/AiPageAssembler.tsx',
+  ]) {
+    assert.equal(fs.existsSync(path.resolve(gone)), false, `${gone} is still here`);
   }
 });
 
-test('both screens read the price from the one pricing endpoint', () => {
-  assert.match(read('pages/website/WebsiteAiBuilder.tsx'), /getSiteAiPricing/);
-  assert.match(read('components/AiBlockGenerator.tsx'), /getSiteAiPricing/);
+test('the old address still lands somewhere that works', () => {
+  const router = fs.readFileSync(path.resolve('src/pages/ServiceRouter.tsx'), 'utf8');
+  assert.doesNotMatch(router, /WebsiteAiBuilder/);
+  assert.match(router, /arion_website_ai_builder/);
+  assert.match(router, /Navigate to="\/app\/services\/arion_website_pages"/);
 });
 
-test('a price we cannot read is a price we do not quote', () => {
-  const gen = read('components/AiBlockGenerator.tsx');
-  assert.match(gen, /price == null/, 'no number is better than a made-up one');
-  assert.match(gen, /we will tell you/);
-  const page = read('pages/website/WebsiteAiBuilder.tsx');
-  assert.match(page, /generateCredits == null/);
-});
-
-test('no estimated cost travels with the generate request any more', () => {
-  const gen = read('components/AiBlockGenerator.tsx');
-  assert.doesNotMatch(stripComments(gen), /client_estimated_cost/,
-    'a price in the body was a second opinion about a number we do not own');
+test('the builder quotes the SERVER price and computes none', () => {
+  const src = readBuilder('WebsiteBuilder.tsx');
+  assert.match(src, /getPricing/);
+  assert.match(src, /pricing\?\.actions\?\.page\?\.credits/);
+  const live = stripComments(src);
+  assert.doesNotMatch(live, /SECTION_COSTS|computeSectionCost|client_estimated_cost/,
+    'a price in the Portal is a second opinion about a number we do not own');
 });
 
 /* ═══════════════════════ 7. the lists still hold ════════════════════════ */

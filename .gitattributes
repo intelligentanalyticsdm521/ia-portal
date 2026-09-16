@@ -1,0 +1,7 @@
+# test/fixtures/website-section-kinds.json is a declared BYTE-IDENTICAL copy shared
+# with arion-api (its source of truth is lib/websiteBuilder/sectionSchema.js), and a
+# test in each repo asserts the two files match byte for byte. core.autocrlf=true on
+# a Windows machine hands a fresh checkout CRLF here and LF there, which fails that
+# assertion for a reason that has nothing to do with the seam. LF, everywhere, always
+# — the same pin arion-api already puts on scripts/_tools.mjs.
+test/fixtures/website-section-kinds.json text eol=lf

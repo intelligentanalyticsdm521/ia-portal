@@ -77,11 +77,57 @@ export interface BuilderShellProps extends InspectorSlots {
   ctx: RenderContext;
   swatches: string[];
   fonts: string[];
+  /** What an empty font choice is called. See Inspector. */
+  defaultFontLabel?: string;
   savedTemplates?: SavedTemplate[];
   onOpenTemplate?: (t: SavedTemplate) => void;
   nextUp?: string | null;
   /** Rendered above the widget list in the pane. */
   paneHeader?: ReactNode;
+  /** Canvas shape — a document is Letter-ish, a web page is full width. */
+  paperWidth?: number | "full";
+  paperNote?: string;
+  /** The adapter's own stylesheet and page chrome. See Canvas. */
+  extraCss?: string;
+  chromeTop?: string;
+  chromeBottom?: string;
+  chromeNote?: string;
+  canvasBackground?: string;
+  /**
+   * Adding a section is the adapter's job when the SERVER builds it — the
+   * website adapter asks arion-api for a real Elementor node rather than
+   * inventing one. Returning false means "I handled it"; the default is the
+   * engine's own blank section.
+   */
+  onAddBlank?: (atIndex: number) => boolean;
+  /**
+   * The adapter's own insert. The website adapter needs it because a SECTION
+   * widget there is a whole new section whose Elementor node the SERVER
+   * builds — the Portal never invents Elementor JSON. Return false for "I
+   * handled it"; anything else falls through to the engine's own insert.
+   */
+  onInsertWidget?: (def: WidgetDef, count?: number) => boolean;
+  /**
+   * The adapter's own "place a pre-made section".
+   *
+   * The website adapter needs it for the same reason as `onInsertWidget`: a
+   * website section's Elementor node is built by the SERVER from the business's
+   * own details, so the gallery cannot hand back a section the engine made up.
+   * Return false for "I handled it".
+   */
+  onPlaceSection?: (premade: PremadeSection, atIndex: number) => boolean;
+  /** The adapter's pre-made sections for the gallery. */
+  premade?: PremadeSection[];
+  premadeTags?: string[];
+  premadeThumb?: (key: string) => ReactNode;
+  /**
+   * What is selected, told to the adapter.
+   *
+   * The website adapter needs it because a content block has to land in the
+   * section the author is looking at — a paragraph has nowhere to live inside
+   * a hero, and guessing is how a widget ends up on the wrong band.
+   */
+  onSelectionChange?: (selection: Selection) => void;
 }
 
 export function BuilderShell(p: BuilderShellProps) {
@@ -90,13 +136,19 @@ export function BuilderShell(p: BuilderShellProps) {
   const [gallery, setGallery] = useState<{ at: number } | null>(null);
   const doc = p.doc;
 
+  const select = useCallback((s: Selection) => {
+    setSelection(s);
+    p.onSelectionChange?.(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.onSelectionChange]);
+
   // The adapter owns the document; the shell owns the history OF it. When the
   // adapter swaps the document wholesale — a template applied, a saved
   // proposal loaded — it bumps `resetKey` and the history starts again, so
   // undo can never walk backwards into a different document.
   useEffect(() => {
     setHistory(initHistory(p.doc));
-    setSelection(null);
+    select(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.resetKey]);
 
@@ -119,6 +171,7 @@ export function BuilderShell(p: BuilderShellProps) {
   }, [doc.sections, selection]);
 
   const insertWidget = useCallback((def: WidgetDef, count?: number) => {
+    if (p.onInsertWidget && p.onInsertWidget(def, count) === false) return;
     let next = doc;
     let section = targetSection;
     if (!section) {
@@ -128,7 +181,7 @@ export function BuilderShell(p: BuilderShellProps) {
     // "Columns" is a layout choice, not a thing on the page.
     if (def.kind === "columns") {
       apply(setLayout(next, section.id, (count === 3 ? 3 : 2)));
-      setSelection({ kind: "section", sectionId: section.id });
+      select({ kind: "section", sectionId: section.id });
       return;
     }
     const props: Record<string, unknown> = JSON.parse(JSON.stringify(def.defaults || {}));
@@ -147,14 +200,15 @@ export function BuilderShell(p: BuilderShellProps) {
     const col = selection?.kind === "widget" ? selection.columnIndex : 0;
     apply(addWidget(next, section.id, col, widget));
     const placed = section.columns[col]?.widgets.length ?? 0;
-    setSelection({ kind: "widget", sectionId: section.id, columnIndex: col, widgetIndex: placed });
-  }, [apply, doc, selection, targetSection]);
+    select({ kind: "widget", sectionId: section.id, columnIndex: col, widgetIndex: placed });
+  }, [apply, doc, p, selection, targetSection]);
 
   const placeSection = useCallback((premade: PremadeSection, at: number) => {
+    if (p.onPlaceSection && p.onPlaceSection(premade, at) === false) return;
     const s = premade.build();
     apply(addSection(doc, s, at));
-    setSelection({ kind: "section", sectionId: s.id });
-  }, [apply, doc]);
+    select({ kind: "section", sectionId: s.id });
+  }, [apply, doc, p, select]);
 
   const onEditText = useCallback((sectionId: string, widgetId: string, path: string, value: string, mergeKey: string) => {
     const section = doc.sections.find((s) => s.id === sectionId);
@@ -200,6 +254,7 @@ export function BuilderShell(p: BuilderShellProps) {
       canRedo={canRedo(history)}
       onUndo={doUndo}
       onRedo={doRedo}
+      canvasBackground={p.canvasBackground}
       pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
       inspector={
         <Inspector
@@ -207,12 +262,13 @@ export function BuilderShell(p: BuilderShellProps) {
           selection={selection}
           swatches={p.swatches}
           fonts={p.fonts}
+          defaultFontLabel={p.defaultFontLabel}
           askArgus={p.askArgus}
           widgetExtras={p.widgetExtras}
           onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
           onPatchWidget={patchSelectedWidget}
-          onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); setSelection({ kind: "section", sectionId: selection.sectionId }); } }}
-          onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); setSelection({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
+          onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); select({ kind: "section", sectionId: selection.sectionId }); } }}
+          onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); select({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
           onSetCount={setCount}
         />
       }
@@ -221,6 +277,9 @@ export function BuilderShell(p: BuilderShellProps) {
           open={!!gallery}
           adapter={p.adapter}
           savedTemplates={p.savedTemplates}
+          premade={p.premade}
+          tags={p.premadeTags}
+          thumb={p.premadeThumb}
           onOpenTemplate={p.onOpenTemplate}
           onClose={() => setGallery(null)}
           onPlaceSection={(s) => placeSection(s, gallery?.at ?? doc.sections.length)}
@@ -233,17 +292,24 @@ export function BuilderShell(p: BuilderShellProps) {
         ctx={p.ctx}
         selection={selection}
         nextUp={p.nextUp}
-        onSelect={setSelection}
+        paperWidth={p.paperWidth}
+        paperNote={p.paperNote}
+        extraCss={p.extraCss}
+        chromeTop={p.chromeTop}
+        chromeBottom={p.chromeBottom}
+        chromeNote={p.chromeNote}
+        onSelect={select}
         onEditText={onEditText}
         onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
         onDuplicateSection={(id) => apply(duplicateSection(doc, id))}
-        onDeleteSection={(id) => { apply(removeSection(doc, id)); setSelection(null); }}
+        onDeleteSection={(id) => { apply(removeSection(doc, id)); select(null); }}
         onMoveSection={(id, to) => apply(moveSection(doc, id, to))}
         onAddSection={(at, how) => {
           if (how === "premade") { setGallery({ at }); return; }
+          if (p.onAddBlank && p.onAddBlank(at) === false) return;
           const s = makeSection({ label: "Section" });
           apply(addSection(doc, s, at));
-          setSelection({ kind: "section", sectionId: s.id });
+          select({ kind: "section", sectionId: s.id });
         }}
       />
     </BuilderFrame>

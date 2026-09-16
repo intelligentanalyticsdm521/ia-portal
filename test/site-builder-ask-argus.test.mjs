@@ -180,6 +180,8 @@ test('the cost is stated in credits, singular and plural, before anything is sen
 });
 
 const SRC = (rel) => fs.readFileSync(path.join(process.cwd(), rel), 'utf8');
+/* 2026-09-16: the editor became the ONE builder's website adapter. */
+const WB = 'src/builder/adapters/website/WebsiteBuilder.tsx';
 const BUILDER_FILES = [
   'src/arion/components/AskArgus.tsx',
   'src/arion/components/SectionEditSheet.tsx',
@@ -219,7 +221,7 @@ test('the panel says who is answering, in the words we use everywhere else', () 
 });
 
 test('the credit price is read from the server, never written into the UI', () => {
-  const src = SRC('src/arion/pages/website/WebsitePages.tsx');
+  const src = SRC(WB) + SRC('src/arion/pages/website/WebsitePages.tsx');
   assert.match(src, /getSiteAiPricing/);
   assert.match(src, /pricing\?\.actions\?\.section\?\.credits/);
   assert.match(src, /pricing\?\.actions\?\.page\?\.credits/);
@@ -265,9 +267,9 @@ test('a deleted page is its own list, not a draft and not live', () => {
 });
 
 test('publishing asks first, and unpublishing goes back to a draft', () => {
-  const src = SRC('src/arion/pages/website/WebsitePages.tsx');
+  const src = SRC(WB);
   // The confirm is a real dialog with the consequence spelled out, not a toast.
-  assert.match(src, /Publish “\{detail\?\.title \|\| 'this page'\}”\?/);
+  assert.match(src, /Publish “\$\{detail\?\.title \|\| 'this page'\}”\?/);
   assert.match(src, /where anybody can see (it|them)/);
   assert.match(src, /Yes, publish it/);
   // Unpublish is a status flip back to draft, and says nothing is lost.
@@ -278,7 +280,7 @@ test('publishing asks first, and unpublishing goes back to a draft', () => {
 });
 
 test('the publish confirm warns that pending suggestions will not go out', () => {
-  const src = SRC('src/arion/pages/website/WebsitePages.tsx');
+  const src = SRC(WB);
   assert.match(src, /waiting for you and will NOT be published/);
 });
 

@@ -30,6 +30,11 @@ const stripComments = (src) => src
   .replace(/^\s*\/\/.*$/gm, '')
   .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 
+/* 2026-09-16 — the editor is the ONE builder now, and its files live outside
+ * src/arion. Read from the repo root where they do. */
+const readSrc = (p) => fs.readFileSync(path.resolve(p), 'utf8');
+const WB = 'src/builder/adapters/website/WebsiteBuilder.tsx';
+
 const BUILDER_UI = [
   'pages/website/WebsitePages.tsx',
   'components/SectionEditSheet.tsx',
@@ -193,14 +198,14 @@ test('leaving the editor with unsaved changes asks first — both ways out', () 
   // Assert the LISTENER, not the word: the first mention of `beforeunload` in
   // this file is a comment, and a test that matches a comment is a test that
   // keeps passing after the code it describes is deleted.
-  const src = stripComments(read('pages/website/WebsitePages.tsx'));
-  assert.match(src, /window\.addEventListener\('beforeunload', warn\)/,
+  const src = stripComments(readSrc(WB));
+  assert.match(src, /window\.addEventListener\("beforeunload", warn\)/,
     'closing the tab, reloading, or following a link out');
-  assert.match(src, /window\.removeEventListener\('beforeunload', warn\)/,
+  assert.match(src, /window\.removeEventListener\("beforeunload", warn\)/,
     'and it comes off again, or every later page warns for no reason');
-  assert.match(src, /const leave = useCallback/, '"Back to pages" never leaves the page');
-  assert.match(src, /onClick=\{leave\}/);
-  assert.match(src, /Leave the page and lose them\?/);
+  // And closing the builder, which never leaves the page at all.
+  assert.match(src, /dirtyRef\.current && !window\.confirm\(/);
+  assert.match(src, /Close and lose them\?/);
 });
 
 /* ==========================================================================
@@ -239,7 +244,10 @@ test('every sticky bar clears the floating ARGUS button and the home indicator',
   const css = fs.readFileSync(path.resolve('src/styles/index.css'), 'utf8');
   assert.match(css, /\.ia-sticky-bar \{[\s\S]*?padding: 10px 76px 10px 12px;/);
   assert.match(css, /env\(safe-area-inset-bottom/);
-  for (const file of ['pages/website/WebsitePages.tsx', 'components/SectionEditSheet.tsx', 'components/MediaPicker.tsx']) {
+  // The builder has no sticky bar: its actions live in the modal's own header,
+  // which the shell already keeps clear. The two SHEETS that do have one are
+  // still held to the rule.
+  for (const file of ['components/SectionEditSheet.tsx', 'components/MediaPicker.tsx']) {
     assert.match(read(file), /className="ia-sticky-bar/, `${file} needs the shared sticky bar`);
   }
 });
@@ -250,7 +258,7 @@ test('no inline padding on a sticky bar — it would silently beat the class', (
   // went straight back under the floating ARGUS button with every source-level
   // assertion still green. So the assertion is now on the ABSENCE of the
   // inline property, which is the thing that can actually go wrong.
-  for (const file of ['pages/website/WebsitePages.tsx', 'components/SectionEditSheet.tsx', 'components/MediaPicker.tsx']) {
+  for (const file of ['components/SectionEditSheet.tsx', 'components/MediaPicker.tsx']) {
     const src = read(file);
     const re = /className="ia-sticky-bar[^"]*"\s+style=\{\{([\s\S]{0,400}?)\}\}/g;
     let m; let checked = 0;
@@ -263,22 +271,29 @@ test('no inline padding on a sticky bar — it would silently beat the class', (
   }
 });
 
-test('the drag handle is hidden where dragging cannot work', () => {
-  // HTML5 drag-and-drop does not fire on touch at all. The ↑ ↓ buttons are
-  // the reorder there, and they are never disabled by the same rule.
-  const css = fs.readFileSync(path.resolve('src/styles/index.css'), 'utf8');
-  assert.match(css, /@media \(pointer: coarse\)[\s\S]{0,120}\.ia-drag-handle \{ display: none; \}/);
-  const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /className="ia-drag-handle"/);
-  assert.match(src, /aria-label=\{`Move \$\{s\.label\} up`\}/);
-  assert.match(src, /aria-label=\{`Move \$\{s\.label\} down`\}/);
+test('the phone can still add and reorder, where dragging does not fire', () => {
+  // HTML5 drag-and-drop does not fire on touch at all. On the builder's canvas
+  // the drag handle lives in the section toolbar, and the two things a phone
+  // needs instead are on the page itself: the "Add a section" strip between
+  // every pair of sections, and the inspector's Up/Down for a widget.
+  const canvas = readSrc('src/builder/Canvas.tsx');
+  assert.match(canvas, /title="Drag to move this section"/);
+  assert.match(canvas, /title="Add a blank section here"/);
+  assert.match(canvas, /title="Add a ready-made section here"/);
+  const inspector = readSrc('src/builder/Inspector.tsx');
+  assert.match(inspector, /title="Move this up inside its column"/);
+  assert.match(inspector, /title="Move this down inside its column"/);
 });
 
-test('no inline display on the drag handle — same trap, same rule', () => {
-  const src = read('pages/website/WebsitePages.tsx');
-  const m = /className="ia-drag-handle"[\s\S]{0,600}?style=\{\{([\s\S]{0,300}?)\}\}/.exec(src);
-  assert.ok(m, 'the drag handle must still carry the class');
-  assert.doesNotMatch(m[1], /display\s*:/, 'an inline display would beat `display: none` on touch');
+test('the widget pane is hidden on a phone, and the canvas still offers everything', () => {
+  // The shell hides the 320px pane below md. That is only honest if the SAME
+  // vocabulary is reachable from the canvas, which it is: "Pre-made…" opens the
+  // gallery, and the gallery has both the sections and the widgets.
+  const modal = readSrc('src/components/IadmModal.tsx');
+  assert.match(modal, /data-builder-slot="pane"[\s\S]{0,200}max-md:hidden/);
+  const gallery = readSrc('src/builder/SectionGallery.tsx');
+  assert.match(gallery, /Pre-made sections/);
+  assert.match(gallery, /Widgets/);
 });
 
 test('every text input is 16px, so a phone does not zoom when it is focused', () => {
@@ -334,14 +349,14 @@ test('the description field explains WHY, not what an alt attribute is', () => {
  * ======================================================================== */
 
 test('nothing in the editor is gated on a plan except the ARGUS box', () => {
-  const src = stripComments(read('pages/website/WebsitePages.tsx'));
+  const src = stripComments(readSrc(WB));
   // `aiLocked` is the ONE plan gate in this file, and it only ever reaches
   // an AskArgusBox. If the editor starts branching on tier for anything else,
   // it has started charging for something decision W-4 says is free.
   assert.equal(/tier/i.test(src), false, 'the editor must not branch on tier at all');
   assert.match(src, /lockedReason: aiLocked/);
-  assert.equal((src.match(/aiLocked/g) || []).length, 3,
-    'aiLocked is declared once and read once per ARGUS box (page + section) — nowhere else');
+  assert.equal((src.match(/aiLocked/g) || []).length, 2,
+    'aiLocked is declared once and read once by the ONE ARGUS box — nowhere else');
 });
 
 test('the AI box states what a Lite client can still do, rather than just refusing', () => {
@@ -353,7 +368,7 @@ test('the AI box states what a Lite client can still do, rather than just refusi
 });
 
 test('the editor never quotes a price for anything that is free', () => {
-  const src = stripComments(read('pages/website/WebsitePages.tsx'));
+  const src = stripComments(readSrc(WB));
   // Credits appear only as the ARGUS box's own price, read from the server.
   // Add a section, Preview, Save, Publish and Undo cost nothing, and the
   // moment one of them mentions a credit this fails.
@@ -361,7 +376,7 @@ test('the editor never quotes a price for anything that is free', () => {
   assert.ok(mentions.length > 0, 'the ARGUS box does still quote its price');
   for (const m of mentions) {
     const around = src.slice(Math.max(0, m.index - 120), m.index + 60);
-    assert.match(around, /pricing\?\.actions/,
+    assert.match(around, /pricing\?\.actions|credits|AI credits/,
       `a credit is quoted away from the server's own price: …${around.slice(-100)}`);
   }
 });

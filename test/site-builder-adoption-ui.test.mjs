@@ -211,6 +211,10 @@ test('undoing an adoption puts the greyed row back where it was', () => {
 /* ── 4. nothing happens by itself ──────────────────────────────────────── */
 
 const SRC = path.join(process.cwd(), 'src', 'arion');
+/* 2026-09-16: adoption moved with the editor onto the website adapter of the
+ * one builder. Same rules, new home. */
+const readSrc = (p) => fs.readFileSync(path.join(process.cwd(), p), 'utf8');
+const WB = 'src/builder/adapters/website/WebsiteBuilder.tsx';
 
 function read(rel) {
   return fs.readFileSync(path.join(SRC, rel), 'utf8');
@@ -257,21 +261,21 @@ test('the Portal never says "tenant", and never shows Elementor vocabulary', () 
 });
 
 test('an adoption that comes back with no section is a failure, not a green toast', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readSrc(WB);
   // reference_catch_swallow_report_success: this codebase has produced 13+
   // instances of a 200 over a failure, so the check is asserted in source.
   assert.match(src, /if \(!adopted\) throw new Error/);
-  assert.match(src, /setAdoptError\(messageFrom\(e, 'We could not take charge of that section/);
+  assert.match(src, /setAdoptErr\(messageFrom\(e, 'We could not take charge of that section/);
 });
 
 test('undoing an adoption asks first, and says what goes with it', () => {
-  const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /window\.confirm\(\s*'Put this section back exactly as it was built/);
+  const src = readSrc(WB);
+  assert.match(src, /window\.confirm\(\s*\n?\s*'Put this section back exactly as it was built/);
   assert.match(src, /Anything you have changed on it since will go with it/);
 });
 
 test('the review entry is only offered when there is something to review', () => {
-  const src = read('pages/website/WebsitePages.tsx');
+  const src = readSrc(WB);
   assert.match(src, /\{customCount > 0 && \(/);
   assert.match(src, /Review sections built on the site \(\{customCount\}\)/);
 });
