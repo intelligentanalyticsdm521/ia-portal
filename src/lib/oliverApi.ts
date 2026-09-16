@@ -215,6 +215,31 @@ export async function oliverUpload<T>(
   return (json && typeof json === "object" && "data" in json ? json.data : json) as T;
 }
 
+// Fetch a private file's BYTES, without putting them on disk.
+//
+// A customer file's container is private and the API streams it behind the
+// tenant guard, so `<img src="…/content">` is a request with no bearer token
+// and a 401 — the thumbnail has to be an object URL over a fetch that carries
+// the headers. Same reason downloadHelper.ts exists on the STELLA side; this
+// is the version that hands the Blob back instead of clicking a link with it,
+// because the Files card renders it inline as well as opening it.
+//
+// The caller owns the Blob: create the object URL, and REVOKE it when the row
+// unmounts. An object URL that is never revoked keeps its bytes in memory for
+// the life of the tab.
+export async function oliverBlob(
+  msal: IPublicClientApplication,
+  account: AccountInfo,
+  path: string
+): Promise<Blob> {
+  const res = await oliverFetchRaw(msal, account, path);
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Could not open that file (${res.status}): ${text.slice(0, 200)}`);
+  }
+  return res.blob();
+}
+
 // Download a file (CSV, PDF, etc.) from the OLIVER API by triggering a
 // browser download. `filename` becomes the suggested name on disk.
 // Throws on non-2xx so callers can surface the error.

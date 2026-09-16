@@ -11,19 +11,21 @@
 // one link, and a separate route would have needed its own header, its own
 // customer lookup and its own answer to "what if this id is not yours".
 //
-// ── WHAT IS NOT HERE, AND WHY ─────────────────────────────────────────────
-// "Files and measurements" is NOT built. There is no customer-or-location file
-// store to put them in: the only blob path in the platform is the crew's
-// proof-of-work photos, which hang off a JOB and are written by the employee
-// app. Building one means a table, a container, a retention rule and an answer
-// to "can a site contact see the site map?" — decisions, not code. Named in
-// §12 and on the decisions queue rather than faked with a card that does
-// nothing.
+// ── FILES AND MEASUREMENTS — BUILT 2026-09-16 (D-136) ────────────────────
+// This card used to be the one thing on the page that was named and not built,
+// because there was nowhere to put the bytes: the only blob path in the
+// platform was the crew's proof-of-work photos, which hang off a JOB. D-136
+// answered the three questions — oliver.customer_file keyed on the LOCATION
+// (migration 216), the SAME storage account the proof photos use under a
+// `customer-files/<tenant>/<location>/` prefix, and INVISIBLE in the customer
+// portal until D-133 says otherwise. The files stay with the location when the
+// site is archived; nothing here deletes anything.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MapPin, Pencil, Save, X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { RolesCard } from "./RolesCard";
 import { NotesCard, type LocationRow } from "./CustomerCards";
+import { FilesCard } from "./FilesCard";
 import {
   type PersonRole, type BillingProfile, type CustomFieldValue,
   formatLocationAddress, personName, siteContactFor, visibleOn,
@@ -388,6 +390,14 @@ export function LocationPanel({
             ))}
           </div>
         </div>
+
+        {/* ── files and measurements for THIS site (D-136) ── */}
+        <FilesCard
+          path={`/customers/locations/${locationId}/files`}
+          accent={accent}
+          subtitle="The site map, the snow-relocation plan, the measurement sheet and the photos for this address."
+          emptyText="Nothing here yet. Upload the site map the crew reads before they drive out."
+        />
 
         {/* ── notes for THIS location ── */}
         <NotesCard
