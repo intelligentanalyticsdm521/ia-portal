@@ -47,11 +47,7 @@ export const ARION_PAGES: PageContentMap = {
   },
   arion_website_pages: {
     body:
-      "Every page on your site, and the one place to change what they say. Open a page, tap a section, change the heading or swap the picture, hit Preview to see it, then Publish. If you get it wrong, Undo puts the last version straight back. Anything built by hand on the site itself is shown but left alone.",
-  },
-  arion_website_ai_builder: {
-    body:
-      "Describe a page you need and it drafts one for you — layout, copy and images. It writes a draft, never publishes for you, so there's nothing to be nervous about. Good for the pages you keep meaning to write and never do.",
+      "Every page on your site, and the one place to change what they say. Open a page and you get the builder: the page as a visitor sees it, a panel of sections and parts beside it, and an inspector for the pictures, links and how-many. Type straight onto the page. Preview shows it on your own site, Publish puts it live, Undo puts the last version straight back. Anything built by hand on the site itself is shown but left alone — and offered as \"make it editable\" where we can recognise it.",
   },
   arion_website_content_seo_overview: {
     body:

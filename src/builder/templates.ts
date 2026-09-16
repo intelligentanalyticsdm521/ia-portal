@@ -210,9 +210,14 @@ export function premadeByKey(key: string): PremadeSection | undefined {
 }
 
 /** The gallery's search, as a pure function so it is a test not a click. */
-export function searchPremade(query: string, tag = "All"): PremadeSection[] {
+export function searchPremade(
+  query: string,
+  tag = "All",
+  /** Which set to search. An adapter with its own pre-made sections passes them. */
+  pool: PremadeSection[] = PREMADE_SECTIONS,
+): PremadeSection[] {
   const q = query.trim().toLowerCase();
-  return PREMADE_SECTIONS.filter((p) => {
+  return pool.filter((p) => {
     if (tag !== "All" && !p.tags.includes(tag)) return false;
     if (!q) return true;
     return p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.tags.join(" ").toLowerCase().includes(q);

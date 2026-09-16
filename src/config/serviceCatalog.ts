@@ -53,12 +53,11 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'arion_website_content', displayName: 'Website Content', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content', description: 'Page and post content inventory with last-modified dates and publish status.' },
   // Site builder Phase 1A (2026-09-05) — edit the words and pictures on a page
   // from the Portal instead of opening WordPress. Every ARION tier (W-4).
-  { key: 'arion_website_pages', displayName: 'Pages', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_pages', description: 'Every page on your website. Open one, change the wording or a picture, preview it, and publish — without opening WordPress.' },
+  { key: 'arion_website_pages', displayName: 'Pages', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_pages', description: 'Every page on your website, built the way you would build it anywhere else: sections on a canvas, a widget panel beside them, and Publish when it looks right. Ask ARGUS is the gold button inside it.' },
   // F-AI-WB (re-added 2026-06-28) — catalog entry was lost during a scope flip;
   // SubNav + ServiceRouter case were re-added but this entry was missed,
   // causing the URL to render "Service not found". Scope: overnight-report/
   // 38_AI_WEBSITE_BUILDER_v2_SCOPE.md + FEATURE_AI_BUILDER.md.
-  { key: 'arion_website_ai_builder', displayName: 'AI Builder', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_ai_builder', description: 'AI Website Builder — spend ARGUS Data Credits to generate pages, rewrite sections, generate media, or rebuild whole sites.' },
   // Site builder pack 2 (2026-09-09) — the two jobs that are the same on every
   // page and could only be done by signing into WordPress. Every ARION tier.
   { key: 'arion_website_menus', displayName: 'Menus', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_menus', description: 'What people click to get around your website. Add a page you just built, reorder it, and choose where it shows.' },

@@ -68,26 +68,39 @@ test('the sheet shows the guess as a question, with the two boxes named', () => 
     'the two boxes are named the way the sheet names them below');
 });
 
+/* 2026-09-16: the role swap moved with the editor onto the one builder's
+ * website adapter. Same three rules, same strictness, new home. */
+const BUILDER = 'src/builder/adapters/website/WebsiteBuilder.tsx';
+const INSPECTOR = 'src/builder/adapters/website/SiteInspectorExtras.tsx';
+const readSrc = (p) => fs.readFileSync(path.resolve(p), 'utf8');
+
 test('the swap goes to the server, because the Portal never invents Elementor JSON', () => {
-  const src = stripComments(read(PAGES));
-  assert.match(src, /arionApi\.swapSectionRoles\(/);
-  assert.match(src, /node: row\.node/, 'the section it holds is what it hands back');
+  const src = stripComments(readSrc(BUILDER));
+  assert.match(src, /api\.swapRoles\(/);
+  assert.match(src, /node: \(w\.props as any\)\[NODE_PROP\]/, 'the section it holds is what it hands back');
   assert.doesNotMatch(src, /_ia_role/, 'the Portal does not touch the markers itself');
 });
 
-test('a swap is an unsaved edit like every other, and the sheet says so', () => {
-  const src = stripComments(read(PAGES));
-  assert.match(src, /swapSectionLayout\(cur, uid, swapped\)/,
-    'it goes through the same state transform as a look-swap, which marks it dirty');
+test('a swap is an unsaved edit like every other, and the builder says so', () => {
+  const src = stripComments(readSrc(BUILDER));
+  assert.match(src, /sections: doc\.sections\.map\(\(x\) => \(x\.id === sectionId \? sectionFromServer\(entry\) : x\)\)/,
+    'it replaces the section in the document like every other edit, which marks it dirty');
   assert.match(src, /Save when you are happy/i);
 });
 
 test('a swap that fails says so instead of finishing quietly', () => {
-  const src = stripComments(read(PAGES));
-  const block = src.slice(src.indexOf('const swapRoles'), src.indexOf('const runPreview'));
-  assert.match(block, /setError\(messageFrom\(/, 'the error reaches the screen');
+  const src = stripComments(readSrc(BUILDER));
+  const block = src.slice(src.indexOf('const swapRoles'), src.indexOf('const deps'));
+  assert.match(block, /setErr\(messageFrom\(/, 'the error reaches the screen');
   assert.match(block, /Nothing was changed/, 'and says what did not happen');
   assert.match(block, /finally\s*\{\s*setRoleSwapBusy\(false\)/, 'the button always comes back');
+});
+
+test('the note is rendered only where the server raised one', () => {
+  const src = stripComments(readSrc(INSPECTOR));
+  assert.match(src, /roleReview\.map\(/);
+  assert.match(src, /Array\.isArray\(\(widget\.props as any\)\?\.__roleReview\)/,
+    'no server note, no box');
 });
 
 test('nothing is shown when there is nothing to check', () => {

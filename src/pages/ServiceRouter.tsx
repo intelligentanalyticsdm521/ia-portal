@@ -70,7 +70,6 @@ const WebsiteContent = lazyNamed(() => import('../arion/pages/website/WebsiteCon
 const WebsitePages = lazyNamed(() => import('../arion/pages/website/WebsitePages'), 'WebsitePages');
 const WebsiteMenus = lazyNamed(() => import('../arion/pages/website/WebsiteMenus'), 'WebsiteMenus');
 const WebsiteDesign = lazyNamed(() => import('../arion/pages/website/WebsiteDesign'), 'WebsiteDesign');
-const WebsiteAiBuilder = lazyNamed(() => import('../arion/pages/website/WebsiteAiBuilder'), 'WebsiteAiBuilder');
 const ContentSeoOverview = lazyNamed(() => import('../arion/pages/website/ContentSeoOverview'), 'ContentSeoOverview');
 // ContentSeoPages / ContentSeoPosts / ContentSeoSchema removed 2026-04-21 —
 // consolidated into the single Content SEO Overview storytelling page with
@@ -541,7 +540,11 @@ function ServiceRouterInner() {
       case 'arion_website_pages': arionPage = <WebsitePages />; break;
       case 'arion_website_menus': arionPage = <WebsiteMenus />; break;
       case 'arion_website_design': arionPage = <WebsiteDesign />; break;
-      case 'arion_website_ai_builder': arionPage = <WebsiteAiBuilder />; break;
+      // The AI Builder is GONE (2026-09-16): its configure → generate →
+      // accept → assemble wizard is the thing the one builder replaces, and
+      // Ask ARGUS lives inside the builder now. The route stays as a redirect
+      // so an old bookmark still lands somewhere that works.
+      case 'arion_website_ai_builder': return <Navigate to="/app/services/arion_website_pages" replace />;
       case 'arion_website_content_seo_overview': arionPage = <ContentSeoOverview />; break;
       // Legacy sub-routes — redirect to the consolidated Content SEO Overview
       case 'arion_website_content_seo_pages':

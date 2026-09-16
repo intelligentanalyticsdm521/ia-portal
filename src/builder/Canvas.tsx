@@ -42,6 +42,26 @@ export interface CanvasProps {
   onAddSection: (atIndex: number, how: "blank" | "premade") => void;
   /** Shown under the page: what the template puts next. */
   nextUp?: string | null;
+  /**
+   * How wide the paper is. A document is Letter-ish (780); a WEBSITE page is
+   * as wide as the canvas will give it, because a hero that is 780px wide on
+   * the canvas and full-bleed on the site is a preview that lies.
+   */
+  paperWidth?: number | "full";
+  /** The adapter's own stylesheet, appended after the engine's. */
+  extraCss?: string;
+  /** One line above the paper. "Letter" for a document; the URL for a page. */
+  paperNote?: string;
+  /**
+   * The site's own header and footer, drawn as HTML above and below the page
+   * and NOT part of the document. They come from the theme, they are the same
+   * on every page, and pretending they are page sections would be a lie the
+   * first time somebody tried to delete one.
+   */
+  chromeTop?: string;
+  chromeBottom?: string;
+  /** What the chrome is, in the client's words. Shown as its tooltip. */
+  chromeNote?: string;
 }
 
 const TOOL: React.CSSProperties = {
@@ -53,20 +73,29 @@ const TOOL_ON: React.CSSProperties = { ...TOOL, background: "#0C4A60", color: "#
 export function Canvas(props: CanvasProps) {
   const { doc, ctx, selection, onSelect } = props;
   const [dragId, setDragId] = useState<string | null>(null);
+  const paper: React.CSSProperties = props.paperWidth === "full"
+    ? { width: "100%", maxWidth: 1100 }
+    : { width: props.paperWidth ?? 780 };
 
   return (
     <div style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <style>{DOCUMENT_CSS}{CANVAS_CSS}</style>
+      <style>{DOCUMENT_CSS}{CANVAS_CSS}{props.extraCss || ""}</style>
 
-      <div style={{ width: 780, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A" }}>
-        <span>Click anything on the page to edit it. Everything here is what the customer receives.</span>
-        <span>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"} · Letter</span>
+      <div style={{ ...paper, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A", gap: 12 }}>
+        <span>Click anything on the page to edit it. Everything here is what a visitor sees.</span>
+        <span style={{ whiteSpace: "nowrap" }}>
+          {doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}{props.paperNote ? ` · ${props.paperNote}` : " · Letter"}
+        </span>
       </div>
 
       <div
-        style={{ width: 780, background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
+        style={{ ...paper, background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
         onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       >
+        {props.chromeTop && (
+          <div className="bxc-chrome" title={props.chromeNote || "From your website's theme"}
+            dangerouslySetInnerHTML={{ __html: props.chromeTop }} />
+        )}
         {doc.sections.map((s, i) => (
           <SectionHost
             key={s.id}
@@ -96,6 +125,11 @@ export function Canvas(props: CanvasProps) {
             onClick={() => props.onAddSection(doc.sections.length, "premade")}>Pre-made…</button>
           {props.nextUp && <span style={{ color: "#5A7A8A" }}>Next up in this template: {props.nextUp}</span>}
         </div>
+
+        {props.chromeBottom && (
+          <div className="bxc-chrome" title={props.chromeNote || "From your website's theme"}
+            dangerouslySetInnerHTML={{ __html: props.chromeBottom }} />
+        )}
       </div>
     </div>
   );
@@ -262,6 +296,10 @@ const CANVAS_CSS = `
 .bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; }
 [data-bx-editable]:focus { outline: 2px solid #2D9CDB; outline-offset: 2px; border-radius: 2px; background: #FFFFFF; }
 [data-bx-editable]:hover { background: rgba(45,156,219,.06); }
+.bxc-chrome { position: relative; opacity: .78; pointer-events: none; user-select: none; }
+.bxc-chrome::after { content: "from your theme — the same on every page"; position: absolute; top: 4px; right: 8px;
+  font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #64748B; background: #F1F5F9;
+  border-radius: 999px; padding: 1px 8px; }
 `;
 
 export default Canvas;

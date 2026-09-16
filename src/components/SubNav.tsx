@@ -268,7 +268,6 @@ const ARION_NAV: SubNavConfig = {
         { key: "arion_website_menus", label: "Menus", route: "/app/services/arion_website_menus" },
         { key: "arion_website_design", label: "Brand & layout", route: "/app/services/arion_website_design" },
         { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
-        { key: "arion_website_ai_builder", label: "AI Builder", route: "/app/services/arion_website_ai_builder", tag: { label: "IL", color: "#38BDF8" } },
         { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },
         { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
         // Pre-walk pass 3b, 2026-09-09. ARION pack 2 put the website chat

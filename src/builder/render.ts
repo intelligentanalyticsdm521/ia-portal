@@ -78,6 +78,19 @@ export interface RenderContext {
   totals: DocumentTotals;
   /** section id → "01". Computed by the caller from the whole document. */
   numbers: Record<string, string>;
+  /**
+   * THE ADAPTER'S OWN WIDGETS.
+   *
+   * The engine draws the widgets every builder shares. An adapter that has
+   * widgets of its own — the website adapter's eleven whole-page sections, for
+   * instance — supplies them here rather than adding a branch to the switch
+   * below, which is what keeps this module free of any one product.
+   *
+   * Return a string to draw the widget, or null to let the engine try. The
+   * result is wrapped by `renderWidget` exactly like any other, so edit
+   * markers, selection and the `data-widget` handle all behave the same.
+   */
+  extra?: (widget: Widget, ctx: RenderContext) => string | null;
 }
 
 export function makeContext(
@@ -96,6 +109,7 @@ export function makeContext(
     locations: partial.locations ?? {},
     totals: partial.totals ?? documentTotals(doc),
     numbers: partial.numbers ?? sectionNumbers(doc),
+    extra: partial.extra,
   };
 }
 
@@ -147,6 +161,9 @@ export const UNRENDERED_KINDS = ["columns"] as const;
 export function renderWidget(w: Widget, ctx: RenderContext): string {
   const p: any = w.props || {};
   const body = (() => {
+    // The adapter's own widgets first — see RenderContext.extra.
+    const own = ctx.extra?.(w, ctx);
+    if (own != null) return own;
     switch (w.kind) {
       case "doc_header": return docHeader(p, ctx);
       case "key_facts": return keyFacts(p, ctx);
@@ -482,6 +499,10 @@ export function renderSection(s: Section, ctx: RenderContext): string {
     s.background ? `background:${esc(s.background)}` : "",
     `padding:${Number(s.padding) || 0}px 40px`,
     s.theme === "dark" ? "color:#FFFFFF" : "",
+    // A section's own heading font, when it has one. Set as the SAME variable
+    // the document sets, so one rule draws both and a section with no font of
+    // its own simply inherits.
+    s.headingFont ? `--bx-head:${esc(s.headingFont)}` : "",
   ].filter(Boolean).join(";");
 
   return `<section class="bx-sec bx-w-${s.width} bx-cols-${s.layout} bx-theme-${s.theme}${s.pageBreakBefore ? " bx-break" : ""}${

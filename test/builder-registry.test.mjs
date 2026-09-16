@@ -30,7 +30,7 @@ import {
 const SRC = path.join(process.cwd(), "src");
 
 /**
- * The two widgets that legitimately have NO controls, each with its reason.
+ * The widgets that legitimately have NO controls, each with its reason.
  *
  * Kept as an explicit list rather than by relaxing the assertion: a widget with
  * no controls is nearly always a half-finished definition, and the only way to
@@ -38,8 +38,15 @@ const SRC = path.join(process.cwd(), "src");
  *   page_break — it has no properties. It is a break.
  *   columns    — it is a LAYOUT action; the count it asks for is the section's
  *                column count, and the section toolbar owns it from then on.
+ *   site_*     — a WEBSITE section's properties are the ARION field spec, which
+ *                arion-api sends with the section catalogue so there is ONE
+ *                description of a section and it lives in sectionSchema.js.
+ *                Copying it here would be the second copy this whole rebuild
+ *                exists to delete. `SiteInspectorExtras` renders from the
+ *                server's spec; the registry only says what the SECTION is.
  */
 const NO_CONTROLS = new Set(["page_break", "columns"]);
+const isSiteSection = (kind) => kind.startsWith("site_");
 
 describe("every registered widget is complete", () => {
   for (const w of WIDGETS) {
@@ -52,7 +59,7 @@ describe("every registered widget is complete", () => {
       assert.ok(WIDGET_CATEGORIES.includes(w.category), `category "${w.category}" is not in the pane`);
       assert.ok(w.defaults && typeof w.defaults === "object", "no defaults");
       assert.ok(Array.isArray(w.controls), "controls must be an array");
-      if (!NO_CONTROLS.has(w.kind)) {
+      if (!NO_CONTROLS.has(w.kind) && !isSiteSection(w.kind)) {
         assert.ok(w.controls.length > 0, "no controls");
       }
     });
@@ -117,6 +124,13 @@ describe("§3.2's union is registered", () => {
     //   page_break, columns      document layout the canvas needs
     "doc_header", "key_facts", "clauses", "property_plan", "property_block",
     "page_break", "columns",
+    // Added 2026-09-16 by §4 step 3 — the WEBSITE adapter. One per ARION
+    // section kind (arion-api sectionSchema.js SECTION_KINDS), pinned against
+    // that list by website-builder.test.mjs through the shared fixture, plus
+    // `site_custom` for a section built on the website itself.
+    "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
+    "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
+    "site_content", "site_custom",
   ];
 
   for (const kind of REQUIRED) {
@@ -144,6 +158,12 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
   test("a form is a web thing — a proposal cannot host one", () => {
     assert.ok(!WIDGETS_BY_KIND.form.adapters.includes("proposal"));
     assert.ok(!WIDGETS_BY_KIND.form.adapters.includes("email"));
+  });
+
+  test("a website section is offered to the website builder and nowhere else", () => {
+    for (const w of WIDGETS.filter((x) => x.kind.startsWith("site_"))) {
+      assert.deepEqual(w.adapters, ["website"], `${w.kind} is offered somewhere it cannot render`);
+    }
   });
 
   test("every adapter gets a usable set, not an empty pane", () => {
