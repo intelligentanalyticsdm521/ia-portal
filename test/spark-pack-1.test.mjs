@@ -160,7 +160,10 @@ test("the three places that know a contact id link to it", () => {
   const modal = read("components/spark/SparkLeadModal.tsx");
   assert.match(modal, /spark_contact_360\?id=\$\{lead\.contact_id\}/);
   const contacts = read("pages/spark/SparkContactsPage.tsx");
-  assert.match(contacts, /spark_contact_360\?id=\$\{c\.id\}/);
+  // `c.customer_id` since 2026-09-16: the list is the MIXED customer list and a
+  // row's id is `customer_id`. The assertion still means "the row links to the
+  // person it already knows the id of", which is what it was written for.
+  assert.match(contacts, /spark_contact_360\?id=\$\{c\.customer_id\}/);
   const smsCampaigns = code("pages/spark/SparkSmsCampaignsPage.tsx");
   assert.match(smsCampaigns, /spark_contact_360\?id=\$\{s\.contact_id\}/);
   assert.doesNotMatch(smsCampaigns, /spark_contacts\?id=/,

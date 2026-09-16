@@ -460,7 +460,13 @@ const SPARK_NAV: SubNavConfig = {
         // now does everything this page did (file picker) plus xlsx, so hiding
         // it removes a nav item without removing a capability.
         { key: "spark_contact_import", label: "Import (CSV)", route: "/app/services/spark_contact_import", merged: true },
-        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", merged: true /* merged: Companies is now a view on Contacts (List | Kanban | Companies) — same component, not a copy */ },
+        // D-128 (2026-09-15, built 2026-09-16): UN-merged. Companies was a view
+        // on Contacts; it is a destination again — company header, billing,
+        // people with roles, locations, notes and activity — so it is a nav
+        // item again. "merged" means "folded into another surface"; leaving the
+        // flag on a page that is no longer folded in would hide the only way to
+        // reach it from the nav (reference_nav_visibility_semantics).
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
         { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
         { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).

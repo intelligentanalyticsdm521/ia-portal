@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 
 export interface SparkTableColumn<T> {
   key: string;
@@ -23,6 +23,16 @@ export interface SparkTableProps<T> {
   emptyState?: ReactNode;
   /** Optional total count for "Showing X of Y" footer */
   totalCount?: number;
+  /**
+   * A labelled divider drawn BEFORE a row, when this returns something.
+   *
+   * Added for the mixed customer list (§7 point 1): companies first, then the
+   * labelled group "People not at a company". Two tables stacked would have
+   * given two header rows and two footers for one list; a group row inside the
+   * one table is what the artboard draws. Returns null for every row that does
+   * not start a group, which is all of them on every other page.
+   */
+  groupHeader?: (row: T, prevRow: T | null, index: number) => ReactNode;
   /** Optional page info ({page, pageSize, onPageChange}) */
   pagination?: {
     page: number;
@@ -39,7 +49,7 @@ export interface SparkTableProps<T> {
  * hover at the right edge, no nested cards. Header row sticky on scroll.
  */
 export function SparkTable<T>({
-  rows, columns, getRowKey, onRowClick, rowActions, emptyState, totalCount, pagination,
+  rows, columns, getRowKey, onRowClick, rowActions, emptyState, totalCount, groupHeader, pagination,
 }: SparkTableProps<T>) {
   const widthClass = (w: SparkTableColumn<T>["width"]) => {
     if (!w) return "";
@@ -80,27 +90,36 @@ export function SparkTable<T>({
               </td>
             </tr>
           ) : (
-            rows.map(row => (
-              <tr
-                key={getRowKey(row)}
-                className={`spark-table-row ${onRowClick ? "cursor-pointer" : ""}`}
-                onClick={onRowClick ? () => onRowClick(row) : undefined}
-              >
-                {columns.map(col => (
-                  <td
-                    key={col.key}
-                    className={`${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""}`}
+            rows.map((row, index) => {
+              const group = groupHeader ? groupHeader(row, index > 0 ? rows[index - 1] : null, index) : null;
+              return (
+                <Fragment key={getRowKey(row)}>
+                  {group && (
+                    <tr className="spark-table-group">
+                      <td colSpan={columns.length + (rowActions ? 1 : 0)}>{group}</td>
+                    </tr>
+                  )}
+                  <tr
+                    className={`spark-table-row ${onRowClick ? "cursor-pointer" : ""}`}
+                    onClick={onRowClick ? () => onRowClick(row) : undefined}
                   >
-                    {col.cell(row)}
-                  </td>
-                ))}
-                {rowActions && (
-                  <td className="spark-table-row-actions" onClick={e => e.stopPropagation()}>
-                    {rowActions(row)}
-                  </td>
-                )}
-              </tr>
-            ))
+                    {columns.map(col => (
+                      <td
+                        key={col.key}
+                        className={`${alignClass(col.align)} ${col.hideOnMobile ? "hidden md:table-cell" : ""}`}
+                      >
+                        {col.cell(row)}
+                      </td>
+                    ))}
+                    {rowActions && (
+                      <td className="spark-table-row-actions" onClick={e => e.stopPropagation()}>
+                        {rowActions(row)}
+                      </td>
+                    )}
+                  </tr>
+                </Fragment>
+              );
+            })
           )}
         </tbody>
       </table>
