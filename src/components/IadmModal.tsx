@@ -192,7 +192,7 @@ export function IadmModal({
  * enough that a dedicated variant isn't worth the API surface.
  */
 export function IadmButton({
-  variant, product, onClick, disabled, type = "button", children, icon,
+  variant, product, onClick, disabled, type = "button", children, icon, title,
   "data-tour": dataTour,
 }: {
   variant: "primary" | "accent" | "ghost";
@@ -202,6 +202,13 @@ export function IadmButton({
   type?: "button" | "submit";
   children: ReactNode;
   icon?: ReactNode;
+  /**
+   * The tooltip. SD-010 asks for one on EVERY button, and a builder footer is
+   * where the buttons that actually commit something live — "Save as a
+   * template" and "Use in a post" both need a sentence saying what happens
+   * next. Optional, so no existing call site moves.
+   */
+  title?: string;
   /** InteractiveWalkthrough hook — lets flows spotlight this button by selector. */
   "data-tour"?: string;
 }) {
@@ -211,7 +218,7 @@ export function IadmButton({
   const baseClass = "inline-flex items-center gap-1 rounded px-3 py-1.5 max-md:min-h-[40px] max-md:px-4 text-xs font-semibold transition-colors disabled:opacity-50";
   if (variant === "primary") {
     return (
-      <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: CORE_BLUE }}>
+      <button data-tour={dataTour} title={title} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: CORE_BLUE }}>
         {icon}{children}
       </button>
     );
@@ -219,13 +226,13 @@ export function IadmButton({
   if (variant === "accent") {
     const c = product ? PRODUCT_ACCENT[product] : PRODUCT_ACCENT.spark;
     return (
-      <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: c }}>
+      <button data-tour={dataTour} title={title} type={type} onClick={onClick} disabled={disabled} className={baseClass + " text-white"} style={{ background: c }}>
         {icon}{children}
       </button>
     );
   }
   return (
-    <button data-tour={dataTour} type={type} onClick={onClick} disabled={disabled} className={baseClass + " border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}>
+    <button data-tour={dataTour} title={title} type={type} onClick={onClick} disabled={disabled} className={baseClass + " border border-slate-300 bg-white text-slate-700 hover:bg-slate-100"}>
       {icon}{children}
     </button>
   );

@@ -117,6 +117,13 @@ describe("§3.2's union is registered", () => {
     //   page_break, columns      document layout the canvas needs
     "doc_header", "key_facts", "clauses", "property_plan", "property_block",
     "page_break", "columns",
+    // Added 2026-09-16 by §5 step 5 — My Brand's Template Studio on the shared
+    // shell. Seven placed OBJECTS a pixel canvas has and a flowing page does
+    // not; the studio's other eight tools are registry entries that already
+    // existed (heading, paragraph, list, image, gallery, divider, button,
+    // callout), which is what stops the studio inventing a ninth vocabulary.
+    "brand_logo", "shape", "icon", "colour_block", "background", "qr_code",
+    "social_handle",
   ];
 
   for (const kind of REQUIRED) {
@@ -153,12 +160,47 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
   });
 
   test("the text basics are available everywhere", () => {
-    for (const kind of ["heading", "paragraph", "image", "button", "divider", "spacer"]) {
+    for (const kind of ["heading", "paragraph", "image", "button", "divider"]) {
       assert.deepEqual(
         [...WIDGETS_BY_KIND[kind].adapters].sort(),
         [...BUILDER_ADAPTERS].sort(),
         `${kind} should be offered by every builder`,
       );
+    }
+  });
+
+  test("a flow widget is not offered to the pixel canvas", () => {
+    // §5 step 5. On a 1080×1080 square every object carries its own x, y, w and
+    // h, so "how much space below this" and "split this into two columns" have
+    // nothing to act on. Naming the four here is what stops a later ALL from
+    // quietly putting a spacer back in the Template Studio's pane.
+    for (const kind of ["spacer", "columns", "key_value_table", "data_table"]) {
+      assert.ok(
+        !WIDGETS_BY_KIND[kind].adapters.includes("brand"),
+        `${kind} means nothing on an absolute-pixel canvas`,
+      );
+      assert.deepEqual(
+        [...WIDGETS_BY_KIND[kind].adapters].sort(),
+        ["email", "landing", "proposal", "website"],
+        `${kind} should still be offered to every FLOW builder`,
+      );
+    }
+  });
+
+  test("the studio's own tools belong to the studio and nowhere else", () => {
+    for (const kind of ["brand_logo", "shape", "icon", "colour_block", "background", "qr_code", "social_handle"]) {
+      assert.deepEqual(WIDGETS_BY_KIND[kind].adapters, ["brand"], `${kind} is a placed object, not page furniture`);
+    }
+  });
+
+  test("the Template Studio's pane covers every tool §5 step 5 names", () => {
+    // The eleven Brandon listed, by the kind that serves each one.
+    const kinds = widgetsFor("brand").map((w) => w.kind);
+    for (const kind of [
+      "paragraph", "heading", "image", "brand_logo", "shape", "icon",
+      "colour_block", "background", "qr_code", "social_handle", "callout",
+    ]) {
+      assert.ok(kinds.includes(kind), `the studio's pane is missing ${kind}`);
     }
   });
 });
