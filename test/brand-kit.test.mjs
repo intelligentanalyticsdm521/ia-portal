@@ -36,7 +36,18 @@ const BRAND_CONSUMERS = [
   "components/spark/CTAEditorBlock.tsx",
   "components/spark/SparkCampaignComposerModal.tsx",
   "components/spark/SparkTemplateEditorModal.tsx",
-  "components/myBrand/TemplateStudioEditorModal.tsx",
+  // 2026-09-16 (§5 step 5): the Template Studio's 3,249-line modal was deleted
+  // and its work split across the shared-shell adapter. EVERY piece of it is
+  // listed, not just the one that calls the hook — the old bug was a literal
+  // sitting in a pure helper that could not call a hook at all.
+  "builder/adapters/mybrand/StudioBuilder.tsx",
+  "builder/adapters/mybrand/LayerInspector.tsx",
+  "builder/adapters/mybrand/TemplateGallery.tsx",
+  "builder/adapters/mybrand/PixelCanvas.tsx",
+  "builder/adapters/mybrand/scene.ts",
+  "builder/adapters/mybrand/insert.ts",
+  "builder/adapters/mybrand/templates.ts",
+  "builder/adapters/mybrand/fabricBridge.ts",
   "pages/spark/SparkLandingPagesPage.tsx",
   "pages/settings/BrandIdentityPage.tsx",
   "builder/registry.ts",
@@ -120,7 +131,10 @@ describe("every consumer reads the ONE hook", () => {
     "components/spark/CTAEditorBlock.tsx",
     "components/spark/SparkCampaignComposerModal.tsx",
     "components/spark/SparkTemplateEditorModal.tsx",
-    "components/myBrand/TemplateStudioEditorModal.tsx",
+    // The studio's ONE reader of the kit. Everything else under
+    // adapters/mybrand takes the brand as an argument, which is what lets the
+    // templates be built and asserted on without a React tree.
+    "builder/adapters/mybrand/StudioBuilder.tsx",
     "pages/spark/SparkLandingPagesPage.tsx",
     "pages/settings/BrandIdentityPage.tsx",
   ];

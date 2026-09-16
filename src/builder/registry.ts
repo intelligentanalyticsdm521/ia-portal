@@ -143,6 +143,19 @@ const solid = (x: number, y: number, w: number, h: number) =>
    ══════════════════════════════════════════════════════════════════════════ */
 
 const ALL: BuilderAdapter[] = ["proposal", "website", "email", "landing", "brand"];
+/**
+ * Every builder whose page is a FLOW: sections stack, a widget takes the width
+ * it is given, and "space between things" is a property. My Brand's canvas is
+ * absolute pixels, so the three widgets that only mean something in a flow
+ * (columns, spacer) and the two that are really small tables (key facts, data
+ * table) are offered to these four and not to the studio. Everything else on
+ * ALL genuinely has a pixel meaning — a heading is a text layer, a divider is a
+ * line, a button is a rounded block with a label on it.
+ */
+const FLOWS: BuilderAdapter[] = ["proposal", "website", "email", "landing"];
+/** My Brand's Template Studio only. A logo, a QR code and a colour block are
+ *  placed objects, not page furniture. */
+const CANVAS: BuilderAdapter[] = ["brand"];
 const DOCUMENTS: BuilderAdapter[] = ["proposal"];
 const PAGES: BuilderAdapter[] = ["website", "landing"];
 const SENDS: BuilderAdapter[] = ["email"];
@@ -283,7 +296,7 @@ export const WIDGETS: WidgetDef[] = [
     icon: "MoveVertical",
     picture: pictureFrom(bar(8, 8, 48) + `<path d="M32 16v10" stroke="#CBD5E1"/>` + bar(8, 30, 48)),
     category: "Layout",
-    adapters: ALL,
+    adapters: FLOWS,
     defaults: { height: 24 },
     controls: [{ key: "height", label: "How much space", type: "number" }],
   },
@@ -391,7 +404,7 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Rows3",
     picture: pictureFrom(bar(8, 10, 18) + bar(32, 10, 24) + bar(8, 20, 18) + bar(32, 20, 20) + bar(8, 30, 18) + bar(32, 30, 22)),
     category: "Information",
-    adapters: ALL,
+    adapters: FLOWS,
     defaults: { rows: [] },
     controls: [{ key: "rows", label: "Rows", type: "list" }],
   },
@@ -402,7 +415,7 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Table2",
     picture: pictureFrom(`<rect x="6" y="8" width="52" height="8" rx="2" fill="#CBD5E1" stroke="none"/>` + box(6, 8, 52, 26) + `<path d="M6 24h52M24 16v18M41 16v18" stroke="#CBD5E1"/>`),
     category: "Information",
-    adapters: ALL,
+    adapters: FLOWS,
     defaults: { columns: [], rows: [] },
     controls: [
       { key: "columns", label: "Columns", type: "list" },
@@ -585,6 +598,111 @@ export const WIDGETS: WidgetDef[] = [
     defaults: {},
     controls: [],
   },
+
+  /* ── My Brand's canvas ──────────────────────────────────────
+     §5 step 5. Seven things you place on a square, not on a page. Each one is
+     an OBJECT with a position, which is why none of them belongs to a builder
+     whose model is sections in a flow. The other eight the studio offers
+     (heading, text, bullet list, image, photo grid, divider, button, callout)
+     are the ones already in the registry — the studio draws them as layers
+     rather than re-declaring them, which is the whole point of one registry. */
+  {
+    kind: "brand_logo",
+    label: "Your logo",
+    description: "Your business logo, placed at a sensible size and kept sharp.",
+    icon: "Stamp",
+    picture: pictureFrom(`<circle cx="20" cy="20" r="9" fill="#94A3B8" stroke="none"/>` + bar(34, 15, 22, 5) + bar(34, 24, 14, 4)),
+    category: "Media",
+    adapters: CANVAS,
+    defaults: { source: "brand", url: "" },
+    controls: [
+      { key: "source", label: "Which logo", type: "select", options: ["Your brand logo", "A different picture"], help: "Your brand logo comes from Brand Identity — change it there and every design catches up." },
+      { key: "url", label: "Picture", type: "image" },
+    ],
+  },
+  {
+    kind: "shape",
+    label: "Shape",
+    description: "A rectangle, circle or line — the block a headline sits on.",
+    icon: "Shapes",
+    picture: pictureFrom(`<rect x="8" y="10" width="20" height="20" rx="3" fill="#94A3B8" stroke="none"/>` + `<circle cx="45" cy="20" r="10" fill="#CBD5E1" stroke="none"/>`),
+    category: "Layout",
+    adapters: CANVAS,
+    defaults: { shape: "rect", fill: "", radius: 0 },
+    controls: [
+      { key: "shape", label: "Which shape", type: "select", options: ["Rectangle", "Circle", "Line"] },
+      { key: "fill", label: "Colour", type: "colour", help: "Starts as one of your brand colours. Any colour you like." },
+      { key: "radius", label: "Rounded corners", type: "number" },
+    ],
+  },
+  {
+    kind: "icon",
+    label: "Icon",
+    description: "A simple symbol — a tick, a star, a phone, a leaf — in your colour.",
+    icon: "Star",
+    picture: pictureFrom(`<path d="M32 8l5 11 12 1-9 8 3 12-11-7-11 7 3-12-9-8 12-1z" fill="#94A3B8" stroke="none"/>`),
+    category: "Media",
+    adapters: CANVAS,
+    defaults: { icon: "star", fill: "" },
+    controls: [
+      { key: "icon", label: "Which symbol", type: "select", help: "Pick from the set when you add it; swap it any time." },
+      { key: "fill", label: "Colour", type: "colour" },
+    ],
+  },
+  {
+    kind: "colour_block",
+    label: "Brand colour block",
+    description: "A band of one of your brand colours — the fastest way to look designed.",
+    icon: "PaintBucket",
+    picture: pictureFrom(solid(6, 8, 24, 24) + `<rect x="34" y="8" width="11" height="24" rx="2" fill="#CBD5E1" stroke="none"/>` + `<rect x="48" y="8" width="10" height="24" rx="2" fill="#E2E8F0" stroke="none"/>`),
+    category: "Layout",
+    adapters: CANVAS,
+    defaults: { slot: "primary", band: "left" },
+    controls: [
+      { key: "slot", label: "Which colour", type: "select", options: ["Primary", "Secondary", "Accent", "Text", "Background"] },
+      { key: "band", label: "Where", type: "select", options: ["Left third", "Right third", "Top band", "Bottom band", "Middle"] },
+    ],
+  },
+  {
+    kind: "background",
+    label: "Background",
+    description: "Fills the whole square behind everything — a colour, a fade or a photo.",
+    icon: "Frame",
+    picture: pictureFrom(`<rect x="4" y="4" width="56" height="32" rx="3" fill="#CBD5E1" stroke="none"/>` + bar(16, 16, 32, 8)),
+    category: "Layout",
+    adapters: CANVAS,
+    defaults: { fill: "gradient" },
+    controls: [
+      { key: "fill", label: "Fill", type: "select", options: ["Brand colour", "Fade between two brand colours", "A photo"] },
+    ],
+  },
+  {
+    kind: "qr_code",
+    label: "QR code",
+    description: "A square people scan with a phone to open your link.",
+    icon: "QrCode",
+    picture: pictureFrom(`<rect x="20" y="6" width="26" height="26" rx="2" fill="none" stroke="#64748B"/>` + `<rect x="24" y="10" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="35" y="10" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="24" y="21" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="36" y="23" width="4" height="4" fill="#94A3B8" stroke="none"/>`),
+    category: "Information",
+    adapters: CANVAS,
+    defaults: { url: "" },
+    controls: [
+      { key: "url", label: "Where it goes", type: "link", help: "Paste any link — your website, a booking page, a review page." },
+    ],
+  },
+  {
+    kind: "social_handle",
+    label: "Social handle",
+    description: "Your @name with its platform symbol, so people know where to find you.",
+    icon: "AtSign",
+    picture: pictureFrom(`<circle cx="16" cy="20" r="8" fill="#94A3B8" stroke="none"/>` + bar(29, 14, 27, 5) + bar(29, 23, 18, 4)),
+    category: "Information",
+    adapters: CANVAS,
+    defaults: { platform: "instagram", handle: "" },
+    controls: [
+      { key: "platform", label: "Where", type: "select", options: ["Instagram", "Facebook", "LinkedIn", "Website", "Phone", "Email"] },
+      { key: "handle", label: "Your name there", type: "text" },
+    ],
+  },
   {
     kind: "columns",
     label: "Columns",
@@ -592,7 +710,7 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Columns3",
     picture: pictureFrom(box(6, 8, 15, 26) + box(24, 8, 16, 26) + box(43, 8, 15, 26)),
     category: "Layout",
-    adapters: ALL,
+    adapters: FLOWS,
     defaults: {},
     controls: [],
     count: { min: 2, max: 3, label: "How many columns?", default: 2 },

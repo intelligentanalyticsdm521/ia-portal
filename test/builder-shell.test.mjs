@@ -144,9 +144,37 @@ describe("the three-pane slots are part of the SHELL", () => {
   });
 });
 
-describe("Template Studio is switched over, and nothing else is — yet", () => {
-  test("the Template Studio opens at the builder size", () => {
-    assert.match(read("components/myBrand/TemplateStudioEditorModal.tsx"), /size="builder"/);
+describe("every builder opens through ONE frame", () => {
+  // 2026-09-16, §5 step 5. The chrome moved out of BuilderShell into
+  // BuilderFrame so the pixel canvas could open the same surface as the
+  // document canvas. `size="builder"` is therefore written ONCE, and both
+  // engines get it whether they remember to ask for it or not.
+  const frame = read("builder/BuilderFrame.tsx");
+
+  test("the frame is the one place the builder size is named", () => {
+    assert.match(frame, /size="builder"/);
+    const others = ["builder/BuilderShell.tsx", "builder/adapters/mybrand/StudioBuilder.tsx"];
+    for (const rel of others) {
+      assert.doesNotMatch(read(rel), /size="builder"/, `${rel} should take the size from BuilderFrame`);
+    }
+  });
+
+  test("the frame carries exactly ONE undo and ONE redo control", () => {
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
+  });
+
+  test("both engines open it", () => {
+    for (const rel of ["builder/BuilderShell.tsx", "builder/adapters/mybrand/StudioBuilder.tsx"]) {
+      assert.match(read(rel), /<BuilderFrame/, `${rel} must open the shared frame`);
+      assert.match(read(rel), /from "\.\.?\/*(\.\.\/)*BuilderFrame"|from "\.\/BuilderFrame"/);
+    }
+  });
+
+  test("the Template Studio uses the shared pane, not a rail of its own", () => {
+    const studio = read("builder/adapters/mybrand/StudioBuilder.tsx");
+    assert.match(studio, /<WidgetPane\s+adapter="brand"/);
+    assert.doesNotMatch(studio, /InsertRail/, "the old insert rail is deleted, not hidden");
   });
 
   test("the consultant workspace keeps xl (it embeds a whole Portal, not a canvas)", () => {

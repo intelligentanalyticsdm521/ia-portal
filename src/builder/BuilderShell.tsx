@@ -4,8 +4,8 @@
  * BUILDER_PLATFORM_SCOPE_2026-09-15 §5 step 2. It owns the things that are the
  * same for a proposal, a website page, a newsletter and a landing page:
  *
- *   · the full-viewport surface (IadmModal size="builder", ≥80% of the screen)
- *   · the three panes (IadmBuilderPanes: widget pane / canvas / inspector)
+ *   · the full-viewport surface and the three panes — through BuilderFrame,
+ *     which My Brand's pixel canvas opens as well (§5 step 5)
  *   · the widget pane from the registry, grouped, searchable, tooltips
  *   · selection, the section toolbar, the inspector bound to the selection
  *   · undo / redo, with typing coalesced into one step per field
@@ -17,8 +17,7 @@
  * email adapters will reuse this without a second shell.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Redo2, Undo2 } from "lucide-react";
-import { IadmModal, IadmBuilderPanes } from "../components/IadmModal";
+import { BuilderFrame } from "./BuilderFrame";
 import { WidgetPane } from "./WidgetPane";
 import { Canvas } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
@@ -188,87 +187,67 @@ export function BuilderShell(p: BuilderShellProps) {
   }, [apply, doc, selection]);
 
   return (
-    <>
-      <IadmModal
-        open={p.open}
-        onClose={p.onClose}
-        product="oliver"
-        eyebrow={p.eyebrow}
-        title={p.title}
-        subtitle={p.subtitle}
-        size="builder"
-        headerActions={
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <button type="button" title="Undo (Ctrl+Z)" disabled={!canUndo(history)} onClick={doUndo} style={ghost(canUndo(history))}>
-              <Undo2 size={14} />
-            </button>
-            <button type="button" title="Redo (Ctrl+Shift+Z)" disabled={!canRedo(history)} onClick={doRedo} style={ghost(canRedo(history))}>
-              <Redo2 size={14} />
-            </button>
-            {p.headerActions}
-          </div>
-        }
-        footer={p.footer}
-      >
-        <IadmBuilderPanes
-          canvasBackground="#E6ECF1"
-          pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
-          inspector={
-            <Inspector
-              doc={doc}
-              selection={selection}
-              swatches={p.swatches}
-              fonts={p.fonts}
-              askArgus={p.askArgus}
-              widgetExtras={p.widgetExtras}
-              onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
-              onPatchWidget={patchSelectedWidget}
-              onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); setSelection({ kind: "section", sectionId: selection.sectionId }); } }}
-              onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); setSelection({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
-              onSetCount={setCount}
-            />
-          }
-        >
-          <Canvas
-            doc={doc}
-            ctx={p.ctx}
-            selection={selection}
-            nextUp={p.nextUp}
-            onSelect={setSelection}
-            onEditText={onEditText}
-            onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
-            onDuplicateSection={(id) => apply(duplicateSection(doc, id))}
-            onDeleteSection={(id) => { apply(removeSection(doc, id)); setSelection(null); }}
-            onMoveSection={(id, to) => apply(moveSection(doc, id, to))}
-            onAddSection={(at, how) => {
-              if (how === "premade") { setGallery({ at }); return; }
-              const s = makeSection({ label: "Section" });
-              apply(addSection(doc, s, at));
-              setSelection({ kind: "section", sectionId: s.id });
-            }}
-          />
-        </IadmBuilderPanes>
-      </IadmModal>
-
-      <SectionGallery
-        open={!!gallery}
-        adapter={p.adapter}
-        savedTemplates={p.savedTemplates}
-        onOpenTemplate={p.onOpenTemplate}
-        onClose={() => setGallery(null)}
-        onPlaceSection={(s) => placeSection(s, gallery?.at ?? doc.sections.length)}
-        onPlaceWidget={(w, c) => insertWidget(w, c)}
+    <BuilderFrame
+      open={p.open}
+      onClose={p.onClose}
+      product="oliver"
+      eyebrow={p.eyebrow}
+      title={p.title}
+      subtitle={p.subtitle}
+      headerActions={p.headerActions}
+      footer={p.footer}
+      canUndo={canUndo(history)}
+      canRedo={canRedo(history)}
+      onUndo={doUndo}
+      onRedo={doRedo}
+      pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
+      inspector={
+        <Inspector
+          doc={doc}
+          selection={selection}
+          swatches={p.swatches}
+          fonts={p.fonts}
+          askArgus={p.askArgus}
+          widgetExtras={p.widgetExtras}
+          onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
+          onPatchWidget={patchSelectedWidget}
+          onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); setSelection({ kind: "section", sectionId: selection.sectionId }); } }}
+          onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); setSelection({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
+          onSetCount={setCount}
+        />
+      }
+      overlays={
+        <SectionGallery
+          open={!!gallery}
+          adapter={p.adapter}
+          savedTemplates={p.savedTemplates}
+          onOpenTemplate={p.onOpenTemplate}
+          onClose={() => setGallery(null)}
+          onPlaceSection={(s) => placeSection(s, gallery?.at ?? doc.sections.length)}
+          onPlaceWidget={(w, c) => insertWidget(w, c)}
+        />
+      }
+    >
+      <Canvas
+        doc={doc}
+        ctx={p.ctx}
+        selection={selection}
+        nextUp={p.nextUp}
+        onSelect={setSelection}
+        onEditText={onEditText}
+        onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
+        onDuplicateSection={(id) => apply(duplicateSection(doc, id))}
+        onDeleteSection={(id) => { apply(removeSection(doc, id)); setSelection(null); }}
+        onMoveSection={(id, to) => apply(moveSection(doc, id, to))}
+        onAddSection={(at, how) => {
+          if (how === "premade") { setGallery({ at }); return; }
+          const s = makeSection({ label: "Section" });
+          apply(addSection(doc, s, at));
+          setSelection({ kind: "section", sectionId: s.id });
+        }}
       />
-    </>
+    </BuilderFrame>
   );
-}
-
-function ghost(enabled: boolean): React.CSSProperties {
-  return {
-    display: "inline-flex", alignItems: "center", justifyContent: "center", width: 28, height: 28,
-    borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)", background: "transparent",
-    color: "#fff", opacity: enabled ? 1 : 0.35, cursor: enabled ? "pointer" : "default",
-  };
 }
 
 export default BuilderShell;
