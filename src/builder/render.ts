@@ -91,6 +91,7 @@ export interface RenderContext {
    * markers, selection and the `data-widget` handle all behave the same.
    */
   extra?: (widget: Widget, ctx: RenderContext) => string | null;
+  /**
    * A revision's diff: section id → "added" | "changed" (diff.ts).
    *
    * The author's canvas and the customer's revision page both hand this in, so
