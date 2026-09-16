@@ -261,7 +261,12 @@ const SparkWebhookDeliveriesPage = lazyNamed(() => import('./spark/SparkWebhookD
 const SparkSavedSearchesPage = lazyNamed(() => import('./spark/SparkSavedSearchesPage'), 'SparkSavedSearchesPage');
 const SparkQuietHoursPage = lazyNamed(() => import('./spark/SparkQuietHoursPage'), 'SparkQuietHoursPage');
 const SparkNpsSchedulesPage = lazyNamed(() => import('./spark/SparkNpsSchedulesPage'), 'SparkNpsSchedulesPage');
-const SparkCustomFieldsPage = lazyNamed(() => import('./spark/SparkCustomFieldsPage'), 'SparkCustomFieldsPage');
+// Settings -> Custom fields. Moved out of SPARK 2026-09-16: a property's
+// trigger depth is read by a crew on a job sheet, not by a marketer, and the
+// page now covers customers, properties, jobs and deals. The SPARK page is
+// deleted, not left beside it; the route key stays so every link, the nav
+// entry and the journey content keep pointing at the page that exists.
+const SparkCustomFieldsPage = lazyNamed(() => import('./settings/CustomFieldsPage'), 'CustomFieldsPage');
 const SparkWorkflowTriggersPage = lazyNamed(() => import('./spark/SparkWorkflowTriggersPage'), 'SparkWorkflowTriggersPage');
 const SparkConfigBackupPage = lazyNamed(() => import('./spark/SparkConfigBackupPage'), 'SparkConfigBackupPage');
 const SparkServiceCategoryPage = lazyNamed(() => import('./spark/SparkServiceCategoryPage'), 'SparkServiceCategoryPage');
