@@ -6,7 +6,7 @@
 import { useCallback, useMemo } from "react";
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../auth/useAccessToken";
-import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, oliverUpload, oliverDownload, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
+import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, oliverUpload, oliverDownload, oliverBlob, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
 import { useIsFounder } from "./useIsFounder";
 
@@ -148,10 +148,18 @@ export function useOliverApi() {
     [instance, account]
   );
 
+  // The BYTES of a private file, as a Blob. The Files card (D-136) renders a
+  // thumbnail and opens a PDF from the same guarded endpoint, neither of which
+  // is a save-to-disk — so `download` cannot serve either.
+  const fetchBlob = useCallback(
+    (path: string): Promise<Blob> => oliverBlob(instance, account, path),
+    [instance, account]
+  );
+
   // Stable object identity — prevents consumers keyed on this hook's result
   // from re-fetching on every render (fetch once per page, not per render).
   return useMemo(
-    () => ({ get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, ready: !!account }),
-    [get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, account]
+    () => ({ get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, fetchBlob, ready: !!account }),
+    [get, post, patch, put, del, getFounder, postFounder, patchFounder, uploadFounder, uploadClient, download, fetchBlob, account]
   );
 }

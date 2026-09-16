@@ -41,6 +41,9 @@ import { PhoneInput } from "../../PhoneInput";
 import { useSparkApi } from "../../../hooks/useSparkApi";
 import { BillingCard, LocationsCard, NotesCard, ActivityCard, type LocationRow } from "../../customers/CustomerCards";
 import { RolesCard } from "../../customers/RolesCard";
+// D-136 — the account's own files (the MSA, the COI). A SITE's files live on
+// the location page; these are the ones that cover every site.
+import { FilesCard } from "../../customers/FilesCard";
 import { LocationPanel } from "../../customers/LocationPanel";
 import type { PersonRole, BillingProfile } from "../../../lib/customerModel";
 
@@ -582,6 +585,16 @@ export function CustomerModal({
                   </div>
                   <NotesCard
                     path={`/api/v1/customers/${subject.kind}/${subject.id}/notes`}
+                    accent="#2D9CDB"
+                  />
+                  {/* D-136. The rows with NO location — a site map filed
+                      against Ankeny is a fact about Ankeny and has no business
+                      appearing here as if it covered every site. */}
+                  <FilesCard
+                    path={`/customers/${subject.kind}/${subject.id}/files`}
+                    title="Files for the whole account"
+                    subtitle="Contracts, insurance certificates and anything else that covers every site. A site's own map lives on its location page."
+                    emptyText="Nothing here yet. The signed agreement and the certificate of insurance belong here."
                     accent="#2D9CDB"
                   />
                   <ActivityCard customerKind={subject.kind} customerId={subject.id} />
