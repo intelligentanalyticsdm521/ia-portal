@@ -142,3 +142,28 @@ export const STACK_QUERY = `@container (max-width: ${CONTENT_STACK_MAX}px)`;
  * `container-type: size` would collapse it to nothing.
  */
 export const CONTAINER_ROOT_CSS = "container-type: inline-size;";
+
+/**
+ * The query a DEVICE's style overrides are emitted under (§11.8, D-140).
+ *
+ * The styling pass lets an author say "on a phone, this heading is smaller".
+ * That needs a width per device, and the temptation is to type 768 and 390
+ * into style.ts — which is the fourth-number defect this module was written to
+ * end. So the numbers come from PREVIEW_DEVICES, the same list the preview
+ * toggle offers, and a device the author previewed at 390 is the device their
+ * phone override applies at.
+ *
+ * A CONTAINER query, for the same reason as STACK_QUERY: the canvas is a 390px
+ * sheet inside a 1600px window and a media query there is false forever.
+ *
+ * Note the three widths are deliberately NOT the same number as
+ * CONTENT_STACK_MAX (720): stacking is about what a LAYOUT can no longer do,
+ * and an override is about what the AUTHOR asked for at a width they looked
+ * at. 720 sits between tablet and phone, so a document stacks before the phone
+ * overrides come in — which is the right order and is pinned by a test.
+ */
+export function deviceContainerQuery(key: PreviewKey): string {
+  const width = previewDevice(key).width;
+  if (width === null) return "";
+  return `@container (max-width: ${width}px)`;
+}

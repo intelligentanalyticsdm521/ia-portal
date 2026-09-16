@@ -19,17 +19,19 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BuilderFrame } from "./BuilderFrame";
 import { WidgetPane } from "./WidgetPane";
-import { Canvas } from "./Canvas";
+import { Canvas, type CanvasDrag } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
 import {
   addSection, addWidget, duplicateSection, makeSection, makeWidget, moveSection, moveWidget,
-  patchSection, patchWidget, removeSection, removeWidget, setLayout, setPropPath,
+  moveWidgetTo, patchSection, patchWidget, removeSection, removeWidget, setLayout, setPropPath,
+  setWidgetStyle,
   type BuilderDocument, type Section, type Selection,
 } from "./model";
+import type { ElementStyle } from "./style";
 import { canRedo, canUndo, initHistory, push, redo, undo, type History } from "./history";
 import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
-import type { BuilderAdapter, WidgetDef } from "./registry";
+import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
 
@@ -159,6 +161,16 @@ export function BuilderShell(p: BuilderShellProps) {
    * is the only place that knows an email is 600 wide and a website is not.
    */
   const [preview, setPreview] = useState<PreviewKey>("desktop");
+  /**
+   * WHAT IS IN THE AIR (§11.8).
+   *
+   * The widget PANE starts half of these drags and the CANVAS finishes them,
+   * and neither contains the other — so the one piece of state between them
+   * lives here, exactly like the preview width above. Cleared on `dragend`
+   * whatever the outcome, so a drag abandoned over the widget list cannot
+   * leave a drop line stranded on the page.
+   */
+  const [drag, setDrag] = useState<CanvasDrag>(null);
   const doc = p.doc;
 
   const select = useCallback((s: Selection) => {
@@ -195,10 +207,23 @@ export function BuilderShell(p: BuilderShellProps) {
     return doc.sections[doc.sections.length - 1] || null;
   }, [doc.sections, selection]);
 
-  const insertWidget = useCallback((def: WidgetDef, count?: number) => {
+  /**
+   * Put a widget on the page.
+   *
+   * `at` is where a DRAG dropped it — a section, a column and an index. Absent,
+   * it is a click in the pane and the widget lands in the selected section's
+   * current column, exactly as it always has. ONE insert either way: a drag
+   * that went through its own code path would be a second set of rules about
+   * what a new widget's props are.
+   */
+  const insertWidget = useCallback((
+    def: WidgetDef,
+    count?: number,
+    at?: { sectionId: string; columnIndex: number; index: number },
+  ) => {
     if (p.onInsertWidget && p.onInsertWidget(def, count) === false) return;
     let next = doc;
-    let section = targetSection;
+    let section = at ? (doc.sections.find((s) => s.id === at.sectionId) || targetSection) : targetSection;
     if (!section) {
       section = makeSection({ label: "Section" });
       next = addSection(next, section);
@@ -222,11 +247,32 @@ export function BuilderShell(p: BuilderShellProps) {
       }
     }
     const widget = makeWidget(def.kind, props);
-    const col = selection?.kind === "widget" ? selection.columnIndex : 0;
-    apply(addWidget(next, section.id, col, widget));
-    const placed = section.columns[col]?.widgets.length ?? 0;
+    const col = at ? at.columnIndex : (selection?.kind === "widget" ? selection.columnIndex : 0);
+    const placed = at ? at.index : (section.columns[col]?.widgets.length ?? 0);
+    apply(addWidget(next, section.id, col, widget, at ? at.index : undefined));
     select({ kind: "widget", sectionId: section.id, columnIndex: col, widgetIndex: placed });
   }, [apply, doc, p, selection, targetSection]);
+
+  /**
+   * A DROP. Either a new widget from the pane or one already on the page.
+   *
+   * The index maths for a move is `model.dropIndexFor`, not a subtraction
+   * written here: lift-then-insert shifts the target down by one when the
+   * widget came from the same column above it, and that arithmetic belongs
+   * with the operation it belongs to.
+   */
+  const dropWidget = useCallback((spot: { sectionId: string; columnIndex: number; index: number }) => {
+    const payload = drag;
+    setDrag(null);
+    if (!payload) return;
+    if (payload.kind === "move") {
+      apply(moveWidgetTo(doc, payload.path, spot));
+      select({ kind: "widget", sectionId: spot.sectionId, columnIndex: spot.columnIndex, widgetIndex: spot.index });
+      return;
+    }
+    const def = WIDGETS_BY_KIND[payload.label];
+    if (def) insertWidget(def, def.count?.default, spot);
+  }, [apply, doc, drag, insertWidget, select]);
 
   const placeSection = useCallback((premade: PremadeSection, at: number) => {
     if (p.onPlaceSection && p.onPlaceSection(premade, at) === false) return;
@@ -246,6 +292,27 @@ export function BuilderShell(p: BuilderShellProps) {
       apply(patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, nextProps), mergeKey);
       return;
     }
+  }, [apply, doc]);
+
+  /**
+   * THE one way a section is changed — and the one place `layout` is honoured.
+   *
+   * FOUND BY DRIVING IT (2026-09-17, §11.8): the inspector's Columns select and
+   * the canvas toolbar's 1 / 2 / 3 buttons both went straight to
+   * `patchSection`, which writes `layout: 2` and leaves `columns` one long. The
+   * stylesheet then drew two tracks over one column, so "two columns" was a
+   * section that looked half empty with nowhere to put anything — and the ratio
+   * control this pass adds would have been sharing a width between a column
+   * that existed and one that did not. `setLayout` is the operation that MOVES
+   * the widgets rather than dropping them (model.ts); routing every caller
+   * through here is why there is one answer instead of three.
+   */
+  const changeSection = useCallback((id: string, patch: Partial<Section>) => {
+    const { layout, ...rest } = patch;
+    let next = doc;
+    if (layout != null) next = setLayout(next, id, layout);
+    if (Object.keys(rest).length) next = patchSection(next, id, rest);
+    apply(next);
   }, [apply, doc]);
 
   const patchSelectedWidget = useCallback((props: Record<string, unknown>) => {
@@ -282,7 +349,14 @@ export function BuilderShell(p: BuilderShellProps) {
       canvasBackground={p.canvasBackground}
       preview={preview}
       onPreview={setPreview}
-      pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
+      pane={
+        <WidgetPane
+          adapter={p.adapter}
+          onInsert={(def, count) => insertWidget(def, count)}
+          header={p.paneHeader}
+          onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
+        />
+      }
       inspector={
         <Inspector
           doc={doc}
@@ -290,10 +364,22 @@ export function BuilderShell(p: BuilderShellProps) {
           swatches={p.swatches}
           fonts={p.fonts}
           defaultFontLabel={p.defaultFontLabel}
+          adapter={p.adapter}
+          /* ONE device state (§11.8): the inspector edits the width the canvas
+             is showing, so "I set it on phone and nothing happened" cannot
+             happen. Switching it here moves the paper too. */
+          device={preview}
+          onDevice={setPreview}
+          onSetSectionStyle={(id, style, mergeKey) =>
+            apply(patchSection(doc, id, { style } as Partial<Section>), mergeKey ?? null)}
+          onSetWidgetStyle={(style: ElementStyle | undefined, mergeKey) => {
+            if (selection?.kind !== "widget") return;
+            apply(setWidgetStyle(doc, selection, style), mergeKey ?? null);
+          }}
           askArgus={p.askArgus}
           widgetExtras={p.widgetExtras}
           documentExtras={p.documentExtras}
-          onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
+          onPatchSection={changeSection}
           onPatchWidget={patchSelectedWidget}
           onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); select({ kind: "section", sectionId: selection.sectionId }); } }}
           onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); select({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
@@ -332,9 +418,12 @@ export function BuilderShell(p: BuilderShellProps) {
         chromeTop={p.chromeTop}
         chromeBottom={p.chromeBottom}
         chromeNote={p.chromeNote}
+        drag={drag}
+        onDragWidget={setDrag}
+        onDropWidget={dropWidget}
         onSelect={select}
         onEditText={onEditText}
-        onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
+        onPatchSection={changeSection}
         onDuplicateSection={(id) => apply(duplicateSection(doc, id))}
         onDeleteSection={(id) => { apply(removeSection(doc, id)); select(null); }}
         onMoveSection={(id, to) => apply(moveSection(doc, id, to))}

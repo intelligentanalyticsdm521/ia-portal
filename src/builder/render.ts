@@ -34,6 +34,7 @@
  * page can be resolved to a selection without a second model of the layout.
  */
 import type { BuilderDocument, Section, Widget } from "./model";
+import { hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle } from "./style";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
 import { documentTotals, money, type DocumentTotals } from "./totals";
@@ -213,9 +214,15 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
   // A widget that draws nothing leaves nothing behind in the customer's copy —
   // no empty wrapper, and no class naming a kind this build cannot render.
   if (!body && ctx.mode === "view") return "";
+  // A STYLED widget wears a stable class in BOTH modes (§11.8). `data-widget`
+  // is an editor marker and the customer's copy has none, so a rule keyed on
+  // it would style the canvas and not the document — which is the class of
+  // defect one renderer exists to prevent. Nothing is added to an unstyled
+  // widget, so a document nobody has touched is byte-identical.
+  const sy = hasStyle(w.style) ? ` ${widgetStyleClass(w.id)}` : "";
   return ctx.mode === "edit"
-    ? `<div class="bx-w bx-w-${esc(w.kind)}" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
-    : `<div class="bx-w bx-w-${esc(w.kind)}">${body}</div>`;
+    ? `<div class="bx-w bx-w-${esc(w.kind)}${sy}" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
+    : `<div class="bx-w bx-w-${esc(w.kind)}${sy}">${body}</div>`;
 }
 
 function docHeader(p: any, ctx: RenderContext): string {
@@ -520,9 +527,18 @@ export function renderSection(s: Section, ctx: RenderContext): string {
   const cols = s.columns.map((c, i) => `
     <div class="bx-col" data-col="${i}">${c.widgets.map((w) => renderWidget(w, ctx)).join("")}</div>`).join("");
 
+  // THE SECTION'S PADDING, and which of the two owns it (§11.8).
+  //
+  // `padding: Npx 40px` has been written into the HTML since the first
+  // version and DOCUMENT_CSS's phone block reaches it with `!important`. The
+  // four-sided `style.padding` REPLACES it when the author has set one, and is
+  // then emitted in the stylesheet below with everything else — two places
+  // writing the same property is how a control stops working. Absent, nothing
+  // changes and the old string is written exactly as before.
+  const ownPadding = sidesToCss(resolveStyle(s.style, "desktop").padding);
   const style = [
     s.background ? `background:${esc(s.background)}` : "",
-    `padding:${Number(s.padding) || 0}px 40px`,
+    ownPadding ? "" : `padding:${Number(s.padding) || 0}px 40px`,
     s.theme === "dark" ? "color:#FFFFFF" : "",
     // A section's own heading font, when it has one. Set as the SAME variable
     // the document sets, so one rule draws both and a section with no font of
@@ -539,11 +555,44 @@ export function renderSection(s: Section, ctx: RenderContext): string {
 
   return `<section class="bx-sec bx-w-${s.width} bx-cols-${s.layout} bx-theme-${s.theme}${s.pageBreakBefore ? " bx-break" : ""}${
     s.visibility === "internal" ? " bx-internal" : ""}${change ? " bx-changed" : ""}" data-section="${esc(s.id)}" style="${style}">
-    ${s.recommended ? `<div class="bx-rec" style="background:${esc(ctx.accent)}">Recommended</div>` : ""}
+    ${sectionStyleTag(s)}${s.recommended ? `<div class="bx-rec" style="background:${esc(ctx.accent)}">Recommended</div>` : ""}
     ${changeBadge}
     ${label}
     <div class="bx-grid">${cols}</div>
   </section>`;
+}
+
+/**
+ * The `<style>` block for this section and everything styled inside it.
+ *
+ * INSIDE the section and not appended to DOCUMENT_CSS, because the canvas
+ * paints one section at a time (`Canvas.tsx` sets `host.innerHTML` per
+ * section) and a per-document sheet would simply not reach it — the author
+ * would style a widget and see nothing. Emitted only when something is
+ * actually styled, so an untouched document gets no block at all.
+ *
+ * Rules and not inline declarations: typography has to reach the heading
+ * INSIDE the widget, and `.bx-h1 { font-size: 26px }` beats anything a wrapper
+ * could hand down. See style.ts.
+ */
+function sectionStyleTag(s: Section): string {
+  const widgets = s.columns.flatMap((c) => c.widgets)
+    .filter((w) => hasStyle(w.style))
+    .map((w) => ({
+      selector: `.${widgetStyleClass(w.id)}`,
+      style: w.style!,
+      typographic: isTypographic(w.kind),
+    }));
+  if (!hasStyle(s.style) && !widgets.length) return "";
+  const css = styleBlockFor({
+    sectionSelector: `.bx-sec[data-section="${esc(s.id)}"]`,
+    gridSelector: `.bx-sec[data-section="${esc(s.id)}"] > .bx-grid`,
+    layout: s.layout,
+    sectionStyle: s.style,
+    widgets,
+    sectionPadding: true,
+  });
+  return css ? `<style>${css}</style>` : "";
 }
 
 export function renderDocument(doc: BuilderDocument, ctx: RenderContext): string {

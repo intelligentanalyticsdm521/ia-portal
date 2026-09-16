@@ -38,6 +38,7 @@ import {
 } from "../../model";
 import { fill, type MergeContext } from "../../merge";
 import { STACK_QUERY } from "../../responsive";
+import { hasStyle, isTypographic, resolveStyle, sidesToCss, styleBlockFor, widgetStyleClass } from "../../style";
 
 export function esc(s: unknown): string {
   return String(s ?? "")
@@ -172,9 +173,12 @@ export function renderLandingWidget(w: Widget, c: LandingContext): string {
     }
   })();
   if (!body && c.mode === "view") return "";
-  return c.mode === "edit"
-    ? `<div class="lp-w" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
-    : body;
+  // A STYLED widget needs something to hang the rule on in the CUSTOMER's copy
+  // too, where there is no `data-widget` (§11.8). Nothing is added to an
+  // unstyled one, so the golden landing cases are byte-identical.
+  const sy = hasStyle(w.style) ? ` ${widgetStyleClass(w.id)}` : "";
+  if (c.mode === "edit") return `<div class="lp-w${sy}" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`;
+  return sy ? `<div class="lp-w${sy}">${body}</div>` : body;
 }
 
 /** A picture on a landing page still needs a description. Same rule as email. */
@@ -272,15 +276,40 @@ function lpQuote(p: any, c: LandingContext): string {
 export function renderLandingSection(s: Section, c: LandingContext): string {
   if (s.visibility !== "customer" && c.mode === "view") return "";
   const mark = c.mode === "edit";
+  // Per-side padding when the author set one; the single number when not.
+  const ownPadding = sidesToCss(resolveStyle(s.style, "desktop").padding);
   const style = [
     s.background ? `background:${esc(s.background)}` : "",
-    `padding:${Math.max(0, Number(s.padding) || 0)}px 20px`,
+    ownPadding ? "" : `padding:${Math.max(0, Number(s.padding) || 0)}px 20px`,
     s.theme === "dark" ? "color:#fff" : "",
   ].filter(Boolean).join(";");
   const cols = s.columns.map((col, i) =>
     `<div class="lp-col"${mark ? ` data-col="${i}"` : ""}>${col.widgets.map((w) => renderLandingWidget(w, c)).join("")}</div>`).join("");
-  return `<section class="lp-sec lp-w-${s.width} lp-cols-${s.layout}"${mark ? ` data-section="${esc(s.id)}"` : ""} style="${style}">`
+  // `data-section` is an editor marker — except on a STYLED section, where it
+  // is also what the rule is keyed on. Emitted for a styled section in the
+  // customer's copy too, and for nothing else, so an untouched page is
+  // byte-identical to what the goldens hold.
+  const hook = mark || hasStyle(s.style) ? ` data-section="${esc(s.id)}"` : "";
+  return `<section class="lp-sec lp-w-${s.width} lp-cols-${s.layout}"${hook} style="${style}">`
+    + lpStyleTag(s)
     + `<div class="lp-grid">${cols}</div></section>`;
+}
+
+/** The same per-section stylesheet the document renderer emits. See style.ts. */
+function lpStyleTag(s: Section): string {
+  const widgets = s.columns.flatMap((c) => c.widgets)
+    .filter((w) => hasStyle(w.style))
+    .map((w) => ({ selector: `.${widgetStyleClass(w.id)}`, style: w.style!, typographic: isTypographic(w.kind) }));
+  if (!hasStyle(s.style) && !widgets.length) return "";
+  const css = styleBlockFor({
+    sectionSelector: `.lp-sec[data-section="${esc(s.id)}"]`,
+    gridSelector: `.lp-sec[data-section="${esc(s.id)}"] > .lp-grid`,
+    layout: s.layout,
+    sectionStyle: s.style,
+    widgets,
+    sectionPadding: true,
+  });
+  return css ? `<style>${css}</style>` : "";
 }
 
 export interface LandingPageMeta {

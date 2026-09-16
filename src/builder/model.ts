@@ -31,6 +31,8 @@
    Types
    ══════════════════════════════════════════════════════════════════════════ */
 
+import { readStyle, type ElementStyle } from "./style";
+
 /** How wide the section's content runs inside the page. */
 export type SectionWidth = "full" | "contained" | "narrow";
 
@@ -57,6 +59,13 @@ export interface Widget {
    * without it". See adapters/email/emailRender.ts.
    */
   locked?: boolean;
+  /**
+   * How this widget is STYLED, per §11.8 (D-140). Absent on everything the
+   * author has not touched, which is what keeps a stored document
+   * byte-identical to the one this build read. See style.ts for the shape and
+   * for the desktop → tablet → phone cascade.
+   */
+  style?: ElementStyle;
 }
 
 export interface Column {
@@ -90,6 +99,15 @@ export interface Section {
   /** Documents only: start a new printed page before this section. */
   pageBreakBefore?: boolean;
   visibility: SectionVisibility;
+  /**
+   * The section's own styling, per §11.8 (D-140).
+   *
+   * `padding` above stays THE source of truth while `style.padding` is absent:
+   * a document written before this existed must render exactly as it did. The
+   * four-sided value is seeded from it on WRITE, the first time the author
+   * touches a spacing box, and never on read.
+   */
+  style?: ElementStyle;
   columns: Column[];
   /**
    * THE ADAPTER'S OWN DATA, travelling with the section.
@@ -200,6 +218,9 @@ export function makeSection(partial: Partial<Section> = {}): Section {
     recommended: partial.recommended ?? false,
     pageBreakBefore: partial.pageBreakBefore ?? false,
     visibility: partial.visibility ?? "customer",
+    // Only when there IS one: stamping `style: undefined` makes a round trip
+    // look like a change, exactly as it would for `headingFont`.
+    ...(partial.style && Object.keys(partial.style).length ? { style: partial.style } : {}),
     columns,
     ...(partial.meta ? { meta: partial.meta } : {}),
   };
@@ -259,6 +280,10 @@ export function deserialise(raw: unknown): BuilderDocument {
             // Carried, not re-derived: a stored footer must come back locked,
             // or opening yesterday's newsletter would make it deletable.
             if (w.locked) out.locked = true;
+            // TOLERANT, and absent when empty: a widget nobody has styled has
+            // no `style` key, so the golden fixtures stay byte-identical.
+            const style = readStyle(w.style);
+            if (style) out.style = style;
             return out;
           }),
       };
@@ -276,6 +301,7 @@ export function deserialise(raw: unknown): BuilderDocument {
       recommended: !!s?.recommended,
       pageBreakBefore: !!s?.pageBreakBefore,
       visibility: s?.visibility === "internal" ? "internal" : "customer",
+      style: readStyle(s?.style),
       columns,
       ...(s?.meta && typeof s.meta === "object" ? { meta: s.meta } : {}),
     });
@@ -373,6 +399,9 @@ export function cloneSection(s: Section): Section {
       widgets: c.widgets.map((w) => {
         const copy: Widget = { id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) };
         if (w.locked) copy.locked = true;
+        // Deep, like props: a duplicated widget that SHARES its style object
+        // would follow the original the next time it was restyled.
+        if (w.style) copy.style = JSON.parse(JSON.stringify(w.style));
         return copy;
       }),
     })),
@@ -470,6 +499,79 @@ export function patchWidget(
           : c),
     };
   });
+}
+
+/**
+ * Set (or clear) a widget's styling. §11.8.
+ *
+ * A separate operation from `patchWidget` and not another key in its props,
+ * because `style` is NOT a prop: props are what a widget's own renderer reads,
+ * and every renderer would then have to know to ignore this one. Passing
+ * `undefined` removes the key entirely — that is what Reset does, and why a
+ * reset document is byte-identical to one nobody ever styled.
+ */
+export function setWidgetStyle(
+  doc: BuilderDocument,
+  path: WidgetPath,
+  style: ElementStyle | undefined,
+): BuilderDocument {
+  return mapSections(doc, (s) => {
+    if (s.id !== path.sectionId) return s;
+    return {
+      ...s,
+      columns: s.columns.map((c, i) =>
+        i === path.columnIndex
+          ? {
+            ...c,
+            widgets: c.widgets.map((w, j) => {
+              if (j !== path.widgetIndex) return w;
+              const { style: _old, ...rest } = w;
+              return style && Object.keys(style).length ? { ...rest, style } : rest;
+            }),
+          }
+          : c),
+    };
+  });
+}
+
+/**
+ * Move a widget to an exact place — any column, any section, any index.
+ *
+ * This is what DRAGGING does (§11.8). `moveWidget` below nudges inside one
+ * column and stays, because a keyboard has to be able to do everything a mouse
+ * can; both go through the model so neither can invent a document shape the
+ * other cannot.
+ *
+ * THE INDEX MATHS, which is the whole of the bug surface here: the widget is
+ * REMOVED first and then inserted, so when the target is the same column and
+ * the target index is after the one being moved, the index has already shifted
+ * down by one. Getting that wrong drops a widget one place short of where the
+ * indicator line was drawn, every time, and only when dragging downwards.
+ */
+export function dropIndexFor(from: WidgetPath, toSectionId: string, toColumnIndex: number, toIndex: number): number {
+  const sameColumn = from.sectionId === toSectionId && from.columnIndex === toColumnIndex;
+  return sameColumn && toIndex > from.widgetIndex ? toIndex - 1 : toIndex;
+}
+
+export function moveWidgetTo(
+  doc: BuilderDocument,
+  from: WidgetPath,
+  to: { sectionId: string; columnIndex: number; index: number },
+): BuilderDocument {
+  const widget = widgetAt(doc, from);
+  if (!widget) return doc;
+  const target = findSection(doc, to.sectionId);
+  if (!target || !target.columns[to.columnIndex]) return doc;
+  const at = dropIndexFor(from, to.sectionId, to.columnIndex, to.index);
+  const lifted = mapSections(doc, (s) => {
+    if (s.id !== from.sectionId) return s;
+    return {
+      ...s,
+      columns: s.columns.map((c, i) =>
+        i === from.columnIndex ? { ...c, widgets: c.widgets.filter((_, j) => j !== from.widgetIndex) } : c),
+    };
+  });
+  return addWidget(lifted, to.sectionId, to.columnIndex, widget, at);
 }
 
 /** Move a widget up or down inside its own column. */

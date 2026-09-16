@@ -48,6 +48,9 @@
  */
 import type { BuilderDocument, Section, Widget } from "../../model";
 import { fill, type FillMode, type MergeContext } from "../../merge";
+import {
+  emailColumnWidths, emailStyleDeclarations, hasStyle, resolveStyle, sidesToCss, typographyDeclarations,
+} from "../../style";
 
 /* ══════════════════════════════════════════════════════════════════════════
    The four rules, as constants
@@ -189,6 +192,22 @@ export interface EmailRenderContext {
    */
   unsubscribeUrl: string;
   preferencesUrl?: string;
+  /**
+   * THE AUTHOR'S TYPOGRAPHY for the widget being drawn, as inline declarations.
+   *
+   * FOUND BY DRIVING IT (2026-09-17, §11.8): a widget's typography was put on
+   * the wrapping cell and INHERITED down — which is exactly what it does on the
+   * page, where a CSS rule can also name the children. A mailbox has no
+   * stylesheet, and `<h1 style="font-size:26px">` beats anything inherited, so
+   * a 27px heading arrived 26px. The declarations therefore travel to the
+   * widget's own element and are appended LAST, because the last declaration
+   * for a property inside one style attribute is the one that wins.
+   *
+   * Set by `renderEmailWidget` for the widget it is about to draw, and never
+   * set anywhere else — a context carrying somebody else's type would style the
+   * wrong words.
+   */
+  typeCss?: string;
 }
 
 export function makeEmailContext(
@@ -268,9 +287,9 @@ function paras(text: unknown, c: EmailRenderContext, path: string, style: string
   }
   const blocks = filled.split(/\n{2,}/).map((p) => inlineSafe(esc(p.trim())).replace(/\n/g, "<br />"));
   if (c.mode === "edit") {
-    return `<div style="${style}"${edit(path, c)}>${blocks.map((b) => `<p style="margin:0 0 12px 0;">${b}</p>`).join("")}</div>`;
+    return `<div style="${style}${c.typeCss ?? ""}"${edit(path, c)}>${blocks.map((b) => `<p style="margin:0 0 12px 0;">${b}</p>`).join("")}</div>`;
   }
-  return blocks.map((b) => `<p style="${style}margin:0 0 12px 0;">${b}</p>`).join("");
+  return blocks.map((b) => `<p style="${style}margin:0 0 12px 0;${c.typeCss ?? ""}">${b}</p>`).join("");
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -295,8 +314,11 @@ const ALIGN = (v: unknown, dflt = "left"): string => {
   return dflt;
 };
 
-export function renderEmailWidget(w: Widget, c: EmailRenderContext): string {
+export function renderEmailWidget(w: Widget, outer: EmailRenderContext): string {
   const p: any = w.props || {};
+  // The author's own type, carried to the widget's element (see `typeCss`).
+  const type = hasStyle(w.style) ? typographyDeclarations(resolveStyle(w.style, "desktop").typography) : [];
+  const c: EmailRenderContext = type.length ? { ...outer, typeCss: `${type.join(";")};` } : outer;
   const body = (() => {
     switch (w.kind) {
       case "heading": return emHeading(p, c);
@@ -322,8 +344,30 @@ export function renderEmailWidget(w: Widget, c: EmailRenderContext): string {
     }
   })();
   if (!body && c.mode !== "edit") return "";
-  if (c.mode !== "edit") return body;
-  return `<div data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}"${w.locked ? ` data-locked="1"` : ""}>${body}</div>`;
+  // THE AUTHOR'S STYLING, in what a mailbox understands (§11.8).
+  //
+  // A margin becomes an outer CELL's padding, because margin on a block is the
+  // first thing Outlook drops; alignment becomes `text-align` on that cell;
+  // typography becomes inline declarations there, which the widget's own
+  // inline font-size beats where it sets one and inherits into everything
+  // else. NO shadow and NO radius reach this at all — style.ts refuses to
+  // emit either, and the inspector says "not in email" rather than offering a
+  // control that quietly does nothing.
+  //
+  // Absent a style the widget's HTML is exactly what it was, which is what the
+  // thirty golden fixtures pin.
+  const styled = hasStyle(w.style)
+    ? wrapEmailStyle(body, emailStyleDeclarations(w.style, "widget"))
+    : body;
+  if (c.mode !== "edit") return styled;
+  return `<div data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}"${w.locked ? ` data-locked="1"` : ""}>${styled}</div>`;
+}
+
+/** One more table, only when there is something to say with it. */
+function wrapEmailStyle(body: string, decls: string[]): string {
+  if (!decls.length) return body;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>`
+    + `<td style="${decls.join(";")};">${body}</td></tr></table>`;
 }
 
 function emHeading(p: any, c: EmailRenderContext): string {
@@ -331,7 +375,7 @@ function emHeading(p: any, c: EmailRenderContext): string {
   const size = level === 1 ? 26 : level === 2 ? 20 : 16;
   const tag = `h${level}`;
   const col = colour(p.colour, c.ink);
-  return `<${tag} style="margin:0 0 12px 0;font-family:${headStack(c)};font-size:${size}px;line-height:1.25;font-weight:700;color:${col};text-align:${ALIGN(p.align)};"${edit("text", c, "Your heading")}>${t(p.text, c)}</${tag}>`;
+  return `<${tag} style="margin:0 0 12px 0;font-family:${headStack(c)};font-size:${size}px;line-height:1.25;font-weight:700;color:${col};text-align:${ALIGN(p.align)};${c.typeCss ?? ""}"${edit("text", c, "Your heading")}>${t(p.text, c)}</${tag}>`;
 }
 
 /**
@@ -343,7 +387,7 @@ function emHeading(p: any, c: EmailRenderContext): string {
  */
 function emPersonalNote(p: any, c: EmailRenderContext): string {
   const align = ALIGN(p.align);
-  const base = `font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};text-align:${align};`;
+  const base = `font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};text-align:${align};${c.typeCss ?? ""}`;
   const greeting = p.greeting || c.mode === "edit"
     ? `<p style="${base}margin:0 0 10px 0;font-weight:600;"${edit("greeting", c, "Hi {{first name}},")}>${t(p.greeting, c)}</p>` : "";
   const sign = p.signoff || c.mode === "edit"
@@ -357,7 +401,7 @@ function emList(p: any, c: EmailRenderContext): string {
   if (!shown.length) return "";
   const li = shown.map((it, i) =>
     `<li style="margin:0 0 6px 0;"${edit(`items.${i}`, c, "add a point…")}>${t(it, c)}</li>`).join("");
-  return `<ul style="margin:0 0 12px 0;padding-left:20px;font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};">${li}</ul>`;
+  return `<ul style="margin:0 0 12px 0;padding-left:20px;font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};${c.typeCss ?? ""}">${li}</ul>`;
 }
 
 /**
@@ -425,7 +469,7 @@ function emButton(p: any, c: EmailRenderContext): string {
   const full = String(p.width || "").toLowerCase() === "full";
   return `<table role="presentation" ${full ? 'width="100%" ' : ""}cellspacing="0" cellpadding="0" border="0" align="${align}" style="margin:0 auto 20px auto;${full ? "width:100%;" : ""}">`
     + `<tr><td align="center" style="${cell}${full ? "width:100%;" : ""}">`
-    + `<a href="${url}" style="${full ? "display:block;width:100%;box-sizing:border-box;" : "display:inline-block;"}padding:13px 26px;font-family:${bodyStack(c)};font-size:15px;font-weight:600;color:${ink};text-decoration:none;border-radius:${radius}px;">${inner}</a>`
+    + `<a href="${url}" style="${full ? "display:block;width:100%;box-sizing:border-box;" : "display:inline-block;"}padding:13px 26px;font-family:${bodyStack(c)};font-size:15px;font-weight:600;color:${ink};text-decoration:none;border-radius:${radius}px;${c.typeCss ?? ""}">${inner}</a>`
     + `</td></tr></table>`;
 }
 
@@ -569,7 +613,7 @@ function emTestimonial(p: any, c: EmailRenderContext): string {
   const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>`
     + `<td style="padding:14px 16px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
-    + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};font-style:italic;"${edit("quote", c, "What they said")}>${t(p.quote, c)}</div>`
+    + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};font-style:italic;${c.typeCss ?? ""}"${edit("quote", c, "What they said")}>${t(p.quote, c)}</div>`
     + (stars ? `<div style="font-family:${bodyStack(c)};font-size:13px;letter-spacing:2px;color:${c.accent};margin-top:6px;">${"&#9733;".repeat(stars)}</div>` : "")
     + `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;"${edit("attribution", c, "Who said it")}>${t(p.attribution, c)}</div>`
     + `</td></tr></table>`;
@@ -647,7 +691,12 @@ export function hasFooter(doc: BuilderDocument): boolean {
 export function renderEmailSection(s: Section, c: EmailRenderContext): string {
   if (s.visibility !== "customer" && c.mode !== "edit") return "";
 
+  // Per-side padding when the author set one, the single number when they did
+  // not — the same rule as the document renderer, so a section does not sit
+  // differently in the mailbox than it does on the page.
   const pad = Math.max(0, Number(s.padding) || 0);
+  const ownPadding = sidesToCss(resolveStyle(s.style, "desktop").padding);
+  const cellPadding = ownPadding || `${pad}px 24px`;
   const bg = s.background ? colour(s.background, "") : "";
   const ink = s.theme === "dark" ? "#FFFFFF" : c.ink;
   const inner: EmailRenderContext = { ...c, ink };
@@ -667,10 +716,12 @@ export function renderEmailSection(s: Section, c: EmailRenderContext): string {
     i,
     html: col.widgets.map((w) => renderEmailWidget(w, inner)).join(""),
   }));
-  const each = Math.floor(contentWidth / Math.max(1, cols.length));
+  // COLUMN RATIOS become the fluid columns' own max widths (§11.8). Equal by
+  // default, so an unstyled section emits exactly the number it always did.
+  const each = emailColumnWidths(s.style, cols.length, contentWidth);
   const body = cols.length > 1
     ? `<tr><td>${fluidRow(drawn.map((d) => ({
-        max: each,
+        max: each[d.i],
         html: d.html,
         attrs: mark ? ` data-col="${d.i}"` : "",
       })))}</td></tr>`
@@ -682,7 +733,7 @@ export function renderEmailSection(s: Section, c: EmailRenderContext): string {
 
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"`
     + (mark ? ` data-section="${esc(s.id)}"` : "")
-    + ` style="${bg ? `background:${bg};` : ""}"><tr><td align="center" style="padding:${pad}px 24px;">`
+    + ` style="${bg ? `background:${bg};` : ""}"><tr><td align="center" style="padding:${cellPadding};">`
     + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:${contentWidth}px;">`
     + (label ? `<tr><td>${label}</td></tr>` : "")
     + body
