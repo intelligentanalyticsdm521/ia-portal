@@ -43,14 +43,34 @@ export interface CanvasProps {
   /** Shown under the page: what the template puts next. */
   nextUp?: string | null;
   /**
-   * How wide the paper is. A document is Letter-ish (780); a WEBSITE page is
-   * as wide as the canvas will give it, because a hero that is 780px wide on
-   * the canvas and full-bleed on the site is a preview that lies.
+   * How a section becomes HTML.
+   *
+   * The canvas does not know what it is drawing — that is the whole point of
+   * one engine. A proposal and a website page hand it the document renderer;
+   * the email adapter hands it the table-based email renderer, so what the
+   * author types into IS the email, not a web-shaped approximation of one
+   * that looks different in the mailbox. Defaults to the document renderer.
+   */
+  renderSection?: (s: Section, ctx: RenderContext) => string;
+  /**
+   * How wide the page is. A document is Letter-ish (780), an email is 600
+   * because that is as wide as email gets, and a WEBSITE page is as wide as
+   * the canvas will give it — a hero that is 780px here and full-bleed on
+   * the site is a preview that lies.
    */
   paperWidth?: number | "full";
+  /** What the page sits on. The email adapter passes the brand background. */
+  paper?: string;
+  /**
+   * The stylesheet the RENDERER needs, replacing the document one. Email
+   * passes "" — its styles are inline, because a mailbox strips a <style>.
+   */
+  canvasCss?: string;
   /** The adapter's own stylesheet, appended after the engine's. */
   extraCss?: string;
-  /** One line above the paper. "Letter" for a document; the URL for a page. */
+  /** The sentence above the page on the LEFT: what clicking does here. */
+  canvasHint?: string;
+  /** The unit above the page on the RIGHT. "Letter", "600px wide", a URL. */
   paperNote?: string;
   /**
    * The site's own header and footer, drawn as HTML above and below the page
@@ -79,17 +99,17 @@ export function Canvas(props: CanvasProps) {
 
   return (
     <div style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <style>{DOCUMENT_CSS}{CANVAS_CSS}{props.extraCss || ""}</style>
+      <style>{props.canvasCss ?? DOCUMENT_CSS}{CANVAS_CSS}{props.extraCss || ""}</style>
 
       <div style={{ ...paper, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A", gap: 12 }}>
-        <span>Click anything on the page to edit it. Everything here is what a visitor sees.</span>
+        <span>{props.canvasHint ?? "Click anything on the page to edit it. Everything here is what the customer receives."}</span>
         <span style={{ whiteSpace: "nowrap" }}>
           {doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}{props.paperNote ? ` · ${props.paperNote}` : " · Letter"}
         </span>
       </div>
 
       <div
-        style={{ ...paper, background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
+        style={{ ...paper, background: props.paper ?? "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
         onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       >
         {props.chromeTop && (
@@ -140,13 +160,15 @@ export function Canvas(props: CanvasProps) {
 function SectionHost({
   section, index, total, ctx, selected, selectedWidgetId, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
-  onAddSection, onDragStart, onDragEnd, onDropAt,
+  onAddSection, onDragStart, onDragEnd, onDropAt, renderSection: renderOne,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDropAt: (i: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const html = renderSection(section, ctx);
+  const html = (renderOne || renderSection)(section, ctx);
+  /** True when this section holds a part the law puts there. See model.ts. */
+  const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
 
   // Paint the section. SKIPPED while the caret is inside it — see the header.
   useEffect(() => {
@@ -243,9 +265,14 @@ function SectionHost({
             <Layers size={14} />
           </button>
           <span className="bxc-div" />
-          <button type="button" style={TOOL} title="Duplicate this section"
+          {/* A section holding a required part is not the author's to copy or
+              delete — the model refuses either way (model.removeSection), and a
+              button that silently does nothing is worse than one that says why. */}
+          <button type="button" style={{ ...TOOL, opacity: required ? 0.35 : 1 }} disabled={required}
+            title={required ? "This part has to appear exactly once, so it cannot be copied" : "Duplicate this section"}
             onClick={(e) => { e.stopPropagation(); onDuplicateSection(section.id); }}><Copy size={14} /></button>
-          <button type="button" style={{ ...TOOL, color: "#B91C1C" }} title="Delete this section"
+          <button type="button" style={{ ...TOOL, color: "#B91C1C", opacity: required ? 0.35 : 1 }} disabled={required}
+            title={required ? "The footer carries your unsubscribe link and address — the law asks for both, so it stays" : "Delete this section"}
             onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}><Trash2 size={14} /></button>
         </div>
       )}

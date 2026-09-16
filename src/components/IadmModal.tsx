@@ -203,10 +203,12 @@ export function IadmButton({
   children: ReactNode;
   icon?: ReactNode;
   /**
-   * The tooltip. SD-010 asks for one on EVERY button, and a builder footer is
-   * where the buttons that actually commit something live — "Save as a
-   * template" and "Use in a post" both need a sentence saying what happens
-   * next. Optional, so no existing call site moves.
+   * The tooltip. SD-010 asks for one on EVERY button, which a shared button
+   * component has to be able to carry — otherwise every caller works around
+   * it with a wrapping span and half of them forget. A builder footer is
+   * where the buttons that commit something live — "Save as a template",
+   * "Use in a post" — and each needs a sentence saying what happens next.
+   * Optional, so no existing call site moves.
    */
   title?: string;
   /** InteractiveWalkthrough hook — lets flows spotlight this button by selector. */

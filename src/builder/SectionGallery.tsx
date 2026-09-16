@@ -15,21 +15,28 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { IadmModal } from "../components/IadmModal";
 import { groupForPane, widgetTooltip, type BuilderAdapter, type WidgetDef } from "./registry";
-import { PREMADE_TAGS, PREMADE_SECTIONS, searchPremade, type PremadeSection } from "./templates";
+import { PREMADE_SECTIONS, PREMADE_TAGS, searchSections, type PremadeSection } from "./templates";
 
 export interface SavedTemplate { id: string; name: string; description?: string | null }
 
 export interface SectionGalleryProps {
   open: boolean;
   adapter: BuilderAdapter;
+  /**
+   * The pre-made sections THIS builder offers.
+   *
+   * Passed in rather than read from one module: "Terms & conditions" is a
+   * section a proposal has and a newsletter does not, and a gallery that
+   * offered both would be the fifth vocabulary this rebuild exists to delete.
+   * Defaults to the document set so the proposal adapter is unchanged.
+   */
+  premade?: PremadeSection[];
   onClose: () => void;
   onPlaceSection: (premade: PremadeSection) => void;
   onPlaceWidget: (widget: WidgetDef, count?: number) => void;
   onOpenTemplate?: (t: SavedTemplate) => void;
   savedTemplates?: SavedTemplate[];
-  /** The adapter's own pre-made sections. Defaults to the document ones. */
-  premade?: PremadeSection[];
-  /** The filter chips over those sections. */
+  /** The filter chips over those sections. Defaults to the document tags. */
   tags?: string[];
   /** A drawing of one pre-made section, when the adapter has its own. */
   thumb?: (key: string) => React.ReactNode;
@@ -45,7 +52,7 @@ export function SectionGallery(p: SectionGalleryProps) {
 
   const pool = p.premade ?? PREMADE_SECTIONS;
   const tagList = p.tags ?? PREMADE_TAGS;
-  const sections = useMemo(() => searchPremade(query, tag, pool), [query, tag, pool]);
+  const sections = useMemo(() => searchSections(pool, query, tag), [pool, query, tag]);
   const widgets = useMemo(() => groupForPane(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
   const templates = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),

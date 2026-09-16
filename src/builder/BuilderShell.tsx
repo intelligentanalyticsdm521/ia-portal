@@ -38,6 +38,7 @@ export function repeatKeyFor(kind: string): string | null {
     case "comparison_cards": return "cards";
     case "key_facts": case "key_value_table": case "property_plan": case "pricing_table": return "rows";
     case "clauses": case "list": case "gallery": case "property_block": return "items";
+    case "article_card": case "product_card": return "items";
     case "callout": return "panels";
     case "data_table": return "columns";
     case "testimonial": return "items";
@@ -54,6 +55,8 @@ function blankRepeat(kind: string): unknown {
     case "clauses": return { title: "", body: "" };
     case "callout": return { title: "", tone: "accent", body: "" };
     case "property_block": return { description: "", quantity: 1, unit_price: 0 };
+    case "article_card": return { title: "", excerpt: "", image: "", alt: "", url: "", linkLabel: "Read it" };
+    case "product_card": return { name: "", blurb: "", price: "", cadence: "", image: "", alt: "", url: "", ctaLabel: "" };
     default: return "";
   }
 }
@@ -84,11 +87,23 @@ export interface BuilderShellProps extends InspectorSlots {
   nextUp?: string | null;
   /** Rendered above the widget list in the pane. */
   paneHeader?: ReactNode;
-  /** Canvas shape — a document is Letter-ish, a web page is full width. */
+  /**
+   * How this builder draws a section, and what the canvas looks like around
+   * it. The shell knows nothing about proposals, emails or pages; an adapter
+   * hands it a renderer and the canvas shows THAT. Omitted, everything falls
+   * back to the document renderer, so the proposal adapter passes none of it.
+   */
+  renderSection?: (s: Section, ctx: RenderContext) => string;
+  /** Canvas shape — a document is Letter-ish, an email 600, a web page full. */
   paperWidth?: number | "full";
+  /** What the page sits on, and the two lines above it. See Canvas. */
+  paper?: string;
   paperNote?: string;
-  /** The adapter's own stylesheet and page chrome. See Canvas. */
+  canvasHint?: string;
+  /** The renderer's own stylesheet, and the adapter's on top. See Canvas. */
+  canvasCss?: string;
   extraCss?: string;
+  /** The site's own header and footer, drawn around the page. See Canvas. */
   chromeTop?: string;
   chromeBottom?: string;
   chromeNote?: string;
@@ -292,8 +307,12 @@ export function BuilderShell(p: BuilderShellProps) {
         ctx={p.ctx}
         selection={selection}
         nextUp={p.nextUp}
+        renderSection={p.renderSection}
         paperWidth={p.paperWidth}
+        paper={p.paper}
         paperNote={p.paperNote}
+        canvasHint={p.canvasHint}
+        canvasCss={p.canvasCss}
         extraCss={p.extraCss}
         chromeTop={p.chromeTop}
         chromeBottom={p.chromeBottom}

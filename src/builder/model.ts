@@ -45,6 +45,18 @@ export interface Widget {
   kind: string;
   /** Everything the widget's renderer reads. Shape per kind; see registry.ts. */
   props: Record<string, unknown>;
+  /**
+   * A part of the document the law puts there, not the author.
+   *
+   * An email's footer carries the unsubscribe link and the sender's physical
+   * address; CAN-SPAM requires both on every marketing send, so the author may
+   * edit the words in it and may NOT take it off the page. `removeWidget` and
+   * `removeSection` both refuse, and the email renderer puts the block back if
+   * a document reaches it without one — two guards, because "the author cannot
+   * click the button" is not the same promise as "the email cannot go out
+   * without it". See adapters/email/emailRender.ts.
+   */
+  locked?: boolean;
 }
 
 export interface Column {
@@ -150,8 +162,24 @@ export function emptyColumn(): Column {
   return { id: newId("c"), widgets: [] };
 }
 
-export function makeWidget(kind: string, props: Record<string, unknown> = {}): Widget {
-  return { id: newId("w"), kind, props: { ...props } };
+export function makeWidget(
+  kind: string,
+  props: Record<string, unknown> = {},
+  opts: { locked?: boolean } = {},
+): Widget {
+  const w: Widget = { id: newId("w"), kind, props: { ...props } };
+  if (opts.locked) w.locked = true;
+  return w;
+}
+
+/** True when this widget is a required part the author may not remove. */
+export function isLocked(w: Widget | null | undefined): boolean {
+  return !!w?.locked;
+}
+
+/** Every locked widget in the document, in reading order. */
+export function lockedWidgets(doc: BuilderDocument): Widget[] {
+  return walkWidgets(doc).map((x) => x.widget).filter(isLocked);
 }
 
 export function makeSection(partial: Partial<Section> = {}): Section {
@@ -222,11 +250,17 @@ export function deserialise(raw: unknown): BuilderDocument {
         id: String(c?.id || newId("c")),
         widgets: (Array.isArray(c?.widgets) ? c.widgets : [])
           .filter((w: any) => w && typeof w === "object" && typeof w.kind === "string")
-          .map((w: any) => ({
-            id: String(w.id || newId("w")),
-            kind: String(w.kind),
-            props: w.props && typeof w.props === "object" ? { ...w.props } : {},
-          })),
+          .map((w: any) => {
+            const out: Widget = {
+              id: String(w.id || newId("w")),
+              kind: String(w.kind),
+              props: w.props && typeof w.props === "object" ? { ...w.props } : {},
+            };
+            // Carried, not re-derived: a stored footer must come back locked,
+            // or opening yesterday's newsletter would make it deletable.
+            if (w.locked) out.locked = true;
+            return out;
+          }),
       };
     });
     return makeSection({
@@ -299,13 +333,26 @@ export function addSection(doc: BuilderDocument, section: Section, atIndex?: num
   return { ...doc, sections };
 }
 
+/**
+ * Take a section off the page.
+ *
+ * REFUSES when the section holds a locked widget. Deleting the footer section
+ * is the same act as deleting the footer, and a rule the Remove button enforces
+ * but the section toolbar does not is not a rule.
+ */
 export function removeSection(doc: BuilderDocument, sectionId: string): BuilderDocument {
-  return { ...doc, sections: doc.sections.filter((s) => s.id !== sectionId) };
+  const s = findSection(doc, sectionId);
+  if (s && s.columns.some((c) => c.widgets.some(isLocked))) return doc;
+  return { ...doc, sections: doc.sections.filter((x) => x.id !== sectionId) };
 }
 
 export function duplicateSection(doc: BuilderDocument, sectionId: string): BuilderDocument {
   const i = doc.sections.findIndex((s) => s.id === sectionId);
   if (i < 0) return doc;
+  // A required part exists exactly ONCE. Two unsubscribe footers on one email
+  // is a defect in the other direction, and "duplicate" is the quiet way to
+  // get there.
+  if (doc.sections[i].columns.some((c) => c.widgets.some(isLocked))) return doc;
   const copy = cloneSection(doc.sections[i]);
   const sections = [...doc.sections];
   sections.splice(i + 1, 0, copy);
@@ -323,7 +370,11 @@ export function cloneSection(s: Section): Section {
     ...(s.meta ? { meta: JSON.parse(JSON.stringify(s.meta)) } : {}),
     columns: s.columns.map((c) => ({
       id: newId("c"),
-      widgets: c.widgets.map((w) => ({ id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) })),
+      widgets: c.widgets.map((w) => {
+        const copy: Widget = { id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) };
+        if (w.locked) copy.locked = true;
+        return copy;
+      }),
     })),
   };
 }
@@ -382,7 +433,15 @@ export function addWidget(
   });
 }
 
+/**
+ * Take a widget off the page.
+ *
+ * REFUSES a locked one, silently and by returning the same document, so every
+ * caller — the inspector's Remove, a keyboard delete, an adapter doing its own
+ * tidying — gets the same answer without each having to remember to ask.
+ */
 export function removeWidget(doc: BuilderDocument, path: WidgetPath): BuilderDocument {
+  if (isLocked(widgetAt(doc, path))) return doc;
   return mapSections(doc, (s) => {
     if (s.id !== path.sectionId) return s;
     return {

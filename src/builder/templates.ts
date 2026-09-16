@@ -209,19 +209,25 @@ export function premadeByKey(key: string): PremadeSection | undefined {
   return PREMADE_SECTIONS.find((p) => p.key === key);
 }
 
-/** The gallery's search, as a pure function so it is a test not a click. */
-export function searchPremade(
-  query: string,
-  tag = "All",
-  /** Which set to search. An adapter with its own pre-made sections passes them. */
-  pool: PremadeSection[] = PREMADE_SECTIONS,
-): PremadeSection[] {
+/**
+ * The gallery's search, over whichever catalogue the builder handed it.
+ *
+ * Pure, and taking the list as an argument, so the email and landing adapters
+ * search their own sections through the same code rather than growing a second
+ * gallery apiece.
+ */
+export function searchSections(list: PremadeSection[], query: string, tag = "All"): PremadeSection[] {
   const q = query.trim().toLowerCase();
-  return pool.filter((p) => {
+  return list.filter((p) => {
     if (tag !== "All" && !p.tags.includes(tag)) return false;
     if (!q) return true;
     return p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q) || p.tags.join(" ").toLowerCase().includes(q);
   });
+}
+
+/** The document builder's own sections. Kept so its callers read the same. */
+export function searchPremade(query: string, tag = "All"): PremadeSection[] {
+  return searchSections(PREMADE_SECTIONS, query, tag);
 }
 
 export const PREMADE_TAGS = ["All", "Title pages", "Terms", "Pricing", "Acceptance", "Property"];

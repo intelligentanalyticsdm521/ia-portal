@@ -138,6 +138,16 @@ describe("§3.2's union is registered", () => {
     "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content", "site_custom",
+    // Added 2026-09-16 by §7 — the email adapter's own parts, and the one a
+    // hosted landing page opens with. Each maps to a line of §7:
+    //   personal_note  "a personal note text widget that supports merge tags"
+    //   article_card   "article card" (the shape a newsletter is made of)
+    //   product_card   "product/pricing card (from Products & Services with
+    //                   cadence)"
+    //   email_footer   "footer with the required unsubscribe + physical
+    //                   address (never removable)"
+    //   hero           the landing page's "hero" in §7's web widget set
+    "personal_note", "article_card", "product_card", "email_footer", "hero",
   ];
 
   for (const kind of REQUIRED) {
@@ -208,18 +218,45 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
         `${kind} should still be offered to every FLOW builder`,
       );
     }
-    // The two small tables lose "website" as well — §4 step 3: on an ARION
-    // site that job is a whole SECTION the server builds (site_stats for a
-    // details list, content for a plain table), and offering both would be
-    // the two-mechanisms-for-one-job this rebuild exists to end. The list
-    // itself lives in registry.ts as WEBSITE_USES_A_SECTION_INSTEAD, which
-    // website-builder.test.mjs reads; here we pin what is LEFT.
+    // The two small tables ended up with the DOCUMENT and nothing else, by
+    // three decisions taken on three branches — the canvas above, then §4
+    // step 3 (an ARION site builds that job as a whole section: site_stats
+    // for a details list, content for a plain table) and §7 (a details grid
+    // is two columns of text, and a data table inside an email's own layout
+    // tables is what Outlook reflows worst). registry.ts writes the three
+    // reasons down once on SMALL_TABLES; this pins what is LEFT.
     for (const kind of ["key_value_table", "data_table"]) {
       assert.deepEqual(
         [...WIDGETS_BY_KIND[kind].adapters].sort(),
-        ["email", "landing", "proposal"],
-        `${kind} should be offered to every flow builder that is not a website`,
+        ["proposal"],
+        `${kind} belongs to the document builder alone`,
       );
+    }
+  });
+
+  test("a job another builder does its own way is not also a loose widget", () => {
+    // The union of three branches' decisions, each of which took one builder
+    // away from a widget for a reason that builder enforces. Asserted here as
+    // the surviving list, so putting a builder back has to be deliberate:
+    //   comparison_cards / pricing_table  a site has site_pricing; a send has
+    //                                     the product card
+    //   callout                           a site has content; a send has a
+    //                                     coloured section — the STUDIO keeps
+    //                                     it, where a tinted panel is an object
+    assert.deepEqual([...WIDGETS_BY_KIND.comparison_cards.adapters].sort(), ["proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.pricing_table.adapters].sort(), ["proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.callout.adapters].sort(), ["brand", "proposal"]);
+  });
+
+  test("a widget no builder offers says so, rather than sitting in a pane", () => {
+    // logo_strip is the one kind both merges emptied: a site answers it with
+    // site_gallery, an email or a landing page with a 2/3-column section. It
+    // stays in §3.2's vocabulary and is offered nowhere — the same "hidden"
+    // site_custom uses — so it cannot reappear in a pane by accident.
+    assert.equal(WIDGETS_BY_KIND.logo_strip.hidden, true);
+    for (const a of BUILDER_ADAPTERS) {
+      assert.equal(widgetsFor(a).some((w) => w.kind === "logo_strip"), false,
+        `the ${a} builder is offering a widget nothing draws`);
     }
   });
 

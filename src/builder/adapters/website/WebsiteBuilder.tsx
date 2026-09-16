@@ -591,6 +591,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         paperWidth="full"
         paperNote={detail?.permalink ? String(detail.permalink).replace(/^https?:\/\//, "") : "your website"}
         extraCss={SITE_CSS}
+        canvasHint="Click anything on the page to edit it. Everything here is what a visitor sees."
         chromeTop={renderHeaderChrome({ businessName: chrome.businessName, logoUrl: chrome.logoUrl, menu: chrome.menu })}
         chromeBottom={renderFooterChrome({ businessName: chrome.businessName, menu: chrome.menu, contactLine: chrome.contactLine })}
         chromeNote="Your website's header and footer. They are the same on every page — change them under Website → Menus."

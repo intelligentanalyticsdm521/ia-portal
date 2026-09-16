@@ -5,3 +5,10 @@
 # assertion for a reason that has nothing to do with the seam. LF, everywhere, always
 # — the same pin arion-api already puts on scripts/_tools.mjs.
 test/fixtures/website-section-kinds.json text eol=lf
+# test/fixtures/email-render-cases.json and landing-render-cases.json are the same
+# kind of declared byte-identical copy, shared with LUMEN-API: the Portal renders
+# each case with src/builder/adapters/{email,landing}/*Render.ts and the API renders
+# it with src/lib/{builderEmailRender,landingRender}.js, and the two are only
+# provably the same renderer while the two files are the same bytes.
+test/fixtures/email-render-cases.json text eol=lf
+test/fixtures/landing-render-cases.json text eol=lf
