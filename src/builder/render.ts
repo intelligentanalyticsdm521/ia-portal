@@ -78,6 +78,15 @@ export interface RenderContext {
   totals: DocumentTotals;
   /** section id → "01". Computed by the caller from the whole document. */
   numbers: Record<string, string>;
+  /**
+   * A revision's diff: section id → "added" | "changed" (diff.ts).
+   *
+   * The author's canvas and the customer's revision page both hand this in, so
+   * "what moved" is drawn by the ONE renderer and the two surfaces cannot badge
+   * different sections. Absent everywhere else, which is why a normal document
+   * carries no badges at all.
+   */
+  changed?: Record<string, "added" | "changed">;
 }
 
 export function makeContext(
@@ -96,6 +105,7 @@ export function makeContext(
     locations: partial.locations ?? {},
     totals: partial.totals ?? documentTotals(doc),
     numbers: partial.numbers ?? sectionNumbers(doc),
+    ...(partial.changed ? { changed: partial.changed } : {}),
   };
 }
 
@@ -484,9 +494,17 @@ export function renderSection(s: Section, ctx: RenderContext): string {
     s.theme === "dark" ? "color:#FFFFFF" : "",
   ].filter(Boolean).join(";");
 
+  // A revision's badge. `changed` is absent on every document that is not a
+  // revision, so a normal proposal renders byte-identically to before.
+  const change = ctx.changed?.[s.id];
+  const changeBadge = change
+    ? `<div class="bx-chg bx-chg-${change}" data-change="${change}">${change === "added" ? "New" : "Changed"}</div>`
+    : "";
+
   return `<section class="bx-sec bx-w-${s.width} bx-cols-${s.layout} bx-theme-${s.theme}${s.pageBreakBefore ? " bx-break" : ""}${
-    s.visibility === "internal" ? " bx-internal" : ""}" data-section="${esc(s.id)}" style="${style}">
+    s.visibility === "internal" ? " bx-internal" : ""}${change ? " bx-changed" : ""}" data-section="${esc(s.id)}" style="${style}">
     ${s.recommended ? `<div class="bx-rec" style="background:${esc(ctx.accent)}">Recommended</div>` : ""}
+    ${changeBadge}
     ${label}
     <div class="bx-grid">${cols}</div>
   </section>`;
@@ -515,6 +533,9 @@ export const DOCUMENT_CSS = `
 .bx-w-narrow .bx-grid { max-width: 520px; margin: 0 auto; }
 .bx-w-contained .bx-grid { max-width: 700px; margin: 0 auto; }
 .bx-rec { position: absolute; top: 8px; right: 12px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
+.bx-changed { box-shadow: inset 3px 0 0 #B45309; }
+.bx-chg { position: absolute; top: 8px; left: 12px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
+.bx-chg-added { background: #DCFCE7; color: #166534; border-color: #86EFAC; }
 .bx-seclabel { font-size: 11px; letter-spacing: .12em; font-weight: 700; text-transform: uppercase; margin-bottom: 8px; }
 .bx-h { font-family: var(--bx-head, Inter), system-ui, sans-serif; margin: 0 0 8px; line-height: 1.25; }
 .bx-h1 { font-size: 26px; font-weight: 700; } .bx-h2 { font-size: 15px; font-weight: 700; } .bx-h3 { font-size: 13px; font-weight: 700; }

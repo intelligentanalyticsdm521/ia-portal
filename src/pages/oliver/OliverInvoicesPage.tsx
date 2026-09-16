@@ -12,6 +12,7 @@ import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../../auth/useAccessToken";
 import { oliverFetchRaw, oliverDownload } from "../../lib/oliverApi";
 import { InvoiceCreateForm } from "./InvoiceCreateForm";
+import { ReadyToInvoicePanel } from "./ReadyToInvoicePanel";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import { useOliverLocations } from "../../hooks/useOliverLocations";
@@ -41,6 +42,41 @@ interface InvoiceLineItem {
   sort_order: number;
 }
 
+/**
+ * A BILL TO block and a SERVICE LOCATION block, exactly as
+ * `GET /invoices/:id` returns them (CUSTOMER_MODEL_MULTISITE §9.6).
+ *
+ * The owner's screen shows what the customer's copy shows. Until now it showed
+ * neither, so "who is this invoice addressed to?" could only be answered by
+ * opening the PDF.
+ */
+interface AddressBlock {
+  name?: string | null;
+  company?: string | null;
+  email?: string | null;
+  address?: {
+    address_line_1?: string | null; address_line_2?: string | null;
+    city?: string | null; state?: string | null; postal_code?: string | null;
+  } | null;
+  payment_terms_days?: number | null;
+  po_number?: string | null;
+  tax_exempt?: boolean;
+  source?: string | null;
+}
+
+/** One site's lines on a multi-site invoice, with its own subtotal and tax. */
+interface InvoiceLineGroup {
+  location_id: string | null;
+  name: string | null;
+  address: AddressBlock["address"];
+  po_number: string | null;
+  lines: InvoiceLineItem[];
+  subtotal: number;
+  tax_rate: number | null;
+  tax_amount: number;
+  total: number;
+}
+
 interface InvoiceDetail {
   invoice_id: string;
   tenant_id: string;
@@ -61,6 +97,18 @@ interface InvoiceDetail {
   created_at: string;
   updated_at: string;
   line_items?: InvoiceLineItem[];
+  bill_to?: AddressBlock | null;
+  service_location?: (AddressBlock & { location_id?: string | null }) | null;
+  line_groups?: InvoiceLineGroup[];
+  line_group_totals?: { subtotal: number; tax_amount: number; total: number } | null;
+}
+
+/** One address, on one line. Used by both blocks so they cannot read differently. */
+function addressLine(a: AddressBlock["address"]): string {
+  if (!a) return "";
+  return [a.address_line_1, a.address_line_2, [a.city, a.state].filter(Boolean).join(", "), a.postal_code]
+    .filter((x) => String(x ?? "").trim())
+    .join(", ");
 }
 
 const FILTER_PILLS = [
@@ -209,6 +257,24 @@ export function OliverInvoicesPage() {
     }
   }, [searchParams, setSearchParams]);
 
+  // ── The month-end screen lives in the URL ─────────────────────────────
+  // `?view=ready` rather than component state, so the browser's Back button
+  // and the left-nav link both return to the list, and a link to the screen is
+  // a link somebody can send — convention_back_button_top_left.
+  const view = searchParams.get("view");
+  const showReady = view === "ready";
+  const openReady = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.set("view", "ready");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+  const closeReady = useCallback(() => {
+    const next = new URLSearchParams(searchParams);
+    next.delete("view");
+    setSearchParams(next);
+  }, [searchParams, setSearchParams]);
+  const [batchNote, setBatchNote] = useState<string | null>(null);
+
   const filtered = useMemo(() => {
     let list = rows;
     if (filter) list = list.filter((r) => r.status === filter);
@@ -302,6 +368,34 @@ export function OliverInvoicesPage() {
     },
   ];
 
+  // The month-end screen is a VIEW of this page, not a page of its own: it is
+  // reached from Invoices, it returns to Invoices, and what it creates lands in
+  // this list. One route, one nav item, Back top-left.
+  if (showReady) {
+    return (
+      <OliverPageWrapper title="Invoices" subtitle="Ready to invoice" error={null} loading={false}>
+        <ReadyToInvoicePanel
+          api={{ get, post }}
+          onBack={closeReady}
+          onCreated={(result) => {
+            const made = result?.created?.length ?? 0;
+            const failed = result?.failed?.length ?? 0;
+            setBatchNote(
+              `${made} invoice${made === 1 ? "" : "s"} created${failed ? ` · ${failed} failed` : ""}.`
+              + (made ? ` ${result.created.map((c) => c.invoiceNumber).join(", ")}` : ""),
+            );
+            closeReady();
+            void reload();
+            // The first one OPENS, so the line groups are seen rather than
+            // assumed — "Create invoices" that only changes a count is a button
+            // nobody trusts.
+            if (result?.created?.[0]?.invoiceId) setDetailId(result.created[0].invoiceId);
+          }}
+        />
+      </OliverPageWrapper>
+    );
+  }
+
   return (
     <OliverPageWrapper title="Invoices" subtitle="Invoice management" error={error} loading={loading}>
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
@@ -313,13 +407,30 @@ export function OliverInvoicesPage() {
         subtitle="Send, track, and reconcile invoices through Stripe"
         actions={
           <>
-            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length}>
+            <Button
+              variant="secondary"
+              onClick={openReady}
+              title="Bill a month's finished work in one go — one invoice per customer, with a section for each of their sites"
+            >
+              Ready to invoice
+            </Button>
+            <Button variant="secondary" onClick={exportCsv} disabled={exporting || !rows.length} title="Download this list as a CSV file">
               {exporting ? "Exporting…" : "Export CSV"}
             </Button>
-            {!showCreate && <Button variant="primary" data-tour="new-invoice" onClick={() => setShowCreate(true)}>+ Create invoice</Button>}
+            {!showCreate && <Button variant="primary" data-tour="new-invoice" onClick={() => setShowCreate(true)} title="Raise a single invoice by hand">+ Create invoice</Button>}
           </>
         }
       />
+
+      {batchNote && (
+        <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: "#065F46" }}>{batchNote}</span>
+            <button type="button" onClick={() => setBatchNote(null)} title="Dismiss this message"
+              style={{ background: "transparent", border: 0, color: "#065F46", cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+        </div>
+      )}
 
       <div className="stat-row">
         <div className="stat-card">
@@ -410,11 +521,11 @@ export function OliverInvoicesPage() {
                     </span>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
-                    <Button variant="secondary" onClick={bulkMarkPaid} disabled={!!bulkBusy || sentCount === 0}>
+                    <Button variant="secondary" onClick={() => setSelected(new Set())} title="Untick every invoice">Clear</Button>
+                    <Button variant="secondary" onClick={bulkMarkPaid} disabled={!!bulkBusy || sentCount === 0} title="Record a payment on every sent invoice you have ticked">
                       {bulkBusy === "mark-paid" ? "Marking…" : `Mark ${sentCount} as paid`}
                     </Button>
-                    <Button variant="primary" onClick={bulkSendDrafts} disabled={!!bulkBusy || draftCount === 0}>
+                    <Button variant="primary" onClick={bulkSendDrafts} disabled={!!bulkBusy || draftCount === 0} title="Email every draft invoice you have ticked">
                       {bulkBusy === "send" ? "Sending…" : `Send ${draftCount} draft${draftCount === 1 ? "" : "s"}`}
                     </Button>
                   </div>
@@ -648,27 +759,27 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
       subtitle={`Issued ${fmtDate(inv.created_at)} · Total ${fmtMoney(inv.total)}`}
       width="xl"
       headerActions={
-        <button onClick={downloadPdf} className="text-sm text-oliver-teal hover:underline">
+        <button onClick={downloadPdf} className="text-sm text-oliver-teal hover:underline" title="Download this invoice as a PDF, exactly as the customer receives it">
           Download PDF
         </button>
       }
       footer={
         <>
-          <Button variant="ghost" onClick={duplicate} loading={busy === "duplicate"}>Duplicate</Button>
-          {inv.status === "draft" && <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>}
-          {inv.status === "draft" && <Button variant="secondary" onClick={markPaid} loading={busy === "markpaid"}>Mark as paid</Button>}
-          {inv.status === "draft" && <Button variant="primary" onClick={send} loading={busy === "send"}>Send invoice</Button>}
+          <Button variant="ghost" onClick={duplicate} loading={busy === "duplicate"} title="Copy this invoice into a new draft">Duplicate</Button>
+          {inv.status === "draft" && <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"} title="Cancel this invoice. It stays on the record but is no longer owed.">Void</Button>}
+          {inv.status === "draft" && <Button variant="secondary" onClick={markPaid} loading={busy === "markpaid"} title="Record a payment you took outside the system">Mark as paid</Button>}
+          {inv.status === "draft" && <Button variant="primary" onClick={send} loading={busy === "send"} title="Email this invoice to the bill-to contact with a pay link">Send invoice</Button>}
           {inv.status === "sent" && (
             <>
-              <Button variant="ghost" onClick={markUncollectible} loading={busy === "uncollectible"}>Mark uncollectible</Button>
-              <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"}>Void</Button>
+              <Button variant="ghost" onClick={markUncollectible} loading={busy === "uncollectible"} title="Write this off as money you will not collect">Mark uncollectible</Button>
+              <Button variant="ghost" onClick={voidInvoice} loading={busy === "void"} title="Cancel this invoice. It stays on the record but is no longer owed.">Void</Button>
               <Button variant="primary" onClick={markPaid} loading={busy === "markpaid"}>Mark as paid</Button>
             </>
           )}
           {inv.status === "paid" && refundable > 0 && (
             <>
-              <Button variant="ghost" onClick={() => setRefundOpen(true)}>Partial refund…</Button>
-              <Button variant="danger" onClick={fullRefund} loading={busy === "refund"}>Refund {fmtMoney(refundable)}</Button>
+              <Button variant="ghost" onClick={() => setRefundOpen(true)} title="Refund part of what was paid">Partial refund…</Button>
+              <Button variant="danger" onClick={fullRefund} loading={busy === "refund"} title="Refund everything that was paid on this invoice">Refund {fmtMoney(refundable)}</Button>
             </>
           )}
           {inv.stripe_payment_url && (
@@ -687,6 +798,70 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
         {inv.paid_at && <span className="text-sm text-slate-500">Paid {fmtDate(inv.paid_at)}</span>}
         {inv.sent_at && !inv.paid_at && <span className="text-sm text-slate-500">Sent {fmtDate(inv.sent_at)}</span>}
       </div>
+
+      {/* ── BILL TO + SERVICE LOCATIONS ─────────────────────────────────
+          §9.6: "GET /invoices/:id returns bill_to — print it as the BILL TO
+          block". The owner's screen shows what the customer's copy shows; it
+          used to show neither, so "who is this addressed to?" could only be
+          answered by opening the PDF. */}
+      {(inv.bill_to || inv.service_location || (inv.line_groups?.length ?? 0) > 0) && (
+        <div className="grid gap-4 mb-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          {inv.bill_to && (
+            <div className="rounded-xl ring-1 ring-gray-200 p-4" data-testid="bill-to-block">
+              <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-1">Bill to</div>
+              <div className="text-sm font-semibold text-slate-900">
+                {inv.bill_to.company || inv.bill_to.name || "—"}
+              </div>
+              {inv.bill_to.company && inv.bill_to.name && (
+                <div className="text-xs text-slate-600">Attn: {inv.bill_to.name}</div>
+              )}
+              {inv.bill_to.email && <div className="text-xs text-slate-600">{inv.bill_to.email}</div>}
+              {addressLine(inv.bill_to.address) && (
+                <div className="text-xs text-slate-600 mt-1">{addressLine(inv.bill_to.address)}</div>
+              )}
+              <div className="text-xs text-slate-500 mt-1">
+                {inv.bill_to.payment_terms_days != null ? `Net ${inv.bill_to.payment_terms_days}` : "No payment terms set"}
+                {inv.bill_to.po_number ? ` · PO ${inv.bill_to.po_number}` : ""}
+                {inv.bill_to.tax_exempt ? " · Tax exempt" : ""}
+              </div>
+            </div>
+          )}
+
+          {/* One site, or the several a batch invoice covers. Both from the
+              same shape, so a single-site invoice reads exactly as it did. */}
+          {(() => {
+            const sited = (inv.line_groups || []).filter((g) => g.location_id);
+            if (sited.length > 1) {
+              return (
+                <div className="rounded-xl ring-1 ring-gray-200 p-4" data-testid="service-location-block">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-1">
+                    Service locations ({sited.length})
+                  </div>
+                  {sited.map((g) => (
+                    <div key={g.location_id} className="mb-1">
+                      <div className="text-sm font-semibold text-slate-900">{g.name || "This site"}</div>
+                      <div className="text-xs text-slate-600">{addressLine(g.address)}</div>
+                      {g.po_number && <div className="text-xs text-slate-500">PO {g.po_number}</div>}
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            const one = inv.service_location || (sited.length === 1 ? {
+              name: sited[0].name, address: sited[0].address, po_number: sited[0].po_number,
+            } as AddressBlock : null);
+            if (!one) return null;
+            return (
+              <div className="rounded-xl ring-1 ring-gray-200 p-4" data-testid="service-location-block">
+                <div className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-500 mb-1">Service location</div>
+                <div className="text-sm font-semibold text-slate-900">{one.name || "—"}</div>
+                <div className="text-xs text-slate-600">{addressLine(one.address)}</div>
+                {one.po_number && <div className="text-xs text-slate-500">PO {one.po_number}</div>}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* Summary block */}
       <div className="rounded-xl bg-slate-50 ring-1 ring-gray-200 p-4 mb-5">
@@ -768,30 +943,73 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
         <h3 className="text-sm font-semibold text-oliver-teal uppercase tracking-wide" style={{ margin: 0 }}>Line items</h3>
         {inv.status === "draft" && !editing && (
-          <Button variant="secondary" onClick={startEdit}>Edit</Button>
+          <Button variant="secondary" onClick={startEdit} title="Change the lines on this draft">Edit</Button>
         )}
         {editing && (
           <div style={{ display: "flex", gap: 6 }}>
-            <Button variant="secondary" onClick={addEditLine}>+ Line</Button>
-            <Button variant="secondary" onClick={addEditTaxLine}>+ Tax line</Button>
+            <Button variant="secondary" onClick={addEditLine} title="Add another line to this invoice">+ Line</Button>
+            <Button variant="secondary" onClick={addEditTaxLine} title="Add a tax line. Tax lines are never taxed again.">+ Tax line</Button>
           </div>
         )}
       </div>
 
       {!editing ? (
-        <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-5">
-          {(inv.line_items ?? []).map((li) => (
-            <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center ${li.is_tax ? "bg-amber-50/50" : ""}`}>
-              <div className="col-span-7">
-                <div className="text-sm text-slate-800">{li.description}</div>
-                {li.is_tax && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tax</span>}
+        // §9.6: "show group headings only when line_groups has more than one
+        // sited group; a single-site invoice must look exactly as it does
+        // today." That condition is the whole rule, and it is written once.
+        (inv.line_groups || []).filter((g) => g.location_id).length > 1 ? (
+          <div className="rounded-lg ring-1 ring-gray-200 mb-5 overflow-hidden" data-testid="line-groups">
+            {(inv.line_groups || []).map((g) => (
+              <div key={g.location_id || "none"} data-testid="line-group">
+                <div className="px-3 py-2 bg-slate-100 flex justify-between gap-3">
+                  <span className="text-xs font-bold text-slate-800">
+                    {g.location_id ? (g.name || "This site") : "Not tied to a site"}
+                    {addressLine(g.address) && <span className="font-normal text-slate-500"> · {addressLine(g.address)}</span>}
+                    {g.po_number && <span className="font-normal text-slate-500"> · PO {g.po_number}</span>}
+                  </span>
+                  <span className="text-xs font-bold tabular-nums text-slate-800">{fmtMoney(g.subtotal)}</span>
+                </div>
+                {g.lines.map((li) => (
+                  <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center border-b border-gray-100 ${li.is_tax ? "bg-amber-50/50" : ""}`}>
+                    <div className="col-span-7">
+                      <div className="text-sm text-slate-800">{li.description}</div>
+                      {li.is_tax && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tax</span>}
+                    </div>
+                    <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
+                    <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
+                    <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+                  </div>
+                ))}
+                {Number(g.tax_amount) > 0 && (
+                  <div className="px-3 py-1.5 flex justify-between gap-3 text-xs text-slate-500 border-b border-gray-100">
+                    <span>Tax{g.tax_rate != null ? ` · ${g.tax_rate}%` : ""} · {g.name || "this site"}</span>
+                    <span className="tabular-nums">{fmtMoney(g.tax_amount)}</span>
+                  </div>
+                )}
               </div>
-              <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
-              <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
-              <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
-            </div>
-          ))}
-        </div>
+            ))}
+            {inv.line_group_totals && (
+              <div className="px-3 py-2 flex justify-between gap-3 bg-slate-50">
+                <span className="text-xs font-bold text-slate-800">Total across all locations</span>
+                <span className="text-xs font-bold tabular-nums text-slate-800">{fmtMoney(inv.line_group_totals.total)}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-5">
+            {(inv.line_items ?? []).map((li) => (
+              <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center ${li.is_tax ? "bg-amber-50/50" : ""}`}>
+                <div className="col-span-7">
+                  <div className="text-sm text-slate-800">{li.description}</div>
+                  {li.is_tax && <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">Tax</span>}
+                </div>
+                <div className="col-span-1 text-right text-xs text-slate-500 tabular-nums">{li.quantity}</div>
+                <div className="col-span-2 text-right text-sm tabular-nums">{fmtMoney(li.unit_price)}</div>
+                <div className="col-span-2 text-right text-sm font-medium tabular-nums">{fmtMoney(li.line_total)}</div>
+              </div>
+            ))}
+          </div>
+        )
       ) : (
         <>
           <div style={{ border: "1px solid #eef2f4", borderRadius: 6, marginBottom: 12 }}>

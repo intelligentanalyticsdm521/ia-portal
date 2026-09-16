@@ -375,7 +375,7 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
           proposalSummary={proposals.find((p) => p.proposal_id === focusId) ?? null}
           onClose={closeFocus}
           onChanged={reload}
-          api={{ get, post }}
+          api={{ get, post, patch }}
         />
       )}
     </OliverPageWrapper>
@@ -499,6 +499,9 @@ export function ProposalDetailDrawer({
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
+    // The builder saves a revision with PATCH. The drawer is where it opens, so
+    // the drawer needs the verb.
+    patch: <T>(p: string, body: unknown) => Promise<T>;
   };
 }) {
   const [splitKind, setSplitKind] = useState<PaymentSplitKind>("");
@@ -514,7 +517,10 @@ export function ProposalDetailDrawer({
   const [activeTab, setActiveTab] = useState<"overview" | "revisions">("overview");
   const [revisions, setRevisions] = useState<ProposalRevision[]>([]);
   const [revsErr, setRevsErr] = useState<string | null>(null);
-  const [showAddRevision, setShowAddRevision] = useState(false);
+  const [revsNote, setRevsNote] = useState<string | null>(null);
+  // Which revision the BUILDER is open on. There is no other revision editor.
+  const [builderRevision, setBuilderRevision] = useState<{ proposalId: string; revisionId: string } | null>(null);
+  const [creatingRevision, setCreatingRevision] = useState(false);
   // §8 item 6 — the business's countersign, and the signing record behind it.
   const [signatures, setSignatures] = useState<Array<{ party: string; signer_name: string; signed_at: string; ip_address: string | null; consent_text: string; document_version: number }>>([]);
   const [counterName, setCounterName] = useState("");
@@ -565,6 +571,30 @@ export function ProposalDetailDrawer({
   }, [api, proposalId]);
 
   useEffect(() => { reloadRevisions(); }, [reloadRevisions]);
+
+  /**
+   * Start a revision: create the row, then open the BUILDER on it.
+   *
+   * The row is created first because a revision needs a copy of the document to
+   * open — the API takes that copy, and freezes a second one as the baseline
+   * the diff is measured against. Two steps in the code, one button to the
+   * author.
+   */
+  const startRevision = useCallback(async () => {
+    setCreatingRevision(true);
+    setRevsErr(null);
+    try {
+      const created = await api.post<any>(`/proposals/${proposalId}/revisions`, {});
+      const id = created?.data?.revision_id ?? created?.revision_id;
+      if (!id) throw new Error("The revision was created but came back without an id.");
+      await reloadRevisions();
+      setBuilderRevision({ proposalId, revisionId: id });
+    } catch (e) {
+      setRevsErr((e as Error).message);
+    } finally {
+      setCreatingRevision(false);
+    }
+  }, [api, proposalId, reloadRevisions]);
 
   // The signing record, from the one place it lives (oliver.document_signature
   // through GET /proposals/:id).
@@ -877,11 +907,13 @@ export function ProposalDetailDrawer({
             </h3>
             <Button
               variant="primary"
-              onClick={() => setShowAddRevision(true)}
-              disabled={isPaused}
-              title={isPaused ? "Cannot add a revision while paused for payment" : ""}
+              onClick={startRevision}
+              disabled={isPaused || !!creatingRevision}
+              title={isPaused
+                ? "Cannot add a revision while paused for payment"
+                : "Open this document in the builder as a new version. Nothing changes for the customer until you send it."}
             >
-              + Add revision
+              {creatingRevision ? "Opening…" : "+ Revise in the builder"}
             </Button>
           </div>
 
@@ -897,6 +929,11 @@ export function ProposalDetailDrawer({
           {revsErr && (
             <div style={{ marginBottom: 8, padding: 8, fontSize: 11, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 4 }}>
               {revsErr}
+            </div>
+          )}
+          {revsNote && (
+            <div style={{ marginBottom: 8, padding: 8, fontSize: 11, background: "#F0FDF4", color: "#166534", border: "1px solid #BBF7D0", borderRadius: 4 }}>
+              {revsNote}
             </div>
           )}
 
@@ -941,32 +978,45 @@ export function ProposalDetailDrawer({
                       : "canceled")}>
                       {rev.status}
                     </span>
-                    <div style={{ textAlign: "right" }}>
-                      {rev.status === "draft" && (
+                    <div style={{ textAlign: "right", display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }}>
+                      {/* A revision is EDITED and SENT in the builder, which is
+                          where the document is. There is no "send" here any
+                          more: sending without opening it would send the
+                          unedited copy the revision was created from. */}
+                      {(rev.status === "draft" || rev.status === "sent") && (
                         <Button
-                          variant="primary"
-                          onClick={async () => {
-                            try {
-                              await api.post(`/proposals/${proposalId}/revisions/${rev.revision_id}/send`);
-                              await reloadRevisions();
-                              onChanged();
-                            } catch (e) {
-                              setRevsErr((e as Error).message);
-                            }
-                          }}
-                        >Send</Button>
+                          variant={rev.status === "draft" ? "primary" : "secondary"}
+                          onClick={() => setBuilderRevision({ proposalId, revisionId: rev.revision_id })}
+                          title={rev.status === "draft"
+                            ? "Open this revision in the builder — the same builder the original was written in"
+                            : "Open the version that was sent"}
+                        >
+                          {rev.status === "draft" ? "Open in builder" : "Open"}
+                        </Button>
                       )}
                       {rev.status === "sent" && rev.public_token && (
                         <a
                           href={`/p/revisions/${rev.public_token}`}
                           target="_blank"
                           rel="noopener noreferrer"
+                          title="Open the page exactly as the customer sees it"
                           style={{ fontSize: 11, color: "#1A7DB5", fontWeight: 600 }}
                         >
-                          View link
+                          Customer's page
                         </a>
                       )}
-                      {(rev.status === "accepted" || rev.status === "rejected" || rev.status === "lapsed") && (
+                      {rev.status === "accepted" && rev.public_token && (
+                        <a
+                          href={`/p/revisions/${rev.public_token}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open the signed version the customer accepted"
+                          style={{ fontSize: 11, color: "#1A7DB5", fontWeight: 600 }}
+                        >
+                          Signed copy
+                        </a>
+                      )}
+                      {(rev.status === "rejected" || rev.status === "lapsed") && (
                         <span style={{ fontSize: 10, color: "#94A3B8" }}>—</span>
                       )}
                     </div>
@@ -976,18 +1026,25 @@ export function ProposalDetailDrawer({
             </div>
           )}
 
-          {showAddRevision && (
-            <AddRevisionModal
-              open
-              proposalId={proposalId}
-              freeRevisionsUsed={usedFreeRevisions}
-              onClose={() => setShowAddRevision(false)}
-              onCreated={async () => {
-                setShowAddRevision(false);
+          {/* THE builder — the same one the original document was written in.
+              §11.5: "make a revision open in the SAME builder as the original".
+              The pre-builder AddRevisionModal (delta in dollars, a notes box,
+              a Requires-payment tick, and no document anywhere) is DELETED, not
+              left beside it. Replace means delete. */}
+          {builderRevision && (
+            <ProposalBuilder
+              api={{ get: api.get, post: api.post, patch: api.patch }}
+              revision={builderRevision}
+              onClose={() => setBuilderRevision(null)}
+              onSaved={async (msg) => {
+                setBuilderRevision(null);
+                setRevsErr(null);
                 await reloadRevisions();
                 onChanged();
+                // The builder's own message says what happened; showing it here
+                // is what the list does for every other save.
+                setRevsNote(msg);
               }}
-              api={api}
             />
           )}
         </div>
@@ -1012,134 +1069,3 @@ export function ProposalDetailDrawer({
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// F3 — AddRevisionModal
-//
-// Founder UI for creating a draft revision.  When freeRevisionsUsed >= 1
-// the requires_payment toggle is force-checked and disabled (Brandon-lock:
-// 1 free revision per proposal, then chargeable).
-// ──────────────────────────────────────────────────────────────────────────
-function AddRevisionModal({
-  open, proposalId, freeRevisionsUsed, onClose, onCreated, api,
-}: {
-  open: boolean;
-  proposalId: string;
-  freeRevisionsUsed: number;
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-  api: {
-    get: <T>(p: string) => Promise<T>;
-    post: <T>(p: string, body?: unknown) => Promise<T>;
-  };
-}) {
-  // Whole-dollar input for the delta — converted to cents on submit.
-  const [deltaDollars, setDeltaDollars] = useState("");
-  const [scopeNotes, setScopeNotes] = useState("");
-  // Defaults: if a free revision is still available, requires_payment off.
-  // Once used, force-on.
-  const forcedPaid = freeRevisionsUsed >= 1;
-  const [requiresPayment, setRequiresPayment] = useState<boolean>(forcedPaid);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  if (!open) return null;
-
-  async function submit() {
-    setErr(null);
-    const dollars = Number(deltaDollars);
-    let deltaCents: number | null = null;
-    if (deltaDollars.trim() !== "") {
-      if (!Number.isFinite(dollars) || dollars < 0) {
-        setErr("Delta must be a non-negative number");
-        return;
-      }
-      deltaCents = Math.round(dollars * 100);
-    }
-    if (requiresPayment && (!deltaCents || deltaCents <= 0)) {
-      setErr("Paid revisions need a delta > $0");
-      return;
-    }
-    setBusy(true);
-    try {
-      await api.post(`/proposals/${proposalId}/revisions`, {
-        delta_cents: deltaCents,
-        scope_change_notes: scopeNotes.trim() || null,
-        requires_payment: requiresPayment,
-      });
-      await onCreated();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <div style={{
-      position: "fixed", inset: 0, background: "rgba(11,28,36,0.4)",
-      zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center",
-    }}>
-      <div style={{
-        width: 500, background: "#fff", borderRadius: 10,
-        boxShadow: "0 12px 40px rgba(0,0,0,0.15)",
-      }}>
-        <div style={{ padding: 18, borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h2 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1A3A4A" }}>Add revision</h2>
-          <button onClick={onClose} style={{ background: "transparent", border: 0, fontSize: 22, color: "#5A7A8A", cursor: "pointer" }}>×</button>
-        </div>
-
-        <div style={{ padding: 18, display: "grid", gap: 14 }}>
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Scope change notes</span>
-            <textarea
-              rows={4}
-              style={{ ...pInput, resize: "vertical" }}
-              placeholder="Describe what changed, what's new, what's removed…"
-              value={scopeNotes}
-              onChange={(e) => setScopeNotes(e.target.value)}
-              autoFocus
-            />
-          </label>
-
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Delta ($) — additional or new amount</span>
-            <input
-              type="number" min="0" step="0.01" style={pInput}
-              placeholder="0.00"
-              value={deltaDollars}
-              onChange={(e) => setDeltaDollars(e.target.value)}
-            />
-          </label>
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#0B1C24" }}>
-            <input
-              type="checkbox"
-              checked={requiresPayment}
-              disabled={forcedPaid}
-              onChange={(e) => setRequiresPayment(e.target.checked)}
-            />
-            <span>
-              Requires payment
-              {forcedPaid && (
-                <span style={{ marginLeft: 6, fontSize: 10, color: "#92400E" }}>
-                  (free revision already used)
-                </span>
-              )}
-            </span>
-          </label>
-
-          {err && (
-            <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-            <Button variant="primary" onClick={submit} disabled={busy}>
-              {busy ? "Creating…" : "Create draft revision"}
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
