@@ -25,56 +25,21 @@ import {
 // lifecycle_stage. Columns rendered from the tenant's lifecycle_preset
 // (simplified=3, moderate=5, advanced=10) via GET /api/v1/lifecycle/preset.
 import { SparkLifecycleKanban } from "../../components/spark/SparkLifecycleKanban";
-import { SparkAccountsPage, BackBar } from "./SparkAccountsPage";
 import { readSpreadsheet, parseDelimited, gridToRows, toContact } from "../../lib/sheetImport";
 import { PhoneInput } from "../../components/PhoneInput";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+// The MIXED list (customer model spec, section 7 point 1) and the one place
+// its two decisions live: which rows are a group, and what "People only" means.
+import {
+  type MixedCustomerRow, groupMixedList, peopleOnly, customerKey, hasMoney,
+  type CustomerRole, ROLE_LABEL, ROLE_HELP,
+} from "../../lib/customerModel";
+import { CompanyTypeahead, NO_COMPANY, resolveCompanyChoice, type CompanyChoice } from "../../components/customers/CompanyTypeahead";
 
-interface Contact {
-  id: number;
-  display_name?: string | null;
-  first_name: string;
-  last_name: string;
-  title?: string | null;
-  email: string;
-  phone: string;
-  company: string;
-  source: string;
-  contact_intelligence_tier: string | null;
-  contact_intelligence_score: number | null;
-  email_unsubscribed?: boolean;
-  email_invalid?: boolean;
-  sms_unsubscribed?: boolean;
-  account_name?: string | null;
-  account_domain?: string | null;
-  tag_names?: string | null;
-  // #255 (2026-06-21) — mirrored from Stripe customer.subscription.* webhooks
-  // via LUMEN-API POST /contacts/subscription-status. NULL means no Stripe
-  // sub on file. Render a pill when value === 'cancelled' (and dim variants
-  // for past_due / trialing) so SPARK users can tell at a glance which CRM
-  // contacts churned.
-  subscription_status?: "active" | "past_due" | "cancelled" | "trialing" | "unpaid" | "incomplete" | null;
-  created_at: string;
-  updated_at?: string;
-}
-
-// Resolve the best-available label for a contact row.
-// Order: display_name → company → first+last → email → "—"
-// Matches the B2B-aware data shape after the 2026-06-18 Stripe sync fix:
-// businesses have display_name + company set, first/last NULL; individuals
-// have first/last set, company NULL.
-function contactLabel(c: Contact): string {
-  if (c.display_name?.trim()) return c.display_name.trim();
-  if (c.company?.trim()) return c.company.trim();
-  const fullName = `${c.first_name || ""} ${c.last_name || ""}`.trim();
-  if (fullName) return fullName;
-  return c.email || "—";
-}
-
-function contactInitials(c: Contact): string {
-  const label = contactLabel(c);
-  const parts = label.split(/\s+/);
+/** Initials for a person row on the mixed list. */
+function rowInitials(row: { name: string }): string {
+  const parts = String(row.name || "").trim().split(/\s+/);
   const a = (parts[0]?.[0] || "?").toUpperCase();
   const b = (parts[1]?.[0] || "").toUpperCase();
   return a + b;
@@ -94,16 +59,25 @@ export function SparkContactsPage() {
   const { get, post, put, del, ready } = useSparkApi();
   const navigate = useNavigate();
 
-  // List state
-  const [contacts, setContacts] = useState<Contact[]>([]);
+  // List state.
+  //
+  // The rows are the MIXED list now (spec section 7 point 1): company rows
+  // first, then the people who are not at a company. It is the same query
+  // OLIVER's Customers page reads, which is the point - two lists built from
+  // two queries disagree the first time one of them gets a filter fixed.
+  const [rows, setRows] = useState<MixedCustomerRow[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
-  const [sortKey, setSortKey] = useState<SortKey>("created");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // BY NAME, ascending, to start. The server orders the mixed list by name and
+  // the artboard reads that way; defaulting to "newest first" re-sorted the
+  // page into an order the pagination does not share, so page 2 could repeat a
+  // row page 1 had already shown.
+  const [sortKey, setSortKey] = useState<SortKey>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   // F5 — view toggle [List | Kanban]. Default 'list' (Brandon LOCK 2026-06-25).
   // Kanban hits GET /api/v1/lifecycle/kanban; List hits the existing
@@ -112,29 +86,21 @@ export function SparkContactsPage() {
   // 2026-09-15 (prod defect, Brandon — "I can't get back to the full contacts
   // list"): the pick used to live in localStorage, so clicking Contacts in the
   // left nav re-landed on whatever view you last used — with no way out, since
-  // the same route does not remount. The view now lives in the URL
-  // (?view=kanban|companies, absent = list), which makes the nav link, the
-  // browser Back button, a refresh and a deep link all agree.
+  // the same route does not remount. The view lives in the URL (?view=kanban,
+  // absent = list), which makes the nav link, the browser Back button, a
+  // refresh and a deep link all agree.
+  //
+  // 2026-09-16 (D-128): "companies" left this union. Companies is its own page
+  // again, so the Companies button navigates instead of switching a view —
+  // and the back button that only existed to climb out of the nested surface
+  // went with it, because the page it climbed out of now has its own.
   const [searchParams, setSearchParams] = useSearchParams();
   const viewParam = searchParams.get("view");
-  const view: "list" | "kanban" | "companies" =
-    viewParam === "kanban" || viewParam === "companies" ? viewParam : "list";
-  // Push (never replace) so Back walks list → companies → a company.
-  const setView = useCallback((next: "list" | "kanban" | "companies") => {
+  const view: "list" | "kanban" = viewParam === "kanban" ? "kanban" : "list";
+  const setView = useCallback((next: "list" | "kanban") => {
     const params = new URLSearchParams(searchParams);
     if (next === "list") params.delete("view"); else params.set("view", next);
-    // ?company belongs to the Companies view only — leaving it behind would
-    // re-open a company the next time Companies is picked.
-    if (next !== "companies") params.delete("company");
-    setSearchParams(params);
-  }, [searchParams, setSearchParams]);
-
-  // "← Back" for the Companies view sits TOP-LEFT of the page header (Brandon
-  // 2026-09-15: "that's generally where the back buttons would be located").
-  // One level per press: a company → the companies list → the full list.
-  const goBackOneLevel = useCallback(() => {
-    const params = new URLSearchParams(searchParams);
-    if (params.has("company")) params.delete("company"); else params.delete("view");
+    params.delete("company");
     setSearchParams(params);
   }, [searchParams, setSearchParams]);
 
@@ -149,8 +115,15 @@ export function SparkContactsPage() {
   const [drawer, setDrawer] = useState<"add" | "import" | "detail" | null>(null);
   const [quickAdd, setQuickAdd] = useState(false);
   const [tagsOpen, setTagsOpen] = useState(false);
-  const [detail, setDetail] = useState<Contact | null>(null);
-  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
+  // The open contact is an ID, not a row. The list now holds mixed rows, and a
+  // stub row built to satisfy the modal's props is a record that looks loaded
+  // and is not — the modal fetches by id anyway.
+  const [detailId, setDetailId] = useState<number | null>(null);
+  const [form, setForm] = useState({ first_name: "", last_name: "", email: "", phone: "", title: "" });
+  /** The Company field's answer: an existing company, a new one, or none. */
+  const [company, setCompany] = useState<CompanyChoice>(NO_COMPANY);
+  /** The person's role at that company (spec section 7 point 3). */
+  const [role, setRole] = useState<CustomerRole | "">("");
   const [saving, setSaving] = useState(false);
   /**
    * Id of the contact created in this session — marks its row for the
@@ -172,10 +145,13 @@ export function SparkContactsPage() {
     if (!ready) return;
     setLoading(true); setError(null);
     try {
-      const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
+      const params = new URLSearchParams({ view: "mixed", page: String(page), limit: String(PAGE_SIZE) });
       if (search) params.set("search", search);
-      const raw = await get<{ data: Contact[]; meta: { total: number } }>(`/api/v1/contacts?${params}`);
-      setContacts(raw.data || []);
+      // The server's search matches a LOCATION's name, street, city and
+      // postcode as well as the person's own fields, so typing a street finds
+      // the customer it belongs to.
+      const raw = await get<{ data: MixedCustomerRow[]; meta: { total: number } }>(`/api/v1/customers?${params}`);
+      setRows(raw.data || []);
       setTotal(raw.meta?.total || 0);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
@@ -183,43 +159,80 @@ export function SparkContactsPage() {
   useEffect(() => { load(); }, [load]);
 
   // ─ Filter + sort ────────────────────────────────────────────────────────
+  //
+  // "People only" is a FILTER of the rows already fetched, not a second
+  // request: the chip exists so bulk actions have checkboxes, and a chip that
+  // re-queried would hand you a different page of people from the one you were
+  // looking at. Every other pill is a person-only property, so each of them
+  // implies the flatten - a "Tier X" list with company rows in it would be
+  // claiming those companies are Tier X.
+  const peopleOnlyView = filter !== "all";
+
   const filtered = useMemo(() => {
-    let rows = contacts;
-    if (filter === "subscribed") rows = rows.filter(c => !c.email_unsubscribed && !c.email_invalid);
-    else if (filter === "unsubscribed") rows = rows.filter(c => c.email_unsubscribed);
+    let out = peopleOnlyView ? peopleOnly(rows) : rows;
+    if (filter === "subscribed") out = out.filter(c => !c.email_unsubscribed && !c.email_invalid);
+    else if (filter === "unsubscribed") out = out.filter(c => c.email_unsubscribed);
     // Bounced is its own filter, not a shade of unsubscribed: unsubscribed is
     // a choice the person made and must be respected, bounced is a broken
     // address you should go and replace.
-    else if (filter === "bounced") rows = rows.filter(c => c.email_invalid);
-    else if (filter === "tier_x") rows = rows.filter(c => c.contact_intelligence_tier === "X");
-    else if (filter === "tier_y") rows = rows.filter(c => c.contact_intelligence_tier === "Y");
-    else if (filter === "tier_z") rows = rows.filter(c => c.contact_intelligence_tier === "Z");
-    else if (filter === "unscored") rows = rows.filter(c => !c.contact_intelligence_tier);
-    else if (filter === "no_email") rows = rows.filter(c => !c.email);
+    else if (filter === "bounced") out = out.filter(c => c.email_invalid);
+    else if (filter === "tier_x") out = out.filter(c => c.contact_intelligence_tier === "X");
+    else if (filter === "tier_y") out = out.filter(c => c.contact_intelligence_tier === "Y");
+    else if (filter === "tier_z") out = out.filter(c => c.contact_intelligence_tier === "Z");
+    else if (filter === "unscored") out = out.filter(c => !c.contact_intelligence_tier);
+    else if (filter === "no_email") out = out.filter(c => !c.email);
 
-    const sorted = [...rows].sort((a, b) => {
+    const sorted = [...out].sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       switch (sortKey) {
-        case "name": return dir * contactLabel(a).localeCompare(contactLabel(b));
         case "email": return dir * (a.email || "").localeCompare(b.email || "");
         case "score": return dir * ((a.contact_intelligence_score || 0) - (b.contact_intelligence_score || 0));
-        case "company": return dir * ((a.account_name || a.company || "").localeCompare(b.account_name || b.company || ""));
-        case "created":
-        default: return dir * (new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        case "company": return dir * ((a.domain || "").localeCompare(b.domain || ""));
+        case "created": return dir * (new Date(a.updated_at || 0).getTime() - new Date(b.updated_at || 0).getTime());
+        case "name":
+        default: return dir * a.name.localeCompare(b.name);
       }
     });
-    return sorted;
-  }, [contacts, filter, sortKey, sortDir]);
+    // Companies first, then the labelled group - the order IS the decision, so
+    // it is applied after the sort rather than smuggled into the comparator.
+    if (peopleOnlyView) return sorted;
+    const g = groupMixedList(sorted);
+    return [...g.companies, ...g.peopleWithoutCompany];
+  }, [rows, filter, peopleOnlyView, sortKey, sortDir]);
+
+  /** The first person row, so the table knows where to draw the divider. */
+  const firstPersonKey = useMemo(() => {
+    if (peopleOnlyView) return null;
+    const first = filtered.find(r => r.customer_kind === "person");
+    return first ? customerKey(first) : null;
+  }, [filtered, peopleOnlyView]);
 
   // ─ Stats ────────────────────────────────────────────────────────────────
   const stats = useMemo(() => {
-    const tierX = contacts.filter(c => c.contact_intelligence_tier === "X").length;
-    const unsubscribed = contacts.filter(c => c.email_unsubscribed).length;
-    const invalid = contacts.filter(c => c.email_invalid).length;
-    return { total, tierX, unsubscribed, invalid };
-  }, [contacts, total]);
+    const companies = rows.filter(r => r.customer_kind === "company").length;
+    const people = rows.filter(r => r.customer_kind === "person");
+    const tierX = people.filter(c => c.contact_intelligence_tier === "X").length;
+    const unsubscribed = people.filter(c => c.email_unsubscribed).length;
+    const invalid = people.filter(c => c.email_invalid).length;
+    return { total, companies, notAtACompany: people.length, tierX, unsubscribed, invalid };
+  }, [rows, total]);
 
   // ─ Actions ──────────────────────────────────────────────────────────────
+  /**
+   * A row opens the thing it IS. A company row opens the Companies page at
+   * that company — a destination with its own back button, its billing, its
+   * people and its locations; a person row opens the contact modal it always
+   * did. The list said which kind it was, so the click must not ask again.
+   */
+  function openRow(row: MixedCustomerRow) {
+    if (row.customer_kind === "company") {
+      navigate(`/app/services/spark_accounts?company=${row.customer_id}`);
+      return;
+    }
+    setDetailId(Number(row.customer_id));
+    setDrawer("detail");
+  }
+
   function toggleSort(key: SortKey) {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortKey(key); setSortDir(key === "score" ? "desc" : "asc"); }
@@ -232,9 +245,15 @@ export function SparkContactsPage() {
       return next;
     });
   }
+  /** Select-all reaches PEOPLE only. A company row carries no checkbox, so
+   *  including it would put a bulk delete on rows the user cannot see ticked. */
+  const selectablePeople = useMemo(
+    () => filtered.filter(r => r.customer_kind === "person").map(r => Number(r.customer_id)),
+    [filtered],
+  );
   function toggleSelectAll() {
-    if (selected.size === filtered.length) setSelected(new Set());
-    else setSelected(new Set(filtered.map(c => c.id)));
+    if (selected.size === selectablePeople.length) setSelected(new Set());
+    else setSelected(new Set(selectablePeople));
   }
   function clearSelection() { setSelected(new Set()); }
 
@@ -369,14 +388,38 @@ export function SparkContactsPage() {
     if (!form.first_name && !form.email) return;
     setSaving(true);
     try {
+      // The company FIRST, because the contact carries its id. "Add as a new
+      // company" creates it here; picking an existing one just hands over the
+      // id it already has. Either way an explicit id beats the server's
+      // email-domain guess, which is the whole reason the field stopped being
+      // free text.
+      const accountId = await resolveCompanyChoice(company, post);
+      const created = await post<{ data?: { id?: number } }>("/api/v1/contacts", {
+        ...form,
+        company: company.name.trim() || null,
+        account_id: accountId,
+      });
+      const newId = created?.data?.id;
       // Keep the new id so its row can carry the walkthrough hook — see
       // justCreatedId. If the response has no id we simply mark nothing,
       // which is the safe direction: no hook beats the wrong hook.
-      const created = await post<{ data?: { id?: number } }>("/api/v1/contacts", form);
-      const newId = created?.data?.id;
       if (newId) setJustCreatedId(newId);
+      // The role at the company, when both a company and a role were named.
+      // Best-effort AFTER the contact exists: a role that fails must not lose
+      // the person who was just saved, and the card says who has no role yet.
+      if (newId && accountId && role) {
+        try {
+          await post(`/api/v1/customers/company/${accountId}/people`, {
+            person_contact_id: newId, role,
+          });
+        } catch (e) {
+          alert(`Saved ${form.first_name || form.email}, but the role did not stick: ${(e as Error).message}`);
+        }
+      }
       setDrawer(null);
-      setForm({ first_name: "", last_name: "", email: "", phone: "", company: "", title: "" });
+      setForm({ first_name: "", last_name: "", email: "", phone: "", title: "" });
+      setCompany(NO_COMPANY);
+      setRole("");
       await load();
     } catch (err) { setError(err); }
     finally { setSaving(false); }
@@ -448,10 +491,12 @@ export function SparkContactsPage() {
   }
 
   function handleExport() {
-    const csv = ["first_name,last_name,email,phone,company,tier,score"]
+    // The list on screen, exported as it reads: a company row is a company row.
+    const csv = ["kind,name,email,phone,domain,people,locations,tier,score"]
       .concat(filtered.map(c => [
-        c.first_name || "", c.last_name || "", c.email || "",
-        c.phone || "", c.account_name || c.company || "",
+        c.customer_kind, c.name, c.email || "", c.phone || "", c.domain || "",
+        c.customer_kind === "company" ? c.contact_count : "",
+        c.location_count,
         c.contact_intelligence_tier || "", c.contact_intelligence_score ?? "",
       ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))).join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
@@ -462,14 +507,20 @@ export function SparkContactsPage() {
   }
 
   // ─ Column defs ──────────────────────────────────────────────────────────
-  const columns: SparkTableColumn<Contact>[] = [
+  //
+  // ONE column set for both kinds of row. A company row differs by what each
+  // cell renders — no checkbox, a building mark, its people and location
+  // counts — not by being a different table, because the divider between the
+  // two groups is the only boundary the user should see.
+  const columns: SparkTableColumn<MixedCustomerRow>[] = [
     {
       key: "select", header: "", width: "narrow",
-      cell: c => (
+      cell: c => c.customer_kind === "company" ? null : (
         <input
           type="checkbox"
-          checked={selected.has(c.id)}
-          onChange={() => toggleSelected(c.id)}
+          aria-label={`Select ${c.name}`}
+          checked={selected.has(Number(c.customer_id))}
+          onChange={() => toggleSelected(Number(c.customer_id))}
           onClick={e => e.stopPropagation()}
           className="cursor-pointer"
         />
@@ -479,14 +530,18 @@ export function SparkContactsPage() {
       key: "name", header: <SortHeader label="Name" col="name" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
       cell: c => (
         <div className="flex items-center gap-2 min-w-0">
-          <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
-            <span className="text-[11px] font-semibold text-slate-700">
-              {contactInitials(c)}
-            </span>
-          </div>
+          {c.customer_kind === "company" ? (
+            <div className="h-7 w-7 rounded-md bg-[#E8F4FB] flex items-center justify-center flex-shrink-0">
+              <Building2 className="h-3.5 w-3.5 text-[#0C4A60]" />
+            </div>
+          ) : (
+            <div className="h-7 w-7 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-[11px] font-semibold text-slate-700">{rowInitials(c)}</span>
+            </div>
+          )}
           <div className="min-w-0">
             <div className="font-medium truncate text-slate-900 flex items-center gap-1.5">
-              <span className="truncate">{contactLabel(c)}</span>
+              <span className="truncate">{c.name || "—"}</span>
               <SubscriptionPill status={c.subscription_status} />
             </div>
             {c.email_unsubscribed && <div className="text-[10px] text-rose-600">Unsubscribed</div>}
@@ -505,21 +560,36 @@ export function SparkContactsPage() {
       width: "wide",
     },
     {
-      key: "email", header: <SortHeader label="Email" col="email" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
-      cell: c => c.email ? <span className="text-sm text-slate-700">{c.email}</span> : <span className="text-xs text-slate-400">—</span>,
+      key: "email", header: <SortHeader label="Email / domain" col="email" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      cell: c => c.customer_kind === "company"
+        ? (c.domain ? <span className="font-mono text-xs text-slate-600">{c.domain}</span> : <span className="text-xs text-slate-400">—</span>)
+        : (c.email ? <span className="text-sm text-slate-700">{c.email}</span> : <span className="text-xs text-slate-400">—</span>),
       hideOnMobile: true,
     },
     {
-      key: "company", header: <SortHeader label="Company" col="company" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
-      cell: c => c.account_name
-        ? <span className="text-sm">{c.account_name}</span>
-        : c.company ? <span className="text-sm text-slate-600">{c.company}</span> : <span className="text-xs text-slate-400">—</span>,
+      key: "company", header: <SortHeader label="People · locations" col="company" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
+      cell: c => c.customer_kind === "company"
+        ? (
+          <span className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+            {c.contact_count > 0
+              ? <span className="rounded-full border border-slate-200 px-2 py-px">{c.contact_count === 1 ? "1 person" : `${c.contact_count} people`}</span>
+              : <span className="text-slate-400">no people yet</span>}
+            {c.location_count > 0
+              ? <span className="rounded-full border border-slate-200 px-2 py-px">{c.location_count === 1 ? "1 location" : `${c.location_count} locations`}</span>
+              : <span className="text-slate-400">no locations yet</span>}
+          </span>
+        )
+        : c.location_count > 0
+          ? <span className="rounded-full border border-slate-200 px-2 py-px text-xs text-slate-600">{c.location_count === 1 ? "1 location" : `${c.location_count} locations`}</span>
+          : <span className="text-xs text-slate-400">—</span>,
       hideOnMobile: true,
     },
     {
       key: "score", header: <SortHeader label="Score" col="score" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />,
       width: "compact",
-      cell: c => <ScoreBadge tier={c.contact_intelligence_tier} score={c.contact_intelligence_score} />,
+      cell: c => c.customer_kind === "company"
+        ? <span className="text-xs text-slate-400">—</span>
+        : <ScoreBadge tier={c.contact_intelligence_tier} score={c.contact_intelligence_score} />,
     },
     {
       key: "source", header: "Source", width: "compact",
@@ -532,8 +602,9 @@ export function SparkContactsPage() {
   return (
     <SparkPageShell
       title="Contacts"
-      subtitle="Everyone in your CRM — auto-scored and segmented"
-      leading={view === "companies" ? <BackBar onBack={goBackOneLevel} /> : undefined}
+      subtitle={peopleOnlyView
+        ? "Everyone in your CRM — people only, ready for bulk actions"
+        : "Everyone in your CRM — companies first, then people who are not at a company"}
       help={
         <>
           <strong className="block mb-1">What you can do here:</strong>
@@ -568,22 +639,23 @@ export function SparkContactsPage() {
             >
               <Columns3 className="h-3.5 w-3.5" /> Kanban
             </button>
-            {/* Companies as a VIEW of your people, not a separate destination.
-                Same records, grouped by the business they belong to — which is
-                why it sits on this toggle rather than in the nav. */}
+            {/* D-128 (2026-09-15): Companies is its OWN page again, not a view
+                rendered inside this one. It grew a billing card, roles,
+                locations, notes and activity — a destination, with its own
+                back button — and nesting that inside Contacts is what left
+                Brandon "stuck on the Midwest Ag page". The button stays where
+                it is, because this is where people look for it; it navigates. */}
             <button
               type="button"
               data-tour="contacts-companies-tab"
-              onClick={() => setView("companies")}
-              className={`px-2 py-1 text-xs flex items-center gap-1 rounded ${
-                view === "companies" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
-              }`}
+              onClick={() => navigate("/app/services/spark_accounts")}
+              className="px-2 py-1 text-xs flex items-center gap-1 rounded text-slate-600 hover:bg-slate-100"
               title="Companies — the businesses your contacts belong to"
             >
               <Building2 className="h-3.5 w-3.5" /> Companies
             </button>
           </div>
-          <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!contacts.length}>
+          <button onClick={handleExport} className="spark-btn spark-btn-secondary" disabled={!rows.length}>
             <Download className="h-3.5 w-3.5" /> Export
           </button>
           <button data-tour="contact-import" onClick={() => setDrawer("import")} className="spark-btn spark-btn-secondary">
@@ -602,9 +674,9 @@ export function SparkContactsPage() {
       }
       stats={
         <SparkStatStrip stats={[
-          { label: "Total contacts", value: stats.total.toLocaleString(), icon: Users },
+          { label: "Companies", value: stats.companies, icon: Building2 },
+          { label: "Not at a company", value: stats.notAtACompany, icon: Users },
           { label: "Tier X (top)", value: stats.tierX, accent: "emerald", icon: Sparkles },
-          { label: "Unsubscribed", value: stats.unsubscribed, accent: stats.unsubscribed > 0 ? "rose" : "default" },
           { label: "Bounced", value: stats.invalid, accent: stats.invalid > 0 ? "amber" : "default", icon: AlertTriangle },
         ]} />
       }
@@ -614,6 +686,11 @@ export function SparkContactsPage() {
           onChange={f => { setFilter(f); setPage(1); clearSelection(); }}
           pills={[
             { key: "all", label: "All", count: total },
+            // The flatten (spec section 7 point 1). Its own pill, carrying no
+            // other predicate: folding it into "Active" would have made "show
+            // me the people" quietly also mean "and hide the unsubscribed
+            // ones", which is a different list from the one the chip promises.
+            { key: "people", label: "People only", count: stats.notAtACompany },
             { key: "subscribed", label: "Active" },
             { key: "tier_x", label: "Tier X", count: stats.tierX },
             { key: "tier_y", label: "Tier Y" },
@@ -627,7 +704,7 @@ export function SparkContactsPage() {
             <SparkSearchBox
               value={search}
               onChange={v => { setSearch(v); setPage(1); }}
-              placeholder="Search name, email, phone…"
+              placeholder="Search name, email, phone, company, location…"
               width="wide"
             />
           }
@@ -725,39 +802,45 @@ export function SparkContactsPage() {
           ignores the list filter pills + search box (its own preset-driven
           server query handles grouping) and clicking a card opens the same
           SparkContactModal the list view uses. */}
-      {view === "companies" ? (
-        /* Companies view — the SparkAccountsPage surface, rendered inside
-           Contacts instead of as its own nav destination. Same component, so
-           there is one implementation, not a copy that drifts. */
-        <SparkAccountsPage embedded />
-      ) : view === "kanban" ? (
+      {view === "kanban" ? (
         <SparkLifecycleKanban
-          onOpenContact={(id) => {
-            const c = contacts.find((x) => x.id === id);
-            if (c) { setDetail(c); setDrawer("detail"); }
-            else {
-              // Fall back to a minimal stub so the modal can still load by id.
-              setDetail({ id, first_name: "", last_name: "", email: "", phone: "", company: "", source: "", contact_intelligence_tier: null, contact_intelligence_score: null, created_at: "" });
-              setDrawer("detail");
-            }
-          }}
+          onOpenContact={(id) => { setDetailId(id); setDrawer("detail"); }}
         />
-      ) : contacts.length === 0 && !loading && !search ? (
+      ) : rows.length === 0 && !loading && !search ? (
         <EmptyContactsState onAdd={() => setDrawer("add")} onImport={() => setDrawer("import")} />
       ) : (
-        <SparkTable<Contact>
+        <SparkTable<MixedCustomerRow>
           rows={filtered}
-          getRowKey={c => c.id}
-          onRowClick={c => { setDetail(c); setDrawer("detail"); }}
+          getRowKey={c => customerKey(c)}
+          onRowClick={c => openRow(c)}
           columns={columns}
           totalCount={filtered.length}
-          rowActions={c => (
+          /* The one boundary in the list, said out loud. Drawn before the
+             first person row, and only when the list is actually mixed — the
+             "People only" chip has no companies above it to separate from. */
+          groupHeader={(row) => (!peopleOnlyView && customerKey(row) === firstPersonKey) ? (
+            <>
+              People not at a company
+              <span className="spark-table-group-note">
+                — form intakes, bookings, personal addresses. Set a company from their record when you know it.
+              </span>
+            </>
+          ) : null}
+          rowActions={c => c.customer_kind === "company" ? (
+            <button
+              onClick={() => openRow(c)}
+              className="spark-btn-icon"
+              title="Open this company"
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          ) : (
             <div className="flex items-center gap-1">
               {/* The hook goes ONLY on the contact created in this session, so the
                   walkthrough opens the record it just made — never "whatever is in
                   the first row", which would walk the user into deleting a real
                   customer if the create had failed. */}
-              <button data-tour={c.id === justCreatedId ? "contact-open" : undefined} onClick={() => { setDetail(c); setDrawer("detail"); }} className="spark-btn-icon" title="View details">
+              <button data-tour={Number(c.customer_id) === justCreatedId ? "contact-open" : undefined} onClick={() => openRow(c)} className="spark-btn-icon" title="View details">
                 <MoreHorizontal className="h-4 w-4" />
               </button>
               {/* Contact 360 deep link (SPARK pack 1, 2026-09-08). The 360 page's
@@ -765,7 +848,7 @@ export function SparkContactsPage() {
                   already knows the id. `stopPropagation` because the row itself
                   opens the drawer. */}
               <Link
-                to={`/app/services/spark_contact_360?id=${c.id}`}
+                to={`/app/services/spark_contact_360?id=${c.customer_id}`}
                 onClick={(e) => e.stopPropagation()}
                 className="spark-btn-icon"
                 title="See everything about this person"
@@ -774,7 +857,7 @@ export function SparkContactsPage() {
               </Link>
             </div>
           )}
-          emptyState={search ? <span>No contacts match "{search}".</span> : "No contacts in this filter."}
+          emptyState={search ? <span>No customers match "{search}".</span> : "Nothing in this filter."}
         />
       )}
 
@@ -783,7 +866,7 @@ export function SparkContactsPage() {
         open={drawer === "add"}
         onClose={() => setDrawer(null)}
         title="New contact"
-        subtitle="Add one manually. Email domain auto-matches to a Company."
+        subtitle="A person. Pick their company below, or add a new one."
         footer={
           <>
             <button onClick={() => setDrawer(null)} className="spark-btn spark-btn-secondary">Cancel</button>
@@ -814,14 +897,30 @@ export function SparkContactsPage() {
           <PhoneInput className="spark-field-input" value={form.phone}
             onChange={v => setForm({ ...form, phone: v })} />
         </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Company</label>
-          <input className="spark-field-input" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} placeholder="Acme Inc." />
-          <p className="text-[11px] text-slate-500 mt-0.5">If the email domain matches an existing Company, this contact links automatically.</p>
-        </div>
-        <div className="spark-field">
-          <label className="spark-field-label">Title</label>
-          <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="VP of Marketing" />
+        <CompanyTypeahead value={company} onChange={setCompany} inputTestId="contact-company" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="spark-field">
+            <label className="spark-field-label">Role at this company</label>
+            <select
+              className="spark-field-input"
+              value={role}
+              disabled={!company.name.trim()}
+              onChange={e => setRole(e.target.value as CustomerRole | "")}
+            >
+              <option value="">No role yet</option>
+              <option value="primary">{ROLE_LABEL.primary} contact</option>
+              <option value="working">{ROLE_LABEL.working} contact</option>
+              <option value="billing">{ROLE_LABEL.billing} contact</option>
+              <option value="site">{ROLE_LABEL.site} contact</option>
+            </select>
+            <p className="text-[11px] text-slate-500 mt-0.5">
+              {role ? ROLE_HELP[role] : "Roles decide who gets job updates and who gets invoices. You can set one later."}
+            </p>
+          </div>
+          <div className="spark-field">
+            <label className="spark-field-label">Title</label>
+            <input className="spark-field-input" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Facilities Manager" />
+          </div>
         </div>
       </SparkDrawer>
 
@@ -941,9 +1040,9 @@ export function SparkContactsPage() {
       />
 
       <SparkContactModal
-        contactId={drawer === "detail" && detail ? detail.id : null}
-        open={drawer === "detail" && !!detail}
-        onClose={() => { setDrawer(null); setDetail(null); load(); }}
+        contactId={drawer === "detail" ? detailId : null}
+        open={drawer === "detail" && detailId !== null}
+        onClose={() => { setDrawer(null); setDetailId(null); load(); }}
         onChanged={() => { load(); }}
       />
 
@@ -1029,7 +1128,7 @@ function SortHeader({ label, col, sortKey, sortDir, onSort }: {
 // the headline case (Brandon's report: "no cancelled-sub status pill"),
 // past_due/unpaid get amber, trialing/incomplete get slate. Active is
 // rendered as a tiny dot rather than a pill so it doesn't dominate the row.
-function SubscriptionPill({ status }: { status?: Contact["subscription_status"] }) {
+function SubscriptionPill({ status }: { status?: MixedCustomerRow["subscription_status"] }) {
   if (!status) return null;
   if (status === "active") {
     return (

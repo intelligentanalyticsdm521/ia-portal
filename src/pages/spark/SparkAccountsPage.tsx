@@ -12,6 +12,12 @@ import { Building2, Users, ExternalLink, Plus, ArrowLeft, Edit3, Save, Trash2, X
 
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+// The five cards a customer has, wherever the customer is shown (spec
+// section 7 point 2). SPARK's company page and OLIVER's customer record read
+// the same components, so "does this location pay for itself?" has one answer.
+import { BillingCard, LocationsCard, NotesCard, ActivityCard, type LocationRow } from "../../components/customers/CustomerCards";
+import { RolesCard } from "../../components/customers/RolesCard";
+import type { PersonRole } from "../../lib/customerModel";
 interface Account {
   id: number;
   name: string;
@@ -44,47 +50,30 @@ const HEALTH_COLORS: Record<string, string> = {
 
 
 /**
- * Page chrome that steps aside when embedded.
+ * D-128, decided 2026-09-15 and built 2026-09-16: Companies is its OWN page
+ * again, so the "embedded" mode is gone rather than left switched off.
  *
- * Standalone this is a full SparkPageShell; inside Contacts the surrounding
- * page already supplies the title, search and stats, so a second shell would
- * nest two headers. Embedded keeps the parts that DO work (the New company
- * action, the stat strip) and drops the duplicated chrome.
+ * It was embedded because Companies was a VIEW on Contacts and a second
+ * SparkPageShell would have nested two headers. The page now carries a billing
+ * card, people with roles, locations, notes and activity — a destination with
+ * its own back button — and rendering that inside another page is what left
+ * Brandon "stuck on the Midwest Ag page" with no way out. Deleting the mode,
+ * rather than leaving a prop nobody passes, is the point: a switched-off second
+ * layout is a second layout somebody will switch back on.
  */
 function Frame({
-  embedded, title, subtitle, showTitle = false, leading, actions, stats, filters, error, loading, children,
+  title, subtitle, leading, actions, stats, filters, error, loading, children,
 }: {
-  embedded: boolean; title: string; subtitle?: string;
-  /** Embedded only — render the title line (the company name on the detail view). */
-  showTitle?: boolean;
+  title: string; subtitle?: string;
   /** Top-LEFT of the header row: the way back. Never mixed in with `actions`. */
   leading?: React.ReactNode;
   actions?: React.ReactNode; stats?: React.ReactNode; filters?: React.ReactNode;
   error?: unknown; loading?: boolean; children: React.ReactNode;
 }) {
-  if (!embedded) {
-    return (
-      <SparkPageShell title={title} subtitle={subtitle} leading={leading} actions={actions} stats={stats} filters={filters} error={error} loading={loading}>
-        {children}
-      </SparkPageShell>
-    );
-  }
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          {leading}
-          <div className="min-w-0">
-            {showTitle && <div className="text-sm font-semibold text-slate-900 truncate">{title}</div>}
-            <p className="text-xs text-slate-500 truncate">{subtitle}</p>
-          </div>
-        </div>
-        {actions}
-      </div>
-      {stats}
-      {filters}
+    <SparkPageShell title={title} subtitle={subtitle} leading={leading} actions={actions} stats={stats} filters={filters} error={error} loading={loading}>
       {children}
-    </div>
+    </SparkPageShell>
   );
 }
 
@@ -114,19 +103,7 @@ export function BackBar({ onBack }: { onBack: () => void }) {
   );
 }
 
-interface SparkAccountsPageProps {
-  /**
-   * Render WITHOUT its own page shell, for use inside another page.
-   *
-   * Companies moved from a top-level nav item to a view on Contacts (feature
-   * map 2026-07-27: "Companies -> tab/filter under Contacts"). Rendering this
-   * same component there — rather than copying its table — means one
-   * implementation, so the two can never drift apart.
-   */
-  embedded?: boolean;
-}
-
-export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps = {}) {
+export function SparkAccountsPage() {
   const insightsPayload = useProductInsightsPayload('spark').payload;
   const { get, post, put, del, ready } = useSparkApi();
 
@@ -190,13 +167,8 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
       setSearchParams(params);
       return;
     }
-    if (embedded) {
-      params.delete("view");
-      setSearchParams(params);
-      return;
-    }
     navigate("/app/services/spark_contacts");
-  }, [embedded, navigate, searchParams, setSearchParams]);
+  }, [navigate, searchParams, setSearchParams]);
 
   // 2026-09-15 (prod defect, Brandon) — "Contacts at this company" rows were
   // inert: the only way into a contact record was the Contacts list, and the
@@ -263,6 +235,31 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
     }
   }, [get, ready, selectedId]);
   useEffect(() => { loadSelectedContacts(); }, [loadSelectedContacts]);
+
+  // The customer model behind the open company: its sites and its people's
+  // roles. Fetched ONCE for the page and handed down, rather than by each card
+  // that wants them — the Locations card and the Billing card both need the
+  // roles, and two fetches of one list is how two cards start disagreeing
+  // about who the billing contact is (convention_data_fetching).
+  const [selectedLocations, setSelectedLocations] = useState<LocationRow[]>([]);
+  const [selectedRoles, setSelectedRoles] = useState<PersonRole[]>([]);
+  const loadCustomerModel = useCallback(async () => {
+    if (selectedId == null || !ready) { setSelectedLocations([]); setSelectedRoles([]); return; }
+    try {
+      const [ls, ps] = await Promise.all([
+        get<{ data: LocationRow[] }>(`/api/v1/customers/company/${selectedId}/locations`),
+        get<{ data: PersonRole[] }>(`/api/v1/customers/company/${selectedId}/people`),
+      ]);
+      setSelectedLocations(ls.data || []);
+      setSelectedRoles(ps.data || []);
+    } catch {
+      // A card with nothing in it is the honest answer to a failed read; the
+      // cards say "none yet" rather than pretending the customer has none.
+      setSelectedLocations([]);
+      setSelectedRoles([]);
+    }
+  }, [get, ready, selectedId]);
+  useEffect(() => { loadCustomerModel(); }, [loadCustomerModel]);
 
   // ─ Filters ───────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -360,7 +357,7 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   // than flashing the companies list first.
   if (selectedId != null && !selected && !loaded) {
     return (
-      <Frame embedded={embedded} title="Company" showTitle subtitle="Loading…" leading={embedded ? undefined : <BackBar onBack={goBack} />}>
+      <Frame title="Company" subtitle="Loading…" leading={<BackBar onBack={goBack} />}>
         <div className="py-6 text-center text-sm text-slate-500">Loading…</div>
       </Frame>
     );
@@ -369,11 +366,11 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   // ─ Render: DETAIL view when an account is selected ──────────────────────
   if (selected) {
     return (
-      <Frame embedded={embedded}
+      <Frame
         title={selected.name}
-        showTitle
-        subtitle={selected.domain || selected.industry || "Company detail"}
-        leading={embedded ? undefined : <BackBar onBack={goBack} />}
+        subtitle={[selected.domain, `${selectedLocations.length} ${selectedLocations.length === 1 ? "location" : "locations"}`]
+          .filter(Boolean).join(" · ")}
+        leading={<BackBar onBack={goBack} />}
         actions={
           <div className="flex items-center gap-2">
             {!editing && (
@@ -482,9 +479,50 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
           </div>
         )}
 
-        <div className="spark-mini-card">
+        {/* The five cards (spec section 7 point 2). The same components
+            OLIVER's customer record uses, so the two screens cannot come to
+            disagree about a company's billing, its people or its sites. */}
+        <div className="grid gap-3 lg:grid-cols-2">
+          <BillingCard
+            customerKind="company"
+            customerId={String(selected.id)}
+            people={selectedRoles}
+            onChanged={() => { loadCustomerModel(); }}
+          />
+          <RolesCard
+            customerKind="company"
+            customerId={String(selected.id)}
+            locations={selectedLocations}
+            onOpenPerson={(id) => setContactModalId(id)}
+            onChanged={() => { loadCustomerModel(); load(); }}
+          />
+          <div className="lg:col-span-2">
+            <LocationsCard
+              customerKind="company"
+              customerId={String(selected.id)}
+              customerName={selected.name}
+              locations={selectedLocations}
+              roles={selectedRoles}
+              onChanged={() => { loadCustomerModel(); load(); }}
+              onOpenLocation={(locationId) => {
+                // The location PAGE is OLIVER's — it carries the job history,
+                // the crew notes and the custom fields the crew reads. SPARK
+                // links to it rather than growing a second one that would show
+                // the same site with half the facts.
+                navigate(`/app/services/oliver_contacts?customer=company:${selected.id}&location=${locationId}`);
+              }}
+            />
+          </div>
+          <NotesCard path={`/api/v1/customers/company/${selected.id}/notes`} />
+          <ActivityCard customerKind="company" customerId={String(selected.id)} />
+        </div>
+
+        {/* The people WITHOUT a role are still at this company, and they are
+            the ones a role has to be given to. Kept below the cards so the
+            company's contact list is never hidden behind the roles view. */}
+        <div className="spark-mini-card mt-3">
           <div className="spark-mini-card-header">
-            <span className="spark-mini-card-title">Contacts at this company</span>
+            <span className="spark-mini-card-title">Everyone at this company</span>
             {selectedContacts.length > 0 && <span className="text-xs text-slate-500">{selectedContacts.length} contacts</span>}
           </div>
           {selectedLoading ? (
@@ -501,6 +539,14 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
                 { key: "title", header: "Title", cell: c => c.title || "—" },
                 { key: "email", header: "Email", cell: c => <span className="text-slate-600">{c.email || "—"}</span>, width: "wide" },
                 { key: "phone", header: "Phone", cell: c => c.phone || "—", hideOnMobile: true },
+                {
+                  key: "roles", header: "Roles", cell: c => {
+                    const held = selectedRoles.filter(r => r.person_contact_id === c.id);
+                    return held.length
+                      ? <span className="text-xs text-slate-600">{held.map(r => r.role).join(", ")}</span>
+                      : <span className="text-xs text-slate-400">no role yet</span>;
+                  },
+                },
               ]}
             />
           )}
@@ -560,10 +606,10 @@ export function SparkAccountsPage({ embedded = false }: SparkAccountsPageProps =
   ];
 
   return (
-    <Frame embedded={embedded}
+    <Frame
       title="Companies"
       subtitle="Group contacts by company — auto-matched by email domain"
-      leading={embedded ? undefined : <BackBar onBack={goBack} />}
+      leading={<BackBar onBack={goBack} />}
       actions={
         <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
           <Plus className="h-3.5 w-3.5" /> New company

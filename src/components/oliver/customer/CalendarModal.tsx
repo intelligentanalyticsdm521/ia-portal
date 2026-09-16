@@ -142,6 +142,8 @@ export function CalendarModal({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [prefillStart, setPrefillStart] = useState<string | null>(null);
   const [prefillCustomerId, setPrefillCustomerId] = useState<string | null>(null);
+  /** The same customer as LUMEN addresses them — the only way to open a COMPANY. */
+  const [prefillSubject, setPrefillSubject] = useState<{ kind: "company" | "person"; id: string } | null>(null);
   const [createMode, setCreateMode] = useState<"job" | "quote" | null>(null);
 
   // Fetch window covers the visible month even when in day view, so flipping
@@ -359,17 +361,20 @@ export function CalendarModal({
           defaultKind="job"
           api={{ get, post }}
           onCancel={() => { setPickerOpen(false); setPrefillStart(null); }}
-          onResolved={({ customerId, kind }) => {
+          onResolved={({ customerId, kind, subject }) => {
             setPrefillCustomerId(customerId);
+            setPrefillSubject(subject ?? null);
             setCreateMode(kind);
             setPickerOpen(false);
           }}
         />
       )}
 
-      {createMode && prefillCustomerId && (
+      {createMode && (prefillCustomerId || prefillSubject) && (
         <CustomerModal
-          customerId={prefillCustomerId}
+          customerId={prefillCustomerId || undefined}
+          customerKind={prefillSubject?.kind}
+          customerLumenId={prefillSubject?.id}
           initialSection={createMode === "quote" ? "quotes" : "jobs"}
           initialCreating={createMode}
           prefillJob={createMode === "job" && prefillStart ? { scheduled_start: prefillStart } : undefined}

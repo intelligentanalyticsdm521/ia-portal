@@ -138,7 +138,12 @@ export function OliverJobBoardPage() {
   // picker), then routes the user into the CustomerModal at the chosen
   // section's create panel. The old inline JobCreateForm is gone.
   const [launcherOpen, setLauncherOpen] = useState(false);
-  const [pendingNew, setPendingNew] = useState<{ customerId: string; kind: "job" | "quote" } | null>(null);
+  // The launcher now answers with the SITE too, so the create panel below
+  // opens with the location already chosen rather than asking a second time.
+  const [pendingNew, setPendingNew] = useState<{
+    customerId: string; kind: "job" | "quote";
+    subject?: { kind: "company" | "person"; id: string } | null;
+  } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
@@ -490,16 +495,18 @@ export function OliverJobBoardPage() {
           defaultKind="job"
           api={{ get, post }}
           onCancel={() => setLauncherOpen(false)}
-          onResolved={({ customerId, kind }) => {
+          onResolved={({ customerId, kind, subject }) => {
             setLauncherOpen(false);
-            setPendingNew({ customerId, kind });
+            setPendingNew({ customerId, kind, subject });
           }}
         />
       )}
 
       {pendingNew && (
         <CustomerModal
-          customerId={pendingNew.customerId}
+          customerId={pendingNew.customerId || undefined}
+          customerKind={pendingNew.subject?.kind}
+          customerLumenId={pendingNew.subject?.id}
           initialCreating={pendingNew.kind}
           onClose={() => setPendingNew(null)}
           onChanged={reload}

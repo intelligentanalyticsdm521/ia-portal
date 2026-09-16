@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+// ONE customer search, and the forced location picker with it (spec section 7
+// point 2). The dropdown this replaces listed every customer in one <select>
+// and could not ask which of their buildings the lines were for — which is how
+// an invoice prints with no service address on it.
+import { CustomerLocationPicker, type CustomerLocationSelection } from "../../components/customers/CustomerLocationPicker";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { Button } from "../../components/oliver/ui";
 
@@ -111,6 +116,9 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [selectedJobId, setSelectedJobId] = useState<string>(initialJobId || "");
   const [selectedContactId, setSelectedContactId] = useState<string>(initialContactId || "");
+  /** Who, and where. The site rides onto every line, which is what groups the
+   *  printed invoice by building. */
+  const [picked, setPicked] = useState<CustomerLocationSelection>({ customer: null, locationIds: [] });
   const [items, setItems] = useState<LineItemDraft[]>([{ ...blankItem }]);
   const [dueDate, setDueDate] = useState<string>("");
   const [coupons, setCoupons] = useState<CouponLite[]>([]);
@@ -233,6 +241,13 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
       };
       if (mode === "job") body.job_id = selectedJobId;
       else body.contact_id = selectedContactId;
+      // Every line carries the site. The server groups by it and taxes each
+      // group at that site’s rate (section 9.4).
+      if (picked.locationIds[0]) {
+        body.line_items = (body.line_items as Array<Record<string, unknown>>).map((li) => ({
+          ...li, service_location_id: li.is_tax ? null : picked.locationIds[0],
+        }));
+      }
 
       await post("/invoices", body);
       onCreated();
@@ -270,21 +285,18 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
         {mode === "customer" ? (
-          <Field label="Customer">
-            <select
-              data-tour="invoice-customer"
-              value={selectedContactId}
-              onChange={(e) => setSelectedContactId(e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">— Pick a customer —</option>
-              {contacts.map((c) => (
-                <option key={c.contact_id} value={c.contact_id}>
-                  {contactName(c)}{c.email ? ` · ${c.email}` : ""}
-                </option>
-              ))}
-            </select>
-          </Field>
+          <div style={{ gridColumn: "1 / -1" }} data-tour="invoice-customer">
+            <CustomerLocationPicker
+              value={picked}
+              onChange={(next) => {
+                setPicked(next);
+                // The invoice is still written against the OLIVER contact; the
+                // picker is what decides WHICH one, and which of their sites.
+                setSelectedContactId(next.customer?.oliverContactId || "");
+              }}
+              scope="oliver"
+            />
+          </div>
         ) : (
           <Field label="Job">
             <select

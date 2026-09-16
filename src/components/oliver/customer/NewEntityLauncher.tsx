@@ -20,6 +20,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DetailDrawer, Button } from "../ui";
 import { formatPhone } from "../../../lib/formatPhone";
 import { PhoneInput } from "../../PhoneInput";
+// ONE search, and the forced location picker with it (spec section 7 point 2).
+// This launcher's own contact typeahead was one of four answers to "which
+// customer, and which of their buildings?"; it is now the same component the
+// create panels and the invoice form use.
+import { CustomerLocationPicker, type CustomerLocationSelection } from "../../customers/CustomerLocationPicker";
 
 interface ContactRow {
   contact_id: string;
@@ -59,12 +64,21 @@ export interface NewEntityLauncherProps {
   onCancel: () => void;
   /** Called once both customer + kind are picked. Parent then opens the
    *  CustomerModal with initialCreating set to `kind`. */
-  onResolved: (args: { customerId: string; kind: Kind }) => void;
+  onResolved: (args: {
+    customerId: string;
+    kind: Kind;
+    /** The site the work is at, when the customer has more than one. */
+    locationId?: string | null;
+    /** The customer as LUMEN addresses them, for the create panel below. */
+    subject?: { kind: "company" | "person"; id: string } | null;
+  }) => void;
 }
 
 export function NewEntityLauncher({ defaultKind = "job", api, onCancel, onResolved }: NewEntityLauncherProps) {
   const [step, setStep] = useState<Step>("customer");
   const [chosenCustomerId, setChosenCustomerId] = useState<string | null>(null);
+  const [picked, setPicked] = useState<CustomerLocationSelection>({ customer: null, locationIds: [] });
+  const [creatingCustomer, setCreatingCustomer] = useState(false);
   const [kind, setKind] = useState<Kind>(defaultKind);
 
   return (
@@ -79,18 +93,58 @@ export function NewEntityLauncher({ defaultKind = "job", api, onCancel, onResolv
           : "Step 2 of 2 — confirm what you're creating"
       }
     >
-      {step === "customer" && (
-        <CustomerPickerStep
+      {step === "customer" && (creatingCustomer ? (
+        <InlineCreateCustomer
           api={api}
-          onPicked={(cid) => { setChosenCustomerId(cid); setStep("kind"); }}
-          onCancel={onCancel}
+          onCancel={() => setCreatingCustomer(false)}
+          onCreated={(newId) => {
+            // A brand-new customer has no locations yet, so there is nothing to
+            // pick and nothing to force. They go straight on.
+            setChosenCustomerId(newId);
+            setPicked({ customer: null, locationIds: [] });
+            setCreatingCustomer(false);
+            setStep("kind");
+          }}
         />
-      )}
-      {step === "kind" && chosenCustomerId && (
+      ) : (
+        <div>
+          <CustomerLocationPicker
+            value={picked}
+            onChange={setPicked}
+            scope="oliver"
+            onCreateCustomer={() => setCreatingCustomer(true)}
+          />
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginTop: 16, paddingTop: 12, borderTop: "1px solid #F1F5F9" }}>
+            <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+              A homeowner skips the location pane and goes straight to what and when.
+            </span>
+            <span style={{ display: "flex", gap: 8 }}>
+              <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+              <Button
+                variant="primary"
+                disabled={!picked.customer}
+                onClick={() => {
+                  if (!picked.customer) return;
+                  setChosenCustomerId(picked.customer.oliverContactId || "");
+                  setStep("kind");
+                }}
+              >
+                Next: what and when
+              </Button>
+            </span>
+          </div>
+        </div>
+      ))}
+      {step === "kind" && (
         <KindPickerStep
           kind={kind}
           onKindChange={setKind}
-          onConfirm={() => onResolved({ customerId: chosenCustomerId, kind })}
+          onConfirm={() => onResolved({
+            customerId: chosenCustomerId || "",
+            kind,
+            locationId: picked.locationIds[0] ?? null,
+            subject: picked.customer ? { kind: picked.customer.kind, id: picked.customer.id } : null,
+          })}
           onBack={() => setStep("customer")}
         />
       )}
@@ -98,131 +152,6 @@ export function NewEntityLauncher({ defaultKind = "job", api, onCancel, onResolv
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Step 1 — customer picker
-//   - Search input typeahead-filters the contacts list
-//   - "+ Create new customer" button opens an inline create form
-// ─────────────────────────────────────────────────────────────────────────────
-function CustomerPickerStep({
-  api, onPicked, onCancel,
-}: {
-  api: Api;
-  onPicked: (customerId: string) => void;
-  onCancel: () => void;
-}) {
-  const [contacts, setContacts] = useState<ContactRow[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [createMode, setCreateMode] = useState(false);
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const reload = useCallback(async () => {
-    setLoading(true); setErr(null);
-    try {
-      const data = await api.get<ContactRow[] | { data: ContactRow[] }>("/contacts");
-      setContacts(Array.isArray(data) ? data : ((data as any).data ?? []));
-    } catch (e) { setErr((e as Error).message); }
-    finally { setLoading(false); }
-  }, [api]);
-
-  useEffect(() => { reload(); }, [reload]);
-  useEffect(() => { searchRef.current?.focus(); }, []);
-
-  // Client-side typeahead. Customer lists for one tenant cap at ~thousands,
-  // which a JS filter handles instantly — saves a server round-trip per
-  // keystroke.
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return contacts.slice(0, 50); // limit visible list at idle
-    return contacts.filter((c) => {
-      const name = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
-      return name.includes(q)
-        || (c.company_name ?? "").toLowerCase().includes(q)
-        || (c.email ?? "").toLowerCase().includes(q)
-        || (c.phone ?? "").toLowerCase().includes(q);
-    }).slice(0, 100);
-  }, [contacts, search]);
-
-  if (createMode) {
-    return (
-      <InlineCreateCustomer
-        api={api}
-        onCancel={() => setCreateMode(false)}
-        onCreated={(newId) => onPicked(newId)}
-      />
-    );
-  }
-
-  return (
-    <div>
-      {err && (
-        <div style={{ background: "#FEE2E2", border: "1px solid #FECACA", color: "#991B1B", borderRadius: 6, padding: "8px 12px", fontSize: 12, marginBottom: 12 }}>
-          {err}
-        </div>
-      )}
-
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-        <input
-          ref={searchRef}
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search name, company, email, or phone…"
-          style={{ ...inputS, flex: 1, padding: "8px 12px", fontSize: 13 }}
-        />
-        <Button variant="secondary" onClick={() => setCreateMode(true)}>+ Create new customer</Button>
-      </div>
-
-      {loading ? (
-        <div style={{ color: "#5A7A8A", padding: 20 }}>Loading customers…</div>
-      ) : filtered.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "30px 0" }}>
-          <div style={{ fontSize: 13, color: "#5A7A8A", marginBottom: 12 }}>
-            {search.trim()
-              ? `No customers match "${search.trim()}".`
-              : "No customers yet."}
-          </div>
-          <Button variant="primary" onClick={() => setCreateMode(true)}>+ Create new customer</Button>
-        </div>
-      ) : (
-        <div style={{ border: "1px solid #E5E7EB", borderRadius: 6, maxHeight: 460, overflowY: "auto" }}>
-          {filtered.map((c) => (
-            <button
-              key={c.contact_id}
-              type="button"
-              onClick={() => onPicked(c.contact_id)}
-              style={{
-                display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
-                width: "100%", padding: "10px 12px", background: "#fff",
-                border: "none", borderBottom: "1px solid #F3F4F6",
-                cursor: "pointer", textAlign: "left",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#F8FAFC")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-            >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24" }}>{contactName(c)}</div>
-                <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
-                  {[c.email, c.phone ? formatPhone(c.phone) : null, c.company_name].filter(Boolean).join(" · ") || "—"}
-                </div>
-              </div>
-              <span style={{ fontSize: 11, color: "#1A7DB5" }}>Pick →</span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-      </div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Inline new-customer form. Mirrors the existing NewContactModal field set
-// but lives inside this launcher so the user doesn't pop yet another modal.
 // ─────────────────────────────────────────────────────────────────────────────
 function InlineCreateCustomer({
   api, onCancel, onCreated,
