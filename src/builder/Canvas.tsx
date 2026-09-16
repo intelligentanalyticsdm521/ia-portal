@@ -42,6 +42,24 @@ export interface CanvasProps {
   onAddSection: (atIndex: number, how: "blank" | "premade") => void;
   /** Shown under the page: what the template puts next. */
   nextUp?: string | null;
+  /**
+   * How a section becomes HTML.
+   *
+   * The canvas does not know what it is drawing — that is the whole point of
+   * one engine. A proposal hands it the document renderer; the email adapter
+   * hands it the table-based email renderer, so what the author types into IS
+   * the email, not a web-shaped approximation of one that looks different in
+   * the mailbox. Defaults to the document renderer.
+   */
+  renderSection?: (s: Section, ctx: RenderContext) => string;
+  /** The stylesheet that HTML needs. Email passes "" — its styles are inline. */
+  css?: string;
+  /** How wide the page is on the canvas. A4-ish by default, 600px for email. */
+  pageWidth?: number;
+  /** What the page sits on, and the line above it. */
+  paper?: string;
+  pageNote?: string;
+  unitNote?: string;
 }
 
 const TOOL: React.CSSProperties = {
@@ -53,18 +71,20 @@ const TOOL_ON: React.CSSProperties = { ...TOOL, background: "#0C4A60", color: "#
 export function Canvas(props: CanvasProps) {
   const { doc, ctx, selection, onSelect } = props;
   const [dragId, setDragId] = useState<string | null>(null);
+  const width = props.pageWidth ?? 780;
+  const css = props.css ?? DOCUMENT_CSS;
 
   return (
     <div style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <style>{DOCUMENT_CSS}{CANVAS_CSS}</style>
+      <style>{css}{CANVAS_CSS}</style>
 
-      <div style={{ width: 780, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A" }}>
-        <span>Click anything on the page to edit it. Everything here is what the customer receives.</span>
-        <span>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"} · Letter</span>
+      <div style={{ width, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A" }}>
+        <span>{props.pageNote ?? "Click anything on the page to edit it. Everything here is what the customer receives."}</span>
+        <span>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"} · {props.unitNote ?? "Letter"}</span>
       </div>
 
       <div
-        style={{ width: 780, background: "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
+        style={{ width, background: props.paper ?? "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
         onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}
       >
         {doc.sections.map((s, i) => (
@@ -106,13 +126,15 @@ export function Canvas(props: CanvasProps) {
 function SectionHost({
   section, index, total, ctx, selected, selectedWidgetId, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
-  onAddSection, onDragStart, onDragEnd, onDropAt,
+  onAddSection, onDragStart, onDragEnd, onDropAt, renderSection: renderOne,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDropAt: (i: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
-  const html = renderSection(section, ctx);
+  const html = (renderOne || renderSection)(section, ctx);
+  /** True when this section holds a part the law puts there. See model.ts. */
+  const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
 
   // Paint the section. SKIPPED while the caret is inside it — see the header.
   useEffect(() => {
@@ -209,9 +231,14 @@ function SectionHost({
             <Layers size={14} />
           </button>
           <span className="bxc-div" />
-          <button type="button" style={TOOL} title="Duplicate this section"
+          {/* A section holding a required part is not the author's to copy or
+              delete — the model refuses either way (model.removeSection), and a
+              button that silently does nothing is worse than one that says why. */}
+          <button type="button" style={{ ...TOOL, opacity: required ? 0.35 : 1 }} disabled={required}
+            title={required ? "This part has to appear exactly once, so it cannot be copied" : "Duplicate this section"}
             onClick={(e) => { e.stopPropagation(); onDuplicateSection(section.id); }}><Copy size={14} /></button>
-          <button type="button" style={{ ...TOOL, color: "#B91C1C" }} title="Delete this section"
+          <button type="button" style={{ ...TOOL, color: "#B91C1C", opacity: required ? 0.35 : 1 }} disabled={required}
+            title={required ? "The footer carries your unsubscribe link and address — the law asks for both, so it stays" : "Delete this section"}
             onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}><Trash2 size={14} /></button>
         </div>
       )}

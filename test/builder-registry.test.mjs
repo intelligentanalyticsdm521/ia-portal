@@ -117,6 +117,16 @@ describe("§3.2's union is registered", () => {
     //   page_break, columns      document layout the canvas needs
     "doc_header", "key_facts", "clauses", "property_plan", "property_block",
     "page_break", "columns",
+    // Added 2026-09-16 by §7 — the email adapter's own parts, and the one a
+    // hosted landing page opens with. Each maps to a line of §7:
+    //   personal_note  "a personal note text widget that supports merge tags"
+    //   article_card   "article card" (the shape a newsletter is made of)
+    //   product_card   "product/pricing card (from Products & Services with
+    //                   cadence)"
+    //   email_footer   "footer with the required unsubscribe + physical
+    //                   address (never removable)"
+    //   hero           the landing page's "hero" in §7's web widget set
+    "personal_note", "article_card", "product_card", "email_footer", "hero",
   ];
 
   for (const kind of REQUIRED) {

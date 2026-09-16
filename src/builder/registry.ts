@@ -147,6 +147,39 @@ const DOCUMENTS: BuilderAdapter[] = ["proposal"];
 const PAGES: BuilderAdapter[] = ["website", "landing"];
 const SENDS: BuilderAdapter[] = ["email"];
 
+/* ── THE EMAIL SUBSET, 2026-09-16 ───────────────────────────────────────────
+   Q2, answered by Brandon: "same canvas, new interface, RESTRICTED widget
+   set". §7 names the set: heading, text, image, button, divider, spacer,
+   columns, article card, product/pricing card, social links, footer with the
+   unsubscribe, plus a personal note that takes merge tags. A bullet list joins
+   them because a list is three <li> in a table cell and every newsletter has
+   one.
+
+   Everything else lost its "email" adapter in the same pass, and each for a
+   reason a mailbox enforces rather than a preference:
+     comparison_cards  the product card IS the priced card for email, and two
+                       ways to show a price is the duplication this rebuild
+                       exists to delete
+     pricing_table     a rate card is a document, not a send
+     key_value_table
+     data_table        a table inside a layout table, in Outlook
+     callout           a tinted panel is what a coloured section already is
+     countdown         a live timer is an animated GIF from a third party, and
+                       §"no third-party product surface" says no
+     testimonial       it is a paragraph with a name under it; the newsletter
+                       templates place one
+     logo_strip        images side by side is what a 2/3-column section does
+     merge_field       every run of text takes merge tags; a widget whose whole
+                       job is one token is a fourth way to do one thing
+     footer_note       email_footer carries the small print AND the two things
+                       the law requires
+
+   The landing set is trimmed the same way, to §7's "hero, text, image, form,
+   button, columns, spacer, divider, footer" plus the headings, lists, reviews
+   and social row a real page needs. A hosted landing page is "a headline, some
+   copy, a picture, a button and a way to be contacted" — anything past that is
+   a website, and that is the website builder's job. ─────────────────────── */
+
 export const WIDGETS: WidgetDef[] = [
   /* ── Text ──────────────────────────────────────────────────────────── */
   {
@@ -196,7 +229,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "FileText",
     picture: pictureFrom(box(6, 6, 52, 28) + bar(10, 26, 30, 3)),
     category: "Text",
-    adapters: ["proposal", "email", "landing"],
+    // Not email: the email footer carries the small print AND the two things
+    // the law requires beside it, so an email has one footer, not two.
+    adapters: ["proposal", "landing"],
     defaults: { text: "" },
     controls: [{ key: "text", label: "Note", type: "textarea", help: "Shown in small grey type. Nothing is added unless you write it." }],
   },
@@ -207,7 +242,10 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Braces",
     picture: pictureFrom(bar(8, 12, 18) + `<rect x="30" y="10" width="26" height="8" rx="4" fill="#E2E8F0" stroke="#94A3B8"/>` + bar(8, 26, 40)),
     category: "Text",
-    adapters: ["proposal", "email", "landing"],
+    // Not email or landing: every run of text there takes merge tags from the
+    // picker, so a widget whose only job is one token is a fourth way to do
+    // one thing.
+    adapters: ["proposal"],
     defaults: { token: "" },
     controls: [{ key: "token", label: "Which detail", type: "merge", help: "Picked from a list — customer, property, contract or your own fields." }],
   },
@@ -258,7 +296,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Building2",
     picture: pictureFrom(solid(6, 16, 12, 8) + solid(22, 16, 12, 8) + solid(38, 16, 12, 8) + solid(54, 16, 4, 8)),
     category: "Media",
-    adapters: ["website", "landing", "email"],
+    // Website only: a row of pictures in an email or on a landing page is what
+    // a two- or three-column section already does, with no new widget.
+    adapters: ["website"],
     defaults: { items: [] },
     controls: [{ key: "items", label: "Logos", type: "list" }],
     count: { min: 2, max: 10, label: "How many logos?", default: 5 },
@@ -310,7 +350,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "AlertCircle",
     picture: pictureFrom(`<rect x="8" y="10" width="48" height="20" rx="3" fill="#F1F5F9" stroke="#94A3B8"/>` + `<path d="M13 10v20" stroke="#64748B" stroke-width="3"/>` + bar(19, 15, 30) + bar(19, 22, 20)),
     category: "Layout",
-    adapters: ALL,
+    // Not email or landing: a tinted panel is what a section with a background
+    // colour already is, and one of those survives Outlook.
+    adapters: ["proposal", "website"],
     defaults: { heading: "", panels: [{ title: "", body: "", tone: "accent" }] },
     controls: [
       { key: "heading", label: "Heading", type: "text" },
@@ -345,7 +387,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "LayoutGrid",
     picture: pictureFrom(box(6, 8, 16, 26) + `<rect x="24" y="5" width="16" height="29" rx="3" fill="#F1F5F9" stroke="#64748B"/>` + box(42, 8, 16, 26) + bar(27, 11, 10, 3)),
     category: "Money",
-    adapters: ["proposal", "website", "landing", "email"],
+    // Not email or landing: the product card IS the priced card there, pulled
+    // from Products & Services with the catalogue's own cadence.
+    adapters: ["proposal", "website"],
     defaults: { heading: "", intro: "", cards: [] },
     controls: [
       { key: "heading", label: "Heading above the cards", type: "text" },
@@ -361,7 +405,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Table",
     picture: pictureFrom(box(6, 8, 52, 26) + `<path d="M6 16h52M23 8v26M41 8v26" stroke="#CBD5E1"/>`),
     category: "Money",
-    adapters: ["proposal", "website", "landing", "email"],
+    // Not email or landing: a rate card is a document. A send shows the two or
+    // three things on offer as product cards.
+    adapters: ["proposal", "website"],
     // A rate card, not a bill: "$185 per push" does not add up to anything
     // until it snows, so this NEVER feeds the total (totals.ts rule 1).
     defaults: { heading: "", intro: "", rows: [], columns: { service: true, basis: true, rate: true } },
@@ -391,7 +437,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Rows3",
     picture: pictureFrom(bar(8, 10, 18) + bar(32, 10, 24) + bar(8, 20, 18) + bar(32, 20, 20) + bar(8, 30, 18) + bar(32, 30, 22)),
     category: "Information",
-    adapters: ALL,
+    // Not email or landing: a details grid is two columns of text, which a
+    // two-column section gives without a nested table inside a layout table.
+    adapters: ["proposal", "website", "brand"],
     defaults: { rows: [] },
     controls: [{ key: "rows", label: "Rows", type: "list" }],
   },
@@ -402,7 +450,10 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Table2",
     picture: pictureFrom(`<rect x="6" y="8" width="52" height="8" rx="2" fill="#CBD5E1" stroke="none"/>` + box(6, 8, 52, 26) + `<path d="M6 24h52M24 16v18M41 16v18" stroke="#CBD5E1"/>`),
     category: "Information",
-    adapters: ALL,
+    // Not email or landing: a data table inside an email's own layout tables
+    // is the thing Outlook reflows worst, and there is no way to preview that
+    // from here honestly.
+    adapters: ["proposal", "website"],
     defaults: { columns: [], rows: [] },
     controls: [
       { key: "columns", label: "Columns", type: "list" },
@@ -417,7 +468,9 @@ export const WIDGETS: WidgetDef[] = [
     icon: "MapPin",
     picture: pictureFrom(box(8, 8, 48, 24) + `<path d="M32 14a5 5 0 0 1 5 5c0 4-5 8-5 8s-5-4-5-8a5 5 0 0 1 5-5z" fill="#94A3B8" stroke="none"/>`),
     category: "Information",
-    adapters: ["website", "landing"],
+    // Website only. A hosted landing page is a headline, some copy, a picture,
+    // a button and a way to be contacted — a map belongs on the site.
+    adapters: ["website"],
     defaults: { address: "" },
     controls: [{ key: "address", label: "Address or area", type: "text" }],
   },
@@ -428,7 +481,7 @@ export const WIDGETS: WidgetDef[] = [
     icon: "Timer",
     picture: pictureFrom(box(8, 12, 12, 16) + box(26, 12, 12, 16) + box(44, 12, 12, 16) + `<path d="M23 20h0M41 20h0" stroke="#94A3B8" stroke-width="3"/>`),
     category: "Information",
-    adapters: SENDS.concat(["landing"]),
+    adapters: SENDS,
     defaults: { ends_at: "" },
     controls: [{ key: "ends_at", label: "Counts down to", type: "text", help: "Email clients that cannot show a timer see the date instead." }],
   },
@@ -584,6 +637,97 @@ export const WIDGETS: WidgetDef[] = [
     adapters: DOCUMENTS,
     defaults: {},
     controls: [],
+  },
+  /* ── The email set, 2026-09-16 (§7, the email adapter) ──────────────────
+     Four widgets an email has and a document does not, plus the one a hosted
+     landing page opens with. Everything else the email builder offers already
+     existed — that is the point of one registry. ─────────────────────────── */
+  {
+    kind: "personal_note",
+    label: "Personal note",
+    description: "A short note that greets each person by name and signs off from you.",
+    icon: "PenTool",
+    picture: pictureFrom(bar(8, 8, 26) + bar(8, 17, 48) + bar(8, 26, 40) + bar(8, 34, 16, 3)),
+    category: "Text",
+    adapters: SENDS,
+    defaults: { greeting: "Hi {{first name}},", text: "", signoff: "", align: "left" },
+    controls: [
+      { key: "greeting", label: "Greeting", type: "text", help: "Uses the recipient's own name. Pick the name from the tag list." },
+      { key: "text", label: "The note", type: "textarea" },
+      { key: "signoff", label: "Sign off", type: "text" },
+      { key: "align", label: "Line up", type: "select", options: ["Left", "Centre"] },
+    ],
+  },
+  {
+    kind: "article_card",
+    label: "Articles",
+    description: "Your stories, each with a picture, a few lines and a link to read the rest.",
+    icon: "Newspaper",
+    picture: pictureFrom(solid(8, 8, 18, 24) + bar(30, 10, 26, 5) + bar(30, 20, 26) + bar(30, 28, 16)),
+    category: "Information",
+    adapters: SENDS,
+    defaults: { items: [] },
+    controls: [
+      { key: "items", label: "Articles", type: "list", help: "Type them here, or bring them in from your website with “From the website”." },
+      { key: "layout", label: "Shape", type: "select", options: ["Picture beside the words", "Picture above the words"] },
+    ],
+    count: { min: 1, max: 8, label: "How many articles?", default: 3 },
+  },
+  {
+    kind: "product_card",
+    label: "Products & prices",
+    description: "What you sell, with the price and how it is billed, straight from your catalogue.",
+    icon: "ShoppingBag",
+    picture: pictureFrom(solid(8, 8, 16, 14) + bar(8, 25, 16) + bar(8, 32, 10, 3)
+      + solid(28, 8, 16, 14) + bar(28, 25, 16) + bar(28, 32, 10, 3)
+      + solid(48, 8, 8, 14) + bar(48, 25, 8)),
+    category: "Money",
+    adapters: SENDS,
+    defaults: { items: [], layout: "cards" },
+    controls: [
+      { key: "items", label: "What is on offer", type: "list", help: "Pick from Products & Services and the price and cadence come with it." },
+      { key: "layout", label: "Shape", type: "select", options: ["Cards side by side", "One under the other"] },
+    ],
+    count: { min: 1, max: 4, label: "How many products?", default: 2 },
+  },
+  {
+    kind: "email_footer",
+    label: "Footer",
+    description: "Who sent this, where you are, and the unsubscribe link. Required on every send.",
+    icon: "PanelBottom",
+    picture: pictureFrom(`<rect x="6" y="6" width="52" height="16" rx="3" fill="#F1F5F9" stroke="none"/>`
+      + `<rect x="6" y="25" width="52" height="10" rx="2" fill="#CBD5E1" stroke="none"/>`
+      + bar(16, 28, 14, 4) + bar(34, 28, 14, 4)),
+    category: "Layout",
+    adapters: SENDS,
+    defaults: {
+      businessName: "", address: "", note: "",
+      unsubscribeLabel: "Unsubscribe", preferencesLabel: "Update your preferences",
+      showSocial: true,
+    },
+    controls: [
+      { key: "address", label: "Your postal address", type: "text", help: "The law asks for a real address on every marketing email. Comes from your business profile." },
+      { key: "note", label: "Anything else", type: "textarea", help: "A line about why they are hearing from you, for example." },
+      { key: "unsubscribeLabel", label: "Unsubscribe wording", type: "text" },
+      { key: "showSocial", label: "Show your social links", type: "toggle" },
+    ],
+  },
+  {
+    kind: "hero",
+    label: "Headline & picture",
+    description: "The top of the page — the one line that says what you do, over a picture.",
+    icon: "Sparkle",
+    picture: pictureFrom(solid(6, 5, 52, 14) + bar(14, 23, 36, 6) + bar(20, 33, 24)),
+    category: "Layout",
+    // Landing only for now. The website adapter brings its own opening
+    // section from the ARION library (§11 "what remains").
+    adapters: ["landing"],
+    defaults: { headline: "", sub: "", image: "", alt: "", align: "center" },
+    controls: [
+      { key: "image", label: "Picture", type: "image" },
+      { key: "alt", label: "Describe the picture", type: "text", help: "Read aloud by screen readers and shown if the picture fails to load." },
+      { key: "align", label: "Line up", type: "select", options: ["Centre", "Left"] },
+    ],
   },
   {
     kind: "columns",

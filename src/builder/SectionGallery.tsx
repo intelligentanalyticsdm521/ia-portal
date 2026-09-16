@@ -15,13 +15,23 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { IadmModal } from "../components/IadmModal";
 import { groupForPane, widgetTooltip, type BuilderAdapter, type WidgetDef } from "./registry";
-import { PREMADE_TAGS, searchPremade, type PremadeSection } from "./templates";
+import { PREMADE_SECTIONS, PREMADE_TAGS, searchSections, type PremadeSection } from "./templates";
 
 export interface SavedTemplate { id: string; name: string; description?: string | null }
 
 export interface SectionGalleryProps {
   open: boolean;
   adapter: BuilderAdapter;
+  /**
+   * The pre-made sections THIS builder offers.
+   *
+   * Passed in rather than read from one module: "Terms & conditions" is a
+   * section a proposal has and a newsletter does not, and a gallery that
+   * offered both would be the fifth vocabulary this rebuild exists to delete.
+   * Defaults to the document set so the proposal adapter is unchanged.
+   */
+  premade?: PremadeSection[];
+  premadeTags?: string[];
   onClose: () => void;
   onPlaceSection: (premade: PremadeSection) => void;
   onPlaceWidget: (widget: WidgetDef, count?: number) => void;
@@ -37,7 +47,9 @@ export function SectionGallery(p: SectionGalleryProps) {
   const [tag, setTag] = useState("All");
   const [picked, setPicked] = useState<string | null>(null);
 
-  const sections = useMemo(() => searchPremade(query, tag), [query, tag]);
+  const catalogue = p.premade ?? PREMADE_SECTIONS;
+  const tags = p.premadeTags ?? PREMADE_TAGS;
+  const sections = useMemo(() => searchSections(catalogue, query, tag), [catalogue, query, tag]);
   const widgets = useMemo(() => groupForPane(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
   const templates = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),
@@ -95,7 +107,7 @@ export function SectionGallery(p: SectionGalleryProps) {
           <>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>Filter</span>
-              {PREMADE_TAGS.map((t) => (
+              {tags.map((t) => (
                 <button key={t} type="button" title={`Show ${t.toLowerCase()}`} onClick={() => setTag(t)}
                   style={{
                     fontSize: 10, fontWeight: 600, borderRadius: 999, padding: "3px 9px", cursor: "pointer",

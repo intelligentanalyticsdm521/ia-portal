@@ -39,6 +39,7 @@ export function repeatKeyFor(kind: string): string | null {
     case "comparison_cards": return "cards";
     case "key_facts": case "key_value_table": case "property_plan": case "pricing_table": return "rows";
     case "clauses": case "list": case "gallery": case "property_block": return "items";
+    case "article_card": case "product_card": return "items";
     case "callout": return "panels";
     case "data_table": return "columns";
     case "testimonial": return "items";
@@ -55,6 +56,8 @@ function blankRepeat(kind: string): unknown {
     case "clauses": return { title: "", body: "" };
     case "callout": return { title: "", tone: "accent", body: "" };
     case "property_block": return { description: "", quantity: 1, unit_price: 0 };
+    case "article_card": return { title: "", excerpt: "", image: "", alt: "", url: "", linkLabel: "Read it" };
+    case "product_card": return { name: "", blurb: "", price: "", cadence: "", image: "", alt: "", url: "", ctaLabel: "" };
     default: return "";
   }
 }
@@ -83,6 +86,23 @@ export interface BuilderShellProps extends InspectorSlots {
   nextUp?: string | null;
   /** Rendered above the widget list in the pane. */
   paneHeader?: ReactNode;
+  /**
+   * How this builder draws a section, and what the canvas looks like around it.
+   *
+   * The shell knows nothing about proposals, emails or pages; an adapter hands
+   * it a renderer and the canvas shows THAT. Omitted, everything falls back to
+   * the document renderer, so the proposal adapter passes none of it.
+   */
+  renderSection?: (s: Section, ctx: RenderContext) => string;
+  canvasCss?: string;
+  canvasWidth?: number;
+  canvasBackground?: string;
+  paper?: string;
+  pageNote?: string;
+  unitNote?: string;
+  /** The pre-made sections this builder's gallery offers. */
+  premade?: PremadeSection[];
+  premadeTags?: string[];
 }
 
 export function BuilderShell(p: BuilderShellProps) {
@@ -211,7 +231,7 @@ export function BuilderShell(p: BuilderShellProps) {
         footer={p.footer}
       >
         <IadmBuilderPanes
-          canvasBackground="#E6ECF1"
+          canvasBackground={p.canvasBackground ?? "#E6ECF1"}
           pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
           inspector={
             <Inspector
@@ -234,6 +254,12 @@ export function BuilderShell(p: BuilderShellProps) {
             ctx={p.ctx}
             selection={selection}
             nextUp={p.nextUp}
+            renderSection={p.renderSection}
+            css={p.canvasCss}
+            pageWidth={p.canvasWidth}
+            paper={p.paper}
+            pageNote={p.pageNote}
+            unitNote={p.unitNote}
             onSelect={setSelection}
             onEditText={onEditText}
             onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
@@ -253,6 +279,8 @@ export function BuilderShell(p: BuilderShellProps) {
       <SectionGallery
         open={!!gallery}
         adapter={p.adapter}
+        premade={p.premade}
+        premadeTags={p.premadeTags}
         savedTemplates={p.savedTemplates}
         onOpenTemplate={p.onOpenTemplate}
         onClose={() => setGallery(null)}

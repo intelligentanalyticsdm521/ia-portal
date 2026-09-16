@@ -148,9 +148,24 @@ export function Inspector(p: InspectorProps) {
             <div style={{ display: "flex", gap: 6 }}>
               <button type="button" style={miniBtn} title="Move this up inside its column" onClick={() => p.onMoveWidget(-1)}>↑ Up</button>
               <button type="button" style={miniBtn} title="Move this down inside its column" onClick={() => p.onMoveWidget(1)}>↓ Down</button>
-              <button type="button" style={{ ...miniBtn, color: "#B91C1C", marginLeft: "auto" }} title="Remove this from the page"
+              {/* A locked widget is a part the law puts on the page, not the
+                  author. model.removeWidget refuses it too — this is the half
+                  that explains WHY, which a disabled button with no tooltip
+                  never does. */}
+              <button
+                type="button"
+                disabled={!!widget.locked}
+                style={{ ...miniBtn, color: widget.locked ? "#94A3B8" : "#B91C1C", marginLeft: "auto", cursor: widget.locked ? "default" : "pointer" }}
+                title={widget.locked
+                  ? "This has to be on every email you send — it carries the unsubscribe link and your postal address. You can change the wording; you cannot remove it."
+                  : "Remove this from the page"}
                 onClick={p.onDeleteWidget}><Trash2 size={12} /> Remove</button>
             </div>
+            {widget.locked && (
+              <div style={{ fontSize: 10, color: "#B45309", lineHeight: 1.45 }}>
+                Required on every marketing email. Edit the wording on the page; it stays where it is.
+              </div>
+            )}
           </>
         )}
 
