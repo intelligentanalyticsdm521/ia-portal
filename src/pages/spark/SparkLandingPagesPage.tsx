@@ -3,7 +3,11 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
-import { SparkLandingPageEditor, type Block } from "../../components/spark/SparkLandingPageEditor";
+// §7: the hosted landing page is built on the SAME canvas as the proposal and
+// the newsletter, with the web widget set. SparkLandingPageEditor — five fixed
+// kinds, up-and-down arrows, a form of text boxes with no picture of the page
+// anywhere — is deleted in the same pass. Replace means delete.
+import { LandingBuilder, type LandingPageRow } from "../../builder/adapters/landing/LandingBuilder";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { Plus, FileText, Eye, Send, ExternalLink } from "lucide-react";
@@ -18,6 +22,10 @@ interface LandingPage {
   status: string; published_url: string | null;
   view_count: number; submission_count: number;
   created_at: string; updated_at: string;
+  /** Either the v2 builder document or the old flat array. Both open. */
+  blocks_json?: unknown;
+  theme_json?: unknown;
+  meta_description?: string | null;
 }
 
 export function SparkLandingPagesPage() {
@@ -32,6 +40,16 @@ export function SparkLandingPagesPage() {
   /** The page currently open in the section editor — this is what turns
    *  "publish a placeholder" into "build a page". */
   const [editing, setEditing] = useState<LandingPage | null>(null);
+  const [flash, setFlash] = useState<string | null>(null);
+  /**
+   * Does this business have a website with us?
+   *
+   * §7's first sentence about landing pages is "With ARION: it is a website
+   * page, built in the website builder and published on their site." The only
+   * moment that advice is worth anything is the moment somebody opens this, so
+   * the builder is told, and says so with the link.
+   */
+  const [hasArionSite, setHasArionSite] = useState(false);
 
   const load = useCallback(async () => {
     if (!ready) return;
@@ -42,6 +60,17 @@ export function SparkLandingPagesPage() {
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!ready) return;
+    // Best effort, and silent when it fails: the note about the website
+    // builder is a nicety, and a business whose site status we cannot read
+    // still gets a working landing page. It rides the identity call the
+    // builder already makes rather than adding a second one.
+    get<any>("/api/v1/email-builder/identity")
+      .then((r) => setHasArionSite(!!((r?.data ?? r)?.has_website)))
+      .catch(() => setHasArionSite(false));
+  }, [get, ready]);
 
   async function create() {
     if (!form.slug || !form.name) return;
@@ -73,9 +102,10 @@ export function SparkLandingPagesPage() {
   return (
     <SparkPageShell
       title="Landing Pages"
-      subtitle="Hosted landing pages with submission capture — click any page to build it"
+      subtitle="Hosted pages you build on the page itself — every submission becomes a contact"
       actions={
-        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent">
+        <button onClick={() => setDrawerOpen(true)} className="spark-btn spark-btn-accent"
+          title="Name a new page, then build it on the page itself">
           <Plus className="h-3.5 w-3.5" /> New page
         </button>
       }
@@ -101,6 +131,12 @@ export function SparkLandingPagesPage() {
       loading={loading}
       error={error}
     >
+      {flash && (
+        <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+          {flash}
+        </div>
+      )}
+
       <SparkTable<LandingPage>
         rows={filtered}
         getRowKey={p => p.id}
@@ -174,17 +210,14 @@ export function SparkLandingPagesPage() {
         </div>
       </IadmModal>
 
-      {/* Section editor — the thing that was missing. Row click opens it. */}
-      <SparkLandingPageEditor
+      {/* THE builder. Same canvas, same widget pane, the web widget set. */}
+      <LandingBuilder
         open={!!editing}
         page={editing}
-        publicUrl={editing?.published_url || null}
+        api={{ get, put }}
         onClose={() => setEditing(null)}
-        onSave={async (blocks: Block[]) => {
-          if (!editing) return;
-          await put(`/api/v1/landing-pages/${editing.id}`, { blocks_json: blocks });
-          await load();
-        }}
+        onSaved={async (message) => { setFlash(message); await load(); }}
+        arionSitePath={hasArionSite ? "/app/services/arion_website_pages" : null}
       />
     </SparkPageShell>
   );

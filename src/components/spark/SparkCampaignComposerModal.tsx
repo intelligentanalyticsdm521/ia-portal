@@ -17,6 +17,13 @@ import { MergeTagHint } from "./MergeTagHint";
 import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
+// §7, campaigns: "keep the composer as the quick write-and-send mode … add ONE
+// button, Design this in the builder, which opens the same email canvas as the
+// newsletter and hands the result back as the campaign body. NO SECOND
+// BUILDER." This is that one button and nothing else.
+import { EmailBuilder } from "../../builder/adapters/email/EmailBuilder";
+import type { EmailWire } from "../../builder/adapters/email/emailDoc";
+import { LayoutTemplate } from "lucide-react";
 // THE brand kit — one fetch for the whole shell, shared with every other
 // builder on screen and live the moment Brand Identity saves. This surface
 // used to fetch brandColor/Secondary/Accent from oliver /settings for itself
@@ -129,7 +136,12 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     del: <T>(p: string) => Promise<T>;
     ready: boolean;
   };
-  const oliverApi = useOliverApi() as { get: <T>(p: string) => Promise<T> };
+  // Products & Services, for the builder's product card. OLIVER owns the
+  // catalogue; a business without it loses the picker, not the builder.
+  const oliverApi = useOliverApi() as {
+    get: <T>(p: string) => Promise<T>;
+    post: <T>(p: string, body?: unknown) => Promise<T>;
+  };
 
   // F-CS.2 — IL Suggestions tab is Pro/Business only. Platform owner always
   // qualifies (see lib/currentPlan.ts). We fetch /api/v1/usage when the modal
@@ -174,6 +186,17 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
   // CTA editor — opened from the SparkBodyEditor toolbar. On save, the
   // rendered CTA HTML is appended to contentHtml; SparkBodyEditor's
   // setContent useEffect picks up the change and re-renders the editor.
+  /**
+   * The builder, open over the composer.
+   *
+   * The composer stays exactly what it was — the quick "write and send" mode.
+   * This opens the SAME canvas the Newsletter Studio uses, pre-filled with
+   * whatever is already typed here, and hands back the rendered HTML and the
+   * model. There is one email builder on the platform.
+   */
+  const [builderOpen, setBuilderOpen] = useState(false);
+  /** The model, so re-opening the builder carries on rather than starting again. */
+  const [documentJson, setDocumentJson] = useState<unknown>(null);
   const [ctaOpen, setCtaOpen] = useState(false);
   const [ctaValue, setCtaValue] = useState<CTAValue>({
     type: "button",
@@ -1052,6 +1075,37 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
             </div>
           )}
       </div>
+      {/* THE email builder. Same canvas, same widget set, same renderer as the
+          Newsletter Studio — opened ON this campaign. What it hands back is the
+          campaign's body, so the preview and the send are the same string. */}
+      <EmailBuilder
+        open={builderOpen}
+        onClose={() => setBuilderOpen(false)}
+        api={{ get, post }}
+        catalogApi={oliverApi}
+        eyebrow="SPARK · Campaign"
+        row={{
+          document_json: documentJson,
+          // Nothing built yet? The prose already typed here is read back into
+          // widgets, so "Design this in the builder" carries the writing over
+          // instead of asking for it again.
+          content_html: documentJson ? null : (contentHtml || null),
+        }}
+        title={name}
+        titlePlaceholder="Name this campaign — only you see this"
+        initialSubject={subject}
+        initialPreheader=""
+        saveLabel="Use this as the campaign"
+        onSave={async (wire: EmailWire, meta) => {
+          setDocumentJson(wire.document_json);
+          setContentHtml(wire.content_html);
+          setContentText(wire.content_text);
+          if (meta.subject.trim()) setSubject(meta.subject.trim());
+          if (meta.title.trim()) setName(meta.title.trim());
+          setBuilderOpen(false);
+        }}
+      />
+
       {/* CTA Editor sub-modal — opened from the SparkBodyEditor CTA toolbar
           button. Save appends the rendered HTML to contentHtml; the editor's
           setContent useEffect picks up the new value and re-renders. */}
