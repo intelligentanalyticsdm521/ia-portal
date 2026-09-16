@@ -31,7 +31,7 @@ import {
   Unlock, Wand2, X, Image as ImageIcon,
 } from "lucide-react";
 import {
-  familyOf, fontOptions, ICON_PATHS, DECOR_KEYS,
+  familyOf, fontOptions, ICON_PATHS,
   type CanvasDoc, type ChartLayer, type ImageFilters, type ImageLayer, type ImageMask,
   type Layer, type ShapeLayer, type TextLayer,
 } from "./scene";
@@ -799,8 +799,5 @@ function ToggleButton({ title, active, onClick, children }: {
   );
 }
 
-/** Decorative keys are filtered OUT of the symbol picker above; kept so the
- *  import stays honest about what the icon pack contains. */
-export const DECORATIVE = DECOR_KEYS;
 
 export default LayerInspector;

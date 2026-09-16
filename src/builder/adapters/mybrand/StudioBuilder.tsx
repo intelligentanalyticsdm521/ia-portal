@@ -681,7 +681,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
           />
         }
       >
-        <div className="flex h-full flex-col">
+        <div className="relative flex h-full flex-col">
           {errorMessage && (
             <div className="mx-4 mt-3 flex items-start gap-2 rounded border border-red-200 bg-red-50 p-2.5 text-xs text-red-700">
               <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
