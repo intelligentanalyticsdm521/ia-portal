@@ -30,6 +30,7 @@
  */
 import type { Widget } from "../../model";
 import { esc, type RenderContext } from "../../render";
+import { STACK_QUERY } from "../../responsive";
 
 /* ── small shared bits ──────────────────────────────────────────────────── */
 
@@ -451,8 +452,28 @@ export const SITE_CSS = `
 .sw-chrome-foot { border-top: 1px solid #E2E8F0; background: #0F172A; color: #CBD5E1; padding: 18px 24px; font-size: 11px; display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .sw-chrome-brand { font-weight: 800; font-size: 14px; color: #0F172A; }
 .sw-chrome-nav { display: flex; gap: 14px; color: #475569; flex-wrap: wrap; }
-@media (max-width: 720px) {
+/* ── THE PHONE ──────────────────────────────────────────────────────────────
+   The same container query DOCUMENT_CSS uses (responsive.ts), so a page is
+   drawn the same way by the canvas's phone preview and by the phone. It was a
+   MEDIA query until 2026-09-16, which meant the preview could only ever show
+   the desktop layout however narrow the paper was made. */
+${STACK_QUERY} {
   .sw-row-2, .sw-row-3, .sw-row-4, .sw-split, .sw-grid { grid-template-columns: 1fr; }
+  /* 36px each side of a 390px screen is a fifth of the page. */
+  .sw-band { padding: 28px 20px; }
+  .sw-locked { margin: 12px 0; padding: 14px; }
+  .sw-h1 { font-size: 24px; }
+  .sw-h2 { font-size: 19px; }
+  .sw-split { gap: 18px; }
+  .sw-img { max-height: 180px; }
+  .sw-gimg { height: 140px; }
+  .sw-btnrow { justify-content: flex-start; }
+  .sw-hero .sw-btnrow { justify-content: center; }
+  /* The theme's own header and footer wrap rather than push the page sideways. */
+  .sw-chrome-bar { flex-wrap: wrap; padding: 12px 20px; gap: 8px; }
+  .sw-chrome-foot { padding: 16px 20px; }
+  .sw-method { flex-wrap: wrap; }
+  .sw-doc img, .sw-card img { max-width: 100%; height: auto; }
 }
 `;
 

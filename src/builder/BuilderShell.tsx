@@ -28,6 +28,7 @@ import {
   type BuilderDocument, type Section, type Selection,
 } from "./model";
 import { canRedo, canUndo, initHistory, push, redo, undo, type History } from "./history";
+import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
 import type { BuilderAdapter, WidgetDef } from "./registry";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
@@ -149,6 +150,15 @@ export function BuilderShell(p: BuilderShellProps) {
   const [history, setHistory] = useState<History>(() => initHistory(p.doc));
   const [selection, setSelection] = useState<Selection>(null);
   const [gallery, setGallery] = useState<{ at: number } | null>(null);
+  /**
+   * THE preview-width state — ONE for every adapter.
+   *
+   * It lives here and not in each adapter because "phone" has to mean the same
+   * 390px in a proposal, an email, a landing page and a website page; the
+   * arithmetic that turns it into a paper width is `previewPaperWidth`, which
+   * is the only place that knows an email is 600 wide and a website is not.
+   */
+  const [preview, setPreview] = useState<PreviewKey>("desktop");
   const doc = p.doc;
 
   const select = useCallback((s: Selection) => {
@@ -270,6 +280,8 @@ export function BuilderShell(p: BuilderShellProps) {
       onUndo={doUndo}
       onRedo={doRedo}
       canvasBackground={p.canvasBackground}
+      preview={preview}
+      onPreview={setPreview}
       pane={<WidgetPane adapter={p.adapter} onInsert={insertWidget} header={p.paneHeader} />}
       inspector={
         <Inspector
@@ -309,9 +321,11 @@ export function BuilderShell(p: BuilderShellProps) {
         selection={selection}
         nextUp={p.nextUp}
         renderSection={p.renderSection}
-        paperWidth={p.paperWidth}
+        /* The adapter says how wide its paper is; the preview toggle narrows
+           it and never widens it. One function, no per-adapter fork. */
+        paperWidth={previewPaperWidth(preview, p.paperWidth ?? 780)}
         paper={p.paper}
-        paperNote={p.paperNote}
+        paperNote={previewNote(preview, p.paperWidth ?? 780) ?? p.paperNote}
         canvasHint={p.canvasHint}
         canvasCss={p.canvasCss}
         extraCss={p.extraCss}

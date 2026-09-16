@@ -285,12 +285,20 @@ test('the phone can still add and reorder, where dragging does not fire', () => 
   assert.match(inspector, /title="Move this down inside its column"/);
 });
 
-test('the widget pane is hidden on a phone, and the canvas still offers everything', () => {
-  // The shell hides the 320px pane below md. That is only honest if the SAME
-  // vocabulary is reachable from the canvas, which it is: "Pre-made…" opens the
-  // gallery, and the gallery has both the sections and the widgets.
+test('the widget pane becomes a drawer on a phone, and the canvas still offers everything', () => {
+  // WAS: "the shell hides the 320px pane below md", which the phone pass
+  // (2026-09-16, scope §12.7) replaced — a hidden pane is a builder with the
+  // widget list simply gone. BuilderFrame now swaps the three panes for the
+  // canvas plus two slide-over drawers off a bottom bar, and IadmModal's frame
+  // carries no breakpoint of its own any more.
   const modal = readSrc('src/components/IadmModal.tsx');
-  assert.match(modal, /data-builder-slot="pane"[\s\S]{0,200}max-md:hidden/);
+  assert.doesNotMatch(modal, /data-builder-slot="pane"[\s\S]{0,300}max-md:hidden/,
+    'the wide frame must not hide the pane; BuilderFrame decides, once');
+  const frame = readSrc('src/builder/BuilderFrame.tsx');
+  assert.match(frame, /data-builder-drawer="open"/);
+  assert.match(frame, /data-builder-slot="bottombar"/);
+  // Still honest the other way too: the SAME vocabulary is reachable from the
+  // canvas — "Pre-made…" opens the gallery, and the gallery has both.
   const gallery = readSrc('src/builder/SectionGallery.tsx');
   assert.match(gallery, /Pre-made sections/);
   assert.match(gallery, /Widgets/);

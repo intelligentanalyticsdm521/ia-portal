@@ -93,9 +93,15 @@ const TOOL_ON: React.CSSProperties = { ...TOOL, background: "#0C4A60", color: "#
 export function Canvas(props: CanvasProps) {
   const { doc, ctx, selection, onSelect } = props;
   const [dragId, setDragId] = useState<string | null>(null);
+  // `maxWidth: "100%"` on the fixed case as well as the full one: a 780px
+  // sheet inside a 374px canvas used to hang off BOTH edges, so the author on
+  // a phone saw the middle of a document with no way to see either margin.
+  // Capped, the sheet is as wide as the canvas — and because the renderer's
+  // stylesheet asks the CONTAINER and not the viewport (responsive.ts), the
+  // document then folds exactly as it will for the customer.
   const paper: React.CSSProperties = props.paperWidth === "full"
     ? { width: "100%", maxWidth: 1100 }
-    : { width: props.paperWidth ?? 780 };
+    : { width: props.paperWidth ?? 780, maxWidth: "100%" };
 
   return (
     <div style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
