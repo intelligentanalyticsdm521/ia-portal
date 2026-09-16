@@ -14,6 +14,9 @@ import {
   DbCard, DbError, DbLoading, DbButton, DbSelect, DbField, DbTable,
   DbEmpty, DbNotice, useNotice, Pill, DbModal, CapLine,
 } from "../dbmanager/DbManagerKit";
+import {
+  runNowSummary, deliveryFromRecipients, unusableRecipients, type RunNowResult,
+} from "./scheduledDelivery";
 
 type Sched = {
   scheduled_report_id: string; saved_report_id: string; report_name: string | null; name: string | null;
@@ -37,7 +40,10 @@ export function StellaScheduledReportsPage() {
   const [notice, showNotice] = useNotice();
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ saved_report_id: "", cadence: "monthly", format: "xlsx", delivery_type: "portal" });
+  const [form, setForm] = useState({ saved_report_id: "", cadence: "monthly", format: "xlsx" });
+  // PRE-WALK 1b, walk row S8 — who this schedule emails. Empty = portal only,
+  // which is what every schedule was before this box existed.
+  const [recipients, setRecipients] = useState("");
 
   const load = useCallback(() => {
     if (!api.ready) return;
@@ -54,9 +60,16 @@ export function StellaScheduledReportsPage() {
   async function create() {
     setBusy(true); setError(null);
     try {
-      await api.post("/reporting/scheduled", form);
-      showNotice("Schedule created. Use “Run it now” to check it does what you expect.");
-      setCreating(false); setForm({ saved_report_id: "", cadence: "monthly", format: "xlsx", delivery_type: "portal" });
+      const delivery = deliveryFromRecipients(recipients);
+      await api.post("/reporting/scheduled", { ...form, ...delivery });
+      showNotice(
+        delivery.recipients.length
+          ? `Schedule created — it will email ${delivery.recipients.join(", ")}. Use “Run it now” to check it does what you expect.`
+          : "Schedule created. Use “Run it now” to check it does what you expect.",
+      );
+      setCreating(false);
+      setForm({ saved_report_id: "", cadence: "monthly", format: "xlsx" });
+      setRecipients("");
       load();
     } catch (e) { setError(e); } finally { setBusy(false); }
   }
@@ -64,8 +77,11 @@ export function StellaScheduledReportsPage() {
   async function runNow(s: Sched) {
     setBusy(true); setError(null);
     try {
-      const r = await api.post<{ row_count: number; file_name: string; note: string }>(`/reporting/scheduled/${s.scheduled_report_id}/run-now`, {});
-      showNotice(`Ran now — ${r.row_count} rows into ${r.file_name}. ${r.note}`);
+      // PRE-WALK 1b, walk row S8 — this read `r.note`, a field the server
+      // DELETED when the delivery tally replaced it, so every run printed
+      // "Ran now — 7 rows into Spend-by-month-2026-09-16.xlsx. undefined".
+      const r = await api.post<RunNowResult>(`/reporting/scheduled/${s.scheduled_report_id}/run-now`, {});
+      showNotice(runNowSummary(r));
       load();
     } catch (e) { setError(e); } finally { setBusy(false); }
   }
@@ -202,9 +218,29 @@ export function StellaScheduledReportsPage() {
                 </DbSelect>
               </DbField>
             </div>
+            <DbField label="Email it to (optional)">
+              <input
+                type="text"
+                value={recipients}
+                onChange={(e) => setRecipients(e.target.value)}
+                placeholder="you@yourbusiness.com, bookkeeper@theirfirm.com"
+                style={{
+                  width: "100%", padding: "8px 10px", fontSize: 12, color: "#0B1C24",
+                  border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, background: "#fff",
+                }}
+              />
+            </DbField>
+            {unusableRecipients(recipients).length > 0 && (
+              <div style={{ fontSize: 11, color: "#B42318", lineHeight: 1.5 }}>
+                Not an email address, so it will be left out:{" "}
+                {unusableRecipients(recipients).join(", ")}
+              </div>
+            )}
             <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
-              Runs are saved to <strong>Report history</strong> where you can download them. Email delivery uses the
-              platform notification path when it is set up — the file is kept here either way.
+              Every run is saved to <strong>Report history</strong> where you can download it, whether it is emailed or
+              not. Leave the address box empty and the report simply waits for you there. Put addresses in and each run
+              is emailed to them with the file attached — <strong>Run it now</strong> tells you exactly how many
+              messages were queued, suppressed or held.
             </div>
             <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
               <DbButton onClick={create} disabled={busy || !form.saved_report_id}>{busy ? "Scheduling…" : "Schedule it"}</DbButton>

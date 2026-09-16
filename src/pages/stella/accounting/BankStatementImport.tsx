@@ -31,8 +31,12 @@ import {
   DbCard, DbError, DbButton, DbSelect, DbField, DbTable, DbEmpty,
   DbNotice, useNotice, Pill, DbModal, DbLoading,
 } from "../dbmanager/DbManagerKit";
+import { acceptFromPresets, chooseFileLabel, type BankImportPreset } from "./bankImportAccept";
 
-type Preset = { key: string; label: string; convention: string; day_first: boolean };
+// PRE-WALK 1b, walk row S6 — the picker's accept list and its button label are
+// built from the layouts the SERVER publishes, in bankImportAccept.ts (own
+// module, zero imports, so a test can reach the rule).
+type Preset = BankImportPreset;
 
 type PreviewRow = {
   row: number; posted_date: string; description: string | null;
@@ -213,8 +217,8 @@ export function BankStatementImport({ reconciliationId, coaAccountId, accounts, 
             opacity: busy ? 0.5 : 1, background: "#FFFFFF", color: "#4C5BD4", border: `1px solid ${STELLA_LAVENDER}`,
           }}>
             <Upload size={14} />
-            <span>{file ? file.name : "Choose a CSV"}</span>
-            <input type="file" accept=".csv,text/csv,text/plain" disabled={busy} style={{ display: "none" }}
+            <span>{file ? file.name : chooseFileLabel(presets)}</span>
+            <input type="file" accept={acceptFromPresets(presets)} disabled={busy} style={{ display: "none" }}
               onChange={(e) => {
                 const f = e.target.files?.[0] || null;
                 e.target.value = "";

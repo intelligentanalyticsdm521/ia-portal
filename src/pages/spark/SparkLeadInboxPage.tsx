@@ -479,14 +479,26 @@ function LeadInboxTab() {
 
   // label → the raw source keys behind it, so picking a chip can tell the
   // server what it means without the server learning the labels.
+  //
+  // KEYED ON THE COUNTS, NOT ON `meta` — measured 2026-09-16, pre-walk 1b.
+  // `load()` calls `setMeta(r.meta)` with a freshly parsed object, so `meta`
+  // gets a NEW IDENTITY on every fetch even when nothing about it changed.
+  // Depending on `meta` therefore rebuilt this map, which rebuilt
+  // `filterParams`, which rebuilt `load`, which re-fired `useEffect(load)` —
+  // a fetch loop that ran the Lead Inbox at ~35 requests a second for as long
+  // as the page was open (174 calls to /api/v1/leads in a five-second sample).
+  // The dependency is the CONTENT of source_counts, serialised, so the memo
+  // keeps its identity across fetches that changed nothing and the chain
+  // settles after one load.
+  const sourceCountsKey = JSON.stringify(meta?.source_counts ?? null);
   const sourceKeysByLabel = useMemo(() => {
     const out: Record<string, string[]> = {};
-    for (const rawKey of Object.keys(meta?.source_counts || {})) {
+    for (const rawKey of Object.keys(JSON.parse(sourceCountsKey) || {})) {
       const label = sourceFacetLabel(rawKey);
       (out[label] ||= []).push(rawKey);
     }
     return out;
-  }, [meta]);
+  }, [sourceCountsKey]);
 
   // The chips the client has picked, as query parameters. ONE builder, used by
   // the list and by Export — the file has to be the list they were looking at,

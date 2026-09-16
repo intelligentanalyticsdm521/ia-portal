@@ -17,6 +17,40 @@ import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
 import { OLIVER_API_BASE } from "./oliverApi";
+import { apiBodySentence } from "./apiErrorMessage";
+
+/**
+ * A failed STELLA call, as an Error a person can read.
+ *
+ * PRE-WALK 1b, 2026-09-16. This used to be
+ * `new Error(\`STELLA API ${status}: ${text}\`)`, and every STELLA surface
+ * renders `error.message` — so editing a line inside a closed month printed the
+ * whole 409 envelope on screen, internal period ids and the reopen API path
+ * included, when the server had already written the one sentence the walk asks
+ * for ("… falls inside a closed period (2026-08-01 to 2026-08-31) … Reopen that
+ * period under Period Close …").
+ *
+ * The sentence becomes the message. The machine-readable parts do not vanish —
+ * they move onto the error object, where `status` is a number to compare rather
+ * than a string to search for.
+ */
+export function stellaError(status: number, text: string): Error & {
+  status: number;
+  body: unknown;
+  raw: string;
+} {
+  let body: unknown = null;
+  try { body = JSON.parse(text); } catch { /* not JSON — the raw text is all there is */ }
+  const sentence = apiBodySentence(body) || text.trim();
+  const err = new Error(sentence || `STELLA API ${status}`) as Error & {
+    status: number; body: unknown; raw: string;
+  };
+  err.status = status;
+  err.body = body;
+  // The old string, kept verbatim for anything that still wants to log it.
+  err.raw = `STELLA API ${status}: ${text}`;
+  return err;
+}
 
 // 2026-08 fold: STELLA's ledger routes live ON oliver-api — there is no
 // standalone stella-api service. Default to oliver-api's host (shared
@@ -126,7 +160,7 @@ async function stellaFetch<T>(
         if (typeof e === "object" && e !== null && "type" in e) throw e;
       }
     }
-    throw new Error(`STELLA API ${res.status}: ${text}`);
+    throw stellaError(res.status, text);
   }
 
   if (res.status === 204) return undefined as T;

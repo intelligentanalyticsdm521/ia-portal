@@ -128,7 +128,12 @@ export function StellaOverviewPage() {
         setPlaidItems([]);
       }
     } catch (e) {
-      if (e instanceof Error && e.message.includes("STELLA API 404")) setNotLive(true);
+      // PRE-WALK 1b: stellaApi now puts the SERVER'S SENTENCE in `message` and
+      // the code in `status`, so "is this a 404" is a number to compare rather
+      // than a string to search. The old substring is still accepted because a
+      // non-JSON body can still come back prefixed.
+      const status = (e as { status?: number })?.status;
+      if (status === 404 || (e instanceof Error && e.message.includes("STELLA API 404"))) setNotLive(true);
       else setError(e);
     } finally {
       setLoading(false);
