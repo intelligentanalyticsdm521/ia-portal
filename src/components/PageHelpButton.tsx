@@ -69,7 +69,10 @@ export function PageHelpButton({ compact = false }: { compact?: boolean }) {
   const hasDoIt = Array.isArray(step.doIt) && step.doIt.length > 0;
 
   return (
-    <div className="flex items-center gap-1.5 max-md:flex-wrap">
+    // data-app-chrome: the app around the page, not the page. STELLA's print
+    // rules hide everything carrying it so a printed financial statement is the
+    // statement and nothing else (walk row S2). Inert everywhere else.
+    <div data-app-chrome className="flex items-center gap-1.5 max-md:flex-wrap">
       <button
         type="button"
         onClick={() => launchJourneyStep(step.id, "explain")}

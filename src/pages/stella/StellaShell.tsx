@@ -69,7 +69,11 @@ export function StellaShell({
           {subtitle && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{subtitle}</div>}
         </div>
         {(actions || showRecord) && (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          // PRE-WALK 1b, walk row S2 — this row is CONTROLS (the month picker,
+          // the basis toggle, Export, Record), not statement. A printed P&L
+          // already says its month and its basis in its own words, so none of
+          // it belongs on the paper.
+          <div className="stella-no-print" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {actions}
             {showRecord && <RecordSplitButton onRecorded={onRecorded} />}
           </div>

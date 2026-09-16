@@ -127,8 +127,22 @@ export function StellaPrintStyles() {
   return (
     <style>{`
       @media print {
-        /* The app chrome is not part of a financial statement. */
-        .stella-no-print, nav, aside, header button, [data-tour] button { display: none !important; }
+        /* The app chrome is not part of a financial statement.
+         *
+         * PRE-WALK 1b, 2026-09-16, walk row S2 ("the print preview shows only
+         * the statement"). This list used to be ".stella-no-print, nav, aside,
+         * header button, [data-tour] button" and it missed most of the app:
+         * there is exactly one <nav> in the shell and no <aside> at all, so a
+         * printed Balance Sheet carried the nine-item product rail, the STELLA
+         * sub-nav's product heading, "Welcome, Summit Lawn & Landscape", the
+         * Explain-this-page button, Record, and the Ask ARGUS launcher —
+         * measured by applying these very rules to the live page.
+         *
+         * [data-app-chrome] is the marker every piece of shell now carries
+         * (AppShell's header, the rail + sub-nav wrapper, the founder banners,
+         * PageHelpButton, the ARGUS launcher). One attribute, one rule, and no
+         * page has to learn a STELLA class name. */
+        .stella-no-print, [data-app-chrome], nav, aside, header, [data-tour] button { display: none !important; }
         /* Cards should not be boxed twice on paper, and must not be cut in half
            across a page break — a P&L split mid-section is unreadable. */
         .stella-print-block { break-inside: avoid; box-shadow: none !important; }

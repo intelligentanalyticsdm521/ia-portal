@@ -288,6 +288,9 @@ export function ArgusChatbot() {
           onClick={() => setOpen(true)}
           aria-label="Open ARGUS Agent"
           title="ARGUS Agent"
+          // data-app-chrome — the app around the page. A printed financial
+          // statement must not carry a chat launcher (walk row S2).
+          data-app-chrome
           className="fixed bottom-5 right-5 z-[9000] flex min-h-[44px] min-w-[44px] items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold text-white shadow-lg hover:shadow-xl transition-shadow"
           style={{ background: "linear-gradient(135deg, #84CC16 0%, #65A30D 100%)" }}
         >
@@ -299,6 +302,7 @@ export function ArgusChatbot() {
       {/* Chat panel */}
       {open && (
         <div
+          data-app-chrome
           className="fixed bottom-5 right-5 z-[9000] flex flex-col rounded-xl bg-white shadow-2xl border-2 overflow-hidden"
           style={{
             width: 380,

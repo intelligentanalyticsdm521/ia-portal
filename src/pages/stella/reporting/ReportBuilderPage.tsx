@@ -18,9 +18,21 @@ import {
 } from "../dbmanager/DbManagerKit";
 import { useFieldCatalog, ReportChart, CHART_LABEL, type ReportConfig, type RunResult, type FieldCol } from "./ReportKit";
 
+// PRE-WALK 1b, 2026-09-16, walk row S7: "build from Invoices & Receivables …
+// filter Still owed GREATER THAN 0." There was no greater-than. The only
+// numeric comparisons offered were `gte` and `lte`, so "Still owed at least 0"
+// came back with all 125 invoices, every zero-balance one included — the
+// opposite of a receivables list, and a number the client would have read as
+// their AR.
+//
+// `gt` and `lt` were never missing from the SERVER: lib/stellaReportSql.js
+// FILTER_OPS has had `gt: ">"` and `lt: "<"` all along, and POST
+// /reporting/preview with op "gt" returns exactly the AR list. This list was
+// simply short by two.
 const OPS = [
   { key: "eq", label: "is" }, { key: "ne", label: "is not" },
   { key: "contains", label: "contains" },
+  { key: "gt", label: "is after / more than" }, { key: "lt", label: "is before / less than" },
   { key: "gte", label: "is on or after / at least" }, { key: "lte", label: "is on or before / at most" },
   { key: "isnull", label: "is empty" }, { key: "notnull", label: "is not empty" },
 ];

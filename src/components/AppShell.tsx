@@ -326,25 +326,26 @@ export function AppShell() {
       {/* Founder-only view-as-tenant banner — slate, no timer, renders above
           the header while the founder is viewing a client's portal
           read-only. Stays on top across navigation. */}
-      <div className="shrink-0">
+      <div data-app-chrome className="shrink-0">
         <ViewAsTenantBanner />
       </div>
 
       {/* Founder-only emergency act-as banner — renders above the header
           while a 30-min read-only session is open. shrink-0 so it never
           gets squeezed by the main content area. */}
-      <div className="shrink-0">
+      <div data-app-chrome className="shrink-0">
         <EmergencyActAsBanner />
       </div>
 
       {/* Consultant Mode banner — shown while a founder is acting in a
           client tenant via the View-as flow. Returns null when inactive. */}
-      <div className="shrink-0">
+      <div data-app-chrome className="shrink-0">
         <ConsultantModeBanner />
       </div>
 
-      {/* Top header */}
-      <header className="iadm-header shrink-0">
+      {/* Top header.
+          data-app-chrome — see the icon rail below. */}
+      <header data-app-chrome className="iadm-header shrink-0">
         <HeaderBar />
       </header>
 
@@ -383,7 +384,21 @@ export function AppShell() {
             Desktop (md+): inline flex row, no transform.
             Mobile (< md): fixed slide-over from the left, hidden by translate-x.
             Drawer auto-closes via the useEffect above on any route change. */}
+        {/* data-app-chrome — THE marker for "this is the app around the page,
+            not the page". PRE-WALK 1b, walk row S2: STELLA's print rules hid
+            `nav`, `aside` and `.stella-no-print`, and this wrapper is none of
+            those, so printing a Balance Sheet put the whole product rail (Home,
+            Digital Presence, Invoicing & Administration, …), the STELLA sub-nav
+            heading and the "Welcome, <business>" header on the paper a lender
+            was going to read. The rail and the sub-nav's product heading live
+            OUTSIDE the <nav> that held the links, which is why hiding `nav`
+            alone never covered them.
+
+            An attribute rather than a class: nothing styles it, no stylesheet
+            depends on it, and one print rule can name every piece of chrome
+            without any page learning a STELLA-specific class name. */}
         <div
+          data-app-chrome
           className={
             "flex md:relative md:translate-x-0 md:transform-none md:transition-none " +
             "fixed inset-y-0 left-0 z-50 transition-transform duration-200 ease-out " +
