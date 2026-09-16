@@ -43,10 +43,12 @@ import {
   type EmailBusiness, type EmailRenderContext,
 } from "./emailRender";
 import {
-  EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, EMAIL_PREMADE_TAGS,
+  EMAIL_PREMADE_SECTIONS, EMAIL_PREMADE_TAGS, emailLibrary,
   emailTemplateByKey, startingEmail, applyEmailBrand, ensureFooter,
   withArticleCount, withProductCount,
 } from "./emailTemplates";
+import { TemplateLibrary } from "../../TemplateLibrary";
+import { BLANK_TEMPLATE_ID } from "../../templateLibraryModel";
 import {
   openEmailDocument, toEmailWire, articlesFromPosts,
   type EmailRowLike, type EmailWire, type WebsitePost,
@@ -134,6 +136,10 @@ export function EmailBuilder(p: EmailBuilderProps) {
   const [doc, setDoc] = useState<BuilderDocument>(() => startingEmail({ name: "" }, kit.colours.primary));
   const [resetKey, setResetKey] = useState(0);
   const [picking, setPicking] = useState(true);
+  /** A template chosen in the library that still has to be asked "how many?". */
+  const [pending, setPending] = useState<string | null>(null);
+  const [articles, setArticles] = useState(3);
+  const [products, setProducts] = useState(2);
   const [note, setNote] = useState<string | null>(null);
   const [title, setTitle] = useState(p.title || "");
   const [subject, setSubject] = useState(p.initialSubject || "");
@@ -280,6 +286,22 @@ export function EmailBuilder(p: EmailBuilderProps) {
     setPicking(false);
   }, [identity, kit, preheader, subject, title]);
 
+  /**
+   * The library's list — §11.9. Real renders of the eight shapes plus the
+   * basics, in the business's own colour and with its own masthead.
+   */
+  const libraryEntries = useMemo(
+    () => emailLibrary(identity, kit.colours.primary),
+    [identity, kit]);
+
+  /** One id back from the library. Only a counted template gets a second step. */
+  const pickTemplate = useCallback((id: string) => {
+    if (id === BLANK_TEMPLATE_ID) { start(null, { articles, products }); return; }
+    const t = emailTemplateByKey(id);
+    if (t?.askArticles || t?.askProducts) { setPending(id); return; }
+    start(id, { articles, products });
+  }, [articles, products, start]);
+
   /* ── Saving and testing ────────────────────────────────────────────────── */
   const meta = (): EmailSaveResult => ({ subject: subject.trim(), preheader: preheader.trim(), title: title.trim() });
 
@@ -324,11 +346,54 @@ export function EmailBuilder(p: EmailBuilderProps) {
   if (!p.open) return null;
 
   if (picking) {
+    // A template that repeats something asks "how many?" ONCE, before it is
+    // built (SD-010). The library cannot ask it — it knows nothing about
+    // articles or products — so the adapter holds the answer back for exactly
+    // those templates and builds the rest straight away.
+    const pendingTemplate = pending ? emailTemplateByKey(pending) : null;
+    if (pendingTemplate) {
+      return (
+        <IadmModal
+          open
+          onClose={() => setPending(null)}
+          product="spark"
+          eyebrow="SPARK · Email builder"
+          title={`How many, for “${pendingTemplate.name}”?`}
+          subtitle="Answered once, before the page is built. You can add or remove one at any time afterwards."
+          size="info"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setPending(null)}>Back to the templates</IadmButton>
+              <IadmButton variant="accent" product="spark"
+                onClick={() => { start(pending, { articles, products }); setPending(null); }}>
+                Build “{pendingTemplate.name}”
+              </IadmButton>
+            </>
+          }
+        >
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+            {pendingTemplate.askArticles && (
+              <Ask label="How many articles?" value={articles} min={1} max={8} onChange={setArticles}
+                help="You can add or remove one at any time." />
+            )}
+            {pendingTemplate.askProducts && (
+              <Ask label="How many products?" value={products} min={1} max={4} onChange={setProducts}
+                help="Each one pulls its price and how it is billed from Products & Services." />
+            )}
+          </div>
+        </IadmModal>
+      );
+    }
     return (
-      <StartFrom
-        business={identity}
-        onPick={start}
+      <TemplateLibrary
+        open
         onClose={p.onClose}
+        product="spark"
+        eyebrow="SPARK · Email builder"
+        title="Start from a shape that already works"
+        subtitle="Every one of these opens with your logo at the top and your unsubscribe footer at the bottom. Pick the one closest to what you want to say, then change anything on it."
+        entries={libraryEntries}
+        onPick={pickTemplate}
       />
     );
   }
@@ -424,90 +489,15 @@ function brandDefaults(kit: { colours: { primary: string }; fonts: { heading: st
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The starting screen — never a blank canvas
+/* ══════════════════════════════════════════════════════════════════════════
+   The starting screen — the ONE template library (§11.9, D-146)
+
+   The four hand-drawn cards that used to live here are gone: the library
+   below shows a REAL RENDER of each email, searchable, with categories. All
+   that stays behind is the guided count, which is a question about THIS
+   template and cannot be asked by a component that knows nothing about
+   articles or products.
    ══════════════════════════════════════════════════════════════════════════ */
-
-function StartFrom({
-  business, onPick, onClose,
-}: {
-  business: EmailBusiness;
-  onPick: (key: string | null, counts: { articles: number; products: number }) => void;
-  onClose: () => void;
-}) {
-  const [chosen, setChosen] = useState<string | null>(null);
-  const [articles, setArticles] = useState(3);
-  const [products, setProducts] = useState(2);
-  const t = chosen ? emailTemplateByKey(chosen) : null;
-
-  return (
-    <IadmModal
-      open
-      onClose={onClose}
-      product="spark"
-      eyebrow="SPARK · Email builder"
-      title="Start from a shape that already works"
-      subtitle="Every one of these opens with your logo at the top and your unsubscribe footer at the bottom. Change anything on it."
-      size="info"
-      footer={
-        <>
-          <IadmButton variant="ghost" onClick={onClose}>Cancel</IadmButton>
-          <IadmButton variant="ghost" onClick={() => onPick(null, { articles, products })}
-            title="A masthead, a note from you, and the footer. The smallest email it is legal to send.">
-            Just the basics
-          </IadmButton>
-          <IadmButton
-            variant="accent" product="spark"
-            disabled={!t}
-            title={t ? `Build “${t.name}”` : "Choose one first"}
-            onClick={() => onPick(chosen, { articles, products })}
-          >
-            {t ? `Build “${t.name}”` : "Choose one"}
-          </IadmButton>
-        </>
-      }
-    >
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12 }}>
-          {EMAIL_TEMPLATES.map((tpl) => (
-            <button
-              key={tpl.key}
-              type="button"
-              title={`${tpl.name} — ${tpl.description}`}
-              onClick={() => setChosen(tpl.key)}
-              style={{
-                textAlign: "left", background: "#fff", borderRadius: 10, padding: 0, cursor: "pointer", overflow: "hidden",
-                border: "1px solid " + (chosen === tpl.key ? "#0C4A60" : "#E2E8F0"),
-                boxShadow: chosen === tpl.key ? "0 8px 24px rgba(0,0,0,0.08)" : "none",
-              }}
-            >
-              <TemplateThumb kind={tpl.key} />
-              <span style={{ display: "block", padding: "10px 12px" }}>
-                <span style={{ display: "block", fontSize: 12, fontWeight: 600 }}>{tpl.name}</span>
-                <span style={{ display: "block", fontSize: 11, color: "#5A7A8A", lineHeight: 1.35, marginTop: 3 }}>{tpl.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-
-        {/* The guided count, asked ONCE, in words, before anything is built. */}
-        {t?.askArticles && (
-          <Ask label="How many articles?" value={articles} min={1} max={8} onChange={setArticles}
-            help="You can add or remove one at any time." />
-        )}
-        {t?.askProducts && (
-          <Ask label="How many products?" value={products} min={1} max={4} onChange={setProducts}
-            help="Each one pulls its price and how it is billed from Products & Services." />
-        )}
-
-        <div style={{ fontSize: 11, color: "#5A7A8A", borderTop: "1px solid #E2E8F0", paddingTop: 12 }}>
-          {business.name
-            ? <>The masthead will show <strong>{business.name}</strong>{business.logoUrl ? " and your logo" : ""}, and the footer your address and unsubscribe link.</>
-            : <>Fill in your business profile and this will open with your own logo and address already on it.</>}
-        </div>
-      </div>
-    </IadmModal>
-  );
-}
 
 function Ask({ label, value, min, max, onChange, help }: {
   label: string; value: number; min: number; max: number; onChange: (n: number) => void; help: string;
@@ -528,42 +518,6 @@ function Ask({ label, value, min, max, onChange, help }: {
       </div>
     </div>
   );
-}
-
-/** A drawing of the shape each template makes. */
-function TemplateThumb({ kind }: { kind: string }) {
-  const bar = (w: string, h = 6, bg = "#E2E8F0") => <div style={{ height: h, width: w, background: bg, borderRadius: 2 }} />;
-  const wrap: React.CSSProperties = { height: 108, background: "#F2F6F9", padding: 12, display: "flex", flexDirection: "column", gap: 5 };
-  const foot = <div style={{ marginTop: "auto", height: 8, background: "#CBD5E1", borderRadius: 2 }} />;
-  switch (kind) {
-    case "monthly_update":
-      return <div style={wrap}><div style={{ height: 10, width: 34, background: "#0B1C24", borderRadius: 2, margin: "0 auto" }} />
-        {bar("70%", 8, "#CBD5E1")}
-        <div style={{ display: "flex", gap: 5 }}><div style={{ width: 22, height: 18, background: "#94A3B8", borderRadius: 2 }} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>{bar("100%", 4)}{bar("80%", 4)}</div></div>
-        <div style={{ display: "flex", gap: 5 }}><div style={{ width: 22, height: 18, background: "#94A3B8", borderRadius: 2 }} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 3 }}>{bar("100%", 4)}{bar("60%", 4)}</div></div>
-        {foot}</div>;
-    case "promo":
-      return <div style={wrap}><div style={{ height: 10, width: 34, background: "#0B1C24", borderRadius: 2, margin: "0 auto" }} />
-        {bar("80%", 10, "#CBD5E1")}
-        <div style={{ height: 12, width: "45%", background: PRODUCT_ACCENT.spark, borderRadius: 999, margin: "2px auto" }} />
-        <div style={{ display: "flex", gap: 5 }}>
-          <div style={{ flex: 1, height: 24, border: "1px solid #CBD5E1", borderRadius: 3, background: "#fff" }} />
-          <div style={{ flex: 1, height: 24, border: "1px solid #CBD5E1", borderRadius: 3, background: "#fff" }} /></div>
-        {foot}</div>;
-    case "event":
-      return <div style={wrap}><div style={{ height: 10, width: 34, background: "#0B1C24", borderRadius: 2, margin: "0 auto" }} />
-        {bar("70%", 9, "#CBD5E1")}
-        <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
-          {[0, 1, 2].map((i) => <div key={i} style={{ width: 16, height: 16, border: "1px solid #0C4A60", borderRadius: 3 }} />)}</div>
-        {bar("100%", 4)}{bar("80%", 4)}
-        {foot}</div>;
-    default:
-      return <div style={wrap}><div style={{ height: 10, width: 34, background: "#0B1C24", borderRadius: 2, margin: "0 auto" }} />
-        {bar("60%", 9, "#CBD5E1")}{bar("100%", 4)}{bar("100%", 4)}{bar("40%", 4)}
-        {foot}</div>;
-  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

@@ -454,16 +454,21 @@ describe("the ONE renderer", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("templates and pre-made sections (§7)", () => {
-  test("all three shipped templates build a document with sections", () => {
-    assert.equal(SHIPPED_TEMPLATES.length, 3);
+  test("every shipped template builds a document, and says what it is FOR", () => {
+    // §11.9 / D-146: three templates named after clients became eight named
+    // after jobs, and `description` (what it LOOKS like) became `useCase`.
+    assert.equal(SHIPPED_TEMPLATES.length, 8);
     for (const t of SHIPPED_TEMPLATES) {
       const doc = t.build();
       assert.ok(doc.sections.length >= 4, `${t.key} built ${doc.sections.length} sections`);
-      assert.ok(t.description && t.description.length > 20, `${t.key} has no readable description`);
+      assert.ok(t.useCase && t.useCase.length > 40, `${t.key} has no readable use case`);
+      assert.ok(t.purpose && t.purpose.length > 3, `${t.key} has no purpose badge`);
+      assert.ok(t.businessTypes.length > 0, `${t.key} is for nobody`);
+      assert.equal(t.description, undefined, `${t.key} still carries a description`);
     }
   });
 
-  test("the service agreement carries the Rolling In It shape: title, terms, pricing, signature, property plan", () => {
+  test("the seasonal service agreement carries the whole shape: title, terms, pricing, signature, property plan", () => {
     const doc = templateByKey("service_agreement").build();
     const kinds = walkWidgets(doc).map((x) => x.widget.kind);
     for (const k of ["doc_header", "key_facts", "clauses", "pricing_table", "callout", "signature", "property_plan"]) {

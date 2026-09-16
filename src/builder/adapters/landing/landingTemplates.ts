@@ -14,7 +14,8 @@ import {
   makeSection, makeWidget, emptyDocument,
   type BuilderDocument, type Section, type Widget,
 } from "../../model";
-import { defaultFormFields } from "./landingRender";
+import { LANDING_CSS, defaultFormFields, makeLandingContext, renderLandingSection } from "./landingRender";
+import type { TemplateEntry, TemplatePreview } from "../../templateLibraryModel";
 import type { PremadeSection } from "../../templates";
 
 const one = (widgets: Widget[], extra: Partial<Section> = {}) =>
@@ -127,14 +128,43 @@ function premade(key: string): Section {
   return p.build();
 }
 
+/**
+ * A pre-made section carrying THIS template’s own words.
+ *
+ * §11.9/D-146 asked for a picture of every template, and a picture of a page
+ * whose every field is empty is a picture of nothing. The words are generic,
+ * true of any trade, and editable in place like everything else. The pre-made
+ * sections themselves stay empty — they are what you add to a page you are
+ * already writing.
+ */
+function say(section: Section, props: Record<string, unknown>, widgetIndex = 0): Section {
+  const w = section.columns[0].widgets[widgetIndex];
+  if (w) w.props = { ...w.props, ...props };
+  return section;
+}
+
+function premadeSaying(key: string, props: Record<string, unknown>, widgetIndex = 0): Section {
+  return say(premade(key), props, widgetIndex);
+}
 /* ══════════════════════════════════════════════════════════════════════════
    The shipped templates
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * A shipped landing page, as the library (§11.9, D-146) shows it.
+ *
+ * `description` is gone: the card carries a real render, so the words say
+ * what the page is FOR and who should point traffic at it.
+ */
 export interface LandingTemplate {
   key: string;
   name: string;
-  description: string;
+  purpose: string;
+  businessTypes: string[];
+  tags: string[];
+  useCase: string;
+  bestFor: string;
+  featured?: boolean;
   build: (business: LandingBusiness, accent: string) => BuilderDocument;
 }
 
@@ -155,12 +185,32 @@ export const LANDING_TEMPLATES: LandingTemplate[] = [
   {
     key: "lead_capture",
     name: "Get in touch",
-    description: "Headline, what you do, why you, and a form. The page most campaigns point at.",
+    purpose: "Lead capture",
+    businessTypes: ["Any business"],
+    tags: ["enquiry", "form", "leads", "campaign", "contact"],
+    useCase: "Headline, what you do, why you, and a form. The page most campaigns should point at, because everything on it is arranged to get one enquiry out of one visitor.",
+    bestFor: "Any advert, email or postcard where the only thing you want back is a name and a number.",
+    featured: true,
     build: (business, accent) => {
       const doc = emptyDocument({ style: "landing", accent });
       doc.sections = withFooter([
-        premade("lp_hero"), premade("lp_words"), premade("lp_reasons"),
-        premade("lp_quote"), premade("lp_form"),
+        premadeSaying("lp_hero", {
+          headline: "Tidy, reliable work — booked in this week",
+          sub: "Tell us what you need and we will come back with a price the same day.",
+        }), say(premadeSaying("lp_words", { text: "What we do" }, 0), {
+          text: "We do the job you booked, at the time we said, for the price we quoted. No subcontractors you have never met, no extras added at the end, and the site left clean.",
+        }, 1), premadeSaying("lp_reasons", {
+          items: [
+            "A fixed price before we start",
+            "Fully insured, and happy to prove it",
+            "The same crew, every visit",
+            "We tidy up before we leave",
+          ],
+        }, 1),
+        premadeSaying("lp_quote", {
+          quote: "Quoted on the Monday, done by the Thursday, and the price was the price. I have already recommended them twice.",
+          attribution: "A customer, this year",
+        }), premade("lp_form"),
       ], business);
       return doc;
     },
@@ -168,11 +218,22 @@ export const LANDING_TEMPLATES: LandingTemplate[] = [
   {
     key: "offer",
     name: "One offer",
-    description: "A single deal, said plainly, with one button and the form underneath.",
+    purpose: "One offer",
+    businessTypes: ["Any business", "Retail & hospitality"],
+    tags: ["offer", "deal", "discount", "seasonal", "promotion"],
+    useCase: "A single deal, said plainly, with one button and the form underneath. Nothing else on the page competes with it, which is the whole point of sending traffic somewhere other than your home page.",
+    bestFor: "A seasonal push, a launch price, or a limited run you want gone by the end of the month.",
     build: (business, accent) => {
       const doc = emptyDocument({ style: "landing", accent });
       doc.sections = withFooter([
-        premade("lp_hero"), premade("lp_words"), premade("lp_cta"), premade("lp_form"),
+        premadeSaying("lp_hero", {
+          headline: "Ten per cent off, booked this month",
+          sub: "The same work, the same crew, a better price — if the job goes in the diary before the month is out.",
+        }),
+        say(premadeSaying("lp_words", { text: "What is on offer" }, 0), {
+          text: "Book any job before the end of the month and we will take ten per cent off the quoted price. Nothing to print, no code to remember: the discount is on the quote when it reaches you.",
+        }, 1),
+        premadeSaying("lp_cta", { label: "Get my price" }), premade("lp_form"),
       ], business);
       return doc;
     },
@@ -180,12 +241,23 @@ export const LANDING_TEMPLATES: LandingTemplate[] = [
   {
     key: "showcase",
     name: "Show the work",
-    description: "Photos of what you have done, a quote from a customer, then the form.",
+    purpose: "Showcase",
+    businessTypes: ["Lawn & landscape", "Home services", "Cleaning"],
+    tags: ["gallery", "photos", "portfolio", "before and after", "work"],
+    useCase: "Photographs of what you have done, a quote from a customer, then the form. For trades where the work sells itself as soon as somebody can see it.",
+    bestFor: "Landscaping, building, cleaning and anything else with a striking before and after.",
     build: (business, accent) => {
       const doc = emptyDocument({ style: "landing", accent });
       doc.sections = withFooter([
-        premade("lp_hero"), premade("lp_gallery"), premade("lp_two_up"),
-        premade("lp_quote"), premade("lp_form"),
+        premadeSaying("lp_hero", {
+          headline: "See what we have been doing",
+          sub: "Recent jobs, photographed the day we finished them. Yours could be next.",
+        }),
+        premadeSaying("lp_gallery", { items: ["", "", "", "", "", ""] }), premade("lp_two_up"),
+        premadeSaying("lp_quote", {
+          quote: "Quoted on the Monday, done by the Thursday, and the price was the price. I have already recommended them twice.",
+          attribution: "A customer, this year",
+        }), premade("lp_form"),
       ], business);
       return doc;
     },
@@ -210,4 +282,51 @@ export function applyLandingBrand(
       bodyFont: doc.settings.bodyFont || kit.bodyFont,
     },
   };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The library (§11.9, D-146)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** A hosted landing page is drawn at the width the page itself uses. */
+export const LANDING_PREVIEW_WIDTH = 900;
+
+/**
+ * One landing page’s picture: the real page, through the landing renderer.
+ *
+ * The same `renderLandingSection` the canvas draws with, so the card and the
+ * builder cannot disagree about what the page looks like.
+ */
+export function landingPreview(
+  doc: BuilderDocument,
+  business: LandingBusiness,
+  accent: string,
+): TemplatePreview {
+  const ctx = makeLandingContext(doc, { mode: "view", accent, business });
+  return {
+    html: doc.sections.map((s) => renderLandingSection(s, ctx)).join(""),
+    css: LANDING_CSS.replace(/__ACCENT__/g, accent),
+    width: LANDING_PREVIEW_WIDTH,
+  };
+}
+
+/**
+ * Every landing page as a library entry.
+ *
+ * There is deliberately no "empty page" card here: a landing page with no
+ * form is not a landing page, and the three shapes below are the three ways
+ * a campaign page is built. The builder never offered a blank one either.
+ */
+export function landingLibrary(business: LandingBusiness, accent: string): TemplateEntry[] {
+  return LANDING_TEMPLATES.map((t) => ({
+    id: t.key,
+    title: t.name,
+    purpose: t.purpose,
+    businessTypes: t.businessTypes,
+    tags: t.tags,
+    useCase: t.useCase,
+    bestFor: t.bestFor,
+    featured: t.featured,
+    preview: () => landingPreview(t.build(business, accent), business, accent),
+  }));
 }

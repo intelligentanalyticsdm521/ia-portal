@@ -34,8 +34,11 @@ import { unfilledTokens, tagLabel } from "../merge";
 import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
-  SHIPPED_TEMPLATES, applyBrandDefaults, hydrateClauses, templateByKey, type ClauseRow,
+  applyBrandDefaults, hydrateClauses, proposalLibrary, savedIdOf, savedTemplateEntries,
+  templateByKey, type ClauseRow,
 } from "../templates";
+import { TemplateLibrary } from "../TemplateLibrary";
+import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
   buildPick, cadenceOf, type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
@@ -313,20 +316,69 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     if (!t) return;
     const built = hydrateClauses(t.build(), clauses);
     setDoc(applyBrandDefaults(built, brandDefaults(kit)));
-    if (!title.trim()) setTitle(t.name.replace(/\s*\(.*\)$/, ""));
-    setResetKey((k) => k + 1);
-    setPicking(false);
-  }, [clauses, kit, title]);
-
-  const startFromSaved = useCallback((t: { id: string; name: string; document?: any; body?: any }) => {
-    const opened = t.document
-      ? deserialise(t.document)
-      : openProposalDocument({ blocks: t.body?.blocks ? { v: 1, blocks: t.body.blocks } : null }) || emptyDocument();
-    setDoc(applyBrandDefaults(hydrateClauses(opened, clauses), brandDefaults(kit)));
     if (!title.trim()) setTitle(t.name);
     setResetKey((k) => k + 1);
     setPicking(false);
   }, [clauses, kit, title]);
+
+  /** A saved row, as a document. Used by the library's picture and by opening it. */
+  const openSavedDoc = useCallback((t: { document?: any; body?: any }) => (
+    t.document
+      ? deserialise(t.document)
+      : openProposalDocument({ blocks: t.body?.blocks ? { v: 1, blocks: t.body.blocks } : null }) || emptyDocument()
+  ), []);
+
+  const startFromSaved = useCallback((t: { id: string; name: string; document?: any; body?: any }) => {
+    setDoc(applyBrandDefaults(hydrateClauses(openSavedDoc(t), clauses), brandDefaults(kit)));
+    if (!title.trim()) setTitle(t.name);
+    setResetKey((k) => k + 1);
+    setPicking(false);
+  }, [clauses, kit, title, openSavedDoc]);
+
+  /**
+   * The library's list — §11.9. The shipped templates, the business's own
+   * saved ones and the empty page, all as entries with a real picture. The
+   * grid, the search and the chips are TemplateLibrary's; the adapter only
+   * says what a proposal template is.
+   */
+  const libraryOpts = useMemo(() => ({
+    clauses,
+    accent: identity.accent || kit.colours.primary,
+    headingFont: kit.fonts.heading,
+    bodyFont: kit.fonts.body,
+    business: {
+      name: identity.name || "Your business",
+      tagline: identity.website || "",
+      logoUrl: identity.logoUrl || kit.logo_url,
+      contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
+    },
+  }), [clauses, identity, kit]);
+
+  const libraryEntries = useMemo(() => [
+    ...proposalLibrary(libraryOpts),
+    ...savedTemplateEntries(
+      savedTemplates.map((t) => ({ id: t.id, name: t.name, description: t.description, document: t.document })),
+      (row) => openSavedDoc(savedTemplates.find((x) => x.id === row.id) || row),
+      libraryOpts,
+    ),
+  ], [libraryOpts, savedTemplates, openSavedDoc]);
+
+  /** One id back from the library: a shipped key, a saved row, or the empty page. */
+  const startFrom = useCallback((id: string) => {
+    if (id === BLANK_TEMPLATE_ID) {
+      setDoc(applyBrandDefaults(emptyDocument(), brandDefaults(kit)));
+      setResetKey((k) => k + 1);
+      setPicking(false);
+      return;
+    }
+    const savedId = savedIdOf(id);
+    if (savedId) {
+      const row = savedTemplates.find((x) => x.id === savedId);
+      if (row) startFromSaved(row);
+      return;
+    }
+    startFromTemplate(id);
+  }, [kit, savedTemplates, startFromSaved, startFromTemplate]);
 
   /* ── Saving ──────────────────────────────────────────────────────────── */
   const wire = useCallback(() => toWire(doc, {
@@ -470,13 +522,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   /* ── The starting-point step ─────────────────────────────────────────── */
   if (picking) {
     return (
-      <StartFrom
-        templates={SHIPPED_TEMPLATES.map((t) => ({ key: t.key, name: t.name, description: t.description }))}
-        saved={savedTemplates}
-        onPickShipped={startFromTemplate}
-        onPickSaved={startFromSaved}
-        onBlank={() => { setDoc(applyBrandDefaults(emptyDocument(), brandDefaults(kit))); setResetKey((k) => k + 1); setPicking(false); }}
+      <TemplateLibrary
+        open
         onClose={onClose}
+        product="oliver"
+        eyebrow="OLIVER · Document builder"
+        title="Start your document"
+        subtitle="Every one of these opens in your colours with your details already on it. Pick the one closest to the job, change anything, and save it as your own."
+        entries={libraryEntries}
+        onPick={startFrom}
       />
     );
   }
@@ -1145,56 +1199,6 @@ function AskArgusModal({ api, context, onClose, onAccept }: {
         <div style={{ fontSize: 10, color: "#94A3B8" }}>
           ARGUS returns sections, never finished markup, so everything it writes stays editable on the page.
         </div>
-      </div>
-    </IadmModal>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════════════════
-   "Start from" — never a blank page (§7)
-   ══════════════════════════════════════════════════════════════════════════ */
-
-function StartFrom({ templates, saved, onPickShipped, onPickSaved, onBlank, onClose }: {
-  templates: Array<{ key: string; name: string; description: string }>;
-  saved: Array<{ id: string; name: string; description?: string | null; document?: any; body?: any }>;
-  onPickShipped: (key: string) => void;
-  onPickSaved: (t: any) => void;
-  onBlank: () => void;
-  onClose: () => void;
-}) {
-  return (
-    <IadmModal open onClose={onClose} product="oliver" eyebrow="OLIVER · Document builder"
-      title="Start your document" size="info"
-      subtitle="Templates are a starting point — open one, change anything, save it as your own."
-      footer={<button type="button" style={ghostDark} onClick={onClose} title="Close">Cancel</button>}>
-      <div style={{ padding: 20, display: "grid", gap: 14 }}>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0,1fr))", gap: 12 }}>
-          {templates.map((t) => (
-            <button key={t.key} type="button" onClick={() => onPickShipped(t.key)} title={`${t.name} — ${t.description}`}
-              style={{ textAlign: "left", border: "1px solid #E2E8F0", borderRadius: 10, padding: 14, background: "#fff", cursor: "pointer" }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>{t.name}</div>
-              <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 4, lineHeight: 1.4 }}>{t.description}</div>
-            </button>
-          ))}
-        </div>
-        {saved.length > 0 && (
-          <div>
-            <div style={LBL}>Your saved templates</div>
-            <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
-              {saved.map((t) => (
-                <button key={t.id} type="button" onClick={() => onPickSaved(t)} title={`Open “${t.name}”`}
-                  style={{ textAlign: "left", border: "1px solid #E2E8F0", borderRadius: 8, padding: 10, background: "#fff", cursor: "pointer" }}>
-                  <span style={{ fontSize: 12, fontWeight: 600 }}>{t.name}</span>
-                  {t.description && <span style={{ fontSize: 11, color: "#5A7A8A" }}> — {t.description}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        <button type="button" onClick={onBlank} style={{ ...miniBtn, justifySelf: "start" }}
-          title="Start with nothing on the page and add sections yourself">
-          <X size={11} /> Start from an empty page instead
-        </button>
       </div>
     </IadmModal>
   );

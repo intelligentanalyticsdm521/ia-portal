@@ -8,7 +8,8 @@ import type { ArionSitePage } from '../../../lib/arionApi';
 import type { FieldContext } from '../../components/SectionFieldInputs';
 import { splitPages } from '../../utils/siteBuilderCopy';
 import { WebsiteBuilder, type WebsiteBuilderApi } from '../../../builder/adapters/website/WebsiteBuilder';
-import { SITE_PAGE_TEMPLATES } from '../../../builder/adapters/website/siteTemplates';
+import { SITE_PAGE_TEMPLATES, siteLibrary } from '../../../builder/adapters/website/siteTemplates';
+import { TemplateLibrary } from '../../../builder/TemplateLibrary';
 
 /**
  * ARION → Website → Pages
@@ -120,6 +121,10 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   // a list of ARION section KINDS — arion-api fills each one from the
   // business's own details, so no template ever carries somebody else's words.
   const [template, setTemplate] = useState('home');
+  // §11.9 — the one template library, opened from 'Browse templates'.
+  const [browsing, setBrowsing] = useState(false);
+  const pageLibrary = useMemo(() => siteLibrary(), []);
+  const chosenTemplate = SITE_PAGE_TEMPLATES.find((t) => t.key === template);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [askFor, setAskFor] = useState<ArionSitePage | null>(null);
@@ -336,34 +341,42 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
                 border: '1px solid var(--border)', minHeight: 44, boxSizing: 'border-box',
               }}
             />
+            {/* §11.9 / D-146 — the grid of text cards that used to sit here is
+                gone. One library, with a picture of every page, search and
+                categories, shared with the proposal and email builders. */}
             {newKind === 'page' && (
               <div style={{ margin: '12px 0' }}>
                 <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Start from…</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: 8 }}>
-                  {SITE_PAGE_TEMPLATES.map((t) => (
-                    <button
-                      key={t.key}
-                      type="button"
-                      title={`${t.name} — ${t.description}`}
-                      onClick={() => setTemplate(t.key)}
-                      style={{
-                        textAlign: 'left', borderRadius: 8, padding: 10, cursor: 'pointer',
-                        minHeight: 44, background: 'var(--surface, #fff)',
-                        border: `1px solid ${template === t.key ? '#0C4A60' : 'var(--border)'}`,
-                        boxShadow: template === t.key ? '0 0 0 1px #0C4A60' : 'none',
-                      }}
-                    >
-                      <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>
-                        {t.description}
-                      </div>
-                      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4 }}>
-                        {t.kinds.length} section{t.kinds.length === 1 ? '' : 's'}
-                      </div>
-                    </button>
-                  ))}
+                <div style={{
+                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+                  border: '1px solid var(--border)', borderRadius: 8, padding: 10,
+                  background: 'var(--surface, #fff)',
+                }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{chosenTemplate?.name || 'Choose a template'}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>
+                      {chosenTemplate
+                        ? `${chosenTemplate.purpose} · ${chosenTemplate.kinds.length} section${chosenTemplate.kinds.length === 1 ? '' : 's'} · ${chosenTemplate.bestFor}`
+                        : 'Every template opens filled in from your own business details.'}
+                    </div>
+                  </div>
+                  <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setBrowsing(true)}>
+                    Browse templates
+                  </button>
                 </div>
               </div>
+            )}
+            {browsing && (
+              <TemplateLibrary
+                open
+                onClose={() => setBrowsing(false)}
+                product="arion"
+                eyebrow="ARION · Website"
+                title="Start your page"
+                subtitle="Every page opens as a draft, filled in from your own business details. Pick the one closest to what this page is for, then change anything in the builder."
+                entries={pageLibrary}
+                onPick={(id) => { setTemplate(id); setBrowsing(false); }}
+              />
             )}
             <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 10px' }}>
               It starts as a draft, filled in from your own business details, so nothing appears on your
