@@ -494,7 +494,12 @@ export const WIDGETS: WidgetDef[] = [
     category: "Information",
     adapters: ["website", "landing", "email"],
     defaults: { links: [] },
-    controls: [{ key: "links", label: "Accounts", type: "list", help: "Left blank, we use the accounts already connected in My Brand." }],
+    // Not "we use the accounts connected in My Brand": those are OAuth
+    // identities (a numeric Facebook page id, an Instagram account id), not
+    // public addresses, and only one of the four can be turned into a working
+    // link. A row of dead links in a client's email to their own customers is
+    // worse than no row, so the author gives the addresses.
+    controls: [{ key: "links", label: "Accounts", type: "list", help: "Paste the address of each account you want people to follow." }],
   },
 
   /* ── Capture ───────────────────────────────────────────────────────── */

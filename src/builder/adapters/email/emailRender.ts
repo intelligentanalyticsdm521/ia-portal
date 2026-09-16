@@ -47,7 +47,7 @@
  * PURE: strings in, string out. No React, no DOM, no fetch.
  */
 import type { BuilderDocument, Section, Widget } from "../../model";
-import { fill, type MergeContext } from "../../merge";
+import { fill, type FillMode, type MergeContext } from "../../merge";
 
 /* ══════════════════════════════════════════════════════════════════════════
    The four rules, as constants
@@ -89,7 +89,12 @@ export interface EmailBusiness {
 }
 
 export interface EmailRenderContext {
-  mode: "view" | "edit";
+  /**
+   * "edit" on the canvas, "view" for a preview of one recipient's copy, and
+   * "send" for the body that is STORED and then mailed — see merge.ts. A body
+   * stored in "view" mode carries the preview contact's name to everybody.
+   */
+  mode: FillMode;
   merge: MergeContext;
   /** Any colour and any font, per Q4; the brand kit only pre-filled these. */
   accent: string;
@@ -241,7 +246,7 @@ export function renderEmailWidget(w: Widget, c: EmailRenderContext): string {
           : "";
     }
   })();
-  if (!body && c.mode === "view") return "";
+  if (!body && c.mode !== "edit") return "";
   if (c.mode !== "edit") return body;
   return `<div data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}"${w.locked ? ` data-locked="1"` : ""}>${body}</div>`;
 }
@@ -441,7 +446,7 @@ function emSocial(p: any, c: EmailRenderContext, align: string): string {
   const links = declared.length ? declared : (c.business.social || []);
   if (!links.length) {
     return c.mode === "edit"
-      ? `<div style="text-align:${align};font-family:${bodyStack(c)};font-size:12px;color:#94A3B8;">Your social accounts appear here once they are connected in My Brand.</div>`
+      ? `<div style="text-align:${align};font-family:${bodyStack(c)};font-size:12px;color:#94A3B8;">Add the address of each account you want people to follow, in the panel on the right.</div>`
       : "";
   }
   const cells = links.slice(0, 8).map((l: any) =>
@@ -504,7 +509,12 @@ function emFooter(p: any, c: EmailRenderContext): string {
   const name = String(p.businessName || c.business.name || "").trim();
   const address = String(p.address || c.business.address || "").trim();
   const small = `font-family:${bodyStack(c)};font-size:12px;line-height:1.6;color:#6B7280;text-align:center;`;
-  const social = p.showSocial === false ? "" : emSocial({ links: [] }, c, "center");
+  // The footer BORROWS the business's accounts; it has no list of its own and
+  // no panel to set one in. So when there are none it says nothing at all —
+  // the "add the address of each account" hint belongs on the social widget,
+  // where there is actually somewhere to type them.
+  const hasSocial = Array.isArray(c.business.social) && c.business.social.length > 0;
+  const social = p.showSocial === false || !hasSocial ? "" : emSocial({ links: [] }, c, "center");
   const note = p.note || c.mode === "edit"
     ? `<div style="${small}margin:0 0 6px 0;"${edit("note", c, "Anything else you want to say here")}>${t(p.note, c)}</div>` : "";
   // The address line reads as a gap the author can fill, never as a silent
@@ -543,7 +553,7 @@ export function hasFooter(doc: BuilderDocument): boolean {
  * the templates use it that way and the pane says so.
  */
 export function renderEmailSection(s: Section, c: EmailRenderContext): string {
-  if (s.visibility !== "customer" && c.mode === "view") return "";
+  if (s.visibility !== "customer" && c.mode !== "edit") return "";
 
   const pad = Math.max(0, Number(s.padding) || 0);
   const bg = s.background ? colour(s.background, "") : "";
@@ -608,7 +618,9 @@ export function renderEmailDocument(
       + `<tr><td>${emFooter(makeFooterProps(c.business), { ...c, mode: "view" })}</td></tr></table></td></tr></table>`;
 
   const pre = opts.preheader
-    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${c.page};">${esc(fill(opts.preheader, c.merge, "view"))}</div>`
+    ? `<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:${c.page};">${// The preview line follows the body: tokens survive a "send" render and
+    // are resolved per recipient, filled in a preview.
+    esc(fill(opts.preheader, c.merge, c.mode))}</div>`
     : "";
 
   return `<!doctype html>
@@ -641,7 +653,7 @@ ${pre}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bo
 export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): string {
   const out: string[] = [];
   const line = (s: unknown) => {
-    const v = fill(String(s ?? ""), c.merge, "view").trim();
+    const v = fill(String(s ?? ""), c.merge, c.mode).trim();
     if (v) out.push(v);
   };
   for (const s of doc.sections) {

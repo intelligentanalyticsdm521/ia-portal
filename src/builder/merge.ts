@@ -95,16 +95,32 @@ export function tokensIn(text: string): string[] {
   return out;
 }
 
+/** How much of a merge token survives this render. */
+export type FillMode = "view" | "edit" | "send";
+
 /**
  * Fill a string from the context.
  *
  * @param mode "view"  — a token with no value becomes a blank line the
- *                       customer can read as "to be completed".
+ *                       customer can read as "to be completed". This is a
+ *                       PREVIEW and a finished document.
  *             "edit"  — it stays visible as {{token}} so the author can SEE
  *                       what is unfilled and fix it. Same function, so the two
  *                       cannot disagree about which tokens exist.
+ *             "send"  — EVERY token is left exactly as written, filled or not.
+ *
+ * ── WHY "send" EXISTS ─────────────────────────────────────────────────────
+ * An email body is STORED and then mailed to many people, and the server
+ * resolves the tokens per recipient at send time (renderTemplate.js, the one
+ * shared renderer). A body stored in "view" mode has the PREVIEW contact's name
+ * baked into it — so a newsletter previewed as Dale would greet four hundred
+ * subscribers as Dale. Found on the 2026-09-16 walk, in the received mail.
+ *
+ * A document that is finished when it is written — a proposal — has no send
+ * mode and does not want one; it keeps using "view".
  */
-export function fill(text: string, ctx: MergeContext, mode: "view" | "edit" = "view"): string {
+export function fill(text: string, ctx: MergeContext, mode: FillMode = "view"): string {
+  if (mode === "send") return String(text ?? "");
   return String(text ?? "").replace(TOKEN_RE, (whole, token: string) => {
     const value = lookup(ctx, token);
     if (value != null) return value;

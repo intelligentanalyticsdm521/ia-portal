@@ -373,11 +373,15 @@ export function toEmailWire(
   ctx: EmailRenderContext,
   opts: { subject?: string; preheader?: string } = {},
 ): EmailWire {
-  const view: EmailRenderContext = { ...ctx, mode: "view" };
+  // "send", NOT "view". The tokens stay as written so the SERVER resolves them
+  // per recipient at send time, exactly as it does for every other body. Stored
+  // in "view" mode this body would greet the whole list by the preview
+  // contact's name — which is what the 2026-09-16 walk found in the inbox.
+  const send: EmailRenderContext = { ...ctx, mode: "send" };
   return {
     document_json: doc,
-    content_html: renderEmailDocument(doc, view, opts),
-    content_text: renderEmailText(doc, view),
+    content_html: renderEmailDocument(doc, send, opts),
+    content_text: renderEmailText(doc, send),
   };
 }
 

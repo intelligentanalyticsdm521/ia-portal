@@ -73,7 +73,10 @@ export function SparkNewsletterPage() {
    * the row can never hold a body and a model that disagree — which was the
    * defect behind three different pictures of one proposal.
    */
-  const saveIssue = useCallback(async (wire: EmailWire, meta: { subject: string; title: string; preheader: string }) => {
+  const saveIssue = useCallback(async (
+    wire: EmailWire,
+    meta: { subject: string; title: string; preheader: string },
+  ): Promise<number | null> => {
     const payload = {
       title: meta.title,
       summary: meta.preheader || null,
@@ -85,7 +88,7 @@ export function SparkNewsletterPage() {
     if (editing && editing !== "new") {
       await put(`/api/v1/newsletters/${editing.id}`, payload);
       await load();
-      return;
+      return editing.id;
     }
     const r = await post<{ data: NewsletterIssue }>("/api/v1/newsletters", {
       ...payload,
@@ -97,6 +100,11 @@ export function SparkNewsletterPage() {
     const saved = (r as any)?.data ?? r;
     if (saved?.id) setEditing(saved as NewsletterIssue);
     await load();
+    // RETURNED, not read back off state. setEditing does not take effect until
+    // the next render, so a caller that saved and then looked at `editing` got
+    // the value from BEFORE the save — which on the 2026-09-16 walk meant the
+    // test send mailed the top row of the list instead of the issue on screen.
+    return saved?.id ?? null;
   }, [editing, load, nextIssueNumber, post, put]);
 
   /**
@@ -106,16 +114,23 @@ export function SparkNewsletterPage() {
    * something that was never stored would be a test of nothing. That also means
    * the address that receives it gets byte-for-byte what a subscriber would.
    */
-  const testSend = useCallback(async (wire: EmailWire, meta: { subject: string; title: string; preheader: string }, to: string) => {
-    await saveIssue(wire, meta);
-    const id = editing && editing !== "new" ? editing.id : list[0]?.id;
-    const target = id ?? (await get<{ data: NewsletterIssue[] }>("/api/v1/newsletters")).data?.[0]?.id;
-    if (!target) throw new Error("Save the issue first — there was nothing to send.");
+  const testSend = useCallback(async (
+    wire: EmailWire,
+    meta: { subject: string; title: string; preheader: string },
+    to: string,
+    previewContactId?: string | null,
+  ) => {
+    const target = await saveIssue(wire, meta);
+    if (!target) throw new Error("The issue did not save, so there was nothing to send.");
     const r = await post<{ data?: { message?: string } }>(`/api/v1/newsletters/${target}/test-send`, {
-      to, subject: meta.subject,
+      to,
+      subject: meta.subject,
+      // WHOSE details the test should fill in. Without it the tester receives
+      // {{first name}} and learns nothing about whether the merge tags work.
+      preview_contact_id: previewContactId || null,
     });
     return (r as any)?.data?.message || `Sent to ${to}. It went out exactly as a real send would.`;
-  }, [editing, get, list, post, saveIssue]);
+  }, [post, saveIssue]);
 
   async function publish(id: number) {
     setPublishing(id); setFlash(null);

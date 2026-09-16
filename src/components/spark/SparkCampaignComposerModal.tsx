@@ -349,6 +349,10 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
           setContentHtml(c.content_html || "");
           setContentText(c.content_text || "");
           setContentSms(c.content_sms || "");
+          // Migration 184. A campaign whose body was BUILT opens showing the
+          // designed version rather than dropping it into a rich-text box that
+          // would flatten it on the first keystroke.
+          setDocumentJson((c as { document_json?: unknown }).document_json || null);
           setListId(c.recipient_list_id ?? "");
           setSenderId(c.sender_address_id ?? "");
           setSignatureId(c.signature_id ?? "");
@@ -424,6 +428,10 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
       payload.signature_id = signatureId === "" ? null : signatureId;
       payload.content_html = contentHtml || null;
       payload.content_text = contentText || null;
+      // The MODEL, so re-opening this campaign opens the builder on what was
+      // built rather than on the rendered HTML (migration 184). Null for a body
+      // typed straight into the composer, which stays a supported way to send.
+      payload.document_json = documentJson || null;
     } else {
       payload.content_sms = contentSms || null;
     }
@@ -1021,27 +1029,81 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                     </div>
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase font-semibold text-slate-500 mb-1">Body</label>
-                    <SparkBodyEditor
-                      value={contentHtml}
-                      onChange={(html, text) => {
-                        setContentHtml(html);
-                        setContentText(text);
-                      }}
-                      placeholder={"Hi {{first name}}, ..."}
-                      onInsertCTA={() => {
-                        setCtaValue({
-                          type: "button",
-                          label: "",
-                          url: "",
-                          align: "center",
-                          width: "fit",
-                          borderRadius: 6,
-                        });
-                        setCtaOpen(true);
-                      }}
-                    />
-                    <MergeTagHint buttonLabel="Merge tag" mentionCta />
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <label className="block text-[10px] uppercase font-semibold text-slate-500">Body</label>
+                      {/* §7's ONE button. It opens the newsletter's canvas on
+                          this campaign, pre-filled with what is already typed. */}
+                      <button
+                        type="button"
+                        onClick={() => setBuilderOpen(true)}
+                        title="Open the same page builder the Newsletter Studio uses, pre-filled with what you have written. Pictures, buttons, columns, articles and products — and it comes back here as the campaign body."
+                        data-tour="campaign-design-in-builder"
+                        className="inline-flex items-center gap-1.5 rounded border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:border-[#EF6C33] hover:text-[#EF6C33]"
+                      >
+                        <LayoutTemplate className="h-3 w-3" />
+                        {documentJson ? "Edit in the builder" : "Design this in the builder"}
+                      </button>
+                    </div>
+
+                    {/* ── A BODY BUILT IN THE BUILDER IS NOT EDITED HERE ─────
+                        The rich-text box is TipTap, whose schema has no table
+                        node. A builder body is nothing but tables, so the first
+                        keystroke in that box would silently flatten the whole
+                        email to paragraphs — losing every column, every card
+                        and every button, with nothing on screen to say so.
+                        So it becomes a read-only preview with one way back in,
+                        and one way out. Found on the 2026-09-16 walk. */}
+                    {documentJson ? (
+                      <div className="rounded border border-slate-300 bg-white">
+                        <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50 px-2.5 py-1.5">
+                          <span className="text-[11px] font-semibold text-slate-600">
+                            Built in the builder — this is what will be sent
+                          </span>
+                          <button
+                            type="button"
+                            title="Throw away the designed version and go back to typing the body here. The design is not kept."
+                            className="text-[11px] font-semibold text-slate-500 underline hover:text-rose-600"
+                            onClick={() => {
+                              if (!window.confirm("Go back to a plain typed body? The design you built is not kept.")) return;
+                              setDocumentJson(null);
+                              setContentHtml("");
+                              setContentText("");
+                            }}
+                          >
+                            Start over as plain text
+                          </button>
+                        </div>
+                        <iframe
+                          title="What this campaign will look like"
+                          srcDoc={contentHtml}
+                          sandbox=""
+                          className="h-[320px] w-full rounded-b bg-white"
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        <SparkBodyEditor
+                          value={contentHtml}
+                          onChange={(html, text) => {
+                            setContentHtml(html);
+                            setContentText(text);
+                          }}
+                          placeholder={"Hi {{first name}}, ..."}
+                          onInsertCTA={() => {
+                            setCtaValue({
+                              type: "button",
+                              label: "",
+                              url: "",
+                              align: "center",
+                              width: "fit",
+                              borderRadius: 6,
+                            });
+                            setCtaOpen(true);
+                          }}
+                        />
+                        <MergeTagHint buttonLabel="Merge tag" mentionCta />
+                      </>
+                    )}
                   </div>
                 </>
               )}

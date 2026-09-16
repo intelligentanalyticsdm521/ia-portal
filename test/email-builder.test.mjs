@@ -636,11 +636,35 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
 describe("a save writes the model and the rendered body together", () => {
   test("one render produces both, so a row can never disagree with itself", () => {
     const doc = ensureFooter(emailTemplateByKey("announcement").build(BUSINESS, "#0C4A60"), BUSINESS);
-    const wire = toEmailWire(doc, view(doc), { subject: "Hours are changing", preheader: "From Monday." });
+    const opts = { subject: "Hours are changing", preheader: "From Monday." };
+    const wire = toEmailWire(doc, view(doc), opts);
     assert.equal(wire.document_json, doc);
-    assert.equal(wire.content_html, renderEmailDocument(doc, view(doc), { subject: "Hours are changing", preheader: "From Monday." }));
+    // "send", not "view" — see the next test for why.
+    assert.equal(wire.content_html, renderEmailDocument(doc, view(doc, { mode: "send" }), opts));
     assert.ok(wire.content_text.length > 0, "there is no plain-text half");
     assertEmailSafe(wire.content_html);
+  });
+
+  test("the STORED body keeps its tokens, so the list is not all greeted as one person", () => {
+    // THE 2026-09-16 WALK DEFECT, in a test. The body is stored once and mailed
+    // to many; the server resolves the tokens per recipient. Rendered in "view"
+    // mode, the PREVIEW contact's name is baked in and four hundred subscribers
+    // are greeted as Dale — which is what came out of the inbox on the walk.
+    const doc = emailDoc([makeWidget("personal_note", { greeting: "Hi {{first name}},", text: "" })]);
+    const wire = toEmailWire(doc, view(doc, { merge: { "first name": "Dana" } }), { subject: "Hi {{first name}}" });
+    assert.ok(wire.content_html.includes("{{first name}}"), "the token was resolved into the stored body");
+    assert.ok(!wire.content_html.includes("Dana"), "the preview contact's name was baked into the send");
+    assert.ok(wire.content_text.includes("{{first name}}"));
+    // And the PREVIEW still shows the real name, or the author is building blind.
+    const preview = renderEmailSection(doc.sections[0], view(doc, { merge: { "first name": "Dana" } }));
+    assert.ok(preview.includes("Hi Dana,"));
+  });
+
+  test("a token with no value still never reaches a customer in a VIEW render", () => {
+    const doc = emailDoc([makeWidget("paragraph", { text: "{{nothing}}" })]);
+    assert.ok(!renderEmailSection(doc.sections[0], view(doc, { merge: {} })).includes("{{"));
+    // …but a SEND render hands it to the server untouched, which is the point.
+    assert.ok(renderEmailSection(doc.sections[0], view(doc, { mode: "send", merge: {} })).includes("{{nothing}}"));
   });
 
   test("the model it writes opens again unchanged", () => {

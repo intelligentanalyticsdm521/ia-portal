@@ -45,6 +45,12 @@ import {
   openEmailDocument, toEmailWire, articlesFromPosts,
   type EmailRowLike, type EmailWire, type WebsitePost,
 } from "./emailDoc";
+// THE catalogue readers, the ones the proposal builder already uses. A second
+// reading of "what does this cost and how is it billed" is how a price ends up
+// saying one thing on a proposal and another in an email.
+import {
+  buildPick, type CatalogOffering, type CatalogPrice,
+} from "../../../components/oliver/ProposalCatalogPicker";
 
 /* ══════════════════════════════════════════════════════════════════════════
    What the adapter is handed
@@ -76,10 +82,22 @@ export interface EmailBuilderProps {
   titlePlaceholder?: string;
   initialSubject?: string;
   initialPreheader?: string;
-  /** Written by whoever owns the row. Given the model AND the rendered body. */
-  onSave: (wire: EmailWire, meta: EmailSaveResult) => Promise<void>;
+  /**
+   * Written by whoever owns the row. Given the model AND the rendered body.
+   *
+   * The return value is ignored here — an owner that has something useful to
+   * hand back (the id of the row it just created) is free to, and its own
+   * test-send path is where that matters.
+   */
+  onSave: (wire: EmailWire, meta: EmailSaveResult) => Promise<unknown>;
   /** Present when this surface can send a test. Answers a sentence to show. */
-  onTestSend?: (wire: EmailWire, meta: EmailSaveResult, toAddress: string) => Promise<string>;
+  onTestSend?: (
+    wire: EmailWire,
+    meta: EmailSaveResult,
+    toAddress: string,
+    /** Whose details the test should fill in — the contact being previewed. */
+    previewContactId: string | null,
+  ) => Promise<string>;
   /** Extra buttons in the header — "Publish to site", "Create send". */
   extraActions?: ReactNode;
   /** The word for the Save button. */
@@ -89,11 +107,6 @@ export interface EmailBuilderProps {
 interface ContactRow {
   id?: number; contact_id?: string;
   first_name?: string; last_name?: string; email?: string; company?: string;
-}
-
-interface Offering {
-  offering_id?: string; id?: string; name: string; description?: string;
-  prices?: Array<{ price_id?: string; unit_amount?: number; amount?: number; cadence?: string | null; interval?: string | null }>;
 }
 
 const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? r?.items ?? []);
@@ -120,7 +133,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
   const [identity, setIdentity] = useState<EmailBusiness>({ name: "" });
 
   /* ── The material the widgets pull from ────────────────────────────────── */
-  const [offerings, setOfferings] = useState<Offering[]>([]);
+  const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
   const [posts, setPosts] = useState<WebsitePost[] | null>(null);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
@@ -147,7 +160,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
       .then((r) => setContacts(rows<ContactRow>(r).filter((c) => c.email)))
       .catch(() => setContacts([]));
     p.catalogApi?.get<any>("/catalog/offerings?include_prices=1")
-      .then((r) => setOfferings(rows<Offering>(r)))
+      .then((r) => setOfferings(rows<CatalogOffering>(r)))
       .catch(() => setOfferings([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.open]);
@@ -273,7 +286,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
     if (!to) { setErr("Type the address to send the test to."); return; }
     if (!subject.trim()) { setErr("A test send needs a subject line."); return; }
     setBusy(true); setErr(null); setSaid(null);
-    try { setSaid(await p.onTestSend(wire(), meta(), to)); }
+    try { setSaid(await p.onTestSend(wire(), meta(), to, previewContact ? String(previewContact.id ?? previewContact.contact_id) : null)); }
     catch (e) { setErr(`Could not send the test: ${apiErrorMessage(e)}`); }
     finally { setBusy(false); }
   }
@@ -635,7 +648,7 @@ function WidgetExtras({
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
-  offerings: Offering[];
+  offerings: CatalogOffering[];
   posts: WebsitePost[] | null; postsError: string | null; onLoadPosts: () => Promise<void>;
   identity: EmailBusiness;
 }) {
@@ -835,7 +848,7 @@ function FromTheWebsite({ items, posts, error, onLoad, onUse }: {
 }
 
 function FromTheCatalogue({ offerings, items, onUse }: {
-  offerings: Offering[]; items: any[];
+  offerings: CatalogOffering[]; items: any[];
   onUse: (item: Record<string, unknown>) => void;
 }) {
   if (!offerings.length) {
@@ -854,19 +867,25 @@ function FromTheCatalogue({ offerings, items, onUse }: {
       <div style={panelTitle}>From Products &amp; Services</div>
       <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
         {offerings.slice(0, 40).map((o) => {
-          const price = o.prices?.[0];
-          const money = price ? formatMoney(price.unit_amount ?? price.amount) : "";
-          const cadence = price ? String(price.cadence || price.interval || "") : "";
+          // buildPick, the SAME reader the proposal builder uses. It knows that
+          // `unit_amount` is DOLLARS (not cents), that a price's own label is
+          // the distinguishing detail between tiers of one service, and what
+          // the catalogue's word for the billing basis is. A second reading of
+          // those three columns is how a price says one thing on a proposal and
+          // another in an email.
+          const price = pickDefaultPrice(o);
+          const { parts } = buildPick(o, price);
+          const money = formatMoney(parts.unit_price);
+          const cadence = parts.cadence || (price?.label ? String(price.label) : "");
           return (
-            <button key={String(o.offering_id || o.id || o.name)} type="button"
-              title={`Put “${o.name}” on the page${money ? ` at ${money}${cadence ? ` ${cadence}` : ""}` : ""}`}
+            <button key={String(o.offering_id || o.name)} type="button"
+              title={`Put “${parts.name}” on the page${money ? ` at ${money}${cadence ? ` ${cadence}` : ""}` : ""}`}
               onClick={() => onUse({
-                name: o.name,
-                blurb: String(o.description || "").slice(0, 160),
+                name: parts.name,
+                blurb: String(parts.description || "").slice(0, 160),
                 price: money,
-                // The catalogue's OWN word for how it is billed — per push, per
-                // application, seasonal. A price with no basis beside it is the
-                // thing a customer reads wrong.
+                // The catalogue's OWN word for how it is billed. A price with no
+                // basis beside it is the thing a customer reads wrong.
                 cadence,
                 image: "", alt: "", url: "", ctaLabel: "",
               })}
@@ -875,7 +894,7 @@ function FromTheCatalogue({ offerings, items, onUse }: {
                 border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer",
                 display: "flex", justifyContent: "space-between", gap: 8,
               }}>
-              <span style={{ fontWeight: 600 }}>{o.name}</span>
+              <span style={{ fontWeight: 600 }}>{parts.name}</span>
               <span style={{ color: "#5A7A8A", whiteSpace: "nowrap" }}>
                 {money}{cadence ? <span style={{ color: "#94A3B8" }}> {cadence}</span> : null}
               </span>
@@ -891,7 +910,19 @@ function FromTheCatalogue({ offerings, items, onUse }: {
   );
 }
 
-/** Dollars, from whichever of the catalogue's two shapes carried the number. */
+/**
+ * The price to show, of however many a service carries.
+ *
+ * The one the business marked default, else the first. Never a made-up
+ * "cheapest" — an email that quietly advertises a tier the business did not
+ * choose is worse than one that quotes nothing.
+ */
+function pickDefaultPrice(o: CatalogOffering): CatalogPrice | null {
+  const list = Array.isArray(o.prices) ? o.prices : [];
+  return list.find((x) => x.is_default) || list[0] || null;
+}
+
+/** Dollars. The catalogue stores unit_amount in DOLLARS, not cents. */
 function formatMoney(v: unknown): string {
   const n = Number(v);
   if (!Number.isFinite(n) || n <= 0) return "";

@@ -251,7 +251,7 @@ function lpButton(p: any, c: LandingContext): string {
 function lpSocial(p: any, c: LandingContext): string {
   const links: any[] = Array.isArray(p.links) ? p.links.filter((l: any) => l?.url) : [];
   if (!links.length) return c.mode === "edit"
-    ? `<p class="lp-small">Your social accounts appear here once they are connected in My Brand.</p>` : "";
+    ? `<p class="lp-small">Add the address of each account you want people to follow, in the panel on the right.</p>` : "";
   return `<p class="lp-social">${links.map((l) =>
     `<a href="${esc(l.url)}" rel="noopener noreferrer">${esc(l.label || "Follow")}</a>`).join("")}</p>`;
 }
