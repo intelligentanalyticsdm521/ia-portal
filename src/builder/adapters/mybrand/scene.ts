@@ -335,6 +335,25 @@ export const SIZE_PRESETS = [
   { key: "email_header",  label: "Email header",     w: 1200, h: 400 },
 ] as const;
 
+export type SizePresetKey = (typeof SIZE_PRESETS)[number]["key"];
+
+/**
+ * The two presets that are a PHYSICAL piece of paper rather than a screen, and
+ * how big that piece of paper is. ONE place, read by the PDF export (`pdf.ts`)
+ * so a printed flyer comes out Letter-sized.
+ *
+ * Everything else is a screen: 96 CSS pixels to the inch, which is where a
+ * 1080-pixel square's 11.25 in comes from. These two are not — 1275×1650 is
+ * 8.5×11 in at 150 dpi and 1050×600 is 3.5×2 in at 300 dpi, which is exactly
+ * why those numbers were chosen. Keyed by the preset KEY, never by the pixels,
+ * so the two facts cannot drift apart; test/mybrand-studio.test.mjs checks that
+ * the inches and the pixels still describe the same rectangle.
+ */
+export const PRINT_INCHES: Partial<Record<SizePresetKey, { inches: readonly [number, number]; label: string }>> = {
+  flyer:         { inches: [8.5, 11], label: "Letter" },
+  business_card: { inches: [3.5, 2],  label: "Business card" },
+};
+
 const EDGE_ZONE = 0.18; // a layer whose center sits in the outer 18% is edge-anchored
 
 export function smartResize(doc: CanvasDoc, newW: number, newH: number): CanvasDoc {

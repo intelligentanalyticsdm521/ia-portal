@@ -33,7 +33,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Download, FileImage, Layers, Loader2, Palette, Save, Scaling,
+  AlertTriangle, Download, FileImage, FileText, Layers, Loader2, Palette, Save, Scaling,
   Send, Sparkles, Upload, BarChart3, Image as ImageIcon, LayoutTemplate,
 } from "lucide-react";
 import { BuilderFrame } from "../../BuilderFrame";
@@ -61,6 +61,7 @@ import {
   type CanvasDoc, type DesignDto, type ExportResult, type ImageLayer, type Layer,
   type TemplateDto,
 } from "./scene";
+import { imagePdfFromPngDataUrl, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
 // model stays importable by `node --test` (scripts/test-ts-loader: only pure
@@ -492,6 +493,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
   }, [designName, doc, loadTemplates, p, post, templateName]);
 
   /* ── Export ──────────────────────────────────────────────────────────── */
+  /** How big the PDF's one page is — said out loud on the menu, not implied. */
+  const pageSize = useMemo(() => pdfPageSize(doc), [doc]);
+
   const download = useCallback((href: string, filename: string) => {
     const a = document.createElement("a");
     a.href = href;
@@ -501,7 +505,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     a.remove();
   }, []);
 
-  const exportLocal = useCallback((format: "png" | "jpg" | "svg") => {
+  const exportLocal = useCallback(async (format: "png" | "jpg" | "svg" | "pdf") => {
     setExporting(format); setExportError(null);
     try {
       if (format === "svg") {
@@ -509,6 +513,17 @@ export function StudioBuilder(p: StudioBuilderProps) {
         if (!svg) throw new Error("the design could not be drawn");
         const href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         download(href, exportFilename(designName, "svg"));
+      } else if (format === "pdf") {
+        // One page, the artboard's real size, the SAME picture the PNG download
+        // gets — see pdf.ts. No library, no server round trip.
+        const url = canvasRef.current?.toDataURL("png");
+        if (!url) throw new Error("the design could not be drawn");
+        const bytes = await imagePdfFromPngDataUrl(url, pageSize, designName);
+        const href = URL.createObjectURL(new Blob([bytes], { type: PDF_MIME }));
+        download(href, exportFilename(designName, "pdf"));
+        // Freed on a timer, not immediately: revoking before the anchor's click
+        // has been serviced cancels the download in Chrome.
+        setTimeout(() => URL.revokeObjectURL(href), 60_000);
       } else {
         const url = canvasRef.current?.toDataURL(format);
         if (!url) throw new Error("the design could not be drawn");
@@ -520,7 +535,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       setExporting(null);
       setExportOpen(false);
     }
-  }, [designName, download]);
+  }, [designName, download, pageSize]);
 
   /** Render server-side into the Media Library, and go and look at it. */
   const exportToLibrary = useCallback(async () => {
@@ -862,13 +877,16 @@ export function StudioBuilder(p: StudioBuilderProps) {
           <div className="grid grid-cols-1 gap-3 p-5">
             <ExportOption icon={<Download className="h-5 w-5" />} title="Download PNG"
               blurb="Full quality, saved to this computer. Keeps a see-through background."
-              disabled={!!exporting} onClick={() => exportLocal("png")} />
+              disabled={!!exporting} onClick={() => void exportLocal("png")} />
             <ExportOption icon={<Download className="h-5 w-5" />} title="Download JPG"
               blurb="Smaller file, no transparency — fine for a photo-heavy post."
-              disabled={!!exporting} onClick={() => exportLocal("jpg")} />
+              disabled={!!exporting} onClick={() => void exportLocal("jpg")} />
             <ExportOption icon={<Download className="h-5 w-5" />} title="Download SVG"
               blurb="Sharp at any size — what a sign maker or a printer asks for."
-              disabled={!!exporting} onClick={() => exportLocal("svg")} />
+              disabled={!!exporting} onClick={() => void exportLocal("svg")} />
+            <ExportOption icon={<FileText className="h-5 w-5" />} title="Download PDF"
+              blurb={`One page at its real size — ${pageSize.label}, ${pageSize.dpi} dpi. What a print shop asks for.`}
+              disabled={!!exporting} onClick={() => void exportLocal("pdf")} />
             <ExportOption icon={<FileImage className="h-5 w-5" />} title="Save to your Media Library"
               blurb="We render it on our side and keep it with your other pictures."
               disabled={!!exporting} onClick={() => void exportToLibrary()} accent />

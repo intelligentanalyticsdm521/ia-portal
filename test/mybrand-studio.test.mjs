@@ -16,12 +16,16 @@
 //   3. AN OVERRIDE NEVER WRITES BACK — nothing under adapters/mybrand or the My
 //      Brand pages calls the kit's save().
 //        mutation: add `save({ colours: { primary: c } })` to the inspector → red.
-//   4. THE EXPORT PATH — one filename rule, three formats, and the canvas
+//   4. THE EXPORT PATH — one filename rule, four formats, and the canvas
 //      renders at 1:1 whatever the zoom is.
 //        mutation: drop `c.setZoom(1)` from PixelCanvas's export → red.
+//   5. THE PDF IS A REAL PDF — the page is the artboard's true size in points,
+//      the xref points at the objects, and the image inflates back byte for byte.
+//        mutation: divide by 72 instead of 96 in pdfPageSize → red.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
+import zlib from "node:zlib";
 import path from "node:path";
 import { widgetsFor, widgetTooltip, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import {
@@ -31,8 +35,9 @@ import { insertWidget, brandSwatches } from "../src/builder/adapters/mybrand/ins
 import {
   addLayers, alignLayer, brandSync, duplicateLayer, emptyCanvas, exportFilename,
   fixTextContrast, fontOptions, patchLayer, removeLayer, reorderLayer, smartResize,
-  STUDIO_FONTS, familyOf,
+  STUDIO_FONTS, familyOf, SIZE_PRESETS, PRINT_INCHES,
 } from "../src/builder/adapters/mybrand/scene.ts";
+import { buildImagePdf, pdfPageSize, PDF_MIME } from "../src/builder/adapters/mybrand/pdf.ts";
 import { initHistory, push, undo, redo, canUndo, canRedo } from "../src/builder/history.ts";
 
 const SRC = path.join(process.cwd(), "src");
@@ -442,6 +447,161 @@ describe("the export path", () => {
   test("saving as a template posts to the route LUMEN now has", () => {
     assert.match(studio, /post<TemplateDto>\("\/api\/v1\/my-brand\/templates",/);
     assert.match(studio, /await loadTemplates\(\)/, "a saved template must show up in the gallery without a reload");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   5. The PDF export — §14.6's one gap, closed
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("the PDF export", () => {
+  const studio = read("builder/adapters/mybrand/StudioBuilder.tsx");
+  const pdfSrc = read("builder/adapters/mybrand/pdf.ts");
+
+  /** A tiny picture whose bytes are recognisable on the way back out. */
+  function swatch(w, h) {
+    const rgb = new Uint8Array(w * h * 3);
+    for (let i = 0; i < rgb.length; i++) rgb[i] = (i * 7) % 251;
+    return rgb;
+  }
+
+  const FIXED = new Date(Date.UTC(2026, 8, 16, 12, 0, 0));
+
+  test("an artboard's pixels become a page in POINTS, at 96 dpi", () => {
+    // 1 px = 1/96 in, 1 pt = 1/72 in. An Instagram square is 11.25 in of paper.
+    assert.deepEqual(pdfPageSize({ width: 1080, height: 1080 }), {
+      widthPt: 810, heightPt: 810, dpi: 96, label: "11.25 × 11.25 in",
+    });
+    assert.deepEqual(pdfPageSize({ width: 1200, height: 630 }), {
+      widthPt: 900, heightPt: 472.5, dpi: 96, label: "12.5 × 6.56 in",
+    });
+    // A size nobody preset still gets a real page rather than a default.
+    assert.deepEqual(pdfPageSize({ width: 500, height: 250 }), {
+      widthPt: 375, heightPt: 187.5, dpi: 96, label: "5.21 × 2.6 in",
+    });
+  });
+
+  test("the two presets that are PAPER print at their real paper size", () => {
+    // The defect this exists to stop: a "Flyer (Letter)" coming out of the
+    // studio 13.3 in wide because 1275 px was divided by 96 like a screen.
+    assert.deepEqual(pdfPageSize({ width: 1275, height: 1650 }), {
+      widthPt: 612, heightPt: 792, dpi: 150, label: "8.5 × 11 in (Letter)",
+    });
+    assert.deepEqual(pdfPageSize({ width: 1050, height: 600 }), {
+      widthPt: 252, heightPt: 144, dpi: 300, label: "3.5 × 2 in (Business card)",
+    });
+  });
+
+  test("the inches and the pixels describe the SAME rectangle", () => {
+    // PRINT_INCHES is keyed by preset key, so the two facts live apart. If a
+    // preset's pixels are ever re-cut without its inches, this is what says so.
+    for (const [key, physical] of Object.entries(PRINT_INCHES)) {
+      const preset = SIZE_PRESETS.find((p) => p.key === key);
+      assert.ok(preset, `PRINT_INCHES names ${key}, which is not a size preset`);
+      const [inW, inH] = physical.inches;
+      const dpiW = preset.w / inW;
+      const dpiH = preset.h / inH;
+      assert.equal(dpiW, dpiH, `${key} is ${dpiW} dpi across and ${dpiH} dpi down — one of the two is wrong`);
+      assert.ok(Number.isInteger(dpiW) && dpiW >= 150, `${key} would print at ${dpiW} dpi`);
+    }
+  });
+
+  test("the filename and the type come from the same two rules as PNG", () => {
+    assert.equal(exportFilename("Spring sale!", "pdf"), "Spring_sale.pdf");
+    assert.equal(exportFilename(null, "pdf"), "design.pdf");
+    assert.equal(PDF_MIME, "application/pdf");
+  });
+
+  test("what comes out is a PDF a reader will open", async () => {
+    const rgb = swatch(4, 3);
+    const bytes = await buildImagePdf({
+      rgb, pixelWidth: 4, pixelHeight: 3,
+      pageWidthPt: 612, pageHeightPt: 792, title: "Spring sale", createdAt: FIXED,
+    });
+    const buf = Buffer.from(bytes);
+    const text = buf.toString("latin1");
+
+    assert.equal(text.slice(0, 5), "%PDF-", "a PDF starts with %PDF-");
+    assert.ok(text.trimEnd().endsWith("%%EOF"), "a PDF ends with %%EOF");
+    assert.match(text, /\/MediaBox \[0 0 612 792\]/, "the page is not the size it was asked for");
+    assert.match(text, /\/Type \/Pages \/Kids \[3 0 R\] \/Count 1/, "one page, not two");
+    assert.match(text, /\/Width 4 \/Height 3 \/ColorSpace \/DeviceRGB \/BitsPerComponent 8/);
+    assert.match(text, /612 0 0 792 0 0 cm\n\/Im0 Do/, "the picture must fill the page exactly");
+    assert.match(text, /\/Title \(Spring sale\)/);
+  });
+
+  test("the picture inside the PDF is the picture that went in, byte for byte", async () => {
+    // FlateDecode is zlib, which is what CompressionStream("deflate") makes.
+    // If that ever becomes raw deflate the file opens and the image is missing.
+    const rgb = swatch(8, 5);
+    const bytes = await buildImagePdf({
+      rgb, pixelWidth: 8, pixelHeight: 5, pageWidthPt: 100, pageHeightPt: 62.5, createdAt: FIXED,
+    });
+    const buf = Buffer.from(bytes);
+    const text = buf.toString("latin1");
+
+    const objAt = text.indexOf("4 0 obj");
+    const streamAt = text.indexOf("stream\n", objAt) + "stream\n".length;
+    const length = Number(/\/Length (\d+)/.exec(text.slice(objAt, streamAt))[1]);
+    const packed = buf.subarray(streamAt, streamAt + length);
+
+    assert.deepEqual(new Uint8Array(zlib.inflateSync(packed)), rgb);
+    assert.equal(text.slice(streamAt + length, streamAt + length + 10), "\nendstream");
+  });
+
+  test("the xref really points at the objects", async () => {
+    // A PDF with a wrong xref opens in a browser and fails in a print shop's
+    // RIP, which is the worst possible place to find out.
+    const bytes = await buildImagePdf({
+      rgb: swatch(2, 2), pixelWidth: 2, pixelHeight: 2,
+      pageWidthPt: 144, pageHeightPt: 144, createdAt: FIXED,
+    });
+    const text = Buffer.from(bytes).toString("latin1");
+
+    const startxref = Number(/startxref\n(\d+)/.exec(text)[1]);
+    assert.equal(text.slice(startxref, startxref + 4), "xref", "startxref does not land on the table");
+
+    const offsets = [...text.slice(startxref).matchAll(/(\d{10}) 00000 n /g)].map((m) => Number(m[1]));
+    assert.equal(offsets.length, 6, "six objects, six entries");
+    offsets.forEach((off, i) => {
+      assert.ok(text.startsWith(`${i + 1} 0 obj`, off), `the xref sends a reader to the wrong place for object ${i + 1}`);
+    });
+    assert.match(text, /\/Size 7 \/Root 1 0 R/);
+  });
+
+  test("it refuses to write a file that is not the picture", async () => {
+    // Half a buffer makes a PDF that OPENS, shows a torn image and blames the
+    // printer. Saying no is the whole guard.
+    await assert.rejects(
+      () => buildImagePdf({ rgb: new Uint8Array(10), pixelWidth: 4, pixelHeight: 3, pageWidthPt: 72, pageHeightPt: 72 }),
+      /10 bytes where a 4×3 page needs 36/,
+    );
+    await assert.rejects(
+      () => buildImagePdf({ rgb: new Uint8Array(0), pixelWidth: 0, pixelHeight: 0, pageWidthPt: 72, pageHeightPt: 72 }),
+      /no size to print/,
+    );
+    await assert.rejects(
+      () => buildImagePdf({ rgb: swatch(2, 2), pixelWidth: 2, pixelHeight: 2, pageWidthPt: 0, pageHeightPt: 72 }),
+      /no size/,
+    );
+  });
+
+  test("no new dependency — pdf.ts imports nothing but its neighbour", () => {
+    // §14.6 said a PDF needs a library. It does not: this file is the whole of
+    // it. A future `import PDFDocument from "pdfkit"` in here is caught by this.
+    const imports = [...pdfSrc.matchAll(/from "([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual([...new Set(imports)], ["./scene"]);
+    assert.doesNotMatch(pdfSrc, /\bfetch\(/, "a download must not need the network");
+  });
+
+  test("the PDF goes out through the SAME download helper as the PNG", () => {
+    assert.ok(studio.includes('exportLocal("pdf")'), "the export picker has no PDF");
+    assert.match(studio, /title="Download PDF"/);
+    // One anchor, one place: a second download path is how two formats end up
+    // with two different filename rules.
+    assert.equal((studio.match(/document\.createElement\("a"\)/g) || []).length, 1);
+    assert.match(studio, /download\(href, exportFilename\(designName, "pdf"\)\)/);
+    assert.match(studio, /revokeObjectURL/, "a blob URL that is never freed leaks the whole picture");
   });
 });
 
