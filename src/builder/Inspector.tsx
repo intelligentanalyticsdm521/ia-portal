@@ -26,6 +26,18 @@ export interface InspectorSlots {
   widgetExtras?: (w: Widget, sectionId: string) => ReactNode;
   /** Rendered at the top of the panel — the gold Ask ARGUS button. */
   askArgus?: ReactNode;
+  /**
+   * The DOCUMENT's own settings, shown whatever is selected — including when
+   * nothing is.
+   *
+   * Not every fact about a thing being built belongs to a section or a widget.
+   * A SPARK template has a category, a from address and whether it is active;
+   * none of those is on the page, none of them changes when the selection
+   * does, and a panel that only appeared once a widget happened to be clicked
+   * would be a setting the author has to hunt for. The engine stays ignorant of
+   * what the settings ARE — the adapter renders them.
+   */
+  documentExtras?: ReactNode;
 }
 
 export interface InspectorProps extends InspectorSlots {
@@ -56,11 +68,14 @@ export function Inspector(p: InspectorProps) {
   const { doc, selection } = p;
   if (!selection) {
     return (
-      <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>
-        <div style={L}>Nothing selected</div>
-        <p style={{ marginTop: 8, lineHeight: 1.5 }}>
-          Click a section or anything on the page to change it here. Words are typed straight on the page.
-        </p>
+      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflowY: "auto" }}>
+        {p.documentExtras}
+        <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>
+          <div style={L}>Nothing selected</div>
+          <p style={{ marginTop: 8, lineHeight: 1.5 }}>
+            Click a section or anything on the page to change it here. Words are typed straight on the page.
+          </p>
+        </div>
       </div>
     );
   }
@@ -75,6 +90,7 @@ export function Inspector(p: InspectorProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      {p.documentExtras}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div>
           <div style={L}>Selected</div>

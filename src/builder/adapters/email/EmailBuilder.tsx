@@ -15,14 +15,20 @@
  *
  * ── ONE BUILDER, THREE DOORS ──────────────────────────────────────────────
  * The Newsletter Studio opens it on an issue; the campaign composer's "Design
- * this in the builder" opens it on a campaign; the template editor will open it
- * on a template. Each hands in a row and takes back `{ document_json,
+ * this in the builder" opens it on a campaign; and since 2026-09-16 the SPARK
+ * template library opens it on a template (§13.8's last outstanding door —
+ * `SparkTemplateBuilderModal`, which stores the model in the `blocks_json` the
+ * column has always had). Each hands in a row and takes back `{ document_json,
  * content_html, content_text }`. There is no second email builder, which is
  * §7's whole instruction for campaigns.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Globe, Loader2, Mail, Send, ShoppingBag, Tag, Wand2 } from "lucide-react";
-import { IadmModal, IadmButton } from "../../../components/IadmModal";
+import { IadmModal, IadmButton, PRODUCT_ACCENT } from "../../../components/IadmModal";
+// THE merge-tag control. The campaign composer's subject line, the SMS box and
+// the CTA editor all open this one; a second list of tags in the builder would
+// be a second answer to "what can I personalise".
+import { MergeTagPicker } from "../../../components/spark/MergeTagPicker";
 import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { apiErrorMessage } from "../../../lib/apiErrorMessage";
 import { BuilderShell } from "../../BuilderShell";
@@ -102,6 +108,13 @@ export interface EmailBuilderProps {
   extraActions?: ReactNode;
   /** The word for the Save button. */
   saveLabel?: string;
+  /**
+   * Settings that belong to the THING being built rather than to the email —
+   * a template's category, its from address, whether it is active. Shown at the
+   * top of the right-hand pane whatever is selected. A newsletter and a
+   * campaign have none, and pass none.
+   */
+  documentExtras?: ReactNode;
 }
 
 interface ContactRow {
@@ -388,6 +401,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
           previewName={previewContact ? [previewContact.first_name, previewContact.last_name].filter(Boolean).join(" ") || previewContact.email || "" : null}
         />
       }
+      documentExtras={p.documentExtras}
       widgetExtras={(w, sectionId) => (
         <WidgetExtras
           widget={w}
@@ -533,7 +547,7 @@ function TemplateThumb({ kind }: { kind: string }) {
     case "promo":
       return <div style={wrap}><div style={{ height: 10, width: 34, background: "#0B1C24", borderRadius: 2, margin: "0 auto" }} />
         {bar("80%", 10, "#CBD5E1")}
-        <div style={{ height: 12, width: "45%", background: "#EF6C33", borderRadius: 999, margin: "2px auto" }} />
+        <div style={{ height: 12, width: "45%", background: PRODUCT_ACCENT.spark, borderRadius: 999, margin: "2px auto" }} />
         <div style={{ display: "flex", gap: 5 }}>
           <div style={{ flex: 1, height: 24, border: "1px solid #CBD5E1", borderRadius: 3, background: "#fff" }} />
           <div style={{ flex: 1, height: 24, border: "1px solid #CBD5E1", borderRadius: 3, background: "#fff" }} /></div>
@@ -766,26 +780,75 @@ function WidgetExtras({
     );
   }
 
-  if (widget.kind === "personal_note") {
+  // Every widget that carries WORDS gets the merge-tag picker — the same one
+  // the campaign composer's subject line and the SMS box use, so a business
+  // owner learns one control. The tag is appended to the field rather than
+  // dropped at a caret on purpose: the words themselves are typed on the PAGE
+  // (Canvas.tsx), so there is no caret in this pane to drop it at, and an input
+  // here to give it one would be the raw field list the rebuild exists to
+  // delete. Drag it where you want it on the canvas.
+  const fields = MERGE_TARGETS[widget.kind];
+  if (fields) {
     return (
       <div style={panel}>
-        <div style={panelTitle}>Greet them by name</div>
-        <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-          {[["{{first name}}", "First name"], ["{{full name}}", "Full name"], ["{{company}}", "Company"]].map(([token, label]) => (
-            <button key={token} type="button" style={miniBtn} title={`Put ${label.toLowerCase()} in the greeting`}
-              onClick={() => setAt("greeting", `${String((widget.props as any).greeting || "").replace(/,\s*$/, "")} ${token},`.trim())}>
-              + {label}
-            </button>
+        <div style={panelTitle}>Personalise</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {fields.map((f) => (
+            <TagInsert
+              key={f.key}
+              label={f.label}
+              value={String((widget.props as any)[f.key] ?? "")}
+              onChange={(next) => setAt(f.key, next)}
+            />
           ))}
         </div>
         <div style={{ fontSize: 10, color: "#94A3B8" }}>
-          Each person sees their own. Choose a contact at the top to see it filled in.
+          Each person sees their own details. Choose a contact at the top of the
+          window to see it filled in rather than as {"{{"}a tag{"}}"}.
         </div>
       </div>
     );
   }
 
   return null;
+}
+
+/**
+ * The fields a merge tag can go into, per widget.
+ *
+ * Only the ones that hold a SENTENCE. A button's web address is not one — a
+ * tag in a URL is how a link goes out pointing at `https://{{website}}` and
+ * 404s for four hundred people.
+ */
+const MERGE_TARGETS: Record<string, Array<{ key: string; label: string }>> = {
+  heading: [{ key: "text", label: "Heading" }],
+  paragraph: [{ key: "text", label: "Paragraph" }],
+  personal_note: [
+    { key: "greeting", label: "Greeting" },
+    { key: "text", label: "The note" },
+    { key: "signoff", label: "Sign off" },
+  ],
+  button: [{ key: "label", label: "Button words" }],
+  testimonial: [{ key: "quote", label: "Quote" }],
+};
+
+/** One field's picker. Owns the ref MergeTagPicker asks for. */
+function TagInsert({ label, value, onChange }: {
+  label: string; value: string; onChange: (next: string) => void;
+}) {
+  // Deliberately never attached to an element. MergeTagPicker's own documented
+  // fallback for a ref with nothing behind it is to APPEND the token, which is
+  // the behaviour this pane wants.
+  const noCaret = useRef<HTMLInputElement>(null);
+  return (
+    <MergeTagPicker
+      targetRef={noCaret}
+      value={value}
+      onChange={onChange}
+      label={label}
+      compact
+    />
+  );
 }
 
 function FromTheWebsite({ items, posts, error, onLoad, onUse }: {
@@ -969,7 +1032,9 @@ const ghostBtn: React.CSSProperties = {
 };
 
 const orangeBtn: React.CSSProperties = {
-  ...ghostBtn, background: "#EF6C33", borderColor: "#EF6C33",
+  // SPARK's own orange, from the ONE map that holds it. A second spelling of
+  // it here is how a product accent drifts between two surfaces of one product.
+  ...ghostBtn, background: PRODUCT_ACCENT.spark, borderColor: PRODUCT_ACCENT.spark,
 };
 
 const panel: React.CSSProperties = {

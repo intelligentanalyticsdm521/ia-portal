@@ -280,6 +280,7 @@ export function BuilderShell(p: BuilderShellProps) {
           defaultFontLabel={p.defaultFontLabel}
           askArgus={p.askArgus}
           widgetExtras={p.widgetExtras}
+          documentExtras={p.documentExtras}
           onPatchSection={(id, patch) => apply(patchSection(doc, id, patch))}
           onPatchWidget={patchSelectedWidget}
           onDeleteWidget={() => { if (selection?.kind === "widget") { apply(removeWidget(doc, selection)); select({ kind: "section", sectionId: selection.sectionId }); } }}
