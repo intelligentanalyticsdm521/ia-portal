@@ -3107,6 +3107,9 @@ function DeliverablesTab({
         const panelShape: DeliverableShape = {
           deliverable_id: d.deliverable_id,
           status: d.status,
+          // A document on a task is sent and reviewed through the task.
+          service_request_id: d.service_request_id ?? null,
+          sent_at: d.sent_at ?? null,
           is_payment_trigger: d.is_payment_trigger ?? null,
           payment_amount_cents: d.payment_amount_cents ?? null,
           payment_charge_status: d.payment_charge_status ?? null,

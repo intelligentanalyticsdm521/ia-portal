@@ -90,6 +90,11 @@ interface Deliverable {
   payment_charge_status?: string | null;
   approved_at?: string | null;
   revision_notes?: string | null;
+  /** consulting.deliverable's own column is SINGULAR. */
+  revision_note?: string | null;
+  sent_at?: string | null;
+  /** 1 when the CLIENT uploaded it as markup — shown on its task, not here. */
+  is_client_supplied?: boolean | number | null;
 }
 
 interface ProjectDetail {
@@ -316,15 +321,21 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
     revision_notes?: string | null;
     milestone_id?: number | string | null;
     service_request_id?: string | null;
+    sent_at?: string | null;
+    file_name?: string | null;
   }> = (() => {
     if (!payload) return [];
     if (payload.schema === "consulting") {
       return (payload.deliverables || [])
         .filter((d) => d.is_client_visible === undefined || d.is_client_visible === true || d.is_client_visible === 1)
+        // The client's own markup lives on its task ("your markup"), not in the
+        // list of what we delivered.
+        .filter((d) => !(d.is_client_supplied === true || d.is_client_supplied === 1))
         .map((d) => ({
           id: d.deliverable_id,
           kind: d.kind || "deliverable",
           title: d.title,
+          file_name: d.file_name ?? null,
           description: d.description,
           file_url: d.file_url,
           external_link: d.external_link,
@@ -333,9 +344,13 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
           payment_amount_cents: d.payment_amount_cents ?? null,
           payment_charge_status: d.payment_charge_status ?? null,
           approved_at: d.approved_at,
-          revision_notes: d.revision_notes,
+          revision_notes: d.revision_note ?? d.revision_notes ?? null,
           milestone_id: d.milestone_id ?? null,
-          service_request_id: null,
+          // Was hardcoded null until 2026-09-15, so the panel could never tell a
+          // task's document from a milestone's and approved it through a route
+          // that wrote the wrong table.
+          service_request_id: d.service_request_id ?? null,
+          sent_at: d.sent_at ?? null,
         }));
     }
     return (payload.artifacts || [])
@@ -604,8 +619,27 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
                         <div className="text-sm font-semibold text-slate-900">
                           {a.title}
                         </div>
+                        {a.sent_at && (
+                          <div className="text-[11px] text-slate-400">
+                            Sent {new Date(a.sent_at).toLocaleDateString()}
+                          </div>
+                        )}
                       </div>
-                      {(a.file_url || a.external_link) && (
+                      {payload?.schema === "consulting" && a.file_url ? (
+                        // The container is private, so the file streams through
+                        // the API. A plain link to file_url is refused for want
+                        // of a token — this was an "Open ↗" that never opened.
+                        <button
+                          type="button"
+                          onClick={() => {
+                            download(`/consulting/deliverables/${a.id}/download`, a.file_name || a.title || "document")
+                              .catch((e) => setError((e as Error).message || "Download failed."));
+                          }}
+                          className="text-xs font-semibold text-blue-600 hover:underline whitespace-nowrap"
+                        >
+                          Download
+                        </button>
+                      ) : (a.file_url || a.external_link) ? (
                         <a
                           href={a.file_url || a.external_link || "#"}
                           target="_blank"
@@ -614,7 +648,7 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
                         >
                           Open ↗
                         </a>
-                      )}
+                      ) : null}
                     </div>
                     {a.description && (
                       <p className="text-xs text-slate-600 mb-2 whitespace-pre-wrap">
@@ -631,6 +665,8 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
                       deliverable={{
                         deliverable_id: a.id,
                         status: a.status,
+                        service_request_id: a.service_request_id ?? null,
+                        sent_at: a.sent_at ?? null,
                         is_payment_trigger: a.is_payment_trigger,
                         payment_amount_cents: a.payment_amount_cents,
                         payment_charge_status: a.payment_charge_status,
@@ -675,6 +711,8 @@ export function ClientConsultingProjectModal({ open, projectId, onClose, onChang
                   file_name: d.file_name ?? null,
                   file_url: d.file_url ?? null,
                   status: d.status,
+                  // Without this the "your markup" tag never showed from here.
+                  is_client_supplied: d.is_client_supplied ?? null,
                 }))
             : []
         }

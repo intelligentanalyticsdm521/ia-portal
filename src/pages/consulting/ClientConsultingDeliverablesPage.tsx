@@ -1,376 +1,252 @@
-// ClientConsultingDeliverablesPage — F-Client.Consulting (2026-06-29).
+// ClientConsultingDeliverablesPage — every document we have sent the client.
 //
-// CLIENT-facing flat deliverables list across every project + every service
-// request. Uses the same /consulting-deliverables endpoint the founder
-// surface uses; tenant scoping is handled server-side (see
-// consultingDeliverables.js:46 — `WHERE p.provider_tenant_id = @tid OR
-// p.client_tenant_id = @tid`), so a client tenant naturally sees only
-// their own rows.
+// Brandon, 2026-09-15: "make sure they can always see their deliverables we've
+// sent. I'd recommend a list with a link so they can see the document name and
+// the date sent plus any approvals or anything like that. Revisions, approvals
+// etc."
 //
-// Layout:
-//   1. PENDING REVIEW (top, full cards, action panel inline) — anything
-//      submitted/in_review/awaiting_client_review that the client needs to
-//      act on.
-//   2. APPROVED (collapsed by default, click to expand) — last 365 days
-//      only, "Show older" toggle reveals everything older than 1 year.
-//   3. Archived stays hidden behind a separate explicit toggle.
-//
-// Per Brandon's brief: "1-year archive cutoff: only show approved
-// deliverables where approved_at >= now - 365d; 'Show older' toggle".
-
+// The page before this was a library of APPROVED work only. On Rolling In It
+// every document was still 'pending' — nothing moved a document when its
+// request was approved — so a client who had approved two documents read "No
+// approved deliverables yet." The API now returns every document that was sent,
+// with its state and its history (oliver-api routes/consultingDeliverables.js),
+// and this page is a plain list of it: what it is, when it was sent, where it
+// stands, and what happened to it.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, Download, FileText, Inbox } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { Inbox, ChevronDown, ChevronRight } from "lucide-react";
+import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { DeliverableActionPanel } from "../../components/consulting/DeliverableActionPanel";
 
-interface CrossDeliverable {
-  deliverable_kind: "project_artifact" | "request_deliverable";
-  deliverable_id: string;
-  project_id: string | null;
-  project_number?: string | null;
-  project_title?: string | null;
-  engagement_type?: string | null;
-  project_type?: string | null;
-  parent_ticket_id?: string | null;
-  parent_ticket_number?: string | null;
-  parent_ticket_title?: string | null;
-  parent_ticket_status?: string | null;
+interface HistoryItem {
+  at: string;
   kind: string;
-  title: string;
-  description?: string | null;
-  file_url?: string | null;
-  external_link?: string | null;
-  status: string;
-  is_client_visible: boolean;
-  uploaded_by_kind: string;
-  uploaded_by_name?: string | null;
-  created_at: string | null;
-  approved_at?: string | null;
-  revision_notes?: string | null;
-  reviewed_at?: string | null;
-  open_url?: string;
-  is_payment_trigger?: boolean | number | null;
-  payment_amount_cents?: number | null;
-  payment_charge_status?: string | null;
-  milestone_id?: number | string | null;
-  service_request_id?: string | null;
+  label: string;
+  note?: string | null;
 }
 
-const KIND_ICON: Record<string, string> = {
-  proposal: "📄",
-  design: "🎨",
-  contract: "📝",
-  brief: "📋",
-  spec: "📐",
-  code: "💻",
-  copy: "✍️",
-  ticket_deliverable: "📦",
-  other: "📎",
+type DocumentState = "waiting" | "approved" | "changes" | "sent";
+
+interface ClientDocument {
+  deliverable_id: string;
+  title: string;
+  file_name?: string | null;
+  download_path?: string | null;
+  project_name?: string | null;
+  milestone_id?: string | null;
+  milestone_name?: string | null;
+  service_request_id?: string | null;
+  request_title?: string | null;
+  status: string;
+  state: DocumentState;
+  state_label: string;
+  state_at?: string | null;
+  sent_at?: string | null;
+  approved_at?: string | null;
+  history: HistoryItem[];
+}
+
+const STATE_STYLE: Record<DocumentState, string> = {
+  waiting: "bg-sky-100 text-sky-800",
+  approved: "bg-emerald-100 text-emerald-800",
+  changes: "bg-amber-100 text-amber-800",
+  sent: "bg-slate-100 text-slate-700",
 };
-
-// "Pending the client's attention" — the three wire statuses the
-// approve/revise flow accepts from the client side (per DeliverableActionPanel
-// status vocabulary).
-const PENDING_STATUSES = new Set([
-  "submitted",
-  "in_review",
-  "awaiting_client",
-  "awaiting_client_review",
-]);
-
-// 1-year cutoff in ms.
-const ONE_YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 function fmtDate(iso?: string | null): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleDateString();
-}
-
-function DeliverableCard({
-  d,
-  onChanged,
-  viewerRole = "client",
-}: {
-  d: CrossDeliverable;
-  onChanged: () => void;
-  viewerRole?: "client" | "founder";
-}) {
-  const isRequest = d.deliverable_kind === "request_deliverable";
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 hover:border-slate-300 transition">
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-2xl">{KIND_ICON[d.kind] || "📎"}</span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-2">
-            <span>{d.kind}</span>
-            <span
-              className="px-1.5 py-0.5 rounded text-white font-bold"
-              style={{ background: isRequest ? "#0EA5E9" : "#64748b" }}
-            >
-              {isRequest ? "Request" : "Project"}
-            </span>
-          </div>
-          <div className="text-sm font-semibold text-slate-900 truncate">{d.title}</div>
-        </div>
-      </div>
-
-      {d.description && (
-        <div className="text-xs text-slate-600 mb-2 line-clamp-2 whitespace-pre-wrap">
-          {d.description}
-        </div>
-      )}
-
-      <div className="text-[11px] text-slate-500 mb-2">
-        {isRequest && d.parent_ticket_number && (
-          <>📨 {d.parent_ticket_number} · {d.parent_ticket_title}</>
-        )}
-        {!isRequest && d.project_number && (
-          <>📁 {d.project_title || d.project_number} ({d.project_number})</>
-        )}
-      </div>
-
-      {(d.file_url || d.external_link) && (
-        <a
-          href={d.file_url || d.external_link || "#"}
-          target="_blank"
-          rel="noreferrer"
-          className="text-xs font-semibold text-blue-600 hover:underline"
-        >
-          Open file ↗
-        </a>
-      )}
-
-      <div className="mt-2">
-        <DeliverableActionPanel
-          deliverable={{
-            deliverable_id: d.deliverable_id,
-            status: d.status,
-            approved_at: d.approved_at,
-            revision_notes: d.revision_notes,
-            is_payment_trigger: d.is_payment_trigger ?? null,
-            payment_amount_cents: d.payment_amount_cents ?? null,
-            payment_charge_status: d.payment_charge_status ?? null,
-          }}
-          viewerRole={viewerRole}
-          context={
-            d.milestone_id != null
-              ? "milestone"
-              : d.service_request_id != null
-              ? "sr"
-              : "standalone"
-          }
-          onChanged={onChanged}
-        />
-      </div>
-
-      <div className="mt-2 text-[10px] text-slate-400">
-        {fmtDate(d.created_at)} · by {d.uploaded_by_kind}
-      </div>
-    </div>
-  );
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function ClientConsultingDeliverablesPage() {
-  const { get, ready } = useOliverApi();
-  const [items, setItems] = useState<CrossDeliverable[]>([]);
+  const { get, download, ready } = useOliverApi();
+  const [docs, setDocs] = useState<ClientDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [approvedOpen, setApprovedOpen] = useState(false);
-  const [showOlder, setShowOlder] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true);
     setError(null);
     try {
-      const r = await get<{ deliverables: CrossDeliverable[] }>("/consulting-deliverables");
-      setItems(Array.isArray(r?.deliverables) ? r.deliverables : []);
+      const r = await get<{ deliverables: ClientDocument[] }>("/consulting-deliverables");
+      // history is always an array here, even from an API build that predates
+      // it — the Portal and oliver-api deploy on separate pipelines.
+      setDocs(Array.isArray(r?.deliverables)
+        ? r.deliverables.map((d) => ({ ...d, history: Array.isArray(d.history) ? d.history : [] }))
+        : []);
     } catch (e) {
-      setError((e as Error).message);
-      setItems([]);
+      // A failed load is not an empty library — say so rather than telling a
+      // client nothing was ever sent.
+      setError(apiErrorMessage(e));
+      setDocs([]);
     } finally {
       setLoading(false);
     }
   }, [get, ready]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  const { pending, approvedRecent, approvedOlder } = useMemo(() => {
-    const pend: CrossDeliverable[] = [];
-    const apprRecent: CrossDeliverable[] = [];
-    const apprOlder: CrossDeliverable[] = [];
-    const now = Date.now();
-    for (const d of items) {
-      const status = String(d.status).toLowerCase();
-      if (PENDING_STATUSES.has(status)) {
-        pend.push(d);
-        continue;
-      }
-      if (status === "approved") {
-        // Use approved_at if available, fall back to reviewed_at, fall back
-        // to created_at. The 365-day cutoff matches the SCOPE rule.
-        const ts =
-          d.approved_at || d.reviewed_at || d.created_at || null;
-        const age = ts ? now - new Date(ts).getTime() : 0;
-        if (!ts || age <= ONE_YEAR_MS) apprRecent.push(d);
-        else apprOlder.push(d);
-      }
-      // archived / revision_requested intentionally not surfaced on the
-      // client list — revision_requested rounds back to the founder
-      // (client has already acted), archived is hidden by design.
+  const waitingCount = useMemo(() => docs.filter((d) => d.state === "waiting").length, [docs]);
+
+  async function handleDownload(d: ClientDocument) {
+    if (!d.download_path) return;
+    setDownloadingId(d.deliverable_id);
+    setDownloadError(null);
+    try {
+      // The container is private: the file streams through the API with the
+      // bearer token. A plain link to the blob would be refused.
+      await download(d.download_path, d.file_name || d.title || "document");
+    } catch (e) {
+      setDownloadError(`Couldn't download ${d.title}: ${apiErrorMessage(e)}`);
+    } finally {
+      setDownloadingId(null);
     }
-    // Most recent first within each bucket.
-    const byDateDesc = (a: CrossDeliverable, b: CrossDeliverable) =>
-      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
-    pend.sort(byDateDesc);
-    apprRecent.sort(byDateDesc);
-    apprOlder.sort(byDateDesc);
-    return { pending: pend, approvedRecent: apprRecent, approvedOlder: apprOlder };
-  }, [items]);
+  }
 
   if (loading) {
     return (
       <div className="card" style={{ padding: 24, color: "#5A7A8A", fontSize: 13 }}>
-        Loading deliverables…
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="card" style={{ padding: 16 }}>
-        <div className="text-sm font-semibold text-red-600">Couldn&apos;t load your deliverables.</div>
-        <p className="text-xs text-slate-500 mt-1">{error}</p>
+        Loading your documents…
       </div>
     );
   }
 
-  if (items.length === 0) {
+  if (error) {
     return (
-      <div className="rounded-xl bg-slate-50 border border-slate-200 px-6 py-12 text-center">
-        <Inbox className="mx-auto h-8 w-8 text-slate-400 mb-2" />
-        <div className="text-sm font-semibold text-slate-700">No approved deliverables yet.</div>
-        {/* 2026-08-29 — the old copy promised that work submitted FOR REVIEW
-            shows up here. It doesn't: this library is approval-gated
-            (consultingDeliverables.js filters status='approved'), so a client
-            with a design sitting in review read an empty page as broken.
-            Say where the in-review item actually is. */}
-        <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-          This is your library of finished work — designs, proposals, and brand assets
-          land here once you&apos;ve approved them. Anything waiting on you right now is
-          under <strong>Service Requests</strong>, where you can review it and approve or
-          ask for changes.
+      <div className="card" style={{ padding: 16 }}>
+        <div className="text-sm font-semibold text-red-600">Couldn&apos;t load your documents.</div>
+        <p className="mt-1 text-xs text-slate-500">{error}</p>
+        <button
+          type="button"
+          onClick={() => { setLoading(true); void load(); }}
+          className="mt-2 rounded border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          Try again
+        </button>
+      </div>
+    );
+  }
+
+  if (docs.length === 0) {
+    return (
+      <div className="rounded-xl border border-slate-200 bg-slate-50 px-6 py-12 text-center">
+        <Inbox className="mx-auto mb-2 h-8 w-8 text-slate-400" />
+        <div className="text-sm font-semibold text-slate-700">Nothing sent to you yet.</div>
+        <p className="mx-auto mt-1 max-w-md text-xs text-slate-500">
+          Every document we send you — designs, plans, reports — lands here with the date it
+          was sent and whether it&apos;s been approved.
         </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-5">
-      {/* Counts strip */}
+    <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
-        {pending.length > 0 && (
-          <span className="rounded-full bg-purple-100 px-3 py-1 text-purple-800 font-semibold">
-            {pending.length} pending review
-          </span>
-        )}
-        <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-800">
-          {approvedRecent.length} approved (last year)
+        <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+          <strong>{docs.length}</strong> document{docs.length === 1 ? "" : "s"}
         </span>
-        {approvedOlder.length > 0 && (
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
-            {approvedOlder.length} older
+        {waitingCount > 0 && (
+          <span className="rounded-full bg-sky-100 px-3 py-1 font-semibold text-sky-800">
+            {waitingCount} waiting on you
           </span>
         )}
       </div>
 
-      {/* Pending Review — top, always expanded */}
-      <section>
-        <div className="flex items-baseline justify-between mb-2">
-          <h2 className="text-sm font-bold text-slate-900">Pending your review</h2>
-          {pending.length === 0 && (
-            <span className="text-[11px] text-slate-500 italic">All caught up.</span>
-          )}
+      {downloadError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+          {downloadError}
         </div>
-        {pending.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {pending.map((d) => (
-              <DeliverableCard
-                key={`${d.deliverable_kind}-${d.deliverable_id}`}
-                d={d}
-                onChanged={load}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      )}
 
-      {/* Approved — collapsed by default. Last year only unless "show older". */}
-      {(approvedRecent.length > 0 || approvedOlder.length > 0) && (
-        <section>
-          <button
-            type="button"
-            onClick={() => setApprovedOpen((o) => !o)}
-            className="w-full flex items-center justify-between text-left rounded-lg border border-slate-200 bg-white px-3 py-2 hover:border-slate-300"
-          >
-            <div className="flex items-center gap-2">
-              {approvedOpen ? (
-                <ChevronDown className="h-4 w-4 text-slate-500" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-slate-500" />
-              )}
-              <span className="text-sm font-semibold text-slate-900">Approved</span>
-              <span className="text-[10px] text-slate-500">
-                ({approvedRecent.length}
-                {showOlder && approvedOlder.length > 0 ? ` + ${approvedOlder.length} older` : ""})
-              </span>
-            </div>
-          </button>
-
-          {approvedOpen && (
-            <div className="mt-2 space-y-3">
-              {approvedRecent.length === 0 && !showOlder && (
-                <div className="text-xs text-slate-500 italic px-3">
-                  No approved deliverables in the last year.
+      <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {docs.map((d) => {
+          const isOpen = !!expanded[d.deliverable_id];
+          const where = [d.project_name, d.milestone_name || d.request_title].filter(Boolean).join(" · ");
+          // Approved / changes carry their own date; waiting and sent read off
+          // the sent date already shown beside them.
+          const stateDate = d.state === "approved" || d.state === "changes" ? d.state_at : null;
+          return (
+            <li key={d.deliverable_id} className="px-4 py-3">
+              <div className="flex flex-wrap items-start gap-3">
+                <FileText className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <div className="break-words text-sm font-semibold text-slate-900">{d.title}</div>
+                  {where && <div className="mt-0.5 text-[11px] text-slate-500">{where}</div>}
+                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+                    <span className="tabular-nums">Sent {fmtDate(d.sent_at)}</span>
+                    <span className={`rounded-full px-2 py-0.5 font-semibold ${STATE_STYLE[d.state] || STATE_STYLE.sent}`}>
+                      {d.state_label}
+                      {stateDate ? ` ${fmtDate(stateDate)}` : ""}
+                    </span>
+                  </div>
                 </div>
-              )}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {approvedRecent.map((d) => (
-                  <DeliverableCard
-                    key={`${d.deliverable_kind}-${d.deliverable_id}`}
-                    d={d}
-                    onChanged={load}
-                  />
-                ))}
-                {showOlder &&
-                  approvedOlder.map((d) => (
-                    <DeliverableCard
-                      key={`older-${d.deliverable_kind}-${d.deliverable_id}`}
-                      d={d}
-                      onChanged={load}
-                    />
-                  ))}
-              </div>
-              {approvedOlder.length > 0 && (
-                <div>
+                {d.download_path && (
                   <button
                     type="button"
-                    onClick={() => setShowOlder((s) => !s)}
-                    className="text-xs font-semibold text-blue-600 hover:underline"
+                    onClick={() => void handleDownload(d)}
+                    disabled={downloadingId === d.deliverable_id}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                   >
-                    {showOlder
-                      ? `Hide older deliverables`
-                      : `Show ${approvedOlder.length} older deliverable${
-                          approvedOlder.length === 1 ? "" : "s"
-                        }`}
+                    <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                    {downloadingId === d.deliverable_id ? "Downloading…" : "Download"}
                   </button>
+                )}
+              </div>
+
+              {/* Their turn: the same review panel used everywhere else, so a
+                  document on a request is approved by approving the request. */}
+              {d.state === "waiting" && (
+                <div className="mt-2 max-w-md sm:ml-7">
+                  <DeliverableActionPanel
+                    deliverable={{
+                      deliverable_id: d.deliverable_id,
+                      status: d.status,
+                      service_request_id: d.service_request_id ?? null,
+                      sent_at: d.sent_at ?? null,
+                    }}
+                    viewerRole="client"
+                    context={d.milestone_id ? "milestone" : d.service_request_id ? "sr" : "standalone"}
+                    onChanged={() => void load()}
+                  />
                 </div>
               )}
-            </div>
-          )}
-        </section>
-      )}
+
+              {d.history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((s) => ({ ...s, [d.deliverable_id]: !isOpen }))}
+                  aria-expanded={isOpen}
+                  className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-slate-600 hover:text-slate-900 sm:ml-7"
+                >
+                  {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                  History ({d.history.length})
+                </button>
+              )}
+              {isOpen && (
+                <ol className="mt-2 space-y-1.5 border-l border-slate-200 pl-3 sm:ml-9">
+                  {d.history.map((h, i) => (
+                    <li key={`${h.at}-${i}`} className="text-[11px] text-slate-600">
+                      <span className="font-medium text-slate-800">{h.label}</span>
+                      <span className="tabular-nums"> · {fmtDate(h.at)}</span>
+                      {h.note && (
+                        <div className="mt-0.5 whitespace-pre-wrap rounded bg-amber-50 px-2 py-1 text-amber-900">
+                          {h.note}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

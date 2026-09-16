@@ -1,14 +1,14 @@
 // DeliverableActionPanel — F-Shared.1 (Consulting Rework 2026-06-28).
 //
 // ONE component, THREE host contexts (Service Requests, Project Milestones,
-// standalone Deliverables page). Replaces the inline DeliverableActions in
-// ConsultingDeliverablesPage as call-sites migrate.
+// standalone Deliverables page).
 //
-// Status vocabulary — tolerant of three spellings the backend uses today:
+// Status vocabulary — tolerant of the spellings the backend has used:
 //
 //   pending           ↔ draft                       (founder is building it)
 //   awaiting_client_review ↔ submitted ↔ awaiting_client
 //                                                   (client decides)
+//   sent              ↔ sent_to_client             (client has it; nothing to decide)
 //   in_revision       ↔ revision_requested         (founder is reworking)
 //   approved          (terminal — locked)
 //   archived          (terminal — hidden by default in lists)
@@ -16,22 +16,25 @@
 // The component normalises on render so callers can pass whichever spelling
 // the backend on the wire happens to use.
 //
-// Endpoint contract (oliver-api):
-//   POST /consulting/deliverables/:id/approve         — body { notes? }
-//   POST /consulting/deliverables/:id/revision        — body { revision_notes }
-//   POST /consulting/deliverables/:id/send-to-client  — founder transitions
-//                                                       pending → awaiting_client_review.
-//   POST /consulting/deliverables/:id/pay             — client-side deliverable
-//                                                       pay. STILL DEFERRED
-//                                                       (ADR-006): client pays
-//                                                       via a Stripe portal
-//                                                       invoice link; status
-//                                                       syncs from the webhook.
-//                                                       Founder-side milestone
-//                                                       charges go through
-//                                                       POST /payment-milestones/:id/approve
-//                                                       (confirm_charge), NOT
-//                                                       this route.
+// Endpoint contract (oliver-api), 2026-09-15:
+//   A document ON A REQUEST is reviewed by reviewing the request:
+//     PATCH /consulting/requests/:id  { action: "approve" }
+//     PATCH /consulting/requests/:id  { action: "request_revision", note }
+//   That single move advances the task, moves every document on it and emails
+//   the agency. The old default — POST /consulting/deliverables/:id/approve —
+//   wrote oliver.deliverable, a different table, so it never worked for a
+//   consulting file, and approving a file on its own would have left its
+//   request waiting.
+//   A document on a MILESTONE, or standalone:
+//     PATCH /consulting/deliverables/:id/approve
+//     PATCH /consulting/deliverables/:id/request-revisions   { note }
+//   POST /consulting/deliverables/:id/send-to-client — founder: pending → awaiting_client_review.
+//     Not offered for a document on a request: moving the request to Client
+//     Review is what sends it.
+//   POST /consulting/deliverables/:id/pay — client-side deliverable pay. STILL
+//     DEFERRED (ADR-006): client pays via a Stripe portal invoice link; status
+//     syncs from the webhook. Founder-side milestone charges go through
+//     POST /payment-milestones/:id/approve (confirm_charge), NOT this route.
 //
 // Per SCOPE_WORKING.md Delta 4 (locked 2026-06-28): one component, role-aware,
 // payment-trigger only shown when the host context is a milestone AND the
@@ -41,10 +44,11 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 
 // ─── Status normaliser ───────────────────────────────────────────────────
 
-/** Canonical 5-state vocabulary the panel renders against. */
+/** Canonical vocabulary the panel renders against. */
 export type DeliverableStatusCanonical =
   | "pending"
   | "awaiting_client_review"
+  | "sent"
   | "in_revision"
   | "approved"
   | "archived";
@@ -55,6 +59,7 @@ export type DeliverableStatusWire =
   | "draft"
   | "submitted"
   | "awaiting_client"
+  | "sent_to_client"
   | "revision_requested";
 
 export function normalizeStatus(raw: string | null | undefined): DeliverableStatusCanonical {
@@ -66,6 +71,11 @@ export function normalizeStatus(raw: string | null | undefined): DeliverableStat
     case "awaiting_client":
     case "awaiting_client_review":
       return "awaiting_client_review";
+    // 2026-09-15 — used to fall through to "pending", so a document the client
+    // HAD been sent rendered "Not yet sent for review".
+    case "sent_to_client":
+    case "sent":
+      return "sent";
     case "revision_requested":
     case "in_revision":
       return "in_revision";
@@ -86,10 +96,15 @@ export function normalizeStatus(raw: string | null | undefined): DeliverableStat
 // is the host's job (the panel is mounted inline beneath that content).
 
 export interface DeliverableShape {
-  /** Server PK. UNIQUEIDENTIFIER on oliver.deliverable / consulting.deliverable. */
+  /** Server PK. UNIQUEIDENTIFIER on consulting.deliverable. */
   deliverable_id: string;
   /** Wire status (any spelling); we normalise on render. */
   status: DeliverableStatusWire | string;
+  /** Set when the document hangs off a task / service request. Its review
+   *  then happens on the request, never on the file alone. */
+  service_request_id?: string | null;
+  /** When the client was sent it. */
+  sent_at?: string | null;
   /** Milestone-trigger flag. Only meaningful when host context is 'milestone'. */
   is_payment_trigger?: boolean | number | null;
   /** Dollars-in-cents to charge. Required when is_payment_trigger=1. */
@@ -121,13 +136,8 @@ export interface DeliverableActionPanelProps {
    * one (the pencil icon hides itself in that case).
    */
   onEdit?: () => void;
-  /**
-   * Optional approve-callback override. Default behaviour POSTs to
-   * /consulting/deliverables/:id/approve which the server uses to (a)
-   * mark approved + (b) when is_payment_trigger=1, also create the
-   * invoice and email the client a pay-link. The host can short-circuit
-   * for unit-testing.
-   */
+  /** Optional approve-callback override (see the endpoint contract above for
+   *  the default). The host can short-circuit for unit-testing. */
   onApprove?: () => Promise<void> | void;
   /** Optional override mirroring onApprove for the revisions branch. */
   onRequestRevision?: (notes: string) => Promise<void> | void;
@@ -153,13 +163,6 @@ export interface DeliverableActionPanelProps {
   readOnly?: boolean;
 }
 
-// ─── Toast hook — minimal ────────────────────────────────────────────────
-//
-// The Portal codebase doesn't have a global toast hook yet (search 2026-06-28
-// — only inline status banners). Emulate one with an opt-in callback so the
-// host can choose to render its own. Inline error/success message renders
-// here if no host handler is wired.
-
 // ─── Component ───────────────────────────────────────────────────────────
 
 export function DeliverableActionPanel({
@@ -173,7 +176,7 @@ export function DeliverableActionPanel({
   context = "standalone",
   readOnly = false,
 }: DeliverableActionPanelProps) {
-  const { post } = useOliverApi();
+  const { post, patch } = useOliverApi();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -181,6 +184,7 @@ export function DeliverableActionPanel({
   const [revNotes, setRevNotes] = useState("");
 
   const status = normalizeStatus(deliverable.status);
+  const onRequest = !!deliverable.service_request_id;
   const isPaymentTrigger = Boolean(
     typeof deliverable.is_payment_trigger === "number"
       ? deliverable.is_payment_trigger === 1
@@ -203,11 +207,11 @@ export function DeliverableActionPanel({
     try {
       if (onApprove) {
         await onApprove();
+      } else if (onRequest) {
+        await patch(`/consulting/requests/${deliverable.service_request_id}`, { action: "approve" });
       } else {
-        await post(`/consulting/deliverables/${deliverable.deliverable_id}/approve`, {});
+        await patch(`/consulting/deliverables/${deliverable.deliverable_id}/approve`, {});
       }
-      // Server-side: when is_payment_trigger=1 the approve endpoint also
-      // creates the invoice + emails the pay-link. Surface that to the user.
       if (showPayCta || (isPaymentTrigger && (deliverable.payment_amount_cents || 0) > 0)) {
         setInfo("Invoice sent — pay through your portal.");
       }
@@ -230,11 +234,15 @@ export function DeliverableActionPanel({
     try {
       if (onRequestRevision) {
         await onRequestRevision(trimmed);
+      } else if (onRequest) {
+        await patch(`/consulting/requests/${deliverable.service_request_id}`, {
+          action: "request_revision",
+          note: trimmed,
+        });
       } else {
-        await post(
-          `/consulting/deliverables/${deliverable.deliverable_id}/revision`,
-          { revision_notes: trimmed },
-        );
+        await patch(`/consulting/deliverables/${deliverable.deliverable_id}/request-revisions`, {
+          note: trimmed,
+        });
       }
       setRevOpen(false);
       setRevNotes("");
@@ -296,6 +304,33 @@ export function DeliverableActionPanel({
             </span>
           )}
         </div>
+      </div>
+    );
+  }
+
+  // Sent without a review — a standalone document, or a review the agency took
+  // back. The client has it and there is nothing for them to decide.
+  if (status === "sent") {
+    const canAskForReview = viewerRole === "founder" && !onRequest;
+    return (
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+          <StatusPill status={status} />
+          {deliverable.sent_at && (
+            <span className="text-[11px] text-slate-600">{formatDate(deliverable.sent_at)}</span>
+          )}
+        </div>
+        {canAskForReview && (
+          <button
+            type="button"
+            onClick={handleSendToClient}
+            disabled={busy || readOnly}
+            className="w-full rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            {busy ? "Sending…" : "Ask for review"}
+          </button>
+        )}
+        {error && <div className="text-[11px] text-red-700">{error}</div>}
       </div>
     );
   }
@@ -428,7 +463,9 @@ export function DeliverableActionPanel({
     return (
       <div className="flex items-center gap-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
         <StatusPill status={status} />
-        <span className="text-[11px] text-sky-800">Waiting on client</span>
+        <span className="text-[11px] text-sky-800">
+          Waiting on client{deliverable.sent_at ? ` · sent ${formatDate(deliverable.sent_at)}` : ""}
+        </span>
         {onEdit && (
           <button
             type="button"
@@ -449,6 +486,11 @@ export function DeliverableActionPanel({
       <div className="space-y-1.5">
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
           <StatusPill status={status} />
+          {onRequest && (
+            <span className="text-[11px] text-slate-500">
+              Goes to the client when its task moves to Client Review.
+            </span>
+          )}
           {onEdit && (
             <button
               type="button"
@@ -460,22 +502,24 @@ export function DeliverableActionPanel({
             </button>
           )}
         </div>
-        <button
-          type="button"
-          onClick={handleSendToClient}
-          disabled={busy || readOnly}
-          className="w-full rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-50"
-        >
-          {busy ? "Sending…" : "Send to Client"}
-        </button>
+        {!onRequest && (
+          <button
+            type="button"
+            onClick={handleSendToClient}
+            disabled={busy || readOnly}
+            className="w-full rounded bg-sky-600 px-3 py-1.5 text-xs font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            {busy ? "Sending…" : "Send to Client"}
+          </button>
+        )}
         {error && <div className="text-[11px] text-red-700">{error}</div>}
       </div>
     );
   }
 
   // Client sees a pending row only when the founder hasn't sent it yet —
-  // shouldn't normally happen (the server scopes pending to provider) but
-  // degrade to a quiet meta strip rather than a broken UI.
+  // shouldn't normally happen (the server hides unsent drafts from clients)
+  // but degrade to a quiet meta strip rather than a broken UI.
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
       <StatusPill status={status} /> <span className="ml-1">Not yet sent for review.</span>
@@ -489,6 +533,7 @@ function StatusPill({ status }: { status: DeliverableStatusCanonical }) {
   const map: Record<DeliverableStatusCanonical, { label: string; cls: string }> = {
     pending: { label: "Pending", cls: "bg-slate-200 text-slate-700" },
     awaiting_client_review: { label: "Awaiting review", cls: "bg-sky-200 text-sky-800" },
+    sent: { label: "Sent", cls: "bg-slate-200 text-slate-700" },
     in_revision: { label: "In revision", cls: "bg-amber-200 text-amber-800" },
     approved: { label: "Approved", cls: "bg-emerald-200 text-emerald-800" },
     archived: { label: "Archived", cls: "bg-slate-300 text-slate-700" },
