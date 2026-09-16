@@ -103,6 +103,11 @@ const FILTER_PILLS = [
   { key: "declined", label: "Declined" },
 ];
 
+/** oliver-api's own origin — the PDF is streamed by the API, not the Portal. */
+const OLIVER_PDF_BASE =
+  (import.meta.env.VITE_OLIVER_API_BASE as string) ||
+  (import.meta.env.VITE_OLIVER_API_BASE_URL as string) || "";
+
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -510,6 +515,15 @@ export function ProposalDetailDrawer({
   const [revisions, setRevisions] = useState<ProposalRevision[]>([]);
   const [revsErr, setRevsErr] = useState<string | null>(null);
   const [showAddRevision, setShowAddRevision] = useState(false);
+  // §8 item 6 — the business's countersign, and the signing record behind it.
+  const [signatures, setSignatures] = useState<Array<{ party: string; signer_name: string; signed_at: string; ip_address: string | null; consent_text: string; document_version: number }>>([]);
+  const [counterName, setCounterName] = useState("");
+  const [counterBusy, setCounterBusy] = useState(false);
+  const [counterErr, setCounterErr] = useState<string | null>(null);
+  // The public token. The business opens the SAME PDF the customer gets, by
+  // the same URL — the authenticated route cannot be reached from an <a href>,
+  // and a second PDF endpoint would be a second PDF.
+  const [publicToken, setPublicToken] = useState<string | null>(null);
 
   // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
   const parentTotalCents = proposalSummary
@@ -551,6 +565,21 @@ export function ProposalDetailDrawer({
   }, [api, proposalId]);
 
   useEffect(() => { reloadRevisions(); }, [reloadRevisions]);
+
+  // The signing record, from the one place it lives (oliver.document_signature
+  // through GET /proposals/:id).
+  useEffect(() => {
+    let cancelled = false;
+    api.get<any>(`/proposals/${proposalId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const row = r?.data ?? r;
+        setSignatures(row?.signatures || []);
+        setPublicToken(row?.token || null);
+      })
+      .catch(() => { if (!cancelled) { setSignatures([]); setPublicToken(null); } });
+    return () => { cancelled = true; };
+  }, [api, proposalId]);
 
   const usedFreeRevisions = Number(proposalSummary?.free_revisions_used ?? 0);
   const isPaused = !!proposalSummary?.is_paused;
@@ -623,6 +652,63 @@ export function ProposalDetailDrawer({
       subtitle={proposalSummary?.proposal_number ?? proposalId}
       width="xl"
     >
+      {/* ── Signatures (§8 item 6) ─────────────────────────────────────────
+          Who signed, when, from where, to which wording, against which
+          version — and the business's own countersign, which is a SECOND row
+          on the record rather than an edit of the customer's. */}
+      <div style={{ marginBottom: 14, padding: 12, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>Signatures</span>
+          {publicToken && (
+            <a href={`${OLIVER_PDF_BASE}/p/proposals/${publicToken}/pdf`} target="_blank" rel="noreferrer"
+              title="Open this document as a PDF, with any signatures on it — the same file the customer gets"
+              style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5" }}>Open the PDF</a>
+          )}
+        </div>
+        {signatures.length === 0 && <div style={{ color: "#94A3B8" }}>Nobody has signed this yet.</div>}
+        {signatures.map((sg) => (
+          <div key={sg.party} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid #F1F5F9" }}>
+            <span style={{ color: "#5A7A8A" }}>{sg.party === "customer" ? "Customer" : "Countersigned"}</span>
+            <span style={{ textAlign: "right" }}>
+              <strong>{sg.signer_name}</strong>
+              <span style={{ color: "#5A7A8A" }}> · {new Date(sg.signed_at).toLocaleString()} · v{sg.document_version}{sg.ip_address ? ` · ${sg.ip_address}` : ""}</span>
+            </span>
+          </div>
+        ))}
+        {proposalSummary?.status === "accepted" && !signatures.some((sg) => sg.party === "business") && (
+          <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              value={counterName}
+              onChange={(e) => setCounterName(e.target.value)}
+              placeholder="Type your name to countersign"
+              title="Your typed name becomes your signature on this document"
+              style={{ border: "1px solid #CBD5E1", borderRadius: 4, padding: "6px 9px", fontSize: 12, flex: "1 1 200px" }}
+            />
+            <button
+              type="button"
+              disabled={counterBusy || counterName.trim().length < 2}
+              title={counterName.trim().length < 2 ? "Type your name first" : "Countersign this document"}
+              onClick={async () => {
+                setCounterBusy(true); setCounterErr(null);
+                try {
+                  await api.post(`/proposals/${proposalId}/countersign`, { signature: counterName.trim() });
+                  const d = await api.get<any>(`/proposals/${proposalId}`);
+                  setSignatures((d?.data ?? d)?.signatures || []);
+                  setCounterName("");
+                } catch (e) { setCounterErr((e as Error).message); }
+                finally { setCounterBusy(false); }
+              }}
+              style={{
+                border: "none", borderRadius: 4, padding: "7px 12px", fontSize: 12, fontWeight: 700, color: "#fff",
+                background: counterName.trim().length >= 2 ? "#0B6E8C" : "#CBD5E1",
+                cursor: counterName.trim().length >= 2 ? "pointer" : "not-allowed",
+              }}
+            >{counterBusy ? "Signing…" : "Countersign"}</button>
+            {counterErr && <span style={{ color: "#B91C1C", fontSize: 11 }}>{counterErr}</span>}
+          </div>
+        )}
+      </div>
+
       <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "#5A7A8A" }}>Total</span>

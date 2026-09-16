@@ -21,6 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
 import { IadmModal } from "../../components/IadmModal";
 import { useBrandKit } from "../../brand/BrandKitProvider";
+import { useLumenApi } from "../../hooks/useLumenApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { BuilderShell } from "../BuilderShell";
 import {
@@ -63,10 +64,19 @@ const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
 
 export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
+  // §9/D-121 — the ONE custom-field mechanism. The property's own fields live
+  // in lumen.custom_field, which already accepts entity_kind "property", so the
+  // service plan reads and writes the fields the CREW sees on the job sheet
+  // rather than inventing a second store on the document.
+  const lumen = useLumenApi();
 
   /* ── What the document is about ──────────────────────────────────────── */
   const [contacts, setContacts] = useState<ContactRow[]>([]);
+  const [contactSearch, setContactSearch] = useState("");
   const [contactId, setContactId] = useState("");
+  // The chosen customer is REMEMBERED, not looked up in the current search
+  // results: searching again must not blank the name at the top of the page.
+  const [pickedContact, setPickedContact] = useState<ContactRow | null>(null);
   const [locations, setLocations] = useState<LocationRow[]>([]);
   const [pickedLocationIds, setPickedLocationIds] = useState<string[]>([]);
   const [title, setTitle] = useState("");
@@ -98,7 +108,6 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
 
   /* ── Load once ───────────────────────────────────────────────────────── */
   useEffect(() => {
-    api.get<any>("/contacts?limit=200").then((r) => setContacts(rows<ContactRow>(r))).catch(() => setContacts([]));
     Promise.all([
       api.get<any>("/settings").catch(() => ({})),
       api.get<any>("/settings/invoice-template").catch(() => ({})),
@@ -108,7 +117,10 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
       logoUrl: tpl.logoUrl || settings.logoUrl || null,
       accent: tpl.accentColor || null,
     })).catch(() => undefined);
-    api.get<any>("/catalog/offerings").then((r) => setOfferings(rows<CatalogOffering>(r))).catch(() => setOfferings([]));
+    // include_prices=1 or every offering arrives priceless and the picker can
+    // only offer "type one" — which is how the old picker under-quoted.
+    api.get<any>("/catalog/offerings?include_prices=1")
+      .then((r) => setOfferings(rows<CatalogOffering>(r))).catch(() => setOfferings([]));
     api.get<any>("/proposal-builder/clauses").then((r) => setClauses(rows<ClauseRow>(r))).catch(() => setClauses([]));
     api.get<any>("/proposal-templates").then((r) => setSavedTemplates(rows<any>(r).map((t: any) => ({
       id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
@@ -116,6 +128,16 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
     })))).catch(() => setSavedTemplates([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /* ── The customer picker asks the API, so a long list is still reachable ─ */
+  useEffect(() => {
+    const q = contactSearch.trim();
+    const t = setTimeout(() => {
+      const qs = q ? `?search=${encodeURIComponent(q)}&per_page=25` : "?per_page=25";
+      api.get<any>(`/contacts${qs}`).then((r) => setContacts(rows<ContactRow>(r))).catch(() => setContacts([]));
+    }, q ? 220 : 0);
+    return () => clearTimeout(t);
+  }, [api, contactSearch]);
 
   /* ── Editing an existing proposal ────────────────────────────────────── */
   useEffect(() => {
@@ -125,6 +147,14 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
       const row = r?.data ?? r;
       setTitle(row.title || "");
       setContactId(row.contact_id || "");
+      if (row.contact_id) {
+        setPickedContact({
+          contact_id: row.contact_id,
+          first_name: (row.customer_name || "").split(" ")[0],
+          last_name: (row.customer_name || "").split(" ").slice(1).join(" "),
+          email: row.customer_email, company_name: row.customer_company,
+        });
+      }
       setPickedLocationIds((row.location_ids || []).map((x: string) => String(x).toLowerCase()));
       if (row.valid_until) setValidUntil(String(row.valid_until).slice(0, 10));
       const opened = openProposalDocument(row) || emptyDocument();
@@ -151,7 +181,9 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
       .catch(() => setLocations([]));
   }, [api, contactId]);
 
-  const contact = contacts.find((c) => c.contact_id === contactId) || null;
+  const contact = pickedContact && pickedContact.contact_id === contactId
+    ? pickedContact
+    : contacts.find((c) => c.contact_id === contactId) || null;
   const pickedLocations = useMemo(
     () => locations.filter((l) => pickedLocationIds.includes(String(l.location_id).toLowerCase())),
     [locations, pickedLocationIds]);
@@ -336,7 +368,9 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
         }
         subtitle={
           <CustomerBar
-            contacts={contacts} contactId={contactId} onPickContact={setContactId}
+            search={contactSearch} onSearch={setContactSearch}
+            contact={contact} contacts={contacts}
+            onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
             locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
           />
         }
@@ -367,6 +401,35 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
               await api.post("/proposal-builder/clauses/seed", { pack });
               const r = await api.get<any>("/proposal-builder/clauses");
               setClauses(rows<ClauseRow>(r));
+            }}
+            onLoadPropertyFields={async (locationId) => {
+              try {
+                const r = await lumen.get<any>(`/api/v1/custom-fields/values/property/${locationId}`);
+                return rows<any>(r)
+                  .filter((f) => String(f.value_text ?? "").trim())
+                  .map((f) => ({ label: f.label, value: String(f.value_text), field_key: f.field_key }));
+              } catch { return []; }
+            }}
+            onSavePropertyFields={async (locationId, propRows) => {
+              // Written back through the ONE custom-field API, keyed by the
+              // field the row came from — a row the author typed by hand with
+              // no field behind it stays on the document and is not invented
+              // into the property's record.
+              const values: Record<string, string> = {};
+              for (const r of propRows as any[]) {
+                if (r?.field_key) values[r.field_key] = String(r.value ?? "");
+              }
+              if (!Object.keys(values).length) {
+                setErr("These rows are not property fields yet, so there is nothing to save back. Add them in Settings → Custom fields first.");
+                return;
+              }
+              try {
+                await lumen.put(`/api/v1/custom-fields/values/property/${locationId}`, { values });
+                setErr(null);
+                onSaved("Saved to the property. Your crew sees the same details on the job.");
+              } catch (e) {
+                setErr(`Could not save to the property: ${apiErrorMessage(e)}`);
+              }
             }}
           />
         )}
@@ -433,50 +496,102 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
    The customer, picked once
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * The customer, chosen ONCE — by typing, not by scrolling.
+ *
+ * It was a <select> of the first page of customers, which is fine on the
+ * fixture database and useless on a real one: `/contacts` pages at 50, so a
+ * business with four hundred customers could not reach most of them, and the
+ * one they wanted was never on screen. Typing asks the API, which already
+ * matches name, email and company.
+ *
+ * Once a customer is chosen the bar reads like the design's: the name, the
+ * locations this document covers as chips, and "change".
+ */
 function CustomerBar({
-  contacts, contactId, onPickContact, locations, picked, onPickLocations,
+  search, contact, contacts, onSearch, onPickContact, locations, picked, onPickLocations,
 }: {
-  contacts: ContactRow[]; contactId: string; onPickContact: (id: string) => void;
+  search: string;
+  contact: ContactRow | null;
+  contacts: ContactRow[];
+  onSearch: (q: string) => void;
+  onPickContact: (id: string) => void;
   locations: LocationRow[]; picked: string[]; onPickLocations: (ids: string[]) => void;
 }) {
-  const c = contacts.find((x) => x.contact_id === contactId);
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        {c?.company_name ? <Building2 size={12} /> : <UserRound size={12} />}
-        <select
-          value={contactId}
-          onChange={(e) => { onPickContact(e.target.value); onPickLocations([]); }}
-          title="Choose the customer once. Every merge field on the page fills from this."
-          style={{ background: "rgba(255,255,255,0.12)", color: "#fff", border: "1px solid rgba(255,255,255,0.25)", borderRadius: 999, padding: "2px 8px", fontSize: 11 }}
-        >
-          <option value="">Choose a customer…</option>
-          {contacts.map((x) => (
-            <option key={x.contact_id} value={x.contact_id} style={{ color: "#0B1C24" }}>
-              {x.company_name || [x.first_name, x.last_name].filter(Boolean).join(" ") || x.email}
-            </option>
-          ))}
-        </select>
+  const [open, setOpen] = useState(false);
+  const label = (c: ContactRow) =>
+    c.company_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "";
+
+  if (contact && !open) {
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
+          {contact.company_name ? <Building2 size={12} /> : <UserRound size={12} />}
+          <span style={{ background: "rgba(255,255,255,0.12)", borderRadius: 999, padding: "2px 9px", fontWeight: 600 }}>
+            {label(contact)}
+          </span>
+          <button type="button" onClick={() => setOpen(true)} title="Choose a different customer"
+            style={{ background: "none", border: "none", color: "#fff", textDecoration: "underline", cursor: "pointer", fontSize: 11 }}>
+            change
+          </button>
+        </span>
+        {locations.length > 0 && (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+            <MapPin size={12} />
+            {locations.map((l) => {
+              const id = String(l.location_id).toLowerCase();
+              const on = picked.includes(id);
+              return (
+                <button key={id} type="button"
+                  title={on ? `${l.name} is covered by this document — click to remove it` : `Add ${l.name} to this document`}
+                  onClick={() => onPickLocations(on ? picked.filter((x) => x !== id) : [...picked, id])}
+                  style={{
+                    borderRadius: 999, padding: "2px 9px", fontSize: 11, cursor: "pointer",
+                    border: "1px solid rgba(255,255,255,0.3)",
+                    background: on ? "#FFFFFF" : "transparent", color: on ? "#0B1C24" : "#fff",
+                  }}>
+                  {l.name}{l.city ? ` · ${l.city}` : ""}
+                </button>
+              );
+            })}
+          </span>
+        )}
       </span>
-      {locations.length > 0 && (
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-          <MapPin size={12} />
-          {locations.map((l) => {
-            const id = String(l.location_id).toLowerCase();
-            const on = picked.includes(id);
-            return (
-              <button key={id} type="button"
-                title={on ? `${l.name} is covered by this document — click to remove it` : `Add ${l.name} to this document`}
-                onClick={() => onPickLocations(on ? picked.filter((x) => x !== id) : [...picked, id])}
-                style={{
-                  borderRadius: 999, padding: "2px 9px", fontSize: 11, cursor: "pointer",
-                  border: "1px solid rgba(255,255,255,0.3)",
-                  background: on ? "#FFFFFF" : "transparent", color: on ? "#0B1C24" : "#fff",
-                }}>
-                {l.name}{l.city ? ` · ${l.city}` : ""}
-              </button>
-            );
-          })}
+    );
+  }
+
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, position: "relative" }}>
+      <UserRound size={12} />
+      <input
+        value={search}
+        autoFocus={open}
+        onChange={(e) => onSearch(e.target.value)}
+        placeholder="Type a customer's name…"
+        title="Choose the customer once. Every merge field on the page fills from this."
+        data-customer-search="1"
+        style={{
+          background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px", fontSize: 11, width: 240, outline: "none",
+        }}
+      />
+      {contacts.length > 0 && (
+        <span style={{
+          position: "absolute", top: "100%", left: 20, zIndex: 20, marginTop: 4, background: "#fff",
+          border: "1px solid #CBD5E1", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,.18)",
+          maxHeight: 260, overflowY: "auto", minWidth: 280,
+        }}>
+          {contacts.slice(0, 25).map((c) => (
+            <button key={c.contact_id} type="button" title={`Use ${label(c)}`}
+              onClick={() => { onPickContact(c.contact_id); onPickLocations([]); setOpen(false); }}
+              style={{
+                display: "block", width: "100%", textAlign: "left", border: "none", background: "transparent",
+                padding: "7px 10px", fontSize: 12, color: "#0B1C24", cursor: "pointer",
+              }}>
+              {label(c)}
+              {c.email && <span style={{ color: "#5A7A8A" }}> · {c.email}</span>}
+            </button>
+          ))}
         </span>
       )}
     </span>
@@ -489,12 +604,15 @@ function CustomerBar({
 
 function WidgetExtras({
   widget, sectionId, doc, onChange, offerings, clauses, locations, onSaveClause, onSeedClauses,
+  onLoadPropertyFields, onSavePropertyFields,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
   onSaveClause: (c: ClauseRow) => Promise<void>;
   onSeedClauses: (pack: string) => Promise<void>;
+  onLoadPropertyFields: (locationId: string) => Promise<Array<{ label: string; value: string }>>;
+  onSavePropertyFields: (locationId: string, rows: Array<{ label?: string; value?: string }>) => Promise<void>;
 }) {
   const patch = (props: Record<string, unknown>) => {
     onChange({
@@ -511,8 +629,50 @@ function WidgetExtras({
 
   const p: any = widget.props || {};
 
+  // A property block needs BOTH: which location it is, and what is being done
+  // there. The location picker used to sit in a later branch that an early
+  // return never reached, so a block could be priced but never placed.
+  const locationPicker = (widget.kind === "property_plan" || widget.kind === "property_block") ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={LBL}>Which location</span>
+        <select style={INPUT} value={String(p.locationId || "")}
+          title="The location this block is about. Its name and address fill in automatically."
+          onChange={async (e) => {
+            const locationId = e.target.value;
+            // Name the block after the location unless the author has already
+            // named it. The totals list one line per site and can only print
+            // the name the block carries.
+            const loc = locations.find((l) => String(l.location_id).toLowerCase() === locationId);
+            const heading = String(p.heading || "").trim() || loc?.name || "";
+            patch({ locationId, heading });
+            if (widget.kind === "property_plan" && locationId) {
+              const planRows = await onLoadPropertyFields(locationId);
+              if (planRows.length) patch({ locationId, heading, rows: planRows });
+            }
+          }}>
+          <option value="">Choose a location…</option>
+          {locations.map((l) => (
+            <option key={String(l.location_id)} value={String(l.location_id).toLowerCase()}>
+              {l.name}{l.city ? ` · ${l.city}` : ""}
+            </option>
+          ))}
+        </select>
+      </div>
+      {widget.kind === "property_plan" && p.locationId && (
+        <button type="button" style={miniBtn}
+          title="Save what is on this page back to the property, so the crew sees the same sheet on the job"
+          onClick={() => onSavePropertyFields(String(p.locationId), Array.isArray(p.rows) ? p.rows : [])}>
+          Save these details to the property
+        </button>
+      )}
+    </div>
+  ) : null;
+
   if (widget.kind === "pricing_table" || widget.kind === "priced_line" || widget.kind === "property_block") {
     return (
+      <>
+      {locationPicker}
       <CatalogPicker
         offerings={offerings}
         label={widget.kind === "pricing_table" ? "Add a service to the table" : widget.kind === "property_block" ? "Add a service to this property" : "Fill from Products & Services"}
@@ -544,6 +704,31 @@ function WidgetExtras({
           }
         }}
       />
+      </>
+    );
+  }
+
+  if (widget.kind === "comparison_cards") {
+    const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
+    const recIndex = cards.findIndex((c) => c?.recommended);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={LBL}>Recommended</span>
+        <select style={INPUT} value={recIndex >= 0 ? String(recIndex) : ""}
+          title="Which card wears the Recommended badge. Exactly one, or none."
+          onChange={(e) => {
+            const pick = e.target.value === "" ? -1 : Number(e.target.value);
+            patch({ cards: cards.map((c, i) => ({ ...c, recommended: i === pick })) });
+          }}>
+          <option value="">None</option>
+          {cards.map((c, i) => (
+            <option key={i} value={i}>{String(c?.name || `Card ${i + 1}`)}</option>
+          ))}
+        </select>
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>
+          Cards never add into the total — the plan the customer picks becomes the priced line.
+        </span>
+      </div>
     );
   }
 
@@ -601,23 +786,7 @@ function WidgetExtras({
     );
   }
 
-  if (widget.kind === "property_plan" || widget.kind === "property_block") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={LBL}>Which location</span>
-        <select style={INPUT} value={String(p.locationId || "")}
-          title="The location this block is about. Its name and address fill in automatically."
-          onChange={(e) => patch({ locationId: e.target.value })}>
-          <option value="">Choose a location…</option>
-          {locations.map((l) => (
-            <option key={String(l.location_id)} value={String(l.location_id).toLowerCase()}>
-              {l.name}{l.city ? ` · ${l.city}` : ""}
-            </option>
-          ))}
-        </select>
-      </div>
-    );
-  }
+  if (locationPicker) return locationPicker;
 
   if (widget.kind === "key_facts" || widget.kind === "key_value_table" || widget.kind === "property_plan") {
     return (

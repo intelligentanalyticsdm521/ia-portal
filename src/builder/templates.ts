@@ -173,7 +173,11 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     description: "One block per location with its own line items and subtotal. One total at the end.",
     tags: ["Property", "Pricing"],
     build: () => sec([
-      makeWidget("property_block", { locationId: "", heading: "", items: [{ description: "", quantity: 1, unit_price: 0 }] }),
+      // No line items to begin with: an empty priced row on the page is a row
+      // the author cannot fill by typing (a quantity and a rate are not runs of
+      // text), and an empty row printed on a customer's document is a defect.
+      // Services come in from Products & Services in the panel.
+      makeWidget("property_block", { locationId: "", heading: "", items: [] }),
     ], { label: "Property" }),
   },
   {

@@ -156,6 +156,8 @@ export function IadmModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
+              // SD-010: a tooltip on every button, the close X included.
+              title="Close"
               className="rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
             >
               <X className="h-4 w-4" />

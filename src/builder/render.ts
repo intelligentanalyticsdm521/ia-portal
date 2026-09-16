@@ -48,8 +48,13 @@ export function esc(s: unknown): string {
 export interface LocationLite {
   location_id: string;
   name?: string | null;
+  /** Two spellings reach the renderer: `address_line1` off
+   *  lumen.customer_location (the builder's picker) and `address_line_1` from
+   *  oliver-api's fetchLocationDetails, which renames them. Both are read. */
   address_line1?: string | null;
   address_line2?: string | null;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
   city?: string | null;
   state?: string | null;
   postal_code?: string | null;
@@ -194,11 +199,11 @@ function docHeader(p: any, ctx: RenderContext): string {
     ? `<div class="bx-band" style="background:${esc(ctx.ink)}">
          <div class="bx-band-l">${logo}<div><div class="bx-band-name">${esc(ctx.business.name)}</div>
            <div class="bx-band-sub">${esc(ctx.business.tagline || "")}</div></div></div>
-         <div class="bx-band-r">${t(p.bandRight || "", ctx)}</div>
+         <div class="bx-band-r" data-edit="bandRight">${t(p.bandRight || "", ctx)}</div>
        </div>`
     : `<div class="bx-rule" style="border-bottom-color:${esc(ctx.accent)}">
          <div class="bx-band-l">${logo}<div class="bx-band-name">${esc(ctx.business.name)}</div></div>
-         <div class="bx-band-r">${t(p.bandRight || "", ctx)}</div>
+         <div class="bx-band-r" data-edit="bandRight">${t(p.bandRight || "", ctx)}</div>
        </div>`;
   return `${band}
     <div class="bx-title-wrap">
@@ -250,9 +255,15 @@ function heading(p: any, ctx: RenderContext): string {
 
 function list(p: any, ctx: RenderContext): string {
   const items: string[] = Array.isArray(p.items) ? p.items : [];
-  const shown = items.filter((x) => String(x ?? "").trim() || ctx.mode === "edit");
-  if (!shown.length) return "";
-  return `<ul class="bx-list">${shown.map((it, i) => `<li data-edit="items.${i}">${t(it, ctx)}</li>`).join("")}</ul>`;
+  if (ctx.mode !== "edit") {
+    const shown = items.filter((x) => String(x ?? "").trim());
+    if (!shown.length) return "";
+    return `<ul class="bx-list">${shown.map((it, i) => `<li data-edit="items.${i}">${t(it, ctx)}</li>`).join("")}</ul>`;
+  }
+  // One blank line at the end, always, so the list can grow by typing.
+  const slots = [...items, ""];
+  return `<ul class="bx-list">${slots.map((it, i) =>
+    `<li${it ? "" : ` class="bx-slot" data-placeholder="add a point…"`} data-edit="items.${i}">${t(it, ctx)}</li>`).join("")}</ul>`;
 }
 
 function clauses(p: any, ctx: RenderContext): string {
@@ -309,20 +320,28 @@ function comparisonCards(p: any, ctx: RenderContext): string {
   const head = p.heading || ctx.mode === "edit"
     ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
   const intro = p.intro || ctx.mode === "edit" ? paras(p.intro, ctx, "intro") : "";
+  const editing = ctx.mode === "edit";
   const body = cards.map((c, i) => {
     const feats: string[] = Array.isArray(c?.features) ? c.features : [];
+    // While editing, the OPTIONAL parts of a card are always on the page as
+    // empty slots, and the feature list always has one blank line at the end.
+    // A run that is only rendered when it already has words cannot be typed
+    // into at all — which is how "was $34.99", "/mo" and a fourth bullet were
+    // unreachable.
+    const slots = editing ? [...feats, ""] : feats;
+    const opt = (cond: unknown, html: string) => (cond || editing ? html : "");
     return `
     <div class="bx-card${c?.recommended ? " bx-card-rec" : ""}"${c?.recommended ? ` style="border-color:${esc(ctx.accent)}"` : ""}>
       ${c?.recommended ? `<div class="bx-card-badge" style="background:${esc(ctx.accent)}">${esc(c?.badge || "Recommended")}</div>` : ""}
       <div class="bx-card-name" data-edit="cards.${i}.name">${t(c?.name, ctx)}</div>
       <div class="bx-card-price">
-        ${c?.list_price ? `<span class="bx-was" data-edit="cards.${i}.list_price">${t(c.list_price, ctx)}</span>` : ""}
+        ${opt(c?.list_price, `<span class="bx-was${c?.list_price ? "" : " bx-slot"}" data-edit="cards.${i}.list_price" data-placeholder="was…">${t(c?.list_price, ctx)}</span>`)}
         <span class="bx-now" data-edit="cards.${i}.price">${t(c?.price, ctx)}</span>
-        ${c?.per ? `<span class="bx-per" data-edit="cards.${i}.per">${t(c.per, ctx)}</span>` : ""}
+        ${opt(c?.per, `<span class="bx-per${c?.per ? "" : " bx-slot"}" data-edit="cards.${i}.per" data-placeholder="/mo">${t(c?.per, ctx)}</span>`)}
       </div>
       <div class="bx-card-pitch" data-edit="cards.${i}.pitch">${t(c?.pitch, ctx)}</div>
-      <ul class="bx-card-feats">${feats.map((f, fi) => `<li data-edit="cards.${i}.features.${fi}">${t(f, ctx)}</li>`).join("")}</ul>
-      ${c?.note ? `<div class="bx-card-note" data-edit="cards.${i}.note">${t(c.note, ctx)}</div>` : ""}
+      <ul class="bx-card-feats">${slots.map((f, fi) => `<li${f ? "" : ` class="bx-slot" data-placeholder="add a line…"`} data-edit="cards.${i}.features.${fi}">${t(f, ctx)}</li>`).join("")}</ul>
+      ${opt(c?.note, `<div class="bx-card-note${c?.note ? "" : " bx-slot"}" data-edit="cards.${i}.note" data-placeholder="small note…">${t(c?.note, ctx)}</div>`)}
     </div>`;
   }).join("");
   // Rule 1, said on the page as well as enforced in totals.ts.
@@ -360,7 +379,9 @@ function totalsBlock(p: any, ctx: RenderContext): string {
 
 function locationLine(loc?: LocationLite): string {
   if (!loc) return "";
-  return [loc.address_line1, loc.address_line2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
+  const line1 = loc.address_line1 ?? loc.address_line_1;
+  const line2 = loc.address_line2 ?? loc.address_line_2;
+  return [line1, line2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
     .filter((x) => String(x ?? "").trim()).join(" · ");
 }
 
@@ -383,7 +404,8 @@ function propertyPlan(p: any, ctx: RenderContext): string {
 function propertyBlock(p: any, ctx: RenderContext, widgetId: string): string {
   const loc = ctx.locations?.[String(p.locationId || "")];
   const site = ctx.totals.sites.find((s) => s.locationId === String(p.locationId || ""));
-  const items: any[] = Array.isArray(p.items) ? p.items : [];
+  const items: any[] = (Array.isArray(p.items) ? p.items : [])
+    .filter((it: any) => String(it?.description ?? "").trim());
   const rows = items.map((it, i) => {
     const qty = Number(it?.quantity) || 1;
     const unit = Number(it?.unit_price) || 0;
@@ -399,10 +421,10 @@ function propertyBlock(p: any, ctx: RenderContext, widgetId: string): string {
       <div class="bx-site-name" data-edit="heading">${t(p.heading || loc?.name || "", ctx)}</div>
       <div class="bx-site-addr">${esc(locationLine(loc))}</div>
     </div>
-    <table class="bx-table bx-table-plain">
+    ${items.length || ctx.mode !== "edit" ? `<table class="bx-table bx-table-plain">
       <thead><tr style="background:${esc(ctx.accent)}"><th>Service</th><th class="bx-right">Qty</th><th class="bx-right">Rate</th><th class="bx-right">Amount</th></tr></thead>
       <tbody>${rows}</tbody>
-    </table>
+    </table>` : `<div class="bx-imgdrop">Add a service to this property from the panel on the right.</div>`}
     <div class="bx-site-sub"><span>Subtotal for this property</span><span class="bx-strong">${esc(money(site?.subtotal ?? 0, ctx.currency))}</span></div>
   </div>`;
 }
@@ -500,6 +522,8 @@ export const DOCUMENT_CSS = `
 .bx-prose > .bx-p:last-child { margin-bottom: 0; }
 .bx-empty { min-height: 1.4em; color: #94A3B8; }
 .bx-empty:empty::before { content: attr(data-placeholder); color: #94A3B8; }
+.bx-slot:empty::before { content: attr(data-placeholder); color: #CBD5E1; }
+.bx-slot:empty { min-width: 60px; display: inline-block; }
 .bx-list { margin: 0 0 8px; padding-left: 18px; } .bx-list li { margin-bottom: 3px; }
 .bx-band { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 22px 40px; color: #fff; margin: -24px -40px 20px; }
 .bx-rule { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 2px solid; margin-bottom: 18px; }
