@@ -74,13 +74,9 @@ export function OliverQuotesProposalsPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState<null | "quote" | "proposal">(null);
-  // New/Template chooser (founder 2026-08-24): hitting "Create a proposal"
-  // asks blank-or-template FIRST, then opens the editor pre-filled. With no
-  // templates saved the chooser is skipped — a popup with one option is
-  // friction, not a choice.
-  const [chooserOpen, setChooserOpen] = useState(false);
-  const [chooserTemplates, setChooserTemplates] = useState<Array<{ template_id: string; name: string; description?: string | null; is_default?: boolean }> | null>(null);
-  const [pickedTemplateId, setPickedTemplateId] = useState<string | null>(null);
+  // "Create a proposal" opens the builder, which asks blank-or-template as its
+  // own first step (founder 2026-08-24's requirement, in one place instead of
+  // two — see openProposalBuilder below).
   const [detail, setDetail] = useState<null | { kind: "quote" | "proposal"; id: string }>(null);
   const [flash, setFlash] = useState<string | null>(null);
 
@@ -231,29 +227,15 @@ export function OliverQuotesProposalsPage() {
     },
   ];
 
-  async function openProposalChooser() {
-    setPickedTemplateId(null);
-    let list = chooserTemplates;
-    if (list === null) {
-      try {
-        const r = await get<any>("/proposal-templates");
-        const raw = Array.isArray(r) ? r : r?.data ?? [];
-        list = raw.map((t: any) => ({
-          template_id: t.proposal_template_id || t.template_id,
-          name: t.name,
-          description: t.description,
-          is_default: !!t.is_default,
-        }));
-      } catch {
-        list = [];
-      }
-      setChooserTemplates(list);
-    }
-    if (!list || list.length === 0) {
-      setCreateOpen("proposal"); // nothing to choose from — straight to blank
-      return;
-    }
-    setChooserOpen(true);
+  // 2026-09-16 — the template chooser that used to sit here is GONE.
+  //
+  // It asked "blank or which template?" in a small modal, and the builder's own
+  // first step asks exactly that, with the three shipped templates, the
+  // business's saved ones and a picture of each. Two modals asking one question
+  // is the kind of duplication SD-010's rebuild is supposed to remove, so the
+  // card opens the builder and the builder asks once.
+  function openProposalBuilder() {
+    setCreateOpen("proposal");
   }
 
   const card: React.CSSProperties = {
@@ -349,7 +331,7 @@ export function OliverQuotesProposalsPage() {
             </span>
           </span>
         </button>
-        <button style={card} onClick={openProposalChooser}>
+        <button style={card} onClick={openProposalBuilder}>
           <span style={{ ...iconWrap, background: "#F1EDFB", color: "#7C3AED" }}><ScrollText size={18} /></span>
           <span>
             <span style={{ display: "block", fontSize: 14, fontWeight: 700, color: "#0B1C24" }}>Create a proposal</span>
@@ -424,46 +406,11 @@ export function OliverQuotesProposalsPage() {
         </IadmModal>
       )}
 
-      {chooserOpen && (
-        <IadmModal
-          open
-          onClose={() => setChooserOpen(false)}
-          product="oliver"
-          eyebrow="OLIVER · QUOTES & PROPOSALS"
-          title="New proposal"
-          subtitle="Start from scratch, or from one of your templates."
-          size="confirm"
-        >
-          <div style={{ padding: 16, display: "grid", gap: 8 }}>
-            <button
-              onClick={() => { setChooserOpen(false); setPickedTemplateId(null); setCreateOpen("proposal"); }}
-              style={{ textAlign: "left", padding: "12px 14px", borderRadius: 8, border: "1px solid #DBE7ED", background: "#fff", cursor: "pointer" }}
-            >
-              <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>Blank proposal</div>
-              <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>Start from an empty document.</div>
-            </button>
-            {(chooserTemplates || []).map((t) => (
-              <button
-                key={t.template_id}
-                onClick={() => { setChooserOpen(false); setPickedTemplateId(t.template_id); setCreateOpen("proposal"); }}
-                style={{ textAlign: "left", padding: "12px 14px", borderRadius: 8, border: "1px solid #DBE7ED", background: "#fff", cursor: "pointer" }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
-                  {t.name}{t.is_default ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: "#1A7DB5" }}>default</span> : null}
-                </div>
-                {t.description && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>{t.description}</div>}
-              </button>
-            ))}
-          </div>
-        </IadmModal>
-      )}
-
       {createOpen === "proposal" && (
         <CreateProposalDrawer
           onClose={() => setCreateOpen(null)}
           onCreated={(msg) => { setCreateOpen(null); setFlash(msg); reload(); }}
           api={api}
-          initialTemplateId={pickedTemplateId}
         />
       )}
 

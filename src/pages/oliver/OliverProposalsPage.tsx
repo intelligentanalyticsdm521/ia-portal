@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
-import { ProposalCatalogPicker, type PickedService } from "../../components/oliver/ProposalCatalogPicker";
-import { DocumentBrandFrame } from "../../components/oliver/DocumentBrandFrame";
+// The builder replaces the block editor that used to live in this file
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §5 step 2). The catalogue picker and the
+// branded document frame moved with it: the builder renders the real branded
+// document itself, so there is nothing left here to frame.
+import { ProposalBuilder } from "../../builder/proposal/ProposalBuilder";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
@@ -100,6 +103,11 @@ const FILTER_PILLS = [
   { key: "declined", label: "Declined" },
 ];
 
+/** oliver-api's own origin — the PDF is streamed by the API, not the Portal. */
+const OLIVER_PDF_BASE =
+  (import.meta.env.VITE_OLIVER_API_BASE as string) ||
+  (import.meta.env.VITE_OLIVER_API_BASE_URL as string) || "";
+
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -123,7 +131,7 @@ function fmtDate(d?: string | null) {
 
 export function OliverProposalsPage({ embedded = false, createSignal = 0, createCards }: { embedded?: boolean; createSignal?: number; createCards?: React.ReactNode } = {}) {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
-  const { get, post, ready } = useOliverApi();
+  const { get, post, patch, ready } = useOliverApi();
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -354,7 +362,7 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
             setFlash(msg);
             setTimeout(() => setFlash(null), 4000);
           }}
-          api={{ get, post }}
+          api={{ get, post, patch }}
         />
       )}
 
@@ -374,779 +382,50 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
   );
 }
 
-// ─── Create drawer ──────────────────────────────────────────────────────────
+// ─── The editor ─────────────────────────────────────────────────────────────
+//
+// REPLACED 2026-09-16 (BUILDER_PLATFORM_SCOPE_2026-09-15 §5 step 2).
+//
+// What stood here was ~770 lines of block editor: a modal of stacked field
+// lists, one per block kind, with the document rendered beside them and the
+// two kept in step by hand. Brandon's 2026-09-15 walk marked it P2 FAIL —
+// "blocks are added as raw inline fields with no explanation" — and SD-010
+// makes raw field lists a fail by rule.
+//
+// It is DELETED, not left beside the new one. Same export, same props, same
+// route, same list, same buttons; behind them is the one builder every surface
+// will use (src/builder/). "Replace means delete."
 export function CreateProposalDrawer({
-  onClose, onCreated, api, initialTemplateId,
+  onClose, onCreated, api, proposalId,
 }: {
   onClose: () => void;
   onCreated: (msg: string) => void;
-  /** Pre-apply this template the moment the list loads — the New/Template
-      chooser on Quotes & Proposals passes the pick through here. */
+  /** Kept in the signature because Quotes & Proposals passes it; the builder
+   *  offers templates in its own "start from" step and in the gallery, so a
+   *  pre-picked one is no longer a separate mechanism. */
   initialTemplateId?: string | null;
+  /** Opening an existing draft to keep working on it. */
+  proposalId?: string | null;
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
+    patch?: <T>(p: string, body: unknown) => Promise<T>;
   };
 }) {
-  // ── The block model ───────────────────────────────────────────────────────
-  //
-  // Founder 2026-08-19: "Proposals should be expanded to be able to add like
-  // real text field descriptions, pull in the specific line items plus their
-  // descriptions... make it look like a fucking proposal. Not just a quote
-  // with the word proposal."
-  //
-  // So a proposal is a SEQUENCE OF SECTIONS, not a scope textarea over a price
-  // grid:
-  //   text    — a heading and a paragraph. The pitch, the situation, the
-  //             recommendation. Carries no price.
-  //   service — pulled from the product catalogue: name, description and
-  //             feature bullets arrive pre-written, price attached. Editable
-  //             here without touching the catalogue.
-  //   line    — a plain priced row for one-off amounts that need no story.
-  //
-  // scope_html and line_items are RENDERED from the blocks at save, so the
-  // backend contract (and the public accept page, and the PDF) is unchanged.
-  type CardItem = { name: string; pitch?: string; price?: string; list_price?: string; per?: string; note?: string; features?: string[]; recommended?: boolean; badge?: string };
-  type Block =
-    | { key: number; kind: "text"; heading: string; body: string }
-    | { key: number; kind: "service"; name: string; description: string; features: string[]; quantity: number; unit_price: number; recommended?: boolean;
-        // Which catalogue price this line came from. Quotes, jobs and invoices
-        // have always recorded these; proposals recorded neither, so an
-        // accepted proposal could not be traced back to the price it quoted.
-        offering_id?: string; price_id?: string | null;
-        // "billed monthly" / "billed annually". 98 of 114 active prices are
-        // recurring, and without this the customer reads a bare "$29.99" as
-        // the entire cost of the engagement.
-        cadence?: string | null }
-    | { key: number; kind: "line"; description: string; quantity: number; unit_price: number; recommended?: boolean }
-    // Comparison cards. Deliberately NOT priced into the total: a tier
-    // comparison shows four options and the customer buys one, so summing
-    // them would silently change what they are agreeing to pay. The priced
-    // truth stays in service/line blocks.
-    | { key: number; kind: "cards"; heading: string; intro: string; items: CardItem[] }
-    | { key: number; kind: "callout"; heading: string; panels: { title: string; tone?: "accent" | "warn"; items: string[] }[] }
-    | { key: number; kind: "buckets"; heading: string; intro: string; groups: { title: string; total?: string; rows: { label: string; list?: string; amount?: string }[] }[] }
-    | { key: number; kind: "signature"; heading: string; parties: { name: string; lines?: string[] }[] };
-
-  const keyRef = useRef(1);
-  const nextKey = () => keyRef.current++;
-
-  const [contacts, setContacts] = useState<Array<{ contact_id: string; first_name?: string; last_name?: string; email?: string; company_name?: string }>>([]);
-  const [contactId, setContactId] = useState("");
-  // Template body shape (v2): { title?, terms?, tax_rate?, blocks? }.
-  // Legacy bodies ({ scope?, line_items? }) are mapped on load below.
-  const [templates, setTemplates] = useState<Array<{ template_id: string; name: string; body: any; is_default?: boolean }>>([]);
-  const [templateId, setTemplateId] = useState("");
-  const [title, setTitle] = useState("");
-  const [terms, setTerms] = useState("Payment due within 30 days of acceptance.");
-  const [validUntil, setValidUntil] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() + 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [taxRate, setTaxRate] = useState("0");
-  const [discount, setDiscount] = useState("0");
-  const [saving, setSaving] = useState(false);
-  const [savingTemplate, setSavingTemplate] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  const [blocks, setBlocks] = useState<Block[]>([]);
-
-  useEffect(() => {
-    // useOliverApi auto-unwraps the { data: ... } envelope (lib/oliverApi.ts
-    // — documented at the top of that file). Reading r.data here therefore
-    // got undefined from an already-unwrapped array, which emptied the
-    // customer dropdown, the template picker AND the catalogue picker in one
-    // go. Tolerate both shapes so a future un-unwrapped caller still works.
-    const rows = (r: any): any[] => (Array.isArray(r) ? r : r?.data ?? []);
-    api.get<any>("/contacts?limit=200")
-      .then((r) => setContacts(rows(r)))
-      .catch(() => setContacts([]));
-    api.get<any>("/proposal-templates")
-      .then((r) => {
-        const list = rows(r).map((t: any) => ({
-          template_id: t.proposal_template_id || t.template_id,
-          name: t.name,
-          is_default: !!t.is_default,
-          body: typeof t.body_json === "string" ? safeJson(t.body_json) : (t.body_json || t.body || {}),
-        }));
-        setTemplates(list);
-        // Chooser pick: apply it now, against the freshly fetched list —
-        // onSelectTemplate reads state that has not committed yet.
-        if (initialTemplateId) {
-          const t = list.find((x: any) => x.template_id === initialTemplateId);
-          if (t) applyTemplateBody(t);
-        }
-      })
-      .catch(() => setTemplates([]));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function safeJson(s: string): any {
-    try { return JSON.parse(s || "{}"); } catch { return {}; }
-  }
-
-  function onSelectTemplate(id: string) {
-    setTemplateId(id);
-    const t = templates.find((x) => x.template_id === id);
-    if (!t) return;
-    applyTemplateBody(t);
-  }
-
-  function applyTemplateBody(t: { template_id: string; body: any }) {
-    setTemplateId(t.template_id);
-    const b = t.body || {};
-    if (b.title) setTitle(String(b.title));
-    if (b.terms) setTerms(String(b.terms));
-    if (b.tax_rate != null) setTaxRate(String(Number(b.tax_rate) <= 1 ? Number(b.tax_rate) * 100 : Number(b.tax_rate)));
-    if (Array.isArray(b.blocks) && b.blocks.length) {
-      // v2 template: restore the sections exactly as they were saved.
-      setBlocks(b.blocks.map((blk: any) => ({ ...blk, key: nextKey() })));
-      return;
-    }
-    // Legacy template: a scope string becomes one text section, line items
-    // become plain priced rows. Nothing is lost, it just arrives un-split.
-    const legacy: Block[] = [];
-    if (b.scope) legacy.push({ key: nextKey(), kind: "text", heading: "Overview", body: String(b.scope) });
-    for (const it of Array.isArray(b.line_items) ? b.line_items : []) {
-      legacy.push({ key: nextKey(), kind: "line", description: String(it.description || ""), quantity: Number(it.quantity) || 1, unit_price: Number(it.unit_price) || 0 });
-    }
-    if (legacy.length) setBlocks(legacy);
-  }
-
-  // ── Block operations ─────────────────────────────────────────────────────
-  const patchBlock = (key: number, patch: Partial<Block>) =>
-    setBlocks((prev) => prev.map((b) => (b.key === key ? ({ ...b, ...patch } as Block) : b)));
-  const removeBlock = (key: number) => setBlocks((prev) => prev.filter((b) => b.key !== key));
-  const moveBlock = (key: number, dir: -1 | 1) =>
-    setBlocks((prev) => {
-      const i = prev.findIndex((b) => b.key === key);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
-
-  const addText = () => setBlocks((p) => [...p, { key: nextKey(), kind: "text", heading: "", body: "" }]);
-
-  // Sub-item editors for the composite blocks. Each one patches a single
-  // entry inside a block's array without disturbing its siblings — mutating
-  // in place would lose the other cards on every keystroke.
-  const patchCard = (blockKey: number, idx: number, patch: Partial<CardItem>) =>
-    setBlocks((prev) => prev.map((bl) =>
-      bl.key === blockKey && bl.kind === "cards"
-        ? { ...bl, items: bl.items.map((c, i) => (i === idx ? { ...c, ...patch } : c)) }
-        : bl));
-
-  const patchPanel = (blockKey: number, idx: number, patch: Partial<{ title: string; tone: "accent" | "warn"; items: string[] }>) =>
-    setBlocks((prev) => prev.map((bl) =>
-      bl.key === blockKey && bl.kind === "callout"
-        ? { ...bl, panels: bl.panels.map((pn, i) => (i === idx ? { ...pn, ...patch } : pn)) }
-        : bl));
-
-  const patchGroup = (blockKey: number, idx: number, patch: Partial<{ title: string; total: string; rows: { label: string; list?: string; amount?: string }[] }>) =>
-    setBlocks((prev) => prev.map((bl) =>
-      bl.key === blockKey && bl.kind === "buckets"
-        ? { ...bl, groups: bl.groups.map((g, i) => (i === idx ? { ...g, ...patch } : g)) }
-        : bl));
-
-  const addCards = () => setBlocks((p) => [...p, { key: nextKey(), kind: "cards", heading: "", intro: "", items: [
-    { name: "", pitch: "", price: "", features: [] },
-    { name: "", pitch: "", price: "", features: [], recommended: true },
-  ] }]);
-  const addCallout = () => setBlocks((p) => [...p, { key: nextKey(), kind: "callout", heading: "", panels: [
-    { title: "What is included", tone: "accent", items: [""] },
-    { title: "What is not", tone: "warn", items: [""] },
-  ] }]);
-  const addBuckets = () => setBlocks((p) => [...p, { key: nextKey(), kind: "buckets", heading: "Your total, at a glance", intro: "", groups: [
-    { title: "Starting now", total: "", rows: [{ label: "", list: "", amount: "" }] },
-  ] }]);
-  const addSignature = () => setBlocks((p) => [...p, { key: nextKey(), kind: "signature", heading: "Agreement", parties: [
-    { name: "" }, { name: "" },
-  ] }]);
-  const addLine = () => setBlocks((p) => [...p, { key: nextKey(), kind: "line", description: "", quantity: 1, unit_price: 0 }]);
-  const addServiceFromCatalog = (picked: PickedService) =>
-    setBlocks((p) => [...p, {
-      key: nextKey(), kind: "service",
-      name: picked.parts.name,
-      description: picked.parts.description,
-      features: picked.parts.features,
-      quantity: 1,
-      unit_price: picked.parts.unit_price,
-      offering_id: picked.parts.offering_id,
-      price_id: picked.parts.price_id,
-      cadence: picked.parts.cadence,
-    }]);
-
-  // ── Derived money ────────────────────────────────────────────────────────
-  // Money comes from service/line ONLY — never from a comparison card.
-  const priced = blocks.filter((b): b is Extract<Block, { unit_price: number }> => b.kind === "service" || b.kind === "line");
-  const subtotal = priced.reduce((s, b) => s + (Number(b.quantity) || 0) * (Number(b.unit_price) || 0), 0);
-  const tax = subtotal * (Number(taxRate) / 100);
-  const total = Math.max(0, subtotal + tax - Number(discount || 0));
-
-  // ── Render blocks to the wire shape ──────────────────────────────────────
-  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const paras = (s: string) => s.split(/\n{2,}/).map((p) => `<p>${esc(p.trim()).replace(/\n/g, "<br/>")}</p>`).join("\n");
-
-  function renderScopeHtml(): string {
-    return blocks.map((b) => {
-      if (b.kind === "text") {
-        return [b.heading.trim() ? `<h3>${esc(b.heading.trim())}</h3>` : "", b.body.trim() ? paras(b.body) : ""].filter(Boolean).join("\n");
-      }
-      if (b.kind === "service") {
-        return [
-          `<h3>${esc(b.name)}</h3>`,
-          b.description.trim() ? paras(b.description) : "",
-          b.features.length ? `<ul>${b.features.map((f) => `<li>${esc(f)}</li>`).join("")}</ul>` : "",
-        ].filter(Boolean).join("\n");
-      }
-      // The new blocks render properly from blocks_json on the customer page.
-      // scope_html is still written for the sent email and for any reader that
-      // predates blocks, so each one degrades to an honest summary here rather
-      // than vanishing from those surfaces.
-      if (b.kind === "cards") {
-        const cards = b.items.filter((c) => (c.name || "").trim()).map((c) => {
-          const price = [c.list_price, c.price].filter(Boolean).join(" -> ");
-          const head = [c.name, price, c.recommended ? "(recommended)" : ""].filter(Boolean).join(" - ");
-          const feats = (c.features || []).filter(Boolean);
-          return "<li>" + esc(head) + (feats.length ? "<ul>" + feats.map((f) => "<li>" + esc(f) + "</li>").join("") + "</ul>" : "") + "</li>";
-        }).join("");
-        if (!cards) return "";
-        return [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", b.intro.trim() ? paras(b.intro) : "", "<ul>" + cards + "</ul>"].filter(Boolean).join("\n");
-      }
-      if (b.kind === "callout") {
-        const panels = b.panels.map((pn) => {
-          const items = (pn.items || []).filter((x) => x.trim());
-          if (!items.length) return "";
-          return "<h3>" + esc(pn.title) + "</h3><ul>" + items.map((x) => "<li>" + esc(x) + "</li>").join("") + "</ul>";
-        }).filter(Boolean).join("\n");
-        return panels ? [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", panels].filter(Boolean).join("\n") : "";
-      }
-      if (b.kind === "buckets") {
-        const groups = b.groups.map((g) => {
-          const rows = (g.rows || []).filter((r) => (r.label || "").trim());
-          if (!rows.length) return "";
-          const head = [g.title, g.total].filter(Boolean).join(" - ");
-          return "<h3>" + esc(head) + "</h3><ul>" + rows.map((r) => "<li>" + esc([r.label, r.amount].filter(Boolean).join(" - ")) + "</li>").join("") + "</ul>";
-        }).filter(Boolean).join("\n");
-        return groups ? [b.heading.trim() ? "<h3>" + esc(b.heading.trim()) + "</h3>" : "", b.intro.trim() ? paras(b.intro) : "", groups].filter(Boolean).join("\n") : "";
-      }
-      if (b.kind === "signature") return "";  // a signature line means nothing in an email body
-      return ""; // plain priced rows appear in the totals table, not the narrative
-    }).filter(Boolean).join("\n\n");
-  }
-
-  function collectLineItems() {
-    return priced
-      .filter((b) => (b.kind === "service" ? b.name.trim() : b.description.trim()))
-      .map((b) => ({
-        // A recurring price must SAY it is recurring. The amount column shows
-        // a bare number, so "$29.99" with no cadence reads as the whole cost.
-        description: (() => {
-          const base = (b.kind === "service" ? b.name : b.description).trim();
-          const cadence = b.kind === "service" ? b.cadence : null;
-          return cadence && !base.includes(cadence) ? `${base} (${cadence})` : base;
-        })(),
-        quantity: Number(b.quantity) || 1,
-        unit_price: Number(b.unit_price) || 0,
-        line_total: (Number(b.quantity) || 1) * (Number(b.unit_price) || 0),
-        // Ride through line_items_json untouched (parseLineItems passes the
-        // array straight through), so this needs no API or migration change.
-        ...(b.kind === "service" && b.offering_id ? { service_offering_id: b.offering_id } : {}),
-        ...(b.kind === "service" && b.price_id ? { service_price_id: b.price_id } : {}),
-        // Rides through line_items_json untouched; the customer page renders
-        // it as the "Recommended" pill — the founder's own reference proposal
-        // (MS Moments PDF) buckets services exactly this way.
-        recommended: !!b.recommended,
-      }));
-  }
-
-  async function submit(sendNow = false) {
-    if (!title.trim()) { setErr("Type a title at the top of the document first."); return; }
-    // Send-immediately needs somewhere to send. Catching this here beats the
-    // API's 400 — the customer picker is right above the document.
-    if (sendNow && !contactId) { setErr("Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
-    const line_items = collectLineItems();
-    if (!line_items.length) { setErr("Add at least one service or priced line."); return; }
-    setErr(null); setSaving(true);
-    try {
-      const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals", {
-        contact_id: contactId || null,
-        title: title.trim(),
-        scope_html: renderScopeHtml() || null,
-        // The document as authored. scope_html + line_items above stay exactly
-        // as they were, so nothing that reads them changes; this is what lets
-        // the customer page rebuild the real document instead of a narrative.
-        blocks: { v: 1, blocks: blocks.map(({ key: _k, ...rest }) => rest) },
-        terms_html: terms.trim() || null,
-        line_items,
-        tax_rate: Number(taxRate) / 100,
-        discount_amount: Number(discount) || 0,
-        valid_until: validUntil || null,
-      });
-      let msg = `Created proposal ${res.proposal_number}.`;
-      if (sendNow) {
-        try {
-          const sendRes = await api.post<{ url: string }>(`/proposals/${res.proposal_id}/send`);
-          msg += ` Sent — public URL: ${sendRes.url}`;
-        } catch (e) {
-          msg += ` Send failed: ${apiErrorMessage(e)}`;
-        }
-      }
-      onCreated(msg);
-    } catch (e) {
-      setErr(`Create failed: ${(e as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Save what is on screen as a reusable template, sections and all.
-  // "Standard snow removal proposal" is picked next winter, prices adjusted,
-  // sent — not retyped.
-  async function saveAsTemplate() {
-    const name = window.prompt("Name this template", title.trim() || "Untitled proposal");
-    if (!name || !name.trim()) return;
-    setSavingTemplate(true); setErr(null);
-    try {
-      await api.post("/proposal-templates", {
-        name: name.trim(),
-        description: title.trim() ? `Saved from “${title.trim()}”` : null,
-        body: {
-          title: title.trim() || null,
-          terms: terms.trim() || null,
-          tax_rate: Number(taxRate) || 0,
-          blocks: blocks.map(({ key: _k, ...rest }) => rest),
-        },
-      });
-      window.alert(`Saved “${name.trim()}”. It's in the template picker for your next proposal.`);
-    } catch (e) {
-      setErr(`Could not save the template: ${(e as Error).message}`);
-    } finally {
-      setSavingTemplate(false);
-    }
-  }
-
-  const blockShell: React.CSSProperties = { border: "1px solid #E2E8F0", borderRadius: 8, padding: 12, background: "#fff" };
-  const blockToolbar = (b: Block, label: string, color: string) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color }}>{label}</span>
-      {/* Only the PRICED blocks carry a document-level Recommended flag;
-          comparison cards each carry their own, and a callout or a
-          signature has nothing to recommend. */}
-      {(b.kind === "service" || b.kind === "line") && (
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: b.recommended ? "#B45309" : "#8AA6B4", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={!!b.recommended}
-            onChange={(e) => patchBlock(b.key, { recommended: e.target.checked } as Partial<Block>)}
-          />
-          Recommended
-        </label>
-      )}
-      <span style={{ marginLeft: "auto", display: "flex", gap: 2 }}>
-        <button onClick={() => moveBlock(b.key, -1)} title="Move up" style={miniBtn}>↑</button>
-        <button onClick={() => moveBlock(b.key, 1)} title="Move down" style={miniBtn}>↓</button>
-        <button onClick={() => removeBlock(b.key)} title="Remove section" style={{ ...miniBtn, color: "#B91C1C" }}>×</button>
-      </span>
-    </div>
-  );
-
-  // Founder 2026-08-19: no side bars — the editor is a pop-up modal, and you
-  // edit ON the branded document: the same accent bar, logo, business name and
-  // footer the customer receives, live while the words are typed.
   return (
-    <IadmModal
-      open
+    <ProposalBuilder
+      api={{
+        get: api.get,
+        post: api.post,
+        patch: api.patch ?? ((path, body) => api.post(path, body)),
+      }}
+      proposalId={proposalId ?? null}
       onClose={onClose}
-      product="oliver"
-      eyebrow="OLIVER · QUOTES & PROPOSALS"
-      title="New proposal"
-      subtitle="What you see here is what the customer receives."
-      size="info"
-      footer={
-        <>
-          <button
-            onClick={saveAsTemplate}
-            disabled={savingTemplate || (!blocks.length && !title.trim())}
-            style={{ ...addBtn, marginRight: "auto" }}
-            title="Save these sections as a reusable template"
-          >
-            {savingTemplate ? "Saving template…" : "Save as template"}
-          </button>
-          {/* Greyed-out-with-no-reason is what made this un-shippable at
-              10pm with a customer waiting: the title box on the page reads as
-              a heading, so an empty title silently disabled everything. The
-              button is always live now; submit() says exactly what is missing,
-              here in the footer where it cannot scroll out of view. */}
-          {err && (
-            <span style={{ fontSize: 12, color: "#B91C1C", marginRight: 4 }}>{err}</span>
-          )}
-          <IadmButton variant="ghost" onClick={onClose} disabled={saving}>Cancel</IadmButton>
-          {/* accent is documented as "second action — Save / Create / Confirm";
-              ghost is Cancel's. Both as ghost put two identical bordered-white
-              buttons side by side, which is how you click the wrong one. */}
-          <IadmButton variant="accent" product="oliver" onClick={() => submit(false)} disabled={saving}>
-            {saving ? "Working…" : "Save draft"}
-          </IadmButton>
-          {/* No title= — IadmButton does not take one. The label says it. */}
-          <IadmButton variant="primary" product="oliver" onClick={() => submit(true)} disabled={saving}>
-            {saving ? "Working…" : "Create & send"}
-          </IadmButton>
-        </>
-      }
-    >
-        <div style={{ padding: 20, display: "grid", gap: 14, background: "#EEF3F6" }}>
-          {templates.length > 0 && (
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Start from template (optional)</span>
-              <select style={pInput} value={templateId} onChange={(e) => onSelectTemplate(e.target.value)}>
-                <option value="">— No template —</option>
-                {templates.map((t) => (
-                  <option key={t.template_id} value={t.template_id}>
-                    {t.name}{t.is_default ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Customer</span>
-              <select style={pInput} value={contactId} onChange={(e) => setContactId(e.target.value)}>
-                <option value="">— Choose later —</option>
-                {contacts.map((c) => (
-                  <option key={c.contact_id} value={c.contact_id}>
-                    {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.company_name || c.contact_id.slice(0, 8)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Valid until</span>
-              <input type="date" style={pInput} value={validUntil} onChange={(e) => setValidUntil(e.target.value)} />
-            </label>
-            {/* 2026-09-02 — the "Send immediately" checkbox that used to sit
-                here is gone. Sending is a primary action and was hidden beside
-                a date field, so the button said "Save draft" unless you found
-                and ticked it. It is now two explicit buttons at the bottom. */}
-          </div>
-
-          {/* ── The document, AS THE CUSTOMER GETS IT ─────────────────────
-              Everything below is edited in place on the branded page — accent
-              bar, logo, business name, footer — so what is on screen while
-              typing IS the send. */}
-          <DocumentBrandFrame get={api.get} docLabel="PROPOSAL">
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              placeholder="Proposal title (required) — e.g. Your Platform Proposal"
-              style={{
-                width: "100%", border: 0, outline: "none", background: "transparent",
-                borderBottom: "2px dashed #CBD5E1",
-                fontSize: 24, fontWeight: 800, color: "#0B1C24", marginBottom: 12, padding: "0 0 4px",
-              }}
-            />
-
-          {/* ── The document ───────────────────────────────────────────── */}
-          <div>
-            <span style={pLabel}>Proposal sections</span>
-            <div style={{ display: "grid", gap: 10 }}>
-              {blocks.length === 0 && (
-                <div style={{ padding: 20, border: "1px dashed #CBD5E1", borderRadius: 8, textAlign: "center", fontSize: 12, color: "#64748B", background: "#fff" }}>
-                  Build the proposal from sections: written parts for the pitch, services pulled
-                  from your catalogue with their descriptions, and plain priced lines.
-                </div>
-              )}
-
-              {blocks.map((b) => (
-                <div key={b.key} style={blockShell}>
-                  {b.kind === "text" && (
-                    <>
-                      {blockToolbar(b, "Written section", "#7C3AED")}
-                      <input
-                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
-                        placeholder="Section heading — e.g. Your Recommended Path"
-                        value={b.heading}
-                        onChange={(e) => patchBlock(b.key, { heading: e.target.value })}
-                      />
-                      <textarea
-                        style={{ ...pInput, minHeight: 88, resize: "vertical", lineHeight: 1.5 }}
-                        placeholder="The words that sell it. Blank line starts a new paragraph."
-                        value={b.body}
-                        onChange={(e) => patchBlock(b.key, { body: e.target.value })}
-                      />
-                    </>
-                  )}
-
-                  {b.kind === "service" && (
-                    <>
-                      {blockToolbar(b, "Service — from your catalogue", "#0B6E8C")}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 84px 110px", gap: 8, marginBottom: 6 }}>
-                        <input style={{ ...pInput, fontWeight: 600 }} value={b.name}
-                          onChange={(e) => patchBlock(b.key, { name: e.target.value })} />
-                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.5} value={b.quantity}
-                          onChange={(e) => patchBlock(b.key, { quantity: Number(e.target.value) })} title="Quantity" />
-                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.01} value={b.unit_price}
-                          onChange={(e) => patchBlock(b.key, { unit_price: Number(e.target.value) })} title="Unit price" />
-                      </div>
-                      <textarea
-                        style={{ ...pInput, minHeight: 64, resize: "vertical", lineHeight: 1.5, marginBottom: 6 }}
-                        placeholder="What this service is and why it's worth having."
-                        value={b.description}
-                        onChange={(e) => patchBlock(b.key, { description: e.target.value })}
-                      />
-                      <textarea
-                        style={{ ...pInput, minHeight: 48, resize: "vertical", fontSize: 12 }}
-                        placeholder={"What's included — one bullet per line"}
-                        value={b.features.join("\n")}
-                        onChange={(e) => patchBlock(b.key, { features: e.target.value.split("\n") })}
-                        onBlur={(e) => patchBlock(b.key, { features: e.target.value.split("\n").map((f) => f.trim()).filter(Boolean) })}
-                      />
-                      <div style={{ marginTop: 4, fontSize: 10, color: "#8AA6B4" }}>
-                        Edits here change this proposal only — the catalogue keeps its own wording.
-                      </div>
-                    </>
-                  )}
-
-                  {b.kind === "line" && (
-                    <>
-                      {blockToolbar(b, "Priced line", "#B45309")}
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 84px 110px", gap: 8 }}>
-                        <input style={pInput} placeholder="Description" value={b.description}
-                          onChange={(e) => patchBlock(b.key, { description: e.target.value })} />
-                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.5} value={b.quantity}
-                          onChange={(e) => patchBlock(b.key, { quantity: Number(e.target.value) })} title="Quantity" />
-                        <input style={{ ...pInput, textAlign: "right" }} type="number" min={0} step={0.01} value={b.unit_price}
-                          onChange={(e) => patchBlock(b.key, { unit_price: Number(e.target.value) })} title="Unit price" />
-                      </div>
-                    </>
-                  )}
-
-                  {b.kind === "cards" && (
-                    <>
-                      {blockToolbar(b, "Comparison cards", "#B45309")}
-                      <input
-                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
-                        placeholder="Section heading - e.g. Choose your ARION tier"
-                        value={b.heading}
-                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
-                      />
-                      <textarea
-                        style={{ ...pInput, minHeight: 46, resize: "vertical", marginBottom: 8 }}
-                        placeholder="One line of context above the cards (optional)"
-                        value={b.intro}
-                        onChange={(e) => patchBlock(b.key, { intro: e.target.value } as Partial<Block>)}
-                      />
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {b.items.map((c, ci) => (
-                          <div key={ci} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: c.recommended ? "#FFF7ED" : "#F8FAFC" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 96px 96px 64px", gap: 6, marginBottom: 6 }}>
-                              <input style={pInput} placeholder="Tier name" value={c.name}
-                                onChange={(e) => patchCard(b.key, ci, { name: e.target.value })} />
-                              <input style={pInput} placeholder="Was $34.99" value={c.list_price || ""}
-                                onChange={(e) => patchCard(b.key, ci, { list_price: e.target.value })} />
-                              <input style={pInput} placeholder="Now $14" value={c.price || ""}
-                                onChange={(e) => patchCard(b.key, ci, { price: e.target.value })} />
-                              <input style={pInput} placeholder="/mo" value={c.per || ""}
-                                onChange={(e) => patchCard(b.key, ci, { per: e.target.value })} />
-                            </div>
-                            <input style={{ ...pInput, marginBottom: 6 }} placeholder="One-line pitch for this tier"
-                              value={c.pitch || ""} onChange={(e) => patchCard(b.key, ci, { pitch: e.target.value })} />
-                            <textarea
-                              style={{ ...pInput, minHeight: 56, resize: "vertical" }}
-                              placeholder="Features - one per line"
-                              value={(c.features || []).join("\n")}
-                              onChange={(e) => patchCard(b.key, ci, { features: e.target.value.split("\n") })}
-                            />
-                            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-                              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: c.recommended ? "#B45309" : "#8AA6B4", cursor: "pointer" }}>
-                                <input type="checkbox" checked={!!c.recommended}
-                                  onChange={(e) => patchCard(b.key, ci, { recommended: e.target.checked })} />
-                                Recommended
-                              </label>
-                              <input style={{ ...pInput, maxWidth: 190 }} placeholder="Badge override"
-                                value={c.badge || ""} onChange={(e) => patchCard(b.key, ci, { badge: e.target.value })} />
-                              <button style={{ ...miniBtn, marginLeft: "auto", color: "#B91C1C" }} title="Remove card"
-                                onClick={() => patchBlock(b.key, { items: b.items.filter((_, x) => x !== ci) } as Partial<Block>)}>x</button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      <button style={{ ...addBtn, marginTop: 8 }}
-                        onClick={() => patchBlock(b.key, { items: [...b.items, { name: "", pitch: "", price: "", features: [] }] } as Partial<Block>)}>
-                        + Add card
-                      </button>
-                      <div style={{ fontSize: 10, color: "#8AA6B4", marginTop: 6 }}>
-                        Cards are a comparison - they show options side by side and do not change the total.
-                        The priced truth stays in your services and priced lines.
-                      </div>
-                    </>
-                  )}
-
-                  {b.kind === "callout" && (
-                    <>
-                      {blockToolbar(b, "Two-column callout", "#0F766E")}
-                      <input
-                        style={{ ...pInput, fontWeight: 600, marginBottom: 8 }}
-                        placeholder="Section heading (optional)"
-                        value={b.heading}
-                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
-                      />
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        {b.panels.map((pn, pi) => (
-                          <div key={pi} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: "#F8FAFC" }}>
-                            <input style={{ ...pInput, fontWeight: 600, marginBottom: 6 }} placeholder="Panel title"
-                              value={pn.title} onChange={(e) => patchPanel(b.key, pi, { title: e.target.value })} />
-                            <textarea style={{ ...pInput, minHeight: 76, resize: "vertical" }}
-                              placeholder="One point per line"
-                              value={(pn.items || []).join("\n")}
-                              onChange={(e) => patchPanel(b.key, pi, { items: e.target.value.split("\n") })} />
-                            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 600, color: "#8AA6B4", marginTop: 6, cursor: "pointer" }}>
-                              <input type="checkbox" checked={pn.tone === "warn"}
-                                onChange={(e) => patchPanel(b.key, pi, { tone: e.target.checked ? "warn" : "accent" })} />
-                              Flag colour (gaps / exclusions)
-                            </label>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  )}
-
-                  {b.kind === "buckets" && (
-                    <>
-                      {blockToolbar(b, "Totals at a glance", "#1D4ED8")}
-                      <input
-                        style={{ ...pInput, fontWeight: 600, marginBottom: 6 }}
-                        placeholder="Section heading"
-                        value={b.heading}
-                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
-                      />
-                      <textarea style={{ ...pInput, minHeight: 40, resize: "vertical", marginBottom: 8 }}
-                        placeholder="Context line (optional)"
-                        value={b.intro} onChange={(e) => patchBlock(b.key, { intro: e.target.value } as Partial<Block>)} />
-                      <div style={{ display: "grid", gap: 8 }}>
-                        {b.groups.map((g, gi) => (
-                          <div key={gi} style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 10, background: "#F8FAFC" }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 130px 30px", gap: 6, marginBottom: 6 }}>
-                              <input style={{ ...pInput, fontWeight: 600 }} placeholder="Group - e.g. Starting now"
-                                value={g.title} onChange={(e) => patchGroup(b.key, gi, { title: e.target.value })} />
-                              <input style={pInput} placeholder="$74.00 / mo"
-                                value={g.total || ""} onChange={(e) => patchGroup(b.key, gi, { total: e.target.value })} />
-                              <button style={{ ...miniBtn, color: "#B91C1C" }} title="Remove group"
-                                onClick={() => patchBlock(b.key, { groups: b.groups.filter((_, x) => x !== gi) } as Partial<Block>)}>x</button>
-                            </div>
-                            <textarea style={{ ...pInput, minHeight: 60, resize: "vertical" }}
-                              placeholder={"One row per line:  Label | was | amount"}
-                              value={(g.rows || []).map((r) => [r.label, r.list, r.amount].filter((x) => x != null).join(" | ")).join("\n")}
-                              onChange={(e) => patchGroup(b.key, gi, {
-                                rows: e.target.value.split("\n").map((ln) => {
-                                  const parts = ln.split("|").map((x) => x.trim());
-                                  return { label: parts[0] || "", list: parts[1] || "", amount: parts[2] || "" };
-                                }),
-                              })} />
-                          </div>
-                        ))}
-                      </div>
-                      <button style={{ ...addBtn, marginTop: 8 }}
-                        onClick={() => patchBlock(b.key, { groups: [...b.groups, { title: "", total: "", rows: [{ label: "", list: "", amount: "" }] }] } as Partial<Block>)}>
-                        + Add group
-                      </button>
-                    </>
-                  )}
-
-                  {b.kind === "signature" && (
-                    <>
-                      {blockToolbar(b, "Signature block", "#475569")}
-                      <input
-                        style={{ ...pInput, fontWeight: 600, marginBottom: 8 }}
-                        placeholder="Heading - e.g. Agreement and signatures"
-                        value={b.heading}
-                        onChange={(e) => patchBlock(b.key, { heading: e.target.value } as Partial<Block>)}
-                      />
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                        {b.parties.map((pt, pi) => (
-                          <input key={pi} style={pInput} placeholder={pi === 0 ? "Customer name" : "Your business name"}
-                            value={pt.name}
-                            onChange={(e) => patchBlock(b.key, {
-                              parties: b.parties.map((x, xi) => (xi === pi ? { ...x, name: e.target.value } : x)),
-                            } as Partial<Block>)} />
-                        ))}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#8AA6B4", marginTop: 6 }}>
-                        Renders signature, printed name and date lines for both parties.
-                      </div>
-                    </>
-                  )}
-
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12, marginTop: 8 }}>
-              <button onClick={addText} style={addBtn}>+ Written section</button>
-              <button onClick={addLine} style={addBtn}>+ Priced line</button>
-              <ProposalCatalogPicker get={api.get} ready onPick={addServiceFromCatalog} />
-              <span style={{ width: 1, height: 20, background: "#E2E8F0" }} />
-              <button onClick={addCards} style={addBtn}>+ Comparison cards</button>
-              <button onClick={addCallout} style={addBtn}>+ Two-column callout</button>
-              <button onClick={addBuckets} style={addBtn}>+ Totals at a glance</button>
-              <button onClick={addSignature} style={addBtn}>+ Signature block</button>
-            </div>
-          </div>
-
-          {/* ── Money ──────────────────────────────────────────────────── */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Tax rate (%)</span>
-              <input type="number" min="0" step="0.01" style={pInput} value={taxRate} onChange={(e) => setTaxRate(e.target.value)} />
-            </label>
-            <label style={{ display: "block" }}>
-              <span style={pLabel}>Discount ($)</span>
-              <input type="number" min="0" step="0.01" style={pInput} value={discount} onChange={(e) => setDiscount(e.target.value)} />
-            </label>
-          </div>
-
-          <div style={{ padding: 12, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ color: "#5A7A8A" }}>Subtotal</span>
-              <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>{fmtMoney(subtotal)}</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-              <span style={{ color: "#5A7A8A" }}>Tax ({taxRate}%)</span>
-              <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>{fmtMoney(tax)}</span>
-            </div>
-            {Number(discount) > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                <span style={{ color: "#5A7A8A" }}>Discount</span>
-                <span style={{ color: "#0B1C24", fontFamily: "monospace" }}>-{fmtMoney(Number(discount))}</span>
-              </div>
-            )}
-            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #E2E8F0", paddingTop: 6 }}>
-              <span>Total</span>
-              <span style={{ fontFamily: "monospace" }}>{fmtMoney(total)}</span>
-            </div>
-          </div>
-
-          <label style={{ display: "block" }}>
-            <span style={pLabel}>Terms</span>
-            <textarea style={{ ...pInput, minHeight: 56, resize: "vertical" }}
-              value={terms} onChange={(e) => setTerms(e.target.value)} />
-          </label>
-
-          </DocumentBrandFrame>
-
-          {err && (
-            <div style={{ padding: 10, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 6 }}>{err}</div>
-          )}
-        </div>
-    </IadmModal>
+      onSaved={onCreated}
+    />
   );
 }
 
-const miniBtn: React.CSSProperties = { border: "1px solid #E2E8F0", background: "#fff", borderRadius: 4, width: 22, height: 22, fontSize: 12, color: "#5A7A8A", cursor: "pointer", lineHeight: 1 };
-const addBtn: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent", border: 0, cursor: "pointer", padding: 0 };
 
 const pLabel: React.CSSProperties = { display: "block", fontSize: 11, fontWeight: 600, color: "#5A7A8A", marginBottom: 4 };
 const pInput: React.CSSProperties = {
@@ -1236,6 +515,15 @@ export function ProposalDetailDrawer({
   const [revisions, setRevisions] = useState<ProposalRevision[]>([]);
   const [revsErr, setRevsErr] = useState<string | null>(null);
   const [showAddRevision, setShowAddRevision] = useState(false);
+  // §8 item 6 — the business's countersign, and the signing record behind it.
+  const [signatures, setSignatures] = useState<Array<{ party: string; signer_name: string; signed_at: string; ip_address: string | null; consent_text: string; document_version: number }>>([]);
+  const [counterName, setCounterName] = useState("");
+  const [counterBusy, setCounterBusy] = useState(false);
+  const [counterErr, setCounterErr] = useState<string | null>(null);
+  // The public token. The business opens the SAME PDF the customer gets, by
+  // the same URL — the authenticated route cannot be reached from an <a href>,
+  // and a second PDF endpoint would be a second PDF.
+  const [publicToken, setPublicToken] = useState<string | null>(null);
 
   // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
   const parentTotalCents = proposalSummary
@@ -1277,6 +565,21 @@ export function ProposalDetailDrawer({
   }, [api, proposalId]);
 
   useEffect(() => { reloadRevisions(); }, [reloadRevisions]);
+
+  // The signing record, from the one place it lives (oliver.document_signature
+  // through GET /proposals/:id).
+  useEffect(() => {
+    let cancelled = false;
+    api.get<any>(`/proposals/${proposalId}`)
+      .then((r) => {
+        if (cancelled) return;
+        const row = r?.data ?? r;
+        setSignatures(row?.signatures || []);
+        setPublicToken(row?.token || null);
+      })
+      .catch(() => { if (!cancelled) { setSignatures([]); setPublicToken(null); } });
+    return () => { cancelled = true; };
+  }, [api, proposalId]);
 
   const usedFreeRevisions = Number(proposalSummary?.free_revisions_used ?? 0);
   const isPaused = !!proposalSummary?.is_paused;
@@ -1349,6 +652,63 @@ export function ProposalDetailDrawer({
       subtitle={proposalSummary?.proposal_number ?? proposalId}
       width="xl"
     >
+      {/* ── Signatures (§8 item 6) ─────────────────────────────────────────
+          Who signed, when, from where, to which wording, against which
+          version — and the business's own countersign, which is a SECOND row
+          on the record rather than an edit of the customer's. */}
+      <div style={{ marginBottom: 14, padding: 12, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>Signatures</span>
+          {publicToken && (
+            <a href={`${OLIVER_PDF_BASE}/p/proposals/${publicToken}/pdf`} target="_blank" rel="noreferrer"
+              title="Open this document as a PDF, with any signatures on it — the same file the customer gets"
+              style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5" }}>Open the PDF</a>
+          )}
+        </div>
+        {signatures.length === 0 && <div style={{ color: "#94A3B8" }}>Nobody has signed this yet.</div>}
+        {signatures.map((sg) => (
+          <div key={sg.party} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid #F1F5F9" }}>
+            <span style={{ color: "#5A7A8A" }}>{sg.party === "customer" ? "Customer" : "Countersigned"}</span>
+            <span style={{ textAlign: "right" }}>
+              <strong>{sg.signer_name}</strong>
+              <span style={{ color: "#5A7A8A" }}> · {new Date(sg.signed_at).toLocaleString()} · v{sg.document_version}{sg.ip_address ? ` · ${sg.ip_address}` : ""}</span>
+            </span>
+          </div>
+        ))}
+        {proposalSummary?.status === "accepted" && !signatures.some((sg) => sg.party === "business") && (
+          <div style={{ display: "flex", gap: 6, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <input
+              value={counterName}
+              onChange={(e) => setCounterName(e.target.value)}
+              placeholder="Type your name to countersign"
+              title="Your typed name becomes your signature on this document"
+              style={{ border: "1px solid #CBD5E1", borderRadius: 4, padding: "6px 9px", fontSize: 12, flex: "1 1 200px" }}
+            />
+            <button
+              type="button"
+              disabled={counterBusy || counterName.trim().length < 2}
+              title={counterName.trim().length < 2 ? "Type your name first" : "Countersign this document"}
+              onClick={async () => {
+                setCounterBusy(true); setCounterErr(null);
+                try {
+                  await api.post(`/proposals/${proposalId}/countersign`, { signature: counterName.trim() });
+                  const d = await api.get<any>(`/proposals/${proposalId}`);
+                  setSignatures((d?.data ?? d)?.signatures || []);
+                  setCounterName("");
+                } catch (e) { setCounterErr((e as Error).message); }
+                finally { setCounterBusy(false); }
+              }}
+              style={{
+                border: "none", borderRadius: 4, padding: "7px 12px", fontSize: 12, fontWeight: 700, color: "#fff",
+                background: counterName.trim().length >= 2 ? "#0B6E8C" : "#CBD5E1",
+                cursor: counterName.trim().length >= 2 ? "pointer" : "not-allowed",
+              }}
+            >{counterBusy ? "Signing…" : "Countersign"}</button>
+            {counterErr && <span style={{ color: "#B91C1C", fontSize: 11 }}>{counterErr}</span>}
+          </div>
+        )}
+      </div>
+
       <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "#5A7A8A" }}>Total</span>
