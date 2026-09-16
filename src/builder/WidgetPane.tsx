@@ -48,9 +48,23 @@ export interface WidgetPaneProps {
   onInsert: (widget: WidgetDef, count?: number) => void;
   /** Rendered above the search box — an "Ask ARGUS" action, typically. */
   header?: React.ReactNode;
+  /**
+   * DRAG TO POSITION (§11.8).
+   *
+   * A card can be dragged onto the canvas and dropped between two widgets
+   * rather than only clicked and landed at the end. The pane reports what is
+   * being dragged and the canvas draws the indicator, because the canvas is
+   * the only thing that knows where the columns are; the shell holds the one
+   * piece of state between them.
+   *
+   * `null` means the drag is over. Told on `dragend` whatever the outcome, so
+   * a drag that ends on the widget list itself cannot leave the canvas
+   * believing something is still in the air.
+   */
+  onDragWidget?: (widget: WidgetDef | null) => void;
 }
 
-export function WidgetPane({ adapter, onInsert, header }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, header, onDragWidget }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   // Which widget is mid-question, and the number showing in its stepper.
   const [asking, setAsking] = useState<{ kind: string; value: number } | null>(null);
@@ -90,6 +104,13 @@ export function WidgetPane({ adapter, onInsert, header }: WidgetPaneProps) {
         </div>
       </div>
 
+      {/* DRAG TO POSITION (§11.8), said once rather than appended to every
+          tooltip — the tooltips are the widget's own words and stay that way. */}
+      <div className="border-b border-slate-100 px-3 pb-2 text-[10px] leading-snug text-slate-400">
+        Click a widget to add it, or <strong className="font-semibold text-slate-500">drag it onto the page</strong> to
+        drop it exactly where you want it.
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         {total === 0 && (
           <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
@@ -112,6 +133,17 @@ export function WidgetPane({ adapter, onInsert, header }: WidgetPaneProps) {
                     title={widgetTooltip(w)}
                     aria-label={widgetTooltip(w)}
                     data-widget-kind={w.kind}
+                    /* HTML5 drag, the events Canvas already uses to reorder
+                       sections. No library: a second drag mechanism is a
+                       second set of rules about what a drop means. */
+                    draggable={!!onDragWidget}
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = "copy";
+                      // Some browsers refuse to start a drag with no payload.
+                      e.dataTransfer.setData("text/plain", w.label);
+                      onDragWidget?.(w);
+                    }}
+                    onDragEnd={() => onDragWidget?.(null)}
                     className="flex w-full items-start gap-2.5 rounded border border-slate-200 bg-white p-2 text-left transition-colors hover:border-slate-400 hover:bg-slate-50"
                   >
                     {/* The PICTURE: the shape this widget makes on the page. */}

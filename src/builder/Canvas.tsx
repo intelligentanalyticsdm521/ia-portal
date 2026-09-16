@@ -25,8 +25,34 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Copy, GripVertical, Layers, Palette, PanelsTopLeft, Plus, Square, Star, Sun, Trash2, Type,
 } from "lucide-react";
-import type { BuilderDocument, Section, Selection } from "./model";
+import type { BuilderDocument, Section, Selection, WidgetPath } from "./model";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
+
+/**
+ * WHERE A DROP WOULD LAND — the indicator line's own coordinates (§11.8).
+ *
+ * Computed from the DOM and not from the model, because the canvas paints the
+ * renderer's HTML with `innerHTML` and there are no React nodes inside it to
+ * hang a drop zone on. That is a feature: one renderer means the author drops
+ * a widget onto the CUSTOMER's document, not onto an editor's shadow copy of
+ * it.
+ */
+export interface DropSpot {
+  sectionId: string;
+  columnIndex: number;
+  /** Where in that column's widget list the drop inserts. */
+  index: number;
+  /** Relative to the section host, for the line. */
+  top: number;
+  left: number;
+  width: number;
+}
+
+/** What is in the air: a NEW widget from the pane, or one already on the page. */
+export type CanvasDrag =
+  | { kind: "new"; label: string }
+  | { kind: "move"; path: WidgetPath }
+  | null;
 
 export interface CanvasProps {
   doc: BuilderDocument;
@@ -40,6 +66,16 @@ export interface CanvasProps {
   onDeleteSection: (sectionId: string) => void;
   onMoveSection: (sectionId: string, toIndex: number) => void;
   onAddSection: (atIndex: number, how: "blank" | "premade") => void;
+  /**
+   * DRAG TO POSITION. What is being dragged, and where it was let go.
+   *
+   * The shell owns the payload because the widget PANE starts half of these
+   * drags and the pane is not inside the canvas. The canvas owns the geometry,
+   * because it is the only thing that knows where the columns ended up.
+   */
+  drag?: CanvasDrag;
+  onDragWidget?: (drag: CanvasDrag) => void;
+  onDropWidget?: (spot: { sectionId: string; columnIndex: number; index: number }) => void;
   /** Shown under the page: what the template puts next. */
   nextUp?: string | null;
   /**
@@ -167,11 +203,15 @@ function SectionHost({
   section, index, total, ctx, selected, selectedWidgetId, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onAddSection, onDragStart, onDragEnd, onDropAt, renderSection: renderOne,
+  drag, onDragWidget, onDropWidget,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void; onDropAt: (i: number) => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  /** Where the line is drawn right now. Null when nothing is over this section. */
+  const [spot, setSpot] = useState<DropSpot | null>(null);
   const html = (renderOne || renderSection)(section, ctx);
   /** True when this section holds a part the law puts there. See model.ts. */
   const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
@@ -190,9 +230,84 @@ function SectionHost({
     }
     // Show which widget is selected, without a second render path.
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-widget]"))) {
-      el.classList.toggle("bxc-widget-sel", el.dataset.widget === selectedWidgetId);
+      const isSel = el.dataset.widget === selectedWidgetId;
+      el.classList.toggle("bxc-widget-sel", isSel);
+      if (!isSel) continue;
+      // A GRIP, not a draggable wrapper. Making the widget itself draggable
+      // fights the contentEditable runs inside it — the author would lose the
+      // ability to select a word with the mouse, which is the thing "edit in
+      // place" is for. One handle, on the selected widget only, so the page is
+      // not covered in furniture.
+      const grip = document.createElement("span");
+      grip.className = "bxc-grip";
+      grip.setAttribute("draggable", "true");
+      grip.title = "Drag to move this anywhere on the page — another column, another section";
+      grip.setAttribute("aria-label", "Drag to move");
+      grip.textContent = "\u2237";
+      grip.addEventListener("dragstart", (e) => {
+        const ev = e as DragEvent;
+        ev.dataTransfer?.setData("text/plain", "widget");
+        if (ev.dataTransfer) ev.dataTransfer.effectAllowed = "move";
+        const col = Number(el.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
+        const idx = section.columns[col]?.widgets.findIndex((w) => w.id === el.dataset.widget) ?? -1;
+        if (idx >= 0) onDragWidget?.({ kind: "move", path: { sectionId: section.id, columnIndex: col, widgetIndex: idx } });
+      });
+      grip.addEventListener("dragend", () => onDragWidget?.(null));
+      el.appendChild(grip);
     }
-  }, [html, selectedWidgetId]);
+  }, [html, selectedWidgetId, onDragWidget, section]);
+
+  /**
+   * THE INDEX MATHS, which is the whole of the bug surface.
+   *
+   * The column under the pointer, then the first widget in it whose MIDDLE is
+   * below the pointer — that is where the line goes and where the drop
+   * inserts. Past the last middle, the end. An empty column is index 0 and the
+   * line is drawn across the top of it, which is the only way an empty column
+   * can say "you can put something here".
+   */
+  const findSpot = useCallback((clientX: number, clientY: number): DropSpot | null => {
+    const host = hostRef.current;
+    const wrap = wrapRef.current;
+    if (!host || !wrap) return null;
+    const cols = Array.from(host.querySelectorAll<HTMLElement>("[data-col]"));
+    if (!cols.length) return null;
+    // The column the pointer is over, or the nearest one — never nothing, so a
+    // drop just outside a column still lands somewhere the author can see.
+    let col = cols.find((c) => {
+      const r = c.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right;
+    });
+    if (!col) {
+      col = cols.reduce((best, c) => {
+        const d = (x: HTMLElement) => {
+          const r = x.getBoundingClientRect();
+          return clientX < r.left ? r.left - clientX : clientX - r.right;
+        };
+        return d(c) < d(best) ? c : best;
+      }, cols[0]);
+    }
+    const colRect = col.getBoundingClientRect();
+    const wrapRect = wrap.getBoundingClientRect();
+    const widgets = Array.from(col.children).filter((el): el is HTMLElement =>
+      el instanceof HTMLElement && el.hasAttribute("data-widget"));
+    let index = widgets.length;
+    let top = widgets.length ? widgets[widgets.length - 1].getBoundingClientRect().bottom : colRect.top;
+    for (let i = 0; i < widgets.length; i++) {
+      const r = widgets[i].getBoundingClientRect();
+      if (clientY < r.top + r.height / 2) { index = i; top = r.top; break; }
+    }
+    return {
+      sectionId: section.id,
+      columnIndex: Number(col.dataset.col ?? 0),
+      index,
+      top: top - wrapRect.top,
+      left: colRect.left - wrapRect.left,
+      width: colRect.width,
+    };
+  }, [section.id]);
+
+  const draggingWidget = drag?.kind === "new" || drag?.kind === "move";
 
   const commit = useCallback((el: HTMLElement) => {
     const path = el.dataset.edit;
@@ -204,10 +319,30 @@ function SectionHost({
 
   return (
     <div
+      ref={wrapRef}
       className={`bxc-sec${selected ? " bxc-sel" : ""}${dragging ? " bxc-dragging" : ""}`}
       data-section-host={section.id}
-      onDragOver={(e) => { e.preventDefault(); }}
-      onDrop={(e) => { e.preventDefault(); onDropAt(index); }}
+      onDragOver={(e) => {
+        e.preventDefault();
+        // A WIDGET drag draws the line; a SECTION drag is the reorder that was
+        // already here. One handler, two payloads, and the payload decides —
+        // never a guess from where the pointer happens to be.
+        if (draggingWidget) setSpot(findSpot(e.clientX, e.clientY));
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+        setSpot(null);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        if (draggingWidget) {
+          const at = spot ?? findSpot(e.clientX, e.clientY);
+          setSpot(null);
+          if (at) onDropWidget?.({ sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index });
+          return;
+        }
+        onDropAt(index);
+      }}
       onClick={(e) => {
         const target = e.target as HTMLElement;
         const widgetEl = target.closest<HTMLElement>("[data-widget]");
@@ -297,6 +432,19 @@ function SectionHost({
         }}
       />
 
+      {/* WHERE IT WOULD LAND. One line, drawn over the page rather than
+          inserted into it, so the document's own HTML is untouched by a drag
+          that may never finish. */}
+      {spot && draggingWidget && (
+        <div
+          className="bxc-dropline"
+          data-drop-index={spot.index}
+          data-drop-col={spot.columnIndex}
+          style={{ top: spot.top, left: spot.left, width: spot.width }}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Between-sections insert, so a section can be added in the middle
           rather than only at the end. */}
       <div className="bxc-between">
@@ -326,7 +474,19 @@ const CANVAS_CSS = `
 .bxc-between { display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0; height: 0; overflow: hidden; transition: opacity .1s; }
 .bxc-sec:hover .bxc-between { opacity: 1; height: auto; padding: 4px 0; }
 .bxc-tiny { border: 1px dashed #CBD5E1; background: #fff; color: #0C4A60; border-radius: 999px; padding: 2px 10px; font-size: 10px; cursor: pointer; }
-.bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; }
+.bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; position: relative; }
+/* THE GRIP on the selected widget. Small, and outside the text, so dragging
+   the widget and selecting a word in it are two different gestures. */
+.bxc-grip { position: absolute; top: -9px; left: -9px; z-index: 6; width: 18px; height: 18px;
+  display: inline-flex; align-items: center; justify-content: center; cursor: grab;
+  background: #2D9CDB; color: #fff; border-radius: 4px; font-size: 11px; line-height: 1;
+  letter-spacing: 1px; user-select: none; }
+.bxc-grip:active { cursor: grabbing; }
+/* WHERE IT WOULD LAND. */
+.bxc-dropline { position: absolute; z-index: 7; height: 3px; margin-top: -1px; border-radius: 2px;
+  background: #2D9CDB; box-shadow: 0 0 0 1px rgba(45,156,219,.35); pointer-events: none; }
+.bxc-dropline::before { content: ""; position: absolute; left: -4px; top: -3px; width: 9px; height: 9px;
+  border-radius: 50%; background: #2D9CDB; }
 [data-bx-editable]:focus { outline: 2px solid #2D9CDB; outline-offset: 2px; border-radius: 2px; background: #FFFFFF; }
 [data-bx-editable]:hover { background: rgba(45,156,219,.06); }
 .bxc-chrome { position: relative; opacity: .78; pointer-events: none; user-select: none; }
