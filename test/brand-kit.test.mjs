@@ -35,7 +35,12 @@ const BRAND_CONSUMERS = [
   "components/oliver/DocumentBrandFrame.tsx",
   "components/spark/CTAEditorBlock.tsx",
   "components/spark/SparkCampaignComposerModal.tsx",
-  "components/spark/SparkTemplateEditorModal.tsx",
+  // 2026-09-16 (§13.5, §13.8): SparkTemplateEditorModal's EMAIL half was
+  // deleted when the template library moved onto the builder. What is left is
+  // SMS, which has no colours at all. The file that resolves a business's brand
+  // for a template now is the email adapter — and it does so for the newsletter
+  // and the campaign too, which is the point of listing it once.
+  "builder/adapters/email/EmailBuilder.tsx",
   // 2026-09-16 (§5 step 5): the Template Studio's 3,249-line modal was deleted
   // and its work split across the shared-shell adapter. EVERY piece of it is
   // listed, not just the one that calls the hook — the old bug was a literal
@@ -130,7 +135,7 @@ describe("every consumer reads the ONE hook", () => {
     "components/oliver/DocumentBrandFrame.tsx",
     "components/spark/CTAEditorBlock.tsx",
     "components/spark/SparkCampaignComposerModal.tsx",
-    "components/spark/SparkTemplateEditorModal.tsx",
+    "builder/adapters/email/EmailBuilder.tsx",
     // The studio's ONE reader of the kit. Everything else under
     // adapters/mybrand takes the brand as an argument, which is what lets the
     // templates be built and asserted on without a React tree.
@@ -163,7 +168,7 @@ describe("every consumer reads the ONE hook", () => {
   });
 
   test("the composers no longer fetch a brand of their own from oliver /settings", () => {
-    for (const rel of ["components/spark/SparkCampaignComposerModal.tsx", "components/spark/SparkTemplateEditorModal.tsx"]) {
+    for (const rel of ["components/spark/SparkCampaignComposerModal.tsx", "builder/adapters/email/EmailBuilder.tsx"]) {
       assert.doesNotMatch(read(rel), /setBrandColors/, `${rel} still fetches its own brand colours`);
     }
   });

@@ -1,105 +1,30 @@
-// SparkTemplateEditorModal — F-91.
+// SparkTemplateEditorModal — the SMS template editor. F-91.
 //
-// Unified modal editor for Email + SMS templates. Replaces the two
-// separate master/detail editor pages (Email + SMS Templates) with a
-// single modal you can open from anywhere. For richer block-based email
-// editing, a "Open advanced editor" link routes to the legacy
-// SparkEmailTemplatesPage (kept for the visual builder).
+// ── WHAT THIS FILE USED TO BE, AND WHY HALF OF IT IS GONE ─────────────────
+// It was the unified Email + SMS editor: a column of form fields (name,
+// subject, preheader, from, reply-to) with a TipTap box for the HTML body and
+// a CTA sub-modal that pasted a styled button onto the end of it.
 //
-// Channel-aware:
-//   - Email   → name, subject, preheader, body_html, body_text, from/reply, category
-//   - SMS     → name, body (160-char counter), category
+// BUILDER_PLATFORM_SCOPE_2026-09-15 §13.5 puts every email surface on ONE
+// builder, and §13.8 named this file as the last door not yet moved. It has
+// been moved: an email template now opens `SparkTemplateBuilderModal` →
+// `EmailBuilder`, the same canvas the Newsletter Studio and the campaign
+// composer open. The email branch here is DELETED rather than left beside it —
+// `feedback_replace_means_delete`, and the concrete reason behind that rule is
+// that two editors over one `body_html` column drift, and the one nobody walks
+// is the one that silently writes the worse body.
+//
+// What is left is SMS, which never had a visual builder and does not want one:
+// a template is 160 characters of plain text with merge tags in it, and the
+// thing a writer needs to see is the segment count, not a canvas.
 //
 // CRUD endpoints:
-//   - POST/PUT/DELETE /api/v1/email-templates(/:id)
 //   - POST/PATCH/DELETE /api/v1/sms-templates(/:id)
 import { useEffect, useMemo, useState } from "react";
 import { Save, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { useOliverApi } from "../../hooks/useOliverApi";
 import { IadmModal, IadmButton } from "../IadmModal";
-import { SparkBodyEditor } from "./SparkBodyEditor";
-import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
-// THE brand kit — one fetch for the whole shell, shared with every other
-// builder on screen and live the moment Brand Identity saves. This surface
-// used to fetch brandColor/Secondary/Accent from oliver /settings for itself
-// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
-import { useBrandKit } from "../../brand/BrandKitProvider";
-import type { BrandKit } from "../../lib/brandKit";
-
-// Render a CTAValue into the inline HTML that gets appended to the
-// template body. Mirrors LUMEN-API emailBuilder button block output so
-// what the writer previews matches what recipients see in their inbox.
-// `kit` is threaded in rather than read from a hook: this is a pure string
-// builder, and the colour it bakes into the saved body must be the BUSINESS's
-// accent. It used to fall back to Intelligent Analytics' navy
-// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
-function ctaValueToHtml(v: CTAValue, kit: BrandKit): string {
-  const block = ctaToBlock(v, kit) as Record<string, unknown>;
-  if (block.type === "paragraph") {
-    const align = (v.align || "center") as string;
-    return `<p style="text-align:${align};">${block.html as string}</p>`;
-  }
-  const align = (v.align || "center") as string;
-  const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
-  const radius = v.borderRadius ?? 6;
-  const width = v.width || "fit";
-  const bg = v.buttonColor || kit.colours.accent;
-  const color = v.textColor || autoContrastColor(bg, kit);
-  const label = (v.label || "Click here")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const url = (v.url || "#").replace(/"/g, "&quot;");
-  return (
-    `<p style="display:flex;justify-content:${justify};">`
-    + `<a href="${url}" style="display:inline-block;`
-    + `background:${bg};color:${color};padding:12px 24px;`
-    + `border-radius:${radius}px;font-weight:600;font-size:16px;`
-    + `text-decoration:none;text-align:center;`
-    + (width === "full" ? "width:100%;" : "")
-    + `">${label}</a></p>`
-  );
-}
-
-interface Sender {
-  id: number;
-  display_name: string | null;
-  effective_display_name?: string | null;
-  email_address: string;
-  is_default: boolean;
-}
-
-/**
- * Slugify a template name into a stable template_key (lowercase snake_case,
- * ASCII only). Used for the auto-generated key on create — the backend
- * accepts `template_key: null` and falls back to the row id, but a stable
- * key makes the template addressable from code (transactional sends) and
- * survives a rename.
- */
-function slugifyTemplateKey(name: string): string {
-  return (name || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 100);
-}
-
-export type TemplateChannel = "email" | "sms";
-
-interface EmailTemplate {
-  id?: number;
-  template_key?: string | null;
-  name: string;
-  description?: string | null;
-  category: "transactional" | "marketing" | "system";
-  subject: string;
-  preheader?: string | null;
-  body_html: string;
-  body_text?: string | null;
-  from_name?: string | null;
-  from_email?: string | null;
-  reply_to?: string | null;
-  is_active: boolean;
-}
+import { slugifyTemplateKey } from "../../builder/adapters/email/templateDoc";
 
 interface SmsTemplate {
   id?: number;
@@ -114,25 +39,17 @@ interface SmsTemplate {
 interface Props {
   open: boolean;
   onClose: () => void;
-  channel: TemplateChannel;
   /** Existing template ID to edit, or null for create-new. */
   templateId: number | null;
   /** Called after save/delete so the parent library refreshes. */
   onChanged?: () => void;
 }
 
-const DEFAULT_EMAIL: EmailTemplate = {
-  name: "", category: "marketing", subject: "",
-  preheader: "", body_html: "<p>Hi {{first name}},</p>",
-  body_text: "Hi {{first name}},", from_name: "", from_email: "", reply_to: "",
-  is_active: true,
-};
-
 const DEFAULT_SMS: SmsTemplate = {
   name: "", category: "marketing", body: "", is_active: true,
 };
 
-export function SparkTemplateEditorModal({ open, onClose, channel, templateId, onChanged }: Props) {
+export function SparkTemplateEditorModal({ open, onClose, templateId, onChanged }: Props) {
   const { get, post, patch, del, ready } = useSparkApi() as {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, body?: unknown) => Promise<T>;
@@ -140,71 +57,37 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     del: <T>(p: string) => Promise<T>;
     ready: boolean;
   };
-  const oliverApi = useOliverApi() as {
-    get: <T>(p: string) => Promise<T>;
-  };
 
-  const [email, setEmail] = useState<EmailTemplate>(DEFAULT_EMAIL);
   const [sms, setSms] = useState<SmsTemplate>(DEFAULT_SMS);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // From-email picker (audit gap): /senders feeds the dropdown so the
-  // template carries a verified sender by default. Free-text from_name +
-  // reply_to remain so per-template overrides still work.
-  const [senders, setSenders] = useState<Sender[]>([]);
-  // The three chips on the CTA editor, straight off the kit. No local fetch,
-  // no undefined-means-no-brand branch: the kit is always a complete palette.
-  const { kit } = useBrandKit();
-  const brandColors = {
-    primary: kit.colours.primary,
-    secondary: kit.colours.secondary,
-    accent: kit.colours.accent,
-  };
-  const [ctaOpen, setCtaOpen] = useState(false);
-  const [ctaValue, setCtaValue] = useState<CTAValue>({
-    type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
-  });
 
   // Auto-derived template_key when creating from scratch. The user can't
-  // edit the key once saved (the backend uses it as a stable handle).
+  // edit the key once saved (the backend uses it as a stable handle). The
+  // slug function is THE one the email templates use — one spelling of a key.
   const isEdit = templateId != null;
-  const derivedKey = useMemo(
-    () => (channel === "email" ? slugifyTemplateKey(email.name) : slugifyTemplateKey(sms.name)),
-    [channel, email.name, sms.name],
-  );
+  const derivedKey = useMemo(() => slugifyTemplateKey(sms.name), [sms.name]);
 
   useEffect(() => {
     if (!open || !ready) return;
     setError(null);
-    // Always refresh the sender list when the modal opens — the picker is
-    // tenant-scoped and senders can be added/removed in Settings.
-    get<{ data: Sender[] }>("/api/v1/senders")
-      .then((r) => setSenders(r?.data || []))
-      .catch(() => setSenders([]));
     if (templateId == null) {
-      // Create-new
-      setEmail(DEFAULT_EMAIL);
       setSms(DEFAULT_SMS);
       return;
     }
     setLoading(true);
     (async () => {
       try {
-        if (channel === "email") {
-          const t = await get<EmailTemplate>(`/api/v1/email-templates/${templateId}`);
-          setEmail({ ...DEFAULT_EMAIL, ...t });
-        } else {
-          const t = await get<SmsTemplate>(`/api/v1/sms-templates/${templateId}`);
-          setSms({ ...DEFAULT_SMS, ...t });
-        }
+        const t = await get<SmsTemplate>(`/api/v1/sms-templates/${templateId}`);
+        setSms({ ...DEFAULT_SMS, ...t });
       } catch (err) {
         setError(String((err as Error)?.message || err));
       } finally {
         setLoading(false);
       }
     })();
-  }, [open, ready, channel, templateId, get, oliverApi]);
+  }, [open, ready, templateId, get]);
 
   // Esc to close
   useEffect(() => {
@@ -218,43 +101,20 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     setSaving(true);
     setError(null);
     try {
-      if (channel === "email") {
-        // POST requires name + subject + body_html; PATCH allows partial
-        // updates including is_active. There is NO PUT — the LUMEN-API
-        // mutation verb for email templates is PATCH.
-        if (!email.name.trim()) { setError("Name is required."); setSaving(false); return; }
-        if (templateId == null) {
-          if (!email.subject.trim()) { setError("Subject is required for new email templates."); setSaving(false); return; }
-          if (!email.body_html.trim()) { setError("Body HTML is required for new email templates."); setSaving(false); return; }
-          // POST does NOT accept is_active — strip it on create (defaults to active=1 server-side).
-          // Auto-generate the template_key from the name when the user
-          // hasn't set one explicitly (the backend treats it as nullable
-          // but a stable slug is much friendlier for code references).
-          const { is_active: _ignore, ...createPayload } = email;
-          if (!createPayload.template_key && derivedKey) {
-            createPayload.template_key = derivedKey;
-          }
-          await post(`/api/v1/email-templates`, createPayload);
-        } else {
-          // PATCH accepts every editable field including is_active.
-          await patch(`/api/v1/email-templates/${templateId}`, email);
+      // SMS POST allow-list: template_key, name, description, category, body.
+      //   (is_active NOT in POST allow-list — defaults to 1 server-side.)
+      // SMS PATCH allow-list: name, description, category, body, template_key,
+      //   is_active (separately handled in the PATCH route).
+      if (!sms.name.trim()) { setError("Name is required."); setSaving(false); return; }
+      if (!sms.body.trim()) { setError("Body is required."); setSaving(false); return; }
+      if (templateId == null) {
+        const { is_active: _ignore, ...createPayload } = sms;
+        if (!createPayload.template_key && derivedKey) {
+          createPayload.template_key = derivedKey;
         }
+        await post(`/api/v1/sms-templates`, createPayload);
       } else {
-        // SMS POST allow-list: template_key, name, description, category, body.
-        //   (is_active NOT in POST allow-list — defaults to 1 server-side.)
-        // SMS PATCH allow-list: name, description, category, body, template_key,
-        //   is_active (separately handled in the PATCH route).
-        if (!sms.name.trim()) { setError("Name is required."); setSaving(false); return; }
-        if (!sms.body.trim()) { setError("Body is required."); setSaving(false); return; }
-        if (templateId == null) {
-          const { is_active: _ignore, ...createPayload } = sms;
-          if (!createPayload.template_key && derivedKey) {
-            createPayload.template_key = derivedKey;
-          }
-          await post(`/api/v1/sms-templates`, createPayload);
-        } else {
-          await patch(`/api/v1/sms-templates/${templateId}`, sms);
-        }
+        await patch(`/api/v1/sms-templates/${templateId}`, sms);
       }
       onChanged?.();
       onClose();
@@ -270,8 +130,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
     if (!confirm("Delete this template? This cannot be undone.")) return;
     setSaving(true);
     try {
-      if (channel === "email") await del(`/api/v1/email-templates/${templateId}`);
-      else await del(`/api/v1/sms-templates/${templateId}`);
+      await del(`/api/v1/sms-templates/${templateId}`);
       onChanged?.();
       onClose();
     } catch (err) {
@@ -283,15 +142,13 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
 
   if (!open) return null;
 
-  const channelLabel = channel === "email" ? "Email" : "SMS";
-
   return (
     <IadmModal
       open={open}
       onClose={onClose}
       product="spark"
-      eyebrow={`SPARK · ${channelLabel.toUpperCase()} TEMPLATE`}
-      title={isEdit ? `Edit · ${channel === "email" ? email.name : sms.name || "template"}` : "New template"}
+      eyebrow="SPARK · SMS TEMPLATE"
+      title={isEdit ? `Edit · ${sms.name || "template"}` : "New SMS template"}
       size="info"
       footer={
         <>
@@ -317,114 +174,7 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
             </div>
           )}
 
-          {!loading && channel === "email" && (
-            <div className="space-y-3">
-              <Row label="Name">
-                <input value={email.name} onChange={(e) => setEmail({ ...email, name: e.target.value })} className="spark-input" />
-              </Row>
-              {/* Template key — read-only. Auto-generated from the name on
-                  create; shown on edit so users know what to reference in
-                  transactional sends. */}
-              <Row label={isEdit ? "Template key" : "Template key (auto)"}>
-                <input
-                  value={isEdit ? (email.template_key ?? "") : derivedKey}
-                  readOnly
-                  className="spark-input bg-slate-50 text-slate-500 font-mono text-xs"
-                  placeholder="auto-generated from name"
-                />
-              </Row>
-              <div className="grid grid-cols-2 gap-3">
-                <Row label="Category">
-                  <select
-                    value={email.category}
-                    onChange={(e) => setEmail({ ...email, category: e.target.value as EmailTemplate["category"] })}
-                    className="spark-input bg-white"
-                  >
-                    <option value="marketing">Marketing</option>
-                    <option value="transactional">Transactional</option>
-                    <option value="system">System</option>
-                  </select>
-                </Row>
-                {isEdit ? (
-                  <Row label="Active">
-                    <label className="flex items-center gap-2 mt-1.5">
-                      <input type="checkbox" checked={email.is_active} onChange={(e) => setEmail({ ...email, is_active: e.target.checked })} />
-                      <span className="text-sm">Template is active</span>
-                    </label>
-                  </Row>
-                ) : (
-                  <div />
-                )}
-              </div>
-              <Row label="Description">
-                <input
-                  value={email.description ?? ""}
-                  onChange={(e) => setEmail({ ...email, description: e.target.value })}
-                  className="spark-input"
-                  placeholder="Short note about what this template is for"
-                />
-              </Row>
-              <Row label="Subject">
-                <input value={email.subject} onChange={(e) => setEmail({ ...email, subject: e.target.value })} className="spark-input" placeholder="Welcome to {{business name}}" />
-              </Row>
-              <Row label="Preheader (preview text)">
-                <input value={email.preheader ?? ""} onChange={(e) => setEmail({ ...email, preheader: e.target.value })} className="spark-input" />
-              </Row>
-              <div className="grid grid-cols-3 gap-3">
-                <Row label="From name">
-                  <input value={email.from_name ?? ""} onChange={(e) => setEmail({ ...email, from_name: e.target.value })} className="spark-input" />
-                </Row>
-                <Row label="From email">
-                  <select
-                    value={email.from_email ?? ""}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      const picked = senders.find((s) => s.email_address === v);
-                      setEmail({
-                        ...email,
-                        from_email: v || null,
-                        // If the user picks a sender that has a display name
-                        // and the template's from_name is empty, mirror it
-                        // so the saved template has both fields populated.
-                        from_name:
-                          email.from_name
-                          || (picked ? (picked.effective_display_name || picked.display_name || "") : ""),
-                      });
-                    }}
-                    className="spark-input bg-white"
-                  >
-                    <option value="">— Business default —</option>
-                    {senders.map((s) => (
-                      <option key={s.id} value={s.email_address}>
-                        {s.email_address}{s.is_default ? " (default)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </Row>
-                <Row label="Reply-to">
-                  <input value={email.reply_to ?? ""} onChange={(e) => setEmail({ ...email, reply_to: e.target.value })} className="spark-input" />
-                </Row>
-              </div>
-              <Row label="Body">
-                <SparkBodyEditor
-                  value={email.body_html}
-                  onChange={(html, text) => setEmail({ ...email, body_html: html, body_text: text })}
-                  placeholder={"Hi {{first name}}, ..."}
-                  onInsertCTA={() => {
-                    setCtaValue({
-                      type: "button", label: "", url: "", align: "center", width: "fit", borderRadius: 6,
-                    });
-                    setCtaOpen(true);
-                  }}
-                />
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Type <span className="font-mono">{"{{"}</span> to insert a merge tag, or click <span className="font-semibold">CTA</span> in the toolbar to add a styled button. For block-based editing, <a href={`/app/services/spark_email_templates`} className="text-[#EF6C33] hover:underline">open the advanced editor</a> from the Templates library page.
-                </p>
-              </Row>
-            </div>
-          )}
-
-          {!loading && channel === "sms" && (
+          {!loading && (
             <div className="space-y-3">
               <Row label="Name">
                 <input value={sms.name} onChange={(e) => setSms({ ...sms, name: e.target.value })} className="spark-input" />
@@ -501,44 +251,6 @@ export function SparkTemplateEditorModal({ open, onClose, channel, templateId, o
           box-shadow: 0 0 0 1px #EF6C33;
         }
       `}</style>
-      {ctaOpen && (
-        <IadmModal
-          open={ctaOpen}
-          onClose={() => setCtaOpen(false)}
-          product="spark"
-          eyebrow="SPARK · INSERT CTA"
-          title="Add a call-to-action"
-          size="info"
-          footer={
-            <>
-              <IadmButton variant="ghost" onClick={() => setCtaOpen(false)}>Cancel</IadmButton>
-              <IadmButton
-                variant="accent"
-                product="spark"
-                onClick={() => {
-                  const html = ctaValueToHtml(ctaValue, kit);
-                  const nextBody = email.body_html ? `${email.body_html}\n${html}` : html;
-                  setEmail({ ...email, body_html: nextBody });
-                  setCtaOpen(false);
-                }}
-                disabled={!ctaValue.url.trim() || !ctaValue.label.trim()}
-              >
-                Insert
-              </IadmButton>
-            </>
-          }
-        >
-          <div className="p-5">
-            <CTAEditorBlock
-              value={ctaValue}
-              onChange={setCtaValue}
-              brandPrimaryColor={brandColors.primary}
-              brandSecondaryColor={brandColors.secondary}
-              brandAccentColor={brandColors.accent}
-            />
-          </div>
-        </IadmModal>
-      )}
     </IadmModal>
   );
 }
