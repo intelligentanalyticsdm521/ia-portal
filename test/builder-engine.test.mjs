@@ -36,7 +36,7 @@ import { initHistory, push, undo, redo, canUndo, canRedo } from "../src/builder/
 import {
   PREMADE_SECTIONS, SHIPPED_TEMPLATES, hydrateClauses, searchPremade, templateByKey, premadeByKey,
 } from "../src/builder/templates.ts";
-import { upgradeV1, toWire, openProposalDocument } from "../src/builder/proposalDoc.ts";
+import { upgradeV1, toWire, openProposalDocument, locationsUsedBy } from "../src/builder/proposalDoc.ts";
 import { WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
 
 const FIXTURE = JSON.parse(
@@ -603,6 +603,26 @@ describe("what goes on the wire", () => {
     assert.equal(wire.line_items[0].service_location_id, "aaaaaaaa-0000-4000-8000-000000000001");
     assert.ok(wire.scope_html.includes("Des Moines campus"), "the narrative is not the document");
     assert.equal(wire.document, doc, "the document must ride as itself");
+  });
+
+  test("the locations the document PRICES are the locations it covers", () => {
+    // Accepting opens a job per location from this list. A site priced on the
+    // page and missing from it gets no job and no address on the customer's
+    // copy — which is what happened before this existed.
+    const doc = deserialise(FIXTURE.cases[2].document);   // multi-site
+    assert.deepEqual(locationsUsedBy(doc), [
+      "aaaaaaaa-0000-4000-8000-000000000001",
+      "aaaaaaaa-0000-4000-8000-000000000002",
+    ]);
+  });
+
+  test("an internal section's location is not a location the customer is billed for", () => {
+    const doc = deserialise({
+      v: 2, sections: [{ id: "s", layout: 1, visibility: "internal", columns: [{ id: "c", widgets: [
+        { id: "w", kind: "property_block", props: { locationId: "aaaaaaaa-0000-4000-8000-000000000009", items: [] } },
+      ] }] }],
+    });
+    assert.deepEqual(locationsUsedBy(doc), []);
   });
 
   test("a comparison card never becomes a line item", () => {

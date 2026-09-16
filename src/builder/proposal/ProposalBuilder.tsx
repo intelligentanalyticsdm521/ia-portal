@@ -31,7 +31,7 @@ import {
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { unfilledTokens, tagLabel } from "../merge";
-import { openProposalDocument, toWire } from "../proposalDoc";
+import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
   SHIPPED_TEMPLATES, applyBrandDefaults, hydrateClauses, templateByKey, type ClauseRow,
 } from "../templates";
@@ -290,7 +290,11 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
         tax_rate: Number(taxRate) / 100,
         discount_amount: Number(discount) || 0,
         valid_until: validUntil || null,
-        location_ids: pickedLocationIds,
+        // The chips the author ticked, PLUS every location a property block or
+        // a service plan on the page actually refers to. Accepting opens a job
+        // per location from this list; a site priced on the document and
+        // missing from it gets no job.
+        location_ids: [...new Set([...pickedLocationIds, ...locationsUsedBy(doc)])],
       };
       let id = proposalId;
       let number = "";

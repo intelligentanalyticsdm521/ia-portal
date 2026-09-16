@@ -138,6 +138,31 @@ export function openProposalDocument(
   return null;
 }
 
+/**
+ * Every location the DOCUMENT itself refers to.
+ *
+ * A property block that prices a site, or a service plan that describes one,
+ * means the document covers that site — whether or not the author also ticked
+ * its chip in the header. This matters beyond the page: accepting a proposal
+ * opens a job PER LOCATION from `oliver.proposal_location`, and the customer's
+ * page can only print an address for a location the proposal says it covers.
+ * A site that is priced but not listed gets no job and no address.
+ */
+export function locationsUsedBy(doc: BuilderDocument): string[] {
+  const out: string[] = [];
+  for (const s of doc.sections) {
+    if (s.visibility !== "customer") continue;
+    for (const c of s.columns) {
+      for (const w of c.widgets) {
+        if (w.kind !== "property_block" && w.kind !== "property_plan") continue;
+        const id = String((w.props as any)?.locationId || "").trim().toLowerCase();
+        if (id && !out.includes(id)) out.push(id);
+      }
+    }
+  }
+  return out;
+}
+
 /* ── 2. Wire shape ───────────────────────────────────────────────────────── */
 
 export interface ProposalWire {
