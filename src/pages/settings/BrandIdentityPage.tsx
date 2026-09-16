@@ -14,13 +14,20 @@
 //   AI-generated emails to sound right" use case.
 //
 // Data flow (per-section save — no giant Save All):
-//   1. Logo       → POST /settings/logo  → core.tenants.logo_url
-//   2. Colors     → PATCH /settings      → core.tenants.brand_color/_secondary/_accent
-//   3. Typography → PUT  /api/v1/my-brand/voice/profile (tone_attributes envelope)
-//                     Schema gap: lumen.brand_voice_profile has no first-class
-//                     font columns; we tunnel heading_font/body_font through the
-//                     existing tone_attributes JSON envelope (same pattern
-//                     VoicePage.tsx already uses for keywords/avoid_list).
+//   1. Logo       → POST /settings/logo (the upload) then the brand kit records
+//                     the address → core.tenants.logo_url
+//   2. Colors     → PUT /brand-kit      → core.tenants.brand_color/_secondary/_accent
+//   3. Typography → PUT /brand-kit      → core.tenants.brand_heading_font/_body_font
+//
+//   2026-09-15 (BUILDER_PLATFORM_SCOPE §2, step 0): colours used to go to
+//   oliver-api PATCH /settings and typography to LUMEN PUT
+//   /api/v1/my-brand/voice/profile, TUNNELLED through a JSON envelope on a
+//   SPARK table because lumen.brand_voice_profile had no font columns. A
+//   business's brand is neither OLIVER's nor SPARK's. platform-api migration
+//   038 gave core.tenants the font columns this header used to list as an
+//   unshipped follow-up, and both sections now save through the one kit that
+//   every builder reads — which is what makes the change appear on a
+//   proposal and a CTA preview without a reload.
 //   4. Voice      → PUT  /api/v1/my-brand/voice/profile (selected_voices +
 //                     custom_voice tunneled through tone_attributes)
 //   5. Tagline    → PUT  /api/v1/my-brand/voice/profile (tagline tunneled
@@ -31,12 +38,11 @@
 //   — otherwise saving Typography here would wipe the user's keyword list.
 //   See `mergeEnvelope()` below.
 //
-// Schema follow-ups surfaced (intentionally NOT shipped here, separate
-// migration when promoted to first-class):
-//   - lumen.brand_voice_profile needs columns: tagline NVARCHAR(280),
-//     heading_font NVARCHAR(80), body_font NVARCHAR(80),
+// Schema follow-ups still open (typography was promoted 2026-09-15 by
+// platform-api migration 038; these were not):
+//   - lumen.brand_voice_profile still needs columns for tagline NVARCHAR(280),
 //     selected_voices NVARCHAR(MAX) (JSON array), custom_voice NVARCHAR(MAX).
-//   - core.tenants logo + colors already exist (migration 002).
+//     Voice and tagline are SPARK facts and still ride the envelope.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
@@ -45,25 +51,18 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { LogoPicker } from "../../components/oliver/LogoPicker";
 import { BRAND_VOICE_CATALOG } from "../../components/consulting/OnboardingWizardModal";
+// THE brand kit. This page is its ONE writer.
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import { NEUTRAL_BRAND_KIT } from "../../lib/brandKit";
 
-// ── Curated 12-font catalog ───────────────────────────────────────────────
-// V1: small, hand-picked list of safe web fonts. When we ship a true font
-// uploader (custom @font-face), this catalog grows but the persisted shape
-// (string font name) stays the same.
-const FONT_CATALOG: { value: string; label: string; sampleFamily: string }[] = [
-  { value: "Inter",            label: "Inter — modern sans (default)",  sampleFamily: "Inter, system-ui, sans-serif" },
-  { value: "Roboto",           label: "Roboto — neutral sans",          sampleFamily: "Roboto, system-ui, sans-serif" },
-  { value: "Open Sans",        label: "Open Sans — friendly sans",      sampleFamily: "'Open Sans', system-ui, sans-serif" },
-  { value: "Lato",             label: "Lato — warm sans",               sampleFamily: "Lato, system-ui, sans-serif" },
-  { value: "Montserrat",       label: "Montserrat — geometric sans",    sampleFamily: "Montserrat, system-ui, sans-serif" },
-  { value: "Poppins",          label: "Poppins — rounded modern",       sampleFamily: "Poppins, system-ui, sans-serif" },
-  { value: "Source Sans Pro",  label: "Source Sans Pro — clean sans",   sampleFamily: "'Source Sans Pro', system-ui, sans-serif" },
-  { value: "Playfair Display", label: "Playfair Display — premium serif", sampleFamily: "'Playfair Display', Georgia, serif" },
-  { value: "Merriweather",     label: "Merriweather — editorial serif", sampleFamily: "Merriweather, Georgia, serif" },
-  { value: "Lora",             label: "Lora — soft serif",              sampleFamily: "Lora, Georgia, serif" },
-  { value: "Georgia",          label: "Georgia — classic serif",        sampleFamily: "Georgia, serif" },
-  { value: "Inconsolata",      label: "Inconsolata — clean mono",       sampleFamily: "Inconsolata, ui-monospace, monospace" },
-];
+// ── Fonts ─────────────────────────────────────────────────────────────────
+// The catalog comes from the brand kit (platform-api lib/brandKit.js
+// FONT_CATALOG). It used to be a 12-entry list declared right here, and it was
+// one of THREE disjoint lists: this one, the Template Studio's six bundled OFL
+// faces (the only ones the server can rasterise) and ARION's industry
+// suggestion. A client could pick Georgia here and get Poppins on the exported
+// graphic with nothing said. One list now, and each entry carries whether an
+// export can really render it.
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -213,6 +212,18 @@ function mergeEnvelope(prev: ToneEnvelope | null, patch: Partial<ToneEnvelope>):
 // ── Page ──────────────────────────────────────────────────────────────────
 
 export function BrandIdentityPage() {
+  // THE kit: what this page reads for colours/fonts/logo and the ONLY thing it
+  // writes them to. save() updates the shared context, so every builder already
+  // on screen repaints in the same commit — no reload, which is the walk row.
+  const { kit, save: saveKit, error: kitError } = useBrandKit();
+  // The kit always answers with a complete palette — the neutral fills any slot
+  // the business has not chosen. These two read the CHOICE, so an unset colour
+  // shows as an empty field ("not set") rather than as slate they never picked.
+  const kitColour = (key: "primary" | "secondary" | "accent") =>
+    kit.sources?.[key] === "tenant" ? kit.colours[key] : "";
+  const kitFont = (key: "heading" | "body") =>
+    kit.sources?.[`${key}_font`] === "default" ? "" : kit.fonts[key];
+  const fontCatalog = kit.fonts.catalog.length ? kit.fonts.catalog : [];
   const oliver = useOliverApi();
   const lumen = useLumenApi();
 
@@ -262,14 +273,9 @@ export function BrandIdentityPage() {
       ]);
 
       if (orgResult.status === "fulfilled" && orgResult.value) {
-        const org = orgResult.value;
-        setProfile(org);
-        setLogoDraft(org.logoUrl ?? null);
-        setColorsDraft({
-          primary: org.brandColor ?? "",
-          secondary: org.brandColorSecondary ?? "",
-          accent: org.brandColorAccent ?? "",
-        });
+        // /settings is still read for the business NAME and the other account
+        // facts this page shows. The colours below come from the kit.
+        setProfile(orgResult.value);
       } else if (orgResult.status === "rejected") {
         console.warn("[BrandIdentityPage] /settings load failed:", orgResult.reason);
       }
@@ -278,10 +284,9 @@ export function BrandIdentityPage() {
         const v = voiceResult.value;
         setVoice(v);
         const env = (v?.tone_attributes ?? null) as ToneEnvelope | null;
-        setTypographyDraft({
-          heading: typeof env?.heading_font === "string" ? env.heading_font : "",
-          body: typeof env?.body_font === "string" ? env.body_font : "",
-        });
+        // Typography is NOT read from the envelope any more — the kit owns it
+        // (and falls back to the envelope server-side until the backfill has run
+        // for this environment, reported as sources.heading_font).
         const sel = Array.isArray(env?.selected_voices)
           ? env!.selected_voices!.filter((s): s is string => typeof s === "string")
           : [];
@@ -309,6 +314,20 @@ export function BrandIdentityPage() {
     }
   }, [oliver.ready, lumen.ready, load]);
 
+  // The colour, font and logo drafts come from THE KIT, and re-seed whenever it
+  // changes — including after a save, so the fields show what was stored rather
+  // than what was typed.
+  useEffect(() => {
+    setLogoDraft(kit.logo_url ?? null);
+    setColorsDraft({
+      primary: kitColour("primary"),
+      secondary: kitColour("secondary"),
+      accent: kitColour("accent"),
+    });
+    setTypographyDraft({ heading: kitFont("heading"), body: kitFont("body") });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kit]);
+
   // Flash "Saved" pill for ~2s after a successful section save.
   const flash = useCallback((sectionKey: string) => {
     setSavedFlash(sectionKey);
@@ -325,32 +344,33 @@ export function BrandIdentityPage() {
     setSavingLogo(true);
     setSectionError(null);
     try {
-      const updated = await oliver.patch<OrgProfile>("/settings", { logoUrl: logoDraft ?? "" });
-      setProfile(updated);
-      setLogoDraft(updated.logoUrl ?? null);
+      // LogoPicker still UPLOADS through oliver (POST /settings/logo — that is a
+      // file-storage mechanism, not a brand store). Where the file LIVES is a
+      // brand fact, so the address is recorded on the kit.
+      const saved = await saveKit({ logo_url: logoDraft ?? null });
+      setLogoDraft(saved.logo_url);
       flash("logo");
     } catch (e) {
       setSectionError({ section: "logo", message: (e as Error).message || "Save failed." });
     } finally {
       setSavingLogo(false);
     }
-  }, [oliver, logoDraft, flash]);
+  }, [saveKit, logoDraft, flash]);
 
   // ── Section 2: Colors ───────────────────────────────────────────────────
   const handleColorsSave = useCallback(async () => {
     setSavingColors(true);
     setSectionError(null);
     try {
-      const updated = await oliver.patch<OrgProfile>("/settings", {
-        brandColor: colorsDraft.primary || undefined,
-        brandColorSecondary: colorsDraft.secondary || undefined,
-        brandColorAccent: colorsDraft.accent || undefined,
-      });
-      setProfile(updated);
-      setColorsDraft({
-        primary: updated.brandColor ?? "",
-        secondary: updated.brandColorSecondary ?? "",
-        accent: updated.brandColorAccent ?? "",
+      // A PARTIAL patch carrying only the three colour fields — an empty string
+      // CLEARS that one colour rather than leaving the old value, and no other
+      // section of the kit is touched.
+      await saveKit({
+        colours: {
+          primary: colorsDraft.primary,
+          secondary: colorsDraft.secondary,
+          accent: colorsDraft.accent,
+        },
       });
       flash("colors");
     } catch (e) {
@@ -358,7 +378,7 @@ export function BrandIdentityPage() {
     } finally {
       setSavingColors(false);
     }
-  }, [oliver, colorsDraft, flash]);
+  }, [saveKit, colorsDraft, flash]);
 
   // ── Sections 3/4/5 all hit voice/profile (different envelope keys) ──────
   // Each builds a fresh merge from the LATEST envelope so concurrent edits
@@ -384,9 +404,11 @@ export function BrandIdentityPage() {
     setSavingTypography(true);
     setSectionError(null);
     try {
-      await putVoiceProfile({
-        heading_font: typographyDraft.heading || undefined,
-        body_font: typographyDraft.body || undefined,
+      await saveKit({
+        fonts: {
+          heading: typographyDraft.heading,
+          body: typographyDraft.body,
+        },
       });
       flash("typography");
     } catch (e) {
@@ -394,7 +416,7 @@ export function BrandIdentityPage() {
     } finally {
       setSavingTypography(false);
     }
-  }, [putVoiceProfile, typographyDraft, flash]);
+  }, [saveKit, typographyDraft, flash]);
 
   const handleVoiceSave = useCallback(async () => {
     setSavingVoice(true);
@@ -426,15 +448,16 @@ export function BrandIdentityPage() {
   }, [putVoiceProfile, taglineDraft, flash]);
 
   // ── Derived: detect per-section changes so Save stays disabled until dirty
-  const logoChanged = (profile?.logoUrl ?? null) !== logoDraft;
+  // Dirty is measured against THE KIT, which is the thing being written.
+  const logoChanged = (kit.logo_url ?? null) !== logoDraft;
   const colorsChanged =
-    (profile?.brandColor ?? "") !== colorsDraft.primary ||
-    (profile?.brandColorSecondary ?? "") !== colorsDraft.secondary ||
-    (profile?.brandColorAccent ?? "") !== colorsDraft.accent;
+    kitColour("primary") !== colorsDraft.primary ||
+    kitColour("secondary") !== colorsDraft.secondary ||
+    kitColour("accent") !== colorsDraft.accent;
   const envelope = (voice?.tone_attributes ?? null) as ToneEnvelope | null;
   const typographyChanged =
-    (envelope?.heading_font ?? "") !== typographyDraft.heading ||
-    (envelope?.body_font ?? "") !== typographyDraft.body;
+    kitFont("heading") !== typographyDraft.heading ||
+    kitFont("body") !== typographyDraft.body;
   const voiceChanged =
     JSON.stringify(envelope?.selected_voices ?? []) !== JSON.stringify(voiceDraft.selected) ||
     (envelope?.custom_voice ?? "") !== voiceDraft.custom;
@@ -477,6 +500,17 @@ export function BrandIdentityPage() {
         </div>
       )}
 
+      {/* A brand we could not READ is not a brand of slate. platform-api answers
+          503 — never a colour — when core.tenants is unreadable, precisely so
+          this can be said out loud instead of showing a save that would write
+          over colours the page never managed to load. */}
+      {kitError && (
+        <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          Your brand could not be loaded ({kitError}). The colours and fonts below are the
+          platform defaults, not yours — reload before saving.
+        </div>
+      )}
+
       {/* ── 1. Logo ───────────────────────────────────────────────────── */}
       <Section
         icon={<ImageIcon className="h-4 w-4" />}
@@ -513,12 +547,17 @@ export function BrandIdentityPage() {
         description="Primary and secondary always apply. Accent is optional — used for portal highlights."
       >
         <div className="space-y-3">
+          {/* The swatch a picker shows for an UNSET colour is the kit neutral,
+              not a literal. These three rows used to read #1A3A4A / #FEC82C /
+              #1A7DB5 — IA navy, IA gold and a blue belonging to nobody — so the
+              picker suggested our brand to a business that had chosen none. */}
           {([
-            ["primary", "Primary", "#1A3A4A"],
-            ["secondary", "Secondary", "#FEC82C"],
-            ["accent", "Accent (optional)", "#1A7DB5"],
-          ] as const).map(([key, label, fallback]) => {
+            ["primary", "Primary"],
+            ["secondary", "Secondary"],
+            ["accent", "Accent (optional)"],
+          ] as const).map(([key, label]) => {
             const v = colorsDraft[key];
+            const fallback = NEUTRAL_BRAND_KIT.colours[key];
             return (
               <div key={key} className="flex items-center gap-3">
                 <span className="w-36 text-sm text-gray-700">{label}</span>
@@ -567,7 +606,7 @@ export function BrandIdentityPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           {(["heading", "body"] as const).map((kind) => {
             const value = typographyDraft[kind];
-            const preview = FONT_CATALOG.find((f) => f.value === value)?.sampleFamily || "system-ui";
+            const preview = fontCatalog.find((f) => f.value === value)?.stack || "system-ui";
             return (
               <div key={kind}>
                 <label className="block text-sm font-medium text-gray-700">
@@ -579,9 +618,9 @@ export function BrandIdentityPage() {
                   className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-black focus:outline-none focus:ring-1 focus:ring-black"
                 >
                   <option value="">— Use default —</option>
-                  {FONT_CATALOG.map((f) => (
+                  {fontCatalog.map((f) => (
                     <option key={f.value} value={f.value}>
-                      {f.label}
+                      {f.label}{f.export_safe ? "" : " — web only"}
                     </option>
                   ))}
                 </select>
@@ -611,8 +650,8 @@ export function BrandIdentityPage() {
           )}
         </div>
         <p className="mt-3 text-[11px] text-slate-400">
-          Schema note: typography is stored in lumen.brand_voice_profile.tone_attributes (JSON
-          envelope). When first-class columns are added, this UI will switch over without losing data.
+          Fonts marked “web only” render everywhere on screen but are substituted in a
+          downloaded graphic — only the faces bundled with the export renderer come out exact.
         </p>
       </Section>
 

@@ -17,12 +17,22 @@ import { MergeTagHint } from "./MergeTagHint";
 import { SparkSuggestionsPanel } from "./SparkSuggestionsPanel";
 import { SparkBodyEditor } from "./SparkBodyEditor";
 import { CTAEditorBlock, ctaToBlock, autoContrastColor, type CTAValue } from "./CTAEditorBlock";
+// THE brand kit — one fetch for the whole shell, shared with every other
+// builder on screen and live the moment Brand Identity saves. This surface
+// used to fetch brandColor/Secondary/Accent from oliver /settings for itself
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import type { BrandKit } from "../../lib/brandKit";
 
 // Render a CTAValue into the inline HTML that gets appended to the email
 // body. Mirrors the LUMEN-API emailBuilder button block output so the
 // editor preview + the inbox preview stay visually consistent.
-function ctaValueToHtml(v: CTAValue): string {
-  const block = ctaToBlock(v) as Record<string, unknown>;
+// `kit` is threaded in rather than read from a hook: this is a pure string
+// builder, and the colour it bakes into the saved body must be the BUSINESS's
+// accent. It used to fall back to Intelligent Analytics' navy
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+function ctaValueToHtml(v: CTAValue, kit: BrandKit): string {
+  const block = ctaToBlock(v, kit) as Record<string, unknown>;
   if (block.type === "paragraph") {
     const align = (v.align || "center") as string;
     return `<p style="text-align:${align};">${block.html as string}</p>`;
@@ -31,8 +41,8 @@ function ctaValueToHtml(v: CTAValue): string {
   const justify = align === "left" ? "flex-start" : align === "right" ? "flex-end" : "center";
   const radius = v.borderRadius ?? 6;
   const width = v.width || "fit";
-  const bg = v.buttonColor || "#1A3A4A";
-  const color = v.textColor || autoContrastColor(bg);
+  const bg = v.buttonColor || kit.colours.accent;
+  const color = v.textColor || autoContrastColor(bg, kit);
   const label = (v.label || "Click here")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const url = (v.url || "#").replace(/"/g, "&quot;");
@@ -173,7 +183,14 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     width: "fit",
     borderRadius: 6,
   });
-  const [brandColors, setBrandColors] = useState<{ primary?: string; secondary?: string; accent?: string }>({});
+  // The three chips on the CTA editor, straight off the kit. No local fetch,
+  // no undefined-means-no-brand branch: the kit is always a complete palette.
+  const { kit } = useBrandKit();
+  const brandColors = {
+    primary: kit.colours.primary,
+    secondary: kit.colours.secondary,
+    accent: kit.colours.accent,
+  };
 
   const [saving, setSaving] = useState(false);
   const [sending, setSending] = useState(false);
@@ -242,14 +259,6 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     // tenant hasn't set up senders yet the dropdown shows a "no senders"
     // hint pointing to Settings — but we still allow drafts so the user
     // isn't blocked while waiting on domain verification.
-    oliverApi
-      .get<{ brandColor?: string | null; brandColorSecondary?: string | null; brandColorAccent?: string | null }>("/settings")
-      .then((r) => setBrandColors({
-        primary: r?.brandColor || undefined,
-        secondary: r?.brandColorSecondary || undefined,
-        accent: r?.brandColorAccent || undefined,
-      }))
-      .catch(() => setBrandColors({}));
     get<{ data: Sender[] }>("/api/v1/senders").then((r) => {
       const list = r?.data || [];
       setSenders(list);
@@ -1061,7 +1070,7 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
                 variant="accent"
                 product="spark"
                 onClick={() => {
-                  const html = ctaValueToHtml(ctaValue);
+                  const html = ctaValueToHtml(ctaValue, kit);
                   const next = contentHtml ? `${contentHtml}\n${html}` : html;
                   setContentHtml(next);
                   setCtaOpen(false);

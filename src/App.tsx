@@ -1,5 +1,10 @@
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AppStateProvider } from './app/AppState';
+// THE brand kit, one fetch for the whole shell. Inside AppStateProvider
+// because it needs the active business; outside Routes so a save in Brand
+// Identity repaints every builder on screen without a reload
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+import { BrandKitProvider } from './brand/BrandKitProvider';
 
 import { LandingPage } from './pages/LandingPage';
 import { DEV_AUTH } from './lib/devAuth';
@@ -171,6 +176,7 @@ export function App() {
   return (
     <BrowserRouter>
       <AppStateProvider>
+        <BrandKitProvider>
         <Routes>
           {/* Public routes. Under VITE_DEV_AUTH=1 the bare root goes straight
               into the app — the sign-in landing must never render in local dev
@@ -515,6 +521,7 @@ export function App() {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </BrandKitProvider>
       </AppStateProvider>
     </BrowserRouter>
   );

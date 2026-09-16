@@ -12,6 +12,12 @@
 // Nothing here is a mock; if the logo is missing on the page, it is missing in
 // Business Setup, which is exactly the prompt to go set it.
 import { useEffect, useState, type ReactNode } from "react";
+// THE brand kit. The colour and the fonts come from here now; /settings still
+// supplies the contact line and /settings/invoice-template the document's own
+// logo/accent override, which deliberately still beats the kit
+// (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
+import { useBrandKit } from "../../brand/BrandKitProvider";
+import { fontStack } from "../../lib/brandKit";
 
 interface BrandData {
   businessName: string;
@@ -27,7 +33,14 @@ interface BrandData {
   bodyFont?: string | null;
 }
 
-const FALLBACK: BrandData = { businessName: "Your business", accentColor: "#1A7DB5" };
+/**
+ * What the frame shows before anything has loaded. The accent used to be
+ * "#1A7DB5" — a FIFTH brand colour that belongs to nobody, not even us, and
+ * that a client could see on their own proposal with no idea where it came
+ * from. There is no colour here at all now: the kit supplies it, and the kit
+ * is the platform neutral until the business's own is loaded.
+ */
+const FALLBACK_NAME = "Your business";
 
 export function DocumentBrandFrame({
   get, docLabel, docNumber, children,
@@ -38,6 +51,10 @@ export function DocumentBrandFrame({
   docNumber?: string | null;
   children: ReactNode;
 }) {
+  // ONE fetch for the whole shell, shared with every other builder on screen,
+  // and it repaints the moment Brand Identity saves — that live round trip is
+  // the walk row (GAP_SPRINT_WALK BK-3).
+  const { kit } = useBrandKit();
   const [brand, setBrand] = useState<BrandData | null>(null);
 
   useEffect(() => {
@@ -50,34 +67,40 @@ export function DocumentBrandFrame({
         ]);
         if (cancelled) return;
         setBrand({
-          businessName: settings.tenantFullName || settings.tenantName || FALLBACK.businessName,
+          businessName: settings.tenantFullName || settings.tenantName || FALLBACK_NAME,
           email: settings.email,
           phone: settings.phone,
           website: settings.website,
           // The invoice template's logo wins (it is the document logo); the
           // business profile logo is the fallback.
           logoUrl: tpl.logoUrl || settings.logoUrl || null,
-          accentColor: tpl.accentColor || FALLBACK.accentColor,
+          // The document template override wins (it is the DOCUMENT accent a
+          // business set for its paperwork); the kit is behind it. Neither is
+          // a literal any more.
+          accentColor: tpl.accentColor || kit.colours.primary,
           footerNote: tpl.footerNote,
-          headingFont: settings.headingFont || null,
-          bodyFont: settings.bodyFont || null,
+          headingFont: settings.headingFont || kit.fonts.heading,
+          bodyFont: settings.bodyFont || kit.fonts.body,
         });
       } catch {
         // The editor must not be blocked by a branding fetch — render the
-        // frame with fallbacks rather than nothing.
-        if (!cancelled) setBrand(FALLBACK);
+        // frame on the kit alone rather than nothing. Degraded, but still the
+        // business's own colour, never a stray blue.
+        if (!cancelled) setBrand({ businessName: FALLBACK_NAME, accentColor: kit.colours.primary });
       }
     })();
     return () => { cancelled = true; };
-  }, [get]);
+  }, [get, kit]);
 
-  const b = brand || FALLBACK;
+  const b: BrandData = brand || { businessName: FALLBACK_NAME, accentColor: kit.colours.primary };
   const contact = [b.email, b.phone, b.website].filter(Boolean).join("  ·  ");
   // Same stack the public proposal page uses, so the editor is honest about
   // what the customer will actually see.
   const SANS = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif";
-  const headingFamily = b.headingFont ? `'${b.headingFont}', ${SANS}` : SANS;
-  const bodyFamily = b.bodyFont ? `'${b.bodyFont}', ${SANS}` : SANS;
+  // The catalog the kit carries knows each face's real CSS stack, so the
+  // editor renders what the sent document renders instead of guessing one.
+  const headingFamily = b.headingFont ? `'${b.headingFont}', ${SANS}` : fontStack(kit, "heading");
+  const bodyFamily = b.bodyFont ? `'${b.bodyFont}', ${SANS}` : fontStack(kit, "body");
 
   return (
     <div style={{
