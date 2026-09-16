@@ -55,6 +55,13 @@ export function PublicProposalPage() {
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ signer: string; at: string } | null>(null);
+  // "Ask for a change" — the customer's half of a revision. Before this the
+  // only way a revision existed was the business inventing one, so a customer
+  // who wanted a different price sent an email and hoped; what they asked for
+  // then lived in a mailbox rather than beside the document.
+  const [askOpen, setAskOpen] = useState(false);
+  const [askText, setAskText] = useState("");
+  const [asked, setAsked] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +118,23 @@ export function PublicProposalPage() {
       if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
       setAccepted({ signer: body.data?.signature?.signer_name || signature.trim(), at: body.data?.signature?.signed_at || new Date().toISOString() });
       await load();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally { setBusy(false); }
+  }
+
+  async function requestChanges() {
+    setBusy(true); setError(null);
+    try {
+      const res = await fetch(`${OLIVER_API_BASE}/p/proposals/${token}/request-changes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: askText.trim() }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
+      setAsked(true);
+      setAskOpen(false);
     } catch (e) {
       setError((e as Error).message);
     } finally { setBusy(false); }
@@ -195,6 +219,53 @@ export function PublicProposalPage() {
             >
               {busy ? "Signing…" : "Sign and accept"}
             </button>
+            <button
+              type="button"
+              onClick={() => setAskOpen((v) => !v)}
+              disabled={busy}
+              title="Ask for something to be changed before you sign"
+              style={{
+                marginTop: 12, marginLeft: 8, background: "transparent", border: "1px solid #CBD5E1",
+                borderRadius: 4, padding: "10px 14px", fontSize: 13, color: "#334155", cursor: "pointer",
+              }}
+            >
+              Ask for a change
+            </button>
+
+            {asked && (
+              <div style={{ marginTop: 12, border: "1px solid #BBF7D0", background: "#F0FDF4", borderRadius: 6, padding: "10px 12px", fontSize: 12, color: "#166534" }}>
+                Sent. {data.branding?.tenantName || "They"} will update the document and send it back for you to sign.
+              </div>
+            )}
+
+            {askOpen && !asked && (
+              <div style={{ marginTop: 12 }}>
+                <label style={{ display: "block", fontSize: 12, color: "#5A7A8A", marginBottom: 4 }}>
+                  What would you like changed? One thing per line.
+                </label>
+                <textarea
+                  value={askText}
+                  onChange={(e) => setAskText(e.target.value)}
+                  rows={4}
+                  placeholder={"e.g.\nDrop the salting line for the back lot\nCan the per-push rate come down?"}
+                  title="Your words go straight to the business, exactly as you type them"
+                  style={{ width: "100%", maxWidth: 560, border: "1px solid #CBD5E1", borderRadius: 4, padding: "8px 10px", fontSize: 13, fontFamily: "inherit" }}
+                />
+                <button
+                  type="button"
+                  onClick={requestChanges}
+                  disabled={busy || askText.trim().length < 3}
+                  title={askText.trim().length < 3 ? "Tell them what to change first" : "Send this to the business"}
+                  style={{
+                    display: "block", marginTop: 8, background: askText.trim().length >= 3 ? "#0C4A60" : "#CBD5E1",
+                    color: "#fff", border: "none", borderRadius: 4, padding: "9px 14px", fontSize: 13, fontWeight: 600,
+                    cursor: askText.trim().length >= 3 ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {busy ? "Sending…" : "Send my request"}
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div style={{ marginTop: 18, fontSize: 12, color: "#5A7A8A" }}>

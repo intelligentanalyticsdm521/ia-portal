@@ -31,6 +31,7 @@ import {
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { unfilledTokens, tagLabel } from "../merge";
+import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
   SHIPPED_TEMPLATES, applyBrandDefaults, hydrateClauses, templateByKey, type ClauseRow,
@@ -49,8 +50,30 @@ export interface ProposalBuilderProps {
   api: ProposalApi;
   /** Editing an existing draft, or null for a new one. */
   proposalId?: string | null;
+  /**
+   * Editing a REVISION of a sent document, rather than the document itself.
+   *
+   * §11.5's remaining item. A revision opens in THIS builder — the same
+   * sections, the same widgets, the same pane — with two additions and nothing
+   * else: the customer's requested changes as a checklist in the pane, and a
+   * badge on every section that differs from the version the customer read.
+   * There is no second editor.
+   */
+  revision?: { proposalId: string; revisionId: string } | null;
   onClose: () => void;
   onSaved: (message: string) => void;
+}
+
+/** The customer's words, one line at a time, with a tick beside each. */
+interface RequestItem { text: string; done: boolean }
+
+interface RevisionMeta {
+  revision_number: number;
+  document_version: number;
+  status: string;
+  requested_by: string | null;
+  request_note: string | null;
+  public_token: string | null;
 }
 
 interface ContactRow {
@@ -62,7 +85,7 @@ interface LocationRow extends LocationLite { is_default?: boolean }
 
 const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
 
-export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: ProposalBuilderProps) {
+export function ProposalBuilder({ api, proposalId = null, revision = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
   // §9/D-121 — the ONE custom-field mechanism. The property's own fields live
   // in lumen.custom_field, which already accepts entity_kind "property", so the
@@ -90,9 +113,17 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
   /* ── The document ────────────────────────────────────────────────────── */
   const [doc, setDoc] = useState<BuilderDocument>(() => emptyDocument());
   const [resetKey, setResetKey] = useState(0);
-  const [picking, setPicking] = useState(!proposalId);   // the "start from" step
+  // A revision never starts from a template — it starts from the document the
+  // customer already read.
+  const [picking, setPicking] = useState(!proposalId && !revision);   // the "start from" step
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  /* ── The revision, when this is one ──────────────────────────────────── */
+  const [revMeta, setRevMeta] = useState<RevisionMeta | null>(null);
+  /** The document as the customer LAST READ IT. The diff's baseline. */
+  const [baseDoc, setBaseDoc] = useState<BuilderDocument | null>(null);
+  const [requestItems, setRequestItems] = useState<RequestItem[]>([]);
 
   /* ── The business's own material ─────────────────────────────────────── */
   const [clauses, setClauses] = useState<ClauseRow[]>([]);
@@ -165,6 +196,50 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
 
+  /* ── Opening a REVISION ──────────────────────────────────────────────── */
+  useEffect(() => {
+    if (!revision) return;
+    const key = `rev:${revision.revisionId}`;
+    if (loadedFor.current === key) return;
+    loadedFor.current = key;
+    api.get<any>(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}`).then((r) => {
+      const row = r?.data ?? r;
+      const p = row.proposal || {};
+      setTitle(p.title || "");
+      setContactId(p.contact_id || "");
+      if (p.contact_id) {
+        setPickedContact({
+          contact_id: p.contact_id,
+          first_name: (p.customer_name || "").split(" ")[0],
+          last_name: (p.customer_name || "").split(" ").slice(1).join(" "),
+          email: p.customer_email, company_name: p.customer_company,
+        });
+      }
+      setPickedLocationIds((p.location_ids || []).map((x: string) => String(x).toLowerCase()));
+      if (p.valid_until) setValidUntil(String(p.valid_until).slice(0, 10));
+      if (p.tax_rate != null) setTaxRate(String(Math.round(Number(p.tax_rate) * 10000) / 100));
+      if (p.discount_amount != null) setDiscount(String(Number(p.discount_amount) || 0));
+      const opened = row.document ? deserialise(row.document) : emptyDocument();
+      setDoc(opened);
+      setBaseDoc(row.base_document ? deserialise(row.base_document) : null);
+      setRequestItems(Array.isArray(row.request_items) ? row.request_items : []);
+      setRevMeta({
+        revision_number: Number(row.revision_number) || 1,
+        document_version: Number(row.document_version) || 2,
+        status: String(row.status || "draft"),
+        requested_by: row.requested_by || null,
+        request_note: row.request_note || null,
+        public_token: row.public_token || null,
+      });
+      setResetKey((k) => k + 1);
+      setPicking(false);
+    }).catch((e) => setErr(apiErrorMessage(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revision?.revisionId]);
+
+  /** What this document changes, measured against what the customer read. */
+  const diff = useMemo(() => diffDocuments(baseDoc, revision ? doc : null), [baseDoc, doc, revision]);
+
   /* ── The customer's locations, the moment a customer is chosen ───────── */
   useEffect(() => {
     if (!contactId) { setLocations([]); return; }
@@ -223,8 +298,12 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
       },
       locations: locationMap,
       totals: documentTotals(doc, { taxRate: Number(taxRate) / 100, discount: Number(discount) || 0 }),
+      // The ONE renderer draws the badges. The author's canvas and the
+      // customer's revision page hand in the SAME map, so they cannot badge
+      // different sections.
+      ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, contact, pickedLocations, locations, kit, identity, validUntil, taxRate, discount]);
+  }, [doc, contact, pickedLocations, locations, kit, identity, validUntil, taxRate, discount, revision, diff]);
 
   const totals = ctx.totals;
 
@@ -317,6 +396,59 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
     }
   }
 
+  /* ── Saving a REVISION ───────────────────────────────────────────────── */
+
+  /** The ticks, written straight through: a tick is work done, not a draft. */
+  const toggleRequestItem = useCallback(async (index: number) => {
+    if (!revision) return;
+    const next = requestItems.map((it, i) => (i === index ? { ...it, done: !it.done } : it));
+    setRequestItems(next);
+    try {
+      await api.patch(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}`, { request_items: next });
+    } catch (e) {
+      // Put it back. A tick that looks saved and is not is worse than one that
+      // refuses: the author would work from a list that lies to them.
+      setRequestItems(requestItems);
+      setErr(`Could not save that tick: ${apiErrorMessage(e)}`);
+    }
+  }, [api, requestItems, revision]);
+
+  async function saveRevision(send: boolean) {
+    if (!revision) return;
+    if (send && diff.identical) {
+      setErr("Nothing has changed yet, so there is nothing to send. Edit the document first.");
+      return;
+    }
+    if (send && blanks.length) {
+      const list = blanks.slice(0, 4).map((t) => tagLabel(t)).join(", ");
+      setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Fill them in, or remove them, before sending.`);
+      return;
+    }
+    setErr(null); setBusy(true);
+    try {
+      const w = wire();
+      await api.patch(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}`, {
+        document: w.document,
+        request_items: requestItems,
+      });
+      if (!send) { onSaved("Revision saved. The customer still sees the version they were sent."); return; }
+      const sent = await api.post<any>(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}/send`, {
+        document: w.document,
+        blocks: w.blocks,
+        scope_html: w.scope_html || null,
+        line_items: w.line_items,
+        tax_rate: Number(taxRate) / 100,
+        discount_amount: Number(discount) || 0,
+      });
+      const url = (sent as any)?.data?.public_url || (sent as any)?.public_url;
+      onSaved(`Revision v${revMeta?.document_version ?? 2} sent — they must sign it again.${url ? ` Their link is ${url}` : ""}`);
+    } catch (e) {
+      setErr(`Could not ${send ? "send" : "save"} the revision: ${apiErrorMessage(e)}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function saveAsTemplate() {
     const name = window.prompt("Name this template", title.trim() || "Untitled document");
     if (!name?.trim()) return;
@@ -357,7 +489,9 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
         onClose={onClose}
         adapter="proposal"
         resetKey={resetKey}
-        eyebrow="OLIVER · Document builder"
+        eyebrow={revision
+          ? `OLIVER · Revision v${revMeta?.document_version ?? 2}${revMeta?.requested_by === "customer" ? " · asked for by the customer" : ""}`
+          : "OLIVER · Document builder"}
         title={
           <input
             value={title}
@@ -438,24 +572,45 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
           />
         )}
         headerActions={
-          <>
-            <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
-              title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
-              <Sparkles size={13} /> Ask ARGUS
-            </button>
-            <button type="button" onClick={saveAsTemplate} disabled={busy} style={ghostBtn}
-              title="Save this document's sections as a template you can start from next time">
-              Save as template
-            </button>
-            <button type="button" onClick={() => save(false)} disabled={busy} style={ghostBtn}
-              title="Save without sending. You can come back to it.">
-              {busy ? "Working…" : "Save draft"}
-            </button>
-            <button type="button" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-              title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
-              {busy ? "Working…" : "Send to customer"}
-            </button>
-          </>
+          revision ? (
+            <>
+              <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
+                title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
+                <Sparkles size={13} /> Ask ARGUS
+              </button>
+              <button type="button" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
+                title="Save your changes without sending. The customer still sees the version they were sent.">
+                {busy ? "Working…" : "Save draft"}
+              </button>
+              <button type="button" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
+                title={diff.identical
+                  ? "Nothing has changed yet — edit the document first"
+                  : blanks.length
+                    ? `${blanks.length} detail(s) are still blank`
+                    : `Send v${revMeta?.document_version ?? 2} to the customer. They must sign it again.`}>
+                {busy ? "Working…" : `Send v${revMeta?.document_version ?? 2}`}
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
+                title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
+                <Sparkles size={13} /> Ask ARGUS
+              </button>
+              <button type="button" onClick={saveAsTemplate} disabled={busy} style={ghostBtn}
+                title="Save this document's sections as a template you can start from next time">
+                Save as template
+              </button>
+              <button type="button" onClick={() => save(false)} disabled={busy} style={ghostBtn}
+                title="Save without sending. You can come back to it.">
+                {busy ? "Working…" : "Save draft"}
+              </button>
+              <button type="button" onClick={() => save(true)} disabled={busy} style={orangeBtn}
+                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
+                {busy ? "Working…" : "Send to customer"}
+              </button>
+            </>
+          )
         }
         paneHeader={
           <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.4 }}>
@@ -466,6 +621,15 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
               <div style={{ color: "#B45309", marginTop: 2 }} title={blanks.map((t) => tagLabel(t)).join(", ")}>
                 {blanks.length} detail{blanks.length === 1 ? "" : "s"} still blank
               </div>
+            )}
+            {revision && (
+              <RequestedChanges
+                items={requestItems}
+                note={revMeta?.request_note || null}
+                requestedBy={revMeta?.requested_by || null}
+                summary={diffSummary(diff)}
+                onToggle={toggleRequestItem}
+              />
             )}
             {err && <div style={{ color: "#B91C1C", marginTop: 4 }}>{err}</div>}
           </div>
@@ -493,6 +657,82 @@ export function ProposalBuilder({ api, proposalId = null, onClose, onSaved }: Pr
         />
       )}
     </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The customer's requested changes — a side note the author ticks off
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * What they asked for, in their words, beside the document.
+ *
+ * It is a CHECKLIST rather than a paragraph because the author is working
+ * through it: the question they keep asking themselves is "have I done the
+ * second thing?", and a paragraph cannot answer that. The note itself is shown
+ * underneath in full, so nothing is lost to the splitter.
+ *
+ * Ticks are saved the moment they are made — a tick is work done, not a draft,
+ * and an author who ticks three things and closes the tab has still done them.
+ */
+function RequestedChanges({
+  items, note, requestedBy, summary, onToggle,
+}: {
+  items: RequestItem[];
+  note: string | null;
+  requestedBy: string | null;
+  summary: string;
+  onToggle: (index: number) => void;
+}) {
+  const done = items.filter((i) => i.done).length;
+  return (
+    <div style={{
+      marginTop: 8, border: "1px solid #FCD34D", background: "#FFFBEB",
+      borderRadius: 6, padding: "8px 9px",
+    }}>
+      <div style={{ fontWeight: 700, color: "#92400E", fontSize: 11, display: "flex", justifyContent: "space-between", gap: 6 }}>
+        <span>{requestedBy === "customer" ? "What the customer asked for" : "What this revision changes"}</span>
+        {items.length > 0 && <span style={{ fontWeight: 600 }}>{done}/{items.length}</span>}
+      </div>
+
+      {items.length > 0 ? (
+        <ul style={{ listStyle: "none", margin: "6px 0 0", padding: 0, display: "grid", gap: 4 }}>
+          {items.map((it, i) => (
+            <li key={`${i}-${it.text.slice(0, 12)}`}>
+              <label style={{ display: "flex", gap: 6, alignItems: "flex-start", cursor: "pointer", color: it.done ? "#78716C" : "#451A03" }}>
+                <input
+                  type="checkbox"
+                  checked={it.done}
+                  onChange={() => onToggle(i)}
+                  title={it.done ? "Mark this as not done yet" : "Tick this off once the document covers it"}
+                  style={{ marginTop: 2 }}
+                />
+                <span style={{ textDecoration: it.done ? "line-through" : "none", lineHeight: 1.35 }}>{it.text}</span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      ) : note ? (
+        <div style={{ marginTop: 4, color: "#451A03", whiteSpace: "pre-wrap" }}>{note}</div>
+      ) : (
+        <div style={{ marginTop: 4, color: "#92400E" }}>
+          No note — you started this revision yourself.
+        </div>
+      )}
+
+      {items.length > 0 && note && (
+        <details style={{ marginTop: 6 }}>
+          <summary style={{ cursor: "pointer", color: "#92400E", fontSize: 10 }} title="Show the message exactly as they typed it">
+            Their message, in full
+          </summary>
+          <div style={{ marginTop: 4, color: "#451A03", whiteSpace: "pre-wrap" }}>{note}</div>
+        </details>
+      )}
+
+      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid #FDE68A", color: "#92400E" }}>
+        {summary}
+      </div>
+    </div>
   );
 }
 
