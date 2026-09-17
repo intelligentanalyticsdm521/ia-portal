@@ -191,6 +191,22 @@ const TOTALS_RENAMES: ReadonlyArray<[string, string]> = [
 const CARD_KINDS = new Set(["card", "catalog_card"]);
 
 /**
+ * WHICH KINDS CAN WEAR A RIBBON.
+ *
+ * A priced line wears one too - the inspector offers it the same six presets
+ * ("Ribbon on this card"), the canvas draws it, and oliver reads it through
+ * the same `cardTag`. So its OLD spelling has to be converted by the same
+ * pass: found by driving it, 2026-09-17, on a document converted from a
+ * comparison-cards composite, where the cards came back on `show_ribbon` and
+ * the priced line kept `recommended: true`. Two spellings for one fact, which
+ * is what point (g) exists to end.
+ *
+ * The card FIELD renames stay card-only: a priced line's `name` is its own
+ * field and is not the card's `heading`.
+ */
+const RIBBON_KINDS = new Set(["card", "catalog_card", "price_line", "priced_line"]);
+
+/**
  * One widget's props, renamed. Returns the SAME object when nothing moved.
  *
  * The identity return is the whole of the byte-identical promise: an untouched
@@ -225,18 +241,20 @@ export function renameProps(w: Widget): Widget {
     if (Array.isArray(p.features_list) && p.features_list.some((f: unknown) => typeof f === "string")) {
       write("features_list", featureTexts(p.features_list).map(featureItem));
     }
-    // THE RIBBON. `tagOf` is the one reader of all five spellings; whatever it
-    // answers is written back in the card's own names, and the older keys go.
-    if ("tag" in p || "badge" in p || "recommended" in p) {
-      const tag = tagOf(p);
-      for (const [k, v] of Object.entries(ribbonProps(tag ? { text: tag.text, colour: tag.colour, preset: tag.preset } : null))) {
-        write(k, v);
-      }
-      // And the older keys come OFF, rather than being left beside the new
-      // ones holding a falsy value: a key nothing reads is a key somebody will
-      // one day write, and `tagOf` would then have two answers to choose from.
-      for (const k of LEGACY_RIBBON_KEYS) drop(k);
+  }
+
+  // THE RIBBON, on every kind that can wear one. `tagOf` is the one reader of
+  // all five spellings; whatever it answers is written back in the card's own
+  // names, and the older keys go.
+  if (RIBBON_KINDS.has(w.kind) && ("tag" in p || "badge" in p || "recommended" in p)) {
+    const tag = tagOf(p);
+    for (const [k, v] of Object.entries(ribbonProps(tag ? { text: tag.text, colour: tag.colour, preset: tag.preset } : null))) {
+      write(k, v);
     }
+    // And the older keys come OFF, rather than being left beside the new ones
+    // holding a falsy value: a key nothing reads is a key somebody will one
+    // day write, and `tagOf` would then have two answers to choose from.
+    for (const k of LEGACY_RIBBON_KEYS) drop(k);
   }
 
   if (w.kind === "totals") {

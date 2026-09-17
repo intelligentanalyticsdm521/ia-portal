@@ -329,8 +329,13 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // which is ONE catalogue line — two kinds, asserted just below.
     assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(),
       ["email", "landing", "proposal", "website"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.catalog_card.adapters].sort(),
-      ["email", "landing", "proposal", "website"]);
+    // `catalog_card` is PROPOSAL-only again (2026-09-17, driven): every surface
+    // can draw it, but only the proposal can say WHICH product - the catalogue
+    // picker lives in that panel. Offering it in a send gave a card that could
+    // be placed and never filled, and a send already has one mechanism for
+    // products: the newsletter's own `product_card`, which has its picker.
+    // Lift the picker into the widget and this list gains it back.
+    assert.deepEqual([...WIDGETS_BY_KIND.catalog_card.adapters].sort(), ["proposal"]);
     // NOT `website` for these three: the website publish path has no emitter
     // for the kind, and an unknown kind makes the whole page publish refuse by
     // name — so offering one would be a widget an author can place and never

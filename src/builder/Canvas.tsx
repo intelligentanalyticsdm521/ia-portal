@@ -1090,9 +1090,22 @@ const CANVAS_CSS = `
 .bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; }
 [data-widget] { position: relative; }
 /* THE WIDGET'S OWN HANDLE — on hover, at the corner, outside the words. */
+/* A HANDLE THAT CANNOT BE SEEN CANNOT BE PRESSED (landed 2026-09-17).
+
+   FOUND BY DRIVING IT: pressing the ✕ on a card inside a row inside a box
+   deleted THE BOX AND EVERYTHING IN IT. The handles were hidden with
+   opacity: 0 alone, and an element at opacity 0 is invisible but still
+   takes the click — so the ancestors' ✕, painted later in the DOM at the
+   same corner and the same z, swallowed every press meant for the child.
+   Absence-based hiding, failing open, on the one control that destroys
+   work: V-3's defect on the tool row rather than on the "+".
+
+   pointer-events travels with opacity in all three rules below, so
+   "stepped back" means "not pressable" everywhere and there is one
+   answer to "can this handle be pressed". */
 .bxc-wtools { position: absolute; top: -11px; left: -9px; z-index: 6; display: inline-flex; gap: 2px;
-  opacity: 0; transition: opacity .1s; }
-[data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; }
+  opacity: 0; pointer-events: none; transition: opacity .1s; }
+[data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; pointer-events: auto; }
 /* ALSO SELECTED (§11.12) — shift-clicked, going into the box with the other
    one. A dotted ring rather than the solid selection ring, because the author
    has to be able to tell which one the inspector on the right is about. */
@@ -1102,7 +1115,7 @@ const CANVAS_CSS = `
    in the same corner and the author cannot tell which one they are about to
    press — which is the nesting equivalent of the section toolbar that used to
    sit on top of the first widget. */
-.bx-box:has(> [data-widget]:hover) > .bxc-wtools { opacity: 0; }
+.bx-box:has(> [data-widget]:hover) > .bxc-wtools { opacity: 0; pointer-events: none; }
 .bxc-grip, .bxc-wtool { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   background: #2D9CDB; color: #fff; border: none; border-radius: 4px; font-size: 11px; line-height: 1;
   user-select: none; cursor: pointer; padding: 0; }

@@ -291,12 +291,23 @@ export const CATALOG_CARD_DEF: WidgetDef = {
   picture: pictureFrom(box(18, 4, 28, 32) + bar(23, 10, 18, 5) + bar(23, 19, 12)
     + `<path d="M23 28l3 3 6-6" stroke="#64748B"/>`),
   category: "Money",
-  // WHERE IT MAY BE USED (catalogue F.1). D-156 slice one shipped these as
-  // PROPOSAL-only; the panes that can actually DRAW them now offer them too.
-  // The engine's own `renderAtom` draws this in every builder, and the website
-  // publish path knows the kind by name, so nothing here is offered to a
-  // surface that would drop it.
-  adapters: ["proposal", "website", "email", "landing"],
+  // WHERE IT MAY BE USED: the PROPOSAL, and only the proposal — for now.
+  //
+  // Every surface can DRAW this card (`renderAtom` is the engine's) and the
+  // website publish path knows the kind by name. What only the proposal has
+  // is the way to say WHICH product: the catalogue picker lives in the
+  // proposal's own panel. Driven on 2026-09-17, a product card placed in a
+  // newsletter showed its Binding section and no list to choose from — a card
+  // that can be placed and never filled, which is the class of defect this
+  // pass exists to close. A send already has ONE mechanism for products, the
+  // newsletter's own `product_card`, and that one has its picker
+  // (`FromTheCatalogue`, EmailBuilder).
+  //
+  // The way to widen it is to lift that picker into this widget's own
+  // inspector section, where every surface gets it at once; then this line
+  // becomes the four. Written up in the handoff. A TYPED `card` is widened
+  // today, because a typed card needs no picker — the author types into it.
+  adapters: ["proposal"],
   // It reads the OLIVER catalogue, so a business without OLIVER has nothing
   // for it to read. WHETHER this business has it is still the server's answer.
   tier: "ia:oliver",

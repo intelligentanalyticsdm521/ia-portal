@@ -142,7 +142,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    * Read ONCE, like the catalogue, and written onto the widget when it is
    * used — never looked up at render time. See widgets/totals.ts for why.
    */
-  const [businessTax, setBusinessTax] = useState<{ percent: number; label: string } | null>(null);
+  // `percent: null` is "nobody has said" and is NOT 0% - see the read below.
+  const [businessTax, setBusinessTax] = useState<{ percent: number | null; label: string } | null>(null);
 
   /* ── The document ────────────────────────────────────────────────────── */
   const [doc, setDoc] = useState<BuilderDocument>(() => emptyDocument());
@@ -238,15 +239,41 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       .catch(() => setOfferings([]))
       .finally(() => setCatalogueLoading(false));
     api.get<any>("/proposal-builder/clauses").then((r) => setClauses(rows<ClauseRow>(r))).catch(() => setClauses([]));
-    // The business's default sales-tax rate. A business that has not set one
-    // up answers 0 and the Totals panel says so in words rather than showing
-    // a rate nobody typed.
-    api.get<any>("/proposal-builder/money-settings")
+    /**
+     * THE BUSINESS'S OWN TAX RATE, FROM ITS ONE HOME.
+     *
+     * `GET /settings` -> `defaultTaxRate`, i.e. `oliver.tenant_settings.
+     * default_tax_rate` (oliver migration 217), which is the single home the
+     * three repos agreed on (shared vocabulary (c), 2026-09-17) and the one
+     * `lib/taxRate.js` resolves on send.
+     *
+     * IT USED TO READ `/proposal-builder/money-settings`, the STELLA-backed
+     * route, and that was two homes for one number with the halves
+     * disagreeing: this business answers 7.25% there and null here, so the
+     * canvas taxed a proposal at 7.25%, the author saw a total with tax in it,
+     * and pressing Send came back 400 no_tax_rate. Found by driving it,
+     * 2026-09-17. One home, so the number on the page is the number that is
+     * charged.
+     *
+     * `null` and `0` ARE DIFFERENT ANSWERS: null is "nobody has said" and is
+     * what the sentence beside the widget is for; 0 is "this business charges
+     * no sales tax" and is a rate like any other. So `percent` is null when
+     * the field is null, and a failed read is also null - silence is not "0%".
+     *
+     * There is no NAME in the one home. The rate row prints "Tax 7.25%", and
+     * an author who wants it called something types that in the block's own
+     * "What the rate is called" - which is stored on the document, so it
+     * cannot drift from what the customer signed.
+     */
+    api.get<any>("/settings")
       .then((r) => {
         const d = (r && typeof r === "object" && "data" in r ? (r as any).data : r) || {};
-        setBusinessTax({ percent: Number(d.tax_rate_percent) || 0, label: String(d.tax_rate_name || "") });
+        const raw = d.defaultTaxRate;
+        setBusinessTax(raw == null || raw === "" || !Number.isFinite(Number(raw))
+          ? { percent: null, label: "" }
+          : { percent: Number(raw), label: "" });
       })
-      .catch(() => setBusinessTax({ percent: 0, label: "" }));
+      .catch(() => setBusinessTax({ percent: null, label: "" }));
     api.get<any>("/proposal-templates").then((r) => setSavedTemplates(rows<any>(r).map((t: any) => ({
       id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
       document: t.document, body: t.body,
@@ -407,24 +434,67 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    * rate changed shows the new one; a document set to a rate of its own is
    * never touched.
    */
+  /**
+   * THE WIDGETS THAT ARE WAITING FOR THE BUSINESS'S RATE.
+   *
+   * The ids of every Totals block set to "your business's own rate" whose
+   * number is missing or stale. It is a STRING on purpose: it changes only
+   * when that set changes, so the effect below runs when there is stamping to
+   * do and not on every keystroke — and it becomes empty the moment the
+   * stamping is done, which is what makes the effect terminate.
+   *
+   * Depending on the whole `doc` instead loops: the effect writes the doc,
+   * the doc is the dependency, and React runs it again (found by driving it,
+   * 2026-09-17 — "Maximum update depth exceeded" the moment the mode was
+   * chosen). Depending on `businessTax` alone was the defect this replaces:
+   * it ran once, when the rate arrived, so an author who chose the business
+   * rate AFTER that — which is everybody, because the rate arrives while the
+   * document is opening — stored a MODE and never got a NUMBER, and
+   * `renderTotals` draws no tax row at all when the rate is null. A document
+   * taxed at nothing with the word "business" written on it: the audit's
+   * point 5 arriving by a second route.
+   */
+  const awaitingBusinessRate = useMemo(() => {
+    // Nothing to stamp when the business has not set a rate: the widget keeps
+    // `tax_rate: null`, `totalsSettings` reports `taxUnresolved`, and the
+    // canvas prints the sentence rather than a rate nobody set.
+    if (!businessTax || businessTax.percent == null) return "";
+    const ids = [];
+    for (const { widget: w } of walkWidgets(doc)) {
+      if (w.kind !== "totals") continue;
+      const st = totalsSettings(w.props);
+      if (st.taxMode !== "business") continue;
+      if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) continue;
+      ids.push(w.id);
+    }
+    return ids.join(",");
+  }, [doc, businessTax]);
+
+  /**
+   * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
+   *
+   * The NUMBER always lives on the widget, because the customer's page and the
+   * PDF are drawn by a server with no tax table. The MODE says whether to keep
+   * it up to date, and this is where that happens — whenever a block is
+   * waiting for it, however the mode got set: the widget's own Tax control is
+   * the only one there is now, and it stores a mode, not a number.
+   */
   useEffect(() => {
-    if (!businessTax) return;
+    if (!businessTax || !awaitingBusinessRate) return;
     setDoc((d) => {
       // THE WHOLE TREE (V-2). The hand-rolled walk this replaces read the top
       // of each column, so a Totals widget the author had put inside a box —
       // a per-property subtotal, which is exactly where one goes — never
       // heard the business's rate and quietly charged 0% tax.
+      //
+      // THE CANONICAL NAMES ((c), 2026-09-17): `tax_rate` and `tax_label`.
       let next = d;
-      for (const { widget: w } of walkWidgets(d)) {
-        if (w.kind !== "totals") continue;
-        const st = totalsSettings(w.props);
-        if (st.taxMode !== "business") continue;
-        if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) continue;
-        next = patchNode(next, w.id, { taxRatePercent: businessTax.percent, taxLabel: businessTax.label });
+      for (const id of awaitingBusinessRate.split(",")) {
+        next = patchNode(next, id, { tax_rate: businessTax.percent, tax_label: businessTax.label });
       }
       return next;
     });
-  }, [businessTax]);
+  }, [businessTax, awaitingBusinessRate]);
 
   /* ── The document's money ────────────────────────────────── */
   //
@@ -1293,7 +1363,8 @@ function WidgetExtras({
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
   /** The business's own sales-tax rate, for the Totals panel. */
-  businessTax: { percent: number; label: string } | null;
+  /** `percent: null` is "nobody has said" and is NOT 0% (one home, (c)). */
+  businessTax: { percent: number | null; label: string } | null;
   /** Read-only: what a coupon code is worth. It is never redeemed from here. */
   lookupCoupon: (code: string) => Promise<CouponLookup>;
   /** M-24 — the catalogue read has not settled yet. */
@@ -1863,7 +1934,8 @@ function CatalogCardPanel({
 function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
   widget: Widget;
   patch: (props: Record<string, unknown>) => void;
-  businessTax: { percent: number; label: string } | null;
+  /** `percent: null` is "nobody has said" and is NOT 0% (one home, (c)). */
+  businessTax: { percent: number | null; label: string } | null;
   lookupCoupon: (code: string) => Promise<CouponLookup>;
 }) {
   const s = totalsSettings(widget.props);
@@ -1875,60 +1947,22 @@ function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={FIELD_COL}>
-        <span style={LBL}>Tax</span>
-        {/* THREE STATES, each said out loud (catalogue F.1.3 `tax_mode`). A
-            tick box could only say two of them, and the difference between
-            "your business rate" and "this document's own rate" is whether a
-            rate that changes tomorrow reaches a draft that has not gone out. */}
-        <select style={INPUT} value={s.taxMode} data-tax-mode="1"
-          title="Where this document's tax rate comes from"
-          onChange={(e) => {
-            const mode = e.target.value as "business" | "document" | "none";
-            /* THE CANONICAL NAMES — `tax_mode` / `tax_rate` / `tax_label`
-               (shared vocabulary (c), 2026-09-17). `tax_rate_resolved` is the
-               SERVER's and is never written here: it is stamped once on send,
-               so a figure a customer has already seen cannot move.
+      {/* THE TAX CONTROL IS THE WIDGET'S OWN, and there is exactly one of
+          it (landed 2026-09-17). This panel used to draw a second Tax
+          select and rate box beside it, so the author saw TWO groups both
+          labelled "Tax", with different words for the same three choices,
+          writing the same three props. The widget definition
+          (`widgets/totals.ts`) is the one kept: it renders wherever a
+          Totals block is offered — a proposal, a send, a landing page —
+          and it holds the canonical names.
 
-               "No tax" KEEPS the number the author typed. A control that
-               forgets is a control you cannot undo, and `totalsSettings`
-               reports it back as `taxRateDocument`. */
-            if (mode === "none") return patch({ tax_mode: "none" });
-            if (mode === "business") {
-              return patch({
-                tax_mode: "business",
-                // The live figure, so a draft shows it now. The server resolves
-                // it again on send and its answer wins.
-                tax_rate: businessTax ? businessTax.percent : null,
-                tax_label: businessTax?.label || "",
-              });
-            }
-            patch({ tax_mode: "document", tax_rate: s.taxRateDocument ?? businessTax?.percent ?? 0 });
-          }}>
-          <option value="none">No tax on this document</option>
-          <option value="business">Your business rate</option>
-          <option value="document">A rate for this document only</option>
-        </select>
-        {taxOn && (
-          <>
-            <input type="number" min={0} max={100} step="0.001" style={INPUT} data-tax-rate="1"
-              disabled={s.taxMode === "business"}
-              title={s.taxMode === "business"
-                ? "This follows your business rate. Choose “a rate for this document only” to type a different one."
-                : "The rate this document is taxed at, as a percentage"}
-              value={Number(s.taxRatePercent ?? 0)}
-              onChange={(e) => patch({ tax_rate: Number(e.target.value) || 0 })} />
-            <span style={{ fontSize: 10, color: "#94A3B8" }}>
-              {s.taxMode === "business"
-                ? (businessTax && businessTax.percent
-                  ? `Your business rate is ${businessTax.percent}%${businessTax.label ? ` (${businessTax.label})` : ""}. Change it in your books and every draft follows.`
-                  : NO_BUSINESS_RATE_SENTENCE)
-                : "Typed here, and it stays as typed even if your business rate changes."}
-            </span>
-          </>
-        )}
-      </div>
-
+          Nothing the author could read is lost. The rate itself is on the
+          page: the tax row reads "Tax 7.25% · State + county", which is
+          what the deleted sentence said. And when the business has NO rate,
+          the canvas prints `NO_BUSINESS_RATE_SENTENCE` beside the block
+          (`renderTotals`, author only) rather than taxing at zero in
+          silence. Discount and Coupon stay here: they are this document's
+          own money and are drawn nowhere else. */}
       <div style={FIELD_COL}>
         <span style={LBL}>Discount</span>
         <input type="number" min={0} max={100} step="0.1" style={INPUT} data-discount-pct="1"

@@ -922,3 +922,244 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
     assert.equal(p.locationId, "LOC-4", "the location id moved and a job would open with no address");
   });
 });
+
+/* ======================================================================
+   ONE TAX CONTROL, AND A MODE THAT ALWAYS RESOLVES A NUMBER
+   Found by driving the merged branch, 2026-09-17 (the landing pass).
+   ====================================================================== */
+
+describe("the tax rate has one control and one home", () => {
+  test("EXACTLY ONE control sets the tax mode, and it is the widget's own", () => {
+    // MUTATION: put the proposal panel's own Tax select back -> red here.
+    //
+    // Both passes added a tax control: the panel drew a three-option select
+    // ("No tax on this document / Your business rate / A rate for this
+    // document only") and the widget definition added another ("Your
+    // business's own rate / This document only / No tax"). The author saw
+    // TWO groups labelled Tax, with different words for the same three
+    // choices, both writing tax_mode. The widget's is the one kept, because
+    // it renders on every surface a Totals block is offered on.
+    const PANEL = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+    assert.ok(!/<option value="business">/.test(PANEL),
+      "the proposal panel is drawing a second tax control beside the widget's");
+    assert.ok(!/data-tax-mode/.test(PANEL),
+      "the proposal panel is drawing a second tax control beside the widget's");
+
+    // ...and the one that survives offers all three modes, in (c)'s words.
+    const taxCtl = WIDGETS_BY_KIND.totals.controls.find((c) => c.key === "tax_mode");
+    assert.ok(taxCtl, "the surviving tax control is gone too");
+    const modes = controlOptions(taxCtl).map((o) => o.value);
+    assert.deepEqual([...modes].sort(), ["business", "document", "none"]);
+  });
+
+  test("CHOOSING THE BUSINESS RATE ALWAYS RESOLVES A NUMBER, whenever it is chosen", () => {
+    // MUTATION: drop `doc` from the effect's dependencies -> red here.
+    //
+    // The effect that stamps the business figure onto a Totals widget ran on
+    // `[businessTax]` alone, i.e. once, when the rate arrived. The rate
+    // arrives while the document is opening, so every author who picked "your
+    // business's own rate" afterwards stored the WORD and never got the
+    // NUMBER -- and `renderTotals` draws no tax row at all when the rate is
+    // null. A document taxed at nothing, with "business" written on it: the
+    // audit's point 5 arriving by a second route.
+    const PANEL = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+    const eff = PANEL.slice(PANEL.indexOf("THE WIDGETS THAT ARE WAITING FOR THE BUSINESS'S RATE"),
+                            PANEL.indexOf("The document's money"));
+    // The trigger is the DERIVED set of blocks waiting for the rate, not the
+    // whole document: `[businessTax]` alone ran once (the defect), and
+    // `[businessTax, doc]` loops, because the effect writes the document it
+    // depends on ("Maximum update depth exceeded", found by driving it).
+    assert.match(eff, /awaitingBusinessRate = useMemo\(/,
+      "nothing derives which blocks are waiting for the business rate");
+    assert.match(eff, /\}, \[businessTax, awaitingBusinessRate\]\);/,
+      "the business rate is stamped once and never again, so the mode can store a word with no number");
+    assert.ok(!/\}, \[businessTax\]\);/.test(eff),
+      "the stamping effect runs only when the rate arrives again");
+    // ...and it writes the CANONICAL names, which is what `totalsSettings`,
+    // the PDF and oliver's mirror all read.
+    assert.match(eff, /tax_rate: businessTax\.percent, tax_label: businessTax\.label/,
+      "the stamped rate is written under a name nothing canonical reads");
+    // and the walk is the TREE's, so a Totals block inside a box hears it —
+    // a per-property subtotal is exactly where one goes.
+    assert.match(eff, /walkWidgets\(doc\)/,
+      "the blocks waiting for the rate are not found by walking the tree");
+    assert.match(eff, /patchNode\(next, id,/,
+      "the rate is not written by node id, so a block inside a box misses it");
+  });
+
+  test("a tax row is only drawn when there IS a number, and the author is told when there is not", () => {
+    // The behaviour half, called rather than read: business mode with nothing
+    // resolved draws NO tax row (never $0.00) and says so in words to the
+    // author -- and the customer's copy says nothing at all.
+    resetIds();
+    const line = makeWidget("price_line", { description: "Salt applied", quantity: 2, unit_price: 125 });
+    const tot = makeWidget("totals", { tax_mode: "business" });
+    const d = doc([line, tot]);
+    const edit = renderWidget(tot, makeContext(d, { mode: "edit" }));
+    const view = renderWidget(tot, makeContext(d, { mode: "view" }));
+    // the sentence reaches the page HTML-escaped ("Settings &gt; Billing"),
+    // which is the same words: compare the way the page carries them.
+    const escaped = NO_BUSINESS_RATE_SENTENCE.replace(/>/g, "&gt;");
+    assert.ok(edit.includes(escaped),
+      "the author is not told that the business has no rate");
+    assert.ok(!/\$0\.00/.test(edit.split("bx-total-grand")[0]),
+      "an unresolved business rate is being taxed at zero on the canvas");
+    assert.ok(!view.includes(escaped) && !view.includes(NO_BUSINESS_RATE_SENTENCE),
+      "the customer is being shown the author's warning");
+
+    // ...and with a number it computes, at the number.
+    const withRate = makeWidget("totals", { tax_mode: "business", tax_rate: 7.25 });
+    const d2 = doc([line, withRate]);
+    const html = renderWidget(withRate, makeContext(d2, { mode: "view" }));
+    assert.match(html, /Tax 7\.25%/, "the tax row does not name the rate");
+    assert.match(html, /\$18\.13|\$18\.12/, "250 at 7.25% is not on the page");
+  });
+});
+
+/* ======================================================================
+   A HANDLE THAT CANNOT BE SEEN CANNOT BE PRESSED
+   Found by driving the merged branch, 2026-09-17 (the landing pass).
+   ====================================================================== */
+
+describe("the handles of a nested part are the ones that get pressed", () => {
+  test("EVERY rule that hides a handle also stops it taking the press", () => {
+    // MUTATION: drop pointer-events from any of the three handle rules -> red.
+    //
+    // FOUND BY DRIVING IT: pressing the remove button on a card inside a row
+    // inside a box deleted THE BOX AND EVERYTHING IN IT. The ancestors’
+    // handles were hidden with opacity alone, and an element at opacity 0 is
+    // invisible and still takes the click - so the box’s remove button,
+    // painted later in the DOM at the same corner and the same z, swallowed
+    // the press meant for the card. Absence-based hiding, failing open, on
+    // the one control that destroys work.
+    const CANVAS = readFileSync(new URL("../src/builder/Canvas.tsx", import.meta.url), "utf8");
+    // EVERY hover control on the canvas, not just the handles: the section
+    // toolbar already paired the two (it is where the pattern comes from) and
+    // the widget handles were the one that did not. One idea, one rule, and a
+    // new hover control cannot be added without answering the question.
+    const RULE = new RegExp("[^\\n]*\\.bxc-(wtools|toolbar)[^{]*\\{[^}]*}", "g");
+    const rules = CANVAS.match(RULE) || [];
+    const withOpacity = rules.filter((r) => /opacity:/.test(r));
+    assert.ok(withOpacity.length >= 3,
+      `only ${withOpacity.length} hover-control rules set an opacity; expected at least three`);
+    for (const decl of withOpacity) {
+      const hides = /opacity:\s*0\b/.test(decl);
+      assert.match(decl, /pointer-events:/,
+        `a handle rule sets opacity and says nothing about presses: ${decl.slice(0, 60)}`);
+      assert.match(decl, hides ? /pointer-events:\s*none/ : /pointer-events:\s*auto/,
+        `a hidden handle is still pressable, or a shown one is not: ${decl.slice(0, 60)}`);
+    }
+  });
+});
+
+/* ======================================================================
+   THE TAX RATE HAS ONE HOME, AND THE CANVAS READS THAT ONE
+   Found by driving the merged branch, 2026-09-17 (the landing pass).
+   ====================================================================== */
+
+describe("the number on the page is the number that gets charged", () => {
+  test("the builder reads the business rate from GET /settings, and from nowhere else", () => {
+    // MUTATION: point the read back at /proposal-builder/money-settings -> red.
+    //
+    // FOUND BY DRIVING IT: the canvas read the STELLA-backed money-settings
+    // route (7.25% for this business) while the send resolves
+    // oliver.tenant_settings.default_tax_rate through lib/taxRate.js (null for
+    // this business). So a proposal showed a total WITH tax in it, the author
+    // pressed Send, and the server refused: 400 no_tax_rate. Two homes for one
+    // number, with the halves disagreeing about money.
+    const PANEL = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+    assert.match(PANEL, /api.get<any>\("\/settings"\)/,
+      "the builder does not read the business rate from its one home");
+    assert.match(PANEL, /d.defaultTaxRate/,
+      "the builder is not reading the defaultTaxRate field");
+    const reads = PANEL.match(/money-settings/g) || [];
+    // the phrase may survive in the comment that explains the move, but never
+    // inside an api.get
+    assert.ok(!/api.get<any>\("[^"]*money-settings/.test(PANEL),
+      "the second home is being read again");
+
+    // ...and "nobody has said" stays distinct from "0%" all the way through.
+    assert.match(PANEL, /percent: number \| null/,
+      "a business with no rate set is being reported as 0%");
+    assert.match(PANEL, /businessTax.percent == null\) return ""/,
+      "the stamping runs with no rate to stamp, so a rate nobody set is written");
+  });
+});
+
+/* ======================================================================
+   ONE RIBBON VOCABULARY, ON EVERYTHING THAT WEARS A RIBBON
+   Found by driving the merged branch, 2026-09-17 (the landing pass).
+   ====================================================================== */
+
+describe("a ribbon is spelled one way wherever it sits", () => {
+  test("a PRICED LINE saved with the old ribbon name opens with the new one", () => {
+    // MUTATION: put the ribbon rename back inside the CARD_KINDS branch -> red.
+    //
+    // FOUND BY DRIVING IT: a document converted from a comparison-cards
+    // composite came back with its cards on `show_ribbon` and its priced line
+    // still on `recommended: true`. A priced line wears a ribbon - the
+    // inspector offers it the same six presets and oliver reads it through the
+    // same `cardTag` - so its old spelling has to be converted by the same
+    // pass, or one fact has two spellings on disk.
+    resetIds();
+    const line = makeWidget("price_line", {
+      name: "Snow Removal - 2-3 inch push", quantity: 1, unit_price: 625, recommended: true,
+    });
+    const d = upgradeDocument(doc([line]));
+    const out = [...walkWidgets(d)].find((x) => x.widget.kind === "price_line").widget;
+    assert.equal(out.props.recommended, undefined,
+      "the priced line kept the old ribbon name, so one fact has two spellings");
+    // `show_ribbon` is the price table's own spelling: the string "yes".
+    assert.equal(out.props.show_ribbon, "yes", "the ribbon was dropped rather than renamed");
+    assert.equal(out.props.ribbon_title, "Recommended");
+    // its OWN field is untouched: a line's `name` is not a card's heading
+    assert.equal(out.props.name, "Snow Removal - 2-3 inch push");
+    assert.equal(out.props.heading, undefined);
+
+    // and the ONE reader agrees with what was written
+    assert.equal(isRecommended(out.props), true);
+  });
+
+  test("A LINE THAT NEVER WORE A RIBBON IS UNTOUCHED (the golden promise)", () => {
+    resetIds();
+    const line = makeWidget("price_line", { name: "Salt applied", quantity: 2, unit_price: 125 });
+    const before = doc([line]);
+    const after = upgradeDocument(before);
+    assert.equal(after, before, "a document with nothing to rename was rebuilt anyway");
+  });
+});
+
+/* ======================================================================
+   A REFUSAL HAS TO BE TRUE
+   Found by driving the merged branch, 2026-09-17 (the landing pass).
+   ====================================================================== */
+
+describe("the website save says something true when it refuses", () => {
+  test("a part dropped straight on the PAGE is not “still being built”", () => {
+    // MUTATION: put the one "not finished being built" sentence back for both
+    // cases -> red here.
+    //
+    // FOUND BY DRIVING IT: add a box to a website page, press Save draft, and
+    // the answer was "1 section has not finished being built. Give it a moment
+    // and try again." Nothing was building it and nothing ever would - a page
+    // is made of sections and the free parts live inside a "Words and
+    // pictures" one - so the page could never be saved again until the box was
+    // taken off, and the words sent the author round a loop. The pane already
+    // refuses this correctly ("Pick a Words and pictures section first"); the
+    // canvas picker is a second door that does not, which is written up in the
+    // handoff. This is the half that can be fixed with words.
+    const WB = readFileSync(new URL("../src/builder/adapters/website/WebsiteBuilder.tsx", import.meta.url), "utf8");
+    const fn = WB.slice(WB.indexOf("const orphanMessage"), WB.indexOf("const payload = useCallback"));
+    assert.ok(fn, "there is no one place that says why a save was refused");
+    assert.match(fn, /Words and pictures/,
+      "the refusal does not tell the author where the part belongs");
+    assert.match(fn, /sectionWidget\(s\)/,
+      "the refusal cannot tell a part dropped on the page from a section still being built");
+    assert.match(fn, /not finished being built/,
+      "the honest case - the server really is still building one - lost its words");
+
+    // and the sentence is not typed out twice any more
+    const copies = (WB.match(/not finished being built/g) || []).length;
+    assert.equal(copies, 1, "the refusal is written in more than one place");
+  });
+});

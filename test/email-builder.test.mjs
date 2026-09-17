@@ -630,7 +630,7 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     // each with its own golden case — so the pane offers them. A newsletter
     // with two product cards was unreachable until it did.
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "address_block", "article_card", "button", "card", "catalog_card",
+      "address_block", "article_card", "button", "card",
       "columns", "countdown", "divider", "email_footer",
       "heading", "image", "key_fact", "list", "paragraph", "personal_note",
       "product_card", "social_links", "spacer", "testimonial", "totals",
@@ -638,11 +638,15 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("what a mailbox cannot render is not offered", () => {
-    // `card` and `catalog_card` LEFT this list on 2026-09-17: a mailbox can
-    // render both (`emCard`, with its own golden cases), so they are offered.
+    // `card` LEFT this list on 2026-09-17: a mailbox draws a typed card
+    // (`emCard`, with its own golden cases), so it is offered. `catalog_card`
+    // is BACK on it, for a different reason from the others: the mailbox can
+    // draw one, but nothing in a send can say which product it is, and a card
+    // that can be placed and never filled is worse than one that is not
+    // offered. A send's products are the newsletter's own `product_card`.
     // `price_line` stays — it is drawn when a converted document carries one
     // and never offered, because money in an email belongs in a Totals block.
-    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table"]) {
+    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table", "catalog_card"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].adapters.includes("email"), `${kind} is offered to the email builder`);
     }
     // …and the four composites are not "not offered" — they are DELETED
@@ -670,10 +674,11 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
       // page is an HTML page, so a pasted embed is exactly what the author
       // means there; a proposal and an email do not offer it.
       "hero", "html", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
-      // WIDENED 2026-09-17 (catalogue F.1). `landingRender` draws all five,
-      // and a landing page that cannot carry a priced card or its total is a
-      // landing page nobody can sell from.
-      "address_block", "card", "catalog_card", "key_fact", "totals",
+      // WIDENED 2026-09-17 (catalogue F.1). `landingRender` draws them all,
+      // and a landing page that cannot carry a card or its total is a landing
+      // page nobody can sell from. `catalog_card` is not here: nothing on a
+      // landing page can say which product it is (see the registry test).
+      "address_block", "card", "key_fact", "totals",
     ].sort());
     const missing = widgetsFor("landing").map((w) => w.kind)
       .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));

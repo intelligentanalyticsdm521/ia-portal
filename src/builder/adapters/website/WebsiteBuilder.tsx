@@ -389,13 +389,46 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
 
   /* ── save, preview, publish ──────────────────────────────────────────── */
 
+  /**
+   * WHY A SAVE IS REFUSED, IN WORDS THAT ARE TRUE.
+   *
+   * A section can have no ARION node for two different reasons, and the one
+   * sentence used to cover both said "give it a moment and try again" — which
+   * is right for the first and a LOOP for the second:
+   *
+   *   · the server is still building a section the author just asked for.
+   *     Waiting really does fix it.
+   *   · the author put a box straight onto the PAGE. Nothing is building it
+   *     and nothing ever will: a website page is made of sections, and the
+   *     free parts live inside a "Words and pictures" section. Waiting is
+   *     useless, and the author cannot tell that from the old words. Found by
+   *     driving it, 2026-09-17: add a box, press Save draft, and the page can
+   *     never be saved again until the box is taken off.
+   *
+   * So the message names the second case and says what to do about it. The
+   * REAL fix is for a page-level box to become a free section of its own, and
+   * that is a server round trip rather than a sentence — written up in the
+   * handoff. Until then the refusal has to be honest.
+   */
+  const orphanMessage = useCallback((count: number) => {
+    const many = count !== 1;
+    // A section the SERVER built always comes back with a node - an archetype
+    // carries it on its one `site_*` widget, a free section on its own meta.
+    // So an orphan with no `site_*` widget was made HERE, by dropping a part
+    // straight onto the page, and no amount of waiting will give it one.
+    const loose = sectionsWithoutNodes(doc).filter((s) => !sectionWidget(s));
+    if (loose.length) {
+      return `${count} ${many ? "parts are" : "part is"} sitting straight on the page, and a page is `
+        + "made of sections. Put them inside a “Words and pictures” section, or take "
+        + "them off — nothing was saved.";
+    }
+    return `${count} section${many ? "s have" : " has"} not finished being built. `
+      + "Give it a moment and try again — nothing was saved.";
+  }, [doc]);
   const payload = useCallback(() => {
     const orphans = sectionsWithoutNodes(doc);
     if (orphans.length) {
-      throw new Error(
-        `${orphans.length} section${orphans.length === 1 ? " has" : "s have"} not finished being built. `
-        + "Give it a moment and try again — nothing was saved.",
-      );
+      throw new Error(orphanMessage(orphans.length));
     }
     return toPayload(doc);
   }, [doc]);
@@ -404,10 +437,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const draftPayload = useCallback(() => {
     const orphans = sectionsWithoutNodes(doc);
     if (orphans.length) {
-      throw new Error(
-        `${orphans.length} section${orphans.length === 1 ? " has" : "s have"} not finished being built. `
-        + "Give it a moment and try again — nothing was saved.",
-      );
+      throw new Error(orphanMessage(orphans.length));
     }
     return toDraftPayload(doc);
   }, [doc]);
