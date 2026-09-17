@@ -46,6 +46,7 @@ import {
 } from "./siteTemplates";
 import { SiteSectionFields, SiteLockedPanel, type SiteFieldDeps } from "./SiteInspectorExtras";
 import { EMPTY_SITE_CATALOGUE, readSiteCatalogue, type SiteCatalogue } from "./siteCatalogue";
+import { EMPTY_PLAN, readSitePlan, lockFor, canAdd, type SitePlan } from "./sitePlan";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
@@ -140,6 +141,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const [catalogue, setCatalogue] = useState<SiteCatalogue>(EMPTY_SITE_CATALOGUE);
   const [chrome, setChrome] = useState<{ businessName: string; logoUrl?: string | null; menu: Array<{ label: string }>; contactLine?: string }>({ businessName: "", menu: [] });
   const [pageEngine, setPageEngine] = useState<{ known: boolean; active: boolean | null; reason: string | null } | null>(null);
+  /* WHAT THIS BUSINESS'S PLAN CARRIES (D-157). Read off the same reply the
+   * catalogue comes in, never decided here — see sitePlan.ts. */
+  const [plan, setPlan] = useState<SitePlan>(EMPTY_PLAN);
   const [aiLocked, setAiLocked] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
 
@@ -228,6 +232,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       setResetKey((k) => k + 1);
       setDetail(page?.data || null);
       setCatalog(lib?.data?.sections || []);
+      setPlan(readSitePlan(lib?.data));
       setPageEngine(lib?.data?.pageEngine
         ? { known: !!lib.data.pageEngine.known, active: lib.data.pageEngine.active, reason: lib.data.pageEngine.reason || null }
         : null);
@@ -321,15 +326,28 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const placePremade = useCallback((premade: { key: string }, at: number): boolean => {
     const row = sitePremade(premade.key);
     if (!row) return true;
+    // The same plan gate as the pane's own insert: a ready-made section is
+    // still a section, and the gallery is the other door into the same build.
+    const locked = lockFor(plan, row.kind);
+    if (locked) { setErr(locked); return false; }
     if (row.count) { setAsking({ key: row.key, at, value: row.count.default }); return false; }
     void addFromServer(row.kind, at);
     return false;
-  }, [addFromServer]);
+  }, [addFromServer, plan]);
 
   /* ── inserting from the pane ─────────────────────────────────────────── */
 
   const insertWidget = useCallback((def: WidgetDef, count?: number): boolean => {
     const kind = arionKindOf(def.kind);
+    /* THE PLAN, BEFORE ANYTHING IS BUILT (D-157).
+     *
+     * The picker greys the row and says why, and this is the second end of the
+     * same guard: a keyboard shortcut, a slash command and a drag all arrive
+     * here, and only one of them goes through the picker. The server refuses
+     * the build as well — three ends, on purpose, because the one a client
+     * finds is never the one you thought of. */
+    const locked = lockFor(plan, kind);
+    if (locked) { setErr(locked); return false; }
     if (kind) {
       // A SECTION. It becomes a new section of its own, built by the server.
       void addFromServer(kind, doc.sections.length, count);
@@ -353,7 +371,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       })),
     });
     return false;
-  }, [addFromServer, change, doc, selection]);
+  }, [addFromServer, change, doc, plan, selection]);
 
   /* ── save, preview, publish ──────────────────────────────────────────── */
 
@@ -698,13 +716,16 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const premade: PremadeSection[] = useMemo(() => SITE_PREMADE.map((p) => ({
     key: p.key,
     name: p.name,
-    description: p.description,
+    // A section this plan cannot have stays IN the gallery and says why.
+    // Hiding it would make "not on your plan" look exactly like a bug, and a
+    // business that cannot see what they would get cannot decide to buy it.
+    description: canAdd(plan, p.kind) ? p.description : (lockFor(plan, p.kind) as string),
     tags: p.tags,
     // The gallery places a section by calling build(); the website adapter
     // cannot build one locally (the SERVER does), so this returns a placeholder
     // the shell never uses — onPlaceSection is intercepted below.
     build: () => makeSection({ label: p.name }),
-  })), []);
+  })), [plan]);
 
   /* ONLY a website that TOLD us it cannot draw these pages stops Save. A
    * website we could not ask is not a website with no page engine, and a falsy
