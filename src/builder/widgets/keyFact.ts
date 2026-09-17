@@ -36,11 +36,16 @@ export const KEY_FACT_DEF: WidgetDef = {
   icon: "Rows2",
   picture: pictureFrom(bar(8, 16, 18) + bar(32, 16, 24)),
   category: "Document",
-  // D-156 slice one is the PROPOSAL. These replace proposal composites, and
-  // the email, website and landing panes have locked widget sets of their own
-  // (§7, §4 step 3) that a widget cannot join without that adapter's renderer
-  // drawing it. D-157 widens them; the handoff carries the ask.
-  adapters: ["proposal"],
+  // WHERE IT MAY BE USED (catalogue F.1). D-156 slice one shipped these as
+  // PROPOSAL-only; the panes that can actually DRAW them now offer them too.
+  //
+  // NOT `website`: the website publish path (arion `ELEMENTOR_WIDGETS`) has no
+  // emitter for this kind, and an unknown kind makes the whole page publish
+  // REFUSE by name. Offering it there would be a widget an author can place
+  // and never publish, which is the defect this pass exists to close. The
+  // catalogue asks for it on a website; it needs the emitter first, and the
+  // handoff carries the ask.
+  adapters: ["proposal", "email", "landing"],
   defaults: { label: "", value: "" },
   controls: [
     { key: "label", label: "What is it?", type: "text" },

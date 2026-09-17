@@ -124,11 +124,36 @@ export function WidgetPicker(p: WidgetPickerProps) {
   }, []);
 
   const groups = useMemo(() => groupByTask(p.adapter, query), [p.adapter, query]);
+
+  /**
+   * THE BOXES THIS SEARCH MATCHES — and the reason the Layout group is put
+   * back when only they match (V-3's sibling, found by driving it 2026-09-17).
+   *
+   * `groupByTask` returns the groups that hold a matching WIDGET. A box is not
+   * a widget, so typing "row" — which matches the Row box and no widget at all
+   * — dropped the Layout group out of the list entirely and the picker said
+   * *"Nothing here matches 'row'"* while holding exactly the thing asked for.
+   * On the slash command that was the whole of the box door: "/row", then
+   * nothing. So the group is shown when either half of it matches, and the
+   * count that decides the empty message counts both.
+   */
+  const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : []), [p.onPickBox, query]);
+  const withLayout = useMemo(() => {
+    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;
+    const out = [...groups];
+    // In TASK_GROUPS order, so Layout sits where it always sits.
+    const at = TASK_GROUPS.indexOf("Layout");
+    const i = out.findIndex((g) => TASK_GROUPS.indexOf(g.task) > at);
+    out.splice(i < 0 ? out.length : i, 0, { task: "Layout" as WidgetTask, widgets: [] });
+    return out;
+  }, [boxes, groups]);
   const shown = useMemo(
-    () => (task === "All" ? groups : groups.filter((g) => g.task === task)),
-    [groups, task]);
-  const total = useMemo(() => shown.reduce((n, g) => n + g.widgets.length, 0), [shown]);
-  const offered = useMemo(() => new Set(groups.map((g) => g.task)), [groups]);
+    () => (task === "All" ? withLayout : withLayout.filter((g) => g.task === task)),
+    [withLayout, task]);
+  const total = useMemo(
+    () => shown.reduce((n, g) => n + g.widgets.length, 0) + (shown.some((g) => g.task === "Layout") ? boxes.length : 0),
+    [boxes, shown]);
+  const offered = useMemo(() => new Set(withLayout.map((g) => g.task)), [withLayout]);
 
   /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
      It asked, before the thing was on the page, a question the author could
@@ -220,7 +245,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
                   are FIRST in the group because they are the thing the group is
                   now for, and the three columns/sections rows below them are
                   what you reach for afterwards. */}
-              {g.task === "Layout" && p.onPickBox && boxMatches(query).map((preset) => (
+              {g.task === "Layout" && p.onPickBox && boxes.map((preset) => (
                 <button
                   key={preset.key}
                   type="button"

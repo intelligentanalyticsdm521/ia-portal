@@ -887,3 +887,89 @@ export function getPropPath(props: Record<string, unknown>, path: string): unkno
   return String(path).split(".").filter(Boolean)
     .reduce<any>((node, key) => (node == null ? undefined : node[key]), props);
 }
+
+/**
+ * TYPE A WORD INTO A WIDGET, WHEREVER IT SITS (V-1).
+ *
+ * FOUND BY DRIVING IT (verifier, 2026-09-17, on `d156/integration`): every word
+ * typed into anything inside a box was silently discarded. Five surfaces — the
+ * shell's `onEditText`, the email panel, the landing panel, the website panel
+ * and the proposal adapter — each wrote the same six lines by hand:
+ *
+ *     for (const column of section.columns)
+ *       const i = column.widgets.findIndex((w) => w.id === widgetId)   // FLAT
+ *
+ * `column.widgets` is the top of a column. A card inside a row inside a box is
+ * not in it, so `findIndex` returned -1, the loop fell out of the bottom and
+ * the function returned having changed NOTHING. The characters stayed on screen
+ * because the canvas skips its repaint while the caret is in a run of text, and
+ * vanished at the next repaint. Save wrote the document that was never changed.
+ *
+ * THE ADDRESS IS THE NODE ID, and every caller already had it: it is the id the
+ * renderer stamped on the element the author typed into. So this is the whole
+ * of the addressing, once, at any depth — `findNode` walks the tree, `patchNode`
+ * writes by id, and no surface counts an index ever again.
+ *
+ * Returns the document UNCHANGED when the id names nothing (an edit racing an
+ * undo) or names a box — a container has no props by design, and writing words
+ * into one would invent a sixth vocabulary for text.
+ */
+export function editWidgetText(
+  doc: BuilderDocument,
+  widgetId: string,
+  propPath: string,
+  value: unknown,
+): BuilderDocument {
+  const hit = findNode(doc, widgetId);
+  if (!hit || isContainer(hit.node)) return doc;
+  const widget = hit.node as Widget;
+  return patchNode(doc, widgetId, setPropPath(widget.props || {}, propPath, value));
+}
+
+/** The widget behind one id, at any depth. `null` for a box or a stale id. */
+export function widgetById(doc: BuilderDocument, widgetId: string): Widget | null {
+  const hit = findNode(doc, widgetId);
+  return hit && !isContainer(hit.node) ? (hit.node as Widget) : null;
+}
+
+/**
+ * PUT A NODE DIRECTLY AFTER ANOTHER ONE, among its OWN siblings (V-2).
+ *
+ * "Use this plan" on a catalogue card puts a priced line under that card. The
+ * line it replaces read the card's index off the top of a column and, failing
+ * to find it there, dropped the line at index 0 of the section's FIRST column
+ * — so for the card Brandon actually builds (one of two in a row inside a box)
+ * the money appeared at the top of the page, nowhere near the card pressed.
+ *
+ * `insertNode` already refuses a depth past the limit and comes back unchanged,
+ * so a line beside a card in the deepest possible box is refused the same way
+ * everything else is.
+ */
+export function insertBeside(
+  doc: BuilderDocument,
+  siblingId: string,
+  node: Node,
+): BuilderDocument {
+  const hit = findNode(doc, siblingId);
+  if (!hit) return doc;
+  return insertNode(doc, hit.parentId, hit.index + 1, node);
+}
+
+/**
+ * TAKE EVERY WIDGET THE PREDICATE NAMES OFF THE PAGE, wherever it sits.
+ *
+ * One card, one line: pressing "Use this plan" twice has to replace the line
+ * rather than add a second one the total would count twice. The flat filter
+ * this replaces could not see a line inside a box, so the second press left
+ * the first line in place and the customer was charged twice for one plan.
+ */
+export function removeWidgetsWhere(
+  doc: BuilderDocument,
+  match: (w: Widget) => boolean,
+): BuilderDocument {
+  let next = doc;
+  for (const { widget } of walkWidgets(doc)) {
+    if (match(widget)) next = removeNode(next, widget.id);
+  }
+  return next;
+}

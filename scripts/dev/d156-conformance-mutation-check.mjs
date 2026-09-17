@@ -176,10 +176,15 @@ const MUTATIONS = [
 
   /* ── POINT 1 — what a publish has to carry ──────────────────────────── */
   {
+    // THE SEAM MOVED ON THE MERGE (2026-09-17). Two passes fixed this bug
+    // independently; the surviving addressing is `model.editWidgetText`, which
+    // the shell and the four adapter panels all call. So the mutation puts the
+    // flat walk back INSIDE that one function — which is the whole point of
+    // there being one: break it once and every surface goes red.
     name: "C23 words typed on the page never reach a widget inside a box",
-    file: "src/builder/BuilderShell.tsx",
-    from: "      patchNode(doc, widgetId, nextProps),",
-    to: "      patchWidget(doc, { sectionId, columnIndex: 0, widgetIndex: (doc.sections.find((s) => s.id === sectionId)?.columns[c]?.widgets ?? []).findIndex((w) => w.id === widgetId) }, nextProps),",
+    file: "src/builder/model.ts",
+    from: "  return patchNode(doc, widgetId, setPropPath(widget.props || {}, propPath, value));",
+    to: "  const flat = doc.sections.flatMap((s) => s.columns.flatMap((c) => c.widgets));\n  return flat.some((w) => w.id === widgetId) ? patchNode(doc, widgetId, setPropPath(widget.props || {}, propPath, value)) : doc;",
     test: CONF,
     expects: "WORDS TYPED ON THE PAGE reach a widget inside a box",
   },

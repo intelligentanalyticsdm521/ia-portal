@@ -334,7 +334,10 @@ export const EMAIL_RENDERED_KINDS = [
   "divider", "spacer", "article_card", "product_card", "social_links",
   "email_footer", "countdown", "testimonial",
   // D-156 — the box and the atomic widgets reach the mailbox too.
-  "container", "card", "price_line", "address_block", "key_fact", "totals",
+  // `catalog_card` draws through the same `emCard` as a typed card (see the
+  // switch): it was DRAWN and missing from this list, which is the list the
+  // suite checks the pane against — so widening the pane found it.
+  "container", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals",
 ] as const;
 
 /** Deliberately not drawn: `columns` is the SECTION's column count. */

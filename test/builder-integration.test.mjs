@@ -357,7 +357,13 @@ describe("product_card and catalog_card are TWO kinds (B→C-1)", () => {
     assert.ok(WIDGETS_BY_KIND.product_card, "the email builder's product card is gone");
     assert.ok(WIDGETS_BY_KIND.product_card.adapters.includes("email"));
     assert.ok(WIDGETS_BY_KIND.catalog_card, "the catalogue-bound card is gone");
-    assert.deepEqual(WIDGETS_BY_KIND.catalog_card.adapters, ["proposal"]);
+    // The POINT of this test is that the two kinds coexist, each with its own
+    // name and its own case in the renderer — not that one of them is
+    // proposal-only. Both are offered in a send now (catalogue F.1), and they
+    // are still two kinds: `product_card` is a LIST of things to show off,
+    // `catalog_card` is ONE catalogue line.
+    assert.ok(WIDGETS_BY_KIND.catalog_card.adapters.includes("email"));
+    assert.notEqual(WIDGETS_BY_KIND.product_card.kind, WIDGETS_BY_KIND.catalog_card.kind);
   });
 
   test("no renderer branches on which fields happen to be present", () => {

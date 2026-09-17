@@ -311,13 +311,37 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // The union of three branches' decisions, each of which took one builder
     // away from a widget for a reason that builder enforces. Asserted here as
     // the surviving list, so putting a builder back has to be deliberate:
-    //   card / catalog_card / pricing_table  a site has site_pricing; a send
-    //                                     has the product card
+    //   pricing_table                     a site has site_pricing, a whole
+    //                                     ready-made section with its own
+    //                                     round trip
     //   callout                           a site has content; a send has a
     //                                     coloured section — the STUDIO keeps
     //                                     it, where a tinted panel is an object
-    assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.catalog_card.adapters].sort(), ["proposal"]);
+    //
+    // CHANGED 2026-09-17, catalogue F.1 "Where it may be used". `card` and
+    // `catalog_card` were here for the same reason as `pricing_table` and it
+    // does not hold for them: a READY-MADE SECTION and a PART YOU PLACE IN A
+    // BOX are two concerns, not two mechanisms for one — the same way
+    // `heading` is offered on a site that also has `site_hero`. A site’s
+    // pricing SECTION is still the one way to get a pricing section; a card is
+    // the one way to place a single card. A send keeps its `product_card`
+    // composite, which is a LIST of things to show off, beside `catalog_card`,
+    // which is ONE catalogue line — two kinds, asserted just below.
+    assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(),
+      ["email", "landing", "proposal", "website"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.catalog_card.adapters].sort(),
+      ["email", "landing", "proposal", "website"]);
+    // NOT `website` for these three: the website publish path has no emitter
+    // for the kind, and an unknown kind makes the whole page publish refuse by
+    // name — so offering one would be a widget an author can place and never
+    // publish. The catalogue asks for two of them on a site; they need the
+    // emitter first.
+    assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(),
+      ["email", "landing", "proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.address_block.adapters].sort(),
+      ["email", "landing", "proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.key_fact.adapters].sort(),
+      ["email", "landing", "proposal"]);
     assert.deepEqual([...WIDGETS_BY_KIND.pricing_table.adapters].sort(), ["proposal"]);
     assert.deepEqual([...WIDGETS_BY_KIND.callout.adapters].sort(), ["brand", "proposal"]);
   });

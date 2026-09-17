@@ -290,11 +290,12 @@ export const CARD_DEF: WidgetDef = {
   icon: "CreditCard",
   picture: pictureFrom(box(18, 4, 28, 32) + bar(23, 10, 18, 5) + bar(23, 19, 12) + bar(23, 26, 18)),
   category: "Money",
-  // D-156 slice one is the PROPOSAL. These replace proposal composites, and
-  // the email, website and landing panes have locked widget sets of their own
-  // (§7, §4 step 3) that a widget cannot join without that adapter's renderer
-  // drawing it. D-157 widens them; the handoff carries the ask.
-  adapters: ["proposal"],
+  // WHERE IT MAY BE USED (catalogue F.1). D-156 slice one shipped these as
+  // PROPOSAL-only; the panes that can actually DRAW them now offer them too.
+  // The engine's own `renderAtom` draws this in every builder, and the website
+  // publish path knows the kind by name, so nothing here is offered to a
+  // surface that would drop it.
+  adapters: ["proposal", "website", "email", "landing"],
   // A card on a website publishes as the price table, which is a paid widget
   // wherever it lands. The pane says so in the plan's own words; the SERVER
   // still decides whether this business's site carries it.

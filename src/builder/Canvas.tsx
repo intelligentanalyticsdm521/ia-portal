@@ -45,7 +45,10 @@ import { extendSelection } from "./model";
 import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
 import { AddBar, ADDBAR_CSS } from "./AddBar";
-import { FLASH_MS, sectionAtViewport, type InsertSpot, type SectionBox } from "./insertPosition";
+import {
+  FLASH_MS, sectionAtViewport, boxPlusPlacement, BOX_PLUS_SIZE,
+  type InsertSpot, type SectionBox,
+} from "./insertPosition";
 import { DEFAULT_COPY, type BuilderCopy } from "./copy";
 
 /**
@@ -687,12 +690,43 @@ function SectionHost({
       if (!kids.length) continue;
       const hostId = box.dataset.bxHost || "";
       const columnIndex = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
+      /**
+       * EVERY BOX'S "+" IS ITS OWN (V-3).
+       *
+       * FOUND BY DRIVING IT (verifier, 2026-09-17): this button used to take
+       * its position from the stylesheet — the same `right:-11px; bottom:-11px;
+       * z-index:6` for every box at every depth. A row that is the last child
+       * of a box shares its parent's bottom-right corner, so the two buttons
+       * sat on the identical pixel and the PARENT's won (it is appended after
+       * the nested box). Pressing "+ inside this row" added to the box around
+       * it, silently, from the second level down.
+       *
+       * ONE placement rule, `boxPlusPlacement`, keyed on how many boxes this
+       * box is inside: pulled in one step per level and stacked above its
+       * parent's, so no two buttons in an ancestor chain can overlap. The
+       * depth is counted off the DOM the renderer just wrote, which is the
+       * same tree the model has.
+       */
+      let level = 0;
+      for (let up = box.parentElement; up && up !== host; up = up.parentElement) {
+        if (up.hasAttribute("data-bx-host") && !up.hasAttribute("data-col")) level += 1;
+      }
+      const place = boxPlusPlacement(level);
+      const what = box.classList.contains("bx-box-row") ? "row"
+        : box.classList.contains("bx-box-grid") ? "grid" : "box";
+      const words = level
+        ? `Add something inside this ${what} (level ${level + 1})`
+        : `Add something inside this ${what}`;
       const b = document.createElement("button");
       b.type = "button";
       b.className = "bxc-addin";
       b.setAttribute("data-builder-addin", hostId);
-      b.title = "Add something inside this box";
-      b.setAttribute("aria-label", "Add something inside this box");
+      b.setAttribute("data-addin-level", String(level));
+      b.style.right = `${place.right}px`;
+      b.style.bottom = `${place.bottom}px`;
+      b.style.zIndex = String(place.zIndex);
+      b.title = words;
+      b.setAttribute("aria-label", words);
       b.textContent = "+";
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1093,11 +1127,16 @@ const CANVAS_CSS = `
    cell. Found by driving it: the first version was align-self:center, in
    flow, it ended up under the last thing in the box, and clicking where it
    looked selected the paragraph above it instead. */
-.bxc-addin { position: absolute; right: -11px; bottom: -11px; z-index: 6;
+/* Position and z-index are NOT here: they come from boxPlusPlacement (one
+   rule keyed on the box's depth, written onto the element itself), and the
+   SIZE is the same constant the step is measured against. A second answer in
+   this stylesheet is how the parent's "+" ended up on top of its child's. */
+.bxc-addin { position: absolute;
   opacity: 0; transition: opacity .12s;
   display: inline-flex; align-items: center; justify-content: center;
   border: 1px solid #0C4A60; background: #0C4A60; color: #fff; border-radius: 999px;
-  width: 22px; height: 22px; line-height: 1; font-size: 14px; font-weight: 700; cursor: pointer; }
+  width: ${BOX_PLUS_SIZE}px; height: ${BOX_PLUS_SIZE}px;
+  line-height: 1; font-size: 14px; font-weight: 700; cursor: pointer; }
 .bx-box:hover > .bxc-addin, .bxc-addin:focus { opacity: 1; }
 .bxc-addin:hover { background: #12607c; }
 /* A BOX ON THE PAGE, in the editor only: a hairline so the author can see the

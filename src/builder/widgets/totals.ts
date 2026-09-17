@@ -129,7 +129,11 @@ export const TOTALS_DEF: WidgetDef = {
   picture: pictureFrom(bar(8, 10, 26) + bar(44, 10, 12) + bar(8, 18, 20) + bar(44, 18, 12)
     + `<path d="M8 26h48" stroke="#94A3B8"/>` + bar(8, 30, 16) + bar(42, 30, 14, 5)),
   category: "Money",
-  adapters: ["proposal"],
+  // WHERE IT MAY BE USED (catalogue F.1): a proposal, an email and a landing
+  // page — the three that carry priced lines for it to add up. NOT `website`:
+  // a public page has nothing to total, and the website publish path has no
+  // emitter for the kind, so a placed one could never be published.
+  adapters: ["proposal", "email", "landing"],
   // Quotes, proposals and invoices are the OLIVER Invoicing tier's whole job
   // (G.4). WHETHER this business has it is still the server's answer.
   tier: "ia:oliver",

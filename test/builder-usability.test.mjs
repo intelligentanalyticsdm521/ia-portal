@@ -736,8 +736,16 @@ describe("the shell wires the rebuild without a second mechanism", () => {
   test("the slash command's clear and insert are ONE document operation", () => {
     // Two applies in one tick would compute the second from the stale `doc`
     // prop and the typed "/pricing" would come straight back.
-    assert.match(shell, /const cleared = patchWidget\(doc, here, setPropPath\(widget\.props, s\.path, ""\)\)/);
-    assert.match(shell, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
+    // V-1: the clear is now `editWidgetText`, which addresses the widget by
+    // NODE ID — the column scan the old line depended on could not reach a
+    // widget inside a box, so "/" was dead from the second level down.
+    //
+    // Read out of slashCommit ITSELF and not out of the whole file: the box
+    // door beside it clears the same way, so a file-wide match stayed green
+    // with the defect put back (found by mutating it, 2026-09-17).
+    const commit = shell.slice(shell.indexOf("const slashCommit ="), shell.indexOf("const slashCommitBox"));
+    assert.match(commit, /const cleared = editWidgetText\(doc, s\.widgetId, s\.path, ""\)/);
+    assert.match(commit, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
   });
 
   test("the counter is a BUTTON that goes somewhere (D-35)", () => {

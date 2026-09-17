@@ -144,7 +144,12 @@ describe("the seam — what the pane offers is what the website can build", () =
     const groups = groupForPane("website", "");
     assert.equal(groups[0].category, "Sections");
     assert.deepEqual(groups[0].widgets.map((w) => w.kind), [...SITE_SECTION_KINDS]);
-    assert.deepEqual(groups.map((g) => g.category), ["Sections", "Text", "Layout", "Media", "Information"]);
+    // "Money" joined the website pane on 2026-09-17: catalogue F.1 puts a
+    // card and a product card on a site, and both are `category: "Money"`.
+    // The SECTIONS group still comes first — a whole ready-made band is what
+    // most authors want — and the parts follow.
+    assert.deepEqual(groups.map((g) => g.category),
+      ["Sections", "Text", "Money", "Layout", "Media", "Information"]);
   });
 
   test("every button in the pane has a tooltip", () => {

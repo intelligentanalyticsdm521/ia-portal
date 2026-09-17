@@ -38,7 +38,7 @@ import {
   PLAN_SENTENCE, ownershipSentence, productOf, widgetLock, widgetState,
 } from "../src/builder/tier.ts";
 import {
-  deserialise, emptyDocument, makeSection, serialise, walkWidgets,
+  deserialise, editWidgetText, emptyDocument, makeSection, serialise, walkWidgets,
 } from "../src/builder/model.ts";
 import {
   cloneNode, makeContainer, makeWidget, patchNode, resetIds,
@@ -625,18 +625,35 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
     // last reader left counting indexes into the top of one.
     const SHELL = readFileSync(new URL("../src/builder/BuilderShell.tsx", import.meta.url), "utf8");
     const fn = SHELL.slice(SHELL.indexOf("const onEditText"), SHELL.indexOf("const changeSection"));
-    assert.match(fn, /patchNode\(doc, widgetId, nextProps\)/,
+    // THE SEAM CHANGED NAME IN THE MERGE, NOT IN KIND. Two passes fixed this
+    // independently; the surviving one is `model.editWidgetText`, which is
+    // `findNode` + `setPropPath` + `patchNode` behind one name that the four
+    // adapter panels call too — so there is ONE implementation of "put this
+    // word in that widget", not this one and a copy in the shell.
+    assert.match(fn, /editWidgetText\(doc, widgetId, path, value\)/,
       "words typed on the page are committed by counting indexes again");
+    const MODEL = readFileSync(new URL("../src/builder/model.ts", import.meta.url), "utf8");
+    const seam = MODEL.slice(MODEL.indexOf("export function editWidgetText"),
+                             MODEL.indexOf("export function widgetById"));
+    assert.match(seam, /patchNode\(doc, widgetId, setPropPath\(/,
+      "the seam no longer writes through patchNode, so the model rules stopped running");
+    assert.match(seam, /isContainer\(hit\.node\)/,
+      "the seam no longer refuses a box");
     assert.ok(!/columns\[c\]\.widgets\.findIndex/.test(fn),
       "the flat walk that could not reach a nested widget is back");
 
-    // …and the write itself reaches three deep, which is where a card is.
+    // …AND THE SEAM ITSELF IS CALLED, three deep, which is where a card is.
+    // Source text alone is not a guard: the walk can come back AROUND a
+    // `patchNode` that is still written on the line. So this types through
+    // `editWidgetText` — the function every surface calls — and reads the
+    // document that comes back.
     resetIds();
     const card = makeWidget("card", { heading: "Old" });
-    let d = doc([makeContainer(undefined, [makeContainer({ direction: "row" }, [card])])]);
-    d = patchNode(d, card.id, { heading: "Typed on the page" });
+    const d0 = doc([makeContainer(undefined, [makeContainer({ direction: "row" }, [card])])]);
+    const d = editWidgetText(d0, card.id, "heading", "Typed on the page");
     const at = [...walkWidgets(d)].find((x) => x.widget.id === card.id).widget;
-    assert.equal(at.props.heading, "Typed on the page");
+    assert.equal(at.props.heading, "Typed on the page",
+      "a word typed into a card inside a row inside a box never reached the document");
   });
 
   test("the layout keys a publish must carry are all keys the engine WRITES", () => {

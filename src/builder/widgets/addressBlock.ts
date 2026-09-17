@@ -109,11 +109,16 @@ export const ADDRESS_BLOCK_DEF: WidgetDef = {
   picture: pictureFrom(`<path d="M12 8a5 5 0 0 1 5 5c0 4-5 9-5 9s-5-5-5-9a5 5 0 0 1 5-5z" fill="#94A3B8" stroke="none"/>`
     + bar(22, 10, 34) + bar(22, 20, 26) + bar(22, 29, 30)),
   category: "Document",
-  // D-156 slice one is the PROPOSAL. These replace proposal composites, and
-  // the email, website and landing panes have locked widget sets of their own
-  // (§7, §4 step 3) that a widget cannot join without that adapter's renderer
-  // drawing it. D-157 widens them; the handoff carries the ask.
-  adapters: ["proposal"],
+  // WHERE IT MAY BE USED (catalogue F.1). D-156 slice one shipped these as
+  // PROPOSAL-only; the panes that can actually DRAW them now offer them too.
+  //
+  // NOT `website`: the website publish path (arion `ELEMENTOR_WIDGETS`) has no
+  // emitter for this kind, and an unknown kind makes the whole page publish
+  // REFUSE by name. Offering it there would be a widget an author can place
+  // and never publish, which is the defect this pass exists to close. The
+  // catalogue asks for it on a website; it needs the emitter first, and the
+  // handoff carries the ask.
+  adapters: ["proposal", "email", "landing"],
   /* NO `tier`, deliberately — i.e. free at the widget's own gate.
      G.4 puts this one on "OLIVER **or** SPARK, either", because
      `lumen.customer_location` is shared between them. `tier` is one word and
