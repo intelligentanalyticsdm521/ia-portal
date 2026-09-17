@@ -32,6 +32,7 @@ import { useMyBrandTier } from "../../hooks/useMyBrandTier";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { StudioBuilder } from "../../builder/adapters/mybrand/StudioBuilder";
 import type { DesignDto, TemplateDto } from "../../builder/adapters/mybrand/scene";
+import { designKindLabel } from "../../builder/adapters/mybrand/templates";
 
 type GalleryFilter = "all" | "system" | "brand" | "mine";
 
@@ -126,7 +127,8 @@ export function TemplateStudioPage() {
       key: `tpl-${t.template_id}`,
       kind: "template",
       name: t.name,
-      secondary: t.kind,
+      // D-32: "Instagram post", never the stored enum "Ig_post".
+      secondary: designKindLabel(t.kind),
       isSystem: t.is_system,
       updatedAt: t.updated_at,
       templateId: t.template_id,
@@ -257,7 +259,9 @@ export function TemplateStudioPage() {
                 )}
               </div>
               <div className="mb-0.5 truncate font-semibold text-slate-900">{card.name}</div>
-              <div className="mb-2 truncate text-xs capitalize text-slate-600">{card.secondary}</div>
+              {/* No `capitalize`: the label is already written properly, and
+                  CSS capitalisation is what turned "ig_post" into "Ig_post". */}
+              <div className="mb-2 truncate text-xs text-slate-600">{card.secondary}</div>
               <div className="flex items-center gap-3 text-[10px] text-slate-500">
                 <span>{card.kind === "template" ? "Opens as a new design" : "Continue editing"}</span>
                 <ArrowRight className="ml-auto h-3 w-3 text-[#EF6C33] opacity-0 transition-opacity group-hover:opacity-100" />

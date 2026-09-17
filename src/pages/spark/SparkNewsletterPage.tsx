@@ -28,10 +28,12 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { SparkTable } from "../../components/spark/SparkTable";
-import { Plus, Newspaper, ExternalLink, Send, FileText } from "lucide-react";
+import { Plus, Newspaper, ExternalLink, Send, FileText, Trash2 } from "lucide-react";
 import { EmailBuilder } from "../../builder/adapters/email/EmailBuilder";
 import type { EmailWire } from "../../builder/adapters/email/emailDoc";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
+// D-32: ONE formatter for every date a person reads. See lib/plainValue.ts.
+import { editionLabel } from "../../lib/plainValue";
 
 interface NewsletterIssue {
   id: number; issue_number: number; edition_date: string; title: string; summary: string | null;
@@ -44,7 +46,7 @@ interface NewsletterIssue {
 export function SparkNewsletterPage() {
   const spark = useSparkApi();
   const oliver = useOliverApi();
-  const { get, post, put, ready } = spark;
+  const { get, post, put, del, ready } = spark;
   const [list, setList] = useState<NewsletterIssue[]>([]);
   const [error, setError] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
@@ -63,8 +65,6 @@ export function SparkNewsletterPage() {
     } catch (err) { setError(err); } finally { setLoading(false); }
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
-
-  const nextIssueNumber = (list[0]?.issue_number || 0) + 1;
 
   /**
    * Save what the builder built.
@@ -90,11 +90,11 @@ export function SparkNewsletterPage() {
       await load();
       return editing.id;
     }
-    const r = await post<{ data: NewsletterIssue }>("/api/v1/newsletters", {
-      ...payload,
-      issue_number: nextIssueNumber,
-      edition_date: new Date().toISOString().slice(0, 10),
-    });
+    /* D-25: the SERVER numbers the issue. This used to send
+     * `list[0].issue_number + 1`, and the list is ordered by edition date, not
+     * by number — so two issues written the same afternoon both came out "#3".
+     * The walk finished with three rows all called "#3 Monthly update". */
+    const r = await post<{ data: NewsletterIssue }>("/api/v1/newsletters", payload);
     // Keep the builder open on the row that now exists, so a second Save
     // updates it instead of creating issue after issue.
     const saved = (r as any)?.data ?? r;
@@ -105,7 +105,7 @@ export function SparkNewsletterPage() {
     // the value from BEFORE the save — which on the 2026-09-16 walk meant the
     // test send mailed the top row of the list instead of the issue on screen.
     return saved?.id ?? null;
-  }, [editing, load, nextIssueNumber, post, put]);
+  }, [editing, load, post, put]);
 
   /**
    * Send yourself this exact email, through the path a real send uses.
@@ -136,6 +136,27 @@ export function SparkNewsletterPage() {
     setPublishing(id); setFlash(null);
     try { await post(`/api/v1/newsletters/${id}/publish`, {}); await load(); setFlash("Published to your website."); }
     catch (err) { setError(err); } finally { setPublishing(null); }
+  }
+
+  /**
+   * D-14: nothing a user creates could be deleted. Three of the walk's own
+   * junk rows are still in this list because there was no control to remove
+   * them by clicking.
+   *
+   * The refusals — an issue already on the website, an issue a send was built
+   * from — come from LUMEN and are shown in its own words, because the reason
+   * is the useful part.
+   */
+  async function remove(issue: NewsletterIssue) {
+    if (!window.confirm(
+      `Delete issue #${issue.issue_number} “${issue.title}”? This cannot be undone.`,
+    )) return;
+    setPublishing(issue.id); setFlash(null); setError(null);
+    try {
+      await del(`/api/v1/newsletters/${issue.id}`);
+      await load();
+      setFlash(`Deleted issue #${issue.issue_number}.`);
+    } catch (err) { setError(err); } finally { setPublishing(null); }
   }
 
   async function createSend(issue: NewsletterIssue) {
@@ -201,7 +222,10 @@ export function SparkNewsletterPage() {
             cell: n => <span className="font-mono text-xs text-slate-500">#{n.issue_number}</span>,
           },
           { key: "date", header: "Edition", width: "compact",
-            cell: n => <span className="text-xs text-slate-600">{n.edition_date}</span>,
+            /* D-32: this printed `2026-09-16T00:00:00.000Z` — a raw database
+               value on a screen a business owner reads. One formatter, and it
+               never shows a bare ISO string even when the value is unreadable. */
+            cell: n => <span className="text-xs text-slate-600">{editionLabel(n.edition_date)}</span>,
           },
           { key: "title", header: "Title", width: "wide",
             cell: n => <span className="font-medium">{n.title}</span>,
@@ -241,6 +265,16 @@ export function SparkNewsletterPage() {
               className="spark-btn spark-btn-sm spark-btn-primary"
             >
               <Send className="h-3 w-3" /> {n.campaign_id ? "New send" : "Create send"}
+            </button>
+            {/* D-14. Asks first; an issue already on the website or already
+                sent is refused by LUMEN, in its own words. */}
+            <button
+              onClick={(e) => { e.stopPropagation(); remove(n); }}
+              disabled={publishing === n.id}
+              title="Delete this issue"
+              className="spark-btn spark-btn-sm spark-btn-ghost"
+            >
+              <Trash2 className="h-3 w-3" /> Delete
             </button>
           </div>
         )}

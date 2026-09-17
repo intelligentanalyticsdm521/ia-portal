@@ -539,8 +539,14 @@ function useWebsiteBuilderApi(): WebsiteBuilderApi | null {
       getPage: (pageId: number) => arionApi.getSitePageSections(siteId, pageId),
       getCatalog: () => arionApi.getSectionLibrary(siteId),
       getPricing: () => arionApi.getSiteAiPricing(siteId),
+      // D-23: THE price list. One call, already built for the pricing section's
+      // "Use my current prices" — the services grid reads the same one.
+      getPriceList: () => arionApi.getSitePricingCatalogue(siteId),
       buildSection: (kind: string, blueprintId?: string) => arionApi.buildSiteSection(siteId, kind, blueprintId),
       save: (pageId: number, body: any) => arionApi.saveSitePageSections(siteId, pageId, body),
+      // D-05: "save without publishing" writes HERE, not to the website.
+      saveDraft: (pageId: number, body: any) => arionApi.saveSitePageDraft(siteId, pageId, body),
+      discardDraft: (pageId: number) => arionApi.discardSitePageDraft(siteId, pageId),
       preview: (pageId: number, body: any) => arionApi.previewSitePage(siteId, pageId, body),
       askSection: (pageId: number, body: any) => arionApi.aiEditSection(siteId, pageId, body),
       askPage: (pageId: number, body: any) => arionApi.aiEditPage(siteId, pageId, body),

@@ -44,10 +44,12 @@ import {
 } from "./emailRender";
 import {
   EMAIL_PREMADE_SECTIONS, EMAIL_PREMADE_TAGS, emailLibrary,
-  emailTemplateByKey, startingEmail, applyEmailBrand, ensureFooter,
+  emailTemplateByKey, startingEmail, applyEmailBrand, ensureFooter, settleFooter,
   withArticleCount, withProductCount,
 } from "./emailTemplates";
 import { TemplateLibrary } from "../../TemplateLibrary";
+// D-38: the same product offers the same tiers wherever it is offered.
+import { catalogueTiers } from "./emailCatalogue";
 import { BLANK_TEMPLATE_ID } from "../../templateLibraryModel";
 import {
   openEmailDocument, toEmailWire, articlesFromPosts,
@@ -134,6 +136,16 @@ export function EmailBuilder(p: EmailBuilderProps) {
   const { kit } = useBrandKit();
 
   const [doc, setDoc] = useState<BuilderDocument>(() => startingEmail({ name: "" }, kit.colours.primary));
+  /**
+   * EVERY change goes through the email's own structural rule (D-11).
+   *
+   * The unsubscribe footer is the last thing in an email and holds nothing
+   * else. The walk added two product cards with nothing selected and they
+   * landed BELOW it. One rule on the way in beats a guard on each of the seven
+   * ways a widget can arrive — the pane, a "+", a drag, the slash command, a
+   * pre-made section, a duplicate and an undo.
+   */
+  const applyDoc = useCallback((next: BuilderDocument) => setDoc(settleFooter(next)), []);
   const [resetKey, setResetKey] = useState(0);
   const [picking, setPicking] = useState(true);
   /** A template chosen in the library that still has to be asked "how many?". */
@@ -406,13 +418,32 @@ export function EmailBuilder(p: EmailBuilderProps) {
       resetKey={resetKey}
       eyebrow={p.eyebrow}
       doc={doc}
-      onChange={setDoc}
+      onChange={applyDoc}
       ctx={shellCtx}
       renderSection={renderEmailSection as unknown as (s: any, ctx: RenderContext) => string}
       canvasCss={CANVAS_EMAIL_CSS}
       paperWidth={EMAIL_WIDTH}
       canvasBackground="#E2E8F0"
       paper={kit.colours.background}
+      /* D-30: an EMAIL. Without this the inspector offers "Start a new page
+         here (when printed or saved as a PDF)" and calls the fonts "the
+         document's own" — a proposal's vocabulary in a mailbox. An email has
+         no pages at all, so `pageBreakLabel: ""` hides that control rather
+         than renaming it. */
+      copy={{
+        noun: "email",
+        nounPlural: "emails",
+        audience: "the people on your list",
+        paneHeading: "Add to this email",
+        paneHint: "Click one to add it where you are, or drag it onto the email.",
+        outlineHeading: "This email, top to bottom",
+        defaultFontLabel: "This email's own font",
+        pageBreakLabel: "",
+        canvasHint: "Click anything to edit it. This is exactly what lands in the inbox.",
+        emptyHeading: "What goes in this email?",
+        emptyHint: "Pick one to start. You can add the rest after.",
+      }}
+      onSave={() => void save()}
       canvasHint="Click anything to edit it. This is exactly what lands in the inbox."
       paperNote={`${EMAIL_WIDTH}px wide`}
       premade={EMAIL_PREMADE_SECTIONS}
@@ -472,7 +503,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
           widget={w}
           sectionId={sectionId}
           doc={doc}
-          onChange={setDoc}
+          onChange={applyDoc}
           offerings={offerings}
           posts={posts}
           postsError={postsError}
@@ -883,19 +914,18 @@ function FromTheCatalogue({ offerings, items, onUse }: {
     <div style={panel}>
       <div style={panelTitle}>From Products &amp; Services</div>
       <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3 }}>
-        {offerings.slice(0, 40).map((o) => {
+        {catalogueTiers(offerings).slice(0, 60).map(({ offering: o, price }) => {
           // buildPick, the SAME reader the proposal builder uses. It knows that
           // `unit_amount` is DOLLARS (not cents), that a price's own label is
           // the distinguishing detail between tiers of one service, and what
           // the catalogue's word for the billing basis is. A second reading of
           // those three columns is how a price says one thing on a proposal and
           // another in an email.
-          const price = pickDefaultPrice(o);
           const { parts } = buildPick(o, price);
           const money = formatMoney(parts.unit_price);
           const cadence = parts.cadence || (price?.label ? String(price.label) : "");
           return (
-            <button key={String(o.offering_id || o.name)} type="button"
+            <button key={`${o.offering_id || o.name}:${price?.price_id || "none"}`} type="button"
               title={`Put “${parts.name}” on the page${money ? ` at ${money}${cadence ? ` ${cadence}` : ""}` : ""}`}
               onClick={() => onUse({
                 name: parts.name,
@@ -925,18 +955,6 @@ function FromTheCatalogue({ offerings, items, onUse }: {
       </div>
     </div>
   );
-}
-
-/**
- * The price to show, of however many a service carries.
- *
- * The one the business marked default, else the first. Never a made-up
- * "cheapest" — an email that quietly advertises a tier the business did not
- * choose is worse than one that quotes nothing.
- */
-function pickDefaultPrice(o: CatalogOffering): CatalogPrice | null {
-  const list = Array.isArray(o.prices) ? o.prices : [];
-  return list.find((x) => x.is_default) || list[0] || null;
 }
 
 /** Dollars. The catalogue stores unit_amount in DOLLARS, not cents. */

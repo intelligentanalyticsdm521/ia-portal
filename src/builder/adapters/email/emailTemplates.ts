@@ -614,8 +614,71 @@ export function applyEmailBrand(
  */
 export function ensureFooter(doc: BuilderDocument, business: EmailBusiness): BuilderDocument {
   const has = doc.sections.some((s) => s.columns.some((c) => c.widgets.some((w) => w.kind === "email_footer")));
-  if (has) return doc;
-  return { ...doc, sections: [...doc.sections, footerSection(business)] };
+  if (has) return settleFooter(doc);
+  return settleFooter({ ...doc, sections: [...doc.sections, footerSection(business)] });
+}
+
+/**
+ * NOTHING COMES AFTER THE UNSUBSCRIBE FOOTER (D-11, the email case).
+ *
+ * BUILDER_USER_TEST_2026-09-16: *"the product cards landed after the footer.
+ * Nothing was selected, so they were appended to the last section — which in an
+ * email is the unsubscribe footer. The canvas ended: Summit Lawn & Landscape ·
+ * Des Moines, IA · Unsubscribe · Update your preferences, and then two product
+ * cards below it."*
+ *
+ * The engine now puts an un-anchored widget in the section the author is
+ * LOOKING AT rather than at the end (insertPosition.ts), which fixes the common
+ * case — but an author scrolled to the bottom is looking at the footer, and an
+ * email's footer is not a place content can go. This is the email's own
+ * structural rule, so it lives with the email:
+ *
+ *   · the footer section is LAST;
+ *   · it holds the footer and nothing else — anything that lands in it moves
+ *     up into the last real section, or into a new one if there is none.
+ *
+ * Applied on every change, so there is one rule rather than a guard on each of
+ * the seven ways a widget can arrive. Pure, and a no-op on a document that is
+ * already right, so the reference is unchanged and React does not re-render.
+ */
+export function settleFooter(doc: BuilderDocument): BuilderDocument {
+  const at = doc.sections.findIndex((s) =>
+    s.columns.some((c) => c.widgets.some((w) => w.kind === "email_footer")));
+  if (at < 0) return doc;
+
+  const footer = doc.sections[at];
+  // Anything in the footer section that is NOT the footer itself.
+  const strays = footer.columns.flatMap((c) => c.widgets.filter((w) => w.kind !== "email_footer"));
+  const alreadyLast = at === doc.sections.length - 1;
+  if (!strays.length && alreadyLast) return doc;
+
+  const cleaned: Section = {
+    ...footer,
+    columns: footer.columns.map((c) => ({ ...c, widgets: c.widgets.filter((w) => w.kind === "email_footer") })),
+  };
+  const rest = doc.sections.filter((_, i) => i !== at);
+
+  if (strays.length) {
+    if (rest.length) {
+      // Into the bottom of the last real section — which is where the author
+      // was looking, minus the one place content cannot live.
+      const last = rest[rest.length - 1];
+      rest[rest.length - 1] = {
+        ...last,
+        columns: last.columns.map((c, i) =>
+          (i === 0 ? { ...c, widgets: [...c.widgets, ...strays] } : c)),
+      };
+    } else {
+      // An email that is nothing but a footer: the strays get a section.
+      rest.push({
+        ...footer,
+        id: `${footer.id}-body`,
+        label: "Section",
+        columns: [{ id: `${footer.id}-body-c0`, widgets: strays }],
+      });
+    }
+  }
+  return { ...doc, sections: [...rest, cleaned] };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

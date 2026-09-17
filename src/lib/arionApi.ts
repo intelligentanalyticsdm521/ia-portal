@@ -2495,6 +2495,15 @@ export interface ArionSitePage {
    * "up to N" wherever it is shown.
    */
   adoptCandidateCount?: number;
+  /**
+   * There is work saved in the builder that the public has not seen (D-05).
+   *
+   * A LIVE page with this set reads "Live · draft saved, not published": two
+   * facts, both true at once. Before there was a place for an unpublished
+   * change to live, "save without publishing" could only be spelled as "make
+   * the whole page a draft", which 404'd the site.
+   */
+  hasUnpublishedDraft?: boolean;
 }
 
 /** Why a section cannot be edited in the Portal. `null` means it can. */
@@ -2571,7 +2580,22 @@ export interface ArionPageDetail {
   modified: string | null;
   canUndo: boolean;
   undoCount: number;
+  /** WHAT IS LIVE. The draft below, when there is one, is what the author last
+      saved and nobody else has seen — the two are separate on purpose. */
   sections: ArionPageSection[];
+  /**
+   * Work held BESIDE the live page (D-05), or null.
+   *
+   * The builder opens on this when it is here, and the header says
+   * "Live · draft saved, not published" with Publish these changes /
+   * Discard them.
+   */
+  draft?: {
+    savedAt: string | null;
+    savedBy: string | null;
+    title: string | null;
+    sections: Array<Partial<ArionPageSection>>;
+  } | null;
   /** The page-level answer to "how many were built on the site, and how many
       of those could I take charge of?" — what the review entry counts. */
   adoption?: {
@@ -2840,6 +2864,14 @@ export async function saveSitePageSections(p: {
   baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
   sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>;
   title?: string; status?: string;
+  /**
+   * "Yes, I mean take this off the internet" (D-05).
+   *
+   * arion-api refuses `status: 'draft'` on a page that is currently live
+   * unless this is exactly `true`, because those two are the same wire and one
+   * of them is a 404 nobody asked for. Only the Unpublish confirm sets it.
+   */
+  unpublish?: boolean;
   /** ARGUS suggestions this save is carrying. Stamped applied only if it lands. */
   proposalIds?: string[];
 }) {
@@ -2847,14 +2879,58 @@ export async function saveSitePageSections(p: {
     data: {
       pageId: number; status: string | null; permalink: string | null; previewUrl: string | null;
       sectionsWritten: number; canUndo: boolean; undoCount: number; cachePurged: boolean;
-      proposalsApplied?: number;
+      proposalsApplied?: number; draftCleared?: boolean;
     };
   }>({
     baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
     method: 'PUT',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections`,
-    body: { sections: p.sections, title: p.title, status: p.status, proposalIds: p.proposalIds },
+    body: {
+      sections: p.sections, title: p.title, status: p.status,
+      ...(p.unpublish === true ? { unpublish: true } : {}),
+      proposalIds: p.proposalIds,
+    },
     timeoutMs: 90_000,
+  });
+}
+
+/**
+ * SAVE WITHOUT PUBLISHING (D-05).
+ *
+ * Nothing is sent to the website: the visitor keeps seeing what they were
+ * seeing, and the work is here when the author comes back. Publishing is the
+ * ordinary save with `status: 'publish'`, which consumes the held draft.
+ *
+ * This is a SEPARATE call rather than a flag on the save because it writes to
+ * a different place. One call that sometimes touched the website and sometimes
+ * did not is exactly the ambiguity that put a live page in a list headed
+ * "Nobody can see these until you publish them".
+ */
+export async function saveSitePageDraft(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+  sections: Array<Pick<ArionPageSection, 'fields' | 'node'>>;
+  title?: string;
+}) {
+  return requestJson<{
+    data: { pageId: number; savedAt: string; sectionsHeld: number; published: boolean };
+  }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'PUT',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/draft`,
+    body: { sections: p.sections, title: p.title },
+    timeoutMs: 60_000,
+  });
+}
+
+/** Throw the held draft away. The live page was never touched, so nothing else changes. */
+export async function discardSitePageDraft(p: {
+  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
+}) {
+  return requestJson<{ data: { pageId: number; removed: number } }>({
+    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
+    method: 'DELETE',
+    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/draft`,
+    timeoutMs: 45_000,
   });
 }
 
