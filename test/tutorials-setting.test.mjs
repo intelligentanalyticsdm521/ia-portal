@@ -259,9 +259,9 @@ describe("Settings > Tutorials is ONE page", () => {
 
   test("it says Business, never 'tenant'", () => {
     const src = readSrc("pages/settings/SettingsTutorialsPage.tsx");
-    // Comments and prop names may say tenantId; what reaches a screen may not.
+    // Comments and prop names may say tenantId or tenantName; what reaches a screen may not.
     const rendered = withoutComments(src)
-      .replace(/\b(activeTenantId|tenantId|tenant_id|ClientTenant)\b/g, "")
+      .replace(/\b(activeTenantId|tenantId|tenantName|tenant_id|ClientTenant)\b/g, "")
       .replace(/\?\.tenant\b/g, "");
     assert.ok(!/tenant/i.test(rendered), "no 'tenant' in anything a customer reads");
   });
