@@ -92,6 +92,16 @@ export interface InspectorProps extends InspectorSlots {
    * own inbox.
    */
   adapter?: string;
+  /**
+   * The Page group's page-break line, in the adapter's words (copy.ts, D-30).
+   *
+   * "Start a new page here (when printed or saved as a PDF)" was showing in
+   * the WEBSITE section inspector, where there are no pages and nothing is
+   * printed. An adapter that has no such thing passes "" and the control is
+   * not offered at all — a control that cannot do anything is worse than a
+   * missing one.
+   */
+  pageBreakLabel?: string;
 }
 
 export function Inspector(p: InspectorProps) {
@@ -319,6 +329,18 @@ export function Inspector(p: InspectorProps) {
                 onChange={(e) => patchSectionStyle(
                   { gap: e.target.value === "" ? undefined : Number(e.target.value) }, "gap")} />
             </div>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
+              title="Number this section on the page — 01, 02, 03. The numbers are worked out from the order, so moving a section renumbers both.">
+              <input type="checkbox" data-section-numbered checked={!!section.numbered}
+                onChange={(e) => p.onPatchSection(section.id, { numbered: e.target.checked })} />
+              Number this section (01, 02, 03…)
+            </label>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
+              title="Put a Recommended badge on this section, so the reader knows which one you suggest">
+              <input type="checkbox" data-section-recommended checked={!!section.recommended}
+                onChange={(e) => p.onPatchSection(section.id, { recommended: e.target.checked })} />
+              Mark as Recommended
+            </label>
           </Group>
 
           {/* ── SPACING ───────────────────────────────────────────────── */}
@@ -339,6 +361,18 @@ export function Inspector(p: InspectorProps) {
               <span style={L}>Background</span>
               <Swatches value={section.background || ""} swatches={p.swatches}
                 onPick={(v) => p.onPatchSection(section.id, { background: v })} />
+            </div>
+            {/* MOVED OFF THE CANVAS TOOLBAR (D-12, §11.10). The hover toolbar
+                is now drag · up · down · duplicate · delete · settings, and
+                every setting it used to carry lives here — one home each. */}
+            <div style={FIELD}>
+              <span style={L}>Text colour</span>
+              <select style={INPUT} data-section-theme value={section.theme}
+                title="Dark text on a light background, or light text on a dark one"
+                onChange={(e) => p.onPatchSection(section.id, { theme: e.target.value as Section["theme"] })}>
+                <option value="light">Dark text on light</option>
+                <option value="dark">Light text on dark</option>
+              </select>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <div style={FIELD}>
@@ -427,12 +461,17 @@ export function Inspector(p: InspectorProps) {
           <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
             onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer" })}
             resetTitle="Back to: no page break, and the customer sees it">
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Start a new page here when the document is printed or saved as a PDF">
-              <input type="checkbox" checked={!!section.pageBreakBefore}
-                onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
-              Start a new page here
-            </label>
+            {/* Only where there ARE pages. An email and a web page have none,
+                and a control that cannot do anything is worse than a missing
+                one — D-30. The adapter's own words, through copy.ts. */}
+            {p.pageBreakLabel !== "" && (
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
+                title="Start a new page here when this is printed or saved as a PDF">
+                <input type="checkbox" checked={!!section.pageBreakBefore}
+                  onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
+                {p.pageBreakLabel || "Start a new page here"}
+              </label>
+            )}
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
               title="Your crew sees this; the customer never does, and it is left out of the PDF">
               <input type="checkbox" checked={section.visibility === "internal"}

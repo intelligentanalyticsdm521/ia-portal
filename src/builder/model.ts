@@ -129,6 +129,22 @@ export interface DocumentSettings {
   accent?: string;
   headingFont?: string;
   bodyFont?: string;
+  /**
+   * THE DOCUMENT'S OWN MERGE VALUES (D-03, handoff B-A-3).
+   *
+   * `{{contract.start_date}}`, `{{snow_trigger}}`, `{{severe_event_threshold}}`
+   * are facts about THIS document, not about the customer or the business, and
+   * until now there was nowhere to keep them: the 2026-09-16 walk found that
+   * Send refused on five blanks that had no field anywhere in the Portal, and
+   * the only way through was to retype the clause over the token and destroy
+   * the merge field.
+   *
+   * A flat `token -> value` map, carried verbatim and absent when empty, so a
+   * document nobody has filled in is byte-identical to one written before this
+   * existed. The ENGINE only carries it; deciding which tokens a document
+   * declares and putting a field on screen for each is the adapter's.
+   */
+  merge?: Record<string, string>;
 }
 
 export interface BuilderDocument {
@@ -316,6 +332,18 @@ export function deserialise(raw: unknown): BuilderDocument {
   for (const key of ["accent", "headingFont", "bodyFont"] as const) {
     if (value?.settings?.[key] != null) settings[key] = String(value.settings[key]);
   }
+  // TOLERANT, like everything else here: string keys, string values, and the
+  // key is absent rather than empty when there is nothing in it — otherwise a
+  // round trip would look like an edit and every saved document would gain a
+  // `"merge":{}` it never asked for.
+  const rawMerge = value?.settings?.merge;
+  if (rawMerge && typeof rawMerge === "object" && !Array.isArray(rawMerge)) {
+    const merge: Record<string, string> = {};
+    for (const [k, v] of Object.entries(rawMerge)) {
+      if (typeof k === "string" && k.trim() && v != null && typeof v !== "object") merge[k] = String(v);
+    }
+    if (Object.keys(merge).length) settings.merge = merge;
+  }
   return { v: 2, settings, sections };
 }
 
@@ -479,6 +507,25 @@ export function removeWidget(doc: BuilderDocument, path: WidgetPath): BuilderDoc
         i === path.columnIndex ? { ...c, widgets: c.widgets.filter((_, j) => j !== path.widgetIndex) } : c),
     };
   });
+}
+
+/**
+ * Copy a widget and put the copy directly under it.
+ *
+ * D-12's other half: the hover handle offers drag, duplicate and delete, and
+ * "duplicate" had no operation behind it — every caller would have had to
+ * clone-and-insert by hand, which is three chances to share an id.
+ *
+ * REFUSES a locked one, for the same reason `duplicateSection` does: a part the
+ * law puts on the page exists exactly ONCE, and two unsubscribe footers is a
+ * defect in the other direction.
+ */
+export function duplicateWidget(doc: BuilderDocument, path: WidgetPath): BuilderDocument {
+  const w = widgetAt(doc, path);
+  if (!w || isLocked(w)) return doc;
+  const copy: Widget = { id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) };
+  if (w.style) copy.style = JSON.parse(JSON.stringify(w.style));
+  return addWidget(doc, path.sectionId, path.columnIndex, copy, path.widgetIndex + 1);
 }
 
 export function patchWidget(
