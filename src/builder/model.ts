@@ -3,12 +3,25 @@
  *
  * BUILDER_PLATFORM_SCOPE_2026-09-15 §3.1/§3.2, step 2 (the engine).
  *
- * A document is an ordered list of SECTIONS. A section is a row on the canvas
- * with 1–3 COLUMNS. A column holds an ordered list of WIDGETS. That is the
- * whole model — the same one the ARION section codec already round-trips to
- * Elementor's tree, and the one the inventory found eleven private versions of.
+ * A document is a TREE (§11.12, D-156). A NODE is either a CONTAINER, which
+ * holds children and lays them out, or a WIDGET, which is atomic and has none.
  *
- *     document ── sections[] ── columns[] ── widgets[]
+ *     document ── sections[] ── columns[] ── children ── children …
+ *
+ * A SECTION is the depth-0 container: it carries the page-level facts a band
+ * has (width, theme, page break, visibility) and holds 1–3 COLUMNS. A COLUMN
+ * is a container laid out as a column. Below that, `Container` nodes nest to
+ * any depth — a column can hold a row, a row can hold a box. Ids are unchanged
+ * all the way down, so a document written before this maps 1:1 and a document
+ * with no containers in it serialises byte for byte as it did.
+ *
+ * ── ONE ADDRESS ──────────────────────────────────────────────────────────
+ * A node is addressed by its ID, and every operation in treeOps.ts is keyed on
+ * one. `WidgetPath` survives as the LEGACY address the adapters were written
+ * against: `nodeIdAt` turns one into an id at the boundary and there is exactly
+ * ONE implementation underneath. Everything the engine builds fills in
+ * `path.id`, and the id WINS whenever it is present — that is what lets a path
+ * reach a widget three containers deep, where three indices cannot.
  *
  * ── PURE ON PURPOSE ───────────────────────────────────────────────────────
  * No React, no fetch, no Date.now() inside an operation's result: every
@@ -32,6 +45,13 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 import { readStyle, type ElementStyle } from "./style";
+import {
+  CONTAINER_KIND, cloneNode, descendantsOf, dropIndexForNode, duplicateNode, findNode,
+  groupNodes, holdsLocked, insertNode, isContainer, isLocked, isRequired, isWidget,
+  makeContainer, makeWidget, moveNode, newId, nodeIdAt, nudgeNode, pathOfNode, patchNode,
+  REQUIRED_KINDS, removeNode, resetIds, setDirection, setNodeLocked, setNodeStyle,
+  ungroupNode, walkNodes,
+} from "./treeOps";
 
 /** How wide the section's content runs inside the page. */
 export type SectionWidth = "full" | "contained" | "narrow";
@@ -68,9 +88,84 @@ export interface Widget {
   style?: ElementStyle;
 }
 
+/**
+ * A CONTAINER — the box Brandon drags a Header into (§11.12, D-156).
+ *
+ * "Header, drag that into this box and it's now its own section inside the box,
+ * then a text field under it with Pick One, then cards." That is a container
+ * holding a heading, a paragraph and a row of cards, and before D-156 there was
+ * no such thing: a column could hold widgets and nothing else, and the five
+ * money widgets were composites with their heading and their cards locked
+ * inside one indivisible lump.
+ *
+ * It holds CHILDREN and it lays them out. That is all it does. It has no props
+ * and no renderer of its own beyond the box, because a container that also drew
+ * something would be a widget wearing a container's clothes.
+ *
+ * HOW IT IS LAID OUT LIVES IN `style`, not in a second field beside it:
+ * `style.direction` is row / column / grid, `style.justify`, `style.alignItems`,
+ * `style.gap`, `style.wrap` and `style.columns` are the rest. One mechanism —
+ * and it buys the per-device cascade for nothing, so a row on a desktop can be
+ * a column on a phone with no new machinery at all. See style.ts.
+ */
+export interface Container extends Widget {
+  kind: typeof CONTAINER_KIND;
+  children: Node[];
+}
+
+/**
+ * Either kind of thing on the page. THE unit every operation moves.
+ *
+ * A CONTAINER IS A WIDGET WITH CHILDREN, and that is deliberate rather than
+ * lazy — it is Elementor's own shape, where a container and a widget are the
+ * same record with the same id, the same settings and an `elements` array that
+ * a widget leaves empty. It buys three things:
+ *
+ *   · a column's `widgets` array is still `Widget[]`, so the five adapter
+ *     files, three server mirrors and every template keep compiling and
+ *     keep working, with no change and no second array type to convert at
+ *     each boundary;
+ *   · an OLDER reader — a mirror that has not caught up yet — meets a node
+ *     of an unknown kind, which is a case every one of them already handles
+ *     by carrying it through untouched, rather than a shape it cannot parse;
+ *   · `props` is there and empty, so nothing has to guard a read of it.
+ *
+ * `isContainer` is the one test. Nothing else asks.
+ */
+export type Node = Widget | Container;
+
+/**
+ * THE PRIMITIVES LIVE IN `treeOps.ts` AND ARE RE-EXPORTED HERE.
+ *
+ * Every adapter, renderer and mirror in the Portal imports the model's names
+ * from "./model"; moving them would have edited five files this stream does not
+ * own for no behaviour at all. So the dependency runs ONE way — treeOps takes
+ * only TYPES from here — and this line is the front door it has always been.
+ */
+export {
+  CONTAINER_KIND, cloneNode, descendantsOf, findNode, holdsLocked, insertNode, isContainer,
+  isLocked, isRequired, isWidget, makeContainer, makeWidget, MAX_DEPTH, moveNode, newId, nodeIdAt,
+  nudgeNode, pathOfNode, patchNode, removeNode, REQUIRED_KINDS, resetIds, setDirection,
+  setNodeLocked, setNodeStyle, subtreeHeight, ungroupNode, walkNodes, groupNodes, duplicateNode,
+  directionOf, dropIndexForNode, CONTAINER_PRESETS, makePreset, sectionOfNode, hostChildren,
+  hostDepth,
+} from "./treeOps";
+export type { Direction, NodeHit, ContainerPreset } from "./treeOps";
+
+/**
+ * A COLUMN — a container laid out as a column, kept as its own type.
+ *
+ * `widgets` is its CHILDREN and a child may be a `Container`. The name is the
+ * one every adapter, renderer and mirror was written against; renaming it would
+ * touch five files this stream does not own for no behaviour at all, so it
+ * stays and this comment is the truth about it.
+ */
 export interface Column {
   id: string;
+  /** Its CHILDREN. A child may be a `Container`, which is a widget with its own. */
   widgets: Widget[];
+  /** How this column lays its own children out. Absent = stacked, as always. */
+  style?: ElementStyle;
 }
 
 export interface Section {
@@ -153,40 +248,87 @@ export interface BuilderDocument {
   sections: Section[];
 }
 
-/** Where a widget is, addressed once so every operation speaks one language. */
+/**
+ * WHERE A WIDGET IS — the LEGACY address, and the id that supersedes it.
+ *
+ * Section + column + index reaches the top level of a column and no further,
+ * which was every widget there was before §11.12. It cannot address a card
+ * inside a box inside a row, so the real address is `id`, and `nodeIdAt`
+ * prefers it whenever it is there.
+ *
+ * The three indices stay because five adapter files were written against them
+ * and this stream does not own one of those files. Everything the ENGINE builds
+ * fills in `id`; a path built by hand still works, at depth 0, exactly as it
+ * did. See treeOps.ts.
+ */
 export interface WidgetPath {
   sectionId: string;
   columnIndex: number;
   widgetIndex: number;
+  /** THE address. Present on everything the engine hands out. */
+  id?: string;
 }
 
 /** What is selected on the canvas. The inspector binds to exactly this. */
 export type Selection =
   | { kind: "section"; sectionId: string }
-  | { kind: "widget"; sectionId: string; columnIndex: number; widgetIndex: number }
+  | {
+    kind: "widget";
+    sectionId: string;
+    columnIndex: number;
+    widgetIndex: number;
+    /** THE address, when the engine made this. See `WidgetPath`. */
+    id?: string;
+    /**
+     * THE OTHER THINGS ALSO SELECTED, by id (§11.12, D-156).
+     *
+     * "Select N siblings → Group into a box" needs more than one thing to be
+     * selected, and this is how: the SELECTION carries them, rather than a
+     * second piece of state beside it. One writer, `select()`, so letting go is
+     * automatic — a plain click replaces the whole selection and the extras go
+     * with it, which is the behaviour every editor has and the bug a separate
+     * `alsoSelected` set would have had on its first day.
+     *
+     * The first id is the one in the three fields above; these are the rest, in
+     * the order they were shift-clicked. Absent when there is only one.
+     */
+    also?: string[];
+  }
   | null;
+
+/**
+ * Add (or take away) one thing from a selection with Shift held.
+ *
+ * Pure, so the rule is a test: shift-clicking the thing that is already the
+ * selection does nothing, shift-clicking one that is already in `also` takes it
+ * OUT again — a modifier that can only ever add is a modifier you cannot undo
+ * without starting over.
+ */
+export function extendSelection(current: Selection, path: WidgetPath): Selection {
+  const id = path.id;
+  if (!id) return { kind: "widget", ...path };
+  if (current?.kind !== "widget") return { kind: "widget", ...path };
+  const anchor = current.id;
+  if (!anchor) return { kind: "widget", ...path };
+  if (anchor === id) return current;
+  const also = current.also || [];
+  const next = also.includes(id) ? also.filter((x) => x !== id) : [...also, id];
+  return next.length ? { ...current, also: next } : { ...current, also: undefined };
+}
+
+/** Every id in a selection, the anchor first. */
+export function selectedIds(sel: Selection): string[] {
+  if (sel?.kind !== "widget" || !sel.id) return [];
+  return [sel.id, ...(sel.also || [])];
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ids
    ══════════════════════════════════════════════════════════════════════════ */
 
-let idCounter = 0;
-
-/**
- * A new id.
- *
- * Deterministic and injectable so a renderer snapshot is stable: pass `seed`
- * from a test, or call resetIds() before building a fixture document.
- */
-export function newId(prefix = "w"): string {
-  idCounter += 1;
-  return `${prefix}${idCounter}`;
-}
-
-/** Tests and fixtures call this first so ids read w1, w2, w3. */
-export function resetIds(): void {
-  idCounter = 0;
-}
+/* `newId` and `resetIds` live in treeOps.ts and are re-exported above. One
+   counter, so a container and a widget minted in the same breath cannot
+   collide. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Construction
@@ -196,43 +338,45 @@ export function emptyColumn(): Column {
   return { id: newId("c"), widgets: [] };
 }
 
-export function makeWidget(
-  kind: string,
-  props: Record<string, unknown> = {},
-  opts: { locked?: boolean } = {},
-): Widget {
-  const w: Widget = { id: newId("w"), kind, props: { ...props } };
-  if (opts.locked) w.locked = true;
-  return w;
-}
-
-/** True when this widget is a required part the author may not remove. */
-export function isLocked(w: Widget | null | undefined): boolean {
-  return !!w?.locked;
+/** Every locked widget in the document, in reading order, at any depth. */
+export function lockedWidgets(doc: BuilderDocument): Widget[] {
+  return walkWidgets(doc).map((x) => x.widget).filter(isLocked);
 }
 
 /**
- * THE PARTS THE LAW PUTS THERE, which the author may not unlock (M-21).
+ * READ A STORED NODE BACK — a box or a widget, tolerantly.
  *
- * `locked` is ONE flag and stays one flag — it is what `removeWidget` and
- * `removeSection` refuse on, whether the author set it or the template did.
- * But "lock this so I don't delete it by accident" is reversible and "take the
- * unsubscribe link off this email" is not, and the difference has to live
- * somewhere. It lives here, as a list of KINDS, because the answer is a fact
- * about what the widget IS: an email footer carries the unsubscribe link and
- * the sender's postal address, and CAN-SPAM asks for both on every marketing
- * send whoever is holding the mouse.
+ * TOLERANT BY RULE, like everything else here: a container whose `children` is
+ * missing comes back as an empty box rather than throwing, an unknown widget
+ * kind is carried through untouched, and a node that is not an object at all is
+ * dropped. A newer editor's widget must not be deleted by an older one just
+ * because it opened the document.
  */
-export const REQUIRED_KINDS = new Set<string>(["email_footer"]);
-
-/** Is this a part nobody may unlock? See REQUIRED_KINDS. */
-export function isRequired(w: Widget | null | undefined): boolean {
-  return !!w && REQUIRED_KINDS.has(w.kind);
-}
-
-/** Every locked widget in the document, in reading order. */
-export function lockedWidgets(doc: BuilderDocument): Widget[] {
-  return walkWidgets(doc).map((x) => x.widget).filter(isLocked);
+function readNode(raw: any): Node | null {
+  if (!raw || typeof raw !== "object" || typeof raw.kind !== "string") return null;
+  if (raw.kind === CONTAINER_KIND) {
+    const children = (Array.isArray(raw.children) ? raw.children : [])
+      .map(readNode).filter((n: Node | null): n is Node => !!n);
+    const out: Container = {
+      id: String(raw.id || newId("b")), kind: CONTAINER_KIND, props: {}, children,
+    };
+    const style = readStyle(raw.style);
+    if (style) out.style = style;
+    return out;
+  }
+  const out: Widget = {
+    id: String(raw.id || newId("w")),
+    kind: String(raw.kind),
+    props: raw.props && typeof raw.props === "object" ? { ...raw.props } : {},
+  };
+  // Carried, not re-derived: a stored footer must come back locked, or opening
+  // yesterday's newsletter would make it deletable.
+  if (raw.locked) out.locked = true;
+  // TOLERANT, and absent when empty: a widget nobody has styled has no `style`
+  // key, so the golden fixtures stay byte-identical.
+  const style = readStyle(raw.style);
+  if (style) out.style = style;
+  return out;
 }
 
 export function makeSection(partial: Partial<Section> = {}): Section {
@@ -302,26 +446,16 @@ export function deserialise(raw: unknown): BuilderDocument {
     const rawColumns: any[] = Array.isArray(s?.columns) ? s.columns : [];
     const columns: Column[] = Array.from({ length: layout }, (_, i) => {
       const c = rawColumns[i];
-      return {
+      const column: Column = {
         id: String(c?.id || newId("c")),
         widgets: (Array.isArray(c?.widgets) ? c.widgets : [])
-          .filter((w: any) => w && typeof w === "object" && typeof w.kind === "string")
-          .map((w: any) => {
-            const out: Widget = {
-              id: String(w.id || newId("w")),
-              kind: String(w.kind),
-              props: w.props && typeof w.props === "object" ? { ...w.props } : {},
-            };
-            // Carried, not re-derived: a stored footer must come back locked,
-            // or opening yesterday's newsletter would make it deletable.
-            if (w.locked) out.locked = true;
-            // TOLERANT, and absent when empty: a widget nobody has styled has
-            // no `style` key, so the golden fixtures stay byte-identical.
-            const style = readStyle(w.style);
-            if (style) out.style = style;
-            return out;
-          }),
+          .map(readNode).filter((n: Node | null): n is Node => !!n),
       };
+      // A column's own layout, when it has one. Absent on every column written
+      // before §11.12, so a stored document round-trips byte for byte.
+      const columnStyle = readStyle(c?.style);
+      if (columnStyle) column.style = columnStyle;
+      return column;
     });
     return makeSection({
       id: String(s?.id || newId("s")),
@@ -363,6 +497,24 @@ export function deserialise(raw: unknown): BuilderDocument {
     }
     if (Object.keys(merge).length) settings.merge = merge;
   }
+  /* §11.12 (D-156). THE COMPOSITE -> TREE UPGRADE GOES HERE, and here only:
+     this is the ONE door a stored document comes through, so an upgrade the
+     editor did and the PDF did not is impossible.
+
+         return upgradeDocument({ v: 2, settings, sections });
+
+     It is NOT switched on yet, and the reason is money rather than caution.
+     `upgrade.ts` is built, tested and idempotent, and the four kinds it
+     produces — card, product_card, price_line, key_fact, address_block — have
+     no renderer, no registry entry, no rule in totals.ts and no PDF until the
+     stream that owns the widget definitions lands them. `priced_line` becomes
+     `price_line` in the pass, and `PRICED_KINDS` still says `priced_line`: turn
+     this on alone and every proposal on the line totals zero in the Portal
+     while oliver-api's own mirror still totals correctly, which is two
+     documents wearing one id.
+
+     ONE LINE, and it goes in with the atomic widgets and the two server
+     mirrors in the same commit. See D156_HANDOFF_2026-09-17.md, stream A. */
   return { v: 2, settings, sections };
 }
 
@@ -374,21 +526,57 @@ export function findSection(doc: BuilderDocument, sectionId: string): Section | 
   return doc.sections.find((s) => s.id === sectionId) || null;
 }
 
+/**
+ * The node a legacy path points at, at ANY depth.
+ *
+ * Named `widgetAt` because every caller in the Portal calls it that; it answers
+ * with whatever is there, and a box is a legitimate answer now. `nodeIdAt`
+ * prefers `path.id`, so a path the engine handed out reaches a card three boxes
+ * deep, and one an adapter built by hand still reaches the top of a column.
+ */
 export function widgetAt(doc: BuilderDocument, path: WidgetPath): Widget | null {
-  const s = findSection(doc, path.sectionId);
-  return s?.columns[path.columnIndex]?.widgets[path.widgetIndex] || null;
+  const id = nodeIdAt(doc, path);
+  const hit = id ? findNode(doc, id) : null;
+  return (hit?.node as Widget) || null;
 }
 
-/** Every widget in the document, in reading order, with where it lives. */
+/** The same lookup, saying plainly that a box can come back. */
+export function nodeAt(doc: BuilderDocument, path: WidgetPath): Node | null {
+  const id = nodeIdAt(doc, path);
+  return id ? findNode(doc, id)?.node || null : null;
+}
+
+/**
+ * EVERY WIDGET IN THE DOCUMENT, in reading order, with where it lives.
+ *
+ * THE WHOLE TREE, boxes walked into (§11.12). Totals, the merge-field scan,
+ * the still-to-fill-in list and the locked-part count all read this, and a walk
+ * that stopped at the top of a column would have quietly stopped counting the
+ * moment somebody put a priced line inside a box.
+ *
+ * Containers themselves are NOT widgets and are not returned — use `walkNodes`
+ * for those. Every path carries `id`, which is what makes it usable at depth.
+ */
 export function walkWidgets(doc: BuilderDocument): Array<{ widget: Widget; path: WidgetPath; section: Section }> {
   const out: Array<{ widget: Widget; path: WidgetPath; section: Section }> = [];
-  for (const section of doc.sections) {
-    section.columns.forEach((col, columnIndex) => {
-      col.widgets.forEach((widget, widgetIndex) => {
-        out.push({ widget, path: { sectionId: section.id, columnIndex, widgetIndex }, section });
-      });
+  const byId = new Map(doc.sections.map((s) => [s.id, s]));
+  walkNodes(doc, (hit) => {
+    if (isContainer(hit.node)) return;
+    const section = byId.get(hit.sectionId);
+    if (!section) return;
+    out.push({
+      widget: hit.node,
+      path: { sectionId: hit.sectionId, columnIndex: hit.columnIndex, widgetIndex: hit.index, id: hit.node.id },
+      section,
     });
-  }
+  });
+  return out;
+}
+
+/** Every node, containers included, in reading order. */
+export function allNodes(doc: BuilderDocument): Node[] {
+  const out: Node[] = [];
+  walkNodes(doc, (hit) => out.push(hit.node));
   return out;
 }
 
@@ -415,7 +603,9 @@ export function addSection(doc: BuilderDocument, section: Section, atIndex?: num
  */
 export function removeSection(doc: BuilderDocument, sectionId: string): BuilderDocument {
   const s = findSection(doc, sectionId);
-  if (s && s.columns.some((c) => c.widgets.some(isLocked))) return doc;
+  // AT ANY DEPTH. `some(isLocked)` over the top of each column would have been
+  // walked round by putting the footer in a box.
+  if (s && s.columns.some((c) => c.widgets.some(holdsLocked))) return doc;
   return { ...doc, sections: doc.sections.filter((x) => x.id !== sectionId) };
 }
 
@@ -425,7 +615,7 @@ export function duplicateSection(doc: BuilderDocument, sectionId: string): Build
   // A required part exists exactly ONCE. Two unsubscribe footers on one email
   // is a defect in the other direction, and "duplicate" is the quiet way to
   // get there.
-  if (doc.sections[i].columns.some((c) => c.widgets.some(isLocked))) return doc;
+  if (doc.sections[i].columns.some((c) => c.widgets.some(holdsLocked))) return doc;
   const copy = cloneSection(doc.sections[i]);
   const sections = [...doc.sections];
   sections.splice(i + 1, 0, copy);
@@ -441,16 +631,13 @@ export function cloneSection(s: Section): Section {
     // with the original — the save path re-mints its ids, and it cannot do
     // that to an object two sections point at.
     ...(s.meta ? { meta: JSON.parse(JSON.stringify(s.meta)) } : {}),
+    // Deep, and through the ONE cloner: a duplicated widget that SHARED its
+    // style object would follow the original the next time it was restyled,
+    // and a duplicated BOX that shared its children would be the same box.
     columns: s.columns.map((c) => ({
+      ...c,
       id: newId("c"),
-      widgets: c.widgets.map((w) => {
-        const copy: Widget = { id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) };
-        if (w.locked) copy.locked = true;
-        // Deep, like props: a duplicated widget that SHARES its style object
-        // would follow the original the next time it was restyled.
-        if (w.style) copy.style = JSON.parse(JSON.stringify(w.style));
-        return copy;
-      }),
+      widgets: c.widgets.map(cloneNode),
     })),
   };
 }
@@ -490,23 +677,23 @@ export function setLayout(doc: BuilderDocument, sectionId: string, layout: 1 | 2
   });
 }
 
+/**
+ * Put a node at the top level of a column. The LEGACY insert.
+ *
+ * One line of its own logic — "which column is that" — and then `insertNode`,
+ * which is the one insert every "+", drag, slash command and upgrade goes
+ * through. Two inserts would be two sets of rules about where a thing may go.
+ */
 export function addWidget(
   doc: BuilderDocument,
   sectionId: string,
   columnIndex: number,
-  widget: Widget,
+  widget: Node,
   atIndex?: number,
 ): BuilderDocument {
-  return mapSections(doc, (s) => {
-    if (s.id !== sectionId) return s;
-    const columns = s.columns.map((c, i) => {
-      if (i !== columnIndex) return c;
-      const widgets = [...c.widgets];
-      widgets.splice(atIndex ?? widgets.length, 0, widget);
-      return { ...c, widgets };
-    });
-    return { ...s, columns };
-  });
+  const column = findSection(doc, sectionId)?.columns[columnIndex];
+  if (!column) return doc;
+  return insertNode(doc, column.id, atIndex ?? column.widgets.length, widget);
 }
 
 /**
@@ -517,15 +704,8 @@ export function addWidget(
  * tidying — gets the same answer without each having to remember to ask.
  */
 export function removeWidget(doc: BuilderDocument, path: WidgetPath): BuilderDocument {
-  if (isLocked(widgetAt(doc, path))) return doc;
-  return mapSections(doc, (s) => {
-    if (s.id !== path.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) =>
-        i === path.columnIndex ? { ...c, widgets: c.widgets.filter((_, j) => j !== path.widgetIndex) } : c),
-    };
-  });
+  const id = nodeIdAt(doc, path);
+  return id ? removeNode(doc, id) : doc;
 }
 
 /**
@@ -540,11 +720,8 @@ export function removeWidget(doc: BuilderDocument, path: WidgetPath): BuilderDoc
  * defect in the other direction.
  */
 export function duplicateWidget(doc: BuilderDocument, path: WidgetPath): BuilderDocument {
-  const w = widgetAt(doc, path);
-  if (!w || isLocked(w)) return doc;
-  const copy: Widget = { id: newId("w"), kind: w.kind, props: JSON.parse(JSON.stringify(w.props)) };
-  if (w.style) copy.style = JSON.parse(JSON.stringify(w.style));
-  return addWidget(doc, path.sectionId, path.columnIndex, copy, path.widgetIndex + 1);
+  const id = nodeIdAt(doc, path);
+  return id ? duplicateNode(doc, id) : doc;
 }
 
 export function patchWidget(
@@ -552,19 +729,8 @@ export function patchWidget(
   path: WidgetPath,
   props: Record<string, unknown>,
 ): BuilderDocument {
-  return mapSections(doc, (s) => {
-    if (s.id !== path.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) =>
-        i === path.columnIndex
-          ? {
-            ...c,
-            widgets: c.widgets.map((w, j) => (j === path.widgetIndex ? { ...w, props: { ...w.props, ...props } } : w)),
-          }
-          : c),
-    };
-  });
+  const id = nodeIdAt(doc, path);
+  return id ? patchNode(doc, id, props) : doc;
 }
 
 /**
@@ -586,26 +752,8 @@ export function setWidgetLocked(
   path: WidgetPath,
   locked: boolean,
 ): BuilderDocument {
-  return mapSections(doc, (s) => {
-    if (s.id !== path.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) =>
-        i === path.columnIndex
-          ? {
-            ...c,
-            widgets: c.widgets.map((w, j) => {
-              if (j !== path.widgetIndex) return w;
-              // A required part is never unlocked, however it is asked.
-              // A guard the UI enforces and the model does not is a guard.
-              if (!locked && isRequired(w)) return w;
-              const { locked: _old, ...rest } = w;
-              return locked ? { ...rest, locked: true } : rest;
-            }),
-          }
-          : c),
-    };
-  });
+  const id = nodeIdAt(doc, path);
+  return id ? setNodeLocked(doc, id, locked) : doc;
 }
 
 /**
@@ -622,23 +770,8 @@ export function setWidgetStyle(
   path: WidgetPath,
   style: ElementStyle | undefined,
 ): BuilderDocument {
-  return mapSections(doc, (s) => {
-    if (s.id !== path.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) =>
-        i === path.columnIndex
-          ? {
-            ...c,
-            widgets: c.widgets.map((w, j) => {
-              if (j !== path.widgetIndex) return w;
-              const { style: _old, ...rest } = w;
-              return style && Object.keys(style).length ? { ...rest, style } : rest;
-            }),
-          }
-          : c),
-    };
-  });
+  const id = nodeIdAt(doc, path);
+  return id ? setNodeStyle(doc, id, style) : doc;
 }
 
 /**
@@ -663,40 +796,22 @@ export function dropIndexFor(from: WidgetPath, toSectionId: string, toColumnInde
 export function moveWidgetTo(
   doc: BuilderDocument,
   from: WidgetPath,
-  to: { sectionId: string; columnIndex: number; index: number },
+  to: { sectionId: string; columnIndex: number; index: number; hostId?: string },
 ): BuilderDocument {
-  const widget = widgetAt(doc, from);
-  if (!widget) return doc;
-  const target = findSection(doc, to.sectionId);
-  if (!target || !target.columns[to.columnIndex]) return doc;
-  const at = dropIndexFor(from, to.sectionId, to.columnIndex, to.index);
-  const lifted = mapSections(doc, (s) => {
-    if (s.id !== from.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) =>
-        i === from.columnIndex ? { ...c, widgets: c.widgets.filter((_, j) => j !== from.widgetIndex) } : c),
-    };
-  });
-  return addWidget(lifted, to.sectionId, to.columnIndex, widget, at);
+  const id = nodeIdAt(doc, from);
+  if (!id) return doc;
+  // `hostId` is the box the drop line was drawn in — the canvas always knows
+  // it. Absent (an adapter moving something by hand), the target is the top of
+  // the column, which is where every such move was going before boxes existed.
+  const hostId = to.hostId ?? findSection(doc, to.sectionId)?.columns[to.columnIndex]?.id;
+  if (!hostId) return doc;
+  return moveNode(doc, id, hostId, to.index);
 }
 
 /** Move a widget up or down inside its own column. */
 export function moveWidget(doc: BuilderDocument, path: WidgetPath, delta: -1 | 1): BuilderDocument {
-  return mapSections(doc, (s) => {
-    if (s.id !== path.sectionId) return s;
-    return {
-      ...s,
-      columns: s.columns.map((c, i) => {
-        if (i !== path.columnIndex) return c;
-        const j = path.widgetIndex + delta;
-        if (path.widgetIndex < 0 || j < 0 || j >= c.widgets.length) return c;
-        const widgets = [...c.widgets];
-        [widgets[path.widgetIndex], widgets[j]] = [widgets[j], widgets[path.widgetIndex]];
-        return { ...c, widgets };
-      }),
-    };
-  });
+  const id = nodeIdAt(doc, path);
+  return id ? nudgeNode(doc, id, delta) : doc;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

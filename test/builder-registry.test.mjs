@@ -400,6 +400,7 @@ describe("the pane groups them", () => {
 
 describe("WidgetPane honours SD-010", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
+  const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
     // §11.10 (D-147): the grouping moved to widgetTasks.ts, which groups the
@@ -439,9 +440,17 @@ describe("WidgetPane honours SD-010", () => {
     assert.match(pane, /aria-label="Search widgets"/);
   });
 
-  test("a widget with a count is ASKED before it is inserted", () => {
-    assert.match(pane, /if \(w\.count\) \{/);
-    assert.match(pane, /\{w\.count\.label\}/);
-    assert.match(pane, /onInsert\(w, asking\.value\)/);
+  /* WAS "a widget with a count is ASKED before it is inserted".
+     D-156 item 4 DELETED that control: it asked, before the thing was on the
+     page, a number nobody could answer yet, and it only existed because the
+     cards inside a composite could not be added or removed afterwards. They can
+     now — a card is a widget with the same duplicate and delete as everything
+     else. The assertion is inverted rather than removed, because "the question
+     is gone" is the thing that has to stay true. */
+  test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
+    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
+      assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);
+      assert.doesNotMatch(src, /setAsking/, `${name}: still holds the question's state`);
+    }
   });
 });
