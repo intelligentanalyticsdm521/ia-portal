@@ -30,11 +30,11 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { BuilderShell } from "../../BuilderShell";
 import { Canvas } from "../../Canvas";
 import {
-  addSection, makeSection, makeWidget, patchWidget,
+  addSection, makeSection, makeWidget, patchNode,
   type BuilderDocument, type Selection, type Widget,
 } from "../../model";
 import { makeContext, type RenderContext } from "../../render";
-import { arionKindOf, type WidgetDef } from "../../registry";
+import { arionKindOf, widgetsFor, type WidgetDef } from "../../registry";
 import type { PremadeSection } from "../../templates";
 import {
   toDocument, toPayload, toDraftPayload, sectionFromServer, sectionWidget, arionKindOfSection,
@@ -46,6 +46,8 @@ import {
 } from "./siteTemplates";
 import { SiteSectionFields, SiteLockedPanel, type SiteFieldDeps } from "./SiteInspectorExtras";
 import { EMPTY_SITE_CATALOGUE, readSiteCatalogue, type SiteCatalogue } from "./siteCatalogue";
+import { EMPTY_PLAN, readSitePlan, lockFor, canAdd, pickerLock, type SitePlan } from "./sitePlan";
+import type { WidgetLock } from "../../tier";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
@@ -140,6 +142,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const [catalogue, setCatalogue] = useState<SiteCatalogue>(EMPTY_SITE_CATALOGUE);
   const [chrome, setChrome] = useState<{ businessName: string; logoUrl?: string | null; menu: Array<{ label: string }>; contactLine?: string }>({ businessName: "", menu: [] });
   const [pageEngine, setPageEngine] = useState<{ known: boolean; active: boolean | null; reason: string | null } | null>(null);
+  /* WHAT THIS BUSINESS'S PLAN CARRIES (D-157). Read off the same reply the
+   * catalogue comes in, never decided here — see sitePlan.ts. */
+  const [plan, setPlan] = useState<SitePlan>(EMPTY_PLAN);
   const [aiLocked, setAiLocked] = useState<string | null>(null);
   const [credits, setCredits] = useState<number | null>(null);
 
@@ -228,6 +233,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       setResetKey((k) => k + 1);
       setDetail(page?.data || null);
       setCatalog(lib?.data?.sections || []);
+      setPlan(readSitePlan(lib?.data));
       setPageEngine(lib?.data?.pageEngine
         ? { known: !!lib.data.pageEngine.known, active: lib.data.pageEngine.active, reason: lib.data.pageEngine.reason || null }
         : null);
@@ -321,15 +327,41 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const placePremade = useCallback((premade: { key: string }, at: number): boolean => {
     const row = sitePremade(premade.key);
     if (!row) return true;
+    // The same plan gate as the pane's own insert: a ready-made section is
+    // still a section, and the gallery is the other door into the same build.
+    const locked = lockFor(plan, row.kind);
+    if (locked) { setErr(locked.sentence); return false; }
     if (row.count) { setAsking({ key: row.key, at, value: row.count.default }); return false; }
     void addFromServer(row.kind, at);
     return false;
-  }, [addFromServer]);
+  }, [addFromServer, plan]);
 
   /* ── inserting from the pane ─────────────────────────────────────────── */
 
+  /* Which widgets this plan cannot have, by the BUILDER's name for them.
+     Derived from the one plan reply, never from a tier table here. */
+  const lockedKinds = useMemo(() => {
+    const out: Record<string, WidgetLock> = {};
+    for (const w of widgetsFor("website")) {
+      // The whole DEF, not just its kind: a widget with no section behind it
+      // has no server row, and its own `tier` is what says which gate applies.
+      const lock = pickerLock(plan, arionKindOf, w);
+      if (lock) out[w.kind] = lock;
+    }
+    return out;
+  }, [plan]);
+
   const insertWidget = useCallback((def: WidgetDef, count?: number): boolean => {
     const kind = arionKindOf(def.kind);
+    /* THE PLAN, BEFORE ANYTHING IS BUILT (D-157).
+     *
+     * The picker greys the row and says why, and this is the second end of the
+     * same guard: a keyboard shortcut, a slash command and a drag all arrive
+     * here, and only one of them goes through the picker. The server refuses
+     * the build as well — three ends, on purpose, because the one a client
+     * finds is never the one you thought of. */
+    const locked = lockFor(plan, kind);
+    if (locked) { setErr(locked.sentence); return false; }
     if (kind) {
       // A SECTION. It becomes a new section of its own, built by the server.
       void addFromServer(kind, doc.sections.length, count);
@@ -353,17 +385,50 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       })),
     });
     return false;
-  }, [addFromServer, change, doc, selection]);
+  }, [addFromServer, change, doc, plan, selection]);
 
   /* ── save, preview, publish ──────────────────────────────────────────── */
 
+  /**
+   * WHY A SAVE IS REFUSED, IN WORDS THAT ARE TRUE.
+   *
+   * A section can have no ARION node for two different reasons, and the one
+   * sentence used to cover both said "give it a moment and try again" — which
+   * is right for the first and a LOOP for the second:
+   *
+   *   · the server is still building a section the author just asked for.
+   *     Waiting really does fix it.
+   *   · the author put a box straight onto the PAGE. Nothing is building it
+   *     and nothing ever will: a website page is made of sections, and the
+   *     free parts live inside a "Words and pictures" section. Waiting is
+   *     useless, and the author cannot tell that from the old words. Found by
+   *     driving it, 2026-09-17: add a box, press Save draft, and the page can
+   *     never be saved again until the box is taken off.
+   *
+   * So the message names the second case and says what to do about it. The
+   * REAL fix is for a page-level box to become a free section of its own, and
+   * that is a server round trip rather than a sentence — written up in the
+   * handoff. Until then the refusal has to be honest.
+   */
+  const orphanMessage = useCallback((count: number) => {
+    const many = count !== 1;
+    // A section the SERVER built always comes back with a node - an archetype
+    // carries it on its one `site_*` widget, a free section on its own meta.
+    // So an orphan with no `site_*` widget was made HERE, by dropping a part
+    // straight onto the page, and no amount of waiting will give it one.
+    const loose = sectionsWithoutNodes(doc).filter((s) => !sectionWidget(s));
+    if (loose.length) {
+      return `${count} ${many ? "parts are" : "part is"} sitting straight on the page, and a page is `
+        + "made of sections. Put them inside a “Words and pictures” section, or take "
+        + "them off — nothing was saved.";
+    }
+    return `${count} section${many ? "s have" : " has"} not finished being built. `
+      + "Give it a moment and try again — nothing was saved.";
+  }, [doc]);
   const payload = useCallback(() => {
     const orphans = sectionsWithoutNodes(doc);
     if (orphans.length) {
-      throw new Error(
-        `${orphans.length} section${orphans.length === 1 ? " has" : "s have"} not finished being built. `
-        + "Give it a moment and try again — nothing was saved.",
-      );
+      throw new Error(orphanMessage(orphans.length));
     }
     return toPayload(doc);
   }, [doc]);
@@ -372,10 +437,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const draftPayload = useCallback(() => {
     const orphans = sectionsWithoutNodes(doc);
     if (orphans.length) {
-      throw new Error(
-        `${orphans.length} section${orphans.length === 1 ? " has" : "s have"} not finished being built. `
-        + "Give it a moment and try again — nothing was saved.",
-      );
+      throw new Error(orphanMessage(orphans.length));
     }
     return toDraftPayload(doc);
   }, [doc]);
@@ -678,16 +740,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         label={section?.label || kind}
         deps={deps}
         ctx={ctx}
-        onPatch={(props) => {
-          const section = doc.sections.find((s) => s.id === sectionId);
-          if (!section) return;
-          for (let c = 0; c < section.columns.length; c++) {
-            const idx = section.columns[c].widgets.findIndex((x) => x.id === w.id);
-            if (idx < 0) continue;
-            change(patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, props));
-            return;
-          }
-        }}
+        // BY NODE ID (V-2, §11.12). The column scan this replaces reached the
+        // top of a column only, so a section's fields wrote nothing at all
+        // once that section held a box — silently, with the select moving.
+        onPatch={(props) => change(patchNode(doc, w.id, props))}
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -698,13 +754,21 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const premade: PremadeSection[] = useMemo(() => SITE_PREMADE.map((p) => ({
     key: p.key,
     name: p.name,
-    description: p.description,
+    // A section this plan cannot have stays IN the gallery and says why.
+    // Hiding it would make "not on your plan" look exactly like a bug, and a
+    // business that cannot see what they would get cannot decide to buy it.
+    description: canAdd(plan, p.kind) ? p.description : lockFor(plan, p.kind)!.sentence,
+    // …and the card is GREYED as well as explained (R-D2). The words alone
+    // left a card that looked ready to place and refused after the press.
+    // THE WHOLE REFUSAL travels, not just its words, so the gallery can say
+    // WHICH of the three states this is — the same three the pane shows.
+    ...(canAdd(plan, p.kind) ? {} : { locked: lockFor(plan, p.kind)! }),
     tags: p.tags,
     // The gallery places a section by calling build(); the website adapter
     // cannot build one locally (the SERVER does), so this returns a placeholder
     // the shell never uses — onPlaceSection is intercepted below.
     build: () => makeSection({ label: p.name }),
-  })), []);
+  })), [plan]);
 
   /* ONLY a website that TOLD us it cannot draw these pages stops Save. A
    * website we could not ask is not a website with no page engine, and a falsy
@@ -802,6 +866,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         premadeTags={SITE_PREMADE_TAGS}
         onSelectionChange={setSelection}
         onInsertWidget={insertWidget}
+        /* R-D1 — the PANE and the PICKER say so before the press. `insertWidget`
+           above is the seam a shortcut, a slash command and a drag all reach,
+           and it refuses; this is the same answer, shown as a greyed row with
+           the reason as its line, so "not on your plan" never arrives looking
+           like a bug. ONE source: the plan the server sent. */
+        lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
         onAddBlank={(at) => { void addFromServer("content", at); return false; }}
         nextUp={null}

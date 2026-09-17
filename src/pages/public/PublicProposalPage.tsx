@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { deserialise, type BuilderDocument } from "../../builder/model";
-import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "../../builder/render";
+import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument, walkDocumentTree } from "../../builder/render";
 
 const OLIVER_API_BASE =
   (import.meta.env.VITE_OLIVER_API_BASE as string) ||
@@ -100,9 +100,13 @@ export function PublicProposalPage() {
   const alreadySigned = !!data?.signatures?.find((s) => s.party === "customer");
   const consent = useMemo(() => {
     // The exact words stored on the record are the exact words shown.
-    const fromDoc = doc?.sections
-      .flatMap((s) => s.columns.flatMap((c) => c.widgets))
-      .find((w) => w.kind === "signature");
+    // THE WHOLE TREE (D-156). A signature block the author dragged into a box
+    // is still the signature block, and the words the customer agrees to are
+    // the words on it — a two-level scan would have silently fallen back to
+    // the default consent for any document with one.
+    const fromDoc = doc
+      ? walkDocumentTree(doc).find((w) => w.kind === "signature")
+      : undefined;
     return String((fromDoc?.props as any)?.consent || DEFAULT_CONSENT);
   }, [doc]);
 

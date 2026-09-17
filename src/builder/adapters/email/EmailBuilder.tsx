@@ -33,7 +33,7 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { apiErrorMessage } from "../../../lib/apiErrorMessage";
 import { BuilderShell } from "../../BuilderShell";
 import {
-  addWidget, makeWidget, setPropPath, patchWidget,
+  addWidget, makeWidget, setPropPath, patchNode,
   type BuilderDocument, type Widget,
 } from "../../model";
 import { unfilledTokens } from "../../merge";
@@ -499,10 +499,9 @@ export function EmailBuilder(p: EmailBuilderProps) {
         />
       }
       documentExtras={p.documentExtras}
-      widgetExtras={(w, sectionId) => (
+      widgetExtras={(w) => (
         <WidgetExtras
           widget={w}
-          sectionId={sectionId}
           doc={doc}
           onChange={applyDoc}
           offerings={offerings}
@@ -644,28 +643,25 @@ function PaneHeader({ note, err, said, blanks, unsafe, previewName }: {
    ══════════════════════════════════════════════════════════════════════════ */
 
 function WidgetExtras({
-  widget, sectionId, doc, onChange, offerings, posts, postsError, onLoadPosts, identity,
+  widget, doc, onChange, offerings, posts, postsError, onLoadPosts, identity,
 }: {
-  widget: Widget; sectionId: string; doc: BuilderDocument;
+  widget: Widget; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[];
   posts: WebsitePost[] | null; postsError: string | null; onLoadPosts: () => Promise<void>;
   identity: EmailBusiness;
 }) {
-  const path = useMemo(() => {
-    for (const s of doc.sections) {
-      if (s.id !== sectionId) continue;
-      for (let c = 0; c < s.columns.length; c++) {
-        const i = s.columns[c].widgets.findIndex((w) => w.id === widget.id);
-        if (i >= 0) return { sectionId, columnIndex: c, widgetIndex: i };
-      }
-    }
-    return null;
-  }, [doc, sectionId, widget.id]);
-
-  const setProps = (props: Record<string, unknown>) => { if (path) onChange(patchWidget(doc, path, props)); };
+  /**
+   * BY NODE ID, WHEREVER THE WIDGET SITS (V-2, §11.12).
+   *
+   * The `path` this replaces was found by scanning the top of each column, so
+   * every control on this panel — the article picker, the product list, the
+   * button's link — did nothing at all for a widget inside a box, silently.
+   * `patchNode` is the one write and it takes the id the panel already has.
+   */
+  const setProps = (props: Record<string, unknown>) => { onChange(patchNode(doc, widget.id, props)); };
   const setAt = (dotted: string, value: unknown) => {
-    if (path) onChange(patchWidget(doc, path, setPropPath(widget.props, dotted, value)));
+    onChange(patchNode(doc, widget.id, setPropPath(widget.props, dotted, value)));
   };
 
   if (widget.kind === "article_card") {

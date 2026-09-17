@@ -17,10 +17,16 @@
  *      the server therefore could not render a proposal at all.
  */
 import {
-  deserialise, emptyDocument, makeSection, makeWidget, type BuilderDocument, type Section,
+  deserialise, emptyDocument, makeSection, makeWidget, walkWidgets,
+  type BuilderDocument, type Section, type Widget,
 } from "./model";
 import { documentTotals, type LineTotal } from "./totals";
+import { upgradeDocument } from "./upgrade";
 import { renderDocument, makeContext, type RenderContext } from "./render";
+import type { FillMode } from "./merge";
+import {
+  addressFields, freezeOnSend, priceLineFields, resolveCatalogCard,
+} from "./widgets";
 
 /* ── 1. Upgrade ──────────────────────────────────────────────────────────── */
 
@@ -114,7 +120,12 @@ export function upgradeV1(blocksJson: unknown): BuilderDocument {
         })]));
     }
   }
-  return doc;
+  // THE SAME UPGRADE AS EVERY OTHER DOOR (D-156). `deserialise` runs it for a
+  // stored document; this is the other way a proposal reaches the builder, and
+  // a v1 proposal that opened as composites while a v2 one opened as a tree
+  // would be two models on one screen. The pass is idempotent and returns the
+  // same object when there is nothing to do.
+  return upgradeDocument(doc);
 }
 
 /**
@@ -150,15 +161,17 @@ export function openProposalDocument(
  */
 export function locationsUsedBy(doc: BuilderDocument): string[] {
   const out: string[] = [];
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) {
-      for (const w of c.widgets) {
-        if (w.kind !== "property_block" && w.kind !== "property_plan") continue;
-        const id = String((w.props as any)?.locationId || "").trim().toLowerCase();
-        if (id && !out.includes(id)) out.push(id);
-      }
-    }
+  // THE WHOLE TREE (D-156). A property is a box holding an `address_block`
+  // now, and the address block is at DEPTH — a flat pass over the top of each
+  // column would have returned nothing for an upgraded proposal, which means
+  // no job opened and no address on the customer's copy. `walkWidgets` is the
+  // one walk and it reaches every level.
+  for (const { widget, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    if (widget.kind !== "property_block" && widget.kind !== "property_plan"
+      && widget.kind !== "address_block") continue;
+    const id = String((widget.props as any)?.locationId || "").trim().toLowerCase();
+    if (id && !out.includes(id)) out.push(id);
   }
   return out;
 }
@@ -187,16 +200,37 @@ export interface ProposalWire {
  */
 export function toWire(
   doc: BuilderDocument,
-  ctx: Partial<RenderContext> & { taxRate?: number; discount?: number } = {},
+  ctx: Partial<RenderContext> & {
+    taxRate?: number; discount?: number;
+    /**
+     * WHICH COPY THIS IS — `merge.fill`'s own three modes (F.2).
+     *
+     * `send` freezes every bound widget: `_ia_snapshot` is written and
+     * `refresh` becomes `snapshot_send`, so *"a price a customer was quoted
+     * must not move under them"* is a value ON the document rather than a
+     * consequence of the PDF worker happening to have no catalogue. Absent is
+     * `view`, which is every draft save, and returns the document unchanged by
+     * identity.
+     *
+     * The RENDER mode stays `view`: a proposal is finished when it is written,
+     * so its merge tags are filled here and not left for a server to resolve
+     * per recipient (which is what `send` means for an email BODY).
+     */
+    fill?: FillMode;
+  } = {},
 ): ProposalWire {
-  const totals = documentTotals(doc, { taxRate: ctx.taxRate, discount: ctx.discount });
-  const rc = makeContext(doc, { ...ctx, mode: "view", totals });
+  // THE ONE FREEZE, at the one seam. `documentTotals` and the renderer below
+  // both read the FROZEN document, so the line items, the narrative and the
+  // stored model are three views of the same copy rather than of two.
+  const sent = freezeOnSend(doc, ctx.fill ?? "view", (w) => proposalSnapshot(w, ctx));
+  const totals = documentTotals(sent, { taxRate: ctx.taxRate, discount: ctx.discount });
+  const rc = makeContext(sent, { ...ctx, mode: "view", totals });
   return {
     // v1 blocks are still written so an older reader (and the 166 lineage) sees
     // something honest. One text block per section, in order.
-    blocks: { v: 1, blocks: legacyBlocks(doc) },
-    document: doc,
-    scope_html: renderDocument(doc, rc),
+    blocks: { v: 1, blocks: legacyBlocks(sent) },
+    document: sent,
+    scope_html: renderDocument(sent, rc),
     line_items: totals.lines.map((l: LineTotal) => ({
       description: l.description,
       quantity: l.quantity,
@@ -212,27 +246,68 @@ export function toWire(
   };
 }
 
+/**
+ * WHAT A BOUND WIDGET'S FROZEN VALUES ARE, in a proposal.
+ *
+ * The catalogue and the locations are HANDED IN, as they are to every renderer
+ * on this platform — `ctx.catalogue`, `ctx.locations` — so this is pure and the
+ * test can freeze a document without a fetch. A widget the caller has no data
+ * for returns null and is left alone: freezing a card to nothing would replace
+ * a live price with a blank one on the copy the customer signs.
+ */
+function proposalSnapshot(
+  w: Widget,
+  ctx: Partial<RenderContext>,
+): Record<string, unknown> | null {
+  if (w.kind === "catalog_card") {
+    const r = resolveCatalogCard(w.props, ctx.catalogue);
+    return r.source === "live"
+      ? {
+        title: r.title, price: r.price, per: r.per, description: r.description,
+        bullets: r.bullets, amount: r.amount, cadence: r.cadence, basis: r.basis,
+      }
+      : null;
+  }
+  if (w.kind === "price_line" || w.kind === "priced_line") {
+    const f = priceLineFields(w.props);
+    if (!f.offeringId) return null;
+    return {
+      name: f.name, description: f.description, bullets: f.bullets,
+      quantity: f.quantity, unit_price: f.unitPrice, cadence: f.cadence,
+    };
+  }
+  if (w.kind === "address_block") {
+    const f = addressFields(w.props, ctx.locations);
+    return f.bound
+      ? { name: f.name, address: f.address, contact: f.contact, notes: f.notes }
+      : null;
+  }
+  // `totals` reads the DOCUMENT, not a table (F.1.3), and the document IS the
+  // copy being sent — there is nothing outside it that could move.
+  return null;
+}
+
 /** The v1 projection, for readers that predate the document model. */
 function legacyBlocks(doc: BuilderDocument): unknown[] {
   const out: unknown[] = [];
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) {
-      for (const w of c.widgets) {
-        const p: any = w.props || {};
-        if (w.kind === "priced_line") {
-          out.push({
-            kind: "service", name: p.name || "", description: p.description || "",
-            features: Array.isArray(p.features) ? p.features : [],
-            quantity: Number(p.quantity) || 1, unit_price: Number(p.unit_price) || 0,
-            recommended: !!p.recommended, offering_id: p.offering_id, price_id: p.price_id, cadence: p.cadence ?? null,
-          });
-        } else if (w.kind === "comparison_cards") {
-          out.push({ kind: "cards", heading: p.heading || "", intro: p.intro || "", items: Array.isArray(p.cards) ? p.cards : [] });
-        } else if (w.kind === "signature") {
-          out.push({ kind: "signature", heading: p.heading || "Acceptance", parties: [{ name: p.customerLabel || "" }, { name: p.businessLabel || "" }] });
-        }
-      }
+  // THE WHOLE TREE, and BOTH spellings of a priced line (D-156). An old reader
+  // is the one reader that cannot be upgraded, so the projection it reads has
+  // to follow the model wherever the model goes — including into a box, and
+  // including past the rename of `priced_line` to `price_line`.
+  for (const { widget: w, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    const p: any = w.props || {};
+    if (w.kind === "price_line" || w.kind === "priced_line") {
+      out.push({
+        kind: "service", name: p.name || "", description: p.description || "",
+        features: Array.isArray(p.features) ? p.features : Array.isArray(p.bullets) ? p.bullets : [],
+        quantity: Number(p.quantity) || 1, unit_price: Number(p.unit_price) || 0,
+        recommended: !!p.recommended, offering_id: p.offering_id, price_id: p.price_id, cadence: p.cadence ?? null,
+      });
+    } else if (w.kind === "comparison_cards") {
+      out.push({ kind: "cards", heading: p.heading || "", intro: p.intro || "", items: Array.isArray(p.cards) ? p.cards : [] });
+    } else if (w.kind === "signature") {
+      out.push({ kind: "signature", heading: p.heading || "Acceptance", parties: [{ name: p.customerLabel || "" }, { name: p.businessLabel || "" }] });
     }
   }
   // The narrative of everything else, once, so nothing vanishes for an old

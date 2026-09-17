@@ -21,8 +21,11 @@
  * Pure: no React, no fetch. The adapter supplies the brand kit and the library.
  */
 import {
-  makeSection, makeWidget, emptyDocument, type BuilderDocument, type Section, type Widget,
+  makeContainer, makeSection, makeWidget, emptyDocument,
+  type BuilderDocument, type Section, type Widget,
 } from "./model";
+import { upgradeDocument } from "./upgrade";
+import type { WidgetLock } from "./tier";
 import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "./render";
 import {
   SAMPLE_MERGE, blankEntry, type TemplateEntry, type TemplatePreview,
@@ -35,6 +38,31 @@ export interface PremadeSection {
   description: string;
   /** Gallery filter chips. */
   tags: string[];
+  /**
+   * WHY THIS CLIENT'S PLAN CANNOT HAVE IT — the sentence they read.
+   *
+   * Handoff request R-D2. Absent means it can. A locked card stays IN the
+   * gallery, greyed, with the reason as its line: hiding it would make "not on
+   * your plan" indistinguishable from a section that is missing, and greying
+   * it without the reason would make it indistinguishable from a bug. The
+   * adapter sets it — WHAT is locked is the server's answer, never a tier
+   * table in the engine (adapters/website/sitePlan.ts).
+   *
+   * A `WidgetLock` and not a bare sentence, so the gallery says WHICH of the
+   * three states this is — offered, not on this plan, or needs a product this
+   * business does not have (catalogue G.4). One bucket for two different
+   * refusals is what `reference_nav_visibility_semantics` forbids by name.
+   */
+  locked?: WidgetLock;
+  /**
+   * ONE section, always.
+   *
+   * `buildAll` lived here for the ready-made patterns that are a heading and a
+   * ROW under it — two sections, because a section had one set of columns and
+   * nothing could hold a row. Containers landed, the patterns are one section
+   * with a box in them, and it is deleted: a second way to place a section is
+   * a second way for undo to behave.
+   */
   build: () => Section;
 }
 
@@ -74,7 +102,14 @@ export interface ShippedTemplate {
 const sec = (widgets: Widget[], extra: Partial<Section> = {}) =>
   makeSection({ ...extra, columns: [{ id: `c_${Math.random().toString(36).slice(2, 8)}`, widgets }], layout: 1 });
 
-export const PREMADE_SECTIONS: PremadeSection[] = [
+/* The ready-made sections as they are WRITTEN. A handful of the older ones
+   still describe themselves with a composite widget; `PREMADE_SECTIONS` below
+   is this list with the D-156 upgrade applied, and that is what leaves this
+   module. The raw list stays because the shipped templates build on it and
+   then type words into those composites' own props — which has to happen
+   BEFORE the pass, not after it, or the words would be written onto a box that
+   no longer holds them. */
+const PREMADE_RAW: PremadeSection[] = [
   {
     key: "title_dark",
     name: "Title page — dark band",
@@ -214,36 +249,6 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     ], { numbered: true, label: "Property service plan" }),
   },
   {
-    key: "cards",
-    name: "Comparison cards",
-    description: "Two to six plans side by side, one marked Recommended. Never adds to the total.",
-    tags: ["Pricing"],
-    build: () => sec([
-      makeWidget("comparison_cards", {
-        heading: "Choose your plan",
-        intro: "",
-        cards: [
-          { name: "", pitch: "", price: "", per: "", features: ["", "", ""] },
-          { name: "", pitch: "", price: "", per: "", features: ["", "", ""], recommended: true },
-          { name: "", pitch: "", price: "", per: "", features: ["", "", ""] },
-        ],
-      }),
-    ], { label: "Choose your plan" }),
-  },
-  {
-    key: "multisite",
-    name: "Property block (multi-site)",
-    description: "One block per location with its own line items and subtotal. One total at the end.",
-    tags: ["Property", "Pricing"],
-    build: () => sec([
-      // No line items to begin with: an empty priced row on the page is a row
-      // the author cannot fill by typing (a quantity and a rate are not runs of
-      // text), and an empty row printed on a customer's document is a defect.
-      // Services come in from Products & Services in the panel.
-      makeWidget("property_block", { locationId: "", heading: "", items: [] }),
-    ], { label: "Property" }),
-  },
-  {
     key: "totals",
     name: "Totals",
     description: "Every priced line added up once — per property where there is more than one.",
@@ -267,6 +272,146 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     build: () => sec([makeWidget("footer_note", { text: "" })], { padding: 12 }),
   },
 ];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-156's ready-made sections — container trees, not composite widgets
+   ══════════════════════════════════════════════════════════════════════════
+
+   §11.12: *"The picker's Ready-made section tab and the + strip offer
+   CONTAINER TREES, not widgets"*. Each of these is the pattern a composite
+   widget used to be, built out of atomic widgets that can each be selected,
+   dragged, tagged and deleted:
+
+     Choose your plan      heading + paragraph, then a row of product cards
+     This property         heading + service address + rate card + a total
+     Agreement at a glance four key facts, two across
+
+   Nothing here is a special kind. Place one and then take a card out of it,
+   or drop a picture between two cards — which is the whole of what Brandon
+   asked for and the whole of what the composites could not do. */
+
+/** A row of things, as a BOX — the one shape a set of anything takes. */
+const rowOf = (children: Widget[]) => makeContainer({ direction: "row", gap: 16 }, children);
+
+/**
+ * ONE PROPERTY, as a box (D-156).
+ *
+ * The same four things `property_block` held, each now a widget of its own:
+ * the property's name, its address, a priced line per item, and the subtotal
+ * for it. `totals.ts` reads "which property is this line for?" off the box the
+ * address block sits in, so the money is unchanged.
+ */
+function propertyBox(
+  heading: string,
+  items: Array<{ description: string; quantity: number; unit_price: number }>,
+) {
+  return makeContainer(undefined, [
+    makeWidget("heading", { text: heading, level: 3 }),
+    makeWidget("address_block", { locationId: "", heading: "Service address" }),
+    ...items.map((it) => makeWidget("price_line", {
+      name: it.description, quantity: it.quantity, unit_price: it.unit_price,
+      description: "", bullets: [], cadence: null,
+    })),
+    makeWidget("totals", { heading: "Subtotal for this property" }),
+  ]);
+}
+
+/**
+ * *Choose your plan* — Brandon's sentence, as ONE ready-made section.
+ *
+ * "Header, drag that into this box and it's now its own section inside the
+ * box, then a text field under it with Pick One, then cards". That is a
+ * heading, a paragraph and a ROW OF CARDS in one section, which is what a
+ * container makes possible — before it, this had to be two sections and an
+ * adapter that knew to place both. Both halves of that are gone.
+ */
+export function chooseYourPlanSections(): Section[] {
+  return [
+    sec([
+      makeWidget("heading", { text: "Choose your plan", level: "Section title" }),
+      makeWidget("paragraph", { text: "Pick one. Everything below is included in the price you choose." }),
+      rowOf([
+        makeWidget("catalog_card", {}),
+        makeWidget("catalog_card", {}),
+        makeWidget("catalog_card", {}),
+      ]),
+    ], { label: "Choose your plan", padding: 24 }),
+  ];
+}
+
+/** *This property* — what `property_block` was, as four separate widgets. */
+export function propertySections(): Section[] {
+  return [
+    sec([
+      makeWidget("heading", { text: "This property", level: "Section title" }),
+      makeWidget("address_block", { heading: "Service address" }),
+      makeWidget("pricing_table", { heading: "What we charge here", rows: [] }),
+      makeWidget("totals", { heading: "This property" }),
+    ], { label: "This property", padding: 24 }),
+  ];
+}
+
+/** *Agreement at a glance* — four key facts across, each its own widget. */
+export function atAGlanceSections(): Section[] {
+  const fact = (label: string, value: string) => makeWidget("key_fact", { label, value });
+  return [
+    sec([
+      rowOf([
+        fact("Customer", "{{customer.name}}"),
+        fact("Service term", "{{contract.start_date}} – {{contract.end_date}}"),
+        fact("Property", "{{property.address}}"),
+        fact("Prepared by", "{{business.name}}"),
+      ]),
+    ], { label: "At a glance", padding: 24 }),
+  ];
+}
+
+PREMADE_RAW.push(
+  {
+    key: "choose_your_plan",
+    name: "Choose your plan",
+    description: "A heading, a line of copy and three cards loaded from your products and services.",
+    tags: ["Pricing"],
+    build: () => chooseYourPlanSections()[0],
+  },
+  {
+    key: "this_property",
+    name: "This property",
+    description: "One site: its address, what you charge there and a total for it.",
+    tags: ["Property", "Pricing"],
+    build: () => propertySections()[0],
+  },
+  {
+    key: "at_a_glance_facts",
+    name: "Agreement at a glance",
+    description: "Four short answers across the top — who, where, how long, who prepared it.",
+    tags: ["Terms"],
+    build: () => atAGlanceSections()[0],
+  },
+);
+
+/**
+ * ONE SECTION, AS A TREE (D-156, integration).
+ *
+ * A document built in memory never passes through `deserialise`, so the
+ * upgrade on the read path would never see the library — and the library would
+ * be the last place in the platform handing out lumps. The same pass runs
+ * here, so there is still exactly ONE table saying what a composite becomes.
+ */
+function asTree(p: PremadeSection): PremadeSection {
+  return {
+    ...p,
+    build: () => upgradeDocument({ ...emptyDocument(), sections: [p.build()] }).sections[0],
+  };
+}
+
+/** Every ready-made section the gallery offers, each one a tree. */
+export const PREMADE_SECTIONS: PremadeSection[] = PREMADE_RAW.map(asTree);
+
+/** The raw one, for the shipped templates that type into a composite's props. */
+function rawPremade(key: string): PremadeSection | undefined {
+  return PREMADE_RAW.find((p) => p.key === key);
+}
 
 export function premadeByKey(key: string): PremadeSection | undefined {
   return PREMADE_SECTIONS.find((p) => p.key === key);
@@ -299,9 +444,26 @@ export const PREMADE_TAGS = ["All", "Title pages", "Terms", "Pricing", "Acceptan
    Shipped templates — never a blank page
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * A SET OF PLANS, as a section: a heading, a line of copy and a row of cards.
+ *
+ * Written as the composite and run through the ONE conversion in `upgrade.ts`,
+ * rather than assembled by hand here. A second place that knew a plan's `name`
+ * becomes a card's `title` is a second place for it to be wrong.
+ */
+function plansSection(
+  heading: string,
+  intro: string,
+  cards: Array<Record<string, unknown>>,
+  extra: Partial<Section> = {},
+): Section {
+  const built = sec([makeWidget("comparison_cards", { heading, intro, cards })], extra);
+  return upgradeDocument({ ...emptyDocument(), sections: [built] }).sections[0];
+}
+
 function fromKeys(keys: string[], settings: Partial<BuilderDocument["settings"]> = {}): BuilderDocument {
   const doc = emptyDocument(settings);
-  doc.sections = keys.map((k) => premadeByKey(k)!.build()).filter(Boolean);
+  doc.sections = keys.map((k) => rawPremade(k)!.build()).filter(Boolean);
   return doc;
 }
 
@@ -320,7 +482,12 @@ const AGREEMENT_CLAUSE_SLOTS: Record<string, string[]> = {
   "General terms": ["service_timing", "reasonable_care", "damage_existing", "weather_limitations", "changes_to_scope", "term_cancellation", "entire_agreement"],
 };
 
-export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
+/* As WRITTEN — a few of these still describe a page with a composite widget.
+   `SHIPPED_TEMPLATES` below is this list with the D-156 upgrade applied, which
+   is what a caller gets; the raw one exists because a template types words
+   into a composite's own props while it builds, and that has to happen before
+   the pass rather than after it. */
+const SHIPPED_RAW: ShippedTemplate[] = [
   {
     key: "service_agreement",
     name: "Seasonal service agreement",
@@ -335,23 +502,23 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
       const doc = fromKeys(["title_dark", "at_a_glance"]);
       for (const [label, keys] of Object.entries(AGREEMENT_CLAUSE_SLOTS)) {
         if (label === "Billing & payment") continue; // placed below, in order
-        const s = premadeByKey("terms")!.build();
+        const s = rawPremade("terms")!.build();
         s.label = label;
         (s.columns[0].widgets[0].props as any).libraryKeys = keys;
         doc.sections.push(s);
         if (label === "Severe weather & special conditions") {
-          doc.sections.push(premadeByKey("pricing")!.build());
+          doc.sections.push(rawPremade("pricing")!.build());
         }
       }
-      const billing = premadeByKey("billing")!.build();
+      const billing = rawPremade("billing")!.build();
       (billing.columns[0].widgets[0].props as any).libraryKeys = AGREEMENT_CLAUSE_SLOTS["Billing & payment"];
       // "General terms" was appended by the loop; billing belongs before it.
       doc.sections.splice(doc.sections.length - 1, 0, billing);
-      doc.sections.push(premadeByKey("acceptance")!.build());
-      const plan = premadeByKey("property_plan")!.build();
+      doc.sections.push(rawPremade("acceptance")!.build());
+      const plan = rawPremade("property_plan")!.build();
       plan.pageBreakBefore = true;
       doc.sections.push(plan);
-      doc.sections.push(premadeByKey("footer_notes")!.build());
+      doc.sections.push(rawPremade("footer_notes")!.build());
       return doc;
     },
   },
@@ -373,11 +540,10 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
         }),
       ], { numbered: true, label: "Your recommended path" });
       doc.sections.push(path);
-      const cards = premadeByKey("cards")!.build();
-      (cards.columns[0].widgets[0].props as any) = {
-        heading: "Choose your plan",
-        intro: "Pick one. The total below counts only the plan you choose.",
-        cards: [
+      const cards = plansSection(
+        "Choose your plan",
+        "Pick one. The total below counts only the plan you choose.",
+        [
           {
             name: "Essentials", pitch: "Everything you need to get going", price: "$249.00", per: "per month",
             features: ["One workspace, up to five people", "Email support, next business day", "Monthly summary of what happened"],
@@ -392,11 +558,12 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
             features: ["Everything in Growth", "Unlimited people", "A named contact who knows your account", "We do the setup and the changes for you"],
           },
         ],
-      };
+        { label: "Choose your plan" },
+      );
       doc.sections.push(cards);
-      doc.sections.push(premadeByKey("totals")!.build());
-      doc.sections.push(premadeByKey("acceptance")!.build());
-      doc.sections.push(premadeByKey("footer_notes")!.build());
+      doc.sections.push(rawPremade("totals")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
+      doc.sections.push(rawPremade("footer_notes")!.build());
       return doc;
     },
   },
@@ -418,8 +585,8 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
       doc.sections.push(sec([
         makeWidget("priced_line", { name: "", description: "", features: [], quantity: 1, unit_price: 0 }),
       ], { numbered: true, label: "What it costs" }));
-      doc.sections.push(premadeByKey("totals")!.build());
-      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(rawPremade("totals")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
       return doc;
     },
   },
@@ -490,7 +657,7 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           quantity: 1, unit_price: 6400,
         }),
       ], { numbered: true, label: "What it costs" }));
-      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(rawPremade("totals")!.build());
       doc.sections.push(sec([
         makeWidget("callout", {
           heading: "",
@@ -500,8 +667,8 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           ],
         }),
       ], { label: "Payment and weather" }));
-      doc.sections.push(premadeByKey("acceptance")!.build());
-      doc.sections.push(premadeByKey("footer_notes")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
+      doc.sections.push(rawPremade("footer_notes")!.build());
       return doc;
     },
   },
@@ -566,8 +733,8 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           quantity: 8, unit_price: 1600,
         }),
       ], { numbered: true, label: "Fees" }));
-      doc.sections.push(premadeByKey("totals")!.build());
-      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(rawPremade("totals")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
       return doc;
     },
   },
@@ -630,7 +797,7 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           cadence: "per year",
         }),
       ], { numbered: true, label: "What it costs" }));
-      doc.sections.push(premadeByKey("totals")!.build());
+      doc.sections.push(rawPremade("totals")!.build());
       doc.sections.push(sec([
         makeWidget("callout", {
           heading: "",
@@ -640,7 +807,7 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           ],
         }),
       ], { label: "The small print" }));
-      doc.sections.push(premadeByKey("acceptance")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
       return doc;
     },
   },
@@ -675,25 +842,20 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           ],
         }),
       ], { numbered: true, label: "Scope of work" }));
-      const siteA = premadeByKey("multisite")!.build();
-      (siteA.columns[0].widgets[0].props as any) = {
-        locationId: "", heading: "Site 1 — Main building",
-        items: [
-          { description: "Scheduled service visit", quantity: 24, unit_price: 185 },
-          { description: "Entrances, walkways and steps", quantity: 24, unit_price: 65 },
-        ],
-      };
-      doc.sections.push(siteA);
-      const siteB = premadeByKey("multisite")!.build();
-      (siteB.columns[0].widgets[0].props as any) = {
-        locationId: "", heading: "Site 2 — Car park and service yard",
-        items: [
-          { description: "Scheduled service visit", quantity: 24, unit_price: 240 },
-          { description: "Materials applied as needed", quantity: 12, unit_price: 110 },
-        ],
-      };
-      doc.sections.push(siteB);
-      doc.sections.push(premadeByKey("totals")!.build());
+      // A PROPERTY IS A BOX (D-156): its heading, its address, its priced
+      // lines and its own subtotal, each of them a widget the author can move
+      // or delete. It was one `property_block` composite with all four locked
+      // inside it, and `totals.ts` reads the property off the box the address
+      // is in, so the per-site subtotals are the same numbers they were.
+      doc.sections.push(sec([propertyBox("Site 1 — Main building", [
+        { description: "Scheduled service visit", quantity: 24, unit_price: 185 },
+        { description: "Entrances, walkways and steps", quantity: 24, unit_price: 65 },
+      ])], { label: "Site 1" }));
+      doc.sections.push(sec([propertyBox("Site 2 — Car park and service yard", [
+        { description: "Scheduled service visit", quantity: 24, unit_price: 240 },
+        { description: "Materials applied as needed", quantity: 12, unit_price: 110 },
+      ])], { label: "Site 2" }));
+      doc.sections.push(rawPremade("totals")!.build());
       doc.sections.push(sec([
         makeWidget("clauses", {
           heading: "Terms",
@@ -705,8 +867,8 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           ],
         }),
       ], { numbered: true, label: "Terms" }));
-      doc.sections.push(premadeByKey("acceptance")!.build());
-      doc.sections.push(premadeByKey("footer_notes")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
+      doc.sections.push(rawPremade("footer_notes")!.build());
       return doc;
     },
   },
@@ -740,11 +902,10 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           ],
         }),
       ], { numbered: true, label: "Why we are writing" }));
-      const levels = premadeByKey("cards")!.build();
-      (levels.columns[0].widgets[0].props as any) = {
-        heading: "How you could help",
-        intro: "Choose the level that suits you. Every one of them is acknowledged, and none of them commits you beyond the year.",
-        cards: [
+      const levels = plansSection(
+        "How you could help",
+        "Choose the level that suits you. Every one of them is acknowledged, and none of them commits you beyond the year.",
+        [
           {
             name: "Supporter", pitch: "Keeps the lights on", price: "$500", per: "for the year",
             features: ["Your name on our supporters page", "A thank you in our annual report", "An invitation to the summer open day"],
@@ -759,7 +920,8 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
             features: ["Everything in Partner", "Named on the programme for the full year", "A team volunteering day arranged for you", "A visit and a photograph for your own channels"],
           },
         ],
-      };
+        { label: "How you could help" },
+      );
       doc.sections.push(levels);
       doc.sections.push(sec([
         makeWidget("heading", { text: "What your support pays for", level: 2 }),
@@ -776,12 +938,18 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
           text: "If none of these is quite right, say so and we will find something that is. A partnership that works for you is worth far more to us than a number on a page.",
         }),
       ], { label: "One more thing", padding: 16 }));
-      doc.sections.push(premadeByKey("acceptance")!.build());
-      doc.sections.push(premadeByKey("footer_notes")!.build());
+      doc.sections.push(rawPremade("acceptance")!.build());
+      doc.sections.push(rawPremade("footer_notes")!.build());
       return doc;
     },
   },
 ];
+
+/** Every shipped template, each one a tree (D-156). See `asTree`. */
+export const SHIPPED_TEMPLATES: ShippedTemplate[] = SHIPPED_RAW.map((t) => ({
+  ...t,
+  build: () => upgradeDocument(t.build()),
+}));
 
 export function templateByKey(key: string): ShippedTemplate | undefined {
   return SHIPPED_TEMPLATES.find((t) => t.key === key);

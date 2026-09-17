@@ -14,7 +14,8 @@
  * rule lives here with a test on it.
  */
 import { isRequired } from "./model";
-import type { BuilderDocument, Section, Widget, WidgetPath } from "./model";
+import type { BuilderDocument, Node, Section, Widget, WidgetPath } from "./model";
+import { directionOf, holdsLocked, isContainer, walkNodes } from "./treeOps";
 import { WIDGETS_BY_KIND } from "./registry";
 
 export type OutlineRow =
@@ -27,6 +28,8 @@ export type OutlineRow =
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
     /** A section holding a part the law puts there cannot be moved out or removed. */
     required: boolean;
+    /** Its first column's id — where a drop on the section header lands. */
+    hostId: string;
   }
   | {
     kind: "widget";
@@ -37,10 +40,36 @@ export type OutlineRow =
     locked: boolean;
     /** Locked by the LAW rather than by the author — it cannot be unlocked. */
     required: boolean;
+    /**
+     * HOW FAR IN IT SITS (§11.12): 0 at the top of a column, 1 inside a box,
+     * 2 inside a box in a box. The component indents by this and nothing else,
+     * so the outline shows the nesting the page actually has rather than a flat
+     * list that lies about it.
+     */
+    depth: number;
+    /** True when this row IS a box. Its children are the rows under it. */
+    container: boolean;
+    /** A box says which way it runs, because that is what it is FOR. */
+    direction?: "row" | "column" | "grid";
+    /** The box or column it lives in — what a drag in the outline drops into. */
+    parentId: string;
   };
 
-/** The words a row shows. Never the kind alone — see the header. */
-export function rowLabel(w: Widget): string {
+/**
+ * The words a row shows. Never the kind alone — see the header.
+ *
+ * A BOX is named for what it does and what is in it: "Row · 3 things", "Box ·
+ * empty". There is no registry entry for a container and there should not be
+ * one — it is the engine's own node, the same in every builder — so its name is
+ * arithmetic over the tree, which is why it lives here with a test on it.
+ */
+export function rowLabel(w: Node): string {
+  if (isContainer(w)) {
+    const dir = directionOf(w);
+    const name = dir === "row" ? "Row" : dir === "grid" ? "Grid" : "Box";
+    const n = w.children.length;
+    return `${name} · ${n === 0 ? "empty" : n === 1 ? "1 thing" : `${n} things`}`;
+  }
   const def = WIDGETS_BY_KIND[w.kind];
   const name = def?.label || w.kind;
   const words = firstWords(w.props);
@@ -95,20 +124,51 @@ export function hiddenOf(
   return { desktop: base, tablet: base || !!style?.tablet?.hidden, phone: base || !!style?.phone?.hidden };
 }
 
-/** Does this section hold a part the author may not remove? */
+/** Does this section hold a part the author may not remove, at ANY depth? */
 export function sectionRequired(s: Section): boolean {
-  return s.columns.some((c) => c.widgets.some((w) => w.locked));
+  return s.columns.some((c) => c.widgets.some(holdsLocked));
 }
 
 /**
- * The whole outline, in reading order: each section followed by its widgets.
+ * THE WHOLE OUTLINE, in reading order: each section, then everything under it.
  *
- * Flat rather than nested, because the component draws a list and a nested
- * structure would only be flattened again at the point of drawing — and a
- * flat list is what a drag reorders.
+ * A FLAT LIST OF ROWS THAT EACH KNOW THEIR DEPTH, rather than a nested
+ * structure. The component draws a list and a drag reorders a list, so a tree
+ * of arrays would only be flattened again at the point of drawing and the
+ * indentation would have to be recomputed from the nesting twice. `depth` is
+ * the nesting, carried on the row, and the component indents by it.
+ *
+ * Every row carries `parentId`, which is what an outline drag needs: dropping
+ * between two rows means "into that box, at that index", and the box is the
+ * parent of the row you dropped onto.
  */
 export function outline(doc: BuilderDocument): OutlineRow[] {
   const rows: OutlineRow[] = [];
+  const bySection = new Map<string, OutlineRow[]>();
+  walkNodes(doc, (hit) => {
+    const list = bySection.get(hit.sectionId) || [];
+    const box = isContainer(hit.node);
+    list.push({
+      kind: "widget",
+      id: hit.node.id,
+      label: rowLabel(hit.node),
+      path: {
+        sectionId: hit.sectionId,
+        columnIndex: hit.columnIndex,
+        widgetIndex: hit.index,
+        id: hit.node.id,
+      },
+      hiddenOn: hiddenOf(hit.node.style),
+      locked: !!(hit.node as Widget).locked,
+      required: isRequired(hit.node as Widget),
+      depth: hit.depth,
+      container: box,
+      ...(box ? { direction: directionOf(hit.node) } : {}),
+      parentId: hit.parentId,
+    });
+    bySection.set(hit.sectionId, list);
+  });
+
   doc.sections.forEach((s, index) => {
     rows.push({
       kind: "section",
@@ -117,20 +177,9 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
       index,
       hiddenOn: hiddenOf(s.style),
       required: sectionRequired(s),
+      hostId: s.columns[0]?.id || s.id,
     });
-    s.columns.forEach((col, columnIndex) => {
-      col.widgets.forEach((w, widgetIndex) => {
-        rows.push({
-          kind: "widget",
-          id: w.id,
-          label: rowLabel(w),
-          path: { sectionId: s.id, columnIndex, widgetIndex },
-          hiddenOn: hiddenOf(w.style),
-          locked: !!w.locked,
-          required: isRequired(w),
-        });
-      });
-    });
+    rows.push(...(bySection.get(s.id) || []));
   });
   return rows;
 }
@@ -148,6 +197,29 @@ export function sectionRows(doc: BuilderDocument): Extract<OutlineRow, { kind: "
  * the point of drawing is how a list ends up reordering to somewhere nobody
  * pointed at.
  */
+/**
+ * WHERE A DRAG IN THE OUTLINE WOULD PUT SOMETHING (§11.12).
+ *
+ * The line is drawn on TOP of the row under the pointer, so the answer is
+ * "immediately before that row, among ITS OWN siblings" — which is what lets an
+ * outline drag move a card out of a row and into the box above it, a level the
+ * canvas drag can reach and the old outline could not.
+ *
+ * A section header means "the very top of that section", because there is no
+ * row above its first child to aim at.
+ */
+export interface OutlineDrop {
+  hostId: string;
+  index: number;
+}
+
+export function dropTargetFor(rows: OutlineRow[], overRowIndex: number): OutlineDrop | null {
+  const row = rows[Math.max(0, Math.min(overRowIndex, rows.length - 1))];
+  if (!row) return null;
+  if (row.kind === "section") return { hostId: row.hostId, index: 0 };
+  return { hostId: row.parentId, index: row.path.widgetIndex };
+}
+
 export function sectionDropIndex(rows: OutlineRow[], overRowIndex: number): number {
   let sections = -1;
   for (let i = 0; i <= Math.min(overRowIndex, rows.length - 1); i++) {

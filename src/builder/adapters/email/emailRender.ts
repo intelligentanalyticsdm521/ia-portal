@@ -48,6 +48,21 @@
  */
 import type { BuilderDocument, Section, Widget } from "../../model";
 import { fill, type FillMode, type MergeContext } from "../../merge";
+// THE TREE, read in ONE place (D-156): render.ts owns what a container is,
+// what its layout keys mean and how deep it may go. A mailbox draws it with
+// tables instead of flexbox, which is a difference in PAINT, never in model.
+import {
+  MAX_CONTAINER_DEPTH, childrenOf, containerFlow, containerLayout, isContainer,
+  type LocationLite,
+} from "../../render";
+// ONE catalogue and ONE resolver: the widget's own (stream B), never a second
+// lite shape that resolves a price its own way.
+import {
+  cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
+  snapshotToCardProps, tagOf,
+} from "../../widgets";
+import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
+import { money, type DocumentTotals } from "../../totals";
 import {
   emailColumnWidths, emailStyleDeclarations, hasStyle, resolveStyle, sidesToCss, typographyDeclarations,
 } from "../../style";
@@ -208,6 +223,20 @@ export interface EmailRenderContext {
    * wrong words.
    */
   typeCss?: string;
+  /**
+   * HOW WIDE THE THING BEING DRAWN MAY GET, in px.
+   *
+   * A mailbox has no percentages that survive Outlook, so every column in the
+   * fluid-hybrid row carries its own `max-width` in pixels — which means a box
+   * inside a box has to know what is left of the 552. The section sets it and
+   * each container narrows it for its children; absent, CONTENT_WIDTH, which
+   * is what every widget assumed before boxes existed.
+   */
+  width?: number;
+  /** D-156's three sources, handed in. See the landing adapter for the why. */
+  catalogue?: CatalogOffering[];
+  locations?: Record<string, LocationLite>;
+  totals?: DocumentTotals;
 }
 
 export function makeEmailContext(
@@ -226,6 +255,9 @@ export function makeEmailContext(
     business: partial.business ?? { name: "" },
     unsubscribeUrl: partial.unsubscribeUrl || "{{unsubscribe_url}}",
     preferencesUrl: partial.preferencesUrl,
+    ...(partial.catalogue ? { catalogue: partial.catalogue } : {}),
+    ...(partial.locations ? { locations: partial.locations } : {}),
+    ...(partial.totals ? { totals: partial.totals } : {}),
   };
 }
 
@@ -301,6 +333,11 @@ export const EMAIL_RENDERED_KINDS = [
   "heading", "paragraph", "personal_note", "list", "image", "button",
   "divider", "spacer", "article_card", "product_card", "social_links",
   "email_footer", "countdown", "testimonial",
+  // D-156 — the box and the atomic widgets reach the mailbox too.
+  // `catalog_card` draws through the same `emCard` as a typed card (see the
+  // switch): it was DRAWN and missing from this list, which is the list the
+  // suite checks the pane against — so widening the pane found it.
+  "container", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals",
 ] as const;
 
 /** Deliberately not drawn: `columns` is the SECTION's column count. */
@@ -314,13 +351,19 @@ const ALIGN = (v: unknown, dflt = "left"): string => {
   return dflt;
 };
 
-export function renderEmailWidget(w: Widget, outer: EmailRenderContext): string {
+export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 0): string {
   const p: any = w.props || {};
   // The author's own type, carried to the widget's element (see `typeCss`).
   const type = hasStyle(w.style) ? typographyDeclarations(resolveStyle(w.style, "desktop").typography) : [];
   const c: EmailRenderContext = type.length ? { ...outer, typeCss: `${type.join(";")};` } : outer;
   const body = (() => {
     switch (w.kind) {
+      case "container": return emBox(w, c, depth);
+      case "card": return emCard(emCardFields(p, c), c, emWidth(c));
+      case "price_line": case "priced_line": return emPriceLine(p, c);
+      case "address_block": return emAddress(p, c);
+      case "key_fact": return emKeyFact(p, c);
+      case "totals": return emTotals(p, c);
       case "heading": return emHeading(p, c);
       case "paragraph": return paras(p.text, c, "text", `font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};text-align:${ALIGN(p.align)};`);
       case "personal_note": return emPersonalNote(p, c);
@@ -330,7 +373,16 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext): string 
       case "divider": return emDivider(p, c);
       case "spacer": return `<div style="height:${Math.max(1, Number(p.height) || 24)}px;line-height:${Math.max(1, Number(p.height) || 24)}px;font-size:1px;">&nbsp;</div>`;
       case "article_card": return emArticles(p, c);
+      // THE COLLISION IS GONE, BY NAMING (integration, 2026-09-17).
+      //
+      // `product_card` is the NEWSLETTER's composite — a LIST of things to
+      // show off (`props.items`) — and it keeps its name because it is on disk
+      // in stored email documents and nothing upgrades those. D-156's card
+      // bound to ONE catalogue line is `catalog_card`, which is the name the
+      // registry, the upgrade, the PDF and the website emitter all use. Two
+      // cases, two kinds, no branch on which fields happen to be present.
       case "product_card": return emProducts(p, c);
+      case "catalog_card": return emCard(emCatalogCard(p, c), c, emWidth(c));
       case "social_links": return emSocial(p, c, ALIGN(p.align, "center"));
       case "email_footer": return emFooter(p, c);
       case "countdown": return emCountdown(p, c);
@@ -361,6 +413,233 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext): string 
     : body;
   if (c.mode !== "edit") return styled;
   return `<div data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}"${w.locked ? ` data-locked="1"` : ""}>${styled}</div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-156 — the box and the atomic widgets, in a mailbox
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** What is left of the 552, for the box being drawn. */
+function emWidth(c: EmailRenderContext): number {
+  const w = Number(c.width);
+  return Number.isFinite(w) && w > 0 ? Math.floor(w) : CONTENT_WIDTH;
+}
+
+/**
+ * A BOX, as nested tables.
+ *
+ * A column box is a stack, which in a mailbox is simply the children one after
+ * another inside one cell — the gap delivered as a bottom padding per child,
+ * because a `gap` is a flexbox word and Outlook renders through Word.
+ *
+ * A row box is `fluidRow`, the ONE mechanism §13.1 already uses for a
+ * multi-column section: inline-block divs with their own `max-width` in px, a
+ * font-size:0 wrapper so the whitespace between them is not a gap, and an mso
+ * ghost table for Outlook. It stacks by WRAPPING at any width, so a box three
+ * deep needs no query and there is no breakpoint to get wrong. A grid box is
+ * the same row, taken `columns` at a time.
+ */
+function emBox(w: Widget, c: EmailRenderContext, depth: number): string {
+  if (depth >= MAX_CONTAINER_DEPTH) return "";
+  const layout = containerLayout(w);
+  const kids = childrenOf(w);
+  if (!kids.length) return "";
+  const p: any = w.props || {};
+  const bg = p.background_color ? colour(p.background_color, "") : "";
+  // A mailbox has one gap between two things, not a row gap and a column gap:
+  // a stack is spaced by the ROW gap and a row by the COLUMN gap, which is
+  // what each of those numbers means.
+  const flow = containerFlow(layout);
+  const gap = flow === "column" ? layout.gap.row : layout.gap.column;
+  const outer = emWidth(c);
+
+  let body: string;
+  if (flow === "column") {
+    const inner: EmailRenderContext = { ...c, width: outer };
+    body = kids.map((k, i) => {
+      const html = renderEmailWidget(k, inner, depth + 1);
+      if (!html) return "";
+      const pad = i < kids.length - 1 ? ` style="padding-bottom:${gap}px;"` : "";
+      return `<tr><td valign="top"${pad}>${html}</td></tr>`;
+    }).join("");
+    body = `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${body}</table>`;
+  } else {
+    const per = flow === "grid" ? layout.columns : kids.length;
+    const rows: string[] = [];
+    for (let start = 0; start < kids.length; start += per) {
+      const slice = kids.slice(start, start + per);
+      // The gutter is delivered INSIDE each column (fluidRow's own rule), so
+      // the width a child may use is the share minus what the gutter eats.
+      const max = Math.max(60, Math.floor(outer / slice.length));
+      const inner: EmailRenderContext = { ...c, width: Math.max(40, max - gap) };
+      rows.push(fluidRow(
+        slice.map((k) => ({ max, html: renderEmailWidget(k, inner, depth + 1) })),
+        { gutter: gap, margin: start + per < kids.length ? `margin:0 0 ${gap}px 0;` : "" },
+      ));
+    }
+    body = rows.join("");
+  }
+  if (!bg) return body;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:${bg};"><tr><td>${body}</td></tr></table>`;
+}
+
+interface EmCard {
+  title: unknown; price: unknown; per: unknown; was: unknown;
+  description: unknown; bullets: unknown[]; note: unknown;
+  recommended: boolean; tag: string; tagColour: string;
+  cta?: { label: string; url: string } | null;
+}
+
+/**
+ * One card's words — through the WIDGET's OWN reader (`widgets/card.ts`).
+ *
+ * It used to be a second copy of `cardFields`: the same picks, in the same
+ * order, over its own copy of the list of spellings. Two readers is two
+ * chances to show a blank card in a mailbox, and it was the copy that would
+ * have been forgotten when the card's field names changed. What is left here
+ * is the three things a MAILBOX needs and a page does not — the ribbon as a
+ * plain string, the "recommended" flag the table layout reads, and the CTA as
+ * an object — decorated on top of the one set of words.
+ *
+ * `tagOf` is likewise the widget's own ribbon reader: a tag object, a plain
+ * string, the composite's `badge`, or `show_ribbon` + `ribbon_title`.
+ */
+function emCardFields(p: any, c: EmailRenderContext): EmCard {
+  const f = cardFields(p);
+  const ribbon = tagOf(p);
+  const tag = ribbon?.text ?? "";
+  const glyph = currencyGlyph(p);
+  const price = glyph ? `${glyph}${priceWithoutSymbol(f.price, glyph)}` : f.price;
+  const label = f.button_text;
+  const url = f.link;
+  return {
+    title: f.heading,
+    price,
+    per: f.period,
+    was: f.sale ? f.original_price : "",
+    description: f.description,
+    bullets: f.features_list,
+    note: f.footer_additional_info,
+    recommended: !!tag,
+    tag,
+    tagColour: colour(ribbon?.colour, c.accent),
+    cta: label || url ? { label: String(label || "Choose this"), url: String(url || "#") } : null,
+  };
+}
+
+/**
+ * A catalogue card's words, resolved by the ONE resolver (integration).
+ *
+ * `resolveCatalogCard` is the widget's own — override, then the live catalogue
+ * the caller handed in, then the snapshot stored on the widget — so a card in
+ * a mailbox says exactly what the same card says on the canvas and on paper.
+ * A second resolution order here is how three surfaces come to disagree about
+ * a price.
+ */
+function emCatalogCard(p: any, c: EmailRenderContext): EmCard {
+  const r = resolveCatalogCard(p, c.catalogue);
+  // `snapshotToCardProps` is the ONE map from a catalogue snapshot to a card's
+  // own field names, so a card in a mailbox is spelled exactly as a card on the
+  // canvas is and `cardFields` reads it without a second vocabulary.
+  return emCardFields({ ...p, ...snapshotToCardProps(r) }, c);
+}
+
+/**
+ * A card, in what a mailbox understands.
+ *
+ * The TAG is a table cell with a background, not a floated pill: a mailbox has
+ * no `position:absolute` (it is in FORBIDDEN_CSS), so the pill sits on the
+ * card's first row instead of over its edge. Same words, same colour, a layout
+ * every client can draw.
+ */
+function emCard(f: EmCard, c: EmailRenderContext, max: number): string {
+  const border = f.recommended ? `2px solid ${f.tagColour}` : "1px solid #E5E7EB";
+  const bullets = f.bullets.filter((b) => String(b ?? "").trim());
+  const rows: string[] = [];
+  if (f.tag) {
+    rows.push(`<tr><td style="padding:0 0 8px 0;"><span style="display:inline-block;background:${f.tagColour};color:${contrastInk(f.tagColour)};font-family:${bodyStack(c)};font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 10px;">${esc(f.tag)}</span></td></tr>`);
+  }
+  rows.push(`<tr><td style="font-family:${headStack(c)};font-size:16px;font-weight:700;color:${c.ink};padding:0 0 4px 0;"${edit("title", c, "What it is called")}>${t(f.title, c)}</td></tr>`);
+  const price = [
+    f.price ? `<span style="font-family:${headStack(c)};font-size:20px;font-weight:700;color:${c.ink};">${t(f.price, c)}</span>` : "",
+    f.per ? `<span style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;">&nbsp;${t(f.per, c)}</span>` : "",
+    f.was ? `<span style="font-family:${bodyStack(c)};font-size:12px;color:#9CA3AF;text-decoration:line-through;">&nbsp;${t(f.was, c)}</span>` : "",
+  ].join("");
+  if (price) rows.push(`<tr><td style="padding:0 0 6px 0;">${price}</td></tr>`);
+  if (f.description) rows.push(`<tr><td style="font-family:${bodyStack(c)};font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;"${edit("description", c)}>${t(f.description, c)}</td></tr>`);
+  if (bullets.length) {
+    rows.push(`<tr><td style="padding:0 0 8px 0;"><ul style="margin:0;padding-left:18px;font-family:${bodyStack(c)};font-size:13px;line-height:1.6;color:${c.ink};">${
+      bullets.map((b) => `<li>${t(b, c)}</li>`).join("")}</ul></td></tr>`);
+  }
+  if (f.note) rows.push(`<tr><td style="font-family:${bodyStack(c)};font-size:11px;color:#6B7280;padding:0 0 4px 0;">${t(f.note, c)}</td></tr>`);
+  if (f.cta) {
+    rows.push(`<tr><td style="padding:6px 0 0 0;"><a href="${esc(f.cta.url)}" style="display:inline-block;background:${c.accent};color:${contrastInk(c.accent)};font-family:${bodyStack(c)};font-size:13px;font-weight:600;text-decoration:none;border-radius:6px;padding:9px 16px;">${esc(f.cta.label)}</a></td></tr>`);
+  }
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:${Math.max(60, max)}px;border:${border};border-radius:8px;background:${c.paper};"><tr><td style="padding:14px;">`
+    + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${rows.join("")}</table>`
+    + `</td></tr></table>`;
+}
+
+/** A named line with a figure. `priced_line` is the same widget, older name. */
+function emPriceLine(p: any, c: EmailRenderContext): string {
+  const qty = Number(p?.quantity) || 1;
+  const unit = Number(p?.unit_price) || 0;
+  const amount = money(qty * unit) + (p?.cadence ? ` ${String(p.cadence)}` : "");
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 8px 0;"><tr>`
+    + `<td valign="top" style="font-family:${bodyStack(c)};font-size:14px;font-weight:700;color:${c.ink};"${edit("name", c, "What it is")}>${t(p?.name, c)}</td>`
+    + `<td valign="top" align="right" style="font-family:${bodyStack(c)};font-size:14px;font-weight:700;color:${c.ink};white-space:nowrap;">${esc(amount)}</td>`
+    + `</tr>${p?.description ? `<tr><td colspan="2" style="font-family:${bodyStack(c)};font-size:13px;line-height:1.55;color:#374151;padding-top:2px;"${edit("description", c)}>${t(p.description, c)}</td></tr>` : ""}</table>`;
+}
+
+function emKeyFact(p: any, c: EmailRenderContext): string {
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-bottom:1px solid #E5E7EB;"><tr>`
+    + `<td style="font-family:${bodyStack(c)};font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;color:#6B7280;padding:6px 0;"${edit("label", c, "Label")}>${t(p?.label, c)}</td>`
+    + `<td align="right" style="font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.ink};padding:6px 0;"${edit("value", c, "Value")}>${t(p?.value, c)}</td>`
+    + `</tr></table>`;
+}
+
+function emAddressLine(loc: LocationLite | undefined): string {
+  if (!loc) return "";
+  const l1 = loc.address_line1 ?? loc.address_line_1;
+  const l2 = loc.address_line2 ?? loc.address_line_2;
+  return [l1, l2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
+    .filter((x) => String(x ?? "").trim()).join(" \u00b7 ");
+}
+
+function emAddress(p: any, c: EmailRenderContext): string {
+  const loc = c.locations?.[String(p?.locationId || "")];
+  const bound = !!loc;
+  const name = loc?.name || p?.name;
+  const line = emAddressLine(loc) || String(p?.address ?? "");
+  const contact = loc?.site_contact ?? p?.contact;
+  const access = loc?.access_notes ?? p?.access;
+  if (!name && !line && !contact && !access) return "";
+  const meta = (label: string, value: unknown) => value
+    ? `<div style="font-family:${bodyStack(c)};font-size:11px;color:#6B7280;margin-top:3px;"><span style="text-transform:uppercase;letter-spacing:.06em;font-weight:700;">${esc(label)}</span> ${t(value, c)}</div>` : "";
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr>`
+    + `<td style="border-left:3px solid ${c.accent};padding:0 0 0 10px;">`
+    + `<div style="font-family:${headStack(c)};font-size:14px;font-weight:700;color:${c.ink};"${bound ? "" : edit("name", c, "Property name")}>${t(name, c)}</div>`
+    + (line ? `<div style="font-family:${bodyStack(c)};font-size:13px;color:#6B7280;"${bound ? "" : edit("address", c, "Street, town, postcode")}>${t(line, c)}</div>` : "")
+    + meta("Site contact", contact) + meta("Access", access)
+    + `</td></tr></table>`;
+}
+
+/** THE ONE TOTAL, read from the context. See the landing adapter's `lpTotals`. */
+function emTotals(p: any, c: EmailRenderContext): string {
+  const tt = c.totals;
+  if (!tt) return "";
+  const row = (label: string, amount: string, grand = false) =>
+    `<tr><td style="font-family:${bodyStack(c)};font-size:${grand ? 15 : 13}px;font-weight:${grand ? 700 : 400};color:${c.ink};padding:6px 0;border-top:${grand ? `2px solid ${c.accent}` : "1px solid #E5E7EB"};">${esc(label)}</td>`
+    + `<td align="right" style="font-family:${bodyStack(c)};font-size:${grand ? 15 : 13}px;font-weight:${grand ? 700 : 400};color:${c.ink};padding:6px 0;border-top:${grand ? `2px solid ${c.accent}` : "1px solid #E5E7EB"};">${esc(amount)}</td></tr>`;
+  const head = p?.heading
+    ? `<tr><td colspan="2" style="font-family:${headStack(c)};font-size:16px;font-weight:700;color:${c.ink};padding:0 0 6px 0;"${edit("heading", c)}>${t(p.heading, c)}</td></tr>` : "";
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0">${head}`
+    + tt.sites.map((x) => row(x.name, money(x.subtotal))).join("")
+    + row("Subtotal", money(tt.subtotal))
+    + (tt.tax ? row("Tax", money(tt.tax)) : "")
+    + (tt.discount ? row("Discount", `\u2212${money(tt.discount)}`) : "")
+    + row("Total", money(tt.total), true)
+    + `</table>`;
 }
 
 /** One more table, only when there is something to say with it. */
@@ -712,13 +991,17 @@ export function renderEmailSection(s: Section, c: EmailRenderContext): string {
   // on a phone by wrapping rather than by any query. A single column is left
   // exactly as it was — most emails are one column and their HTML must not
   // grow a ghost table it has no use for.
-  const drawn = cols.map((col, i) => ({
-    i,
-    html: col.widgets.map((w) => renderEmailWidget(w, inner)).join(""),
-  }));
   // COLUMN RATIOS become the fluid columns' own max widths (§11.8). Equal by
   // default, so an unstyled section emits exactly the number it always did.
   const each = emailColumnWidths(s.style, cols.length, contentWidth);
+  // AND THE WIDTH TRAVELS DOWN (D-156): a box inside a column has to know what
+  // is left of the 552 before it can give its own children a max-width in px.
+  const drawn = cols.map((col, i) => ({
+    i,
+    html: col.widgets.map((w) => renderEmailWidget(
+      w, { ...inner, width: cols.length > 1 ? each[i] : contentWidth }, 0,
+    )).join(""),
+  }));
   const body = cols.length > 1
     ? `<tr><td>${fluidRow(drawn.map((d) => ({
         max: each[d.i],

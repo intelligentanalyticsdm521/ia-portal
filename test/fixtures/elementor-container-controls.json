@@ -1,0 +1,147 @@
+{
+  "_comment": [
+    "EXTRACTED from BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json (Elementor 4.2.4), element `container`.",
+    "",
+    "The container layout keys the ONE BUILDER reads are Elementor's own, so the",
+    "website adapter publishes our tree without a translation table (D-157).",
+    "This file is the pin: test/builder-tree.test.mjs asserts every key the",
+    "renderer reads exists here with the option values it accepts.",
+    "",
+    "Byte-identical in Portal-septa. Regenerate from the machine file only when",
+    "Elementor itself changes, and read the diff."
+  ],
+  "elementor_version": "4.2.4",
+  "element": "container",
+  "controls": {
+    "container_type": {
+      "type": "select",
+      "options": [
+        "flex",
+        "grid"
+      ],
+      "default": "flex"
+    },
+    "content_width": {
+      "type": "select",
+      "options": [
+        "boxed",
+        "full"
+      ],
+      "default": "boxed"
+    },
+    "min_height": {
+      "type": "slider",
+      "default": {
+        "unit": "px",
+        "size": "",
+        "sizes": []
+      }
+    },
+    "flex_direction": {
+      "type": "choose",
+      "options": [
+        "row",
+        "column",
+        "row-reverse",
+        "column-reverse"
+      ],
+      "default": ""
+    },
+    "flex_justify_content": {
+      "type": "choose",
+      "options": [
+        "flex-start",
+        "center",
+        "flex-end",
+        "space-between",
+        "space-around",
+        "space-evenly"
+      ],
+      "default": ""
+    },
+    "flex_align_items": {
+      "type": "choose",
+      "options": [
+        "flex-start",
+        "center",
+        "flex-end",
+        "stretch"
+      ],
+      "default": ""
+    },
+    "flex_gap": {
+      "type": "gaps",
+      "default": {
+        "column": "",
+        "row": "",
+        "isLinked": true,
+        "unit": "px"
+      }
+    },
+    "flex_wrap": {
+      "type": "choose",
+      "options": [
+        "nowrap",
+        "wrap"
+      ],
+      "default": ""
+    },
+    "grid_columns_grid": {
+      "type": "slider",
+      "default": {
+        "unit": "fr",
+        "size": 3,
+        "sizes": []
+      }
+    },
+    "grid_gaps": {
+      "type": "gaps",
+      "default": {
+        "column": "",
+        "row": "",
+        "isLinked": true,
+        "unit": "px"
+      }
+    },
+    "grid_justify_items": {
+      "type": "choose",
+      "options": [
+        "start",
+        "center",
+        "end",
+        "stretch"
+      ],
+      "default": ""
+    },
+    "grid_align_items": {
+      "type": "choose",
+      "options": [
+        "start",
+        "center",
+        "end",
+        "stretch"
+      ],
+      "default": ""
+    },
+    "html_tag": {
+      "type": "select",
+      "options": [
+        "",
+        "div",
+        "header",
+        "footer",
+        "main",
+        "article",
+        "section",
+        "aside",
+        "nav",
+        "a"
+      ],
+      "default": ""
+    },
+    "background_color": {
+      "type": "color",
+      "default": ""
+    }
+  }
+}

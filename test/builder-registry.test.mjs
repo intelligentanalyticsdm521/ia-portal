@@ -161,7 +161,7 @@ describe("§3.2's union is registered", () => {
   // The candidate list from the scope doc, by the kind we settled on.
   const REQUIRED = [
     "heading", "paragraph", "image", "button", "divider", "spacer", "list",
-    "key_value_table", "data_table", "priced_line", "comparison_cards",
+    "key_value_table", "data_table",
     "callout", "totals", "signature", "footer_note", "merge_field", "form",
     "map", "video", "social_links", "countdown", "testimonial", "logo_strip",
     "pricing_table", "gallery",
@@ -170,10 +170,17 @@ describe("§3.2's union is registered", () => {
     //   doc_header     §8 item 1 (header/title with style presets)
     //   clauses        §8 item 3 (numbered clauses from the clause library)
     //   property_plan  §8 item 5 (property service plan, crew-visible)
-    //   key_facts      §8 item 7 (merge fields filled from the customer)
-    //   property_block §10       (one block per site, its own subtotal)
     //   page_break, columns      document layout the canvas needs
-    "doc_header", "key_facts", "clauses", "property_plan", "property_block",
+    //
+    // D-156 DELETED FOUR of the kinds this list used to require —
+    // `comparison_cards`, `property_block`, `key_facts` and `priced_line`.
+    // Each was a LUMP: several things locked inside one widget that nobody
+    // could select, move, style or delete on its own. They are `card` /
+    // `catalog_card`, `address_block` + `price_line` + `totals`, `key_fact`
+    // and `price_line` now, each its own widget in its own file, and the
+    // upgrade on the way in converts every stored document. The absence is
+    // asserted below, so a composite cannot quietly come back.
+    "doc_header", "clauses", "property_plan",
     "page_break", "columns",
     // Added 2026-09-16 by §5 step 5 — My Brand's Template Studio on the shared
     // shell. Seven placed OBJECTS a pixel canvas has and a flowing page does
@@ -199,6 +206,19 @@ describe("§3.2's union is registered", () => {
     //                   address (never removable)"
     //   hero           the landing page's "hero" in §7's web widget set
     "personal_note", "article_card", "product_card", "email_footer", "hero",
+    // Added 2026-09-17 by §11.12 — D-156's ATOMIC widgets, each declared in
+    // its own file under src/builder/widgets/ beside the function that draws
+    // it. They replace the composites: `card` + `catalog_card` for
+    // comparison_cards, `price_line` for priced_line, `address_block` for the
+    // address half of property_block, `key_fact` for a row of key_facts, and
+    // `totals`, which moved out of this file with its new tax / discount /
+    // coupon settings (D-157).
+    "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
+    // And 2026-09-17 by the conformance pass — catalogue point 9's free HTML
+    // box. The website emitter has published one since stream D; nobody could
+    // ADD one, and 58 of the 64 page bodies on the estate are one of these and
+    // nothing else (catalogue D.2).
+    "html",
   ];
 
   for (const kind of REQUIRED) {
@@ -219,7 +239,9 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
   });
 
   test("a priced line and a signature belong to documents only", () => {
-    assert.deepEqual(WIDGETS_BY_KIND.priced_line.adapters, ["proposal"]);
+    // `priced_line` is `price_line` now — one widget, and the rename is what
+    // "folded into" means (D-156).
+    assert.deepEqual(WIDGETS_BY_KIND.price_line.adapters, ["proposal"]);
     assert.deepEqual(WIDGETS_BY_KIND.signature.adapters, ["proposal"]);
   });
 
@@ -289,12 +311,42 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // The union of three branches' decisions, each of which took one builder
     // away from a widget for a reason that builder enforces. Asserted here as
     // the surviving list, so putting a builder back has to be deliberate:
-    //   comparison_cards / pricing_table  a site has site_pricing; a send has
-    //                                     the product card
+    //   pricing_table                     a site has site_pricing, a whole
+    //                                     ready-made section with its own
+    //                                     round trip
     //   callout                           a site has content; a send has a
     //                                     coloured section — the STUDIO keeps
     //                                     it, where a tinted panel is an object
-    assert.deepEqual([...WIDGETS_BY_KIND.comparison_cards.adapters].sort(), ["proposal"]);
+    //
+    // CHANGED 2026-09-17, catalogue F.1 "Where it may be used". `card` and
+    // `catalog_card` were here for the same reason as `pricing_table` and it
+    // does not hold for them: a READY-MADE SECTION and a PART YOU PLACE IN A
+    // BOX are two concerns, not two mechanisms for one — the same way
+    // `heading` is offered on a site that also has `site_hero`. A site’s
+    // pricing SECTION is still the one way to get a pricing section; a card is
+    // the one way to place a single card. A send keeps its `product_card`
+    // composite, which is a LIST of things to show off, beside `catalog_card`,
+    // which is ONE catalogue line — two kinds, asserted just below.
+    assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(),
+      ["email", "landing", "proposal", "website"]);
+    // `catalog_card` is PROPOSAL-only again (2026-09-17, driven): every surface
+    // can draw it, but only the proposal can say WHICH product - the catalogue
+    // picker lives in that panel. Offering it in a send gave a card that could
+    // be placed and never filled, and a send already has one mechanism for
+    // products: the newsletter's own `product_card`, which has its picker.
+    // Lift the picker into the widget and this list gains it back.
+    assert.deepEqual([...WIDGETS_BY_KIND.catalog_card.adapters].sort(), ["proposal"]);
+    // NOT `website` for these three: the website publish path has no emitter
+    // for the kind, and an unknown kind makes the whole page publish refuse by
+    // name — so offering one would be a widget an author can place and never
+    // publish. The catalogue asks for two of them on a site; they need the
+    // emitter first.
+    assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(),
+      ["email", "landing", "proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.address_block.adapters].sort(),
+      ["email", "landing", "proposal"]);
+    assert.deepEqual([...WIDGETS_BY_KIND.key_fact.adapters].sort(),
+      ["email", "landing", "proposal"]);
     assert.deepEqual([...WIDGETS_BY_KIND.pricing_table.adapters].sort(), ["proposal"]);
     assert.deepEqual([...WIDGETS_BY_KIND.callout.adapters].sort(), ["brand", "proposal"]);
   });
@@ -330,13 +382,24 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
 });
 
 describe("guided counts — SD-010's \"how many cards?\"", () => {
-  test("comparison cards ask, and the range is 2 to 6", () => {
-    const c = WIDGETS_BY_KIND.comparison_cards.count;
-    assert.ok(c, "comparison cards must ask how many");
-    assert.equal(c.min, 2);
-    assert.equal(c.max, 6);
-    assert.ok(c.default >= c.min && c.default <= c.max);
-    assert.match(c.label, /how many/i);
+  test("D-156 — no widget asks 'how many?' where the answer is a widget", () => {
+    // The count control is DELETED for the card composites (D-156 (4)): a card
+    // is a widget now, so "how many cards?" is "add another card". A widget
+    // that still asks is one that still has hidden sub-parts.
+    // The widgets that ASKED are deleted outright, so nothing can ask.
+    for (const kind of ["comparison_cards", "key_facts"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined,
+        `${kind} is superseded by D-156 and must be gone, not hidden`);
+    }
+    for (const kind of ["card", "catalog_card", "price_line", "key_fact"]) {
+      assert.ok(!WIDGETS_BY_KIND[kind].count, `${kind} is one thing, not a list of them`);
+    }
+    // AND NOWHERE ELSE: not one widget in the whole registry asks how many of
+    // itself the author wants, because the answer to that is "add another one".
+    const asks = WIDGETS.filter((w) => w.count && w.count.label
+      && /how many/i.test(String(w.count.label)) && /card|fact|plan|option/i.test(String(w.count.label)));
+    assert.deepEqual(asks.map((w) => w.kind), [],
+      "a widget still asks how many of a thing that is now a widget");
   });
 
   test("every count is a sane range with a default inside it, asked in words", () => {
@@ -372,9 +435,10 @@ describe("the pane groups them", () => {
   });
 
   test("search matches the DESCRIPTION, not just the label", () => {
-    // Nothing is called "Recommended"; the comparison-card sentence says it.
-    const hits = groupForPane("proposal", "recommended").flatMap((g) => g.widgets.map((w) => w.kind));
-    assert.ok(hits.includes("comparison_cards"), "searching the words people actually use must work");
+    // Nothing is CALLED "included"; the card's sentence says it. (It used to
+    // be "recommended" against comparison_cards, which D-156 superseded.)
+    const hits = groupForPane("proposal", "included").flatMap((g) => g.widgets.map((w) => w.kind));
+    assert.ok(hits.includes("card"), "searching the words people actually use must work");
   });
 
   test("an unmatched search returns nothing rather than everything", () => {
@@ -400,6 +464,7 @@ describe("the pane groups them", () => {
 
 describe("WidgetPane honours SD-010", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
+  const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
     // §11.10 (D-147): the grouping moved to widgetTasks.ts, which groups the
@@ -413,8 +478,10 @@ describe("WidgetPane honours SD-010", () => {
   });
 
   test("every widget button carries a tooltip AND an accessible name", () => {
-    assert.match(pane, /title=\{widgetTooltip\(w, adapter\)\}/);
-    assert.match(pane, /aria-label=\{widgetTooltip\(w, adapter\)\}/);
+    // A LOCKED row says the reason instead, which is the accessible name that
+    // matters when the button cannot be pressed (R-D1).
+    assert.match(pane, /title=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
+    assert.match(pane, /aria-label=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
   });
 
   test("it renders the picture, the label and the one line — in THIS builder's words", () => {
@@ -422,7 +489,7 @@ describe("WidgetPane honours SD-010", () => {
     // is now a map of one per builder for anything offered in more than one.
     assert.match(pane, /src=\{w\.picture\}/);
     assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
-    assert.match(pane, /\{widgetDescription\(w, adapter\)\}/);
+    assert.match(pane, /\{lock\?\.sentence \|\| widgetDescription\(w, adapter\)\}/);
     assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
   });
 
@@ -439,9 +506,17 @@ describe("WidgetPane honours SD-010", () => {
     assert.match(pane, /aria-label="Search widgets"/);
   });
 
-  test("a widget with a count is ASKED before it is inserted", () => {
-    assert.match(pane, /if \(w\.count\) \{/);
-    assert.match(pane, /\{w\.count\.label\}/);
-    assert.match(pane, /onInsert\(w, asking\.value\)/);
+  /* WAS "a widget with a count is ASKED before it is inserted".
+     D-156 item 4 DELETED that control: it asked, before the thing was on the
+     page, a number nobody could answer yet, and it only existed because the
+     cards inside a composite could not be added or removed afterwards. They can
+     now — a card is a widget with the same duplicate and delete as everything
+     else. The assertion is inverted rather than removed, because "the question
+     is gone" is the thing that has to stay true. */
+  test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
+    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
+      assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);
+      assert.doesNotMatch(src, /setAsking/, `${name}: still holds the question's state`);
+    }
   });
 });

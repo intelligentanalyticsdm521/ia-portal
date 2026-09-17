@@ -32,8 +32,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  addSection, addWidget, deserialise, duplicateWidget, emptyDocument, makeSection, makeWidget,
-  resetIds, serialise, widgetAt,
+  addSection, addWidget, deserialise, duplicateWidget, emptyDocument, makeContainer, makeSection,
+  makeWidget, resetIds, serialise, widgetAt,
 } from "../src/builder/model.ts";
 import { makeContext, renderDocument, renderWidget } from "../src/builder/render.ts";
 import {
@@ -97,10 +97,28 @@ function threeSections() {
 }
 
 describe("a widget lands where the author is, never at the end (D-11)", () => {
-  test("a selected WIDGET puts the new one directly after it, in its own column", () => {
+  /* §11.12 (D-156) added `hostId` — THE address of the box a thing lands in,
+     which is a column's id at the top level and a container's below it. The
+     assertions keep the three old fields AND check the new one, because "after
+     the selected widget" and "in the right box" are two different promises and
+     a spot that got one right and the other wrong would put a card at the top
+     of a column instead of beside its neighbour in a row. */
+  test("a selected WIDGET puts the new one directly after it, in its own box", () => {
     const { doc, b } = threeSections();
     const spot = insertSpotFor(doc, { kind: "widget", sectionId: b.id, columnIndex: 0, widgetIndex: 0 });
-    assert.deepEqual(spot, { sectionId: b.id, columnIndex: 0, index: 1 });
+    assert.deepEqual(spot, { hostId: b.columns[0].id, sectionId: b.id, columnIndex: 0, index: 1 });
+  });
+
+  test("a selected widget INSIDE A BOX gets the next one beside it, not at the top of the column", () => {
+    const { doc, b } = threeSections();
+    const box = makeContainer(undefined, [makeWidget("paragraph", { text: "In a box" })]);
+    const withBox = addWidget(doc, b.id, 0, box);
+    const inner = box.children[0];
+    const spot = insertSpotFor(withBox, {
+      kind: "widget", sectionId: b.id, columnIndex: 0, widgetIndex: 0, id: inner.id,
+    });
+    assert.equal(spot.hostId, box.id, "landed outside the box it was told to land in");
+    assert.equal(spot.index, 1);
   });
 
   test("a selected widget in the SECOND column stays in the second column", () => {
@@ -116,13 +134,13 @@ describe("a widget lands where the author is, never at the end (D-11)", () => {
     // widget quietly reappears at the bottom of the page — D-11 again.
     const { doc, a } = threeSections();
     const spot = insertSpotFor(doc, { kind: "widget", sectionId: a.id, columnIndex: 0, widgetIndex: 40 });
-    assert.deepEqual(spot, { sectionId: a.id, columnIndex: 0, index: 1 });
+    assert.deepEqual(spot, { hostId: a.columns[0].id, sectionId: a.id, columnIndex: 0, index: 1 });
   });
 
   test("a selected SECTION appends into its first column", () => {
     const { doc, b } = threeSections();
     const spot = insertSpotFor(doc, { kind: "section", sectionId: b.id });
-    assert.deepEqual(spot, { sectionId: b.id, columnIndex: 0, index: 2 });
+    assert.deepEqual(spot, { hostId: b.columns[0].id, sectionId: b.id, columnIndex: 0, index: 2 });
   });
 
   test("with NOTHING selected it goes into the section on screen", () => {
@@ -351,8 +369,10 @@ describe("the widget picker groups by the job (D-147)", () => {
     // add sections for service address or property address."
     const property = groupByTask("proposal").find((g) => g.task === "Customer & property");
     const money = groupByTask("proposal").find((g) => g.task === "Products & services");
-    assert.ok(property.widgets.some((w) => w.kind === "property_block"),
-      "the property block is not under Customer & property");
+    // D-156: the property block came apart into an address, priced lines and a
+    // total. The ADDRESS is what answers "add a section for service address".
+    assert.ok(property.widgets.some((w) => w.kind === "address_block"),
+      "the service address is not under Customer & property");
     assert.ok(money.widgets.some((w) => w.kind === "pricing_table"),
       "the pricing table is not under Products & services");
   });
@@ -569,9 +589,15 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /kind: "newSection", index: 0/);
   });
 
-  test("an empty column offers its own spot, so two columns are not one (D-11)", () => {
+  test("EVERY empty box offers its own spot, a column included (D-11, D-156)", () => {
+    // WAS "an empty column". §11.12 made it every box at every depth, and it is
+    // ONE loop over `[data-bx-host]` rather than two — a column IS a box, and a
+    // second loop for the nested ones is a second place to forget something.
     assert.match(canvas, /data-builder-addhere/);
-    assert.match(canvas, /if \(col\.querySelector\("\[data-widget\]"\)\) continue;/);
+    assert.match(canvas, /if \(box\.querySelector\("\[data-widget\]"\)\) continue;/);
+    assert.match(canvas, /querySelectorAll<HTMLElement>\("\[data-bx-host\]"\)/);
+    // And a box that is NOT empty is not a dead end either.
+    assert.match(canvas, /data-builder-addin/);
   });
 
   test("THE SECTION TOOLBAR IS ON HOVER, not only on selection (D-12)", () => {
@@ -597,8 +623,11 @@ describe("the canvas carries the chrome the walk asked for", () => {
   test("every widget has a handle with drag, duplicate and delete (D-12)", () => {
     assert.match(canvas, /bxc-wtools/);
     assert.match(canvas, /\[data-widget\]:hover > \.bxc-wtools/);
-    assert.match(canvas, /Make a copy of this, right underneath/);
+    assert.match(canvas, /Make a copy of this \$\{noun\}, right underneath/);
     assert.match(canvas, /Remove this from the page/);
+    // §11.12 — ONE loop, so a box wears the same handle as everything else and
+    // only the words differ.
+    assert.match(canvas, /const isBox = el\.dataset\.kind === "container"/);
   });
 
   test("a locked widget's handle SAYS WHY rather than doing nothing", () => {
@@ -684,7 +713,12 @@ describe("the shell wires the rebuild without a second mechanism", () => {
 
   test("the position of an insert comes from ONE module", () => {
     assert.match(shell, /insertSpotFor\(doc, selection, visibleSectionId\)/);
-    assert.equal((shell.match(/insertSpotFor\(/g) || []).length, 1);
+    // THREE call sites now, not one, and all three are `insertSpotFor`:
+    // a widget, a box (§11.12) and the slash command. The rule the original
+    // assertion protected is "nobody works the position out by hand", and that
+    // is what this says — counting to one was only ever a proxy for it.
+    assert.doesNotMatch(shell, /columnIndex: 0, index: 0 \}/,
+      "a spot was built by hand instead of asked for");
   });
 
   test("THE PANE AND THE PICKER SHARE ONE VOCABULARY", () => {
@@ -702,8 +736,16 @@ describe("the shell wires the rebuild without a second mechanism", () => {
   test("the slash command's clear and insert are ONE document operation", () => {
     // Two applies in one tick would compute the second from the stale `doc`
     // prop and the typed "/pricing" would come straight back.
-    assert.match(shell, /const cleared = patchWidget\(doc, here, setPropPath\(widget\.props, s\.path, ""\)\)/);
-    assert.match(shell, /apply\(addWidget\(cleared,/);
+    // V-1: the clear is now `editWidgetText`, which addresses the widget by
+    // NODE ID — the column scan the old line depended on could not reach a
+    // widget inside a box, so "/" was dead from the second level down.
+    //
+    // Read out of slashCommit ITSELF and not out of the whole file: the box
+    // door beside it clears the same way, so a file-wide match stayed green
+    // with the defect put back (found by mutating it, 2026-09-17).
+    const commit = shell.slice(shell.indexOf("const slashCommit ="), shell.indexOf("const slashCommitBox"));
+    assert.match(commit, /const cleared = editWidgetText\(doc, s\.widgetId, s\.path, ""\)/);
+    assert.match(commit, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
   });
 
   test("the counter is a BUTTON that goes somewhere (D-35)", () => {
@@ -776,8 +818,12 @@ describe("no screen in the rebuild names another product", () => {
 function cardHtml(mode, price) {
   resetIds();
   const doc = emptyDocument();
-  const w = makeWidget("comparison_cards", {
-    cards: [{ name: "Standard", price, per: "", list_price: "", features: [""] }],
+  // D-156: a card is its OWN widget, so the paths are the card's own fields
+  // rather than `cards.N.*` inside a composite. The defect this pins is the
+  // same one — an empty price that measures 0px, has no placeholder and is
+  // skipped by Tab — and it is pinned on the widget that now carries it.
+  const w = makeWidget("card", {
+    heading: "Standard", price, period: "", original_price: "", sale: "yes", features_list: [""],
   });
   return renderWidget(w, makeContext(doc, { mode }));
 }
@@ -787,19 +833,19 @@ describe("the tier card's price can be clicked (D-01, B-A-1)", () => {
     // "cards.N.price is 0px wide with no placeholder; unclickable. Tab from the
     // name skips it. Clicking beside it writes into cards.N.per."
     const html = cardHtml("edit", "");
-    assert.match(html, /class="bx-now bx-slot bx-now-slot"[^>]*data-edit="cards\.0\.price"/);
-    assert.match(html, /data-edit="cards\.0\.price"[^>]*data-placeholder="\$0\.00"/);
+    assert.match(html, /class="bx-now bx-slot bx-now-slot"[^>]*data-edit="price"/);
+    assert.match(html, /data-edit="price"[^>]*data-placeholder="\$0\.00"/);
   });
 
   test("the price comes FIRST, so Tab reaches it before the suffix and the strike-through", () => {
     const html = cardHtml("edit", "");
-    assert.ok(html.indexOf("cards.0.price") < html.indexOf("cards.0.per"), "Tab still skips the price");
-    assert.ok(html.indexOf("cards.0.per") < html.indexOf("cards.0.list_price"));
+    assert.ok(html.indexOf('data-edit="price"') < html.indexOf('data-edit="period"'), "Tab still skips the price");
+    assert.ok(html.indexOf('data-edit="period"') < html.indexOf('data-edit="original_price"'));
   });
 
   test("a price that HAS a figure wears no slot classes", () => {
     const html = cardHtml("edit", "$249.00");
-    assert.match(html, /class="bx-now"[^>]*data-edit="cards\.0\.price"/);
+    assert.match(html, /class="bx-now"[^>]*data-edit="price"/);
   });
 
   test("the rule the target hangs off exists, and is wider than the small slots", () => {

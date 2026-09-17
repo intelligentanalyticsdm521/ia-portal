@@ -250,13 +250,18 @@ describe("A1 · the document a customer signs on a phone", () => {
     assert.match(html, /data-label="Customer rate"/);
   });
 
-  test("a property block's four money columns each carry a label", () => {
+  test("a rate card's money columns each carry a label", () => {
+    // This was `property_block`, whose own four-column table is DELETED with
+    // it (D-156): a property is a box now, and what it charges is either a
+    // rate card or a priced line per item. The rate card is the one with
+    // columns, so it is the one that has to name them above each value when
+    // the table stacks on a phone.
     const d = doc([{
-      kind: "property_block",
-      props: { heading: "North lot", items: [{ description: "Plowing", quantity: 2, unit_price: 185 }] },
+      kind: "pricing_table",
+      props: { heading: "What we charge here", rows: [{ name: "Plowing", basis: "per push", rate: "$185.00" }] },
     }]);
     const html = renderSection(d.sections[0], view(d));
-    for (const label of ["Service", "Qty", "Rate", "Amount"]) {
+    for (const label of ["Service", "Basis", "Customer rate"]) {
       assert.ok(html.includes(`data-label="${label}"`), `the ${label} column has no label to print above its value`);
     }
   });

@@ -27,6 +27,10 @@ import { BuilderShell } from "../BuilderShell";
 import type { BuilderProblem } from "../problems";
 import {
   addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
+  // `patchNode` is THE ONE WRITER of a node's props, at any depth, with the
+  // model's own rules on it (it comes from `treeOps`, re-exported here so
+  // there is one door). See `patch` below for the walk this replaced.
+  insertBeside, patchNode, removeWidgetsWhere, walkWidgets,
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
@@ -47,9 +51,18 @@ import { NameBlockDialog } from "../NameBlockDialog";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
-  basisOf, buildPick, cadenceOf, fmtMoney,
+  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker,
   type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
+/* D-156 — the atomic widgets. The adapter owns the controls only it can draw:
+   which product, which location, the business's tax rate and a coupon code. */
+import {
+  ON_EMPTY_CHOICES, PUT_IT_BACK, REFRESH_MODES, RIBBON_PRESETS, TAG_COLOURS, TYPED_NOT_LIVE,
+  bindingOf, findInCatalogue, onEmptyOf, overriddenFields, putItBackProps,
+  NO_BUSINESS_RATE_SENTENCE,
+  resolveCatalogCard, ribbonProps, selectionProps, snapshotFrom, tagOf,
+} from "../widgets";
+import { documentMoneySettings, totalsSettings } from "../totals";
 
 export interface ProposalApi {
   get: <T>(p: string) => Promise<T>;
@@ -118,8 +131,19 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     const d = new Date(); d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  // What the proposal ROW arrived with. D-156 moved the two numbers onto the
+  // Totals widget — see `docMoney` below — and these are what a document
+  // written before that keeps until somebody touches the Totals panel.
   const [taxRate, setTaxRate] = useState("0");
   const [discount, setDiscount] = useState("0");
+  /**
+   * The business's own sales-tax rate, for the Totals panel's "Add tax".
+   *
+   * Read ONCE, like the catalogue, and written onto the widget when it is
+   * used — never looked up at render time. See widgets/totals.ts for why.
+   */
+  // `percent: null` is "nobody has said" and is NOT 0% - see the read below.
+  const [businessTax, setBusinessTax] = useState<{ percent: number | null; label: string } | null>(null);
 
   /* ── The document ────────────────────────────────────────────────────── */
   const [doc, setDoc] = useState<BuilderDocument>(() => emptyDocument());
@@ -215,6 +239,41 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       .catch(() => setOfferings([]))
       .finally(() => setCatalogueLoading(false));
     api.get<any>("/proposal-builder/clauses").then((r) => setClauses(rows<ClauseRow>(r))).catch(() => setClauses([]));
+    /**
+     * THE BUSINESS'S OWN TAX RATE, FROM ITS ONE HOME.
+     *
+     * `GET /settings` -> `defaultTaxRate`, i.e. `oliver.tenant_settings.
+     * default_tax_rate` (oliver migration 217), which is the single home the
+     * three repos agreed on (shared vocabulary (c), 2026-09-17) and the one
+     * `lib/taxRate.js` resolves on send.
+     *
+     * IT USED TO READ `/proposal-builder/money-settings`, the STELLA-backed
+     * route, and that was two homes for one number with the halves
+     * disagreeing: this business answers 7.25% there and null here, so the
+     * canvas taxed a proposal at 7.25%, the author saw a total with tax in it,
+     * and pressing Send came back 400 no_tax_rate. Found by driving it,
+     * 2026-09-17. One home, so the number on the page is the number that is
+     * charged.
+     *
+     * `null` and `0` ARE DIFFERENT ANSWERS: null is "nobody has said" and is
+     * what the sentence beside the widget is for; 0 is "this business charges
+     * no sales tax" and is a rate like any other. So `percent` is null when
+     * the field is null, and a failed read is also null - silence is not "0%".
+     *
+     * There is no NAME in the one home. The rate row prints "Tax 7.25%", and
+     * an author who wants it called something types that in the block's own
+     * "What the rate is called" - which is stored on the document, so it
+     * cannot drift from what the customer signed.
+     */
+    api.get<any>("/settings")
+      .then((r) => {
+        const d = (r && typeof r === "object" && "data" in r ? (r as any).data : r) || {};
+        const raw = d.defaultTaxRate;
+        setBusinessTax(raw == null || raw === "" || !Number.isFinite(Number(raw))
+          ? { percent: null, label: "" }
+          : { percent: Number(raw), label: "" });
+      })
+      .catch(() => setBusinessTax({ percent: null, label: "" }));
     api.get<any>("/proposal-templates").then((r) => setSavedTemplates(rows<any>(r).map((t: any) => ({
       id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
       document: t.document, body: t.body,
@@ -365,6 +424,123 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       .map((r) => (r.token === token ? { ...r, value } : r))));
   }, [autoMerge]);
 
+  /**
+   * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
+   *
+   * The NUMBER always lives on the widget, because the customer's page and the
+   * PDF are drawn by a server with no tax table. The MODE says whether to keep
+   * it up to date, and this is where that happens: once, when the business's
+   * rate has arrived and the document is in hand. A draft opened after the
+   * rate changed shows the new one; a document set to a rate of its own is
+   * never touched.
+   */
+  /**
+   * THE WIDGETS THAT ARE WAITING FOR THE BUSINESS'S RATE.
+   *
+   * The ids of every Totals block set to "your business's own rate" whose
+   * number is missing or stale. It is a STRING on purpose: it changes only
+   * when that set changes, so the effect below runs when there is stamping to
+   * do and not on every keystroke — and it becomes empty the moment the
+   * stamping is done, which is what makes the effect terminate.
+   *
+   * Depending on the whole `doc` instead loops: the effect writes the doc,
+   * the doc is the dependency, and React runs it again (found by driving it,
+   * 2026-09-17 — "Maximum update depth exceeded" the moment the mode was
+   * chosen). Depending on `businessTax` alone was the defect this replaces:
+   * it ran once, when the rate arrived, so an author who chose the business
+   * rate AFTER that — which is everybody, because the rate arrives while the
+   * document is opening — stored a MODE and never got a NUMBER, and
+   * `renderTotals` draws no tax row at all when the rate is null. A document
+   * taxed at nothing with the word "business" written on it: the audit's
+   * point 5 arriving by a second route.
+   */
+  const awaitingBusinessRate = useMemo(() => {
+    // Nothing to stamp when the business has not set a rate: the widget keeps
+    // `tax_rate: null`, `totalsSettings` reports `taxUnresolved`, and the
+    // canvas prints the sentence rather than a rate nobody set.
+    if (!businessTax || businessTax.percent == null) return "";
+    const ids = [];
+    for (const { widget: w } of walkWidgets(doc)) {
+      if (w.kind !== "totals") continue;
+      const st = totalsSettings(w.props);
+      if (st.taxMode !== "business") continue;
+      if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) continue;
+      ids.push(w.id);
+    }
+    return ids.join(",");
+  }, [doc, businessTax]);
+
+  /**
+   * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
+   *
+   * The NUMBER always lives on the widget, because the customer's page and the
+   * PDF are drawn by a server with no tax table. The MODE says whether to keep
+   * it up to date, and this is where that happens — whenever a block is
+   * waiting for it, however the mode got set: the widget's own Tax control is
+   * the only one there is now, and it stores a mode, not a number.
+   */
+  useEffect(() => {
+    if (!businessTax || !awaitingBusinessRate) return;
+    setDoc((d) => {
+      // THE WHOLE TREE (V-2). The hand-rolled walk this replaces read the top
+      // of each column, so a Totals widget the author had put inside a box —
+      // a per-property subtotal, which is exactly where one goes — never
+      // heard the business's rate and quietly charged 0% tax.
+      //
+      // THE CANONICAL NAMES ((c), 2026-09-17): `tax_rate` and `tax_label`.
+      let next = d;
+      for (const id of awaitingBusinessRate.split(",")) {
+        next = patchNode(next, id, { tax_rate: businessTax.percent, tax_label: businessTax.label });
+      }
+      return next;
+    });
+  }, [businessTax, awaitingBusinessRate]);
+
+  /* ── The document's money ────────────────────────────────── */
+  //
+  // ONE MECHANISM (D-157): tax and discount are set on the Totals widget, and
+  // the proposal row's `tax_rate` / `discount_amount` follow from it. The two
+  // state variables below are what the row arrived with, and they are used
+  // only while no Totals widget declares anything — which is every document
+  // written before today.
+  const docMoney = useMemo(
+    () => documentMoneySettings(doc)
+      ?? { taxRate: Number(taxRate) / 100, discount: Number(discount) || 0 },
+    [doc, taxRate, discount],
+  );
+
+  /**
+   * WHAT A COUPON CODE IS WORTH — a READ, never a redemption.
+   *
+   * `POST /coupons/apply` redeems: it stamps an invoice or a quote, bumps
+   * `times_redeemed` and writes a redemption row. A proposal being written is
+   * none of those things, and a builder that redeemed a coupon every time
+   * somebody typed a code into a draft would burn a business's redemption
+   * limit on documents that were never sent. So this asks what the coupon is
+   * worth, and the discount is written onto the Totals widget as a number the
+   * document carries.
+   */
+  const lookupCoupon = useCallback(async (code: string): Promise<CouponLookup> => {
+    const clean = String(code || "").trim();
+    if (!clean) return { ok: false, message: "Type the code first." };
+    try {
+      const r = await api.get<any>(`/proposal-builder/coupons/${encodeURIComponent(clean)}`);
+      const d = (r && typeof r === "object" && "data" in r ? (r as any).data : r) || {};
+      if (!d.code) return { ok: false, message: "We could not find that code." };
+      return {
+        ok: true,
+        coupon: {
+          code: String(d.code),
+          percentOff: d.percent_off == null ? null : Number(d.percent_off),
+          amountOff: d.amount_off == null ? null : Number(d.amount_off),
+        },
+      };
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      return { ok: false, message: msg.includes("404") ? "We could not find that code." : "That code could not be checked just now." };
+    }
+  }, [api]);
+
   /* ── The one render context ──────────────────────────────────────────── */
   const ctx: RenderContext = useMemo(() => {
     // The typed Details first, the customer pick over the top: the customer's
@@ -383,6 +559,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     return makeContext(doc, {
       mode: "edit",
       merge,
+      // The catalogue a Product card shows its LIVE price from. Loaded once
+      // when the builder opens; a card falls back to its own snapshot when it
+      // is absent, which is what the customer's page and the PDF do.
+      catalogue: offerings,
       accent: doc.settings.accent || identity.accent || kit.colours.primary,
       headingFont: doc.settings.headingFont || kit.fonts.heading,
       bodyFont: doc.settings.bodyFont || kit.fonts.body,
@@ -393,13 +573,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
-      totals: documentTotals(doc, { taxRate: Number(taxRate) / 100, discount: Number(discount) || 0 }),
+      totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
       // different sections.
       ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, autoMerge, locations, kit, identity, taxRate, discount, revision, diff]);
+  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff]);
 
   const totals = ctx.totals;
 
@@ -474,11 +654,16 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [kit, savedTemplates, startFromSaved, startFromTemplate]);
 
   /* ── Saving ──────────────────────────────────────────────────────────── */
-  const wire = useCallback(() => toWire(doc, {
-    ...ctx, mode: "view",
-    taxRate: Number(taxRate) / 100,
-    discount: Number(discount) || 0,
-  }), [ctx, discount, doc, taxRate]);
+  /**
+   * The wire shape.
+   *
+   * `send` is `merge.fill`'s own mode, and it is what freezes every
+   * catalogue-bound widget on the copy that goes to the customer (F.2). A
+   * draft save passes nothing and the document comes back by identity.
+   */
+  const wire = useCallback((send = false) =>
+    toWire(doc, { ...ctx, mode: "view", ...docMoney, fill: send ? "send" : "view" }),
+    [ctx, doc, docMoney]);
 
   const blanks = useMemo(() => {
     const texts: string[] = [];
@@ -541,7 +726,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
     setSaved(null); setRefusal(null); setBusy(true);
     try {
-      const w = wire();
+      const w = wire(send);
       const payload = {
         contact_id: contactId || null,
         title: title.trim(),
@@ -549,8 +734,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         blocks: w.blocks,
         document: w.document,
         line_items: w.line_items,
-        tax_rate: Number(taxRate) / 100,
-        discount_amount: Number(discount) || 0,
+        tax_rate: docMoney.taxRate,
+        discount_amount: docMoney.discount,
         valid_until: validUntil || null,
         // The chips the author ticked, PLUS every location a property block or
         // a service plan on the page actually refers to. Accepting opens a job
@@ -623,7 +808,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
     setSaved(null); setRefusal(null); setBusy(true);
     try {
-      const w = wire();
+      const w = wire(send);
       // D-15 — the title is the PROPOSAL's, not the revision's, so a rename in
       // this builder used to be typed, saved and silently reverted. A rename is
       // not a content edit (the same reasoning /link already runs on), so the
@@ -645,8 +830,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         blocks: w.blocks,
         scope_html: w.scope_html || null,
         line_items: w.line_items,
-        tax_rate: Number(taxRate) / 100,
-        discount_amount: Number(discount) || 0,
+        tax_rate: docMoney.taxRate,
+        discount_amount: docMoney.discount,
       });
       const url = (sent as any)?.data?.public_url || (sent as any)?.public_url;
       onSaved(`Revision v${revMeta?.document_version ?? 2} sent — they must sign it again.${url ? ` Their link is ${url}` : ""}`);
@@ -734,6 +919,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         doc={doc}
         onChange={setDoc}
         ctx={ctx}
+        /* D-156 — the interception is GONE. "Choose your plan" is a heading, a
+           line of copy and a ROW OF CARDS in ONE section now, because a box can
+           hold a row; the shell places it like every other ready-made section,
+           in one step and therefore in one undo. */
         /* N-1 — the engine's problems mechanism, on the surface that needed it
            most. The counter in the pane, the jump, and the refusal beside the
            button that was pressed all come from these three props. */
@@ -810,6 +999,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
             offerings={offerings} clauses={clauses} locations={locations}
             catalogueLoading={catalogueLoading}
+            businessTax={businessTax} lookupCoupon={lookupCoupon}
             onSaveClause={async (c) => {
               const saved = await api.post<any>("/proposal-builder/clauses", c);
               setClauses((prev) => [...prev.filter((x) => x.clause_key !== c.clause_key), (saved as any)]);
@@ -1166,11 +1356,17 @@ function CustomerBar({
 
 function WidgetExtras({
   widget, sectionId, doc, onChange, offerings, clauses, locations, catalogueLoading,
+  businessTax, lookupCoupon,
   onSaveClause, onSeedClauses, onLoadPropertyFields, onSavePropertyFields,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
+  /** The business's own sales-tax rate, for the Totals panel. */
+  /** `percent: null` is "nobody has said" and is NOT 0% (one home, (c)). */
+  businessTax: { percent: number | null; label: string } | null;
+  /** Read-only: what a coupon code is worth. It is never redeemed from here. */
+  lookupCoupon: (code: string) => Promise<CouponLookup>;
   /** M-24 — the catalogue read has not settled yet. */
   catalogueLoading?: boolean;
   onSaveClause: (c: ClauseRow) => Promise<void>;
@@ -1178,17 +1374,32 @@ function WidgetExtras({
   onLoadPropertyFields: (locationId: string) => Promise<Array<{ label: string; value: string }>>;
   onSavePropertyFields: (locationId: string, rows: Array<{ label?: string; value?: string }>) => Promise<void>;
 }) {
+  /**
+   * WRITE THIS WIDGET'S PROPS, WHEREVER IT SITS (V-2, §11.12).
+   *
+   * FOUND BY DRIVING IT TWICE, INDEPENDENTLY (the verifier's V-2 and the
+   * conformance drive, both 2026-09-17, both on `d156/integration`): this
+   * hand-rolled `sections.map(columns.map(widgets.map(…)))`, which only ever
+   * looks at the TOP of a column. It was wrong in two ways at once.
+   *
+   *   · It could not reach a widget inside a box, so every control on this
+   *     panel was a no-op for one — the catalogue picker ("Use this plan",
+   *     loading a price onto a card, which is Brandon's literal ask), the Best
+   *     Price tag, the location picker, the clause picker, the logo, a price
+   *     line's quantity and unit price, and Totals' tax rate, discount and
+   *     coupon. They all appeared to work: the select moved, and the document
+   *     did not.
+   *   · It was a SECOND writer beside `treeOps.patchNode`, so the one rule the
+   *     model enforces there — at most one card in a row carries Recommended
+   *     (catalogue F.1.4) — never ran for anything written from here.
+   *
+   * `patchNode` is the one write, by node id, at any depth — the same one the
+   * canvas's typing and the inspector use, and the rule comes with it. The
+   * hand-rolled walk is DELETED rather than kept beside it, because two
+   * answers to "where is this widget" is how one of them stays wrong.
+   */
   const patch = (props: Record<string, unknown>) => {
-    onChange({
-      ...doc,
-      sections: doc.sections.map((s) => s.id !== sectionId ? s : {
-        ...s,
-        columns: s.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets.map((w) => (w.id === widget.id ? { ...w, props: { ...w.props, ...props } } : w)),
-        })),
-      }),
-    });
+    onChange(patchNode(doc, widget.id, props));
   };
 
   const p: any = widget.props || {};
@@ -1196,7 +1407,8 @@ function WidgetExtras({
   // A property block needs BOTH: which location it is, and what is being done
   // there. The location picker used to sit in a later branch that an early
   // return never reached, so a block could be priced but never placed.
-  const locationPicker = (widget.kind === "property_plan" || widget.kind === "property_block") ? (
+  const locationPicker = (widget.kind === "property_plan" || widget.kind === "address_block"
+    || widget.kind === "address_block") ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={LBL}>Which location</span>
@@ -1233,14 +1445,74 @@ function WidgetExtras({
     </div>
   ) : null;
 
-  if (widget.kind === "pricing_table" || widget.kind === "priced_line" || widget.kind === "property_block") {
+  /* ── D-156's atomic widgets ─────────────────────────────────── */
+
+  if (widget.kind === "card") {
+    return <TagControls widget={widget} patch={patch} />;
+  }
+
+  if (widget.kind === "catalog_card") {
+    return (
+      <CatalogCardPanel
+        widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
+        offerings={offerings} catalogueLoading={catalogueLoading} patch={patch}
+      />
+    );
+  }
+
+  if (widget.kind === "price_line") {
+    return (
+      <>
+        <CatalogPicker
+          offerings={offerings}
+          loading={catalogueLoading}
+          label="Fill from Products &amp; Services"
+          onPick={(o, price) => {
+            const pick = buildPick(o, price);
+            patch({
+              name: pick.parts.name, description: pick.parts.description,
+              bullets: pick.parts.features, unit_price: pick.parts.unit_price,
+              offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
+              cadence: pick.parts.cadence,
+            });
+          }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ ...FIELD_COL, flex: 1 }}>
+            <span style={LBL}>How many</span>
+            <input type="number" min={0} step="1" style={INPUT} data-price-qty="1"
+              title="How many of these the customer is buying"
+              value={Number(p.quantity ?? 1)}
+              onChange={(e) => patch({ quantity: Number(e.target.value) || 0 })} />
+          </div>
+          <div style={{ ...FIELD_COL, flex: 1 }}>
+            <span style={LBL}>Price each</span>
+            <input type="number" min={0} step="0.01" style={INPUT} data-price-unit="1"
+              title="What one of them costs. The line and the total follow it."
+              value={Number(p.unit_price ?? 0)}
+              onChange={(e) => patch({ unit_price: Number(e.target.value) || 0 })} />
+          </div>
+        </div>
+        <TagControls widget={widget} patch={patch} />
+      </>
+    );
+  }
+
+  if (widget.kind === "totals") {
+    return <TotalsPanel widget={widget} patch={patch} businessTax={businessTax} lookupCoupon={lookupCoupon} />;
+  }
+
+  // D-156: `property_block` is DELETED — a property is a box holding an
+  // address block and its own priced lines, and each of those has its own
+  // panel. What is left here is the rate card and the priced line.
+  if (widget.kind === "pricing_table" || widget.kind === "price_line" || widget.kind === "priced_line") {
     return (
       <>
       {locationPicker}
       <CatalogPicker
         offerings={offerings}
         loading={catalogueLoading}
-        label={widget.kind === "pricing_table" ? "Add a service to the table" : widget.kind === "property_block" ? "Add a service to this property" : "Fill from Products & Services"}
+        label={widget.kind === "pricing_table" ? "Add a service to the table" : "Fill from Products & Services"}
         onPick={(o, price) => {
           const pick = buildPick(o, price);
           if (widget.kind === "pricing_table") {
@@ -1260,13 +1532,6 @@ function WidgetExtras({
                 offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
               }],
             });
-          } else if (widget.kind === "property_block") {
-            patch({
-              items: [...(Array.isArray(p.items) ? p.items : []), {
-                description: pick.parts.name, quantity: 1, unit_price: pick.parts.unit_price,
-                cadence: pick.parts.cadence,
-              }],
-            });
           } else {
             patch({
               name: pick.parts.name, description: pick.parts.description,
@@ -1278,15 +1543,6 @@ function WidgetExtras({
         }}
       />
       </>
-    );
-  }
-
-  if (widget.kind === "comparison_cards") {
-    return (
-      <ComparisonCardsPanel
-        widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
-        offerings={offerings} catalogueLoading={catalogueLoading} patch={patch}
-      />
     );
   }
 
@@ -1392,7 +1648,7 @@ function WidgetExtras({
 
   if (locationPicker) return locationPicker;
 
-  if (widget.kind === "key_facts" || widget.kind === "key_value_table" || widget.kind === "property_plan") {
+  if (widget.kind === "key_value_table" || widget.kind === "property_plan") {
     return (
       <button type="button" style={miniBtn} title="Add another row to this list"
         onClick={() => patch({ rows: [...(Array.isArray(p.rows) ? p.rows : []), { label: "", value: "" }] })}>
@@ -1404,132 +1660,186 @@ function WidgetExtras({
   return null;
 }
 
+/* `ComparisonCardsPanel` LIVED HERE and is DELETED (D-156, integration).
+
+   It was the inspector for the `comparison_cards` composite: a catalogue
+   picker that filled several cards at once, a field per card in tab order,
+   and "Use this plan" per card. Every one of those is now a control on ONE
+   card, in `widgets/card.ts` and `widgets/productCard.ts`, because a card is
+   a widget: the picker is the catalogue card's own, the fields are its
+   controls, and "Use this plan" is a button on the card it belongs to. The
+   composite is deleted from the registry, from the renderers and from every
+   stored document by the upgrade on the way in, so a panel for it would be a
+   panel nothing can ever open. */
+
+
+/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
+   scroll-to-the-blank until the engine landed a shared problems mechanism; the
+   engine now selects the widget, scrolls the canvas to it and puts the caret in
+   this adapter's Details box through `onFocusProblem`. One jump, not two. */
+
 /* ══════════════════════════════════════════════════════════════════════════
-   Tier cards — the one money widget that had no catalogue and no price field
-   ══════════════════════════════════════════════════════════════════════════ */
+   D-156 — the panels the atomic widgets need, and only the adapter can draw
+   ══════════════════════════════════════════════════════════════════════════
+
+   A widget's own fields are typed ON THE PAGE (every run with a `data-edit`
+   path) or in the shared inspector's Content group. What is here is the three
+   things the ENGINE cannot know: which of THIS business's products a card is
+   bound to, what THIS business's tax rate is, and what a coupon code of theirs
+   is worth. Exactly the reasoning D-33 settled for "Which location". */
+
+export interface CouponLookup {
+  ok: boolean;
+  message?: string;
+  coupon?: { code: string; percentOff: number | null; amountOff: number | null };
+}
+
+const FIELD_COL: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
 
 /**
- * D-01 and D-10, the third of the 2026-09-16 test's three worst moments.
+ * ADD A TAG TO THIS CARD (D-157).
  *
- * What was here: a Recommended dropdown and "how many cards?", and nothing
- * else. Every plan name, price, bullet and note was typed by hand onto the
- * page — except the price, which could not be typed at all: an empty
- * `cards.N.price` run measures 0px, Tab skips it, and clicking where it looks
- * types into the "/mo" suffix instead. So the one document Brandon named as
- * acceptance test #2 — tier cards with a real price each and a total at the
- * end — could not be produced by clicking.
- *
- * Three things fix it, and the first two are the design:
- *
- *  1. **The same catalogue picker the pricing table has.** Pick a product and
- *     its tiers arrive as cards, filled with the name, the price, the cadence
- *     the catalogue carries and the product's own feature list. One click per
- *     tier, or "Add all N tiers" for a product priced in bands.
- *  2. **A real field per card**, in the inspector, in tab order
- *     **name → price → per → was**, each with a placeholder and a minimum
- *     width, so nothing on a card is unreachable whatever the canvas does.
- *  3. **"Use this plan"**, which turns that card into the priced line below
- *     the block, so the grand total is a real number rather than $0.00.
- *
- * The block's honest note — *"Comparison only — the plan you choose becomes
- * the priced line. These figures are not added to any total"* — STAYS after a
- * plan is chosen, because it is still exactly true: the cards do not sum, the
- * priced line does. It is the sentence describing what just happened.
+ * Brandon: *"cards has a recommended section … add tag to this card … Best
+ * Price & Most Popular"*. Three presets because those are the three he named,
+ * a free-text box because the fourth one is somebody's own words, and a colour
+ * beside it because "Best Price" in the same blue as everything else is not a
+ * tag anybody notices. "Your brand colour" is the default and the first
+ * choice, so a tag belongs to the business unless it is meant to shout.
  */
-function ComparisonCardsPanel({
+function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<string, unknown>) => void }) {
+  const tag = tagOf(widget.props);
+  /* EVERY WRITE GOES THROUGH `ribbonProps` (widgets/ribbon.ts), which spells
+     the ribbon the way the price table does — `show_ribbon` + `ribbon_title` +
+     `ribbon_color` + `ribbon_preset` — and clears every older spelling in the
+     same write. And the six presets are the module's, not a copy: the
+     one-Recommended-per-row rule is keyed on the PRESET, so a second list
+     here would be a second answer to "which card is the recommended one". */
+  return (
+    <div style={FIELD_COL}>
+      <span style={LBL}>Ribbon on this card</span>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {RIBBON_PRESETS.map((preset) => (
+          <button key={preset.preset} type="button" data-tag-preset={preset.text}
+            style={{
+              ...miniBtn,
+              background: tag?.preset === preset.preset ? "#0B6E8C" : "#fff",
+              color: tag?.preset === preset.preset ? "#fff" : "#334155",
+            }}
+            title={preset.preset === "recommended"
+              ? "Put “Recommended” on this card. Only one card in a row can have it — putting it here takes it off the others."
+              : `Put “${preset.text}” on this card`}
+            onClick={() => patch(ribbonProps({ text: preset.text, colour: preset.colour, preset: preset.preset }))}>
+            {preset.text}
+          </button>
+        ))}
+        <button type="button" data-tag-clear="1" style={miniBtn} title="Take the ribbon off this card"
+          onClick={() => patch(ribbonProps(null))}>No ribbon</button>
+      </div>
+      <input style={INPUT} value={tag?.text || ""} data-tag-text="1"
+        placeholder="Or type your own — “Best for corner lots”"
+        title="The words on the ribbon at the top of the card"
+        onChange={(e) => {
+          const text = e.target.value;
+          patch(ribbonProps(text.trim() ? { text, colour: tag?.colour || "", preset: "custom" } : null));
+        }} />
+      {tag && (
+        <select style={INPUT} value={tag.colour || ""} data-tag-colour="1"
+          title="The colour of the ribbon"
+          onChange={(e) => patch({ ribbon_color: e.target.value })}>
+          {TAG_COLOURS.map((c) => <option key={c.label} value={c.value}>{c.label}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A bound field's name, in a business owner's words.
+ *
+ * The Binding section's `overrides` are keyed by the FIELD, and "title" and
+ * "bullets" are the model's words rather than the author's. One map, beside
+ * the sentence that reads them.
+ */
+function plainFieldName(key: string): string {
+  const NAMES: Record<string, string> = {
+    title: "the name", heading: "the name",
+    description: "the description",
+    bullets: "what is included", features_list: "what is included",
+    price: "the price", per: "the billing period", period: "the billing period",
+  };
+  return NAMES[key] || key;
+}
+
+/**
+ * THE PRODUCT CARD — bound to the catalogue, live, with "Use this plan".
+ *
+ * Brandon: *"product cards where they can directly load products/services from
+ * their actual Product Catalog"*. Picking a product writes the BINDING plus a
+ * snapshot of what the catalogue said; the card draws the live figure whenever
+ * the builder is holding the catalogue and the snapshot everywhere else (the
+ * customer's page and the PDF, where there is no catalogue in the request).
+ *
+ * "Use this plan" is unchanged in meaning from the old tier block: the card is
+ * an OFFER and never sums, and pressing this puts a `price_line` under it —
+ * which is money, and which the total counts. Pressing it on a second card
+ * replaces the line rather than adding one, because the customer buys one.
+ */
+function CatalogCardPanel({
   widget, sectionId, doc, onChange, offerings, catalogueLoading, patch,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[];
-  /** M-24 — the catalogue read has not settled yet. */
   catalogueLoading?: boolean;
   patch: (props: Record<string, unknown>) => void;
 }) {
   const p: any = widget.props || {};
-  const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
-  const recIndex = cards.findIndex((c) => c?.recommended);
-  const chosen = String(p.chosenPlan || "");
+  const binding = bindingOf(p);
+  const resolved = resolveCatalogCard(p, offerings);
+  const live = findInCatalogue(binding, offerings);
+  const overridden = overriddenFields(p);
 
-  const setCard = (i: number, fields: Record<string, unknown>) =>
-    patch({ cards: cards.map((c, n) => (n === i ? { ...c, ...fields } : c)) });
+  // THE BINDING SECTION's own writer (F.2): `_ia_source` + `_ia_selection` +
+  // `_ia_snapshot`, through `selectionProps`, which also clears the four loose
+  // spellings so a binding cannot come back from a key nothing reads.
+  const bind = (o: CatalogOffering, price: CatalogPrice | null) => patch({
+    ...selectionProps("oliver:catalogue", {
+      offeringId: String(o.offering_id), priceId: String(price?.price_id || ""),
+    }),
+    _ia_snapshot: snapshotFrom(o, price),
+  });
 
-  /** One catalogue price becomes one card. */
-  const cardFrom = (o: CatalogOffering, price: CatalogPrice | null) => {
-    const pick = buildPick(o, price);
-    return {
-      name: pick.parts.name,
-      price: fmtMoney(pick.parts.unit_price),
-      per: pick.parts.cadence || "",
-      pitch: pick.parts.description || "",
-      features: pick.parts.features.slice(0, 6),
-      list_price: "",
-      note: "",
-      recommended: false,
-      offering_id: pick.parts.offering_id,
-      price_id: pick.parts.price_id,
-      unit_price: pick.parts.unit_price,
-    };
-  };
-
-  const addCards = (next: any[]) => patch({ cards: [...cards, ...next] });
-
-  /**
-   * The chosen plan becomes the priced line, right under the cards.
-   *
-   * A second press replaces the line rather than adding another — the block
-   * has one chosen plan, so the document has one line from it, found again by
-   * the marker rather than by position.
-   */
-  const usePlan = (i: number) => {
-    const card = cards[i] || {};
-    const amount = Number(card.unit_price);
-    const unit = Number.isFinite(amount) && amount > 0 ? amount : parseMoney(card.price);
-    const line = makeWidget("priced_line", {
-      name: String(card.name || "Chosen plan"),
-      description: String(card.pitch || ""),
-      features: Array.isArray(card.features) ? card.features.filter(Boolean) : [],
+  const usePlan = () => {
+    const line = makeWidget("price_line", {
+      name: resolved.title,
+      description: resolved.description,
+      bullets: resolved.bullets,
       quantity: 1,
-      unit_price: unit,
-      cadence: String(card.per || "") || null,
-      recommended: true,
-      ...(card.offering_id ? { offering_id: card.offering_id } : {}),
-      ...(card.price_id ? { price_id: card.price_id } : {}),
+      unit_price: resolved.amount,
+      cadence: resolved.cadence,
+      // The line carries the SAME Binding section the card does, in the same
+      // names — which is what makes "learn it once" true (F.2).
+      ...selectionProps("oliver:catalogue", {
+        offeringId: binding?.offeringId || "", priceId: binding?.priceId || "",
+      }),
       fromCards: widget.id,
     });
-
-    const chosenName = String(card.name || `Card ${i + 1}`);
-    // Drop any line this block put down before — the block has ONE chosen
-    // plan, so the document has one line from it — and stamp the cards in the
-    // same pass, so a half-applied state cannot exist.
-    let next: BuilderDocument = {
-      ...doc,
-      sections: doc.sections.map((s) => ({
-        ...s,
-        columns: s.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets
-            .filter((w) => (w.props as any)?.fromCards !== widget.id)
-            .map((w) => (w.id !== widget.id ? w : {
-              ...w,
-              props: {
-                ...w.props,
-                cards: cards.map((cd, n) => ({ ...cd, recommended: n === i })),
-                chosenPlan: chosenName,
-              },
-            })),
-        })),
-      })),
-    };
-    // Place the line immediately after the cards, in the same column.
-    const sec = next.sections.find((s) => s.id === sectionId);
-    let columnIndex = 0;
-    let at = 0;
-    sec?.columns.forEach((c, ci) => {
-      const idx = c.widgets.findIndex((w) => w.id === widget.id);
-      if (idx >= 0) { columnIndex = ci; at = idx + 1; }
-    });
-    onChange(addWidget(next, sectionId, columnIndex, line, at));
+    /**
+     * BESIDE THE CARD, AT ANY DEPTH (V-2).
+     *
+     * Both halves of this used to read the top of a column only. So for the
+     * card Brandon actually builds — one of two in a row inside a box —
+     * "Use this plan" filtered nothing (a stale line inside the box stayed,
+     * and a second press added a second line, which the total then counted
+     * TWICE) and then dropped the new line at index 0 of the section's FIRST
+     * column, nowhere near the card that was pressed.
+     *
+     * `walkWidgets` finds the old line wherever it is; `insertNode` puts the
+     * new one directly after the card among its own siblings — one card, one
+     * line, in the box the author is looking at.
+     */
+    const next = removeWidgetsWhere(doc, (w) => (w.props as any)?.fromCards === widget.id);
+    onChange(insertBeside(next, widget.id, line));
   };
 
   return (
@@ -1537,140 +1847,172 @@ function ComparisonCardsPanel({
       <CatalogPicker
         offerings={offerings}
         loading={catalogueLoading}
-        label="Add a plan from your catalogue"
-        bulkLabel={(o) => `Add all ${o.prices?.length ?? 0} tiers as cards`}
-        onPickAll={(o) => addCards((o.prices || []).map((pr) => cardFrom(o, pr)))}
-        onPick={(o, price) => addCards([cardFrom(o, price)])}
+        label={binding ? "Load a different product or service" : "Load one of your products or services"}
+        onPick={bind}
       />
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={LBL}>Recommended</span>
-        <select style={INPUT} value={recIndex >= 0 ? String(recIndex) : ""}
-          title="Which card wears the Recommended badge. Exactly one, or none."
-          onChange={(e) => {
-            const pickIdx = e.target.value === "" ? -1 : Number(e.target.value);
-            patch({ cards: cards.map((c, i) => ({ ...c, recommended: i === pickIdx })) });
-          }}>
-          <option value="">None</option>
-          {cards.map((c, i) => (
-            <option key={i} value={i}>{String(c?.name || `Card ${i + 1}`)}</option>
-          ))}
-        </select>
-      </div>
-
-      {cards.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span style={LBL}>The cards</span>
-          {cards.map((c, i) => (
-            <div key={i} data-card-fields={i}
-              style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-              {/* Tab order is SOURCE order: name, price, per, was. On the page
-                  the struck-through "was" sits before the price, which is why
-                  Tab from the name used to land on it. */}
-              <input style={{ ...INPUT, fontWeight: 600 }} value={String(c?.name ?? "")}
-                data-card-field={`${i}.name`} placeholder="Plan name — e.g. Standard"
-                title="What this plan is called"
-                onChange={(e) => setCard(i, { name: e.target.value })} />
-              <div style={{ display: "flex", gap: 5 }}>
-                <input style={{ ...INPUT, minWidth: 90, fontWeight: 700 }} value={String(c?.price ?? "")}
-                  data-card-field={`${i}.price`} placeholder="$0.00"
-                  title="The price on the card — the big number the customer reads"
-                  onChange={(e) => setCard(i, { price: e.target.value, unit_price: parseMoney(e.target.value) })} />
-                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.per ?? "")}
-                  data-card-field={`${i}.per`} placeholder="per month"
-                  title="How often they pay it — per push, per visit, monthly"
-                  onChange={(e) => setCard(i, { per: e.target.value })} />
-                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.list_price ?? "")}
-                  data-card-field={`${i}.was`} placeholder="was…"
-                  title="The list price, struck through beside the price. Leave it empty if there is no discount."
-                  onChange={(e) => setCard(i, { list_price: e.target.value })} />
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <button type="button" style={{ ...miniBtn, background: chosen === String(c?.name || "") ? "#0B6E8C" : "#fff", color: chosen === String(c?.name || "") ? "#fff" : "#334155" }}
-                  data-use-plan={i}
-                  title="Put this plan on the document as the priced line, so the total is real"
-                  onClick={() => usePlan(i)}>
-                  {chosen === String(c?.name || "") ? "This is the plan" : "Use this plan"}
-                </button>
-                <button type="button" style={{ ...miniBtn, color: "#B91C1C", marginLeft: "auto" }}
-                  title="Take this card off the page"
-                  onClick={() => patch({ cards: cards.filter((_, n) => n !== i) })}>
-                  <X size={11} /> Remove
-                </button>
-              </div>
+      {binding && (
+        <>
+          <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }} data-catalog-source={resolved.source}>
+            {resolved.source === "live"
+              ? `Showing ${live?.offering.name} at today's catalogue price. Change the price in Products & Services and this card follows it.`
+              : "This card is showing the price it was loaded with — your catalogue is not open here. Reopen the builder to refresh it."}
+          </div>
+          <button type="button" style={miniBtn} data-use-plan={widget.id}
+            title="Put this plan on the document as a priced line, so it counts towards the total"
+            onClick={usePlan}>
+            Use this plan
+          </button>
+          {/* "TYPED, NOT LIVE" and "PUT IT BACK" (catalogue F.2). The words
+              are the Binding section's own, from `widgets/binding.ts`, so the
+              canvas, the inspector and every other bound widget say the same
+              thing about the same state. */}
+          {overridden.length > 0 && (
+            <div style={FIELD_COL} data-overridden={overridden.join(",")}>
+              <span style={{ fontSize: 11, color: "#B45309", lineHeight: 1.45 }}>
+                {TYPED_NOT_LIVE} — {overridden.map(plainFieldName).join(", ")}.
+                {" "}These stay as you typed them and no longer follow your catalogue.
+              </span>
+              <button type="button" style={miniBtn} data-clear-overrides="1"
+                title="Throw away the words you typed over this card and show the catalogue's own again"
+                onClick={() => patch(putItBackProps())}>
+                {PUT_IT_BACK}
+              </button>
             </div>
-          ))}
-        </div>
-      )}
-
-      <span style={{ fontSize: 10, color: "#94A3B8" }}>
-        {chosen
-          ? `“${chosen}” is the plan on this document — it is priced below the cards and it is in the total.`
-          : "Cards never add into the total. Press “Use this plan” on the one they are buying and it becomes the priced line."}
-      </span>
-    </div>
-  );
-}
-
-/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
-   scroll-to-the-blank until the engine landed a shared problems mechanism; the
-   engine now selects the widget, scrolls the canvas to it and puts the caret in
-   this adapter's Details box through `onFocusProblem`. One jump, not two. */
-
-function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel, loading }: {
-  offerings: CatalogOffering[]; label: string;
-  onPick: (o: CatalogOffering, price: CatalogPrice | null) => void;
-  /** Offered only where adding every tier at once makes sense (tier cards). */
-  onPickAll?: (o: CatalogOffering) => void;
-  bulkLabel?: (o: CatalogOffering) => string;
-  /** M-24 — still on its way. Says so instead of reading "nothing here". */
-  loading?: boolean;
-}) {
-  const [q, setQ] = useState("");
-  const list = useMemo(() => offerings.filter((o) => !q.trim() || o.name.toLowerCase().includes(q.trim().toLowerCase())), [offerings, q]);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={LBL}>{label}</span>
-      <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your services…"
-        title="Search Products & Services" data-catalog-search="1" />
-      <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-        {loading && !offerings.length && (
-          <div data-catalogue-loading="1" style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
-            Loading your catalogue…
-          </div>
-        )}
-        {!loading && !offerings.length && (
-          <div style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
-            Nothing in Products &amp; Services yet. Add what you sell there and it is here every time.
-          </div>
-        )}
-        {list.map((o) => (
-          <div key={o.offering_id} data-offering={o.offering_id}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
-              {(o.prices?.length ? o.prices : [null]).map((pr, i) => (
-                <button key={pr?.price_id || i} type="button" style={{ ...miniBtn, padding: "2px 7px", fontSize: 10 }}
-                  title={pr ? `Adds at ${fmtMoney(Number(pr.unit_amount ?? 0))}${cadenceOf(pr) ? `, ${cadenceOf(pr)}` : ""} — the basis is written onto the line` : "No catalogue price — starts at $0 and you type it"}
-                  onClick={() => onPick(o, pr)}>
-                  {pr ? `${pr.label ? `${pr.label} · ` : ""}${fmtMoney(Number(pr.unit_amount ?? 0))}` : "No price — type one"}
+          )}
+          {/* The Binding section's `refresh`, all THREE modes (catalogue F.2).
+              A document a customer has been sent must keep the price they were
+              quoted; a published page can be pinned at publish; a draft being
+              written should follow the catalogue. */}
+          <div style={FIELD_COL}>
+            <span style={LBL}>Keep the price up to date</span>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {REFRESH_MODES.map((m) => (
+                <button key={m.value} type="button" data-refresh={m.value}
+                  style={{
+                    ...miniBtn,
+                    background: resolved.refresh === m.value ? "#0B6E8C" : "#fff",
+                    color: resolved.refresh === m.value ? "#fff" : "#334155",
+                  }}
+                  title={m.help}
+                  onClick={() => patch({ refresh: m.value })}>
+                  {m.label}
                 </button>
               ))}
-              {onPickAll && (o.prices?.length ?? 0) > 1 && (
-                <button type="button" data-add-all={o.offering_id}
-                  style={{ ...miniBtn, padding: "2px 7px", fontSize: 10, borderColor: "#0B6E8C", color: "#0B6E8C" }}
-                  title={`Add every priced tier of ${o.name} as its own card, filled from the catalogue`}
-                  onClick={() => onPickAll(o)}>
-                  {bulkLabel ? bulkLabel(o) : `Add all ${o.prices?.length}`}
-                </button>
-              )}
             </div>
           </div>
-        ))}
-        {!list.length && <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>}
+          {/* `on_empty`, all THREE values. A bound card whose row is gone. */}
+          <div style={FIELD_COL}>
+            <span style={LBL}>When there is nothing to show</span>
+            <select style={INPUT} data-on-empty="1" value={onEmptyOf(p)}
+              title="What a customer sees if the product this is bound to is no longer there"
+              onChange={(e) => patch({ on_empty: e.target.value })}>
+              {ON_EMPTY_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
+          <button type="button" style={miniBtn} data-unbind="1"
+            title="Stop this card following a product. What is on it stays as typed words."
+            onClick={() => patch(selectionProps("oliver:catalogue", {}))}>
+            Unlink from the catalogue
+          </button>
+        </>
+      )}
+
+      <TagControls widget={widget} patch={patch} />
+    </div>
+  );
+}
+
+/**
+ * THE TOTALS PANEL — subtotal, tax rate, discount, coupon (D-157).
+ *
+ * Every number typed here is written ONTO the widget, never looked up at
+ * render time: the customer's page and the signed PDF are drawn by a server
+ * holding no tax table and no coupon table, and a figure that only existed in
+ * the editor is the defect §11.10 recorded twice over.
+ */
+function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
+  widget: Widget;
+  patch: (props: Record<string, unknown>) => void;
+  /** `percent: null` is "nobody has said" and is NOT 0% (one home, (c)). */
+  businessTax: { percent: number | null; label: string } | null;
+  lookupCoupon: (code: string) => Promise<CouponLookup>;
+}) {
+  const s = totalsSettings(widget.props);
+  const [code, setCode] = useState(s.coupon?.code || "");
+  const [note, setNote] = useState("");
+  // The rate box is offered whenever the document is taxed at all — in
+  // business mode it is read-only and shows what resolved.
+  const taxOn = s.taxMode !== "none";
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* THE TAX CONTROL IS THE WIDGET'S OWN, and there is exactly one of
+          it (landed 2026-09-17). This panel used to draw a second Tax
+          select and rate box beside it, so the author saw TWO groups both
+          labelled "Tax", with different words for the same three choices,
+          writing the same three props. The widget definition
+          (`widgets/totals.ts`) is the one kept: it renders wherever a
+          Totals block is offered — a proposal, a send, a landing page —
+          and it holds the canonical names.
+
+          Nothing the author could read is lost. The rate itself is on the
+          page: the tax row reads "Tax 7.25% · State + county", which is
+          what the deleted sentence said. And when the business has NO rate,
+          the canvas prints `NO_BUSINESS_RATE_SENTENCE` beside the block
+          (`renderTotals`, author only) rather than taxing at zero in
+          silence. Discount and Coupon stay here: they are this document's
+          own money and are drawn nowhere else. */}
+      <div style={FIELD_COL}>
+        <span style={LBL}>Discount</span>
+        <input type="number" min={0} max={100} step="0.1" style={INPUT} data-discount-pct="1"
+          title="A percentage off the subtotal"
+          value={Number(s.discountPercent || 0)}
+          onChange={(e) => patch({ discountPercent: Number(e.target.value) || 0 })} />
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>Per cent off the subtotal. Leave it at 0 for none.</span>
+      </div>
+
+      <div style={FIELD_COL}>
+        <span style={LBL}>Coupon code</span>
+        <div style={{ display: "flex", gap: 5 }}>
+          <input style={{ ...INPUT, flex: 1 }} value={code} data-coupon-code="1"
+            placeholder="SPRING25"
+            title="One of your own coupon codes. We check what it is worth and put it on the document."
+            onChange={(e) => { setCode(e.target.value); setNote(""); }} />
+          <button type="button" style={miniBtn} data-coupon-apply="1"
+            title="Check this code and take it off the total"
+            onClick={async () => {
+              const r = await lookupCoupon(code);
+              if (!r.ok || !r.coupon) { setNote(r.message || "We could not find that code."); return; }
+              patch({ coupon: r.coupon });
+              setNote(r.coupon.percentOff
+                ? `${r.coupon.code} takes ${r.coupon.percentOff}% off.`
+                : `${r.coupon.code} takes ${fmtMoney(Number(r.coupon.amountOff || 0))} off.`);
+            }}>Use it</button>
+        </div>
+        {s.coupon && (
+          <button type="button" style={miniBtn} data-coupon-clear="1"
+            title="Take this coupon off the document"
+            onClick={() => { patch({ coupon: null }); setCode(""); setNote(""); }}>
+            Take “{s.coupon.code}” off
+          </button>
+        )}
+        {note && <span style={{ fontSize: 10, color: "#5A7A8A" }} data-coupon-note="1">{note}</span>}
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>
+          Nothing is redeemed while you are writing. The coupon is counted when the work is invoiced.
+        </span>
       </div>
     </div>
   );
 }
+
+/* `CatalogPicker` LIVED HERE and is DELETED (D-156 stream B). There were two
+   catalogue pickers — this one, which every money widget used, and an
+   unreachable one in components/oliver/ProposalCatalogPicker.tsx that nothing
+   imported. It moved into that file, beside `buildPick` and `cadenceOf`, which
+   are the readers it depends on; the unreachable one is gone. One picker,
+   opened from the product card, the priced line, the pricing table and the
+   property block. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ask ARGUS

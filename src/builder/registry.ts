@@ -75,14 +75,96 @@ export const WIDGET_CATEGORIES: WidgetCategory[] = [
   "Sections", "Document", "Text", "Money", "Layout", "Media", "Information", "Capture", "Trust",
 ];
 
+/**
+ * ONE OPTION OF A SELECT — the value that is STORED, and the words a person
+ * reads.
+ *
+ * The catalogue's own controls are exactly this pair (`h3` = "H3",
+ * `space-between` = "Space Between"), and a control whose stored value has to
+ * be the catalogue's cannot have it derived from an English label: "Biggest"
+ * does not slugify to `h2`, and "I type it with the price" does not slugify to
+ * the empty string. So a select may declare its options either way and ONE
+ * normaliser answers for both — `controlOptions` below.
+ */
+export interface WidgetOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The PANEL SECTION a control belongs to.
+ *
+ * The catalogue groups a widget's controls into named sections — the price
+ * table's Content tab is Heading · Pricing · Features · Footer · Ribbon — and
+ * an author who has built a pricing card anywhere expects those five, in that
+ * order. A control with no section sits in the panel's own body, which is
+ * where every control on the platform sat before this.
+ */
+export type ControlSection = string;
+
 /** One editable property of a widget. Renderers come later; this is the shape. */
 export interface WidgetControl {
   key: string;
   label: string;
-  type: "text" | "textarea" | "richtext" | "number" | "money" | "colour" | "select" | "toggle" | "image" | "link" | "list" | "merge";
+  /**
+   * The control's kind. Eleven of these are the engine's own; two are the
+   * catalogue's own names for shapes the engine did not have:
+   *
+   *   `code`    a box of markup, drawn with a LIVE PREVIEW under it and the
+   *             plain sentence that it goes on the page exactly as typed.
+   *             Elementor's `Controls_Manager::CODE` (A.1).
+   *   `hidden`  a value the widget carries and no author types — the Binding
+   *             section's `_ia_source` / `_ia_selection` / `overrides`. It is
+   *             declared so the section can be READ as a whole, and the
+   *             Inspector draws no field for it. Elementor's
+   *             `Controls_Manager::HIDDEN` (A.1).
+   */
+  type: "text" | "textarea" | "richtext" | "number" | "money" | "colour" | "select" | "toggle"
+      | "image" | "link" | "list" | "merge" | "code" | "hidden";
   /** One line under the field, when the label alone is not enough. */
   help?: string;
-  options?: string[];
+  options?: string[] | WidgetOption[];
+  /** Which named group of the panel it is drawn in. See ControlSection. */
+  section?: ControlSection;
+}
+
+/**
+ * A label → the value it is stored as.
+ *
+ * Lifted out of the Inspector, where it was a private function, because the
+ * registry is what declares the options and a second copy of this rule is a
+ * second answer to "what got saved". Pure, so the tests can pin a control's
+ * values against the machine files without rendering anything.
+ */
+export function optionKey(option: string): string {
+  return option.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+/** Every option of a select, in the one shape the Inspector draws. */
+export function controlOptions(control: WidgetControl): WidgetOption[] {
+  const raw = control.options || [];
+  return (raw as Array<string | WidgetOption>).map((o) =>
+    (typeof o === "string" ? { value: optionKey(o), label: o } : o));
+}
+
+/** The value to store for what the author just chose in a select. */
+export function optionValue(control: WidgetControl, chosen: string): string {
+  const opts = controlOptions(control);
+  return opts.some((o) => o.value === chosen) ? chosen : optionKey(chosen);
+}
+
+/** Controls grouped into their panel sections, in declaration order. */
+export function controlSections(
+  controls: WidgetControl[],
+): Array<{ section: ControlSection | null; controls: WidgetControl[] }> {
+  const out: Array<{ section: ControlSection | null; controls: WidgetControl[] }> = [];
+  for (const c of controls) {
+    const section = c.section ?? null;
+    const last = out[out.length - 1];
+    if (last && last.section === section) last.controls.push(c);
+    else out.push({ section, controls: [c] });
+  }
+  return out;
 }
 
 /** The guided question SD-010 asks before inserting a widget that repeats. */
@@ -135,6 +217,17 @@ export interface WidgetDef {
   category: WidgetCategory;
   /** Which builders may offer it. Never empty. */
   adapters: BuilderAdapter[];
+  /**
+   * WHICH GATE applies to this widget — `free`, `pro`, or `ia:<product>`.
+   *
+   * Absent means `free`, which is what every widget on the platform was until
+   * this field existed. It is a fact about the WIDGET (a price table is a paid
+   * page widget wherever it lands; a product card needs a catalogue to read),
+   * never a fact about a business — WHETHER a business passes the gate is the
+   * server's answer and stays there, `adapters/website/sitePlan.ts`. See
+   * `builder/tier.ts` for why the two are separate questions.
+   */
+  tier?: WidgetTier;
   /** The starting content when it is dropped on the canvas. */
   defaults: Record<string, unknown>;
   controls: WidgetControl[];
@@ -153,31 +246,22 @@ export interface WidgetDef {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Pictures
-   ══════════════════════════════════════════════════════════════════════════ */
+   Pictures — moved to ./pictures (D-156 stream B)
+   ===================================================================== */
 
-/**
- * Build a picture from a compact SVG body.
- *
- * Inline data URIs rather than files so the pane has no network dependency and
- * a widget cannot ship without its picture. `currentColor` is deliberately NOT
- * used: the picture is a diagram of a layout, drawn in slate on transparent, so
- * it reads the same on every pane background and never competes with the
- * business's own brand colours sitting next to it in the same panel.
- */
-export function pictureFrom(body: string): string {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" fill="none" ` +
-    `stroke="#64748B" stroke-width="2" stroke-linecap="round">${body}</svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
+/* A widget now declares itself in its own module under `widgets/`, and this
+   file collects those declarations. A widget module reaching back in here for
+   `pictureFrom` would make the two files import each other at evaluation time,
+   so the three picture helpers live in `./pictures`, which neither side owns.
+   `pictureFrom` is re-exported here, so every existing caller is unchanged. */
+export { pictureFrom } from "./pictures";
+import { pictureFrom, bar, box, solid } from "./pictures";
+import type { WidgetTier } from "./tier";
+export type { WidgetTier } from "./tier";
+/* D-156 — the atomic widgets, each declared in its own file beside the
+   function that draws it. Spread into WIDGETS below: one vocabulary, still. */
+import { ATOM_WIDGET_DEFS } from "./widgets";
 
-const bar = (x: number, y: number, w: number, h = 4) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="#CBD5E1" stroke="none"/>`;
-const box = (x: number, y: number, w: number, h: number) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="none"/>`;
-const solid = (x: number, y: number, w: number, h: number) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#94A3B8" stroke="none"/>`;
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE registry — §3.2's union, as definitions
@@ -236,7 +320,6 @@ const SENDS: BuilderAdapter[] = ["email"];
  * widgets that lost "website" and why, and a test reads this list.
  */
 export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
-  comparison_cards: "site_pricing",
   pricing_table: "site_pricing",
   testimonial: "site_testimonials",
   gallery: "site_gallery",
@@ -258,9 +341,6 @@ export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
 
    Everything else lost its "email" adapter in the same pass, and each for a
    reason a mailbox enforces rather than a preference:
-     comparison_cards  the product card IS the priced card for email, and two
-                       ways to show a price is the duplication this rebuild
-                       exists to delete
      pricing_table     a rate card is a document, not a send
      key_value_table
      data_table        a table inside a layout table, in Outlook
@@ -282,6 +362,10 @@ export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
    a website, and that is the website builder's job. ─────────────────────── */
 
 export const WIDGETS: WidgetDef[] = [
+  /* D-156 — THE ATOMIC WIDGETS. Each one declares itself in its own file under
+     `widgets/`, beside the function that draws it, and the list is spread in
+     here so there is still exactly ONE vocabulary. See widgets/index.ts. */
+  ...ATOM_WIDGET_DEFS,
   /* ── Text ──────────────────────────────────────────────────────────── */
   {
     kind: "heading",
@@ -530,43 +614,6 @@ export const WIDGETS: WidgetDef[] = [
 
   /* ── Money ─────────────────────────────────────────────────────────── */
   {
-    kind: "priced_line",
-    label: "Priced item",
-    description: "One thing you are charging for, with a quantity and a price. Adds to the total.",
-    icon: "Tag",
-    picture: pictureFrom(bar(8, 12, 30) + bar(44, 12, 12) + bar(8, 24, 24) + bar(44, 24, 12)),
-    category: "Money",
-    adapters: DOCUMENTS,
-    defaults: { name: "", description: "", features: [], quantity: 1, unit_price: 0, cadence: null, recommended: false },
-    controls: [
-      { key: "name", label: "What it is", type: "text" },
-      { key: "description", label: "Why it is worth having", type: "textarea" },
-      { key: "features", label: "What is included", type: "list" },
-      { key: "quantity", label: "How many", type: "number" },
-      { key: "unit_price", label: "Price each", type: "money" },
-      { key: "recommended", label: "Mark Recommended", type: "toggle" },
-    ],
-  },
-  {
-    kind: "comparison_cards",
-    label: "Options to choose from",
-    description: "Two to six plans side by side, with one marked Recommended.",
-    icon: "LayoutGrid",
-    picture: pictureFrom(box(6, 8, 16, 26) + `<rect x="24" y="5" width="16" height="29" rx="3" fill="#F1F5F9" stroke="#64748B"/>` + box(42, 8, 16, 26) + bar(27, 11, 10, 3)),
-    category: "Money",
-    // Not website: site_pricing is the one mechanism there (§4 step 3).
-    // Not email or landing: the product card IS the priced card there, pulled
-    // from Products & Services with the catalogue's own cadence (§7).
-    adapters: DOCUMENTS,
-    defaults: { heading: "", intro: "", cards: [] },
-    controls: [
-      { key: "heading", label: "Heading above the cards", type: "text" },
-      { key: "intro", label: "One line of context", type: "textarea" },
-      { key: "cards", label: "The options", type: "list" },
-    ],
-    count: { min: 2, max: 6, label: "How many cards?", default: 3 },
-  },
-  {
     kind: "pricing_table",
     label: "Pricing table",
     description: "Your services, their prices and the basis each one bills on.",
@@ -586,17 +633,10 @@ export const WIDGETS: WidgetDef[] = [
       { key: "rows", label: "Rows", type: "list", help: "Pull them from Products & Services, or type your own." },
     ],
   },
-  {
-    kind: "totals",
-    label: "Totals at a glance",
-    description: "Grouped subtotals and a grand total, for when the list of prices is long.",
-    icon: "Calculator",
-    picture: pictureFrom(bar(8, 10, 26) + bar(44, 10, 12) + bar(8, 18, 20) + bar(44, 18, 12) + `<path d="M8 26h48" stroke="#94A3B8"/>` + bar(8, 30, 16) + bar(42, 30, 14, 5)),
-    category: "Money",
-    adapters: DOCUMENTS,
-    defaults: { heading: "Your total" },
-    controls: [{ key: "heading", label: "Heading", type: "text" }],
-  },
+  /* `totals` LIVED HERE and is DELETED (D-156). It declares itself in
+     widgets/totals.ts now, beside the function that draws it and beside its
+     own tax rate, per-cent discount and coupon — which is the whole of
+     D-157's "add totals … subtotal, tax rate, discounts/coupons". */
 
   /* ── Information ───────────────────────────────────────────────────── */
   {
@@ -756,19 +796,6 @@ export const WIDGETS: WidgetDef[] = [
     ],
   },
   {
-    kind: "key_facts",
-    label: "Key facts",
-    description: "The short answers at the top — customer, property, term, trigger — filled in for you.",
-    task: "Customer & property",
-    icon: "Rows2",
-    picture: pictureFrom(bar(8, 10, 18) + bar(34, 10, 22) + bar(8, 20, 18) + bar(34, 20, 18) + bar(8, 30, 18) + bar(34, 30, 20)),
-    category: "Document",
-    adapters: DOCUMENTS,
-    defaults: { rows: [] },
-    controls: [{ key: "rows", label: "Facts", type: "list", help: "A label and a value. Values can be typed or pulled from the customer." }],
-    count: { min: 2, max: 10, label: "How many facts?", default: 4 },
-  },
-  {
     kind: "clauses",
     label: "Numbered clauses",
     description: "Terms as numbered paragraphs, dropped in from the clauses you have saved.",
@@ -803,22 +830,6 @@ export const WIDGETS: WidgetDef[] = [
     controls: [
       { key: "heading", label: "Heading", type: "text" },
       { key: "rows", label: "Details", type: "list", help: "Saved on the location, so the crew and the next document get them too." },
-    ],
-  },
-  {
-    kind: "property_block",
-    label: "Property block",
-    description: "One location with its own line items and its own subtotal. Use one per site.",
-    task: "Customer & property",
-    icon: "MapPinned",
-    picture: pictureFrom(`<path d="M12 10a4 4 0 0 1 4 4c0 3-4 6-4 6s-4-3-4-6a4 4 0 0 1 4-4z" fill="#94A3B8" stroke="none"/>` + bar(20, 12, 36) + bar(8, 24, 48) + bar(8, 32, 24) + bar(44, 32, 12, 5)),
-    category: "Document",
-    adapters: DOCUMENTS,
-    defaults: { locationId: "", heading: "", items: [] },
-    // D-33, same as property_plan above: the adapter owns "Which location".
-    controls: [
-      { key: "heading", label: "Name on the document", type: "text" },
-      { key: "items", label: "Line items", type: "list" },
     ],
   },
   {

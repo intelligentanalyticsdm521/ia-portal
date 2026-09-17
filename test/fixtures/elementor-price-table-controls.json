@@ -1,0 +1,186 @@
+{
+  "_comment": [
+    "EXTRACTED from BUILDER_WIDGET_CATALOG_2026-09-17.pro.json (Elementor 4.1.4 + Pro 4.1.1),",
+    "widget `price-table` — its seventeen CONTENT-tab controls in five panel sections,",
+    "plus the two Style-tab ribbon colours the card also carries.",
+    "",
+    "The catalogue card in the builder IS this widget: the website adapter publishes a",
+    "`card` as a price table, so a card that spelled its fields any other way would be",
+    "stored one way and read back another. This file is the pin —",
+    "test/builder-conformance.test.mjs asserts every key CARD_DEF writes exists here,",
+    "that its select values are values Elementor offers, and that the five panel",
+    "sections are the five the Inspector draws, in order.",
+    "",
+    "ONE DELIBERATE DIFFERENCE, recorded rather than silent: our first section is",
+    "called \"Heading\" where the catalogue calls it \"Header\". That is the word the three",
+    "D-156 repos agreed on, and the test maps the one to the other by POSITION.",
+    "",
+    "Regenerate from the machine file only when Elementor itself changes, and read the diff."
+  ],
+  "elementor_version": "4.1.4",
+  "pro_version": true,
+  "widget": "price-table",
+  "content_panel_sections": [
+    "Header",
+    "Pricing",
+    "Features",
+    "Footer",
+    "Ribbon"
+  ],
+  "controls": {
+    "heading": {
+      "type": "text",
+      "section": "Header",
+      "label": "Title",
+      "default": "Enter your title"
+    },
+    "sub_heading": {
+      "type": "text",
+      "section": "Header",
+      "label": "Description",
+      "default": "Enter your description"
+    },
+    "heading_tag": {
+      "type": "select",
+      "section": "Header",
+      "label": "Title HTML Tag",
+      "options": [
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6"
+      ],
+      "default": "h3"
+    },
+    "currency_symbol": {
+      "type": "select",
+      "section": "Pricing",
+      "label": "Currency Symbol",
+      "options": [
+        "",
+        "dollar",
+        "euro",
+        "baht",
+        "franc",
+        "guilder",
+        "krona",
+        "lira",
+        "peseta",
+        "peso",
+        "pound",
+        "real",
+        "ruble",
+        "rupee",
+        "indian_rupee",
+        "shekel",
+        "yen",
+        "won",
+        "custom"
+      ],
+      "default": "dollar"
+    },
+    "currency_symbol_custom": {
+      "type": "text",
+      "section": "Pricing",
+      "label": "Custom Symbol",
+      "default": ""
+    },
+    "price": {
+      "type": "text",
+      "section": "Pricing",
+      "label": "Price",
+      "default": "39.99"
+    },
+    "currency_format": {
+      "type": "select",
+      "section": "Pricing",
+      "label": "Currency Format",
+      "options": [
+        "",
+        ","
+      ],
+      "default": ""
+    },
+    "sale": {
+      "type": "switcher",
+      "section": "Pricing",
+      "label": "Sale",
+      "default": ""
+    },
+    "original_price": {
+      "type": "number",
+      "section": "Pricing",
+      "label": "Original Price",
+      "default": "59"
+    },
+    "period": {
+      "type": "text",
+      "section": "Pricing",
+      "label": "Period",
+      "default": "Monthly"
+    },
+    "features_list": {
+      "type": "repeater",
+      "section": "Features",
+      "default": "[{\"item_text\":\"List Item #1\",\"selected_item_icon\":{\"value\":\"far fa-check-circle\",\"library\":\"fa-regular\"}},{\"item_text\":\"…"
+    },
+    "button_text": {
+      "type": "text",
+      "section": "Footer",
+      "label": "Button Text",
+      "default": "Click Here"
+    },
+    "link": {
+      "type": "url",
+      "section": "Footer",
+      "label": "Link",
+      "default": {
+        "url": "#",
+        "is_external": "",
+        "nofollow": "",
+        "custom_attributes": ""
+      }
+    },
+    "footer_additional_info": {
+      "type": "textarea",
+      "section": "Footer",
+      "label": "Additional Info",
+      "default": "This is text element"
+    },
+    "show_ribbon": {
+      "type": "switcher",
+      "section": "Ribbon",
+      "label": "Show",
+      "default": "yes"
+    },
+    "ribbon_title": {
+      "type": "text",
+      "section": "Ribbon",
+      "label": "Title",
+      "default": "Popular"
+    },
+    "ribbon_horizontal_position": {
+      "type": "choose",
+      "section": "Ribbon",
+      "label": "Position",
+      "options": [
+        "left",
+        "right"
+      ],
+      "default": ""
+    },
+    "ribbon_bg_color": {
+      "type": "color",
+      "section": "Ribbon (Style tab)",
+      "label": "Background Color",
+      "default": ""
+    },
+    "ribbon_text_color": {
+      "type": "color",
+      "section": "Ribbon (Style tab)",
+      "label": "Text Color",
+      "default": "#ffffff"
+    }
+  }
+}

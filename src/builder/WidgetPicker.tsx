@@ -21,12 +21,24 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { BuilderAdapter, WidgetDef } from "./registry";
 import { widgetDescription, widgetLabel, widgetTooltip } from "./registry";
+import type { WidgetLock } from "./tier";
 import { groupByTask, flatMatches, TASK_GROUPS, type WidgetTask } from "./widgetTasks";
+import { CONTAINER_PRESETS, type ContainerPreset } from "./treeOps";
 
 export interface WidgetPickerProps {
   adapter: BuilderAdapter;
-  /** Chosen. `count` is the answer to the widget's own guided question. */
-  onPick: (widget: WidgetDef, count?: number) => void;
+  /** Chosen. */
+  onPick: (widget: WidgetDef) => void;
+  /**
+   * A BOX WAS CHOSEN (§11.12) — "box", "row" or "grid".
+   *
+   * A separate handler and not a fake `WidgetDef`, because a container is not
+   * a widget: it has no registry entry, no adapter decides whether to offer it,
+   * and the shell puts it on the page with `makePreset` rather than
+   * `buildWidget`. One pretend widget in the list would be one thing every
+   * `WIDGETS_BY_KIND` lookup in the Portal had to be told to expect.
+   */
+  onPickBox?: (preset: ContainerPreset) => void;
   onClose: () => void;
   /** Where the "+" was, in viewport coordinates. Absent → centred. */
   anchor?: { top: number; left: number; width?: number } | null;
@@ -44,6 +56,20 @@ export interface WidgetPickerProps {
   footer?: React.ReactNode;
   /** The heading, in the adapter's words. */
   heading?: string;
+  /**
+   * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
+   *
+   * Request R-D1 in the handoff, from the website stream, and this is the
+   * door it was missing. The adapter already refuses at `insertWidget`, so
+   * nothing can be added; without this the row still looked available and the
+   * refusal arrived AFTER the press, which reads as a bug rather than a plan.
+   *
+   * A locked row stays IN the list, greyed, with the reason as its line —
+   * HIDING it would make "not on your plan" indistinguishable from a widget
+   * that is missing. Absent means nothing is locked, which is every builder
+   * but the website one.
+   */
+  lockedKinds?: Record<string, WidgetLock>;
 }
 
 /**
@@ -56,11 +82,27 @@ export function topMatch(adapter: BuilderAdapter, query: string): WidgetDef | nu
   return flatMatches(adapter, query)[0] ?? null;
 }
 
+/**
+ * The boxes a search matches. Every word has to match, like the widget search.
+ *
+ * Kept beside the widgets rather than folded into `widgetTasks.groupByTask`,
+ * because that module's whole promise is "every widget an ADAPTER offers
+ * appears in exactly one group", and a box is not something an adapter offers.
+ * Blurring that would make the test which protects it untrue.
+ */
+export function boxMatches(query: string): ContainerPreset[] {
+  const words = query.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return CONTAINER_PRESETS;
+  return CONTAINER_PRESETS.filter((c) => {
+    const hay = `${c.label} ${c.description} box container layout`.toLowerCase();
+    return words.every((w) => hay.includes(w));
+  });
+}
+
 export function WidgetPicker(p: WidgetPickerProps) {
   const controlled = p.query !== undefined;
   const [own, setOwn] = useState("");
   const [task, setTask] = useState<WidgetTask | "All">(p.task ?? "All");
-  const [asking, setAsking] = useState<{ kind: string; value: number } | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const query = controlled ? (p.query as string) : own;
@@ -82,14 +124,45 @@ export function WidgetPicker(p: WidgetPickerProps) {
   }, []);
 
   const groups = useMemo(() => groupByTask(p.adapter, query), [p.adapter, query]);
-  const shown = useMemo(
-    () => (task === "All" ? groups : groups.filter((g) => g.task === task)),
-    [groups, task]);
-  const total = useMemo(() => shown.reduce((n, g) => n + g.widgets.length, 0), [shown]);
-  const offered = useMemo(() => new Set(groups.map((g) => g.task)), [groups]);
 
+  /**
+   * THE BOXES THIS SEARCH MATCHES — and the reason the Layout group is put
+   * back when only they match (V-3's sibling, found by driving it 2026-09-17).
+   *
+   * `groupByTask` returns the groups that hold a matching WIDGET. A box is not
+   * a widget, so typing "row" — which matches the Row box and no widget at all
+   * — dropped the Layout group out of the list entirely and the picker said
+   * *"Nothing here matches 'row'"* while holding exactly the thing asked for.
+   * On the slash command that was the whole of the box door: "/row", then
+   * nothing. So the group is shown when either half of it matches, and the
+   * count that decides the empty message counts both.
+   */
+  const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : []), [p.onPickBox, query]);
+  const withLayout = useMemo(() => {
+    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;
+    const out = [...groups];
+    // In TASK_GROUPS order, so Layout sits where it always sits.
+    const at = TASK_GROUPS.indexOf("Layout");
+    const i = out.findIndex((g) => TASK_GROUPS.indexOf(g.task) > at);
+    out.splice(i < 0 ? out.length : i, 0, { task: "Layout" as WidgetTask, widgets: [] });
+    return out;
+  }, [boxes, groups]);
+  const shown = useMemo(
+    () => (task === "All" ? withLayout : withLayout.filter((g) => g.task === task)),
+    [withLayout, task]);
+  const total = useMemo(
+    () => shown.reduce((n, g) => n + g.widgets.length, 0) + (shown.some((g) => g.task === "Layout") ? boxes.length : 0),
+    [boxes, shown]);
+  const offered = useMemo(() => new Set(withLayout.map((g) => g.task)), [withLayout]);
+
+  /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
+     It asked, before the thing was on the page, a question the author could
+     not yet answer — and the only reason it existed was that the cards inside a
+     composite could not be added or removed afterwards. They can: a card is a
+     widget, and it has the same duplicate and delete as everything else. The
+     widget arrives with its default rows and the author adds or removes them
+     where they can see them. */
   function choose(w: WidgetDef) {
-    if (w.count) { setAsking({ kind: w.kind, value: w.count.default }); return; }
     p.onPick(w);
   }
 
@@ -110,7 +183,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
       }}
       onKeyDown={(e) => {
         if (e.key === "Escape") { e.stopPropagation(); p.onClose(); return; }
-        if (e.key === "Enter" && !asking) {
+        if (e.key === "Enter") {
           const first = topMatch(p.adapter, query);
           if (first) { e.preventDefault(); e.stopPropagation(); choose(first); }
         }
@@ -166,46 +239,71 @@ export function WidgetPicker(p: WidgetPickerProps) {
               {g.task}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {g.widgets.map((w) => (
+              {/* THE BOXES, AT THE TOP OF LAYOUT (§11.12, D-156).
+                  "Drag that into this box" needs a box to exist before anything
+                  can go in one, and Layout is where somebody looks for it. They
+                  are FIRST in the group because they are the thing the group is
+                  now for, and the three columns/sections rows below them are
+                  what you reach for afterwards. */}
+              {g.task === "Layout" && p.onPickBox && boxes.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  data-picker-box={preset.key}
+                  title={preset.description}
+                  aria-label={`${preset.label} — ${preset.description}`}
+                  onClick={() => p.onPickBox!(preset)}
+                  style={{
+                    width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E2E8F0",
+                    borderRadius: 8, padding: 8, cursor: "pointer",
+                  }}
+                >
+                  <div aria-hidden="true" style={{
+                    display: "flex", gap: 3, height: 44, background: "#F2F6F9", borderRadius: 4, padding: 6,
+                    flexDirection: preset.key === "box" ? "column" : "row",
+                  }}>
+                    {(preset.key === "box" ? [1, 2] : preset.key === "grid" ? [1, 2, 3] : [1, 2]).map((n) => (
+                      <span key={n} style={{ flex: 1, background: "#CBD5E1", borderRadius: 2 }} />
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{preset.label}</div>
+                  <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{preset.description}</div>
+                </button>
+              ))}
+              {g.widgets.map((w) => {
+                // R-D1 — a widget this plan cannot have. It stays in the list,
+                // greyed, with the reason as its line, and the press does
+                // nothing: a refusal that arrives after the click reads as a
+                // bug, and a row that is hidden reads as a missing feature.
+                const lock = p.lockedKinds?.[w.kind] ?? null;
+                return (
                 <div key={w.kind}>
-                  <button type="button" data-picker-kind={w.kind} title={widgetTooltip(w, p.adapter)} aria-label={widgetTooltip(w, p.adapter)}
-                    onClick={() => choose(w)}
+                  <button type="button" data-picker-kind={w.kind}
+                    {...(lock ? {
+                      "data-picker-locked": lock.sentence, "data-widget-state": lock.reason,
+                      "data-widget-tier": lock.tier, disabled: true,
+                    } : { "data-widget-state": "offered" })}
+                    title={lock?.sentence || widgetTooltip(w, p.adapter)}
+                    aria-label={lock?.sentence || widgetTooltip(w, p.adapter)}
+                    onClick={() => { if (!lock) choose(w); }}
                     style={{
-                      width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E2E8F0",
-                      borderRadius: 8, padding: 8, cursor: "pointer",
+                      width: "100%", textAlign: "left", background: lock ? "#F8FAFC" : "#fff",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: 8, padding: 8, cursor: lock ? "not-allowed" : "pointer",
+                      opacity: lock ? 0.62 : 1,
                     }}>
                     {/* THE BIG PICTURE — the shape this makes on the page. */}
                     <img src={w.picture} alt="" aria-hidden="true"
                       style={{ display: "block", width: "100%", height: 44, objectFit: "contain", background: "#F2F6F9", borderRadius: 4 }} />
                     <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{widgetLabel(w, p.adapter)}</div>
-                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{widgetDescription(w, p.adapter)}</div>
+                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>
+                      {lock?.sentence || widgetDescription(w, p.adapter)}
+                    </div>
                   </button>
 
-                  {asking?.kind === w.kind && w.count && (
-                    <div style={{ marginTop: 4, border: "1px solid #CBD5E1", borderRadius: 6, background: "#F8FAFC", padding: 8 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#334155" }}>{w.count.label}</div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6 }}>
-                        <input type="number" min={w.count.min} max={w.count.max} value={asking.value}
-                          aria-label={w.count.label}
-                          onChange={(e) => setAsking({
-                            kind: w.kind,
-                            value: Math.max(w.count!.min, Math.min(w.count!.max, Number(e.target.value) || w.count!.min)),
-                          })}
-                          style={{ width: 54, border: "1px solid #CBD5E1", borderRadius: 4, padding: "3px 6px", fontSize: 12 }} />
-                        <button type="button" title={`Add ${asking.value}`}
-                          onClick={() => { p.onPick(w, asking.value); setAsking(null); }}
-                          style={{ marginLeft: "auto", border: "none", background: "#0B1C24", color: "#fff", borderRadius: 4, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                          Add
-                        </button>
-                        <button type="button" title="Cancel" onClick={() => setAsking(null)}
-                          style={{ border: "1px solid #CBD5E1", background: "#fff", borderRadius: 4, padding: "4px 8px", fontSize: 11, cursor: "pointer" }}>
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

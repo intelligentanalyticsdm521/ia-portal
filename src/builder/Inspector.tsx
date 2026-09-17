@@ -33,11 +33,17 @@
  */
 import type { ReactNode } from "react";
 import { Sparkles, Trash2 } from "lucide-react";
-import type { BuilderDocument, Section, Selection, Widget } from "./model";
-import { WIDGETS_BY_KIND, widgetDescription, widgetLabel, type BuilderAdapter } from "./registry";
+import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
+import { widgetAt } from "./model";
+import { directionOf, isContainer } from "./treeOps";
+import {
+  WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  widgetDescription, widgetLabel,
+  type BuilderAdapter, type WidgetControl,
+} from "./registry";
 import {
   isTypographic, layerFor, resetKeys, seedFromPadding, withLayer,
-  type Device, type ElementStyle, type StyleLayer,
+  type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
   AdvancedGroup, DeviceSegment, Group, RatioPicker, SpacingGroup, TypographyGroup,
@@ -69,7 +75,6 @@ export interface InspectorProps extends InspectorSlots {
   onPatchWidget: (props: Record<string, unknown>) => void;
   onDeleteWidget: () => void;
   onMoveWidget: (delta: -1 | 1) => void;
-  onSetCount: (n: number) => void;
   /** Any colour, any font — the brand kit only supplies the swatches. */
   swatches: string[];
   fonts: string[];
@@ -104,6 +109,18 @@ export interface InspectorProps extends InspectorSlots {
   pageBreakLabel?: string;
 }
 
+/**
+ * What a box is CALLED at the top of the inspector.
+ *
+ * "Row", "Grid", "Box" — the same three words the outline uses, from the same
+ * `directionOf`, because a thing called one name in the outline and another in
+ * the inspector is two things as far as the author is concerned.
+ */
+function boxName(n: Node | null): string {
+  const d = directionOf(n);
+  return d === "row" ? "Row" : d === "grid" ? "Grid" : "Box";
+}
+
 export function Inspector(p: InspectorProps) {
   const { doc, selection } = p;
   if (!selection) {
@@ -123,10 +140,12 @@ export function Inspector(p: InspectorProps) {
   const section = doc.sections.find((s) => s.id === selection.sectionId);
   if (!section) return null;
 
-  const widget = selection.kind === "widget"
-    ? section.columns[selection.columnIndex]?.widgets[selection.widgetIndex] ?? null
-    : null;
-  const def = widget ? WIDGETS_BY_KIND[widget.kind] : null;
+  // §11.12: by ID, so the inspector binds to a card inside a row inside a box.
+  // Counting indexes into `columns[n].widgets` could only ever reach the top of
+  // a column, which is where every selection used to be.
+  const widget = selection.kind === "widget" ? widgetAt(doc, selection) : null;
+  const box = isContainer(widget);
+  const def = widget && !box ? WIDGETS_BY_KIND[widget.kind] : null;
   const isEmail = p.adapter === "email";
 
   /* The layer being EDITED — not the resolved one. An empty box means "this
@@ -148,7 +167,11 @@ export function Inspector(p: InspectorProps) {
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div>
           <div style={L}>Selected</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{widget ? (def ? widgetLabel(def, p.adapter) : widget.kind) : (section.label || "Section")}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{
+            widget
+              ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
+              : (section.label || "Section")
+          }</div>
         </div>
         {p.askArgus}
       </div>
@@ -156,7 +179,168 @@ export function Inspector(p: InspectorProps) {
       <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
         {widget && (
           <>
+            {/* A BOX (§11.12, D-156).
+
+                A box has no Content and no Typography: it holds things, it does
+                not say anything. What it HAS is a layout, and that is its first
+                group, open, because it is the reason the author put it there.
+
+                Everything BELOW this — Spacing, Advanced, and the section's own
+                groups — is the same for a box and for a widget and is written
+                ONCE. Two padding controls for one padding is exactly the drift
+                this file exists to stop. */}
+            {box && (
+              <Group title="Layout" hint="Which way what is inside this box runs, and how far apart" defaultOpen
+                onReset={() => p.onSetWidgetStyle(
+                  resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
+                <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                <div style={FIELD}>
+                  <span style={L}>Which way things run</span>
+                  <select
+                    style={INPUT}
+                    data-box-direction
+                    title="Top to bottom, side by side, or in even columns. You can say something different for phones."
+                    value={widgetLayer.direction || "column"}
+                    onChange={(e) => {
+                      const v = e.target.value as "row" | "column" | "grid";
+                      patchWidgetStyle({
+                        direction: v === "column" ? undefined : v,
+                        columns: v === "grid" ? (widgetLayer.columns ?? 3) : undefined,
+                      }, "direction");
+                    }}
+                  >
+                    <option value="column">Stacked, top to bottom</option>
+                    <option value="row">Side by side</option>
+                    <option value="grid">Even columns</option>
+                  </select>
+                </div>
+
+                {widgetLayer.direction === "grid" && (
+                  <div style={FIELD}>
+                    <span style={L}>How many columns</span>
+                    <input
+                      style={INPUT} type="number" min={1} max={12} data-box-columns
+                      title="How many even columns the things inside sit in"
+                      value={widgetLayer.columns ?? 3}
+                      onChange={(e) => patchWidgetStyle(
+                        { columns: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }, "columns")}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={FIELD}>
+                    <span style={L}>Along that way</span>
+                    <select style={INPUT} data-box-justify value={widgetLayer.justify || "start"}
+                      title="Where the things sit along the direction they run in"
+                      onChange={(e) => patchWidgetStyle(
+                        { justify: e.target.value === "start" ? undefined : e.target.value as JustifySpec }, "justify")}>
+                      <option value="start">At the start</option>
+                      <option value="center">In the middle</option>
+                      <option value="end">At the end</option>
+                      <option value="between">Spread out</option>
+                    </select>
+                  </div>
+                  <div style={FIELD}>
+                    <span style={L}>Across it</span>
+                    <select style={INPUT} data-box-align value={widgetLayer.alignItems || "stretch"}
+                      title="Whether the things fill the box across, or line up at one edge"
+                      onChange={(e) => patchWidgetStyle(
+                        { alignItems: e.target.value === "stretch" ? undefined : e.target.value as ItemsSpec }, "alignItems")}>
+                      <option value="stretch">Fill the box</option>
+                      <option value="start">At the top or left</option>
+                      <option value="center">In the middle</option>
+                      <option value="end">At the bottom or right</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={FIELD}>
+                    <span style={L}>Space between them</span>
+                    <input style={INPUT} type="number" min={0} data-box-gap
+                      title="The gap between the things inside this box, in pixels"
+                      value={widgetLayer.gap ?? ""} placeholder="0"
+                      onChange={(e) => patchWidgetStyle(
+                        { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
+                  </div>
+                  <div style={FIELD}>
+                    <span style={L}>Least height</span>
+                    <input style={INPUT} type="number" min={0} data-box-minheight
+                      title="The box is at least this tall, whatever is in it"
+                      value={widgetLayer.minHeight ?? ""} placeholder="auto"
+                      onChange={(e) => patchWidgetStyle(
+                        { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
+                  </div>
+                </div>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
+                  title="When there is not enough room, let them carry on to a second line rather than squeezing">
+                  <input type="checkbox" data-box-wrap checked={!!widgetLayer.wrap}
+                    onChange={(e) => patchWidgetStyle({ wrap: e.target.checked ? true : undefined }, "wrap")} />
+                  Let them wrap onto a second line
+                </label>
+
+                {/* WHAT THE BOX IS DRAWN AS — `props.html_tag` (conformance,
+                    2026-09-17).
+
+                    The renderer has honoured this since stream C and NOTHING
+                    could set it, so the only way to have a page's main region
+                    be a `<main>` was to hand-edit the document. It is on the
+                    box's props rather than its style because it is the same on
+                    every device: a `<header>` does not become a `<div>` on a
+                    phone. That is also the ONE Elementor-spelled key the
+                    engine reads, and it keeps that name so the publish is a
+                    pass-through. */}
+                <div style={FIELD}>
+                  <span style={L}>What this box is, to a screen reader</span>
+                  <select style={INPUT} data-box-html-tag
+                    title="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
+                    value={String((widget.props as any)?.html_tag ?? "")}
+                    onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
+                    <option value="">Just a box</option>
+                    <option value="header">The top of the page</option>
+                    <option value="main">The main part of the page</option>
+                    <option value="section">A section of the page</option>
+                    <option value="article">A whole article</option>
+                    <option value="aside">Something to one side</option>
+                    <option value="footer">The bottom of the page</option>
+                  </select>
+                </div>
+              </Group>
+            )}
+
+            {/* THE BOX'S OWN EDGE — the same three controls a section wears,
+                reading and writing the same keys through the same style.ts. */}
+            {box && (
+              <Group title="Style" hint="The edge round this box, and its corners"
+                onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["border", "radius", "shadow"]))}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div style={FIELD}>
+                    <span style={L}>Edge</span>
+                    <input style={INPUT} type="number" min={0} data-box-border
+                      title="How thick the line round this box is, in pixels"
+                      value={widgetLayer.border?.width ?? ""} placeholder="none"
+                      onChange={(e) => patchWidgetStyle({
+                        border: e.target.value === ""
+                          ? undefined
+                          : { ...(widgetLayer.border || {}), width: Math.max(0, Number(e.target.value) || 0) },
+                      }, "border")} />
+                  </div>
+                  <div style={FIELD}>
+                    <span style={L}>Rounded corners</span>
+                    <input style={INPUT} type="number" min={0} data-box-radius
+                      title="How round the corners of this box are, in pixels"
+                      value={widgetLayer.radius ?? ""} placeholder="0"
+                      onChange={(e) => patchWidgetStyle(
+                        { radius: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "radius")} />
+                  </div>
+                </div>
+              </Group>
+            )}
+
             {/* ── CONTENT — everything that was here before ─────────────── */}
+            {!box && (
             <Group title="Content" hint="What this shows, and where it comes from" defaultOpen>
               {def && widgetDescription(def, p.adapter) && (
                 <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{widgetDescription(def, p.adapter)}</div>
@@ -164,42 +348,56 @@ export function Inspector(p: InspectorProps) {
 
               {p.widgetExtras?.(widget, section.id)}
 
-              {/* The guided count, asked once on insert and adjustable here —
-                  "Add or remove a card any time." */}
-              {def?.count && (
-                <div style={FIELD}>
-                  <span style={L}>{def.count.label}</span>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    {Array.from({ length: def.count.max - def.count.min + 1 }, (_, i) => def.count!.min + i).map((n) => (
-                      <button key={n} type="button" title={`${n}`}
-                        onClick={() => p.onSetCount(n)}
-                        style={{
-                          width: 30, height: 30, borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer",
-                          border: "1px solid " + (countOf(widget) === n ? "#0C4A60" : "#CBD5E1"),
-                          background: countOf(widget) === n ? "#0C4A60" : "#fff",
-                          color: countOf(widget) === n ? "#fff" : "#334155",
-                        }}>{n}</button>
-                    ))}
-                  </div>
-                  <span style={{ fontSize: 10, color: "#94A3B8" }}>Asked once. Add or remove any time.</span>
-                </div>
-              )}
+              {/* THE COUNT CONTROL WAS HERE AND IS DELETED (D-156, item 4).
 
-              {/* Standard controls that are NOT words: toggles, selects, colours. */}
-              {(def?.controls || []).filter((c) => c.type === "toggle" || c.type === "select" || c.type === "colour" || c.type === "number" || c.type === "image" || c.type === "link").map((c) => (
+                  It had THREE homes — the pane, the picker and this — and this
+                  one was found by DRIVING the builder rather than by reading
+                  it: a Key facts widget dropped into a row still showed "HOW
+                  MANY FACTS? 2 3 4 5 6 7 8 9 10" on the right.
+
+                  Nothing is lost. The list control below already adds and
+                  removes a row where the author can see it, which is the whole
+                  point of the change: a number typed into a panel before the
+                  thing exists is not something anybody can answer, and it only
+                  existed because a composite's cards could not be changed
+                  afterwards. They can. */}
+
+              {/* Standard controls that are NOT words: toggles, selects, colours,
+                  and the code box. Grouped into the widget's own PANEL SECTIONS
+                  (registry `controlSections`) — the catalogue names a price
+                  table's five Heading · Pricing · Features · Footer · Ribbon,
+                  and an author who has built a pricing card anywhere expects
+                  those five in that order.
+
+                  A section whose controls are all WORDS draws no heading,
+                  because words are typed on the page: that is the engine's one
+                  editing mechanism and a panel field beside it would be a
+                  second one. `hidden` controls draw nothing at all — they are
+                  declared so the Binding section can be read as a whole. */}
+              {controlSections(def?.controls || []).map((grp) => {
+                const shown = grp.controls.filter((c) => PANEL_CONTROL_TYPES.has(c.type));
+                if (!shown.length) return null;
+                return (
+                  <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
+                    {grp.section && (
+                      <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                        {grp.section}
+                      </div>
+                    )}
+                    {shown.map((c) => (
                 <div key={c.key} style={FIELD}>
                   <span style={L}>{c.label}</span>
                   {c.type === "toggle" && (
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={!!(widget.props as any)[c.key]}
+                      <input type="checkbox" checked={isOn((widget.props as any)[c.key])}
                         onChange={(e) => p.onPatchWidget({ [c.key]: e.target.checked })} />
                       {c.help || "On"}
                     </label>
                   )}
-                  {c.type === "select" && (c.options?.length ? (
+                  {c.type === "select" && (controlOptions(c).length ? (
                     <select style={INPUT} value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c.options!, e.target.value) })}>
-                      {c.options.map((o) => <option key={o} value={optionKey(o)}>{o}</option>)}
+                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c, e.target.value) })}>
+                      {controlOptions(c).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   ) : null)}
                   {c.type === "number" && (
@@ -215,9 +413,33 @@ export function Inspector(p: InspectorProps) {
                       value={String((widget.props as any)[c.key] ?? "")}
                       onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
                   )}
+                  {/* A CODE BOX WITH A LIVE PREVIEW. The box is monospace and
+                      does not wrap words in the middle of a tag; the preview
+                      under it is the same markup the page will carry, drawn
+                      here so the author sees what they pasted before anybody
+                      else does. */}
+                  {c.type === "code" && (
+                    <>
+                      <textarea
+                        style={{ ...INPUT, minHeight: 120, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, whiteSpace: "pre", overflowWrap: "normal" }}
+                        data-code-box={c.key}
+                        spellCheck={false}
+                        placeholder="<div>Paste your own HTML here</div>"
+                        value={String((widget.props as any)[c.key] ?? "")}
+                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
+                      <span style={{ fontSize: 10, color: "#5A7A8A" }}>What it looks like</span>
+                      <div
+                        data-code-preview={c.key}
+                        style={{ border: "1px solid #E2E8F0", borderRadius: 4, padding: 8, background: "#fff", overflow: "auto", maxHeight: 220 }}
+                        dangerouslySetInnerHTML={{ __html: String((widget.props as any)[c.key] ?? "") }} />
+                    </>
+                  )}
                   {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
                 </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
 
               <div style={{ display: "flex", gap: 6 }}>
                 {/* The keyboard path, kept (§11.8): HTML5 drag does not fire
@@ -244,9 +466,10 @@ export function Inspector(p: InspectorProps) {
                 </div>
               )}
             </Group>
+            )}
 
             {/* ── TYPOGRAPHY — only where there are words to set ────────── */}
-            {isTypographic(widget.kind) && (
+            {!box && isTypographic(widget.kind) && (
               <TypographyGroup
                 device={p.device}
                 onDevice={p.onDevice}
@@ -529,21 +752,29 @@ function Swatches({ value, swatches, onPick }: { value: string; swatches: string
   );
 }
 
-/** How many repeats a counted widget currently has. */
-function countOf(w: Widget): number {
-  const p: any = w.props || {};
-  for (const key of ["cards", "items", "rows", "panels", "columns", "features"]) {
-    if (Array.isArray(p[key])) return p[key].length;
-  }
-  return 0;
-}
+/* `optionKey` and `optionValue` LIVED HERE and are now `registry.ts`'s, beside
+   the controls that declare the options. Two copies of "what got saved" is two
+   answers, and the registry is the one a test can pin against the machine
+   files without rendering a panel. */
 
-/** Human option → stored value. "Dark band" → "dark_band". */
-function optionKey(option: string): string {
-  return option.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-}
-function optionValue(options: string[], chosen: string): string {
-  return options.map(optionKey).includes(chosen) ? chosen : optionKey(chosen);
+/**
+ * The control types the PANEL draws.
+ *
+ * Everything else is either typed on the page (`text`, `textarea`, `richtext`,
+ * `list`, `money`, `merge` - the engine's one editing mechanism) or carried by
+ * the widget and never typed at all (`hidden`).
+ */
+const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
+  "toggle", "select", "colour", "number", "image", "link", "code",
+]);
+
+/**
+ * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
+ * writes a boolean. ONE reader, because "yes" is truthy and `false` is not,
+ * and a control that reads only one of the two silently loses the other.
+ */
+function isOn(v: unknown): boolean {
+  return v === true || v === "yes";
 }
 
 export { Sparkles, DeviceSegment };

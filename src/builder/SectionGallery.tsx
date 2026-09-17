@@ -153,11 +153,28 @@ export function SectionGallery(p: SectionGalleryProps) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 14, overflowY: "auto" }}>
               {sections.map((s) => (
-                <button key={s.key} type="button" title={`${s.name} — ${s.description}`}
-                  onDoubleClick={() => { p.onPlaceSection(s); p.onClose(); }}
-                  onClick={() => setPicked(s.key)}
+                /* A SECTION THIS PLAN CANNOT HAVE stays here, greyed, and says
+                   why (R-D2). The press does nothing: a refusal that arrives
+                   after the click reads as a bug, and a card that is not here
+                   at all reads as a missing feature. */
+                <button key={s.key} type="button"
+                  title={s.locked?.sentence || `${s.name} — ${s.description}`}
+                  aria-label={s.locked?.sentence || `${s.name} — ${s.description}`}
+                  disabled={!!s.locked}
+                  /* THE THREE STATES, on the gallery too (catalogue G.4):
+                     `data-widget-state` is `offered`, `plan` or `ownership`,
+                     the same three words the pane and the picker carry. */
+                  {...(s.locked ? {
+                    "data-premade-locked": s.locked.sentence,
+                    "data-widget-state": s.locked.reason,
+                    "data-widget-tier": s.locked.tier,
+                  } : { "data-widget-state": "offered" })}
+                  onDoubleClick={() => { if (!s.locked) { p.onPlaceSection(s); p.onClose(); } }}
+                  onClick={() => { if (!s.locked) setPicked(s.key); }}
                   style={{
-                    textAlign: "left", background: "#fff", borderRadius: 10, padding: 0, cursor: "pointer", overflow: "hidden",
+                    textAlign: "left", background: s.locked ? "#F8FAFC" : "#fff", borderRadius: 10, padding: 0,
+                    cursor: s.locked ? "not-allowed" : "pointer", overflow: "hidden",
+                    opacity: s.locked ? 0.62 : 1,
                     border: "1px solid " + (picked === s.key ? "#0C4A60" : "#E2E8F0"),
                     boxShadow: picked === s.key ? "0 8px 24px rgba(0,0,0,0.08)" : "none",
                   }}>

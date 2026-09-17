@@ -7,10 +7,16 @@
  * as far as the eye can tell, nothing happened.
  *
  * ── THE RULE, IN ONE PLACE ────────────────────────────────────────────────
- *   1. a WIDGET is selected  → insert directly AFTER it, in its own column
+ *   1. a WIDGET is selected  → insert directly AFTER it, IN ITS OWN BOX
  *   2. a SECTION is selected → append into that section's first column
  *   3. nothing selected      → the section the author is LOOKING AT
  *   4. no sections at all    → null; the caller makes one
+ *
+ * Rule 1 is the one §11.12 changed, and it changed by REMOVING a special case
+ * rather than adding one: "its own column" became "its own box", and a column
+ * IS a box. So a card selected inside a row inside a section gets the next card
+ * beside it, where the author is looking — and the old behaviour, at the top
+ * level, is the same sentence with the box being the column.
  *
  * Rule 3 is the one that was missing, and it is the reason this is a module
  * rather than three lines in the shell: "what am I looking at" is arithmetic
@@ -20,9 +26,19 @@
  * Pure: no React, no DOM. The canvas measures; this decides.
  */
 import type { BuilderDocument, Selection } from "./model";
+import { findNode, hostChildren, nodeIdAt } from "./treeOps";
 
-/** Where an insert goes: a section, a column in it, an index in that column. */
+/**
+ * WHERE AN INSERT GOES: a box, and an index in it.
+ *
+ * `hostId` is THE address — a column's id, or a container's, at any depth. The
+ * section and the column index ride along because five adapter files, the
+ * revision diff and the flash-and-scroll all still speak in sections; they are
+ * derived from the host, never typed by hand, so they cannot disagree with it.
+ */
 export interface InsertSpot {
+  /** The column or box the thing lands in. */
+  hostId: string;
   sectionId: string;
   columnIndex: number;
   index: number;
@@ -72,15 +88,37 @@ export function insertSpotFor(
   if (!doc.sections.length) return null;
 
   if (selection?.kind === "widget") {
-    const section = doc.sections.find((s) => s.id === selection.sectionId);
-    const column = section?.columns[selection.columnIndex];
-    if (section && column) {
-      // AFTER the selected widget. `Math.min` because a selection can outlive
-      // the widget it pointed at (undo, or a delete from the outline), and an
-      // index past the end would silently become "the end of the document"
-      // again — the very thing this module exists to stop.
-      const index = Math.min(selection.widgetIndex + 1, column.widgets.length);
-      return { sectionId: section.id, columnIndex: selection.columnIndex, index };
+    const id = nodeIdAt(doc, selection);
+    const hit = id ? findNode(doc, id) : null;
+    if (hit) {
+      const siblings = hostChildren(doc, hit.parentId) ?? [];
+      // AFTER the selected thing, among its OWN siblings — which is inside the
+      // box when it is in one. `Math.min` because a selection can outlive what
+      // it pointed at (undo, or a delete from the outline), and an index past
+      // the end would silently become "the end of the document" again, the very
+      // thing this module exists to stop.
+      return {
+        hostId: hit.parentId,
+        sectionId: hit.sectionId,
+        columnIndex: hit.columnIndex,
+        index: Math.min(hit.index + 1, siblings.length),
+      };
+    }
+    // THE SELECTION OUTLIVED WHAT IT POINTED AT — an undo, a delete from the
+    // outline, or a legacy path naming a column that is now empty. The COLUMN
+    // it named is still a real place, and it is the place the author was
+    // looking at, so the insert stays there rather than jumping to the first
+    // column of the section. Without this, choosing something with an empty
+    // second column selected put it in the FIRST column, which is D-11 in
+    // miniature: it landed somewhere nobody pointed at.
+    const column = doc.sections.find((s) => s.id === selection.sectionId)?.columns[selection.columnIndex];
+    if (column) {
+      return {
+        hostId: column.id,
+        sectionId: selection.sectionId,
+        columnIndex: selection.columnIndex,
+        index: Math.min(selection.widgetIndex + 1, column.widgets.length),
+      };
     }
   }
 
@@ -88,17 +126,38 @@ export function insertSpotFor(
     ?? (visibleSectionId && doc.sections.some((s) => s.id === visibleSectionId) ? visibleSectionId : null)
     ?? doc.sections[doc.sections.length - 1].id;
   const section = doc.sections.find((s) => s.id === chosenId) ?? doc.sections[doc.sections.length - 1];
-  return { sectionId: section.id, columnIndex: 0, index: section.columns[0]?.widgets.length ?? 0 };
+  const column = section.columns[0];
+  return {
+    hostId: column?.id ?? section.id,
+    sectionId: section.id,
+    columnIndex: 0,
+    index: column?.widgets.length ?? 0,
+  };
 }
 
-/** What is selected the moment the widget lands. Selected, so it can be typed into. */
-export function selectionAt(spot: InsertSpot): Selection {
+/**
+ * What is selected the moment the thing lands. Selected, so it can be typed into.
+ *
+ * `id` is passed in because the caller has just MINTED the node and therefore
+ * knows it; a selection carrying it reaches the inspector whatever depth the
+ * thing landed at, where three indices would only reach the top of a column.
+ */
+export function selectionAt(spot: InsertSpot, id?: string): Selection {
   return {
     kind: "widget",
     sectionId: spot.sectionId,
     columnIndex: spot.columnIndex,
     widgetIndex: spot.index,
+    ...(id ? { id } : {}),
   };
+}
+
+/** The column or box a section's first slot is, for a caller with only an id. */
+export function firstSpotIn(doc: BuilderDocument, sectionId: string): InsertSpot | null {
+  const section = doc.sections.find((s) => s.id === sectionId);
+  const column = section?.columns[0];
+  if (!section || !column) return null;
+  return { hostId: column.id, sectionId, columnIndex: 0, index: column.widgets.length };
 }
 
 /**
@@ -108,3 +167,62 @@ export function selectionAt(spot: InsertSpot): Selection {
  * not still glowing when the author starts typing into it.
  */
 export const FLASH_MS = 2000;
+
+/* ══════════════════════════════════════════════════════════════════════════
+   WHERE A BOX'S OWN "+" SITS (V-3)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The "+" button's side, in px. The step below must clear it. */
+export const BOX_PLUS_SIZE = 22;
+
+/**
+ * How far each level of box pulls its "+" in from the level outside it.
+ *
+ * Bigger than the button, so two buttons can never share a pixel — which is
+ * the entire defect. 26 is 22 plus a 4px gap, the same gap the hover toolbar
+ * leaves between its own buttons.
+ */
+export const BOX_PLUS_STEP = 26;
+
+/**
+ * WHERE ONE BOX'S "+" GOES — the one placement rule, at every depth.
+ *
+ * FOUND BY DRIVING IT (verifier, 2026-09-17, on `d156/integration`): a
+ * non-empty box painted its "+" pinned to its own bottom-right corner at
+ * `right:-11px; bottom:-11px; z-index:6`. A row that is the LAST child of a box
+ * has the same bottom-right corner as its parent, so the two 22×22 buttons
+ * landed on the identical pixel with the identical z — and the parent's, being
+ * appended after the nested box in the DOM, painted on top. From the second
+ * level down, "press + inside this box" silently added one level OUT: exactly
+ * the gesture Brandon's sentence is made of ("then a text field under it"),
+ * landing in the wrong host every time.
+ *
+ * The rule: the "+" hangs on ITS OWN box's bottom-right corner, pulled in by
+ * one step per level of nesting, and stacked one above its parent's. Two boxes
+ * in an ancestor chain therefore differ in BOTH position and z, so the click
+ * reaches the box the author pointed at. Depth 0 — a box sitting directly in a
+ * column — keeps the placement it has today, so the common case looks
+ * unchanged.
+ *
+ * Pure arithmetic on a number, so the invariant that makes it correct (the
+ * offsets are strictly increasing and never closer together than the button is
+ * wide) is a `node --test` rather than something you check by squinting at two
+ * overlapping circles.
+ */
+export interface BoxPlusPlacement {
+  /** Distance from the box's right edge, px. Negative hangs outside it. */
+  right: number;
+  /** Distance from the box's bottom edge, px. */
+  bottom: number;
+  /** Above the parent box's own "+", always. */
+  zIndex: number;
+}
+
+export function boxPlusPlacement(depth: number): BoxPlusPlacement {
+  const level = Math.max(0, Math.floor(depth) || 0);
+  return {
+    right: -11 + level * BOX_PLUS_STEP,
+    bottom: -11,
+    zIndex: 6 + level,
+  };
+}

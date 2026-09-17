@@ -89,9 +89,43 @@ const view = (doc, extra = {}) => makeEmailContext(doc, { ...EMAIL.context, ...e
    1. The golden fixtures — one case per widget
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * EVERY KIND A CASE ACTUALLY DRAWS, the whole tree down (D-156).
+ *
+ * `case.kind` is a LABEL — "styled", "tree", "document" — and reading coverage
+ * off it counted a case that draws four widgets as covering one. Since a tree
+ * case draws a box holding cards holding nothing, the only honest answer to
+ * "is this kind pinned by a golden" is the kinds in the document itself.
+ */
+/**
+ * EVERY KIND IN A DOCUMENT, INCLUDING THE ONES INSIDE A BOX.
+ *
+ * A box's children are `w.children` — the node's own field, which is what
+ * `serialise` writes and what the fixture holds. This read `w.props.children`,
+ * found nothing there, and so reported that the five widgets whose only golden
+ * cases are NESTED ones had no coverage at all. It is the same defect shape as
+ * V-1: a reader looking for a box's contents somewhere a box does not keep
+ * them. `props.children` is still accepted because a pre-D-156 fixture case
+ * could carry it.
+ */
+function kindsIn(doc) {
+  const out = [];
+  const walk = (ws, depth) => {
+    if (depth > 12) return;
+    for (const w of ws || []) {
+      out.push(w.kind);
+      const kids = Array.isArray(w.children) ? w.children
+        : Array.isArray(w.props && w.props.children) ? w.props.children : null;
+      if (kids) walk(kids, depth + 1);
+    }
+  };
+  for (const s of doc.sections || []) for (const c of s.columns || []) walk(c.widgets, 0);
+  return out;
+}
+
 describe("the renderer draws exactly what the fixture says", () => {
   test("the fixture covers every widget the email builder offers", () => {
-    const covered = new Set(EMAIL.cases.map((c) => c.kind));
+    const covered = new Set(EMAIL.cases.flatMap((c) => kindsIn(c.doc)));
     const missing = widgetsFor("email").map((w) => w.kind)
       .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `no golden case for: ${missing.join(", ")}`);
@@ -590,16 +624,35 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("§7's email set is exactly what is offered", () => {
+    // WIDENED 2026-09-17 (catalogue F.1 "Where it may be used"). The five
+    // D-156 atoms shipped as proposal-only; the mailbox renderer draws all
+    // five — `card`, `catalog_card`, `totals`, `address_block`, `key_fact`,
+    // each with its own golden case — so the pane offers them. A newsletter
+    // with two product cards was unreachable until it did.
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "article_card", "button", "columns", "countdown", "divider", "email_footer",
-      "heading", "image", "list", "paragraph", "personal_note", "product_card",
-      "social_links", "spacer", "testimonial",
+      "address_block", "article_card", "button", "card",
+      "columns", "countdown", "divider", "email_footer",
+      "heading", "image", "key_fact", "list", "paragraph", "personal_note",
+      "product_card", "social_links", "spacer", "testimonial", "totals",
     ]);
   });
 
   test("what a mailbox cannot render is not offered", () => {
-    for (const kind of ["form", "signature", "priced_line", "data_table", "map", "gallery", "video", "pricing_table", "comparison_cards"]) {
+    // `card` LEFT this list on 2026-09-17: a mailbox draws a typed card
+    // (`emCard`, with its own golden cases), so it is offered. `catalog_card`
+    // is BACK on it, for a different reason from the others: the mailbox can
+    // draw one, but nothing in a send can say which product it is, and a card
+    // that can be placed and never filled is worse than one that is not
+    // offered. A send's products are the newsletter's own `product_card`.
+    // `price_line` stays — it is drawn when a converted document carries one
+    // and never offered, because money in an email belongs in a Totals block.
+    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table", "catalog_card"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].adapters.includes("email"), `${kind} is offered to the email builder`);
+    }
+    // …and the four composites are not "not offered" — they are DELETED
+    // (D-156), so there is nothing left to offer.
+    for (const kind of ["comparison_cards", "property_block", "key_facts", "priced_line"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
     }
   });
 
@@ -617,8 +670,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   test("the landing builder offers §7's web set and draws all of it", () => {
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind).sort(), [
       "button", "columns", "divider", "footer_note", "form", "gallery", "heading",
-      "hero", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
-    ]);
+      // `html` — catalogue point 9's free HTML box, added 2026-09-17. A landing
+      // page is an HTML page, so a pasted embed is exactly what the author
+      // means there; a proposal and an email do not offer it.
+      "hero", "html", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
+      // WIDENED 2026-09-17 (catalogue F.1). `landingRender` draws them all,
+      // and a landing page that cannot carry a card or its total is a landing
+      // page nobody can sell from. `catalog_card` is not here: nothing on a
+      // landing page can say which product it is (see the registry test).
+      "address_block", "card", "key_fact", "totals",
+    ].sort());
     const missing = widgetsFor("landing").map((w) => w.kind)
       .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, []);
@@ -626,7 +687,9 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
 
   test("the proposal builder is untouched by any of this", () => {
     const kinds = widgetsFor("proposal").map((w) => w.kind);
-    for (const k of ["doc_header", "clauses", "priced_line", "totals", "signature", "property_block"]) {
+    // priced_line → price_line and property_block → address_block + price_line
+    // + totals, both by D-156. The proposal builder still has all of it.
+    for (const k of ["doc_header", "clauses", "price_line", "totals", "signature", "address_block"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
     for (const k of ["article_card", "product_card", "email_footer", "hero"]) {

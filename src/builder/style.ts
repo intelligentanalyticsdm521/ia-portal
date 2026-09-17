@@ -59,6 +59,27 @@ export interface BorderSpec {
 export type ShadowSpec = "none" | "soft" | "strong";
 export type AlignSpec = "left" | "center" | "right";
 
+/* ── A CONTAINER'S LAYOUT (§11.12, D-156) ────────────────────────────────
+
+   How a box arranges what is in it lives HERE, in the style, and not in a
+   second `layout` field beside it. One mechanism, and the per-device cascade
+   comes free: a row of three cards on a desktop becomes a column on a phone
+   with no new machinery at all, because `phone: { direction: "column" }` is
+   already a thing this file knows how to merge and how to emit.
+
+   `align` above is TEXT alignment and stays a widget's. `alignItems` is the
+   cross axis of a box. Two words because they are two different questions, and
+   one key answering both is how a control starts lying. */
+
+/** Which way a box runs. Absent means "column", which is how boxes stack. */
+export type DirectionSpec = "row" | "column" | "grid";
+
+/** Along the box's own direction. */
+export type JustifySpec = "start" | "center" | "end" | "between";
+
+/** Across it. */
+export type ItemsSpec = "start" | "center" | "end" | "stretch";
+
 export interface TypographySpec {
   /** px. */
   size?: number;
@@ -89,6 +110,14 @@ export interface StyleLayer {
   shadow?: ShadowSpec;
   minHeight?: number;
 
+  /* Container only — a box, a column, or a section, which is one too. */
+  direction?: DirectionSpec;
+  justify?: JustifySpec;
+  alignItems?: ItemsSpec;
+  wrap?: boolean;
+  /** Grid only: how many even columns. */
+  columns?: number;
+
   /* Widget only. */
   align?: AlignSpec;
   typography?: TypographySpec;
@@ -108,6 +137,9 @@ const SIDES = ["top", "right", "bottom", "left"] as const;
 const BORDER_STYLES: ReadonlyArray<NonNullable<BorderSpec["style"]>> = ["solid", "dashed", "dotted"];
 const SHADOWS: ReadonlyArray<ShadowSpec> = ["none", "soft", "strong"];
 const ALIGNS: ReadonlyArray<AlignSpec> = ["left", "center", "right"];
+const DIRECTIONS: ReadonlyArray<DirectionSpec> = ["row", "column", "grid"];
+const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "between"];
+const ITEMS: ReadonlyArray<ItemsSpec> = ["start", "center", "end", "stretch"];
 
 function num(v: unknown): number | undefined {
   const n = Number(v);
@@ -171,6 +203,14 @@ function readLayer(v: unknown): StyleLayer | undefined {
   if (SHADOWS.includes(o.shadow)) L.shadow = o.shadow;
   const minHeight = num(o.minHeight); if (minHeight !== undefined) L.minHeight = Math.max(0, minHeight);
   if (ALIGNS.includes(o.align)) L.align = o.align;
+  // A box's layout, read as tolerantly as everything else: anything that is not
+  // one of the words this file knows is dropped rather than carried.
+  if (DIRECTIONS.includes(o.direction)) L.direction = o.direction;
+  if (JUSTIFIES.includes(o.justify)) L.justify = o.justify;
+  if (ITEMS.includes(o.alignItems)) L.alignItems = o.alignItems;
+  if (o.wrap === true) L.wrap = true;
+  const columns = num(o.columns);
+  if (columns !== undefined && columns >= 1) L.columns = Math.min(12, Math.round(columns));
   const typography = readTypography(o.typography); if (typography) L.typography = typography;
   return Object.keys(L).length ? L : undefined;
 }
@@ -375,6 +415,11 @@ export const TYPOGRAPHIC_KINDS: ReadonlySet<string> = new Set([
   "heading", "paragraph", "list", "callout", "button", "key_facts", "key_value_table",
   "testimonial", "doc_header", "footer_note", "merge_field", "personal_note", "clauses",
   "quote", "site_heading", "site_paragraph", "site_list", "site_button", "site_text",
+  // D-156's atomic widgets. Every one of them is words on a page — a card's
+  // name and price, a priced line, a label and its answer, a total — so every
+  // one of them gets the Typography group, which is the whole promise of
+  // §11.12's "its own Content / Typography / Spacing / Advanced".
+  "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
 ]);
 
 export function isTypographic(kind: string): boolean {
@@ -428,6 +473,46 @@ export function sectionBoxDeclarations(layer: StyleLayer): string[] {
   return out;
 }
 
+/**
+ * HOW A BOX ARRANGES WHAT IS IN IT (§11.12).
+ *
+ * The one place flex and grid are written, so the canvas, the customer's copy,
+ * the landing page and the PDF cannot arrange the same box three ways.
+ *
+ * A box with NO direction emits nothing at all — it is a plain stacked block,
+ * which is what the page already does, and emitting `display:flex` for it would
+ * change the spacing of every existing document for no reason.
+ *
+ * `minHeight` and the box's own padding/border/radius come from
+ * `sectionBoxDeclarations`; this is only the arranging.
+ */
+export const JUSTIFY_CSS: Record<JustifySpec, string> = {
+  start: "flex-start", center: "center", end: "flex-end", between: "space-between",
+};
+export const ITEMS_CSS: Record<ItemsSpec, string> = {
+  start: "flex-start", center: "center", end: "flex-end", stretch: "stretch",
+};
+
+export function containerLayoutDeclarations(layer: StyleLayer): string[] {
+  const dir = layer.direction;
+  const arranged = dir === "row" || dir === "grid" || !!layer.justify
+    || !!layer.alignItems || !!layer.wrap || layer.gap !== undefined;
+  if (!arranged) return [];
+
+  const out: string[] = [];
+  if (dir === "grid") {
+    const n = Math.max(1, Math.min(12, Math.round(layer.columns ?? 3)));
+    out.push("display:grid", `grid-template-columns:repeat(${n},minmax(0,1fr))`);
+  } else {
+    out.push("display:flex", `flex-direction:${dir === "row" ? "row" : "column"}`);
+    if (layer.wrap) out.push("flex-wrap:wrap");
+  }
+  if (layer.justify) out.push(`justify-content:${JUSTIFY_CSS[layer.justify]}`);
+  if (layer.alignItems) out.push(`align-items:${ITEMS_CSS[layer.alignItems]}`);
+  if (layer.gap !== undefined) out.push(`gap:${round(layer.gap)}px`);
+  return out;
+}
+
 /** The grid's own declarations: the ratio and the gap between columns. */
 export function sectionGridDeclarations(layer: StyleLayer, layout: number): string[] {
   const out: string[] = [];
@@ -471,8 +556,15 @@ export function styleBlockFor(
     gridSelector: string;
     layout: number;
     sectionStyle?: ElementStyle;
-    /** Per widget: its selector and its style. Only STYLED widgets. */
-    widgets: Array<{ selector: string; style: ElementStyle; typographic: boolean }>;
+    /**
+     * Per node: its selector and its style. Only STYLED ones.
+     *
+     * `container` says this is a BOX, so its style emits the arranging
+     * declarations (§11.12) and the box ones — padding, border, radius, shadow,
+     * least height — rather than a widget's margin-and-text-align. A box that
+     * emitted a widget's declarations would take its padding and drop it.
+     */
+    widgets: Array<{ selector: string; style: ElementStyle; typographic: boolean; container?: boolean }>;
     /** Included for a section whose padding the style owns. See render.ts. */
     sectionPadding?: boolean;
   },
@@ -504,7 +596,13 @@ export function styleBlockFor(
       const layer = resolveStyle(w.style, device);
       const own = layerFor(w.style, device);
       const use = device === "desktop" ? layer : own;
-      const box = widgetBoxDeclarations(use);
+      const box = w.container
+        ? [
+          ...sectionBoxDeclarations(use),
+          ...(sidesToCss(use.padding) ? [`padding:${sidesToCss(use.padding)}`] : []),
+          ...containerLayoutDeclarations(use),
+        ]
+        : widgetBoxDeclarations(use);
       if (box.length) rules.push({ selector: w.selector, decls: box });
       if (w.typographic) {
         const type = typographyDeclarations(use.typography);

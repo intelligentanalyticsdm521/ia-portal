@@ -40,9 +40,15 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
 import type { BuilderDocument, Section, Selection, WidgetPath } from "./model";
+import { findNode, isContainer, nodeIdAt } from "./treeOps";
+import { extendSelection } from "./model";
+import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
 import { AddBar, ADDBAR_CSS } from "./AddBar";
-import { FLASH_MS, sectionAtViewport, type InsertSpot, type SectionBox } from "./insertPosition";
+import {
+  FLASH_MS, sectionAtViewport, boxPlusPlacement, BOX_PLUS_SIZE,
+  type InsertSpot, type SectionBox,
+} from "./insertPosition";
 import { DEFAULT_COPY, type BuilderCopy } from "./copy";
 
 /**
@@ -55,19 +61,36 @@ import { DEFAULT_COPY, type BuilderCopy } from "./copy";
  * it.
  */
 export interface DropSpot {
+  /**
+   * THE BOX it lands in — a column's id, or a container's, at any depth.
+   *
+   * §11.12. The old spot could only name a column, so a drop into a row of
+   * cards had nowhere to go; the placement rule below now finds the DEEPEST box
+   * under the pointer and this carries it. The section and column ride along
+   * for the surfaces that still speak in sections, derived and never typed.
+   */
+  hostId: string;
   sectionId: string;
   columnIndex: number;
-  /** Where in that column's widget list the drop inserts. */
+  /** Where among that box's children the drop inserts. */
   index: number;
   /** Relative to the section host, for the line. */
   top: number;
   left: number;
   width: number;
+  /** A row's line is a tall thin one; a column's is a wide flat one. */
+  height?: number;
 }
 
 /** What is in the air: a NEW widget from the pane, or one already on the page. */
 export type CanvasDrag =
-  | { kind: "new"; label: string }
+  /**
+   * Something from the pane. `box` is set when what is in the air is a BOX
+   * rather than a widget (§11.12) — one payload with one optional field, not a
+   * third variant, because the drop handler asks the same two questions of it
+   * either way and a third case is a third place to forget something.
+   */
+  | { kind: "new"; label: string; box?: ContainerPreset }
   | { kind: "move"; path: WidgetPath }
   | null;
 
@@ -187,7 +210,7 @@ export interface CanvasProps {
    */
   drag?: CanvasDrag;
   onDragWidget?: (drag: CanvasDrag) => void;
-  onDropWidget?: (spot: { sectionId: string; columnIndex: number; index: number }) => void;
+  onDropWidget?: (spot: InsertSpot) => void;
   /** Shown under the page: what the template puts next. */
   nextUp?: string | null;
   /**
@@ -356,9 +379,8 @@ export function Canvas(props: CanvasProps) {
               index={i}
               total={doc.sections.length}
               selected={selection?.kind === "section" && selection.sectionId === s.id}
-              selectedWidgetId={selection?.kind === "widget"
-                ? doc.sections.find((x) => x.id === selection.sectionId)?.columns[selection.columnIndex]?.widgets[selection.widgetIndex]?.id ?? null
-                : null}
+              selectedWidgetId={selection?.kind === "widget" ? nodeIdAt(doc, selection) : null}
+              alsoSelectedIds={selection?.kind === "widget" ? (selection.also || []) : []}
               dragging={dragId === s.id}
               onDragStart={() => setDragId(s.id)}
               onDragEnd={() => { setDragId(null); setDropIndex(null); }}
@@ -420,8 +442,19 @@ export function Canvas(props: CanvasProps) {
 
 /* ── One section: its HTML, its toolbar, its editable runs ────────────────── */
 
+/**
+ * A section on its own, as a document, so `findNode` can be asked about it.
+ *
+ * The canvas paints and measures ONE section at a time — that is what makes the
+ * caret survive a repaint — so the tree lookups here are scoped to the section
+ * in hand. One helper rather than the same literal in four callbacks.
+ */
+function oneSection(section: Section): BuilderDocument {
+  return { v: 2, settings: { style: "plain" }, sections: [section] };
+}
+
 function SectionHost({
-  section, index, total, ctx, selected, selectedWidgetId, dragging,
+  section, index, total, ctx, selected, selectedWidgetId, alsoSelectedIds, selection, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onMoveSection, onDragStart, onDragEnd, renderSection: renderOne,
   drag, onDragWidget, onDropWidget, onOpenPicker, onDuplicateWidget, onDeleteWidget,
@@ -429,6 +462,7 @@ function SectionHost({
   flashWidgetId, slash, onSlash, onSlashCommit, onRefuse, onTokenClick,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
+  alsoSelectedIds: string[];
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -439,12 +473,23 @@ function SectionHost({
   /** True when this section holds a part the law puts there. See model.ts. */
   const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
   const flashedRef = useRef<string | null>(null);
+  /** The shift-clicked ids as ONE string, so an effect can depend on them. */
+  const alsoKey = alsoSelectedIds.join(",");
 
-  /** Where a widget on the page lives, read off the DOM it was painted into. */
+  /**
+   * WHERE A THING ON THE PAGE LIVES, read off the DOM it was painted into.
+   *
+   * §11.12: the DOM carries the ID and the model answers everything else, so
+   * this reaches a card inside a row inside a box. The old version counted
+   * indexes in `section.columns[n].widgets`, which by construction could only
+   * ever find something at the top of a column.
+   */
   const pathOf = useCallback((el: HTMLElement): WidgetPath | null => {
-    const col = Number(el.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
-    const idx = section.columns[col]?.widgets.findIndex((w) => w.id === el.dataset.widget) ?? -1;
-    return idx >= 0 ? { sectionId: section.id, columnIndex: col, widgetIndex: idx } : null;
+    const id = el.dataset.widget;
+    if (!id) return null;
+    const hit = findNode(oneSection(section), id);
+    if (!hit) return null;
+    return { sectionId: section.id, columnIndex: hit.columnIndex, widgetIndex: hit.index, id };
   }, [section]);
 
   // Paint the section. SKIPPED while the caret is inside THE WORDS — see the
@@ -480,8 +525,14 @@ function SectionHost({
        sits at the corner, outside the editable runs, so dragging a widget and
        selecting a word in it stay two different gestures. */
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-widget]"))) {
-      const isSel = el.dataset.widget === selectedWidgetId;
+      const id = el.dataset.widget || "";
+      const isSel = id === selectedWidgetId;
       el.classList.toggle("bxc-widget-sel", isSel);
+      // SHIFT-CLICKED AS WELL (§11.12). A second mark rather than the same one,
+      // because "the one the inspector is bound to" and "also going into the
+      // box" are two different facts and the author has to be able to see which
+      // is which.
+      el.classList.toggle("bxc-widget-also", !isSel && alsoSelectedIds.includes(id));
 
       const tools = document.createElement("span");
       tools.className = "bxc-wtools";
@@ -492,10 +543,20 @@ function SectionHost({
         ? !!section.columns[path.columnIndex]?.widgets[path.widgetIndex]?.locked
         : false;
 
+      /* A BOX WEARS THE SAME HANDLE AS EVERYTHING ELSE (§11.12).
+         "Every element behaves like every other element" is the whole rule, so
+         there is no second loop and no second set of buttons here — a container
+         carries `data-widget` in edit mode exactly as a widget does, and this
+         loop finds it. Only the WORDS change, because "another column, another
+         section" is not what a box does. */
+      const isBox = el.dataset.kind === "container";
+      const noun = isBox ? "box" : "block";
       const grip = document.createElement("span");
       grip.className = "bxc-grip";
       grip.setAttribute("draggable", "true");
-      grip.title = "Drag to move this anywhere on the page — another column, another section";
+      grip.title = isBox
+        ? "Drag to move this box, and everything in it, anywhere on the page"
+        : "Drag to move this anywhere on the page — another box, another column, another section";
       grip.setAttribute("aria-label", "Drag to move");
       grip.textContent = "∷";
       grip.addEventListener("dragstart", (e) => {
@@ -518,8 +579,10 @@ function SectionHost({
         tools.appendChild(b);
       };
       if (!locked) {
-        button("⧉", "Make a copy of this, right underneath", () => { if (path) onDuplicateWidget?.(path); });
-        button("✕", "Remove this from the page", () => { if (path) onDeleteWidget?.(path); }, true);
+        button("⧉", `Make a copy of this ${noun}, right underneath`,
+          () => { if (path) onDuplicateWidget?.(path); });
+        button("✕", isBox ? "Remove this box and everything in it" : "Remove this from the page",
+          () => { if (path) onDeleteWidget?.(path); }, true);
       } else {
         button("\u{1F512}", "This has to stay on the page — you can change the wording, not remove it",
           () => onRefuse?.("This part has to stay: it carries your unsubscribe link and postal address. You can change the wording."));
@@ -587,27 +650,120 @@ function SectionHost({
 
     /* ── AN EMPTY COLUMN SAYS SO, AND OFFERS THE "+" ───────────────────────
        An empty column used to render as nothing at all: two columns looked
-       like one, and there was no way to put anything in the second. */
-    for (const col of Array.from(host.querySelectorAll<HTMLElement>("[data-col]"))) {
-      if (col.querySelector("[data-widget]")) continue;
-      const columnIndex = Number(col.dataset.col ?? 0);
+       like one, and there was no way to put anything in the second. §11.12
+       makes it EVERY box: a box the author has just dropped is empty by
+       definition, and an empty box you cannot put anything into is the same
+       defect one level down. A column IS a box, so this is one loop and not
+       two, and the wording is the only thing that differs. */
+    for (const box of Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"))) {
+      if (box.querySelector("[data-widget]")) continue;
+      const columnIndex = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
+      const hostId = box.dataset.bxHost || "";
+      const inBox = !box.hasAttribute("data-col");
       const b = document.createElement("button");
       b.type = "button";
       b.className = "bxc-addhere";
       b.setAttribute("data-builder-addhere", String(columnIndex));
-      b.title = "Add something in this column";
+      b.setAttribute("data-addhere-host", hostId);
+      b.title = inBox ? "Add something in this box" : "Add something in this column";
       b.textContent = "+ Add here";
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         onOpenPicker?.(
-          { kind: "spot", spot: { sectionId: section.id, columnIndex, index: 0 } },
+          { kind: "spot", spot: { hostId, sectionId: section.id, columnIndex, index: 0 } },
           (e.currentTarget as HTMLElement).getBoundingClientRect(),
         );
       });
-      col.appendChild(b);
+      box.appendChild(b);
     }
-  }, [html, selectedWidgetId, onDragWidget, onDuplicateWidget, onDeleteWidget, onOpenPicker, onRefuse,
-      onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy, pathOf, section]);
+
+    /* ── AND A BOX WITH THINGS IN IT IS NOT A DEAD END ──────────────────
+       Brandon's sentence ends "then a text field under it" — UNDER something
+       already in the box. A "+" only on the EMPTY ones would mean the only way
+       to add the second thing is a drag, and the whole of D-11 is that a
+       gesture you have to guess is a gesture nobody makes. A thin strip at the
+       end of each box, quiet until the pointer is near it. */
+    for (const box of Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"))) {
+      if (box.hasAttribute("data-col")) continue;
+      const kids = Array.from(box.children).filter((el) =>
+        el instanceof HTMLElement && el.hasAttribute("data-widget"));
+      if (!kids.length) continue;
+      const hostId = box.dataset.bxHost || "";
+      const columnIndex = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
+      /**
+       * EVERY BOX'S "+" IS ITS OWN (V-3).
+       *
+       * FOUND BY DRIVING IT (verifier, 2026-09-17): this button used to take
+       * its position from the stylesheet — the same `right:-11px; bottom:-11px;
+       * z-index:6` for every box at every depth. A row that is the last child
+       * of a box shares its parent's bottom-right corner, so the two buttons
+       * sat on the identical pixel and the PARENT's won (it is appended after
+       * the nested box). Pressing "+ inside this row" added to the box around
+       * it, silently, from the second level down.
+       *
+       * ONE placement rule, `boxPlusPlacement`, keyed on how many boxes this
+       * box is inside: pulled in one step per level and stacked above its
+       * parent's, so no two buttons in an ancestor chain can overlap. The
+       * depth is counted off the DOM the renderer just wrote, which is the
+       * same tree the model has.
+       */
+      let level = 0;
+      for (let up = box.parentElement; up && up !== host; up = up.parentElement) {
+        if (up.hasAttribute("data-bx-host") && !up.hasAttribute("data-col")) level += 1;
+      }
+      const place = boxPlusPlacement(level);
+      const what = box.classList.contains("bx-box-row") ? "row"
+        : box.classList.contains("bx-box-grid") ? "grid" : "box";
+      const words = level
+        ? `Add something inside this ${what} (level ${level + 1})`
+        : `Add something inside this ${what}`;
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "bxc-addin";
+      b.setAttribute("data-builder-addin", hostId);
+      b.setAttribute("data-addin-level", String(level));
+      b.style.right = `${place.right}px`;
+      b.style.bottom = `${place.bottom}px`;
+      b.style.zIndex = String(place.zIndex);
+      b.title = words;
+      b.setAttribute("aria-label", words);
+      b.textContent = "+";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onOpenPicker?.(
+          { kind: "spot", spot: { hostId, sectionId: section.id, columnIndex, index: kids.length } },
+          (e.currentTarget as HTMLElement).getBoundingClientRect(),
+        );
+      });
+      box.appendChild(b);
+    }
+  }, [html, selectedWidgetId, alsoSelectedIds, onDragWidget, onDuplicateWidget, onDeleteWidget, onOpenPicker,
+      onRefuse, onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy, pathOf, section]);
+
+  /**
+   * THE SELECTION MARKS, WITHOUT A REPAINT.
+   *
+   * FOUND BY DRIVING IT (2026-09-17, D-156). Shift-clicking a second widget
+   * changed the document and changed nothing on the page: the paint above is
+   * deliberately SKIPPED while the caret is inside a run of text, and on this
+   * canvas clicking any words puts the caret inside a run of text. So the
+   * marks could never be drawn by the gesture that sets them, and "select two
+   * things and put them in a box" had no way to show you what was selected.
+   *
+   * The guard exists to stop React rewriting the HTML under the cursor. This
+   * writes no HTML: it toggles two classes on wrappers the paint already made.
+   * That is why it is a second effect rather than a hole in the first one.
+   */
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-widget]"))) {
+      const id = el.dataset.widget || "";
+      const isSel = id === selectedWidgetId;
+      el.classList.toggle("bxc-widget-sel", isSel);
+      el.classList.toggle("bxc-widget-also", !isSel && alsoKey.split(",").includes(id));
+    }
+  }, [selectedWidgetId, alsoKey, html]);
 
   /**
    * THE NEW THING IS BROUGHT TO THE AUTHOR, not the other way round.
@@ -644,40 +800,74 @@ function SectionHost({
     const host = hostRef.current;
     const wrap = wrapRef.current;
     if (!host || !wrap) return null;
-    const cols = Array.from(host.querySelectorAll<HTMLElement>("[data-col]"));
-    if (!cols.length) return null;
-    // The column the pointer is over, or the nearest one — never nothing, so a
-    // drop just outside a column still lands somewhere the author can see.
-    let col = cols.find((c) => {
-      const r = c.getBoundingClientRect();
-      return clientX >= r.left && clientX <= r.right;
-    });
-    if (!col) {
-      col = cols.reduce((best, c) => {
-        const d = (x: HTMLElement) => {
-          const r = x.getBoundingClientRect();
-          return clientX < r.left ? r.left - clientX : clientX - r.right;
-        };
-        return d(c) < d(best) ? c : best;
-      }, cols[0]);
+
+    // EVERY BOX, at every depth, columns included — they are boxes too. This is
+    // the one line that makes the rule the same all the way down: the candidate
+    // list is "things you can drop into", not "columns".
+    const boxes = Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"));
+    if (!boxes.length) return null;
+
+    const covers = (el: HTMLElement) => {
+      const r = el.getBoundingClientRect();
+      return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
+    };
+    // THE DEEPEST ONE THE POINTER IS ACTUALLY IN.
+    //
+    // A box inside a column is inside the column's rectangle too, so "the first
+    // match" would always be the column and a card could never be dropped into
+    // a row. Depth decides, and `querySelectorAll` returns document order, so
+    // the deepest covering box is simply the LAST covering box.
+    let box = boxes.filter(covers).pop() || null;
+    if (!box) {
+      // Nothing covers it — the nearest box by distance, so a drop just outside
+      // still lands somewhere the author can see. Columns only: falling into a
+      // random nested box the pointer was never over is worse than the end of
+      // the nearest column.
+      const cols = boxes.filter((b) => b.hasAttribute("data-col"));
+      const pool = cols.length ? cols : boxes;
+      const distance = (x: HTMLElement) => {
+        const r = x.getBoundingClientRect();
+        const dx = clientX < r.left ? r.left - clientX : clientX > r.right ? clientX - r.right : 0;
+        const dy = clientY < r.top ? r.top - clientY : clientY > r.bottom ? clientY - r.bottom : 0;
+        return dx + dy;
+      };
+      box = pool.reduce((best, b) => (distance(b) < distance(best) ? b : best), pool[0]);
     }
-    const colRect = col.getBoundingClientRect();
+
+    const boxRect = box.getBoundingClientRect();
     const wrapRect = wrap.getBoundingClientRect();
-    const widgets = Array.from(col.children).filter((el): el is HTMLElement =>
+    // Its OWN children only — `children`, never a query — so a card two boxes
+    // down is not mistaken for a sibling of the box it is in.
+    const kids = Array.from(box.children).filter((el): el is HTMLElement =>
       el instanceof HTMLElement && el.hasAttribute("data-widget"));
-    let index = widgets.length;
-    let top = widgets.length ? widgets[widgets.length - 1].getBoundingClientRect().bottom : colRect.top;
-    for (let i = 0; i < widgets.length; i++) {
-      const r = widgets[i].getBoundingClientRect();
-      if (clientY < r.top + r.height / 2) { index = i; top = r.top; break; }
+
+    // A ROW measures across, a column measures down. The same sentence either
+    // way: the first child whose MIDDLE is past the pointer is where the line
+    // goes. A row that measured vertically would draw the line above a card the
+    // pointer was to the left of, which is the drop nobody meant.
+    const across = getComputedStyle(box).flexDirection === "row";
+    let index = kids.length;
+    let before: HTMLElement | null = null;
+    for (let i = 0; i < kids.length; i++) {
+      const r = kids[i].getBoundingClientRect();
+      const past = across ? clientX < r.left + r.width / 2 : clientY < r.top + r.height / 2;
+      if (past) { index = i; before = kids[i]; break; }
     }
+
+    const last = kids.length ? kids[kids.length - 1].getBoundingClientRect() : null;
+    const line = before ? before.getBoundingClientRect() : null;
+    const column = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
     return {
+      hostId: box.dataset.bxHost || "",
       sectionId: section.id,
-      columnIndex: Number(col.dataset.col ?? 0),
+      columnIndex: column,
       index,
-      top: top - wrapRect.top,
-      left: colRect.left - wrapRect.left,
-      width: colRect.width,
+      // The line is drawn ACROSS a column and DOWN a row, which is the only way
+      // it can say "between these two" in either direction.
+      top: (across ? boxRect.top : (line ? line.top : (last ? last.bottom : boxRect.top))) - wrapRect.top,
+      left: (across ? (line ? line.left : (last ? last.right : boxRect.left)) : boxRect.left) - wrapRect.left,
+      width: across ? 3 : boxRect.width,
+      height: across ? boxRect.height : 3,
     };
   }, [section.id]);
 
@@ -736,7 +926,11 @@ function SectionHost({
         e.preventDefault();
         const at = spot ?? findSpot(e.clientX, e.clientY);
         setSpot(null);
-        if (at) onDropWidget?.({ sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index });
+        if (at) {
+          onDropWidget?.({
+            hostId: at.hostId, sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index,
+          });
+        }
       }}
       /* M-8 — right-click is the same menu as the ⋯ on the handle and the ⋯ in
          the Outline. It asks the WIDGET first and falls back to the section, in
@@ -749,7 +943,15 @@ function SectionHost({
         const el = (e.target as HTMLElement).closest<HTMLElement>("[data-widget]");
         const path = el && hostRef.current?.contains(el) ? pathOf(el) : null;
         if (path) {
-          onSelect({ kind: "widget", ...path });
+          /* A RIGHT-CLICK ON SOMETHING ALREADY SELECTED KEEPS THE SELECTION.
+             FOUND BY DRIVING IT (D-156): shift-clicking two widgets and then
+             right-clicking one of them re-selected THAT one on the way to the
+             menu, so "Put these in a box" was greyed out with "hold Shift and
+             click a second thing" beside it — while two things were selected.
+             The gesture that opens the menu cannot be the gesture that undoes
+             what the menu is for. */
+          const already = alsoKey.split(",").includes(path.id || "") || path.id === selectedWidgetId;
+          if (!already) onSelect({ kind: "widget", ...path });
           onContextMenu({ kind: "widget", path }, { x: e.clientX, y: e.clientY });
           return;
         }
@@ -769,7 +971,13 @@ function SectionHost({
         const widgetEl = target.closest<HTMLElement>("[data-widget]");
         if (widgetEl && hostRef.current?.contains(widgetEl)) {
           const path = pathOf(widgetEl);
-          if (path) { onSelect({ kind: "widget", ...path }); return; }
+          if (path) {
+            // SHIFT ADDS TO THE SELECTION (§11.12), which is what "select two
+            // cards and put them in a box" is made of. The rule is in the model
+            // so it is a test rather than three lines in a click handler.
+            onSelect(e.shiftKey ? extendSelection(selection, path) : { kind: "widget", ...path });
+            return;
+          }
         }
         onSelect({ kind: "section", sectionId: section.id });
       }}
@@ -852,7 +1060,8 @@ function SectionHost({
           className="bxc-dropline"
           data-drop-index={spot.index}
           data-drop-col={spot.columnIndex}
-          style={{ top: spot.top, left: spot.left, width: spot.width }}
+          style={{ top: spot.top, left: spot.left, width: spot.width, height: spot.height ?? 3 }}
+          data-drop-host={spot.hostId}
           aria-hidden="true"
         />
       )}
@@ -881,9 +1090,32 @@ const CANVAS_CSS = `
 .bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; }
 [data-widget] { position: relative; }
 /* THE WIDGET'S OWN HANDLE — on hover, at the corner, outside the words. */
+/* A HANDLE THAT CANNOT BE SEEN CANNOT BE PRESSED (landed 2026-09-17).
+
+   FOUND BY DRIVING IT: pressing the ✕ on a card inside a row inside a box
+   deleted THE BOX AND EVERYTHING IN IT. The handles were hidden with
+   opacity: 0 alone, and an element at opacity 0 is invisible but still
+   takes the click — so the ancestors' ✕, painted later in the DOM at the
+   same corner and the same z, swallowed every press meant for the child.
+   Absence-based hiding, failing open, on the one control that destroys
+   work: V-3's defect on the tool row rather than on the "+".
+
+   pointer-events travels with opacity in all three rules below, so
+   "stepped back" means "not pressable" everywhere and there is one
+   answer to "can this handle be pressed". */
 .bxc-wtools { position: absolute; top: -11px; left: -9px; z-index: 6; display: inline-flex; gap: 2px;
-  opacity: 0; transition: opacity .1s; }
-[data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; }
+  opacity: 0; pointer-events: none; transition: opacity .1s; }
+[data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; pointer-events: auto; }
+/* ALSO SELECTED (§11.12) — shift-clicked, going into the box with the other
+   one. A dotted ring rather than the solid selection ring, because the author
+   has to be able to tell which one the inspector on the right is about. */
+.bxc-widget-also { outline: 2px dotted #2D9CDB; outline-offset: 2px; border-radius: 3px; }
+/* A BOX'S OWN HANDLE STEPS BACK while the pointer is on something INSIDE it.
+   Without this, hovering a card in a row in a box shows three handles stacked
+   in the same corner and the author cannot tell which one they are about to
+   press — which is the nesting equivalent of the section toolbar that used to
+   sit on top of the first widget. */
+.bx-box:has(> [data-widget]:hover) > .bxc-wtools { opacity: 0; pointer-events: none; }
 .bxc-grip, .bxc-wtool { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   background: #2D9CDB; color: #fff; border: none; border-radius: 4px; font-size: 11px; line-height: 1;
   user-select: none; cursor: pointer; padding: 0; }
@@ -898,6 +1130,33 @@ const CANVAS_CSS = `
 .bxc-addhere { display: block; width: 100%; border: 1px dashed #A8CDD8; background: #F8FBFD; color: #0C4A60;
   border-radius: 6px; padding: 14px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
 .bxc-addhere:hover { border-color: #0C4A60; background: #EEF6FA; }
+/* THE "+" INSIDE A BOX THAT ALREADY HAS THINGS IN IT. Quiet until the pointer
+   is near, like the strip between sections — a page with a dashed box round
+   every level is a page you cannot read.
+
+   OUT OF FLOW, pinned to the box's bottom-right corner, and that is not a
+   decoration: an in-flow button is a CHILD, so in a row it would sit between
+   the cards and take a share of the width, and in a grid it would take a whole
+   cell. Found by driving it: the first version was align-self:center, in
+   flow, it ended up under the last thing in the box, and clicking where it
+   looked selected the paragraph above it instead. */
+/* Position and z-index are NOT here: they come from boxPlusPlacement (one
+   rule keyed on the box's depth, written onto the element itself), and the
+   SIZE is the same constant the step is measured against. A second answer in
+   this stylesheet is how the parent's "+" ended up on top of its child's. */
+.bxc-addin { position: absolute;
+  opacity: 0; transition: opacity .12s;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #0C4A60; background: #0C4A60; color: #fff; border-radius: 999px;
+  width: ${BOX_PLUS_SIZE}px; height: ${BOX_PLUS_SIZE}px;
+  line-height: 1; font-size: 14px; font-weight: 700; cursor: pointer; }
+.bx-box:hover > .bxc-addin, .bxc-addin:focus { opacity: 1; }
+.bxc-addin:hover { background: #12607c; }
+/* A BOX ON THE PAGE, in the editor only: a hairline so the author can see the
+   thing they are dropping into. Never in the customer's copy — this class is
+   on the canvas wrapper, not in DOCUMENT_CSS. */
+.bxc-sec .bx-box { outline: 1px dashed rgba(12,74,96,.16); outline-offset: 2px; border-radius: 4px; }
+.bxc-sec .bx-box:hover { outline-color: rgba(12,74,96,.42); }
 /* WHERE IT WOULD LAND. */
 .bxc-dropline { position: absolute; z-index: 7; height: 3px; margin-top: -1px; border-radius: 2px;
   background: #2D9CDB; box-shadow: 0 0 0 1px rgba(45,156,219,.35); pointer-events: none; }
