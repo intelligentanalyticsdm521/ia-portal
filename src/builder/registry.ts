@@ -225,7 +225,6 @@ const SENDS: BuilderAdapter[] = ["email"];
  * widgets that lost "website" and why, and a test reads this list.
  */
 export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
-  comparison_cards: "site_pricing",
   pricing_table: "site_pricing",
   testimonial: "site_testimonials",
   gallery: "site_gallery",
@@ -247,9 +246,6 @@ export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
 
    Everything else lost its "email" adapter in the same pass, and each for a
    reason a mailbox enforces rather than a preference:
-     comparison_cards  the product card IS the priced card for email, and two
-                       ways to show a price is the duplication this rebuild
-                       exists to delete
      pricing_table     a rate card is a document, not a send
      key_value_table
      data_table        a table inside a layout table, in Outlook
@@ -523,56 +519,6 @@ export const WIDGETS: WidgetDef[] = [
 
   /* ── Money ─────────────────────────────────────────────────────────── */
   {
-    kind: "priced_line",
-    label: "Priced item",
-    description: "One thing you are charging for, with a quantity and a price. Adds to the total.",
-    icon: "Tag",
-    picture: pictureFrom(bar(8, 12, 30) + bar(44, 12, 12) + bar(8, 24, 24) + bar(44, 24, 12)),
-    category: "Money",
-    adapters: DOCUMENTS,
-    defaults: { name: "", description: "", features: [], quantity: 1, unit_price: 0, cadence: null, recommended: false },
-    controls: [
-      { key: "name", label: "What it is", type: "text" },
-      { key: "description", label: "Why it is worth having", type: "textarea" },
-      { key: "features", label: "What is included", type: "list" },
-      { key: "quantity", label: "How many", type: "number" },
-      { key: "unit_price", label: "Price each", type: "money" },
-      { key: "recommended", label: "Mark Recommended", type: "toggle" },
-    ],
-    /* SUPERSEDED BY D-156 — folded into `price_line`.
-       `hidden` means "still in the vocabulary, never offered": a document
-       saved before the upgrade still draws, and nobody can add another one.
-       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
-       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
-       leave here rather than a composite quietly coming back. */
-    hidden: true,
-  },
-  {
-    kind: "comparison_cards",
-    label: "Options to choose from",
-    description: "Two to six plans side by side, with one marked Recommended.",
-    icon: "LayoutGrid",
-    picture: pictureFrom(box(6, 8, 16, 26) + `<rect x="24" y="5" width="16" height="29" rx="3" fill="#F1F5F9" stroke="#64748B"/>` + box(42, 8, 16, 26) + bar(27, 11, 10, 3)),
-    category: "Money",
-    // Not website: site_pricing is the one mechanism there (§4 step 3).
-    // Not email or landing: the product card IS the priced card there, pulled
-    // from Products & Services with the catalogue's own cadence (§7).
-    adapters: DOCUMENTS,
-    defaults: { heading: "", intro: "", cards: [] },
-    controls: [
-      { key: "heading", label: "Heading above the cards", type: "text" },
-      { key: "intro", label: "One line of context", type: "textarea" },
-      { key: "cards", label: "The options", type: "list" },
-    ],
-    /* SUPERSEDED BY D-156 — decomposed into `card` / `catalog_card` in a row container.
-       `hidden` means "still in the vocabulary, never offered": a document
-       saved before the upgrade still draws, and nobody can add another one.
-       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
-       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
-       leave here rather than a composite quietly coming back. */
-    hidden: true,
-  },
-  {
     kind: "pricing_table",
     label: "Pricing table",
     description: "Your services, their prices and the basis each one bills on.",
@@ -755,25 +701,6 @@ export const WIDGETS: WidgetDef[] = [
     ],
   },
   {
-    kind: "key_facts",
-    label: "Key facts",
-    description: "The short answers at the top — customer, property, term, trigger — filled in for you.",
-    task: "Customer & property",
-    icon: "Rows2",
-    picture: pictureFrom(bar(8, 10, 18) + bar(34, 10, 22) + bar(8, 20, 18) + bar(34, 20, 18) + bar(8, 30, 18) + bar(34, 30, 20)),
-    category: "Document",
-    adapters: DOCUMENTS,
-    defaults: { rows: [] },
-    controls: [{ key: "rows", label: "Facts", type: "list", help: "A label and a value. Values can be typed or pulled from the customer." }],
-    /* SUPERSEDED BY D-156 — decomposed into a row of `key_fact`.
-       `hidden` means "still in the vocabulary, never offered": a document
-       saved before the upgrade still draws, and nobody can add another one.
-       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
-       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
-       leave here rather than a composite quietly coming back. */
-    hidden: true,
-  },
-  {
     kind: "clauses",
     label: "Numbered clauses",
     description: "Terms as numbered paragraphs, dropped in from the clauses you have saved.",
@@ -809,29 +736,6 @@ export const WIDGETS: WidgetDef[] = [
       { key: "heading", label: "Heading", type: "text" },
       { key: "rows", label: "Details", type: "list", help: "Saved on the location, so the crew and the next document get them too." },
     ],
-  },
-  {
-    kind: "property_block",
-    label: "Property block",
-    description: "One location with its own line items and its own subtotal. Use one per site.",
-    task: "Customer & property",
-    icon: "MapPinned",
-    picture: pictureFrom(`<path d="M12 10a4 4 0 0 1 4 4c0 3-4 6-4 6s-4-3-4-6a4 4 0 0 1 4-4z" fill="#94A3B8" stroke="none"/>` + bar(20, 12, 36) + bar(8, 24, 48) + bar(8, 32, 24) + bar(44, 32, 12, 5)),
-    category: "Document",
-    adapters: DOCUMENTS,
-    defaults: { locationId: "", heading: "", items: [] },
-    // D-33, same as property_plan above: the adapter owns "Which location".
-    controls: [
-      { key: "heading", label: "Name on the document", type: "text" },
-      { key: "items", label: "Line items", type: "list" },
-    ],
-    /* SUPERSEDED BY D-156 — decomposed into `address_block` + `price_line` + `totals`.
-       `hidden` means "still in the vocabulary, never offered": a document
-       saved before the upgrade still draws, and nobody can add another one.
-       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
-       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
-       leave here rather than a composite quietly coming back. */
-    hidden: true,
   },
   {
     kind: "page_break",

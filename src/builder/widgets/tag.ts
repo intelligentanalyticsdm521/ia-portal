@@ -58,17 +58,28 @@ export const TAG_COLOURS: ReadonlyArray<{ label: string; value: string }> = [
  */
 export function tagOf(props: Record<string, unknown> | undefined | null): CardTag | null {
   const p: any = props || {};
+  const colourOf = (): string => String(p.tagColour ?? p.ribbon_color ?? "").trim();
   const raw = p.tag;
   if (raw && typeof raw === "object") {
     const text = String((raw as any).text ?? "").trim();
     if (!text) return null;
-    const colour = String((raw as any).colour ?? "").trim();
+    const colour = String((raw as any).colour ?? "").trim() || colourOf();
     return colour ? { text, colour } : { text };
   }
-  if (p.recommended) {
-    const text = String(p.badge || "").trim() || "Recommended";
-    return { text };
+  // A PLAIN STRING is a tag too. The composite wrote `badge: "Best price"` and
+  // a page published to a website comes back as Elementor's `ribbon_title`
+  // behind `show_ribbon`. Three spellings, ONE reader — the alternative is
+  // three renderers each deciding for itself what a ribbon is.
+  const plain = String(
+    raw ?? p.badge
+    ?? (p.show_ribbon === "yes" || p.show_ribbon === true ? p.ribbon_title : "")
+    ?? "",
+  ).trim();
+  if (plain) {
+    const colour = colourOf();
+    return colour ? { text: plain, colour } : { text: plain };
   }
+  if (p.recommended) return { text: "Recommended" };
   return null;
 }
 

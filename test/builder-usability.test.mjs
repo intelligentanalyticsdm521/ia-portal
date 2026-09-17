@@ -810,9 +810,11 @@ describe("no screen in the rebuild names another product", () => {
 function cardHtml(mode, price) {
   resetIds();
   const doc = emptyDocument();
-  const w = makeWidget("comparison_cards", {
-    cards: [{ name: "Standard", price, per: "", list_price: "", features: [""] }],
-  });
+  // D-156: a card is its OWN widget, so the paths are the card's own fields
+  // rather than `cards.N.*` inside a composite. The defect this pins is the
+  // same one — an empty price that measures 0px, has no placeholder and is
+  // skipped by Tab — and it is pinned on the widget that now carries it.
+  const w = makeWidget("card", { title: "Standard", price, per: "", was: "", bullets: [""] });
   return renderWidget(w, makeContext(doc, { mode }));
 }
 
@@ -821,19 +823,19 @@ describe("the tier card's price can be clicked (D-01, B-A-1)", () => {
     // "cards.N.price is 0px wide with no placeholder; unclickable. Tab from the
     // name skips it. Clicking beside it writes into cards.N.per."
     const html = cardHtml("edit", "");
-    assert.match(html, /class="bx-now bx-slot bx-now-slot"[^>]*data-edit="cards\.0\.price"/);
-    assert.match(html, /data-edit="cards\.0\.price"[^>]*data-placeholder="\$0\.00"/);
+    assert.match(html, /class="bx-now bx-slot bx-now-slot"[^>]*data-edit="price"/);
+    assert.match(html, /data-edit="price"[^>]*data-placeholder="\$0\.00"/);
   });
 
   test("the price comes FIRST, so Tab reaches it before the suffix and the strike-through", () => {
     const html = cardHtml("edit", "");
-    assert.ok(html.indexOf("cards.0.price") < html.indexOf("cards.0.per"), "Tab still skips the price");
-    assert.ok(html.indexOf("cards.0.per") < html.indexOf("cards.0.list_price"));
+    assert.ok(html.indexOf('data-edit="price"') < html.indexOf('data-edit="per"'), "Tab still skips the price");
+    assert.ok(html.indexOf('data-edit="per"') < html.indexOf('data-edit="was"'));
   });
 
   test("a price that HAS a figure wears no slot classes", () => {
     const html = cardHtml("edit", "$249.00");
-    assert.match(html, /class="bx-now"[^>]*data-edit="cards\.0\.price"/);
+    assert.match(html, /class="bx-now"[^>]*data-edit="price"/);
   });
 
   test("the rule the target hangs off exists, and is wider than the small slots", () => {

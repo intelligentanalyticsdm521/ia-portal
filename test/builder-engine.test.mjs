@@ -215,13 +215,24 @@ describe("prop paths — what the canvas types into is where the model stores it
         { id: "w", kind: "comparison_cards", props: { heading: "H", cards: [{ name: "A", features: ["f"] }] } },
       ] }] }],
     });
+    // The composite is upgraded on the way in (D-156), so what the renderer
+    // stamps is the ATOMIC card's own paths — `title`, `bullets.0` — and the
+    // editor writes them back into that card's own props.
     const html = renderSection(doc.sections[0], makeContext(doc, { mode: "edit" }));
     const paths = [...html.matchAll(/data-edit="([^"]+)"/g)].map((m) => m[1]);
-    assert.ok(paths.includes("cards.0.name"), "the card's name is not editable in place");
-    assert.ok(paths.includes("cards.0.features.0"), "the card's feature is not editable in place");
-    for (const p of paths) {
-      const next = setPropPath(doc.sections[0].columns[0].widgets[0].props, p, "typed");
-      assert.equal(getPropPath(next, p), "typed", `writing back to ${p} failed`);
+    assert.ok(paths.includes("title"), "the card's name is not editable in place");
+    assert.ok(paths.includes("bullets.0"), "the card's included line is not editable in place");
+    // Every path the renderer stamped writes back into SOME node of the tree —
+    // the heading, the card, the box. The vocabulary is the node's own, which
+    // is the whole point of an atomic widget.
+    const nodes = [];
+    const walk = (list) => { for (const n of list) { nodes.push(n); if (Array.isArray(n.children)) walk(n.children); } };
+    walk(doc.sections[0].columns[0].widgets);
+    for (const path of paths) {
+      const owner = nodes.find((n) => n.props && path.split(".")[0] in n.props);
+      assert.ok(owner, `nothing in the tree stores ${path}`);
+      const next = setPropPath(owner.props, path, "typed");
+      assert.equal(getPropPath(next, path), "typed", `writing back to ${path} failed`);
     }
   });
 });
@@ -305,10 +316,12 @@ describe("money, against the fixture oliver-api runs too", () => {
     // MUTATION: add "card" or "catalog_card" to PRICED_KINDS and the first
     // fixture case goes red. This test says what the list must be.
     //   price_line   D-156's atomic line of money
-    //   priced_line  the same thing under its old name, until every stored
-    //                document has been through stream A's upgrade-on-open
-    //   property_block  superseded, same reason
-    assert.deepEqual([...PRICED_KINDS], ["price_line", "priced_line", "property_block"]);
+    //   priced_line  the same thing under its old name — the rename is what
+    //                "folded into" means, and a line that reached a page
+    //                without passing through `deserialise` still counts
+    // `property_block` was here and is GONE: a property is a box holding
+    // priced lines, so its money is on the lines themselves.
+    assert.deepEqual([...PRICED_KINDS], ["price_line", "priced_line"]);
   });
 
   test("a site's lines are counted in its subtotal AND in the total, exactly once", () => {
@@ -475,7 +488,8 @@ describe("templates and pre-made sections (§7)", () => {
   test("the seasonal service agreement carries the whole shape: title, terms, pricing, signature, property plan", () => {
     const doc = templateByKey("service_agreement").build();
     const kinds = walkWidgets(doc).map((x) => x.widget.kind);
-    for (const k of ["doc_header", "key_facts", "clauses", "pricing_table", "callout", "signature", "property_plan"]) {
+    // `key_facts` is `key_fact` now, one widget per row (D-156).
+    for (const k of ["doc_header", "key_fact", "clauses", "pricing_table", "callout", "signature", "property_plan"]) {
       assert.ok(kinds.includes(k), `the agreement template has no ${k}`);
     }
     const labels = doc.sections.map((s) => s.label);
@@ -487,7 +501,9 @@ describe("templates and pre-made sections (§7)", () => {
 
   test("the platform proposal carries tier cards and a total", () => {
     const kinds = walkWidgets(templateByKey("platform_proposal").build()).map((x) => x.widget.kind);
-    assert.ok(kinds.includes("comparison_cards"));
+    // Three CARDS, each its own widget, not one comparison-cards lump (D-156).
+    assert.equal(kinds.filter((k) => k === "card").length, 3);
+    assert.ok(!kinds.includes("comparison_cards"), "a shipped template still ships a lump");
     assert.ok(kinds.includes("totals"));
   });
 
@@ -535,13 +551,20 @@ describe("templates and pre-made sections (§7)", () => {
   });
 
   test("every widget a pre-made section places is in the registry and offered to proposals", () => {
-    for (const p of PREMADE_SECTIONS) {
-      for (const w of p.build().columns[0].widgets) {
+    // AT EVERY DEPTH (D-156): a ready-made section is a tree now, and a card
+    // three levels down that nothing draws is the same defect as one at the
+    // top. A CONTAINER is the engine's own node — it has no registry entry by
+    // design, because no adapter decides whether to offer a box — so it is
+    // walked through rather than looked up.
+    const walk = (nodes, p) => {
+      for (const w of nodes) {
+        if (w.kind === "container") { walk(w.children || [], p); continue; }
         const def = WIDGETS_BY_KIND[w.kind];
         assert.ok(def, `${p.key} places "${w.kind}", which is not in the registry`);
         assert.ok(def.adapters.includes("proposal"), `${p.key} places "${w.kind}", which proposals may not use`);
       }
-    }
+    };
+    for (const p of PREMADE_SECTIONS) walk(p.build().columns[0].widgets, p);
   });
 
   test("premadeByKey finds what the gallery lists", () => {
@@ -572,8 +595,10 @@ describe("opening a proposal written by the old editor", () => {
     const doc = upgradeV1(v1);
     const kinds = walkWidgets(doc).map((x) => x.widget.kind);
     assert.ok(kinds.includes("heading") && kinds.includes("paragraph"), "text");
-    assert.equal(kinds.filter((k) => k === "priced_line").length, 2, "service + line");
-    assert.ok(kinds.includes("comparison_cards"), "cards");
+    // The v1 door runs the SAME D-156 upgrade the stored door runs, so a
+    // pre-builder proposal opens as the tree too — one model on the screen.
+    assert.equal(kinds.filter((k) => k === "price_line").length, 2, "service + line");
+    assert.ok(kinds.includes("card"), "cards");
     assert.ok(kinds.includes("callout"), "callout");
     assert.ok(kinds.includes("key_value_table"), "buckets");
     assert.ok(kinds.includes("signature"), "signature");
@@ -596,7 +621,7 @@ describe("opening a proposal written by the old editor", () => {
   test("document_json wins over blocks, and neither present means the caller picks a template", () => {
     const withDoc = { document_json: FIXTURE.cases[1].document, blocks: v1 };
     assert.equal(openProposalDocument(withDoc).sections.length, 1);
-    assert.equal(walkWidgets(openProposalDocument(withDoc))[0].widget.kind, "priced_line");
+    assert.equal(walkWidgets(openProposalDocument(withDoc))[0].widget.kind, "price_line");
     assert.ok(openProposalDocument({ blocks: v1 }));
     assert.equal(openProposalDocument({}), null);
   });

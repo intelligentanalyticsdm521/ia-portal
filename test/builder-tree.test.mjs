@@ -88,7 +88,7 @@ describe("Brandon's sentence, one clause at a time (D-156)", () => {
     const row = makePreset("row");
     let after = insertNode(doc, box.id, 0, row);
     const typed = makeWidget("card", { title: "Standard", price: "$249" });
-    const fromCatalogue = makeWidget("product_card", { itemId: "svc-7" });
+    const fromCatalogue = makeWidget("catalog_card", { offeringId: "svc-7" });
     after = insertNode(after, row.id, 0, typed);
     after = insertNode(after, row.id, 1, fromCatalogue);
 
@@ -577,10 +577,14 @@ describe("composites become trees, and everything else is left exactly alone", (
     assert.equal(typed.props.description, "The usual", "pitch was dropped");
     assert.deepEqual(typed.props.bullets, ["a", "b"], "features were dropped");
     assert.equal(typed.props.recommended, true);
-    assert.equal(typed.props.tag, "Best Price");
-    // A card that NAMES a catalogue item is a product card.
-    assert.equal(fromCatalogue.kind, "product_card");
-    assert.equal(fromCatalogue.props.itemId, "svc-7");
+    assert.deepEqual(typed.props.tag, { text: "Best Price" });
+    // A card that NAMES a catalogue item is a CATALOGUE card, bound by the
+    // catalogue's own two keys, and carrying what the composite was already
+    // showing as its snapshot so it is never blank where there is no catalogue.
+    assert.equal(fromCatalogue.kind, "catalog_card");
+    assert.equal(fromCatalogue.props.offeringId, "svc-7");
+    assert.equal(fromCatalogue.props.snapshot.title, "Pro");
+    assert.equal(fromCatalogue.props.snapshot.price, "$399");
   });
 
   test("no heading and no intro means no empty heading and no empty paragraph", () => {
@@ -593,7 +597,7 @@ describe("composites become trees, and everything else is left exactly alone", (
 
   test("property_block, key_facts and priced_line", () => {
     const property = makeWidget("property_block", {
-      locationId: "loc-3", heading: "42 Elm St", items: [{ name: "Plowing", unit_price: 200 }],
+      locationId: "loc-3", heading: "42 Elm St", items: [{ description: "Plowing", unit_price: 200 }],
     });
     const facts = makeWidget("key_facts", { rows: [{ label: "Term", value: "12 months" }, { label: "Start", value: "Nov 1" }] });
     const priced = makeWidget("priced_line", { name: "Salting", unit_price: 85, quantity: 2 });
@@ -601,10 +605,13 @@ describe("composites become trees, and everything else is left exactly alone", (
 
     const [p, f, line] = upgradeDocument(doc).sections[0].columns[0].widgets;
 
+    // The items are PRICED LINES, never a rate card: a rate card is prose and
+    // does not reach a total, so a property's money would have quietly gone.
     assert.deepEqual(p.children.map((n) => n.kind),
-      ["heading", "address_block", "pricing_table", "totals"]);
+      ["heading", "address_block", "price_line", "totals"]);
     assert.equal(p.children[1].props.locationId, "loc-3");
-    assert.equal(p.children[2].props.rows[0].name, "Plowing");
+    assert.equal(p.children[2].props.name, "Plowing");
+    assert.equal(p.children[2].props.unit_price, 200);
 
     assert.equal(directionOf(f), "row");
     assert.deepEqual(f.children.map((n) => n.props.label), ["Term", "Start"]);

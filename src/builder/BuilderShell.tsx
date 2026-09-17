@@ -81,9 +81,8 @@ export type MenuTarget =
 /** Which array a counted widget repeats. One map, so "how many?" works once. */
 export function repeatKeyFor(kind: string): string | null {
   switch (kind) {
-    case "comparison_cards": return "cards";
-    case "key_facts": case "key_value_table": case "property_plan": case "pricing_table": return "rows";
-    case "clauses": case "list": case "gallery": case "property_block": return "items";
+    case "key_value_table": case "property_plan": case "pricing_table": return "rows";
+    case "clauses": case "list": case "gallery": return "items";
     case "article_card": case "product_card": return "items";
     case "callout": return "panels";
     case "data_table": return "columns";
@@ -95,12 +94,10 @@ export function repeatKeyFor(kind: string): string | null {
 /** One empty repeat, shaped for the widget it belongs to. */
 function blankRepeat(kind: string): unknown {
   switch (kind) {
-    case "comparison_cards": return { name: "", pitch: "", price: "", per: "", features: ["", "", ""] };
-    case "key_facts": case "key_value_table": case "property_plan": return { label: "", value: "" };
+    case "key_value_table": case "property_plan": return { label: "", value: "" };
     case "pricing_table": return { name: "", basis: "", rate: "" };
     case "clauses": return { title: "", body: "" };
     case "callout": return { title: "", tone: "accent", body: "" };
-    case "property_block": return { description: "", quantity: 1, unit_price: 0 };
     case "article_card": return { title: "", excerpt: "", image: "", alt: "", url: "", linkLabel: "Read it" };
     case "product_card": return { name: "", blurb: "", price: "", cadence: "", image: "", alt: "", url: "", ctaLabel: "" };
     default: return "";

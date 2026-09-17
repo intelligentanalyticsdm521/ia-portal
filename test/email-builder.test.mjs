@@ -89,9 +89,32 @@ const view = (doc, extra = {}) => makeEmailContext(doc, { ...EMAIL.context, ...e
    1. The golden fixtures — one case per widget
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * EVERY KIND A CASE ACTUALLY DRAWS, the whole tree down (D-156).
+ *
+ * `case.kind` is a LABEL — "styled", "tree", "document" — and reading coverage
+ * off it counted a case that draws four widgets as covering one. Since a tree
+ * case draws a box holding cards holding nothing, the only honest answer to
+ * "is this kind pinned by a golden" is the kinds in the document itself.
+ */
+function kindsIn(doc) {
+  const out = [];
+  const walk = (ws, depth) => {
+    if (depth > 12) return;
+    for (const w of ws || []) {
+      out.push(w.kind);
+      if (w.kind === "container" && Array.isArray(w.props && w.props.children)) {
+        walk(w.props.children, depth + 1);
+      }
+    }
+  };
+  for (const s of doc.sections || []) for (const c of s.columns || []) walk(c.widgets, 0);
+  return out;
+}
+
 describe("the renderer draws exactly what the fixture says", () => {
   test("the fixture covers every widget the email builder offers", () => {
-    const covered = new Set(EMAIL.cases.map((c) => c.kind));
+    const covered = new Set(EMAIL.cases.flatMap((c) => kindsIn(c.doc)));
     const missing = widgetsFor("email").map((w) => w.kind)
       .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `no golden case for: ${missing.join(", ")}`);
@@ -598,8 +621,13 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("what a mailbox cannot render is not offered", () => {
-    for (const kind of ["form", "signature", "priced_line", "data_table", "map", "gallery", "video", "pricing_table", "comparison_cards"]) {
+    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table", "card", "catalog_card"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].adapters.includes("email"), `${kind} is offered to the email builder`);
+    }
+    // …and the four composites are not "not offered" — they are DELETED
+    // (D-156), so there is nothing left to offer.
+    for (const kind of ["comparison_cards", "property_block", "key_facts", "priced_line"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
     }
   });
 

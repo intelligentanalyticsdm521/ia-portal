@@ -840,17 +840,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         doc={doc}
         onChange={setDoc}
         ctx={ctx}
-        /* D-156 — a ready-made section that is MORE THAN ONE section.
-           "Choose your plan" is a heading and a line of copy with a ROW of
-           cards under them, and today's model gives a section one set of
-           columns, so the pattern is two sections until nested containers
-           land. Returning false tells the shell this adapter placed it. */
-        onPlaceSection={(premade, at) => {
-          const all = premade.buildAll?.();
-          if (!all || all.length < 2) return true;
-          setDoc((d) => all.reduce((acc, section, i) => addSection(acc, section, at + i), d));
-          return false;
-        }}
+        /* D-156 — the interception is GONE. "Choose your plan" is a heading, a
+           line of copy and a ROW OF CARDS in ONE section now, because a box can
+           hold a row; the shell places it like every other ready-made section,
+           in one step and therefore in one undo. */
         /* N-1 — the engine's problems mechanism, on the surface that needed it
            most. The counter in the pane, the jump, and the refusal beside the
            button that was pressed all come from these three props. */
@@ -1319,7 +1312,7 @@ function WidgetExtras({
   // A property block needs BOTH: which location it is, and what is being done
   // there. The location picker used to sit in a later branch that an early
   // return never reached, so a block could be priced but never placed.
-  const locationPicker = (widget.kind === "property_plan" || widget.kind === "property_block"
+  const locationPicker = (widget.kind === "property_plan" || widget.kind === "address_block"
     || widget.kind === "address_block") ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -1414,14 +1407,17 @@ function WidgetExtras({
     return <TotalsPanel widget={widget} patch={patch} businessTax={businessTax} lookupCoupon={lookupCoupon} />;
   }
 
-  if (widget.kind === "pricing_table" || widget.kind === "priced_line" || widget.kind === "property_block") {
+  // D-156: `property_block` is DELETED — a property is a box holding an
+  // address block and its own priced lines, and each of those has its own
+  // panel. What is left here is the rate card and the priced line.
+  if (widget.kind === "pricing_table" || widget.kind === "price_line" || widget.kind === "priced_line") {
     return (
       <>
       {locationPicker}
       <CatalogPicker
         offerings={offerings}
         loading={catalogueLoading}
-        label={widget.kind === "pricing_table" ? "Add a service to the table" : widget.kind === "property_block" ? "Add a service to this property" : "Fill from Products & Services"}
+        label={widget.kind === "pricing_table" ? "Add a service to the table" : "Fill from Products & Services"}
         onPick={(o, price) => {
           const pick = buildPick(o, price);
           if (widget.kind === "pricing_table") {
@@ -1441,13 +1437,6 @@ function WidgetExtras({
                 offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
               }],
             });
-          } else if (widget.kind === "property_block") {
-            patch({
-              items: [...(Array.isArray(p.items) ? p.items : []), {
-                description: pick.parts.name, quantity: 1, unit_price: pick.parts.unit_price,
-                cadence: pick.parts.cadence,
-              }],
-            });
           } else {
             patch({
               name: pick.parts.name, description: pick.parts.description,
@@ -1459,15 +1448,6 @@ function WidgetExtras({
         }}
       />
       </>
-    );
-  }
-
-  if (widget.kind === "comparison_cards") {
-    return (
-      <ComparisonCardsPanel
-        widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
-        offerings={offerings} catalogueLoading={catalogueLoading} patch={patch}
-      />
     );
   }
 
@@ -1573,7 +1553,7 @@ function WidgetExtras({
 
   if (locationPicker) return locationPicker;
 
-  if (widget.kind === "key_facts" || widget.kind === "key_value_table" || widget.kind === "property_plan") {
+  if (widget.kind === "key_value_table" || widget.kind === "property_plan") {
     return (
       <button type="button" style={miniBtn} title="Add another row to this list"
         onClick={() => patch({ rows: [...(Array.isArray(p.rows) ? p.rows : []), { label: "", value: "" }] })}>
@@ -1585,213 +1565,18 @@ function WidgetExtras({
   return null;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Tier cards — the one money widget that had no catalogue and no price field
-   ══════════════════════════════════════════════════════════════════════════ */
+/* `ComparisonCardsPanel` LIVED HERE and is DELETED (D-156, integration).
 
-/**
- * D-01 and D-10, the third of the 2026-09-16 test's three worst moments.
- *
- * What was here: a Recommended dropdown and "how many cards?", and nothing
- * else. Every plan name, price, bullet and note was typed by hand onto the
- * page — except the price, which could not be typed at all: an empty
- * `cards.N.price` run measures 0px, Tab skips it, and clicking where it looks
- * types into the "/mo" suffix instead. So the one document Brandon named as
- * acceptance test #2 — tier cards with a real price each and a total at the
- * end — could not be produced by clicking.
- *
- * Three things fix it, and the first two are the design:
- *
- *  1. **The same catalogue picker the pricing table has.** Pick a product and
- *     its tiers arrive as cards, filled with the name, the price, the cadence
- *     the catalogue carries and the product's own feature list. One click per
- *     tier, or "Add all N tiers" for a product priced in bands.
- *  2. **A real field per card**, in the inspector, in tab order
- *     **name → price → per → was**, each with a placeholder and a minimum
- *     width, so nothing on a card is unreachable whatever the canvas does.
- *  3. **"Use this plan"**, which turns that card into the priced line below
- *     the block, so the grand total is a real number rather than $0.00.
- *
- * The block's honest note — *"Comparison only — the plan you choose becomes
- * the priced line. These figures are not added to any total"* — STAYS after a
- * plan is chosen, because it is still exactly true: the cards do not sum, the
- * priced line does. It is the sentence describing what just happened.
- */
-function ComparisonCardsPanel({
-  widget, sectionId, doc, onChange, offerings, catalogueLoading, patch,
-}: {
-  widget: Widget; sectionId: string; doc: BuilderDocument;
-  onChange: (d: BuilderDocument) => void;
-  offerings: CatalogOffering[];
-  /** M-24 — the catalogue read has not settled yet. */
-  catalogueLoading?: boolean;
-  patch: (props: Record<string, unknown>) => void;
-}) {
-  const p: any = widget.props || {};
-  const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
-  const recIndex = cards.findIndex((c) => c?.recommended);
-  const chosen = String(p.chosenPlan || "");
+   It was the inspector for the `comparison_cards` composite: a catalogue
+   picker that filled several cards at once, a field per card in tab order,
+   and "Use this plan" per card. Every one of those is now a control on ONE
+   card, in `widgets/card.ts` and `widgets/productCard.ts`, because a card is
+   a widget: the picker is the catalogue card's own, the fields are its
+   controls, and "Use this plan" is a button on the card it belongs to. The
+   composite is deleted from the registry, from the renderers and from every
+   stored document by the upgrade on the way in, so a panel for it would be a
+   panel nothing can ever open. */
 
-  const setCard = (i: number, fields: Record<string, unknown>) =>
-    patch({ cards: cards.map((c, n) => (n === i ? { ...c, ...fields } : c)) });
-
-  /** One catalogue price becomes one card. */
-  const cardFrom = (o: CatalogOffering, price: CatalogPrice | null) => {
-    const pick = buildPick(o, price);
-    return {
-      name: pick.parts.name,
-      price: fmtMoney(pick.parts.unit_price),
-      per: pick.parts.cadence || "",
-      pitch: pick.parts.description || "",
-      features: pick.parts.features.slice(0, 6),
-      list_price: "",
-      note: "",
-      recommended: false,
-      offering_id: pick.parts.offering_id,
-      price_id: pick.parts.price_id,
-      unit_price: pick.parts.unit_price,
-    };
-  };
-
-  const addCards = (next: any[]) => patch({ cards: [...cards, ...next] });
-
-  /**
-   * The chosen plan becomes the priced line, right under the cards.
-   *
-   * A second press replaces the line rather than adding another — the block
-   * has one chosen plan, so the document has one line from it, found again by
-   * the marker rather than by position.
-   */
-  const usePlan = (i: number) => {
-    const card = cards[i] || {};
-    const amount = Number(card.unit_price);
-    const unit = Number.isFinite(amount) && amount > 0 ? amount : parseMoney(card.price);
-    const line = makeWidget("priced_line", {
-      name: String(card.name || "Chosen plan"),
-      description: String(card.pitch || ""),
-      features: Array.isArray(card.features) ? card.features.filter(Boolean) : [],
-      quantity: 1,
-      unit_price: unit,
-      cadence: String(card.per || "") || null,
-      recommended: true,
-      ...(card.offering_id ? { offering_id: card.offering_id } : {}),
-      ...(card.price_id ? { price_id: card.price_id } : {}),
-      fromCards: widget.id,
-    });
-
-    const chosenName = String(card.name || `Card ${i + 1}`);
-    // Drop any line this block put down before — the block has ONE chosen
-    // plan, so the document has one line from it — and stamp the cards in the
-    // same pass, so a half-applied state cannot exist.
-    let next: BuilderDocument = {
-      ...doc,
-      sections: doc.sections.map((s) => ({
-        ...s,
-        columns: s.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets
-            .filter((w) => (w.props as any)?.fromCards !== widget.id)
-            .map((w) => (w.id !== widget.id ? w : {
-              ...w,
-              props: {
-                ...w.props,
-                cards: cards.map((cd, n) => ({ ...cd, recommended: n === i })),
-                chosenPlan: chosenName,
-              },
-            })),
-        })),
-      })),
-    };
-    // Place the line immediately after the cards, in the same column.
-    const sec = next.sections.find((s) => s.id === sectionId);
-    let columnIndex = 0;
-    let at = 0;
-    sec?.columns.forEach((c, ci) => {
-      const idx = c.widgets.findIndex((w) => w.id === widget.id);
-      if (idx >= 0) { columnIndex = ci; at = idx + 1; }
-    });
-    onChange(addWidget(next, sectionId, columnIndex, line, at));
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <CatalogPicker
-        offerings={offerings}
-        loading={catalogueLoading}
-        label="Add a plan from your catalogue"
-        bulkLabel={(o) => `Add all ${o.prices?.length ?? 0} tiers as cards`}
-        onPickAll={(o) => addCards((o.prices || []).map((pr) => cardFrom(o, pr)))}
-        onPick={(o, price) => addCards([cardFrom(o, price)])}
-      />
-
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={LBL}>Recommended</span>
-        <select style={INPUT} value={recIndex >= 0 ? String(recIndex) : ""}
-          title="Which card wears the Recommended badge. Exactly one, or none."
-          onChange={(e) => {
-            const pickIdx = e.target.value === "" ? -1 : Number(e.target.value);
-            patch({ cards: cards.map((c, i) => ({ ...c, recommended: i === pickIdx })) });
-          }}>
-          <option value="">None</option>
-          {cards.map((c, i) => (
-            <option key={i} value={i}>{String(c?.name || `Card ${i + 1}`)}</option>
-          ))}
-        </select>
-      </div>
-
-      {cards.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <span style={LBL}>The cards</span>
-          {cards.map((c, i) => (
-            <div key={i} data-card-fields={i}
-              style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 5 }}>
-              {/* Tab order is SOURCE order: name, price, per, was. On the page
-                  the struck-through "was" sits before the price, which is why
-                  Tab from the name used to land on it. */}
-              <input style={{ ...INPUT, fontWeight: 600 }} value={String(c?.name ?? "")}
-                data-card-field={`${i}.name`} placeholder="Plan name — e.g. Standard"
-                title="What this plan is called"
-                onChange={(e) => setCard(i, { name: e.target.value })} />
-              <div style={{ display: "flex", gap: 5 }}>
-                <input style={{ ...INPUT, minWidth: 90, fontWeight: 700 }} value={String(c?.price ?? "")}
-                  data-card-field={`${i}.price`} placeholder="$0.00"
-                  title="The price on the card — the big number the customer reads"
-                  onChange={(e) => setCard(i, { price: e.target.value, unit_price: parseMoney(e.target.value) })} />
-                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.per ?? "")}
-                  data-card-field={`${i}.per`} placeholder="per month"
-                  title="How often they pay it — per push, per visit, monthly"
-                  onChange={(e) => setCard(i, { per: e.target.value })} />
-                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.list_price ?? "")}
-                  data-card-field={`${i}.was`} placeholder="was…"
-                  title="The list price, struck through beside the price. Leave it empty if there is no discount."
-                  onChange={(e) => setCard(i, { list_price: e.target.value })} />
-              </div>
-              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                <button type="button" style={{ ...miniBtn, background: chosen === String(c?.name || "") ? "#0B6E8C" : "#fff", color: chosen === String(c?.name || "") ? "#fff" : "#334155" }}
-                  data-use-plan={i}
-                  title="Put this plan on the document as the priced line, so the total is real"
-                  onClick={() => usePlan(i)}>
-                  {chosen === String(c?.name || "") ? "This is the plan" : "Use this plan"}
-                </button>
-                <button type="button" style={{ ...miniBtn, color: "#B91C1C", marginLeft: "auto" }}
-                  title="Take this card off the page"
-                  onClick={() => patch({ cards: cards.filter((_, n) => n !== i) })}>
-                  <X size={11} /> Remove
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <span style={{ fontSize: 10, color: "#94A3B8" }}>
-        {chosen
-          ? `“${chosen}” is the plan on this document — it is priced below the cards and it is in the total.`
-          : "Cards never add into the total. Press “Use this plan” on the one they are buying and it becomes the priced line."}
-      </span>
-    </div>
-  );
-}
 
 /* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
    scroll-to-the-blank until the engine landed a shared problems mechanism; the

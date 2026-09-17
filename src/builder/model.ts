@@ -45,6 +45,10 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 import { readStyle, type ElementStyle } from "./style";
+/* §11.12 (D-156) — yesterday's composites become today's trees, on the way in.
+   The cycle (model -> upgrade -> treeOps -> model) crosses only types and
+   hoisted function declarations. */
+import { upgradeDocument } from "./upgrade";
 import {
   CONTAINER_KIND, cloneNode, descendantsOf, dropIndexForNode, duplicateNode, findNode,
   groupNodes, holdsLocked, insertNode, isContainer, isLocked, isRequired, isWidget,
@@ -497,25 +501,27 @@ export function deserialise(raw: unknown): BuilderDocument {
     }
     if (Object.keys(merge).length) settings.merge = merge;
   }
-  /* §11.12 (D-156). THE COMPOSITE -> TREE UPGRADE GOES HERE, and here only:
-     this is the ONE door a stored document comes through, so an upgrade the
-     editor did and the PDF did not is impossible.
+  /* §11.12 (D-156). THE COMPOSITE -> TREE UPGRADE, AND IT IS SWITCHED ON.
 
-         return upgradeDocument({ v: 2, settings, sections });
+     This is the ONE door a stored document comes through — the builder, the
+     customer's copy, the revision page and the PDF path all read a document
+     this way — so an upgrade the editor did and the PDF did not is impossible.
 
-     It is NOT switched on yet, and the reason is money rather than caution.
-     `upgrade.ts` is built, tested and idempotent, and the four kinds it
-     produces — card, product_card, price_line, key_fact, address_block — have
-     no renderer, no registry entry, no rule in totals.ts and no PDF until the
-     stream that owns the widget definitions lands them. `priced_line` becomes
-     `price_line` in the pass, and `PRICED_KINDS` still says `priced_line`: turn
-     this on alone and every proposal on the line totals zero in the Portal
-     while oliver-api's own mirror still totals correctly, which is two
-     documents wearing one id.
+     It went on in the integration commit, with everything the handoff said it
+     had to go in with, in one pass:
+       1. the atomic widgets exist and draw — `card`, `catalog_card`,
+          `price_line`, `totals`, `address_block`, `key_fact`, each declared and
+          rendered in its own file under `widgets/`;
+       2. `PRICED_KINDS` says `price_line` (and still says `priced_line`, for a
+          row that has not been read yet), and a property block's items become
+          PRICED LINES rather than a rate card, so no money moves;
+       3. oliver-api's `documentModel.js` and `proposalPdf.js` walk the tree;
+       4. the LUMEN mirrors follow it.
 
-     ONE LINE, and it goes in with the atomic widgets and the two server
-     mirrors in the same commit. See D156_HANDOFF_2026-09-17.md, stream A. */
-  return { v: 2, settings, sections };
+     A document with no composites in it comes back as THE SAME OBJECT, by
+     identity, so `serialise(deserialise(wire))` is byte-for-byte `wire` for
+     every proposal that does not need this. See upgrade.ts. */
+  return upgradeDocument({ v: 2, settings, sections });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

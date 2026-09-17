@@ -155,37 +155,51 @@ describe("D-01 and D-10 · a tier card has a catalogue and a real price field", 
       "the builder kept a second picker");
     assert.ok(!picker.includes("export function ProposalCatalogPicker("),
       "the picker nobody could open is still here");
-    // Opened from the product card, the priced line, the pricing table and the
-    // old comparison block — four widgets, one component.
-    assert.ok((BUILDER.match(/<CatalogPicker/g) || []).length >= 4,
+    // Opened from the catalogue card, the priced line and the pricing table —
+    // three widgets, one component. (It was four: the fourth was the old
+    // comparison block, whose panel is deleted with it — D-156.)
+    assert.ok((BUILDER.match(/<CatalogPicker/g) || []).length >= 3,
       "a money widget lost its way into Products & Services");
   });
 
-  test("every card field is a real input with a placeholder, in tab order name → price → per → was", () => {
-    const order = ["name", "price", "per", "was"]
-      .map((f) => BUILDER.indexOf(`data-card-field={\`\${i}.${f}\`}`));
-    assert.ok(order.every((i) => i > 0), "a card field is missing from the inspector");
-    assert.deepEqual([...order].sort((a, b) => a - b), order,
-      "the card fields are not in source order, so Tab does not visit them in that order");
-    // The price is the one that measured 0px on the canvas. It has a
-    // placeholder AND a minimum width here.
-    const priceField = BUILDER.slice(BUILDER.indexOf("data-card-field={`${i}.price`}") - 200,
-      BUILDER.indexOf("data-card-field={`${i}.price`}") + 120);
-    assert.ok(priceField.includes("minWidth: 90"), "the price field has no minimum width");
-    assert.ok(priceField.includes('placeholder="$0.00"'), "the price field has no placeholder");
+  test("every card field is a real control, in tab order title → price → per → was", () => {
+    // D-156: a card is its OWN widget, so its fields are its REGISTRY
+    // CONTROLS — the shared inspector draws them, with a real input and a
+    // label each, and nothing on a card is unreachable. That is the same fix
+    // D-01 asked for, in the place a widget's fields belong, and it means the
+    // inspector does not carry a hand-built panel per composite any more.
+    const controls = WIDGETS_BY_KIND.card.controls.map((c) => c.key);
+    for (const key of ["title", "price", "per", "was", "description", "bullets"]) {
+      assert.ok(controls.includes(key), `a card has no ${key} control`);
+    }
+    assert.deepEqual(controls.slice(0, 4), ["title", "price", "per", "was"],
+      "the card fields are not in the order Tab should visit them");
+    // The price is the one that measured 0px on the canvas. It is a text
+    // control with help beside it, and the RENDERER gives the empty run a
+    // placeholder and a minimum width — asserted in builder-usability.
+    const price = WIDGETS_BY_KIND.card.controls.find((c) => c.key === "price");
+    assert.equal(price.type, "text");
+    assert.ok(String(price.help || "").trim(), "the price control says nothing about how to type it");
   });
 
   test("\"Use this plan\" exists and says what it does to the total", () => {
     assert.ok(BUILDER.includes("Use this plan"));
-    assert.ok(BUILDER.includes('makeWidget("priced_line"'),
+    assert.ok(BUILDER.includes('makeWidget("price_line"'),
       "the chosen plan does not become a priced line, so the total stays $0.00");
   });
 
   test("the honest note is still there, because it is still true", () => {
-    // Cards never sum. That rule did not change and the sentence must not be
-    // quietly dropped once a plan is chosen.
-    assert.ok(BUILDER.includes("Cards never add into the total"));
-    assert.ok(!WIDGETS_BY_KIND.comparison_cards.controls.some((c) => c.key === "price"));
+    // Cards never sum. That rule did not change, and the sentence moved to
+    // where the SET is: a ROW of cards says it once, under the row, because it
+    // is a fact about the choice and not about any one card (render.ts
+    // `offerNote`). One card on its own says nothing — there is no choice to
+    // explain.
+    const RENDER = readFileSync(new URL("../src/builder/render.ts", import.meta.url), "utf8");
+    assert.ok(RENDER.includes("These figures are not added to any total."));
+    assert.ok(RENDER.includes("function offerNote("), "the sentence has no one place to live");
+    // …and a card still has no control that would make it look like money.
+    assert.ok(!WIDGETS_BY_KIND.card.controls.some((c) => c.key === "quantity"));
+    assert.ok(!WIDGETS_BY_KIND.card.controls.some((c) => c.key === "unit_price"));
   });
 
   test("a card built from a catalogue price carries the name, the money and the cadence", () => {
@@ -556,9 +570,10 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("\"Agreement at a glance\" is not an empty paragraph and three blank rows", () => {
     const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const [para, facts] = section.columns[0].widgets;
+    const [para, box] = section.columns[0].widgets;
     assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
-    const rows = facts.props.rows;
+    // D-156: one `key_fact` widget per row, in a box, instead of one lump.
+    const rows = box.children.map((w) => w.props);
     assert.ok(rows.length >= 5);
     assert.ok(rows.every((r) => String(r.label).trim() && String(r.value).trim()),
       "a key-fact row is still blank");
@@ -566,7 +581,7 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("the glance rows are MERGE FIELDS, so they fill from the customer pick", () => {
     const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const values = section.columns[0].widgets[1].props.rows.map((r) => r.value).join(" ");
+    const values = section.columns[0].widgets[1].children.map((w) => w.props.value).join(" ");
     assert.match(values, /\{\{customer\.name\}\}/);
     assert.match(values, /\{\{property\.address\}\}/);
     assert.match(values, /\{\{snow_trigger\}\}/);
@@ -626,7 +641,9 @@ describe("D-15 · a title edit persists", () => {
 
 describe("D-33 · one control per thing", () => {
   test("\"Which location\" is declared ONCE — by the adapter, which knows the locations", () => {
-    for (const kind of ["property_block", "property_plan"]) {
+    // `property_block` is DELETED (D-156) — a property is a box, and the
+    // address block inside it is what is bound to a location.
+    for (const kind of ["address_block", "property_plan"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].controls.some((c) => c.key === "locationId"),
         `${kind} still declares an empty locationId select, so the label prints twice`);
     }
@@ -634,8 +651,8 @@ describe("D-33 · one control per thing", () => {
   });
 
   test("no proposal widget declares a select with no options to fill it", () => {
-    for (const kind of ["priced_line", "pricing_table", "comparison_cards", "totals",
-      "property_block", "property_plan", "key_facts", "clauses", "doc_header", "signature"]) {
+    for (const kind of ["price_line", "pricing_table", "card", "catalog_card", "totals",
+      "address_block", "property_plan", "key_fact", "clauses", "doc_header", "signature"]) {
       for (const c of WIDGETS_BY_KIND[kind].controls || []) {
         if (c.type !== "select") continue;
         assert.ok(c.options?.length, `${kind}.${c.key} is a select with nothing in it`);

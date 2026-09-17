@@ -45,27 +45,52 @@ export interface CardFields {
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
-/** The card's words, whichever generation of the model wrote them. */
+/**
+ * The card's words, in ANY of the three vocabularies that can hold them.
+ *
+ * ONE reader, because three readers is three chances to show a blank card:
+ *
+ *   1. D-156's own names — `title / price / per / was / description / bullets`.
+ *   2. The composite tier card's — `name / list_price / pitch / features` — so
+ *      a card lifted out of an old `comparison_cards` draws whether or not the
+ *      upgrade has reached that document yet.
+ *   3. **Elementor's `price-table`** — `heading / sub_heading / period /
+ *      original_price / features_list / button_text / link /
+ *      footer_additional_info`. That is what the website adapter PUBLISHES, so
+ *      a page opened back out of a live site arrives spelled this way; without
+ *      it the client would be looking at a blank card on a page they can see
+ *      working in front of them.
+ *
+ * The day the registry picks one spelling the other two become dead aliases
+ * rather than a second answer.
+ */
 export function cardFields(props: Record<string, unknown> | undefined | null): CardFields {
   const p: any = props || {};
-  const bullets = Array.isArray(p.bullets) ? p.bullets : Array.isArray(p.features) ? p.features : [];
+  const pick = (...vs: unknown[]) => vs.find((v) => v !== undefined && v !== null && v !== "");
+  const bullets = [p.bullets, p.features, p.features_list]
+    .find((v) => Array.isArray(v) && v.length) as unknown[] | undefined;
+  const label = pick(p.ctaLabel, p.button_text);
+  const url = pick(p.ctaUrl, p.link?.url, typeof p.link === "string" ? p.link : undefined);
   return {
-    title: str(p.title ?? p.name),
+    title: str(pick(p.title, p.name, p.heading)),
     price: str(p.price),
-    per: str(p.per),
-    was: str(p.was ?? p.list_price),
-    description: str(p.description ?? p.pitch),
-    bullets: bullets.map(str),
-    note: str(p.note),
-    ctaLabel: str(p.ctaLabel),
-    ctaUrl: str(p.ctaUrl),
+    per: str(pick(p.per, p.period)),
+    was: str(pick(p.was, p.list_price, p.original_price)),
+    description: str(pick(p.description, p.pitch, p.sub_heading)),
+    bullets: (bullets ?? []).map(str),
+    note: str(pick(p.note, p.footer_additional_info)),
+    ctaLabel: str(label),
+    ctaUrl: str(url),
   };
 }
 
 /** Which prop name this document is using for the bullets. Writers need it. */
-export function bulletsKey(props: Record<string, unknown> | undefined | null): "bullets" | "features" {
+export function bulletsKey(props: Record<string, unknown> | undefined | null): "bullets" | "features" | "features_list" {
   const p: any = props || {};
-  return Array.isArray(p.bullets) || !Array.isArray(p.features) ? "bullets" : "features";
+  if (Array.isArray(p.bullets)) return "bullets";
+  if (Array.isArray(p.features)) return "features";
+  if (Array.isArray(p.features_list)) return "features_list";
+  return "bullets";
 }
 
 /**

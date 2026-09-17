@@ -50,6 +50,16 @@ export function renderTotals(w: Widget, ctx: RenderContext): string {
       discountFromPercent: 0,
       discountFromCoupon: ctx.totals.discount,
     };
+  // INSIDE A PROPERTY BOX this is that property's subtotal and nothing else —
+  // one line, the same one line the composite it replaced printed. The tax and
+  // the discount belong to the DOCUMENT; printing them under each property
+  // would charge the tax as many times as there are addresses.
+  if ((t as any).scopedTo) {
+    return `<div class="bx-site-sub">`
+      + `<span${ctx.mode === "edit" ? ` data-edit="heading"` : ""}>${esc(p.heading || "Subtotal for this property")}</span>`
+      + `<span class="bx-strong">${esc(money(t.subtotal, ctx.currency))}</span>`
+      + `</div>`;
+  }
   const s = t.settings;
 
   const siteRows = t.sites.map((site) => row(site.name, money(site.subtotal, ctx.currency))).join("");

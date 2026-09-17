@@ -34,8 +34,11 @@
  * page can be resolved to a selection without a second model of the layout.
  */
 import type { BuilderDocument, Section, Widget } from "./model";
-import { hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle } from "./style";
-import { isContainer } from "./treeOps";
+import {
+  hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
+  JUSTIFY_CSS, ITEMS_CSS, type Device,
+} from "./style";
+import { isContainer, CONTAINER_KIND } from "./treeOps";
 import type { Container, Node } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
@@ -72,6 +75,8 @@ export interface LocationLite {
   postal_code?: string | null;
   access_notes?: string | null;
   gate_code?: string | null;
+  /** Who is met on site. Printed by `address_block` (D-156). */
+  site_contact?: string | null;
 }
 
 export interface RenderContext {
@@ -205,13 +210,15 @@ export function paras(text: unknown, ctx: RenderContext, editPath?: string): str
 
 /** Every widget kind this renderer draws. The parity test reads this list. */
 export const RENDERED_KINDS = [
-  "doc_header", "key_facts", "heading", "paragraph", "list", "clauses",
-  "pricing_table", "callout", "comparison_cards", "priced_line", "totals",
-  "property_plan", "property_block", "signature", "page_break", "image",
+  "doc_header", "heading", "paragraph", "list", "clauses",
+  "pricing_table", "callout", "priced_line", "totals",
+  "property_plan", "signature", "page_break", "image",
   "spacer", "divider", "key_value_table", "data_table", "testimonial",
   "footer_note", "merge_field", "button",
   // D-156's atomic widgets, declared and drawn under widgets/.
   ...ATOM_KINDS,
+  // …and the box that holds them, which the engine draws itself.
+  "container",
 ] as const;
 
 /**
@@ -224,13 +231,179 @@ export const RENDERED_KINDS = [
  */
 export const UNRENDERED_KINDS = ["columns"] as const;
 
-export function renderWidget(w: Widget, ctx: RenderContext): string {
+/* ══════════════════════════════════════════════════════════════════════════
+   READING A BOX — the ONE reader, for every surface (§11.12, D-156)
+   ══════════════════════════════════════════════════════════════════════════
+
+   INTEGRATION NOTE (2026-09-17). Two streams wrote a container reader and they
+   disagreed about where a box keeps its answers. The engine (stream A) writes
+   them into `style` — `direction`, `justify`, `alignItems`, `wrap`, `gap`,
+   `columns` — so the §11.8 per-device cascade arranges a row of cards as a
+   column on a phone for nothing; the renderers (stream C) read Elementor's own
+   `container_type` / `flex_direction` / `flex_gap` out of `props`. One of them
+   had to go, and the `style` one won on three counts: it is the only one that
+   is per device, it is the shape the Inspector already writes, and the website
+   adapter already translates `style` into Elementor's settings in exactly one
+   place (`arion-api lib/websiteBuilder/elementorTree.js`), so Elementor's
+   spelling is still written down once — just on the way OUT, where the
+   translation belongs, rather than in four readers on the way in.
+
+   So: the SHAPE below is stream C's (`ContainerLayout`, the depth guard, the
+   tolerant children, `walkTree`), because email, landing and the customer's
+   page are all built on it. What it reads is stream A's `style`.
+
+   Two keys are deliberately NOT read here, each because something else already
+   owns it: `minHeight` (§11.8's own, per device, emitted for a box by
+   `styleBlockFor`) and the section's `width` (how wide the words run). */
+
+/** Elementor's two. `grid` is a box laid out in even tracks. */
+export type ContainerType = "flex" | "grid";
+/** Which way a flex box runs. */
+export type FlexDirection = "row" | "column";
+
+export interface ContainerLayout {
+  type: ContainerType;
+  /** Meaningful for `type: "flex"`. Column is what a fresh container is. */
+  direction: FlexDirection;
+  /** Already a CSS value. */
+  justify?: string;
+  /** Already a CSS value. */
+  align?: string;
+  /** In px. Row first, the order CSS wants. */
+  gap: { row: number; column: number };
+  /** Elementor's default is no wrap; the phone stylesheet is what stacks. */
+  wrap: "wrap" | "nowrap";
+  /** Grid only: how many even tracks. */
+  columns: number;
+  /** The element a box is drawn as. `div` unless the author said otherwise. */
+  tag: string;
+}
+
+/** Elementor's own list, and nothing else: a tag from a document is markup. */
+const HTML_TAGS = ["div", "header", "footer", "main", "article", "section", "aside"];
+
+const DEFAULT_GAP = 16;
+
+/**
+ * HOW DEEP A TREE MAY GO BEFORE THE RENDERER STOPS ASKING.
+ *
+ * Not a limit on what an author may build — twelve levels is far past anything
+ * a page needs. It is the guard against a document that points at itself: a
+ * hand-edited `children` array containing its own parent would otherwise
+ * recurse until the customer's tab died, on a page whose whole job is to be
+ * opened by a stranger. Depth is counted, never identity, because a cycle can
+ * be longer than one hop.
+ */
+export const MAX_CONTAINER_DEPTH = 12;
+
+/* ONE name for the one kind that holds children, and one test for it. Both
+   live in `treeOps.ts`, where the tree itself does; re-exported here because
+   every renderer in the platform reads its tree through this module. */
+export { isContainer, CONTAINER_KIND };
+
+/**
+ * The children of a container, tolerantly.
+ *
+ * Anything that is not a widget-shaped object is dropped rather than drawn,
+ * for the same reason `deserialise` drops junk: a customer's page must not be
+ * an exception because somebody hand-edited a row.
+ */
+export function childrenOf(w: Widget | null | undefined): Widget[] {
+  if (!isContainer(w as Node)) return [];
+  const raw = (w as any)?.children;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((c: any) => c && typeof c === "object" && typeof c.kind === "string") as Widget[];
+}
+
+/** One of a list, or undefined. Junk never reaches the page. */
+function oneOf(v: unknown, allowed: readonly string[]): string | undefined {
+  const s = String(v ?? "").trim();
+  return allowed.includes(s) ? s : undefined;
+}
+
+/**
+ * What the box is, for ONE device.
+ *
+ * Read off the resolved style layer, so a row that the author made a column on
+ * a phone is a column here too — `resolveStyle` is the same cascade the
+ * stylesheet uses, and asking it means the email (which has no stylesheet at
+ * all) gets the per-device answer the page gets.
+ */
+export function containerLayout(w: Widget, device: Device = "desktop"): ContainerLayout {
+  const layer = resolveStyle(w.style, device);
+  const dir = layer.direction;
+  const gap = layer.gap === undefined ? DEFAULT_GAP : Math.max(0, Math.round(layer.gap));
+  return {
+    type: dir === "grid" ? "grid" : "flex",
+    direction: dir === "row" ? "row" : "column",
+    justify: layer.justify ? JUSTIFY_CSS[layer.justify] : undefined,
+    align: layer.alignItems ? ITEMS_CSS[layer.alignItems] : undefined,
+    gap: { row: gap, column: gap },
+    wrap: layer.wrap ? "wrap" : "nowrap",
+    columns: Math.max(1, Math.min(6, Math.round(layer.columns ?? 3))),
+    tag: oneOf((w.props as any)?.html_tag, HTML_TAGS) ?? "div",
+  };
+}
+
+/** Which way a box runs, for the class and for the phone rule. */
+export function containerFlow(l: ContainerLayout): "row" | "column" | "grid" {
+  if (l.type === "grid") return "grid";
+  return l.direction === "row" ? "row" : "column";
+}
+
+/**
+ * The container's display, as declarations, for the surfaces that have NO
+ * stylesheet to put them in — the email's tables and the landing page's inline
+ * box. The document and the canvas do NOT use this: their boxes are arranged
+ * by `styleBlockFor`, per device, which is the one mechanism §11.8 built.
+ */
+export function containerLayoutCss(l: ContainerLayout): string {
+  const out: string[] = [];
+  if (l.type === "grid") {
+    out.push("display:grid", `grid-template-columns:repeat(${l.columns},minmax(0,1fr))`);
+    if (l.justify) out.push(`justify-items:${l.justify === "flex-start" ? "start" : l.justify === "flex-end" ? "end" : l.justify}`);
+    if (l.align) out.push(`align-items:${l.align}`);
+  } else {
+    out.push("display:flex", `flex-direction:${l.direction}`, `flex-wrap:${l.wrap}`);
+    if (l.justify) out.push(`justify-content:${l.justify}`);
+    if (l.align) out.push(`align-items:${l.align}`);
+  }
+  out.push(l.gap.row === l.gap.column ? `gap:${l.gap.row}px` : `gap:${l.gap.row}px ${l.gap.column}px`);
+  return out.join(";");
+}
+
+/**
+ * Every widget in a list, containers included, depth first in reading order.
+ *
+ * The one walk. `sectionStyleTag` needs it to find a styled widget three boxes
+ * down, and the customer's page needs it to find the signature block wherever
+ * the author put it — two places that each used to flatten `columns` by hand
+ * and would each have missed everything nested.
+ */
+export function walkTree(widgets: Widget[], depth = 0): Array<{ widget: Widget; depth: number }> {
+  if (depth > MAX_CONTAINER_DEPTH) return [];
+  const out: Array<{ widget: Widget; depth: number }> = [];
+  for (const w of widgets || []) {
+    out.push({ widget: w, depth });
+    if (isContainer(w as Node)) out.push(...walkTree(childrenOf(w), depth + 1));
+  }
+  return out;
+}
+
+/** Every widget in the document, containers included, in reading order. */
+export function walkDocumentTree(doc: BuilderDocument): Widget[] {
+  return doc.sections
+    .flatMap((s) => s.columns.flatMap((c) => walkTree(c.widgets as Widget[])))
+    .map((x) => x.widget);
+}
+
+export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
   // A BOX IS DRAWN BEFORE ANYTHING ASKS WHAT KIND IT IS (§11.12, D-156).
   //
   // Before the adapter's `extra`, before the switch: a container is the
   // ENGINE's own node and every builder has the same one, so an adapter cannot
   // be asked to know about it and cannot accidentally claim it.
-  if (isContainer(w)) return renderContainer(w, ctx);
+  if (isContainer(w)) return renderContainer(w, ctx, depth);
   const p: any = w.props || {};
   const body = (() => {
     // The adapter's own widgets first — see RenderContext.extra.
@@ -242,7 +415,6 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
     if (atom != null) return atom;
     switch (w.kind) {
       case "doc_header": return docHeader(p, ctx);
-      case "key_facts": return keyFacts(p, ctx);
       case "key_value_table": return keyFacts({ ...p, auto: false }, ctx);
       case "data_table": return dataTable(p, ctx);
       case "testimonial": return testimonial(p, ctx);
@@ -252,10 +424,7 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
       case "clauses": return clauses(p, ctx);
       case "pricing_table": return pricingTable(p, ctx);
       case "callout": return callout(p, ctx);
-      case "comparison_cards": return comparisonCards(p, ctx);
-      case "priced_line": return pricedLine(p, ctx);
       case "property_plan": return propertyPlan(p, ctx);
-      case "property_block": return propertyBlock(p, ctx, w.id);
       case "signature": return signature(p, ctx);
       case "page_break": return `<div class="bx-pagebreak" aria-hidden="true"></div>`;
       case "image": return image(p, ctx);
@@ -311,19 +480,50 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
  * put something in it, so in edit mode it keeps a least height and says so. In
  * the customer's copy an empty box draws nothing at all.
  */
-function renderContainer(c: Container, ctx: RenderContext): string {
-  const kids = (c.children || []).map((k) => renderWidget(k as Widget, ctx)).join("");
+function renderContainer(c: Container, ctx: RenderContext, depth = 0): string {
+  // THE DEPTH GUARD (stream C). A hand-edited `children` array that points back
+  // at its own parent would otherwise recurse until the tab died, on a page
+  // whose whole job is to be opened by a stranger. Counted, never identity,
+  // because a cycle can be longer than one hop.
+  if (depth >= MAX_CONTAINER_DEPTH) {
+    return ctx.mode === "edit"
+      ? `<div class="bx-unknown">This box is nested too deeply to draw.</div>`
+      : "";
+  }
+  let kids = childrenOf(c).map((k) => renderWidget(k, ctx, depth + 1)).join("");
   if (!kids && ctx.mode !== "edit") return "";
+  // An EMPTY box is a target, and it says so in words rather than only with a
+  // dashed edge — the same sentence the landing page's box uses.
+  if (!kids) kids = `<div class="bx-boxdrop">Drag anything in here.</div>`;
   const sy = hasStyle(c.style) ? ` ${widgetStyleClass(c.id)}` : "";
-  const empty = kids ? "" : " bx-box-empty";
+  const empty = childrenOf(c).length ? "" : " bx-box-empty";
+  // The flow class is what the phone rule and the child-width rule key on. It
+  // is the ONLY thing the renderer writes about the layout — the declarations
+  // themselves come from the section's own stylesheet, per device (§11.8).
+  const flow = ` bx-box-${containerFlow(containerLayout(c))}`;
   const editor = ctx.mode === "edit"
-    ? ` data-bx-host="${esc(c.id)}" data-widget="${esc(c.id)}" data-kind="${esc(CONTAINER_KIND_ATTR)}"`
+    ? ` data-bx-host="${esc(c.id)}" data-widget="${esc(c.id)}" data-kind="${esc(CONTAINER_KIND)}"`
     : "";
-  return `<div class="bx-w bx-box${empty}${sy}"${editor}>${kids}</div>`;
+  const tag = containerLayout(c).tag;
+  return `<${tag} class="bx-w bx-box${flow}${empty}${sy}" data-box="${esc(c.id)}"${editor}>${kids}</${tag}>${offerNote(c)}`;
 }
 
-/** Kept as a constant so the attribute and the model cannot drift apart. */
-const CONTAINER_KIND_ATTR = "container";
+/**
+ * RULE 1, SAID ON THE PAGE (totals.ts) — once, under a row of options.
+ *
+ * The sentence used to belong to the `comparison_cards` composite, which held
+ * the whole set. A set is a BOX of cards now, so the box says it: a customer
+ * looking at three prices side by side has to be told they are choosing one,
+ * not being charged for all three, and that is a fact about the SET and not
+ * about any one card. One card on its own says nothing — there is no choice to
+ * explain — which is also why it is not in `renderCardBody`.
+ */
+function offerNote(c: Container): string {
+  const offers = childrenOf(c).filter((k) => k.kind === "card" || k.kind === "catalog_card").length;
+  return offers >= 2
+    ? `<p class="bx-smallprint">Comparison only — the plan you choose becomes the priced line. These figures are not added to any total.</p>`
+    : "";
+}
 
 function docHeader(p: any, ctx: RenderContext): string {
   const dark = (p.style || "dark_band") === "dark_band";
@@ -460,60 +660,24 @@ function callout(p: any, ctx: RenderContext): string {
   return `${head}<div class="bx-panels bx-panels-${panels.length}">${body}</div>`;
 }
 
-function comparisonCards(p: any, ctx: RenderContext): string {
-  const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
-  const head = p.heading || ctx.mode === "edit"
-    ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
-  const intro = p.intro || ctx.mode === "edit" ? paras(p.intro, ctx, "intro") : "";
-  const editing = ctx.mode === "edit";
-  const body = cards.map((c, i) => {
-    const feats: string[] = Array.isArray(c?.features) ? c.features : [];
-    // While editing, the OPTIONAL parts of a card are always on the page as
-    // empty slots, and the feature list always has one blank line at the end.
-    // A run that is only rendered when it already has words cannot be typed
-    // into at all — which is how "was $34.99", "/mo" and a fourth bullet were
-    // unreachable.
-    const slots = editing ? [...feats, ""] : feats;
-    const opt = (cond: unknown, html: string) => (cond || editing ? html : "");
-    return `
-    <div class="bx-card${c?.recommended ? " bx-card-rec" : ""}"${c?.recommended ? ` style="border-color:${esc(ctx.accent)}"` : ""}>
-      ${c?.recommended ? `<div class="bx-card-badge" style="background:${esc(ctx.accent)}">${esc(c?.badge || "Recommended")}</div>` : ""}
-      <div class="bx-card-name" data-edit="cards.${i}.name">${t(c?.name, ctx)}</div>
-      <div class="bx-card-price">
-        ${/* D-01, the worst single moment of the 2026-09-16 walk: an EMPTY price
-             measured 0 x 0, so the one number that matters on a tier card could
-             not be clicked, Tab skipped it, and a click in the space where it
-             visually belongs typed into "/mo". Its two neighbours always had
-             `bx-slot`; this one did not. Wider than they are, because 18px type
-             needs a target you can hit, and FIRST in source order so Tab reads
-             price -> per -> was. */""}
-        <span class="bx-now${c?.price ? "" : " bx-slot bx-now-slot"}" data-edit="cards.${i}.price" data-placeholder="$0.00">${t(c?.price, ctx)}</span>
-        ${opt(c?.per, `<span class="bx-per${c?.per ? "" : " bx-slot"}" data-edit="cards.${i}.per" data-placeholder="/mo">${t(c?.per, ctx)}</span>`)}
-        ${opt(c?.list_price, `<span class="bx-was${c?.list_price ? "" : " bx-slot"}" data-edit="cards.${i}.list_price" data-placeholder="was…">${t(c?.list_price, ctx)}</span>`)}
-      </div>
-      <div class="bx-card-pitch" data-edit="cards.${i}.pitch">${t(c?.pitch, ctx)}</div>
-      <ul class="bx-card-feats">${slots.map((f, fi) => `<li${f ? "" : ` class="bx-slot" data-placeholder="add a line…"`} data-edit="cards.${i}.features.${fi}">${t(f, ctx)}</li>`).join("")}</ul>
-      ${opt(c?.note, `<div class="bx-card-note${c?.note ? "" : " bx-slot"}" data-edit="cards.${i}.note" data-placeholder="small note…">${t(c?.note, ctx)}</div>`)}
-    </div>`;
-  }).join("");
-  // Rule 1, said on the page as well as enforced in totals.ts.
-  const note = `<p class="bx-smallprint">Comparison only — the plan you choose becomes the priced line. These figures are not added to any total.</p>`;
-  return `${head}${intro}<div class="bx-cards bx-cards-${Math.max(1, cards.length)}">${body}</div>${note}`;
-}
 
-function pricedLine(p: any, ctx: RenderContext): string {
-  const qty = Number(p.quantity) || 1;
-  const unit = Number(p.unit_price) || 0;
-  const feats: string[] = Array.isArray(p.features) ? p.features : [];
-  return `<div class="bx-priced${p.recommended ? " bx-priced-rec" : ""}">
-    <div class="bx-priced-head">
-      <div class="bx-priced-name" data-edit="name">${t(p.name, ctx)}</div>
-      <div class="bx-priced-amt">${esc(money(qty * unit, ctx.currency))}${p.cadence ? ` <span class="bx-per">${esc(p.cadence)}</span>` : ""}</div>
-    </div>
-    ${paras(p.description, ctx, "description")}
-    ${feats.length ? `<ul class="bx-list">${feats.map((f, i) => `<li data-edit="features.${i}">${t(f, ctx)}</li>`).join("")}</ul>` : ""}
-  </div>`;
-}
+/* `comparisonCards`, `propertyBlock` and the `key_facts` case LIVED HERE and
+   are DELETED (D-156, integration). Every read path — `deserialise` in this
+   repo and `deserialise` in oliver-api, which are the only two doors a stored
+   document comes through — runs the composite → tree upgrade, so no document
+   can carry one of those four kinds by the time anything draws it. A renderer
+   for a kind nothing can hold is the "still there, just hidden" that §11.12
+   exists to end. `keyFacts()` itself STAYS, because `key_value_table` is a
+   table widget and always was one.
+
+   `pricedLine` LIVED HERE and is DELETED too (D-156, integration). `priced_line`
+   FOLDS INTO `price_line` — one widget, two spellings — and the one that
+   survives is the atomic widget in `widgets/priceLine.ts`, which `renderAtom`
+   answers for BOTH names. Two renderers for one line is how a canvas and a PDF
+   come to show a different figure for the same money. `upgrade.ts` renames
+   the kind on the way in, keeping the line's id so its total does not move; the
+   old spelling stays in the renderer map for anything that reaches a page
+   without passing through `deserialise`. */
 
 /* `totalsBlock` LIVED HERE and is DELETED (D-156 stream B). The total is an
    atomic widget now and draws itself in widgets/totals.ts, where its own tax
@@ -543,33 +707,6 @@ function propertyPlan(p: any, ctx: RenderContext): string {
   return `${head}<div class="bx-plan">${all}</div>`;
 }
 
-function propertyBlock(p: any, ctx: RenderContext, widgetId: string): string {
-  const loc = ctx.locations?.[String(p.locationId || "")];
-  const site = ctx.totals.sites.find((s) => s.locationId === String(p.locationId || ""));
-  const items: any[] = (Array.isArray(p.items) ? p.items : [])
-    .filter((it: any) => String(it?.description ?? "").trim());
-  const rows = items.map((it, i) => {
-    const qty = Number(it?.quantity) || 1;
-    const unit = Number(it?.unit_price) || 0;
-    return `<tr>
-      <td data-label="Service" data-edit="items.${i}.description">${t(it?.description, ctx)}</td>
-      <td class="bx-right" data-label="Qty">${esc(String(qty))}</td>
-      <td class="bx-right" data-label="Rate">${esc(money(unit, ctx.currency))}</td>
-      <td class="bx-right bx-strong" data-label="Amount">${esc(money(qty * unit, ctx.currency))}</td>
-    </tr>`;
-  }).join("");
-  return `<div class="bx-site" data-site="${esc(widgetId)}">
-    <div class="bx-site-head" style="border-left-color:${esc(ctx.accent)}">
-      <div class="bx-site-name" data-edit="heading">${t(p.heading || loc?.name || "", ctx)}</div>
-      <div class="bx-site-addr">${esc(locationLine(loc))}</div>
-    </div>
-    ${items.length || ctx.mode !== "edit" ? `<table class="bx-table bx-table-plain">
-      <thead><tr style="background:${esc(ctx.accent)}"><th>Service</th><th class="bx-right">Qty</th><th class="bx-right">Rate</th><th class="bx-right">Amount</th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>` : `<div class="bx-imgdrop">Add a service to this property from the panel on the right.</div>`}
-    <div class="bx-site-sub"><span>Subtotal for this property</span><span class="bx-strong">${esc(money(site?.subtotal ?? 0, ctx.currency))}</span></div>
-  </div>`;
-}
 
 function signature(p: any, ctx: RenderContext): string {
   const head = p.heading || ctx.mode === "edit"
@@ -754,6 +891,8 @@ export const DOCUMENT_CSS = `
 .bx-box-empty { min-height: 64px; border: 1px dashed #CBD5E1; border-radius: 8px; }
 /* A row's children share the width rather than each demanding their own. */
 .bx-box > .bx-w { min-width: 0; }
+.bx-box-row > .bx-w, .bx-box-grid > .bx-w { flex: 1 1 0; min-width: 0; }
+.bx-boxdrop { flex: 1 1 100%; padding: 14px; text-align: center; color: #94A3B8; font-size: 11px; }
 .bx-rec { position: absolute; top: 8px; right: 12px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
 .bx-changed { box-shadow: inset 3px 0 0 #B45309; }
 .bx-chg { position: absolute; top: 8px; left: 12px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
@@ -863,7 +1002,8 @@ ${STACK_QUERY} {
      section's stylesheet, which comes LATER in source order and would otherwise
      win here. An author who has said something else FOR PHONES still wins: that
      override is !important too and later again. */
-  .bx-box { flex-direction: column !important; grid-template-columns: 1fr !important; }
+  .bx-box-row { flex-direction: column !important; }
+  .bx-box-grid { grid-template-columns: 1fr !important; }
   .bx-panels, .bx-panels-2, .bx-sign, .bx-facts, .bx-cards { grid-template-columns: 1fr; }
   .bx-grid { gap: 16px; }
   .bx-w-narrow .bx-grid, .bx-w-contained .bx-grid { max-width: none; }

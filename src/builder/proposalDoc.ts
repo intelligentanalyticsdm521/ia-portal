@@ -17,9 +17,11 @@
  *      the server therefore could not render a proposal at all.
  */
 import {
-  deserialise, emptyDocument, makeSection, makeWidget, type BuilderDocument, type Section,
+  deserialise, emptyDocument, makeSection, makeWidget, walkWidgets,
+  type BuilderDocument, type Section,
 } from "./model";
 import { documentTotals, type LineTotal } from "./totals";
+import { upgradeDocument } from "./upgrade";
 import { renderDocument, makeContext, type RenderContext } from "./render";
 
 /* ── 1. Upgrade ──────────────────────────────────────────────────────────── */
@@ -114,7 +116,12 @@ export function upgradeV1(blocksJson: unknown): BuilderDocument {
         })]));
     }
   }
-  return doc;
+  // THE SAME UPGRADE AS EVERY OTHER DOOR (D-156). `deserialise` runs it for a
+  // stored document; this is the other way a proposal reaches the builder, and
+  // a v1 proposal that opened as composites while a v2 one opened as a tree
+  // would be two models on one screen. The pass is idempotent and returns the
+  // same object when there is nothing to do.
+  return upgradeDocument(doc);
 }
 
 /**
@@ -150,15 +157,17 @@ export function openProposalDocument(
  */
 export function locationsUsedBy(doc: BuilderDocument): string[] {
   const out: string[] = [];
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) {
-      for (const w of c.widgets) {
-        if (w.kind !== "property_block" && w.kind !== "property_plan") continue;
-        const id = String((w.props as any)?.locationId || "").trim().toLowerCase();
-        if (id && !out.includes(id)) out.push(id);
-      }
-    }
+  // THE WHOLE TREE (D-156). A property is a box holding an `address_block`
+  // now, and the address block is at DEPTH — a flat pass over the top of each
+  // column would have returned nothing for an upgraded proposal, which means
+  // no job opened and no address on the customer's copy. `walkWidgets` is the
+  // one walk and it reaches every level.
+  for (const { widget, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    if (widget.kind !== "property_block" && widget.kind !== "property_plan"
+      && widget.kind !== "address_block") continue;
+    const id = String((widget.props as any)?.locationId || "").trim().toLowerCase();
+    if (id && !out.includes(id)) out.push(id);
   }
   return out;
 }
@@ -215,24 +224,24 @@ export function toWire(
 /** The v1 projection, for readers that predate the document model. */
 function legacyBlocks(doc: BuilderDocument): unknown[] {
   const out: unknown[] = [];
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) {
-      for (const w of c.widgets) {
-        const p: any = w.props || {};
-        if (w.kind === "priced_line") {
-          out.push({
-            kind: "service", name: p.name || "", description: p.description || "",
-            features: Array.isArray(p.features) ? p.features : [],
-            quantity: Number(p.quantity) || 1, unit_price: Number(p.unit_price) || 0,
-            recommended: !!p.recommended, offering_id: p.offering_id, price_id: p.price_id, cadence: p.cadence ?? null,
-          });
-        } else if (w.kind === "comparison_cards") {
-          out.push({ kind: "cards", heading: p.heading || "", intro: p.intro || "", items: Array.isArray(p.cards) ? p.cards : [] });
-        } else if (w.kind === "signature") {
-          out.push({ kind: "signature", heading: p.heading || "Acceptance", parties: [{ name: p.customerLabel || "" }, { name: p.businessLabel || "" }] });
-        }
-      }
+  // THE WHOLE TREE, and BOTH spellings of a priced line (D-156). An old reader
+  // is the one reader that cannot be upgraded, so the projection it reads has
+  // to follow the model wherever the model goes — including into a box, and
+  // including past the rename of `priced_line` to `price_line`.
+  for (const { widget: w, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    const p: any = w.props || {};
+    if (w.kind === "price_line" || w.kind === "priced_line") {
+      out.push({
+        kind: "service", name: p.name || "", description: p.description || "",
+        features: Array.isArray(p.features) ? p.features : Array.isArray(p.bullets) ? p.bullets : [],
+        quantity: Number(p.quantity) || 1, unit_price: Number(p.unit_price) || 0,
+        recommended: !!p.recommended, offering_id: p.offering_id, price_id: p.price_id, cadence: p.cadence ?? null,
+      });
+    } else if (w.kind === "comparison_cards") {
+      out.push({ kind: "cards", heading: p.heading || "", intro: p.intro || "", items: Array.isArray(p.cards) ? p.cards : [] });
+    } else if (w.kind === "signature") {
+      out.push({ kind: "signature", heading: p.heading || "Acceptance", parties: [{ name: p.customerLabel || "" }, { name: p.businessLabel || "" }] });
     }
   }
   // The narrative of everything else, once, so nothing vanishes for an old

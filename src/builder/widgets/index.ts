@@ -45,6 +45,12 @@ const RENDERERS: Record<string, Renderer> = {
   card: renderCard,
   catalog_card: renderCatalogCard,
   price_line: renderPriceLine,
+  /* `priced_line` is what `price_line` was called, and §11.12 folds one into
+     the other. ONE renderer, two spellings: `upgrade.ts` renames the kind on
+     every read path, and this is what draws a line that reached a page without
+     passing through it. Not in `ATOM_KINDS`, because it is not a widget
+     anything OFFERS any more — only one the renderer still understands. */
+  priced_line: renderPriceLine,
   totals: renderTotals,
   address_block: renderAddressBlock,
   key_fact: renderKeyFact,
@@ -61,12 +67,16 @@ export function renderAtom(w: Widget, ctx: RenderContext): string | null {
   return fn ? fn(w, ctx) : null;
 }
 
+/** Every kind this module draws, offered or merely understood. */
+export const ATOM_RENDERED_KINDS: readonly string[] = Object.keys(RENDERERS);
+
 /* The names, the renderers and the definitions are three lists of the same
    set, and a widget that is in two of them is a widget that draws nothing or
    is offered nowhere. Asserted rather than assumed — see the test. */
 export function atomKindsAgree(): { onlyNamed: string[]; onlyRendered: string[]; onlyDefined: string[] } {
   const named = new Set<string>(NAMES);
-  const rendered = new Set(Object.keys(RENDERERS));
+  // `priced_line` is understood but never offered — see the map.
+  const rendered = new Set(Object.keys(RENDERERS).filter((k) => k !== "priced_line"));
   const defined = new Set(ATOM_WIDGET_DEFS.map((d) => d.kind));
   return {
     onlyNamed: [...named].filter((k) => !rendered.has(k) || !defined.has(k)),

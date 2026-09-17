@@ -94,13 +94,22 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
     for (const k of ATOM_KINDS) assert.ok(RENDERED_KINDS.includes(k), `${k} is offered and not drawn`);
   });
 
-  test("the composites are superseded — still readable, never offered", () => {
+  test("the composites are DELETED — not hidden, deleted", () => {
+    // They were `hidden: true` — in the vocabulary, never offered — while the
+    // upgrade on the way in was not switched on yet. It is on now, in BOTH
+    // repos: `deserialise` here and `deserialise` in oliver-api are the only
+    // two doors a stored document comes through, and each runs the pass. So no
+    // document can carry one of these four kinds by the time anything draws
+    // it, and the definitions are gone rather than hidden. "Replace means
+    // delete" — a widget that is still there, just hidden, is the thing that
+    // comes back.
     for (const kind of ["comparison_cards", "property_block", "key_facts", "priced_line"]) {
-      const def = WIDGETS_BY_KIND[kind];
-      assert.ok(def, `${kind} must stay readable until every stored document is upgraded`);
-      assert.ok(def.hidden, `${kind} is still on offer`);
-      assert.ok(!def.count, `${kind} still asks "how many?"`);
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
       assert.ok(!widgetsFor("proposal").some((w) => w.kind === kind));
+    }
+    // …and what replaced each one IS there.
+    for (const kind of ["card", "catalog_card", "address_block", "price_line", "key_fact", "totals"]) {
+      assert.ok(WIDGETS_BY_KIND[kind], `${kind} should have replaced a composite and is missing`);
     }
   });
 
@@ -474,19 +483,25 @@ describe("D-156 · the service address, and one short answer", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("D-156 · “Choose your plan” is a ready-made SECTION", () => {
+  // ONE SECTION, with a BOX in it. This was two sections and a `buildAll`,
+  // because a section had one set of columns and nothing could hold a row.
+  // Containers landed in the same release, so the pattern is Brandon's
+  // sentence exactly: a header, a line of copy under it, then a row of cards
+  // INSIDE the same section — and placing it is one step and one undo.
   test("it is a heading and a line of copy, then a row of product cards", () => {
-    const [intro, row] = chooseYourPlanSections();
-    assert.deepEqual(intro.columns[0].widgets.map((w) => w.kind), ["heading", "paragraph"]);
-    assert.equal(intro.columns[0].widgets[1].props.text.startsWith("Pick one"), true,
+    const [s] = chooseYourPlanSections();
+    const kids = s.columns[0].widgets;
+    assert.deepEqual(kids.map((w) => w.kind), ["heading", "paragraph", "container"]);
+    assert.equal(kids[1].props.text.startsWith("Pick one"), true,
       "Brandon asked for a text field under the header that says Pick One");
-    assert.equal(row.layout, 3, "the cards are not in a row");
-    assert.deepEqual(row.columns.map((c) => c.widgets.map((w) => w.kind)),
-      [["catalog_card"], ["catalog_card"], ["catalog_card"]]);
+    assert.equal(kids[2].style.direction, "row", "the cards are not in a row");
+    assert.deepEqual(kids[2].children.map((w) => w.kind),
+      ["catalog_card", "catalog_card", "catalog_card"]);
   });
 
   test("every card in it is its own widget, with its own id", () => {
-    const [, row] = chooseYourPlanSections();
-    const ids = row.columns.map((c) => c.widgets[0].id);
+    const [s] = chooseYourPlanSections();
+    const ids = s.columns[0].widgets[2].children.map((w) => w.id);
     assert.equal(new Set(ids).size, 3);
   });
 
@@ -498,8 +513,10 @@ describe("D-156 · “Choose your plan” is a ready-made SECTION", () => {
 
   test("at a glance is key facts, one widget each", () => {
     const [s] = atAGlanceSections();
-    const kinds = s.columns.flatMap((c) => c.widgets.map((w) => w.kind));
-    assert.deepEqual(kinds, ["key_fact", "key_fact", "key_fact", "key_fact"]);
+    const box = s.columns[0].widgets[0];
+    assert.equal(box.kind, "container");
+    assert.deepEqual(box.children.map((w) => w.kind),
+      ["key_fact", "key_fact", "key_fact", "key_fact"]);
   });
 
   test("the gallery offers all three, and says what each is for", () => {
@@ -507,9 +524,8 @@ describe("D-156 · “Choose your plan” is a ready-made SECTION", () => {
       const p = premadeByKey(key);
       assert.ok(p, `${key} is not in the gallery`);
       assert.ok(p.description.length > 20, `${key} has no sentence`);
-      assert.ok(typeof p.buildAll === "function", `${key} cannot place its whole pattern`);
-      // build() still answers, so a caller that has not been taught about
-      // buildAll places something real rather than nothing.
+      // ONE section, always: `buildAll` is deleted with the two-section shape.
+      assert.equal(p.buildAll, undefined, `${key} still has a second way in`);
       assert.ok(p.build().columns.length >= 1);
     }
     assert.ok(PREMADE_SECTIONS.some((p) => p.key === "choose_your_plan"));

@@ -66,7 +66,7 @@ function arr(v: unknown): any[] {
 }
 
 /**
- * ONE OLD CARD → one `card`, or one `product_card` when it names a catalogue item.
+ * ONE OLD CARD → one `card`, or one `catalog_card` when it names a catalogue item.
  *
  * The field names change because the new widget's do (§11.12's table):
  * `name → title`, `list_price → was`, `pitch → description`, `features →
@@ -74,31 +74,61 @@ function arr(v: unknown): any[] {
  * still has one, and a card that was Recommended still is.
  *
  * WHICH OF THE TWO is decided from the DOCUMENT and nothing else: if the old
- * card carries a catalogue reference it becomes a `product_card` bound to it,
+ * card carries a catalogue reference it becomes a `catalog_card` bound to it,
  * and otherwise it is a typed `card`. §11.12 also wants "a card whose values
  * match a catalogue tier" recognised, and that needs the catalogue, which this
  * module cannot see and must not fetch — it is written down in the handoff for
  * the stream that owns the catalogue.
+ *
+ * INTEGRATION NOTE (2026-09-17). Two things were re-pointed here to the widget
+ * that actually exists, rather than to the one this pass was written against:
+ *
+ *   · the kind is `catalog_card`, not `product_card` — `product_card` is the
+ *     email builder's composite and is on disk in stored email documents that
+ *     nothing upgrades, so the NEW widget is the one that takes a new name;
+ *   · the binding is `offeringId` / `priceId` — the catalogue's own two keys,
+ *     which is what `resolveCatalogCard` reads — and the words the old card
+ *     already carried are written down as the SNAPSHOT. Without that, a card
+ *     upgraded on a server with no catalogue in the request (the PDF worker,
+ *     the customer's page) would resolve to nothing and print blank. The
+ *     snapshot is what a catalogue card falls back to, so the upgraded card
+ *     prints what the composite printed on the very first render, and picks up
+ *     the live price the next time the builder opens with the catalogue loaded.
  */
 function cardFrom(c: any): Widget {
-  const itemId = str(c?.item_id || c?.service_id || c?.catalogue_id || c?.productId);
+  const offeringId = str(c?.item_id || c?.service_id || c?.catalogue_id || c?.productId || c?.offering_id || c?.offeringId);
+  const title = str(c?.name ?? c?.title);
+  const price = str(c?.price);
+  const per = str(c?.per);
+  const description = str(c?.pitch ?? c?.description);
+  const bullets = arr(c?.features ?? c?.bullets).map(str);
+  if (offeringId) {
+    const props: Record<string, unknown> = {
+      offeringId,
+      priceId: str(c?.tier || c?.price_id || c?.priceId),
+      // What the composite was showing, kept verbatim so the card is never
+      // blank on a surface that has no catalogue.
+      snapshot: { title, price, per, description, bullets, amount: 0, cadence: null, basis: "" },
+      overrides: {},
+      refresh: "live",
+      onEmpty: "hide",
+      note: str(c?.note),
+      recommended: !!c?.recommended,
+    };
+    if (c?.badge) props.tag = { text: str(c.badge) };
+    if (c?.cta) props.ctaLabel = str(c.cta);
+    return makeWidget("catalog_card", props);
+  }
   const props: Record<string, unknown> = {
-    title: str(c?.name ?? c?.title),
-    price: str(c?.price),
-    per: str(c?.per),
+    title, price, per,
     was: str(c?.list_price ?? c?.was),
-    description: str(c?.pitch ?? c?.description),
-    bullets: arr(c?.features ?? c?.bullets).map(str),
+    description,
+    bullets,
     note: str(c?.note),
     recommended: !!c?.recommended,
   };
-  if (c?.badge) props.tag = str(c.badge);
-  if (c?.cta) props.cta = str(c.cta);
-  if (itemId) {
-    props.itemId = itemId;
-    if (c?.tier) props.tier = str(c.tier);
-    return makeWidget("product_card", props);
-  }
+  if (c?.badge) props.tag = { text: str(c.badge) };
+  if (c?.cta) props.ctaLabel = str(c.cta);
   return makeWidget("card", props);
 }
 
@@ -145,9 +175,33 @@ function fromPropertyBlock(w: Widget): Node {
   const p: any = w.props || {};
   const kids: Node[] = [];
   if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 3 }));
-  kids.push(makeWidget("address_block", { locationId: str(p.locationId) }));
-  kids.push(makeWidget("pricing_table", { rows: arr(p.items) }));
-  kids.push(makeWidget("totals", { heading: "Subtotal for this property", scope: "box" }));
+  kids.push(makeWidget("address_block", {
+    locationId: str(p.locationId),
+    name: str(p.locationName),
+  }));
+  // THE ITEMS BECOME PRICED LINES, NOT A RATE CARD (integration, 2026-09-17).
+  //
+  // This was `pricing_table` and it would have been a money defect: a rate
+  // card is PROSE — `PRICED_KINDS` does not list it, deliberately (totals.ts
+  // rule 1) — so every property's items would have quietly stopped reaching
+  // the total the first time a stored proposal was opened. A `price_line` per
+  // item is both the money-preserving shape and the one D-156 asks for: each
+  // line is its own widget you can select, reprice, move or delete.
+  for (const it of arr(p.items)) {
+    if (!str(it?.description).trim()) continue;
+    kids.push(makeWidget("price_line", {
+      name: str(it?.description).trim(),
+      quantity: Number(it?.quantity ?? 1) || 1,
+      unit_price: Number(it?.unit_price ?? 0) || 0,
+      cadence: it?.cadence ?? null,
+      recommended: !!it?.recommended,
+      bullets: [],
+      description: "",
+    }));
+  }
+  // The property's NAME is the heading widget at the top of the box; this is
+  // the line under the prices, and it says what the composite's said.
+  kids.push(makeWidget("totals", { heading: "Subtotal for this property" }));
   const box = makeContainer(undefined, kids);
   box.id = w.id;
   if (w.style) box.style = JSON.parse(JSON.stringify(w.style));
