@@ -94,11 +94,40 @@ export interface WidgetCount {
   default: number;
 }
 
+/**
+ * A sentence, or a sentence PER BUILDER (D-30, C-A-2 / N-4).
+ *
+ * One string served five adapters, so *"A title for the section, optionally
+ * numbered like “1. Scope of work”"* read that way in the email, the website,
+ * the landing page and the social-graphic pane. BUILDER_UX_SPEC §M-26: a widget
+ * offered in four builders has four lines, or it is not offered in all four.
+ *
+ * A plain string still means "the same in every builder", which is correct for
+ * a widget whose job does not change with the medium. The map form is resolved
+ * against the adapter the pane is already being drawn for, and falls back to
+ * the `proposal` wording only when the map has nothing for that adapter — a
+ * missing sentence must never blank the line under a widget's name.
+ */
+export type AdapterText = string | Partial<Record<BuilderAdapter, string>>;
+
 export interface WidgetDef {
   kind: string;
   label: string;
-  /** ONE line, in a business owner's words. See the header. */
-  description: string;
+  /** Where a medium calls this something else. Rare; `label` is the default. */
+  labels?: Partial<Record<BuilderAdapter, string>>;
+  /** ONE line, in a business owner's words, per medium. See the header. */
+  description: AdapterText;
+  /**
+   * THE JOB THIS WIDGET DOES (handoff A-7).
+   *
+   * `widgetTasks.ts` groups the pane and the picker by the job rather than the
+   * type. Whoever owns a widget knows its job better than a map beside it does,
+   * so the entry says so here and `TASK_BY_CATEGORY` only answers for the ones
+   * whose category is specific enough. Typed as a plain string because
+   * `widgetTasks` imports THIS module and not the other way round; it validates
+   * the value against its own seven groups.
+   */
+  task?: string;
   /** lucide-react icon NAME. WidgetPane maps it; this module stays pure. */
   icon: string;
   /** A small inline SVG data URI showing the SHAPE this widget makes. */
@@ -257,7 +286,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "heading",
     label: "Heading",
-    description: "A title for the section, optionally numbered like “1. Scope of work”.",
+    description: {
+      proposal: "A title for the section, optionally numbered like “1. Scope of work”.",
+      website: "A title for this band of the page — the line somebody skims before they read.",
+      email: "A title inside the email — the line that carries the eye down to the next part.",
+      landing: "A title for this band of the page — the line a visitor reads first.",
+      brand: "A line of big type on the design — the words people read from across the room.",
+    },
     icon: "Heading",
     picture: pictureFrom(bar(10, 14, 44, 6) + bar(10, 24, 28)),
     category: "Text",
@@ -272,7 +307,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "paragraph",
     label: "Paragraph",
-    description: "Ordinary writing — a sentence or a few, with bold and links.",
+    description: {
+      proposal: "Ordinary writing — a sentence or a few, with bold and links.",
+      website: "Ordinary writing on the page — a sentence or a few, with bold and links.",
+      email: "Ordinary writing in the email — a sentence or a few, with bold and links.",
+      landing: "Ordinary writing on the page — a sentence or a few, with bold and links.",
+      brand: "A block of smaller type under the headline.",
+    },
     icon: "AlignLeft",
     picture: pictureFrom(bar(8, 10, 48) + bar(8, 18, 48) + bar(8, 26, 30)),
     category: "Text",
@@ -283,7 +324,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "list",
     label: "Bullet list",
-    description: "A list of short points, one per line.",
+    description: {
+      proposal: "A list of short points, one per line.",
+      website: "A list of short points a visitor can skim, one per line.",
+      email: "A list of short points, one per line — the part people actually read.",
+      landing: "A list of short points a visitor can skim, one per line.",
+      brand: "A short list on the design, one point per line.",
+    },
     icon: "List",
     picture: pictureFrom(
       `<circle cx="11" cy="12" r="2" fill="#94A3B8" stroke="none"/>` + bar(18, 10, 38) +
@@ -297,7 +344,11 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "footer_note",
     label: "Small print",
-    description: "A note at the bottom in small type — terms, a disclaimer, a validity date.",
+    description: {
+      proposal: "A note at the bottom in small type — terms, a disclaimer, a validity date.",
+      landing: "A note at the bottom in small type — terms, a privacy line, a disclaimer.",
+    },
+    task: "Signature & terms",
     icon: "FileText",
     picture: pictureFrom(box(6, 6, 52, 28) + bar(10, 26, 30, 3)),
     category: "Text",
@@ -311,6 +362,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "merge_field",
     label: "Personal detail",
     description: "Drops in the customer’s name, address or any field you store, filled in per recipient.",
+    task: "Customer & property",
     icon: "Braces",
     picture: pictureFrom(bar(8, 12, 18) + `<rect x="30" y="10" width="26" height="8" rx="4" fill="#E2E8F0" stroke="#94A3B8"/>` + bar(8, 26, 40)),
     category: "Text",
@@ -326,7 +378,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "image",
     label: "Picture",
-    description: "One photo or graphic, with an optional caption.",
+    description: {
+      proposal: "One photo or graphic, with an optional caption.",
+      website: "One photo or graphic on the page, with an optional caption.",
+      email: "One photo or graphic in the email, with an optional caption.",
+      landing: "One photo or graphic on the page, with an optional caption.",
+      brand: "A photo or graphic placed on the design — drag its corners to size it.",
+    },
     icon: "Image",
     picture: pictureFrom(box(8, 8, 48, 24) + `<circle cx="20" cy="17" r="3" fill="#CBD5E1" stroke="none"/><path d="M12 30l12-10 10 8 8-6 10 8" stroke="#94A3B8"/>`),
     category: "Media",
@@ -341,7 +399,10 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "gallery",
     label: "Photo gallery",
-    description: "Several photos in a grid — a portfolio, before-and-afters, a product range.",
+    description: {
+      landing: "Several photos in a grid — a portfolio, before-and-afters, a product range.",
+      brand: "Several photos laid out in a grid on the design.",
+    },
     icon: "Images",
     picture: pictureFrom(solid(8, 8, 14, 12) + solid(25, 8, 14, 12) + solid(42, 8, 14, 12) + solid(8, 23, 14, 10) + solid(25, 23, 14, 10) + solid(42, 23, 14, 10)),
     category: "Media",
@@ -353,7 +414,10 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "video",
     label: "Video",
-    description: "A video from YouTube or Vimeo, playing on the page.",
+    description: {
+      website: "A video from YouTube or Vimeo, playing on the page.",
+      landing: "A video from YouTube or Vimeo, playing where the visitor lands.",
+    },
     icon: "Play",
     picture: pictureFrom(box(8, 8, 48, 24) + `<path d="M28 15l10 5-10 5z" fill="#94A3B8" stroke="none"/>`),
     category: "Media",
@@ -364,7 +428,10 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "logo_strip",
     label: "Logo row",
-    description: "A row of logos — brands you carry, or clients you have worked with.",
+    description: {
+      email: "A row of logos — brands you carry, or clients you have worked with.",
+      landing: "A row of logos — brands you carry, or clients you have worked with.",
+    },
     icon: "Building2",
     picture: pictureFrom(solid(6, 16, 12, 8) + solid(22, 16, 12, 8) + solid(38, 16, 12, 8) + solid(54, 16, 4, 8)),
     category: "Media",
@@ -385,7 +452,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "divider",
     label: "Divider",
-    description: "A line across the section, to separate one idea from the next.",
+    description: {
+      proposal: "A line across the section, to separate one idea from the next.",
+      website: "A line across the section, to separate one idea from the next.",
+      email: "A line across the email, to separate one idea from the next.",
+      landing: "A line across the section, to separate one idea from the next.",
+      brand: "A straight rule you place on the design, at any length and weight.",
+    },
     icon: "Minus",
     picture: pictureFrom(bar(8, 19, 48, 2)),
     category: "Layout",
@@ -396,7 +469,12 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "spacer",
     label: "Blank space",
-    description: "Empty space, when two things are sitting too close together.",
+    description: {
+      proposal: "Empty space, when two things are sitting too close together.",
+      website: "Empty space, when two things on the page are sitting too close together.",
+      email: "Empty space, when two things in the email are sitting too close together.",
+      landing: "Empty space, when two things on the page are sitting too close together.",
+    },
     icon: "MoveVertical",
     picture: pictureFrom(bar(8, 8, 48) + `<path d="M32 16v10" stroke="#CBD5E1"/>` + bar(8, 30, 48)),
     category: "Layout",
@@ -407,7 +485,13 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "button",
     label: "Button",
-    description: "The thing you want them to click — Accept, Book a call, Get a quote.",
+    description: {
+      proposal: "The thing you want them to press — Accept, Book a call, Ask a question.",
+      website: "The thing you want a visitor to click — Book a call, Get a quote.",
+      email: "The thing you want the reader to click — Book a call, See the offer.",
+      landing: "The thing you want a visitor to click — Get a quote, Claim the offer.",
+      brand: "A rounded block with a few words on it, for a call to action.",
+    },
     icon: "MousePointerClick",
     picture: pictureFrom(`<rect x="16" y="14" width="32" height="13" rx="6" fill="#94A3B8" stroke="none"/>` + bar(23, 19, 18, 3)),
     category: "Layout",
@@ -423,7 +507,11 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "callout",
     label: "Callout panel",
-    description: "A tinted box for something that must not be skimmed past.",
+    description: {
+      proposal: "A tinted box for something that must not be skimmed past.",
+      brand: "A tinted panel on the design, for the words that must not be missed.",
+    },
+    task: "Words",
     icon: "AlertCircle",
     picture: pictureFrom(`<rect x="8" y="10" width="48" height="20" rx="3" fill="#F1F5F9" stroke="#94A3B8"/>` + `<path d="M13 10v20" stroke="#64748B" stroke-width="3"/>` + bar(19, 15, 30) + bar(19, 22, 20)),
     category: "Layout",
@@ -541,6 +629,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "map",
     label: "Map",
     description: "A map showing where you are, or the area you cover.",
+    task: "Customer & property",
     icon: "MapPin",
     picture: pictureFrom(box(8, 8, 48, 24) + `<path d="M32 14a5 5 0 0 1 5 5c0 4-5 8-5 8s-5-4-5-8a5 5 0 0 1 5-5z" fill="#94A3B8" stroke="none"/>`),
     category: "Information",
@@ -564,7 +653,10 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "social_links",
     label: "Social links",
-    description: "Icons linking to your Facebook, Instagram and the rest.",
+    description: {
+      email: "Icons linking to your Facebook, Instagram and the rest.",
+      landing: "Icons linking to your Facebook, Instagram and the rest.",
+    },
     icon: "Share2",
     picture: pictureFrom(`<circle cx="18" cy="20" r="5" fill="#94A3B8" stroke="none"/><circle cx="32" cy="20" r="5" fill="#94A3B8" stroke="none"/><circle cx="46" cy="20" r="5" fill="#94A3B8" stroke="none"/>`),
     category: "Information",
@@ -583,6 +675,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "form",
     label: "Contact form",
     description: "Fields a visitor fills in — every submission lands in your inbox and your contacts.",
+    task: "Customer & property",
     icon: "ClipboardList",
     picture: pictureFrom(box(10, 6, 44, 10) + box(10, 19, 44, 10) + `<rect x="10" y="32" width="20" height="6" rx="3" fill="#94A3B8" stroke="none"/>`),
     category: "Capture",
@@ -597,6 +690,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "signature",
     label: "Signature",
     description: "Where each side signs and dates it. Turns the document into something to accept.",
+    task: "Signature & terms",
     icon: "PenLine",
     picture: pictureFrom(`<path d="M10 26c6-8 10 4 16-2s10 2 16-4" stroke="#94A3B8"/>` + `<path d="M8 32h22M34 32h22" stroke="#CBD5E1"/>`),
     category: "Document",
@@ -618,7 +712,11 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "testimonial",
     label: "Review",
-    description: "Something a customer said about you, with their name underneath.",
+    description: {
+      proposal: "Something a customer said about you, with their name underneath.",
+      email: "Something a customer said about you, with their name underneath.",
+      landing: "Something a customer said about you, with their name underneath.",
+    },
     icon: "Quote",
     picture: pictureFrom(`<path d="M12 14c0-3 3-4 5-4v4c-1 0-2 1-2 3h3v7h-6z" fill="#CBD5E1" stroke="none"/>` + bar(22, 12, 34) + bar(22, 20, 26) + bar(22, 30, 16, 3)),
     category: "Trust",
@@ -639,6 +737,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "doc_header",
     label: "Title page",
     description: "Your logo, the document’s title and who it is for — filled in from the customer you picked.",
+    task: "Customer & property",
     icon: "FileSignature",
     picture: pictureFrom(`<rect x="6" y="6" width="52" height="10" rx="2" fill="#64748B" stroke="none"/>` + bar(10, 22, 34, 5) + bar(10, 31, 22)),
     category: "Document",
@@ -660,6 +759,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "key_facts",
     label: "Key facts",
     description: "The short answers at the top — customer, property, term, trigger — filled in for you.",
+    task: "Customer & property",
     icon: "Rows2",
     picture: pictureFrom(bar(8, 10, 18) + bar(34, 10, 22) + bar(8, 20, 18) + bar(34, 20, 18) + bar(8, 30, 18) + bar(34, 30, 20)),
     category: "Document",
@@ -672,6 +772,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "clauses",
     label: "Numbered clauses",
     description: "Terms as numbered paragraphs, dropped in from the clauses you have saved.",
+    task: "Signature & terms",
     icon: "ListOrdered",
     picture: pictureFrom(`<path d="M8 12h2M8 22h2M8 32h2" stroke="#64748B" stroke-width="3"/>` + bar(16, 10, 40) + bar(16, 20, 34) + bar(16, 30, 38)),
     category: "Document",
@@ -687,6 +788,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "property_plan",
     label: "Property service plan",
     description: "This location’s details — plowing areas, snow storage, obstacles. The crew sees the same sheet.",
+    task: "Customer & property",
     icon: "Home",
     picture: pictureFrom(`<path d="M12 20l10-8 10 8v12H12z" stroke="#64748B"/>` + bar(38, 14, 18) + bar(38, 22, 14) + bar(38, 30, 16)),
     category: "Document",
@@ -707,6 +809,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "property_block",
     label: "Property block",
     description: "One location with its own line items and its own subtotal. Use one per site.",
+    task: "Customer & property",
     icon: "MapPinned",
     picture: pictureFrom(`<path d="M12 10a4 4 0 0 1 4 4c0 3-4 6-4 6s-4-3-4-6a4 4 0 0 1 4-4z" fill="#94A3B8" stroke="none"/>` + bar(20, 12, 36) + bar(8, 24, 48) + bar(8, 32, 24) + bar(44, 32, 12, 5)),
     category: "Document",
@@ -722,6 +825,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "page_break",
     label: "Page break",
     description: "Start a new page here when the document is printed or saved as a PDF.",
+    task: "Signature & terms",
     icon: "Scissors",
     picture: pictureFrom(`<path d="M6 20h52" stroke="#94A3B8" stroke-dasharray="4 3"/>` + bar(10, 8, 30) + bar(10, 28, 24)),
     category: "Document",
@@ -784,6 +888,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "colour_block",
     label: "Brand colour block",
     description: "A band of one of your brand colours — the fastest way to look designed.",
+    task: "Pictures & media",
     icon: "PaintBucket",
     picture: pictureFrom(solid(6, 8, 24, 24) + `<rect x="34" y="8" width="11" height="24" rx="2" fill="#CBD5E1" stroke="none"/>` + `<rect x="48" y="8" width="10" height="24" rx="2" fill="#E2E8F0" stroke="none"/>`),
     category: "Layout",
@@ -798,6 +903,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "background",
     label: "Background",
     description: "Fills the whole square behind everything — a colour, a fade or a photo.",
+    task: "Pictures & media",
     icon: "Frame",
     picture: pictureFrom(`<rect x="4" y="4" width="56" height="32" rx="3" fill="#CBD5E1" stroke="none"/>` + bar(16, 16, 32, 8)),
     category: "Layout",
@@ -811,6 +917,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "qr_code",
     label: "QR code",
     description: "A square people scan with a phone to open your link.",
+    task: "Pictures & media",
     icon: "QrCode",
     picture: pictureFrom(`<rect x="20" y="6" width="26" height="26" rx="2" fill="none" stroke="#64748B"/>` + `<rect x="24" y="10" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="35" y="10" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="24" y="21" width="7" height="7" fill="#94A3B8" stroke="none"/>` + `<rect x="36" y="23" width="4" height="4" fill="#94A3B8" stroke="none"/>`),
     category: "Information",
@@ -860,6 +967,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_services",
     label: "What you do",
     description: "A row of cards, one per service, each with a short description.",
+    task: "Products & services",
     icon: "LayoutGrid",
     picture: pictureFrom(bar(20, 5, 24, 5) + box(5, 14, 16, 21) + box(24, 14, 16, 21) + box(43, 14, 16, 21) + bar(9, 19, 8, 3) + bar(28, 19, 8, 3) + bar(47, 19, 8, 3)),
     category: "Sections",
@@ -872,6 +980,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_about",
     label: "About the business",
     description: "Your story beside a picture, then the things you stand for.",
+    task: "Words",
     icon: "BookOpen",
     picture: pictureFrom(solid(5, 7, 24, 26) + bar(33, 9, 26, 5) + bar(33, 18, 26) + bar(33, 25, 20) + bar(33, 31, 24)),
     category: "Sections",
@@ -883,6 +992,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_pricing",
     label: "What it costs",
     description: "Your prices, one card per package, with what each one includes.",
+    task: "Products & services",
     icon: "Tags",
     picture: pictureFrom(bar(22, 4, 20, 4) + box(5, 11, 16, 24) + `<rect x="24" y="8" width="16" height="27" rx="3" fill="#F1F5F9" stroke="#64748B"/>` + box(43, 11, 16, 24) + bar(28, 12, 8, 3) + bar(28, 19, 8, 5)),
     category: "Sections",
@@ -907,6 +1017,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_gallery",
     label: "Picture gallery",
     description: "A grid of photographs of your work.",
+    task: "Pictures & media",
     icon: "Images",
     picture: pictureFrom(bar(22, 4, 20, 4) + solid(5, 12, 16, 10) + solid(24, 12, 16, 10) + solid(43, 12, 16, 10) + solid(5, 25, 16, 10) + solid(24, 25, 16, 10) + solid(43, 25, 16, 10)),
     category: "Sections",
@@ -943,6 +1054,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_faq",
     label: "Questions and answers",
     description: "The questions customers keep asking, with your answers.",
+    task: "Words",
     icon: "MessageCircleQuestion",
     picture: pictureFrom(bar(20, 4, 24, 4) + box(5, 11, 54, 8) + box(5, 21, 54, 8) + box(5, 31, 54, 6) + bar(9, 14, 22, 3) + bar(9, 24, 26, 3)),
     category: "Sections",
@@ -966,6 +1078,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_contact",
     label: "Contact and form",
     description: "How to reach you, next to a form that sends straight to your inbox.",
+    task: "Customer & property",
     icon: "Mail",
     picture: pictureFrom(bar(20, 4, 24, 4) + `<circle cx="9" cy="15" r="2" fill="#94A3B8" stroke="none"/>` + bar(15, 13, 14, 3) + `<circle cx="9" cy="23" r="2" fill="#94A3B8" stroke="none"/>` + bar(15, 21, 12, 3) + box(34, 11, 25, 8) + box(34, 21, 25, 8) + `<rect x="34" y="31" width="12" height="5" rx="2" fill="#94A3B8" stroke="none"/>`),
     category: "Sections",
@@ -977,6 +1090,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "site_content",
     label: "Words and pictures",
     description: "A free section: headings, paragraphs, pictures, buttons and video, in one to three columns.",
+    task: "Words",
     icon: "Type",
     picture: pictureFrom(bar(5, 6, 26, 5) + bar(5, 15, 26) + bar(5, 22, 22) + bar(5, 29, 26) + solid(35, 6, 24, 29)),
     category: "Sections",
@@ -1023,6 +1137,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "article_card",
     label: "Articles",
     description: "Your stories, each with a picture, a few lines and a link to read the rest.",
+    task: "Words",
     icon: "Newspaper",
     picture: pictureFrom(solid(8, 8, 18, 24) + bar(30, 10, 26, 5) + bar(30, 20, 26) + bar(30, 28, 16)),
     category: "Information",
@@ -1055,6 +1170,7 @@ export const WIDGETS: WidgetDef[] = [
     kind: "email_footer",
     label: "Footer",
     description: "Who sent this, where you are, and the unsubscribe link. Required on every send.",
+    task: "Signature & terms",
     icon: "PanelBottom",
     picture: pictureFrom(`<rect x="6" y="6" width="52" height="16" rx="3" fill="#F1F5F9" stroke="none"/>`
       + `<rect x="6" y="25" width="52" height="10" rx="2" fill="#CBD5E1" stroke="none"/>`
@@ -1093,7 +1209,12 @@ export const WIDGETS: WidgetDef[] = [
   {
     kind: "columns",
     label: "Columns",
-    description: "Split this section into two or three side by side.",
+    description: {
+      proposal: "Split this section into two or three side by side.",
+      website: "Split this band of the page into two or three side by side.",
+      email: "Split this row into two or three side by side. Phones stack them.",
+      landing: "Split this band of the page into two or three side by side.",
+    },
     icon: "Columns3",
     picture: pictureFrom(box(6, 8, 15, 26) + box(24, 8, 16, 26) + box(43, 8, 15, 26)),
     category: "Layout",
@@ -1113,6 +1234,33 @@ export const WIDGETS_BY_KIND: Record<string, WidgetDef> = Object.fromEntries(
 );
 
 /** Every widget a given builder may offer, in registry order. */
+/**
+ * THE ONE RESOLVER for a per-medium string (N-4).
+ *
+ * A plain string is the same everywhere. A map answers for the adapter the
+ * pane is being drawn for; when it has nothing for that adapter it falls back
+ * to the proposal wording and then to the first sentence it has, because a
+ * widget with a blank line under its name looks unfinished and tells the
+ * author nothing.
+ */
+export function adapterText(value: AdapterText, adapter?: BuilderAdapter): string {
+  if (typeof value === "string") return value;
+  if (!value) return "";
+  const own = adapter ? value[adapter] : undefined;
+  if (own) return own;
+  return value.proposal || Object.values(value).find((v) => !!v) || "";
+}
+
+/** The sentence under this widget's name, in this builder's words. */
+export function widgetDescription(def: WidgetDef, adapter?: BuilderAdapter): string {
+  return adapterText(def.description, adapter);
+}
+
+/** What this builder calls this widget. `label` unless the medium renames it. */
+export function widgetLabel(def: WidgetDef, adapter?: BuilderAdapter): string {
+  return (adapter && def.labels?.[adapter]) || def.label;
+}
+
 export function widgetsFor(adapter: BuilderAdapter): WidgetDef[] {
   return WIDGETS.filter((w) => w.adapters.includes(adapter) && !w.hidden);
 }
@@ -1154,7 +1302,8 @@ export function groupForPane(
 ): Array<{ category: WidgetCategory; widgets: WidgetDef[] }> {
   const q = query.trim().toLowerCase();
   const matches = (w: WidgetDef) =>
-    !q || w.label.toLowerCase().includes(q) || w.description.toLowerCase().includes(q) || w.kind.includes(q);
+    !q || widgetLabel(w, adapter).toLowerCase().includes(q)
+      || widgetDescription(w, adapter).toLowerCase().includes(q) || w.kind.includes(q);
 
   return WIDGET_CATEGORIES
     .map((category) => ({
@@ -1164,7 +1313,8 @@ export function groupForPane(
     .filter((g) => g.widgets.length > 0);
 }
 
-/** The tooltip text for a widget's button. Label plus the sentence, always. */
-export function widgetTooltip(w: WidgetDef): string {
-  return `${w.label} — ${w.description}`;
+/** The tooltip text for a widget's button. Label plus the sentence, always,
+ *  and both in THIS builder's words (N-4). */
+export function widgetTooltip(w: WidgetDef, adapter?: BuilderAdapter): string {
+  return `${widgetLabel(w, adapter)} — ${widgetDescription(w, adapter)}`;
 }

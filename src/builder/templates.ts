@@ -948,23 +948,49 @@ export interface SavedTemplateRow {
 
 export const SAVED_PURPOSE = "Your templates";
 
+/**
+ * WHERE A SAVED BLOCK IS FILED (M-23).
+ *
+ * A block and a template are the same stored thing — sections the author kept
+ * — and they are stored the same way, because a second store for "one section
+ * instead of several" would be a second thing to list, search and delete. What
+ * separates them is what you DO with one: a template is where a document
+ * starts, and a block is dropped into a document that already exists. So they
+ * are two purposes over one row, and the row's own shape decides which:
+ * exactly ONE section is a block.
+ */
+export const BLOCK_PURPOSE = "Your own blocks";
+
+/** Is this saved row one the author kept as a block rather than a template? */
+export function isSavedBlock(row: { document?: unknown }): boolean {
+  const sections = (row?.document as { sections?: unknown[] } | undefined)?.sections;
+  return Array.isArray(sections) && sections.length === 1;
+}
+
 export function savedTemplateEntries(
   rows: SavedTemplateRow[],
   open: (row: SavedTemplateRow) => BuilderDocument,
   o: ProposalLibraryOptions = {},
 ): TemplateEntry[] {
-  return rows.map((r) => ({
-    id: `saved:${r.id}`,
-    title: r.name,
-    purpose: SAVED_PURPOSE,
-    businessTypes: ["Any business"],
-    tags: ["saved", "mine", "my templates"],
-    useCase: r.description?.trim()
-      ? r.description.trim()
-      : "One of your own saved templates. It opens exactly as you saved it, and anything on it can still be changed.",
-    bestFor: "Whatever you saved it for — your own wording, your own order, already agreed.",
-    preview: () => proposalPreview(open(r), o),
-  }));
+  return rows.map((r) => {
+    const block = isSavedBlock(r);
+    return {
+      id: `saved:${r.id}`,
+      title: r.name,
+      purpose: block ? BLOCK_PURPOSE : SAVED_PURPOSE,
+      businessTypes: ["Any business"],
+      tags: block ? ["saved", "mine", "my blocks", "block"] : ["saved", "mine", "my templates"],
+      useCase: r.description?.trim()
+        ? r.description.trim()
+        : block
+          ? "One of your own saved blocks. Drop it into any document and change anything on it."
+          : "One of your own saved templates. It opens exactly as you saved it, and anything on it can still be changed.",
+      bestFor: block
+        ? "The part you write the same way every time."
+        : "Whatever you saved it for — your own wording, your own order, already agreed.",
+      preview: () => proposalPreview(open(r), o),
+    };
+  });
 }
 
 /** The id a saved entry carries, back to the row it came from. */

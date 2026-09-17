@@ -14,7 +14,7 @@
  * behaviour it offers already existed somewhere and is reached, not copied.
  */
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock } from "lucide-react";
+import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen } from "lucide-react";
 import type { BuilderDocument, Selection, WidgetPath } from "./model";
 import { outline, sectionDropIndex, type OutlineRow } from "./navigatorModel";
 import type { Device } from "./style";
@@ -28,6 +28,22 @@ export interface NavigatorProps {
   device: Device;
   onHideSection: (sectionId: string, hidden: boolean) => void;
   onHideWidget: (path: WidgetPath, hidden: boolean) => void;
+  /**
+   * LOCK, FROM THE OUTLINE (M-21).
+   *
+   * The padlock was a read-only marker on a widget the LAW locked, so nothing
+   * an author locked themselves could be unlocked and nothing else could be
+   * locked at all. It is a button now, and it shows the state either way.
+   */
+  onLockSection?: (sectionId: string, locked: boolean) => void;
+  onLockWidget?: (path: WidgetPath, locked: boolean) => void;
+  /** Is this section locked? (Every widget in it is.) */
+  isSectionLocked?: (sectionId: string) => boolean;
+  /** The \u22ef \u2014 the SAME menu as right-clicking it on the page (M-8). */
+  onRowMenu?: (
+    target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
+    at: { x: number; y: number },
+  ) => void;
   /** What the thing being built is called, from the adapter's copy. */
   heading?: string;
 }
@@ -128,10 +144,49 @@ export function Navigator(p: NavigatorProps) {
               textDecoration: hidden ? "line-through" : "none",
             }}>{row.label}</span>
 
-            {row.kind === "widget" && row.locked && (
-              <span title="This has to stay on the page — you can change the wording, not remove it"
-                style={{ color: "#B45309", display: "inline-flex" }}><Lock size={11} /></span>
-            )}
+            {/* M-21 — the padlock SHOWS the state and CHANGES it. A widget the
+                law locked (an email footer) keeps the marker and refuses to be
+                unlocked here, because unlocking it is not a thing the author is
+                allowed to do — and a control that pretends otherwise is worse
+                than one that is not there. */}
+            {(() => {
+              const rowLocked = row.kind === "widget"
+                ? !!row.locked
+                : !!p.isSectionLocked?.(row.id);
+              const required = row.kind === "widget" && !!row.required;
+              const can = row.kind === "widget" ? !!p.onLockWidget : !!p.onLockSection;
+              if (!can) {
+                return rowLocked ? (
+                  <span title="This has to stay on the page — you can change the wording, not remove it"
+                    style={{ color: "#B45309", display: "inline-flex" }}><Lock size={11} /></span>
+                ) : null;
+              }
+              if (required) {
+                return (
+                  <span data-nav-locked="required"
+                    title="This has to stay on the page — you can change the wording, not remove it"
+                    style={{ color: "#B45309", display: "inline-flex" }}><Lock size={11} /></span>
+                );
+              }
+              return (
+                <button
+                  type="button"
+                  data-nav-locked={rowLocked ? "1" : "0"}
+                  aria-label={rowLocked ? "Let it be deleted again" : "Lock so it can't be deleted"}
+                  title={rowLocked
+                    ? "Locked, so it cannot be deleted by accident. Press to unlock it."
+                    : "Lock so it can't be deleted. You can still change the words in it."}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (row.kind === "section") p.onLockSection?.(row.id, !rowLocked);
+                    else p.onLockWidget?.(row.path, !rowLocked);
+                  }}
+                  style={{ border: "none", background: "transparent", cursor: "pointer", color: rowLocked ? "#B45309" : "#CBD5E1", display: "inline-flex", padding: 0 }}
+                >
+                  {rowLocked ? <Lock size={11} /> : <LockOpen size={11} />}
+                </button>
+              );
+            })()}
 
             <button
               type="button"
@@ -148,6 +203,29 @@ export function Navigator(p: NavigatorProps) {
             >
               {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
+
+            {/* M-8 \u2014 the same menu, from the outline. */}
+            {p.onRowMenu && (
+              <button
+                type="button"
+                data-nav-more="1"
+                aria-label="Everything you can do with this"
+                title="Everything you can do with this \u2014 the same as right-clicking it on the page"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  p.onRowMenu!(
+                    row.kind === "section"
+                      ? { kind: "section", sectionId: row.id }
+                      : { kind: "widget", path: row.path },
+                    { x: r.left, y: r.bottom + 4 },
+                  );
+                }}
+                style={{ border: "none", background: "transparent", cursor: "pointer", color: "#CBD5E1", display: "inline-flex", padding: 0, fontSize: 13, lineHeight: 1 }}
+              >
+                \u22ef
+              </button>
+            )}
           </div>
         );
       })}

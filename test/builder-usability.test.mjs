@@ -718,8 +718,13 @@ describe("the shell wires the rebuild without a second mechanism", () => {
   test("the outline is the pane's second tab, and hiding uses the styling pass's own flag", () => {
     const left = readSrc("builder/LeftPane.tsx");
     assert.match(left, /<Navigator/);
-    assert.match(shell, /withLayer\(s\.style, preview, \{ hidden:/);
-    assert.match(shell, /withLayer\(w\.style, preview, \{ hidden:/);
+    // M-21 folded the two copies of this into ONE `setHidden`, used by the
+    // outline's eye, the widget handle's eye and the right-click menu — three
+    // ways in, one writer. The flag is still the styling pass's own.
+    assert.match(shell, /withLayer\(w\.style, preview, \{ hidden: hidden \? true : undefined \}\)/);
+    assert.match(shell, /withLayer\(sec\.style, preview, \{ hidden: hidden \? true : undefined \}\)/);
+    assert.equal((shell.match(/withLayer\([a-z]+\.style, preview, \{ hidden:/g) || []).length, 2,
+      "hiding is written in more than one place again");
   });
 
   test("no drag-and-drop library, and no second picker component", () => {

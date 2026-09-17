@@ -13,6 +13,7 @@
  * "Paragraph" eleven times down the list is not an outline — so the label
  * rule lives here with a test on it.
  */
+import { isRequired } from "./model";
 import type { BuilderDocument, Section, Widget, WidgetPath } from "./model";
 import { WIDGETS_BY_KIND } from "./registry";
 
@@ -34,6 +35,8 @@ export type OutlineRow =
     path: WidgetPath;
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
     locked: boolean;
+    /** Locked by the LAW rather than by the author — it cannot be unlocked. */
+    required: boolean;
   };
 
 /** The words a row shows. Never the kind alone — see the header. */
@@ -124,6 +127,7 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
           path: { sectionId: s.id, columnIndex, widgetIndex },
           hiddenOn: hiddenOf(w.style),
           locked: !!w.locked,
+          required: isRequired(w),
         });
       });
     });

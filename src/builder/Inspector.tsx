@@ -34,7 +34,7 @@
 import type { ReactNode } from "react";
 import { Sparkles, Trash2 } from "lucide-react";
 import type { BuilderDocument, Section, Selection, Widget } from "./model";
-import { WIDGETS_BY_KIND } from "./registry";
+import { WIDGETS_BY_KIND, widgetDescription, widgetLabel, type BuilderAdapter } from "./registry";
 import {
   isTypographic, layerFor, resetKeys, seedFromPadding, withLayer,
   type Device, type ElementStyle, type StyleLayer,
@@ -91,7 +91,7 @@ export interface InspectorProps extends InspectorSlots {
    * so beside the control rather than leaving the author to find out in their
    * own inbox.
    */
-  adapter?: string;
+  adapter?: BuilderAdapter;
   /**
    * The Page group's page-break line, in the adapter's words (copy.ts, D-30).
    *
@@ -148,7 +148,7 @@ export function Inspector(p: InspectorProps) {
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div>
           <div style={L}>Selected</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{widget ? (def?.label || widget.kind) : (section.label || "Section")}</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{widget ? (def ? widgetLabel(def, p.adapter) : widget.kind) : (section.label || "Section")}</div>
         </div>
         {p.askArgus}
       </div>
@@ -158,8 +158,8 @@ export function Inspector(p: InspectorProps) {
           <>
             {/* ── CONTENT — everything that was here before ─────────────── */}
             <Group title="Content" hint="What this shows, and where it comes from" defaultOpen>
-              {def?.description && (
-                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{def.description}</div>
+              {def && widgetDescription(def, p.adapter) && (
+                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{widgetDescription(def, p.adapter)}</div>
               )}
 
               {p.widgetExtras?.(widget, section.id)}

@@ -27,6 +27,40 @@ export interface History<T = BuilderDocument> {
   future: T[];
   /** What produced `present`, for coalescing. */
   lastKey: string | null;
+  /**
+   * WHAT EACH STEP WAS, in the author's words (M-7).
+   *
+   * Same length and same order as `past`, `present` and `future`, so step `i`
+   * of the timeline below is named by label `i`. Named AT PUSH TIME, because
+   * the only moment anything knows that a document changed because somebody
+   * moved section 5 above section 4 is the moment it happens — afterwards
+   * there are two documents and a diff, and a diff cannot tell a move from a
+   * delete-and-add.
+   *
+   * An unnamed push gets `DEFAULT_STEP` rather than an empty row: a history
+   * panel with a blank line in it is worse than one that says "Changed the
+   * page", because the blank one looks broken.
+   */
+  pastLabels: string[];
+  presentLabel: string;
+  futureLabels: string[];
+}
+
+/** What a step is called when nothing named it. */
+export const DEFAULT_STEP = "Changed the page";
+
+/** Where the document started. The bottom of every history panel. */
+export const FIRST_STEP = "Opened it";
+
+/** One row of the \u201cWhat you've changed\u201d panel. */
+export interface HistoryStep {
+  /** Its place in the timeline, for `travelTo`. */
+  index: number;
+  label: string;
+  /** The step the document is on right now. */
+  current: boolean;
+  /** After the current one \u2014 listed and greyed until the next edit. */
+  ahead: boolean;
 }
 
 /** Depth. Deep enough for a long session, bounded so a big document cannot
@@ -34,17 +68,25 @@ export interface History<T = BuilderDocument> {
 export const HISTORY_LIMIT = 60;
 
 export function initHistory<T>(doc: T): History<T> {
-  return { past: [], present: doc, future: [], lastKey: null };
+  return { past: [], present: doc, future: [], lastKey: null, pastLabels: [], presentLabel: FIRST_STEP, futureLabels: [] };
 }
 
-export function push<T>(h: History<T>, next: T, mergeKey: string | null = null): History<T> {
+export function push<T>(
+  h: History<T>,
+  next: T,
+  mergeKey: string | null = null,
+  label: string = DEFAULT_STEP,
+): History<T> {
   if (next === h.present) return h;
-  // Same field, still typing: replace the top rather than stacking.
+  // Same field, still typing: replace the top rather than stacking. The LABEL
+  // is replaced too \u2014 one typing burst is one step, and the step is named for
+  // the field it happened in, not for the first letter typed into it.
   if (mergeKey && mergeKey === h.lastKey) {
-    return { ...h, present: next, future: [] };
+    return { ...h, present: next, future: [], futureLabels: [], presentLabel: label };
   }
   const past = [...h.past, h.present].slice(-HISTORY_LIMIT);
-  return { past, present: next, future: [], lastKey: mergeKey };
+  const pastLabels = [...h.pastLabels, h.presentLabel].slice(-HISTORY_LIMIT);
+  return { past, present: next, future: [], lastKey: mergeKey, pastLabels, presentLabel: label, futureLabels: [] };
 }
 
 export function canUndo<T>(h: History<T>): boolean { return h.past.length > 0; }
@@ -52,13 +94,64 @@ export function canRedo<T>(h: History<T>): boolean { return h.future.length > 0;
 
 export function undo<T>(h: History<T>): History<T> {
   if (!h.past.length) return h;
-  const past = [...h.past];
-  const present = past.pop()!;
-  return { past, present, future: [h.present, ...h.future].slice(0, HISTORY_LIMIT), lastKey: null };
+  return travelTo(h, h.past.length - 1);
 }
 
 export function redo<T>(h: History<T>): History<T> {
   if (!h.future.length) return h;
-  const [present, ...future] = h.future;
-  return { past: [...h.past, h.present].slice(-HISTORY_LIMIT), present, future, lastKey: null };
+  return travelTo(h, h.past.length + 1);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TRAVEL (M-7) — undo is a history you can walk in, not one step
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The whole timeline, oldest first: past, then present, then future.
+ *
+ * Undo and redo are both "travel one place" over this, which is why they are
+ * two lines each above \u2014 one mechanism, not three that can disagree about
+ * what `lastKey` should be afterwards.
+ */
+function timeline<T>(h: History<T>): { values: T[]; labels: string[] } {
+  return {
+    values: [...h.past, h.present, ...h.future],
+    labels: [...h.pastLabels, h.presentLabel, ...h.futureLabels],
+  };
+}
+
+/** Where in the timeline the document is now. */
+export function cursor<T>(h: History<T>): number {
+  return h.past.length;
+}
+
+/**
+ * Go to step `index`. Everything after it stays listed, so the author can come
+ * back \u2014 which is the difference between a history and an undo button. Out of
+ * range, or already there, returns the history unchanged.
+ */
+export function travelTo<T>(h: History<T>, index: number): History<T> {
+  const { values, labels } = timeline(h);
+  if (index < 0 || index >= values.length || index === cursor(h)) return h;
+  return {
+    past: values.slice(0, index),
+    present: values[index],
+    future: values.slice(index + 1),
+    lastKey: null,
+    pastLabels: labels.slice(0, index),
+    presentLabel: labels[index],
+    futureLabels: labels.slice(index + 1),
+  };
+}
+
+/**
+ * The panel's rows, NEWEST FIRST \u2014 which is the order Elementor lists them
+ * and the order a person reads "what have I just done".
+ */
+export function steps<T>(h: History<T>): HistoryStep[] {
+  const { labels } = timeline(h);
+  const at = cursor(h);
+  return labels
+    .map((label, index) => ({ index, label, current: index === at, ahead: index > at }))
+    .reverse();
 }

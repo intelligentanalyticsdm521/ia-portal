@@ -26,7 +26,10 @@
  *
  * Pure on purpose: no React, no lucide. `node --test` drives the lot.
  */
-import { WIDGET_CATEGORIES, widgetsFor, type BuilderAdapter, type WidgetCategory, type WidgetDef } from "./registry";
+import {
+  WIDGET_CATEGORIES, widgetDescription, widgetLabel, widgetsFor,
+  type BuilderAdapter, type WidgetCategory, type WidgetDef,
+} from "./registry";
 
 /** The seven groups, in the order the picker and the pane show them. */
 export const TASK_GROUPS = [
@@ -54,43 +57,11 @@ export const DEFAULT_TASK: WidgetTask = "More";
  */
 export interface TaskedWidget { task?: string }
 
-/** The job a widget does, when its category is not specific enough. */
-export const TASK_BY_KIND: Record<string, WidgetTask> = {
-  // Who the document is for, and where the work happens. Brandon, 2026-09-16:
-  // "I need to be able to add sections for service address or property address."
-  doc_header: "Customer & property",
-  key_facts: "Customer & property",
-  property_block: "Customer & property",
-  property_plan: "Customer & property",
-  merge_field: "Customer & property",
-  form: "Customer & property",
-  map: "Customer & property",
-  site_contact: "Customer & property",
-
-  // "I need to be able to call products and services."
-  site_pricing: "Products & services",
-  site_services: "Products & services",
-
-  // Words that happen to be laid out as a panel or a card.
-  callout: "Words",
-  article_card: "Words",
-  site_about: "Words",
-  site_faq: "Words",
-  site_content: "Words",
-
-  // Pictures, wherever their category filed them.
-  qr_code: "Pictures & media",
-  colour_block: "Pictures & media",
-  background: "Pictures & media",
-  site_gallery: "Pictures & media",
-
-  // The end of a document: what they sign, and the small print.
-  signature: "Signature & terms",
-  clauses: "Signature & terms",
-  page_break: "Signature & terms",
-  footer_note: "Signature & terms",
-  email_footer: "Signature & terms",
-};
+/* `TASK_BY_KIND` LIVED HERE and is DELETED (handoff A-7).
+   It was a map of twenty-four kinds beside the registry that declares them —
+   two places to look up one fact. Every kind it named now carries `task` on its
+   own registry entry, which is where the widget's owner can see it, and
+   `TASK_BY_CATEGORY` below answers for the rest. Replace means delete. */
 
 /** The fallback: what a whole category is usually for. */
 export const TASK_BY_CATEGORY: Record<WidgetCategory, WidgetTask> = {
@@ -105,11 +76,11 @@ export const TASK_BY_CATEGORY: Record<WidgetCategory, WidgetTask> = {
   Trust: "More",
 };
 
-/** The job this widget does. Its own `task` first, then the two maps. */
+/** The job this widget does. Its own `task` first, then its category. */
 export function taskFor(w: WidgetDef & TaskedWidget): WidgetTask {
   const own = (w as TaskedWidget).task;
   if (own && (TASK_GROUPS as readonly string[]).includes(own)) return own as WidgetTask;
-  return TASK_BY_KIND[w.kind] ?? TASK_BY_CATEGORY[w.category] ?? DEFAULT_TASK;
+  return TASK_BY_CATEGORY[w.category] ?? DEFAULT_TASK;
 }
 
 /**
@@ -121,10 +92,17 @@ export function taskFor(w: WidgetDef & TaskedWidget): WidgetTask {
  * another. Every word in the query has to match something, so "snow price"
  * narrows rather than widens.
  */
-export function matchesWidgetQuery(w: WidgetDef & TaskedWidget, query: string): boolean {
+export function matchesWidgetQuery(
+  w: WidgetDef & TaskedWidget,
+  query: string,
+  adapter?: BuilderAdapter,
+): boolean {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return true;
-  const hay = `${w.label} ${w.description} ${w.kind} ${taskFor(w)}`.toLowerCase();
+  // The sentence searched is the one the author can SEE (N-4): a widget whose
+  // email line never mentions "scope" must not be found in the email pane by
+  // typing "scope" because its proposal line does.
+  const hay = `${widgetLabel(w, adapter)} ${widgetDescription(w, adapter)} ${w.kind} ${taskFor(w)}`.toLowerCase();
   return q.split(/\s+/).filter(Boolean).every((word) => hay.includes(word));
 }
 
@@ -136,9 +114,9 @@ export interface TaskGroup { task: WidgetTask; widgets: WidgetDef[] }
  * never the registry's.
  */
 export function groupByTask(adapter: BuilderAdapter, query = ""): TaskGroup[] {
-  const pool = widgetsFor(adapter).filter((w) => matchesWidgetQuery(w, query));
+  const pool = widgetsFor(adapter).filter((w) => matchesWidgetQuery(w, query, adapter));
   return TASK_GROUPS
-    .map((task) => ({ task, widgets: byRelevance(pool.filter((w) => taskFor(w) === task), query) }))
+    .map((task) => ({ task, widgets: byRelevance(pool.filter((w) => taskFor(w) === task), query, adapter) }))
     .filter((g) => g.widgets.length > 0);
 }
 
@@ -150,10 +128,10 @@ export function groupByTask(adapter: BuilderAdapter, query = ""): TaskGroup[] {
  * order — so the first card and the thing Enter inserted were two different
  * widgets. One order, computed once, used by both.
  */
-function byRelevance(list: WidgetDef[], query: string): WidgetDef[] {
+function byRelevance(list: WidgetDef[], query: string, adapter?: BuilderAdapter): WidgetDef[] {
   if (!String(query || "").trim()) return list;
   return list
-    .map((w, i) => ({ w, i, r: rank(w, query) }))
+    .map((w, i) => ({ w, i, r: rank(w, query, adapter) }))
     .sort((a, b) => (b.r - a.r) || (a.i - b.i))
     .map((x) => x.w);
 }
@@ -166,10 +144,10 @@ function byRelevance(list: WidgetDef[], query: string): WidgetDef[] {
  * the slash command's Enter takes the first of these, so getting the order
  * wrong inserts the wrong thing without asking.
  */
-export function rank(w: WidgetDef & TaskedWidget, query: string): number {
+export function rank(w: WidgetDef & TaskedWidget, query: string, adapter?: BuilderAdapter): number {
   const q = String(query || "").trim().toLowerCase();
   if (!q) return 0;
-  const label = w.label.toLowerCase();
+  const label = widgetLabel(w, adapter).toLowerCase();
   if (label === q) return 3;
   if (label.startsWith(q) || label.split(/\s+/).includes(q)) return 2;
   if (label.includes(q)) return 1;
@@ -183,7 +161,7 @@ export function rank(w: WidgetDef & TaskedWidget, query: string): number {
  * property" downwards rather than shuffling on every keystroke.
  */
 export function flatMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
-  return byRelevance(groupByTask(adapter, query).flatMap((g) => g.widgets), query);
+  return byRelevance(groupByTask(adapter, query).flatMap((g) => g.widgets), query, adapter);
 }
 
 /**

@@ -27,6 +27,10 @@ export type BuilderAction =
   | "redo"
   /** Save, through the adapter's own save. */
   | "save"
+  /** Open Find — one box for sections, things to add, and what to do (M-22). */
+  | "find"
+  /** Open "What you've changed" — the named history you can travel in (M-7). */
+  | "history"
   /** Remove whatever is selected (a locked widget refuses, and says why). */
   | "delete"
   /** Deselect; with nothing selected, ask to close. */
@@ -81,6 +85,12 @@ export function matchShortcut(e: KeyLike, target?: TargetLike | null): BuilderAc
     if (lower === "z") return e.shiftKey ? "redo" : "undo";
     if (lower === "y") return "redo";
     if (lower === "s") return "save";
+    // M-22. `Ctrl+E` and not `Ctrl+F`: the browser's own Find is a useful
+    // thing to leave alone on a page whose whole content is text, and
+    // Elementor's Finder is on this chord for the same reason.
+    if (lower === "e") return "find";
+    // M-7. `Ctrl+Shift+H`, because Ctrl+H is the browser's history.
+    if (lower === "h" && e.shiftKey) return "history";
     return null;
   }
   if (e.altKey) return null;
@@ -114,6 +124,9 @@ export const SHORTCUT_HELP: Array<{ keys: string; what: string }> = [
   { keys: "Ctrl + Z", what: "Undo the last change" },
   { keys: "Ctrl + Shift + Z", what: "Redo it" },
   { keys: "Ctrl + S", what: "Save" },
+  { keys: "Ctrl + E", what: "Find a section, something to add, or what to do" },
+  { keys: "Ctrl + Shift + H", what: "What you've changed \u2014 and go back to any of it" },
+  { keys: "Right-click", what: "Everything you can do to a section or a block" },
   { keys: "Delete", what: "Remove what is selected" },
   { keys: "Escape", what: "Deselect — press it again to close" },
   { keys: "/", what: "On an empty line, choose something to add" },

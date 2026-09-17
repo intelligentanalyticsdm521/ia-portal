@@ -14,10 +14,26 @@
 import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { IadmModal } from "../components/IadmModal";
-import { groupForPane, widgetTooltip, type BuilderAdapter, type WidgetDef } from "./registry";
+import {
+  groupForPane, widgetDescription, widgetLabel, widgetTooltip,
+  type BuilderAdapter, type WidgetDef,
+} from "./registry";
 import { PREMADE_SECTIONS, PREMADE_TAGS, searchSections, type PremadeSection } from "./templates";
+import type { Section } from "./model";
 
-export interface SavedTemplate { id: string; name: string; description?: string | null }
+export interface SavedTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  /**
+   * A block rather than a whole template (M-23) — one section the author kept
+   * to drop into documents they have already started. Listed under its own
+   * heading so "start from this" and "add this here" are not the same button.
+   */
+  block?: boolean;
+  /** The block itself, so the "+" can put it on the page without a fetch. */
+  section?: Section;
+}
 
 export interface SectionGalleryProps {
   open: boolean;
@@ -36,13 +52,22 @@ export interface SectionGalleryProps {
   onPlaceWidget: (widget: WidgetDef, count?: number) => void;
   onOpenTemplate?: (t: SavedTemplate) => void;
   savedTemplates?: SavedTemplate[];
+  /**
+   * Drop one of the author's own blocks in here (M-23).
+   *
+   * A TEMPLATE replaces the page; a BLOCK is added at the "+" that was pressed.
+   * They are the same stored row — sections somebody kept — and the difference
+   * is only what you do with one, so they are two lists over one store rather
+   * than two stores.
+   */
+  onPlaceSavedBlock?: (t: SavedTemplate) => void;
   /** The filter chips over those sections. Defaults to the document tags. */
   tags?: string[];
   /** A drawing of one pre-made section, when the adapter has its own. */
   thumb?: (key: string) => React.ReactNode;
 }
 
-type Tab = "sections" | "widgets" | "templates";
+type Tab = "sections" | "widgets" | "blocks" | "templates";
 
 export function SectionGallery(p: SectionGalleryProps) {
   const [tab, setTab] = useState<Tab>("sections");
@@ -54,9 +79,11 @@ export function SectionGallery(p: SectionGalleryProps) {
   const tagList = p.tags ?? PREMADE_TAGS;
   const sections = useMemo(() => searchSections(pool, query, tag), [pool, query, tag]);
   const widgets = useMemo(() => groupForPane(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
-  const templates = useMemo(
+  const saved = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),
     [p.savedTemplates, query]);
+  const blocks = useMemo(() => saved.filter((t) => t.block), [saved]);
+  const templates = useMemo(() => saved.filter((t) => !t.block), [saved]);
 
   const pickedSection = sections.find((s) => s.key === picked);
 
@@ -90,7 +117,12 @@ export function SectionGallery(p: SectionGalleryProps) {
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14, height: "100%", minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
           <div style={{ display: "flex", gap: 4, background: "#F2F6F9", borderRadius: 6, padding: 3, fontSize: 12, fontWeight: 600 }}>
-            {([["sections", `Pre-made sections · ${sections.length}`], ["widgets", `Widgets · ${widgets.length}`], ["templates", `My templates · ${templates.length}`]] as Array<[Tab, string]>).map(([k, label]) => (
+            {([
+              ["sections", `Pre-made sections · ${sections.length}`],
+              ["widgets", `Widgets · ${widgets.length}`],
+              ["blocks", `Your own blocks · ${blocks.length}`],
+              ["templates", `My templates · ${templates.length}`],
+            ] as Array<[Tab, string]>).map(([k, label]) => (
               <button key={k} type="button" title={label} onClick={() => setTab(k)}
                 style={{
                   padding: "6px 14px", borderRadius: 4, border: "none", cursor: "pointer",
@@ -144,15 +176,35 @@ export function SectionGallery(p: SectionGalleryProps) {
         {tab === "widgets" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12, overflowY: "auto" }}>
             {widgets.map((w) => (
-              <button key={w.kind} type="button" title={widgetTooltip(w)} data-widget-kind={w.kind}
+              <button key={w.kind} type="button" title={widgetTooltip(w, p.adapter)} data-widget-kind={w.kind}
                 onClick={() => { p.onPlaceWidget(w, w.count?.default); p.onClose(); }}
                 style={{ textAlign: "left", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 10, padding: 12, cursor: "pointer" }}>
                 <img src={w.picture} alt="" aria-hidden="true" style={{ height: 40, width: 64, background: "#F2F6F9", borderRadius: 4 }} />
-                <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>{w.label}</div>
-                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.3, marginTop: 3 }}>{w.description}</div>
+                <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>{widgetLabel(w, p.adapter)}</div>
+                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.3, marginTop: 3 }}>{widgetDescription(w, p.adapter)}</div>
               </button>
             ))}
             {!widgets.length && <Empty query={query} />}
+          </div>
+        )}
+
+        {tab === "blocks" && (
+          <div style={{ display: "grid", gap: 8, overflowY: "auto" }} data-gallery-blocks="1">
+            {blocks.map((t) => (
+              <button key={t.id} type="button" data-saved-block={t.id}
+                title={`Add “${t.name}” here. Everything on it can still be changed.`}
+                onClick={() => { p.onPlaceSavedBlock?.(t); p.onClose(); }}
+                style={{ textAlign: "left", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, padding: 12, cursor: "pointer" }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t.name}</div>
+                {t.description && <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 3 }}>{t.description}</div>}
+              </button>
+            ))}
+            {!blocks.length && (
+              <div style={{ border: "1px dashed #CBD5E1", borderRadius: 8, padding: 24, textAlign: "center", fontSize: 12, color: "#5A7A8A" }}>
+                None yet. Right-click a section on the page and choose “Save this as my own block” — then it is here
+                every time, on every document.
+              </div>
+            )}
           </div>
         )}
 

@@ -211,6 +211,25 @@ export function isLocked(w: Widget | null | undefined): boolean {
   return !!w?.locked;
 }
 
+/**
+ * THE PARTS THE LAW PUTS THERE, which the author may not unlock (M-21).
+ *
+ * `locked` is ONE flag and stays one flag — it is what `removeWidget` and
+ * `removeSection` refuse on, whether the author set it or the template did.
+ * But "lock this so I don't delete it by accident" is reversible and "take the
+ * unsubscribe link off this email" is not, and the difference has to live
+ * somewhere. It lives here, as a list of KINDS, because the answer is a fact
+ * about what the widget IS: an email footer carries the unsubscribe link and
+ * the sender's postal address, and CAN-SPAM asks for both on every marketing
+ * send whoever is holding the mouse.
+ */
+export const REQUIRED_KINDS = new Set<string>(["email_footer"]);
+
+/** Is this a part nobody may unlock? See REQUIRED_KINDS. */
+export function isRequired(w: Widget | null | undefined): boolean {
+  return !!w && REQUIRED_KINDS.has(w.kind);
+}
+
 /** Every locked widget in the document, in reading order. */
 export function lockedWidgets(doc: BuilderDocument): Widget[] {
   return walkWidgets(doc).map((x) => x.widget).filter(isLocked);
@@ -542,6 +561,47 @@ export function patchWidget(
           ? {
             ...c,
             widgets: c.widgets.map((w, j) => (j === path.widgetIndex ? { ...w, props: { ...w.props, ...props } } : w)),
+          }
+          : c),
+    };
+  });
+}
+
+/**
+ * LOCK OR UNLOCK ONE WIDGET (M-21).
+ *
+ * `locked` is the flag `removeWidget` and `removeSection` already refuse on —
+ * this writes THAT one, rather than inventing a second idea of "protected"
+ * that only the menu knows about. Absent when false, so a document nobody has
+ * locked anything in serialises exactly as it did before this existed.
+ *
+ * A widget the LAW locked (an email footer, minted with `locked: true`) and one
+ * the AUTHOR locked are the same flag on purpose: both mean "this cannot be
+ * deleted by accident", both say why on the handle, and one mechanism cannot
+ * disagree with itself about which parts are safe. The difference — whether
+ * the author may UNLOCK it again — is `REQUIRED_KINDS`, and this refuses.
+ */
+export function setWidgetLocked(
+  doc: BuilderDocument,
+  path: WidgetPath,
+  locked: boolean,
+): BuilderDocument {
+  return mapSections(doc, (s) => {
+    if (s.id !== path.sectionId) return s;
+    return {
+      ...s,
+      columns: s.columns.map((c, i) =>
+        i === path.columnIndex
+          ? {
+            ...c,
+            widgets: c.widgets.map((w, j) => {
+              if (j !== path.widgetIndex) return w;
+              // A required part is never unlocked, however it is asked.
+              // A guard the UI enforces and the model does not is a guard.
+              if (!locked && isRequired(w)) return w;
+              const { locked: _old, ...rest } = w;
+              return locked ? { ...rest, locked: true } : rest;
+            }),
           }
           : c),
     };

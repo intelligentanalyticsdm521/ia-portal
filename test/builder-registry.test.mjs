@@ -24,6 +24,8 @@ import {
   widgetsFor,
   groupForPane,
   widgetTooltip,
+  widgetDescription,
+  widgetLabel,
   pictureFrom,
 } from "../src/builder/registry.ts";
 
@@ -52,7 +54,11 @@ describe("every registered widget is complete", () => {
   for (const w of WIDGETS) {
     test(`${w.kind} has a label, a description, a picture and an adapter`, () => {
       assert.ok(w.label && w.label.trim().length > 0, "no label");
-      assert.ok(w.description && w.description.trim().length > 0, "no description");
+      // N-4: the sentence may be a map of one per builder, so every builder
+      // this widget is offered in must resolve to something.
+      for (const a of w.adapters) {
+        assert.ok(widgetDescription(w, a).trim().length > 0, `no description for ${a}`);
+      }
       assert.ok(w.picture && w.picture.startsWith("data:image/svg+xml,"), "no picture");
       assert.ok(Array.isArray(w.adapters) && w.adapters.length > 0, "no adapter");
       assert.ok(w.icon && w.icon.trim().length > 0, "no icon");
@@ -85,24 +91,69 @@ describe("every registered widget is complete", () => {
 
 describe("the description is a sentence a business owner could read", () => {
   for (const w of WIDGETS) {
-    test(`${w.kind}: one line, plain words`, () => {
-      const d = w.description;
-      assert.ok(!d.includes("\n"), "a description is ONE line");
-      assert.ok(d.length >= 25, `"${d}" is too short to explain anything`);
-      assert.ok(d.length <= 140, `"${d}" will not fit beside a picture in a 320px pane`);
-      // Not a restatement of the label ("Heading — a heading").
-      assert.ok(d.toLowerCase().trim() !== w.label.toLowerCase().trim(), "the description repeats the label");
-      // No developer vocabulary. The inventory's finding was five vocabularies
-      // and no explanations; this is the line that has to fix it.
-      for (const jargon of ["json", "blocks_json", "elementor", "widget tree", "flex", "schema", "payload", "adapter", "div"]) {
-        assert.ok(!d.toLowerCase().includes(jargon), `"${d}" says "${jargon}" to a business owner`);
+    for (const adapter of w.adapters) {
+      test(`${w.kind} in the ${adapter} pane: one line, plain words`, () => {
+        const d = widgetDescription(w, adapter);
+        assert.ok(!d.includes("\n"), "a description is ONE line");
+        assert.ok(d.length >= 25, `"${d}" is too short to explain anything`);
+        assert.ok(d.length <= 140, `"${d}" will not fit beside a picture in a 320px pane`);
+        // Not a restatement of the label ("Heading — a heading").
+        assert.ok(d.toLowerCase().trim() !== widgetLabel(w, adapter).toLowerCase().trim(),
+          "the description repeats the label");
+        // No developer vocabulary. The inventory's finding was five vocabularies
+        // and no explanations; this is the line that has to fix it.
+        for (const jargon of ["json", "blocks_json", "elementor", "widget tree", "flex", "schema", "payload", "adapter", "div"]) {
+          assert.ok(!d.toLowerCase().includes(jargon), `"${d}" says "${jargon}" to a business owner`);
+        }
+      });
+    }
+  }
+
+  /**
+   * D-30 / N-4 — NO PROPOSAL WORDING IN ANOTHER BUILDER'S PANE.
+   *
+   * *"Heading — A title for the section, optionally numbered like “1. Scope of
+   * work”."* read that way in the website, email, landing and studio panes,
+   * because one string served five adapters. Each medium bans the nouns that
+   * are not its own: an email has no pages, a studio square has no sections,
+   * and nothing but a document is a document.
+   *
+   * MUTATION: put the proposal sentence back as a plain string on `heading`
+   * and four of these go red at once.
+   */
+  const BANNED = {
+    website: ["document", "proposal", "scope of work", "email"],
+    landing: ["document", "proposal", "scope of work", "email"],
+    email: ["document", "proposal", "scope of work", "page"],
+    brand: ["document", "proposal", "scope of work", "email", "section", "page"],
+  };
+  for (const [adapter, words] of Object.entries(BANNED)) {
+    test(`the ${adapter} pane never reads like a proposal`, () => {
+      for (const w of widgetsFor(adapter)) {
+        const d = widgetDescription(w, adapter).toLowerCase();
+        for (const bad of words) {
+          assert.ok(!d.includes(bad),
+            `${w.kind} tells a ${adapter} author "${bad}": "${widgetDescription(w, adapter)}"`);
+        }
       }
     });
   }
 
-  test("the tooltip carries both the name and the sentence", () => {
-    const w = WIDGETS[0];
-    assert.equal(widgetTooltip(w), `${w.label} — ${w.description}`);
+  test("a widget offered in more than one builder has a sentence for each of them", () => {
+    for (const w of WIDGETS) {
+      if (w.adapters.length < 2) continue;
+      if (typeof w.description === "string") continue;   // the same words everywhere, on purpose
+      for (const a of w.adapters) {
+        assert.ok(w.description[a],
+          `${w.kind} is offered in ${a} and has no sentence for it`);
+      }
+    }
+  });
+
+  test("the tooltip carries both the name and the sentence, in this builder's words", () => {
+    const w = WIDGETS_BY_KIND.heading;
+    assert.equal(widgetTooltip(w, "email"), `${widgetLabel(w, "email")} — ${widgetDescription(w, "email")}`);
+    assert.notEqual(widgetDescription(w, "email"), widgetDescription(w, "proposal"));
   });
 });
 
@@ -362,14 +413,17 @@ describe("WidgetPane honours SD-010", () => {
   });
 
   test("every widget button carries a tooltip AND an accessible name", () => {
-    assert.match(pane, /title=\{widgetTooltip\(w\)\}/);
-    assert.match(pane, /aria-label=\{widgetTooltip\(w\)\}/);
+    assert.match(pane, /title=\{widgetTooltip\(w, adapter\)\}/);
+    assert.match(pane, /aria-label=\{widgetTooltip\(w, adapter\)\}/);
   });
 
-  test("it renders the picture, the label and the one line", () => {
+  test("it renders the picture, the label and the one line — in THIS builder's words", () => {
+    // N-4: the pane reads the resolved sentence, never `w.description`, which
+    // is now a map of one per builder for anything offered in more than one.
     assert.match(pane, /src=\{w\.picture\}/);
-    assert.match(pane, /\{w\.label\}/);
-    assert.match(pane, /\{w\.description\}/);
+    assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
+    assert.match(pane, /\{widgetDescription\(w, adapter\)\}/);
+    assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
   });
 
   test("it groups by the job, with a heading", () => {

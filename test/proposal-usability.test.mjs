@@ -27,8 +27,9 @@ import {
   basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
 } from "../src/components/oliver/ProposalCatalogPicker.tsx";
 import {
-  DETAILS_KEY, detailsMerge, documentLogo, packDetail, parseMoney, plainLabel,
-  readDetails, reconcileDetails, tokensUsedBy, writeDetails,
+  LEGACY_DETAILS_KEY, detailsMerge, documentLogo, packDetail, parseMoney, plainLabel,
+  readDetails, readLegacyDetails, reconcileDetails, tokensUsedBy, widgetForToken,
+  writeDetails,
 } from "../src/builder/proposal/documentDetails.ts";
 
 
@@ -252,46 +253,82 @@ describe("D-03 · every blank the document carries is a field somewhere", () => 
     assert.equal(detailsMerge(readDetails(reopened))["snow_trigger"], "2 inches");
   });
 
-  test("the store is section META — not a section, not a widget, so nothing can land in it", () => {
+  test("the store is `settings.merge` \u2014 not a section, not a widget, so nothing can land in it", () => {
     // It WAS a hidden `visibility:"internal"` section, and a widget added with
-    // nothing selected goes to the LAST section (D-11) — so three priced
+    // nothing selected goes to the LAST section (D-11) \u2014 so three priced
     // property blocks landed inside the store, were counted as internal, and
-    // vanished from the customer's copy, the PDF and the total. Caught by
-    // driving it. The store is `meta` now, which nothing can be appended to.
-    // TWO sections, deliberately: with one, "first" and "last" are the same
-    // place and this test would pass with the store back where it broke the
-    // document.
+    // vanished from the customer's copy, the PDF and the total. Then it was
+    // `sections[0].meta.detailValues`, which was safe but was a SECOND carrier
+    // beside `settings.merge` (N-7). One home now: the document's own settings,
+    // which is not a section, not a widget and not a render target.
+    // TWO sections, deliberately, so "first" and "last" are different places.
     const base = agreementDoc();
     const acceptance = makeSection({ label: "Acceptance" });
     acceptance.columns[0].widgets = [makeWidget("signature", { heading: "Acceptance" })];
     const two = { ...base, sections: [...base.sections, acceptance] };
 
-    const saved = writeDetails(two, reconcileDetails(two, AUTO));
+    const rows = reconcileDetails(two, AUTO).map((r) => ({ ...r, value: "2 inches" }));
+    const saved = writeDetails(two, rows);
     assert.equal(saved.sections.length, two.sections.length,
       "writing a detail added a section to the document");
-    assert.ok(Array.isArray(saved.sections[0].meta?.[DETAILS_KEY]),
-      "the store is not on the FIRST section");
-    assert.ok(!saved.sections.at(-1).meta?.[DETAILS_KEY],
-      "the store is on the LAST section, which is where an unselected widget is appended (D-11)");
-    assert.ok(!saved.sections.some((s) => s.visibility === "internal"),
+    assert.equal(typeof saved.settings.merge, "object", "the store is not on settings.merge");
+    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
+    assert.ok(!saved.sections.some((x) => x.meta?.[LEGACY_DETAILS_KEY]),
+      "a second carrier is still on a section's meta");
+    assert.ok(!saved.sections.some((x) => x.visibility === "internal"),
       "the store is a section again");
     // And it is never counted as a blank on the page.
     const texts = [];
-    for (const s of saved.sections) {
-      if (s.visibility !== "customer") continue;
-      for (const c of s.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
+    for (const x of saved.sections) {
+      if (x.visibility !== "customer") continue;
+      for (const c of x.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
     }
     assert.equal(unfilledTokens(texts, AUTO).length, 4);
+  });
+
+  test("N-7 \u00b7 a document written the OLD way still opens with its values", () => {
+    // Tolerant read, one write. A trigger depth typed last week lives on
+    // `sections[0].meta.detailValues`; refusing to read it would blank it.
+    const doc = agreementDoc();
+    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
+    assert.equal(readLegacyDetails(doc)[0].value, "2 inches");
+    assert.equal(detailsMerge(readDetails(doc)).snow_trigger, "2 inches");
+    assert.equal(reconcileDetails(doc, AUTO).find((r) => r.token === "snow_trigger").value, "2 inches");
+  });
+
+  test("N-7 \u00b7 and the first save MOVES it, so there is never a second carrier", () => {
+    const doc = agreementDoc();
+    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
+    const saved = writeDetails(doc, readDetails(doc));
+    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
+    assert.ok(!saved.sections[0].meta?.[LEGACY_DETAILS_KEY], "the old carrier was left behind");
+    // And what the engine's serialiser does with it survives the round trip.
+    const reopened = deserialise(JSON.parse(serialise(saved)));
+    assert.equal(reopened.settings.merge.snow_trigger, "2 inches");
+  });
+
+  test("N-7 \u00b7 a blank is not stored, so the gap rule still calls it blank", () => {
+    const saved = writeDetails(agreementDoc(), [
+      { token: "snow_trigger", label: "Trigger depth", value: "" },
+    ]);
+    assert.equal(saved.settings.merge, undefined);
+  });
+
+  test("N-1 \u00b7 every blank knows WHERE it is on the page", () => {
+    const at = widgetForToken(agreementDoc(), "snow_trigger");
+    assert.ok(at, "a blank with nowhere to go cannot be jumped to");
+    assert.ok(at.sectionId && at.widgetId);
+    assert.equal(widgetForToken(agreementDoc(), "not_on_this_page"), null);
   });
 
   test("there is ONE store however many sections the document has", () => {
     const doc = agreementDoc();
     const second = makeSection({ label: "Second" });
-    second.meta = { [DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "stale" }] };
+    second.meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "stale" }] };
     const withStale = { ...doc, sections: [...doc.sections, second] };
     const saved = writeDetails(withStale, [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
-    const stores = saved.sections.filter((s) => s.meta?.[DETAILS_KEY]);
-    assert.equal(stores.length, 1);
+    assert.equal(saved.sections.filter((x) => x.meta?.[LEGACY_DETAILS_KEY]).length, 0,
+      "an old carrier survived the write");
     assert.equal(readDetails(saved)[0].value, "2 inches");
   });
 
@@ -329,20 +366,82 @@ describe("D-03 · every blank the document carries is a field somewhere", () => 
   });
 });
 
-describe("D-35 · the blanks counter names them and jumps", () => {
-  test("each blank is a button carrying its token", () => {
-    assert.ok(BUILDER.includes("data-blank-chip={tk}"), "the counter is still a plain div");
-    assert.ok(BUILDER.includes("onClick={() => { setFocusToken(tk); scrollToToken(tk); }}"));
+describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
+  test("the adapter registers into the ENGINE's problems list \u2014 and keeps no chips of its own", () => {
+    // A-1: the engine owns the counter-as-a-button and the jump. Stream B's
+    // chip row is DELETED; two counters over one fact is how they disagree.
+    assert.ok(BUILDER.includes("problems={problems}"), "the adapter passes no problems");
+    assert.ok(!BUILDER.includes("data-blank-chip"), "the second counter is still here");
+    assert.ok(!BUILDER.includes("scrollToToken("), "the second jump is still here");
   });
 
-  test("the chip is labelled in plain words, not with the token", () => {
-    assert.ok(/data-blank-chip=\{tk\}[\s\S]{0,900}\{plainLabel\(tk,/.test(BUILDER));
+  test("each problem is one plain sentence and knows where it lives", () => {
+    assert.ok(BUILDER.includes("id: `blank:${token}`"));
+    assert.ok(BUILDER.includes("message: `${plainLabel(token, labels)} is still blank.`"));
+    assert.ok(BUILDER.includes("const at = widgetForToken(doc, token);"));
+  });
+
+  test("the jump also puts the caret in the Details box, which is where it is typed", () => {
+    assert.ok(BUILDER.includes("onFocusProblem={(problem) => {"));
+    assert.ok(BUILDER.includes("if (token) setFocusToken(token);"));
   });
 
   test("the refusal message names them in plain words too", () => {
     assert.ok(BUILDER.includes("blanks.slice(0, 4).map((t) => plainLabel(t, labels))"));
-    assert.ok(BUILDER.includes("They are in the Details box on the left"),
+    assert.ok(BUILDER.includes("Type them into the Details boxes on the left"),
       "the refusal still does not say where the fields are");
+  });
+});
+
+describe("N-1 \u00b7 D-20 in the proposal builder: the refusal is AT the button", () => {
+  test("every button that can refuse carries an anchor", () => {
+    // EVERY one — counted, not "at least one". There are two Send buttons (a
+    // new document and a revision) and two of each Save, and a refusal from the
+    // one without an anchor lands in the middle of the window, which is D-20
+    // again with a shorter distance.
+    const count = (a) => (BUILDER.match(new RegExp('data-builder-anchor="' + a + '"', "g")) || []).length;
+    assert.equal(count("send"), 2, "a Send button has no anchor — its refusal has nowhere to point");
+    assert.equal(count("save"), 2, "a Save draft button has no anchor");
+    assert.equal(count("save-close"), 2, "a Save and close button has no anchor");
+  });
+
+  test("the refusal is reported through the engine, not printed in the far-left pane", () => {
+    assert.ok(BUILDER.includes("refusal={refusal}"));
+    assert.ok(BUILDER.includes("onDismissRefusal={() => setRefusal(null)}"));
+    // Every refusal in save()/saveRevision() goes through refuse(anchor, ...).
+    assert.ok(BUILDER.includes('refuse(anchor, "Give the document a title at the top first.")'));
+    assert.ok(BUILDER.includes('refuse(anchor, "Pick a customer to send it to'));
+    assert.ok(!/setErr\(`\$\{blanks\.length\}/.test(BUILDER),
+      "the blanks refusal still prints in the pane");
+  });
+
+  test("the send refusal is anchored to the SEND button and the save one is not", () => {
+    assert.ok(BUILDER.includes('const anchor = send ? "send" : close ? "save-close" : "save";'));
+    assert.ok(BUILDER.includes('const anchor = send ? "send" : "save";'));
+  });
+});
+
+describe("N-2 \u00b7 Ctrl+S is honoured in the proposal builder", () => {
+  test("the adapter passes onSave, like the other three", () => {
+    assert.ok(BUILDER.includes("onSave={() => { void (revision ? saveRevision(false) : save(false, false)); }}"),
+      "the \u201c?\u201d panel advertises Ctrl+S and nothing is wired to it");
+  });
+
+  test("every adapter that renders BuilderShell passes onSave", () => {
+    // Assert the PRESENCE of the wiring on every surface \u2014 an advertised
+    // shortcut that does nothing is worse than no shortcut (D-18).
+    const adapters = {
+      "src/builder/proposal/ProposalBuilder.tsx": BUILDER,
+      "src/builder/adapters/email/EmailBuilder.tsx": null,
+      "src/builder/adapters/landing/LandingBuilder.tsx": null,
+      "src/builder/adapters/website/WebsiteBuilder.tsx": null,
+    };
+    for (const file of Object.keys(adapters)) {
+      const src = adapters[file]
+        ?? readFileSync(new URL(`../${file}`, import.meta.url), "utf8");
+      if (!src.includes("<BuilderShell")) continue;
+      assert.ok(/\bonSave=\{/.test(src), `${file} renders BuilderShell and passes no onSave`);
+    }
   });
 });
 

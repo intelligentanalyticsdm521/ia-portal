@@ -64,7 +64,7 @@ import {
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
 } from "../src/builder/adapters/landing/landingTemplates.ts";
-import { widgetsFor, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
+import { widgetsFor, widgetDescription, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import { repeatKeyFor } from "../src/builder/BuilderShell.tsx";
 
 const FIX = (name) => JSON.parse(readFileSync(path.join(process.cwd(), "test", "fixtures", name), "utf8"));
@@ -604,9 +604,13 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("every widget button carries a tooltip — SD-010, not optional", () => {
-    for (const w of widgetsFor("email").concat(widgetsFor("landing"))) {
-      assert.ok(w.description && w.description.trim().length >= 25, `${w.kind} has no sentence for its tooltip`);
-      assert.ok(w.picture.startsWith("data:image/svg+xml,"), `${w.kind} has no picture`);
+    // N-4: the sentence is per builder, so each builder's own is asserted.
+    for (const [adapter, list] of [["email", widgetsFor("email")], ["landing", widgetsFor("landing")]]) {
+      for (const w of list) {
+        assert.ok(widgetDescription(w, adapter).trim().length >= 25,
+          `${w.kind} has no ${adapter} sentence for its tooltip`);
+        assert.ok(w.picture.startsWith("data:image/svg+xml,"), `${w.kind} has no picture`);
+      }
     }
   });
 

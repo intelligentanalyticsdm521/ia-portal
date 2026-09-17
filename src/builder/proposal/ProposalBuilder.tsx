@@ -24,13 +24,14 @@ import { useBrandKit } from "../../brand/BrandKitProvider";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { BuilderShell } from "../BuilderShell";
+import type { BuilderProblem } from "../problems";
 import {
   addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
-  type BuilderDocument, type Widget,
+  type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
   detailsMerge, documentLogo, parseMoney, plainLabel, readDetails,
-  reconcileDetails, writeDetails, type DetailRow,
+  reconcileDetails, widgetForToken, writeDetails, type DetailRow,
 } from "./documentDetails";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
@@ -38,8 +39,8 @@ import { unfilledTokens, tagLabel } from "../merge";
 import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
-  applyBrandDefaults, hydrateClauses, proposalLibrary, savedIdOf, savedTemplateEntries,
-  templateByKey, withTotalBeforeSignature, type ClauseRow,
+  applyBrandDefaults, hydrateClauses, isSavedBlock, proposalLibrary, savedIdOf,
+  savedTemplateEntries, templateByKey, withTotalBeforeSignature, type ClauseRow,
 } from "../templates";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
@@ -126,6 +127,22 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   const [picking, setPicking] = useState(!proposalId && !revision);   // the "start from" step
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * A refusal, reported AT the control that was pressed (D-20 / N-1).
+   *
+   * The engine owns the popover (`AnchoredToast`) and the jump; this is only
+   * which button and which sentence. `err` stays for the things that are NOT a
+   * refusal of a press — a background save-back that failed — and is shown in
+   * the pane where it always was.
+   */
+  const [refusal, setRefusal] = useState<{ anchor: string; message: string; nonce: number } | null>(null);
+  const refuseRef = useRef(0);
+  /** Refuse a press: the sentence appears beside the button that caused it. */
+  const refuse = useCallback((anchor: string, message: string) => {
+    refuseRef.current += 1;
+    setErr(null);
+    setRefusal({ anchor, message, nonce: refuseRef.current });
+  }, []);
   /** D-36 — "Saved" said in the builder, because the builder STAYS OPEN now. */
   const [saved, setSaved] = useState<string | null>(null);
   /** Which Details box the blanks counter is sending the author to. */
@@ -150,6 +167,19 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   /* ── The business's own material ─────────────────────────────────────── */
   const [clauses, setClauses] = useState<ClauseRow[]>([]);
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  /**
+   * HAS THE CATALOGUE LANDED? (M-24)
+   *
+   * *"The shell, the pane and the canvas paint from the document alone, and
+   * never block on the catalogue, the customer's locations, the clause library
+   * or the brand kit — those arrive and fill in, with skeletons where they
+   * land."* They already did arrive in the background; what was missing was any
+   * way to tell "you have no services yet" from "your services are on their
+   * way", and a picker that reads *"Nothing matches"* for half a second is a
+   * picker a person stops trusting. ONE flag, cleared when the read settles
+   * either way — a catalogue that FAILED must not say "loading" for ever.
+   */
+  const [catalogueLoading, setCatalogueLoading] = useState(true);
   const [savedTemplates, setSavedTemplates] = useState<Array<{ id: string; name: string; description?: string | null; document?: any; body?: any }>>([]);
   const [askOpen, setAskOpen] = useState(false);
   // The business's own identity for the document header, resolved exactly the
@@ -173,7 +203,9 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     // include_prices=1 or every offering arrives priceless and the picker can
     // only offer "type one" — which is how the old picker under-quoted.
     api.get<any>("/catalog/offerings?include_prices=1")
-      .then((r) => setOfferings(rows<CatalogOffering>(r))).catch(() => setOfferings([]));
+      .then((r) => setOfferings(rows<CatalogOffering>(r)))
+      .catch(() => setOfferings([]))
+      .finally(() => setCatalogueLoading(false));
     api.get<any>("/proposal-builder/clauses").then((r) => setClauses(rows<ClauseRow>(r))).catch(() => setClauses([]));
     api.get<any>("/proposal-templates").then((r) => setSavedTemplates(rows<any>(r).map((t: any) => ({
       id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
@@ -452,6 +484,27 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [doc, ctx.merge]);
 
   /**
+   * WHAT IS STILL MISSING, in the engine's shape (A-1 / N-1).
+   *
+   * One problem per blank the page still carries, in plain words, each pointing
+   * at the first widget that uses it — so the engine's counter button, its jump
+   * and the refusal beside Send all work here exactly as they do everywhere
+   * else. Stream B's own chip row is DELETED: the problems list is what says
+   * what is missing, and the Details boxes are where it is typed.
+   */
+  const problems = useMemo<BuilderProblem[]>(() => {
+    const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
+    return blanks.map((token) => {
+      const at = widgetForToken(doc, token);
+      return {
+        id: `blank:${token}`,
+        message: `${plainLabel(token, labels)} is still blank.`,
+        ...(at ? { focus: at } : {}),
+      };
+    });
+  }, [blanks, details, doc]);
+
+  /**
    * Save the document.
    *
    * @param send  email it to the customer
@@ -463,8 +516,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    *              what that behaviour was ever for.
    */
   async function save(send: boolean, close = true) {
-    if (!title.trim()) { setErr("Give the document a title at the top first."); return; }
-    if (send && !contactId) { setErr("Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
+    // N-1 / D-20: a refusal appears AT the button that was pressed. Every one
+    // of these used to print in the far-left pane, 1,413px from Send.
+    const anchor = send ? "send" : close ? "save-close" : "save";
+    if (!title.trim()) { refuse(anchor, "Give the document a title at the top first."); return; }
+    if (send && !contactId) { refuse(anchor, "Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
     if (send && blanks.length) {
       const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
       const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
@@ -472,11 +528,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       // error: a document sent with {{plow_rate}} on it is the failure. And
       // the names are PLAIN WORDS now — "snow_trigger" was two of the four
       // names a first-time user was shown and told to go and find (D-03).
-      setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). They are in the Details box on the left — fill them in, or take them off the page, before sending.`);
-      setFocusToken(blanks[0]);
+      refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
       return;
     }
-    setErr(null); setSaved(null); setBusy(true);
+    setErr(null); setSaved(null); setRefusal(null); setBusy(true);
     try {
       const w = wire();
       const payload = {
@@ -519,7 +574,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       // what "it saved" looks like in every editor a business owner has used.
       setSaved(`${msg} You are still in the builder.`);
     } catch (e) {
-      setErr(`Could not save: ${apiErrorMessage(e)}`);
+      refuse(anchor, `Could not save: ${apiErrorMessage(e)}`);
     } finally {
       setBusy(false);
     }
@@ -544,16 +599,18 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
 
   async function saveRevision(send: boolean) {
     if (!revision) return;
+    const anchor = send ? "send" : "save";
     if (send && diff.identical) {
-      setErr("Nothing has changed yet, so there is nothing to send. Edit the document first.");
+      refuse(anchor, "Nothing has changed yet, so there is nothing to send. Edit the document first.");
       return;
     }
     if (send && blanks.length) {
-      const list = blanks.slice(0, 4).map((t) => tagLabel(t)).join(", ");
-      setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Fill them in, or remove them, before sending.`);
+      const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
+      const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
+      refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
       return;
     }
-    setErr(null); setSaved(null); setBusy(true);
+    setErr(null); setSaved(null); setRefusal(null); setBusy(true);
     try {
       const w = wire();
       // D-15 — the title is the PROPOSAL's, not the revision's, so a rename in
@@ -583,7 +640,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       const url = (sent as any)?.data?.public_url || (sent as any)?.public_url;
       onSaved(`Revision v${revMeta?.document_version ?? 2} sent — they must sign it again.${url ? ` Their link is ${url}` : ""}`);
     } catch (e) {
-      setErr(`Could not ${send ? "send" : "save"} the revision: ${apiErrorMessage(e)}`);
+      refuse(anchor, `Could not ${send ? "send" : "save"} the revision: ${apiErrorMessage(e)}`);
     } finally {
       setBusy(false);
     }
@@ -657,9 +714,68 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         doc={doc}
         onChange={setDoc}
         ctx={ctx}
+        /* N-1 — the engine's problems mechanism, on the surface that needed it
+           most. The counter in the pane, the jump, and the refusal beside the
+           button that was pressed all come from these three props. */
+        problems={problems}
+        refusal={refusal}
+        onDismissRefusal={() => setRefusal(null)}
+        /* The engine scrolls the page to the blank; only this adapter knows
+           that the box it is typed into is in its own Details group. */
+        onFocusProblem={(problem) => {
+          const token = problem.id.startsWith("blank:") ? problem.id.slice(6) : "";
+          if (token) setFocusToken(token);
+        }}
+        /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
+           was the one that did not honour it. Save draft, which is what the
+           other three do: it saves and stays open. */
+        onSave={() => { void (revision ? saveRevision(false) : save(false, false)); }}
         swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}
         fonts={kit.fonts.catalog.map((f) => f.value)}
-        savedTemplates={savedTemplates.map((t) => ({ id: t.id, name: t.name, description: t.description }))}
+        savedTemplates={savedTemplates.map((t) => ({
+          id: t.id,
+          name: t.name,
+          description: t.description,
+          /* M-23 — a block and a template are the same saved row; a row holding
+             exactly ONE section is a block, so there is one store and two
+             lists rather than two stores that can disagree. */
+          block: isSavedBlock(t),
+          section: (t.document as { sections?: BuilderSection[] } | undefined)?.sections?.[0],
+        }))}
+        /* M-23 — right-click a section → name it → it is in the library under
+           "Your own blocks" and in the "+" picker, on every document from now
+           on. Saved through the ONE template store this builder already has. */
+        onSaveBlock={async (section, name, note) => {
+          try {
+            await api.post("/proposal-templates", {
+              name,
+              description: note || `Your own block, saved from “${title.trim() || "a document"}”`,
+              body: { title: null, tax_rate: 0, blocks: [] },
+              document: { v: 2, settings: { style: doc.settings.style }, sections: [section] },
+            });
+            const r = await api.get<any>("/proposal-templates");
+            setSavedTemplates(rows<any>(r).map((t: any) => ({
+              id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
+              document: t.document, body: t.body,
+            })));
+            setSaved(`Saved “${name}”. It is under “Your own blocks” whenever you press +.`);
+          } catch (e) {
+            refuse("save", `Could not save that block: ${apiErrorMessage(e)}`);
+          }
+        }}
+        /* M-22 — this builder's own rows in Find, beside the engine's. */
+        findActions={[
+          { id: "save-draft", label: "Save draft", hint: "Keep your work and carry on" },
+          { id: "send", label: "Send to customer", hint: "Email them a link to this document" },
+          { id: "save-template", label: "Save as template", hint: "Start from this next time" },
+          { id: "ask-argus", label: "Ask ARGUS", hint: "Have it write or rebuild a section" },
+        ]}
+        onFindAction={(id) => {
+          if (id === "save-draft") { void save(false, false); return; }
+          if (id === "send") { void save(true); return; }
+          if (id === "save-template") { void saveAsTemplate(); return; }
+          if (id === "ask-argus") setAskOpen(true);
+        }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
         nextUp={null}
         askArgus={
@@ -673,6 +789,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           <WidgetExtras
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
             offerings={offerings} clauses={clauses} locations={locations}
+            catalogueLoading={catalogueLoading}
             onSaveClause={async (c) => {
               const saved = await api.post<any>("/proposal-builder/clauses", c);
               setClauses((prev) => [...prev.filter((x) => x.clause_key !== c.clause_key), (saved as any)]);
@@ -720,15 +837,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" data-save-draft="1" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
+              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
                 title="Save your changes without sending. The builder stays open and the customer still sees the version they were sent.">
                 {busy ? "Working…" : "Save draft"}
               </button>
-              <button type="button" data-save-close="1" onClick={() => { void saveRevision(false).then(() => onClose()); }}
+              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => { void saveRevision(false).then(() => onClose()); }}
                 disabled={busy} style={ghostBtn} title="Save and go back to the document.">
                 Save and close
               </button>
-              <button type="button" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
+              <button type="button" data-builder-anchor="send" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
                 title={diff.identical
                   ? "Nothing has changed yet — edit the document first"
                   : blanks.length
@@ -747,15 +864,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 title="Save this document's sections as a template you can start from next time">
                 Save as template
               </button>
-              <button type="button" data-save-draft="1" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
+              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
                 title="Save your work and carry on. The builder stays open.">
                 {busy ? "Working…" : "Save draft"}
               </button>
-              <button type="button" data-save-close="1" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
+              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
                 title="Save and go back to the list. You can open it again from the row.">
                 Save and close
               </button>
-              <button type="button" onClick={() => save(true)} disabled={busy} style={orangeBtn}
+              <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
                 title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
@@ -767,28 +884,12 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             <div data-doc-total={totals.total} style={{ fontWeight: 600, color: "#0B1C24" }}>
               {totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
             </div>
-            {/* D-35 — the counter NAMES them and jumps. It was a plain <div>
-                with cursor:auto, and the names only appeared after a failed
-                Send, by which point the author had already pressed the button
-                and watched nothing happen. */}
-            {blanks.length > 0 && (
-              <div style={{ color: "#B45309", marginTop: 3 }}>
-                <span>{blanks.length} detail{blanks.length === 1 ? "" : "s"} still blank —</span>
-                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4, marginLeft: 4 }}>
-                  {blanks.map((tk) => (
-                    <button key={tk} type="button" data-blank-chip={tk}
-                      title={`Fill in “${plainLabel(tk, Object.fromEntries(details.map((d) => [d.token, d.label])))}” — this takes you to its box`}
-                      onClick={() => { setFocusToken(tk); scrollToToken(tk); }}
-                      style={{
-                        border: "1px solid #FCD34D", background: "#FFFBEB", color: "#92400E",
-                        borderRadius: 999, padding: "1px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer",
-                      }}>
-                      {plainLabel(tk, Object.fromEntries(details.map((d) => [d.token, d.label])))}
-                    </button>
-                  ))}
-                </span>
-              </div>
-            )}
+            {/* D-35's chip row LIVED HERE and is deleted: the engine's own
+                "N details still to fill in / Take me to the first one" button
+                (LeftPane, from `problems`) is the one counter now, and two
+                counters over one fact is how they start disagreeing. The
+                Details BOXES stay — the list says what is missing, the boxes
+                are where it is typed. */}
             <DetailsGroup
               rows={details}
               onSet={setDetail}
@@ -1025,12 +1126,14 @@ function CustomerBar({
    ══════════════════════════════════════════════════════════════════════════ */
 
 function WidgetExtras({
-  widget, sectionId, doc, onChange, offerings, clauses, locations, onSaveClause, onSeedClauses,
-  onLoadPropertyFields, onSavePropertyFields,
+  widget, sectionId, doc, onChange, offerings, clauses, locations, catalogueLoading,
+  onSaveClause, onSeedClauses, onLoadPropertyFields, onSavePropertyFields,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
+  /** M-24 — the catalogue read has not settled yet. */
+  catalogueLoading?: boolean;
   onSaveClause: (c: ClauseRow) => Promise<void>;
   onSeedClauses: (pack: string) => Promise<void>;
   onLoadPropertyFields: (locationId: string) => Promise<Array<{ label: string; value: string }>>;
@@ -1097,6 +1200,7 @@ function WidgetExtras({
       {locationPicker}
       <CatalogPicker
         offerings={offerings}
+        loading={catalogueLoading}
         label={widget.kind === "pricing_table" ? "Add a service to the table" : widget.kind === "property_block" ? "Add a service to this property" : "Fill from Products & Services"}
         onPick={(o, price) => {
           const pick = buildPick(o, price);
@@ -1142,7 +1246,7 @@ function WidgetExtras({
     return (
       <ComparisonCardsPanel
         widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
-        offerings={offerings} patch={patch}
+        offerings={offerings} catalogueLoading={catalogueLoading} patch={patch}
       />
     );
   }
@@ -1294,11 +1398,13 @@ function WidgetExtras({
  * priced line does. It is the sentence describing what just happened.
  */
 function ComparisonCardsPanel({
-  widget, sectionId, doc, onChange, offerings, patch,
+  widget, sectionId, doc, onChange, offerings, catalogueLoading, patch,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[];
+  /** M-24 — the catalogue read has not settled yet. */
+  catalogueLoading?: boolean;
   patch: (props: Record<string, unknown>) => void;
 }) {
   const p: any = widget.props || {};
@@ -1391,6 +1497,7 @@ function ComparisonCardsPanel({
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <CatalogPicker
         offerings={offerings}
+        loading={catalogueLoading}
         label="Add a plan from your catalogue"
         bulkLabel={(o) => `Add all ${o.prices?.length ?? 0} tiers as cards`}
         onPickAll={(o) => addCards((o.prices || []).map((pr) => cardFrom(o, pr)))}
@@ -1466,36 +1573,19 @@ function ComparisonCardsPanel({
   );
 }
 
-/**
- * Put the first place the page says `{{token}}` in front of the author.
- *
- * Half of D-35: the counter names the blank AND shows you where it bites. This
- * is stream B's own scroll until stream A lands a shared problems mechanism
- * (B-A-4 in the handoff) — it reads the canvas, changes nothing on it, and is
- * a no-op when the run is not on screen.
- */
-function scrollToToken(token: string) {
-  if (typeof document === "undefined") return;
-  const canvas = document.querySelector(".bx-doc");
-  if (!canvas) return;
-  const needle = `{{${token}}}`;
-  const walker = document.createTreeWalker(canvas, NodeFilter.SHOW_TEXT);
-  let node: Node | null = walker.nextNode();
-  while (node) {
-    if ((node.textContent || "").includes(needle)) {
-      (node.parentElement as HTMLElement | null)?.scrollIntoView({ block: "center", behavior: "smooth" });
-      return;
-    }
-    node = walker.nextNode();
-  }
-}
+/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
+   scroll-to-the-blank until the engine landed a shared problems mechanism; the
+   engine now selects the widget, scrolls the canvas to it and puts the caret in
+   this adapter's Details box through `onFocusProblem`. One jump, not two. */
 
-function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel }: {
+function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel, loading }: {
   offerings: CatalogOffering[]; label: string;
   onPick: (o: CatalogOffering, price: CatalogPrice | null) => void;
   /** Offered only where adding every tier at once makes sense (tier cards). */
   onPickAll?: (o: CatalogOffering) => void;
   bulkLabel?: (o: CatalogOffering) => string;
+  /** M-24 — still on its way. Says so instead of reading "nothing here". */
+  loading?: boolean;
 }) {
   const [q, setQ] = useState("");
   const list = useMemo(() => offerings.filter((o) => !q.trim() || o.name.toLowerCase().includes(q.trim().toLowerCase())), [offerings, q]);
@@ -1505,6 +1595,16 @@ function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel }: {
       <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your services…"
         title="Search Products & Services" data-catalog-search="1" />
       <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        {loading && !offerings.length && (
+          <div data-catalogue-loading="1" style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Loading your catalogue…
+          </div>
+        )}
+        {!loading && !offerings.length && (
+          <div style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Nothing in Products &amp; Services yet. Add what you sell there and it is here every time.
+          </div>
+        )}
         {list.map((o) => (
           <div key={o.offering_id} data-offering={o.offering_id}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>

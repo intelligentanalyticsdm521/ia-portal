@@ -520,7 +520,12 @@ describe("D-24 / D-31 · the studio opens clean", () => {
   });
 
   test("the Ask ARGUS bubble is cleared DOWNWARDS, the phone pass's rule", () => {
-    assert.match(studio, /ARGUS_BUBBLE_CLEARANCE = 68/);
+    // C-A-1: ONE number. It was written twice — once in BuilderFrame and once
+    // here — and the studio now imports the frame's, which is exported.
+    assert.match(SRC("builder/BuilderFrame.tsx"), /export const ARGUS_BUBBLE_CLEARANCE = 68;/);
+    assert.match(studio, /import \{ ARGUS_BUBBLE_CLEARANCE, BuilderFrame \}/);
+    assert.doesNotMatch(studio, /const ARGUS_BUBBLE_CLEARANCE = 68/,
+      "the studio writes the clearance a second time");
     assert.match(studio, /paddingBottom: ARGUS_BUBBLE_CLEARANCE/);
   });
 
