@@ -27,6 +27,7 @@ import { BuilderShell } from "../BuilderShell";
 import type { BuilderProblem } from "../problems";
 import {
   addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
+  insertBeside, patchNode, removeWidgetsWhere, walkWidgets,
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
@@ -403,25 +404,19 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   useEffect(() => {
     if (!businessTax) return;
     setDoc((d) => {
-      let changed = false;
-      const next = {
-        ...d,
-        sections: d.sections.map((sec) => ({
-          ...sec,
-          columns: sec.columns.map((c) => ({
-            ...c,
-            widgets: c.widgets.map((w) => {
-              if (w.kind !== "totals") return w;
-              const st = totalsSettings(w.props);
-              if (st.taxMode !== "business") return w;
-              if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) return w;
-              changed = true;
-              return { ...w, props: { ...w.props, taxRatePercent: businessTax.percent, taxLabel: businessTax.label } };
-            }),
-          })),
-        })),
-      };
-      return changed ? next : d;
+      // THE WHOLE TREE (V-2). The hand-rolled walk this replaces read the top
+      // of each column, so a Totals widget the author had put inside a box —
+      // a per-property subtotal, which is exactly where one goes — never
+      // heard the business's rate and quietly charged 0% tax.
+      let next = d;
+      for (const { widget: w } of walkWidgets(d)) {
+        if (w.kind !== "totals") continue;
+        const st = totalsSettings(w.props);
+        if (st.taxMode !== "business") continue;
+        if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) continue;
+        next = patchNode(next, w.id, { taxRatePercent: businessTax.percent, taxLabel: businessTax.label });
+      }
+      return next;
     });
   }, [businessTax]);
 
@@ -1294,17 +1289,25 @@ function WidgetExtras({
   onLoadPropertyFields: (locationId: string) => Promise<Array<{ label: string; value: string }>>;
   onSavePropertyFields: (locationId: string, rows: Array<{ label?: string; value?: string }>) => Promise<void>;
 }) {
+  /**
+   * WRITE THIS WIDGET'S PROPS, WHEREVER IT SITS (V-2, §11.12).
+   *
+   * FOUND BY DRIVING IT (verifier, 2026-09-17, on `d156/integration`): this
+   * hand-rolled `sections.map(columns.map(widgets.map(…)))`, which only ever
+   * looks at the TOP of a column. Every control on this panel was therefore a
+   * no-op for a widget inside a box — the catalogue picker ("Use this plan",
+   * loading a price onto a card, which is Brandon's literal ask), the Best
+   * Price tag, the location picker, the clause picker, the logo, a price
+   * line's quantity and unit price, and Totals' tax rate, discount and coupon.
+   * They all appeared to work: the select moved, and the document did not.
+   *
+   * `patchNode` is the one write, by node id, at any depth — the same one the
+   * canvas's typing and the inspector use. The hand-rolled walk is DELETED
+   * rather than kept beside it, because two answers to "where is this widget"
+   * is how one of them stays wrong.
+   */
   const patch = (props: Record<string, unknown>) => {
-    onChange({
-      ...doc,
-      sections: doc.sections.map((s) => s.id !== sectionId ? s : {
-        ...s,
-        columns: s.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets.map((w) => (w.id === widget.id ? { ...w, props: { ...w.props, ...props } } : w)),
-        })),
-      }),
-    });
+    onChange(patchNode(doc, widget.id, props));
   };
 
   const p: any = widget.props || {};
@@ -1696,25 +1699,22 @@ function CatalogCardPanel({
       ...(binding?.priceId ? { price_id: binding.priceId } : {}),
       fromCards: widget.id,
     });
-    // Any line this card put down before goes first — one card, one line.
-    const next: BuilderDocument = {
-      ...doc,
-      sections: doc.sections.map((sec) => ({
-        ...sec,
-        columns: sec.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets.filter((w) => (w.props as any)?.fromCards !== widget.id),
-        })),
-      })),
-    };
-    const sec = next.sections.find((x) => x.id === sectionId);
-    let columnIndex = 0;
-    let at = 0;
-    sec?.columns.forEach((c, ci) => {
-      const idx = c.widgets.findIndex((w) => w.id === widget.id);
-      if (idx >= 0) { columnIndex = ci; at = idx + 1; }
-    });
-    onChange(addWidget(next, sectionId, columnIndex, line, at));
+    /**
+     * BESIDE THE CARD, AT ANY DEPTH (V-2).
+     *
+     * Both halves of this used to read the top of a column only. So for the
+     * card Brandon actually builds — one of two in a row inside a box —
+     * "Use this plan" filtered nothing (a stale line inside the box stayed,
+     * and a second press added a second line, which the total then counted
+     * TWICE) and then dropped the new line at index 0 of the section's FIRST
+     * column, nowhere near the card that was pressed.
+     *
+     * `walkWidgets` finds the old line wherever it is; `insertNode` puts the
+     * new one directly after the card among its own siblings — one card, one
+     * line, in the box the author is looking at.
+     */
+    const next = removeWidgetsWhere(doc, (w) => (w.props as any)?.fromCards === widget.id);
+    onChange(insertBeside(next, widget.id, line));
   };
 
   return (

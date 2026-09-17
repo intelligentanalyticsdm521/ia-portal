@@ -36,7 +36,7 @@ import { LeftPane, type Tab as PaneTab } from "./LeftPane";
 import { Canvas, type CanvasDrag, type PickerTarget, type SlashState } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
-import { WidgetPicker, topMatch } from "./WidgetPicker";
+import { WidgetPicker, topMatch, boxMatches } from "./WidgetPicker";
 import { FirstRun } from "./FirstRun";
 import { AnchoredToast } from "./AnchoredToast";
 import { ContextMenu } from "./ContextMenu";
@@ -51,6 +51,7 @@ import {
   setPropPath, setWidgetStyle, widgetAt, extendSelection, selectedIds, holdsLocked,
   insertNode, moveNode, groupNodes, ungroupNode, setDirection, makePreset, findNode,
   isContainer, directionOf, hostDepth, subtreeHeight, MAX_DEPTH, nodeIdAt,
+  editWidgetText, widgetById, pathOfNode,
   setWidgetLocked, cloneSection,
   type BuilderDocument, type Section, type Selection, type Widget, type WidgetPath,
 } from "./model";
@@ -526,9 +527,9 @@ export function BuilderShell(p: BuilderShellProps) {
    * It lands and is SELECTED, so the inspector's Layout group is already open
    * on the thing that was just made.
    */
-  const insertBox = useCallback((preset: ContainerPreset, at?: InsertSpot) => {
-    let next = doc;
-    let spot = at ?? insertSpotFor(doc, selection, visibleSectionId);
+  const insertBox = useCallback((preset: ContainerPreset, at?: InsertSpot, from?: BuilderDocument) => {
+    let next = from ?? doc;
+    let spot = at ?? insertSpotFor(next, selection, visibleSectionId);
     if (!spot) {
       const made = makeSection({ label: "Section" });
       next = addSection(next, made);
@@ -657,18 +658,32 @@ export function BuilderShell(p: BuilderShellProps) {
      */
     (document.activeElement as HTMLElement | null)?.blur?.();
     const def = topMatch(p.adapter, s.query);
-    const section = doc.sections.find((x) => x.id === s.sectionId);
-    if (!section) return;
-    let path: WidgetPath | null = null;
-    section.columns.forEach((col, columnIndex) => {
-      const widgetIndex = col.widgets.findIndex((w) => w.id === s.widgetId);
-      if (widgetIndex >= 0) path = { sectionId: section.id, columnIndex, widgetIndex };
-    });
-    if (!path) return;
-    const here = path as WidgetPath;
-    const widget = widgetAt(doc, here);
+    // BY NODE ID, LIKE EVERY OTHER EDIT (V-1). This used to scan the top of
+    // each column for the widget being typed into, so "/" inside a card in a
+    // box found nothing and the slash command was dead from the second level
+    // down — the "/pricing" stayed on the page and nothing was added.
+    const widget = widgetById(doc, s.widgetId);
     if (!widget) return;
-    const cleared = patchWidget(doc, here, setPropPath(widget.props, s.path, ""));
+    const here = pathOfNode(doc, s.widgetId);
+    if (!here) return;
+    const cleared = editWidgetText(doc, s.widgetId, s.path, "");
+    /**
+     * "/row" IS AN ANSWER (§11.12, the picker's Layout group).
+     *
+     * The slash command opens the SAME picker the "+" does, and that picker's
+     * first group is Box / Row / Grid — but only the "+" door passed
+     * `onPickBox`, so in slash mode the three boxes were not in the list and
+     * Enter could not reach them. Brandon's sentence starts *"drag that into
+     * this box"*: a box you cannot ask for is a box that does not exist.
+     * ONE handler, `insertBox`, reached from both doors.
+     */
+    const box = def ? null : (s.query.trim() ? boxMatches(s.query)[0] : null);
+    if (box) {
+      const spot = insertSpotFor(cleared, { kind: "widget", ...here });
+      if (spot) insertBox(box, spot, cleared);
+      else apply(cleared, `${s.widgetId}:${s.path}`);
+      return;
+    }
     if (!def) { apply(cleared, `${s.widgetId}:${s.path}`); return; }
     if (p.onInsertWidget && p.onInsertWidget(def) === false) {
       apply(cleared, `${s.widgetId}:${s.path}`);
@@ -682,7 +697,29 @@ export function BuilderShell(p: BuilderShellProps) {
     if (!spot) return;
     apply(insertNode(cleared, spot.hostId, spot.index, made));
     landed(spot.sectionId, spot.columnIndex, spot.index, made.id);
-  }, [apply, buildWidget, doc, landed, p, slash]);
+  }, [apply, buildWidget, doc, insertBox, landed, p, slash]);
+
+  /**
+   * A BOX CLICKED IN THE SLASH PICKER — the other half of the same door.
+   *
+   * The picker in slash mode now renders the Layout group (`onPickBox`), and a
+   * row you can see has to be a row you can press. It clears the "/row" the
+   * author typed and puts the box exactly where the widget they were typing in
+   * sits, through the SAME `insertBox` the "+" uses — so the refusal at the
+   * depth limit, the undo step and the selection are all one behaviour.
+   */
+  const slashCommitBox = useCallback((preset: ContainerPreset) => {
+    const s = slash;
+    setSlash(null);
+    if (!s) return;
+    (document.activeElement as HTMLElement | null)?.blur?.();
+    const here = pathOfNode(doc, s.widgetId);
+    if (!here) return;
+    const cleared = editWidgetText(doc, s.widgetId, s.path, "");
+    const spot = insertSpotFor(cleared, { kind: "widget", ...here });
+    if (!spot) { apply(cleared, `${s.widgetId}:${s.path}`); return; }
+    insertBox(preset, spot, cleared);
+  }, [apply, doc, insertBox, slash]);
 
   /** D-35: take me to the first thing that is still blank. */
   function jumpToProblem() {
@@ -692,12 +729,12 @@ export function BuilderShell(p: BuilderShellProps) {
     // takes the caret before the canvas scrolls under it.
     p.onFocusProblem?.(problem);
     if (!problem.focus) return;
-    const { sectionId, widgetId } = problem.focus;
-    const section = doc.sections.find((s) => s.id === sectionId);
-    section?.columns.forEach((col, columnIndex) => {
-      const widgetIndex = col.widgets.findIndex((w) => w.id === widgetId);
-      if (widgetIndex >= 0) select({ kind: "widget", sectionId, columnIndex, widgetIndex });
-    });
+    const { widgetId } = problem.focus;
+    // BY NODE ID (V-1): a still-blank price inside a box is exactly the thing
+    // "take me to it" is for, and the column scan this replaces could not
+    // select one, so the jump landed on nothing and said nothing.
+    const at = pathOfNode(doc, widgetId);
+    if (at) select({ kind: "widget", ...at });
     // After the canvas has painted the selection: the element is inside HTML
     // the canvas writes with innerHTML, so it does not exist until then.
     setTimeout(() => {
@@ -715,24 +752,32 @@ export function BuilderShell(p: BuilderShellProps) {
     select({ kind: "section", sectionId: s.id });
   }, [apply, doc, p, select]);
 
-  const onEditText = useCallback((sectionId: string, widgetId: string, path: string, value: string, mergeKey: string) => {
-    const section = doc.sections.find((s) => s.id === sectionId);
-    if (!section) return;
-    for (let c = 0; c < section.columns.length; c++) {
-      const idx = section.columns[c].widgets.findIndex((w) => w.id === widgetId);
-      if (idx < 0) continue;
-      const widget = section.columns[c].widgets[idx];
-      const nextProps = setPropPath(widget.props, path, value);
-      // One typing burst is one step, and the step is named for the thing being
-      // typed into rather than for the first letter (M-7).
-      const def = WIDGETS_BY_KIND[widget.kind];
-      apply(
-        patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, nextProps),
-        mergeKey,
-        `Typed in the ${(def ? def.label : widget.kind).toLowerCase()}`,
-      );
-      return;
-    }
+  /**
+   * WORDS TYPED ON THE CANVAS, AT ANY DEPTH (V-1, §11.12).
+   *
+   * FOUND BY DRIVING IT (verifier, 2026-09-17): this scanned
+   * `section.columns[c].widgets` for the widget's id and patched a
+   * `WidgetPath`, which is the address of the TOP of a column. Everything the
+   * author typed into a card inside a row inside a box hit the `continue`, the
+   * loop fell out of the bottom, and the function returned having changed
+   * nothing — the characters stayed on screen only until the next repaint, and
+   * Save wrote the document that was never edited.
+   *
+   * ONE ADDRESS, the node id, through `editWidgetText` — the same function the
+   * four adapter panels now call, so there is one implementation of "put this
+   * word in that widget" and it works wherever the widget is. The `sectionId`
+   * the canvas passes is no longer an ingredient of the address; it stays in
+   * the signature because the canvas has it and the history label may want it.
+   */
+  const onEditText = useCallback((_sectionId: string, widgetId: string, path: string, value: string, mergeKey: string) => {
+    const widget = widgetById(doc, widgetId);
+    if (!widget) return;
+    const next = editWidgetText(doc, widgetId, path, value);
+    if (next === doc) return;
+    // One typing burst is one step, and the step is named for the thing being
+    // typed into rather than for the first letter (M-7).
+    const def = WIDGETS_BY_KIND[widget.kind];
+    apply(next, mergeKey, `Typed in the ${(def ? def.label : widget.kind).toLowerCase()}`);
   }, [apply, doc]);
 
   /**
@@ -1219,6 +1264,7 @@ export function BuilderShell(p: BuilderShellProps) {
               lockedKinds={p.lockedKinds}
               heading="Type to find it, then press Enter"
               onPick={() => slashCommit()}
+              onPickBox={slashCommitBox}
               onClose={() => setSlash(null)}
             />
           )}

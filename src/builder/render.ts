@@ -38,7 +38,7 @@ import {
   hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
   JUSTIFY_CSS, ITEMS_CSS, type Device,
 } from "./style";
-import { isContainer, CONTAINER_KIND } from "./treeOps";
+import { isContainer, CONTAINER_KIND, MAX_DEPTH } from "./treeOps";
 import type { Container, Node } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
@@ -285,16 +285,30 @@ const HTML_TAGS = ["div", "header", "footer", "main", "article", "section", "asi
 const DEFAULT_GAP = 16;
 
 /**
- * HOW DEEP A TREE MAY GO BEFORE THE RENDERER STOPS ASKING.
+ * HOW DEEP A TREE MAY GO BEFORE THE RENDERER STOPS ASKING — **the editor's own
+ * number**, `treeOps.MAX_DEPTH`.
  *
- * Not a limit on what an author may build — twelve levels is far past anything
- * a page needs. It is the guard against a document that points at itself: a
- * hand-edited `children` array containing its own parent would otherwise
- * recurse until the customer's tab died, on a page whose whole job is to be
- * opened by a stranger. Depth is counted, never identity, because a cycle can
- * be longer than one hop.
+ * It is the guard against a document that points at itself: a hand-edited
+ * `children` array containing its own parent would otherwise recurse until the
+ * customer's tab died, on a page whose whole job is to be opened by a
+ * stranger. Depth is counted, never identity, because a cycle can be longer
+ * than one hop.
+ *
+ * ── WHY IT IS NOT A SECOND NUMBER (V-3's sibling, 2026-09-17) ─────────────
+ * It was 12 while `treeOps.MAX_DEPTH` — the limit `insertNode` and `moveNode`
+ * actually REFUSE on — was 6: two constants for one idea, in the two halves of
+ * the same feature. Six levels is what an author can build, so anything deeper
+ * reaching a renderer is by definition not something a person made, and the
+ * guard that catches it should fire at the same number the editor enforces.
+ * Two numbers means one of them is the wrong one to reason about, and nobody
+ * can tell you which without reading both files.
+ *
+ * The three MIRRORS (`arion`'s Elementor writer excepted, which translates
+ * rather than walks) must read the same 6 — `oliver-api lib/builderStyle.js`
+ * and `LUMEN-API src/lib/builderStyle.js`. See
+ * `overnight-report/D156_CONFORMANCE_HANDOFF_2026-09-17.md`.
  */
-export const MAX_CONTAINER_DEPTH = 12;
+export const MAX_CONTAINER_DEPTH = MAX_DEPTH;
 
 /* ONE name for the one kind that holds children, and one test for it. Both
    live in `treeOps.ts`, where the tree itself does; re-exported here because

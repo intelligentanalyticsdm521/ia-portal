@@ -27,7 +27,7 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { apiErrorMessage } from "../../../lib/apiErrorMessage";
 import { BuilderShell } from "../../BuilderShell";
 import { TemplateLibrary } from "../../TemplateLibrary";
-import { patchWidget, setPropPath, type BuilderDocument, type Widget } from "../../model";
+import { patchNode, setPropPath, walkWidgets, type BuilderDocument, type Widget } from "../../model";
 import type { RenderContext } from "../../render";
 import {
   renderLandingSection, makeLandingContext, embedSnippet, openLandingDocument,
@@ -330,8 +330,8 @@ export function LandingBuilder(p: LandingBuilderProps) {
           {said && <div style={{ color: "#047857" }}>{said}</div>}
         </div>
       }
-      widgetExtras={(w, sectionId) => (
-        <LandingExtras widget={w} sectionId={sectionId} doc={doc} onChange={setDoc} />
+      widgetExtras={(w) => (
+        <LandingExtras widget={w} doc={doc} onChange={setDoc} />
       )}
     />
     </>
@@ -339,7 +339,10 @@ export function LandingBuilder(p: LandingBuilderProps) {
 }
 
 function hasForm(doc: BuilderDocument): boolean {
-  return doc.sections.some((s) => s.columns.some((c) => c.widgets.some((w) => w.kind === "form")));
+  // THE WHOLE TREE (§11.12). A form the author dropped into a box is still a
+  // form, and the flat walk this replaces would have told them they had none
+  // while the page they were looking at plainly had one.
+  return walkWidgets(doc).some(({ widget }) => widget.kind === "form");
 }
 
 function brandDefaults(kit: { colours: { accent: string }; fonts: { heading: string; body: string } }) {
@@ -350,20 +353,12 @@ function brandDefaults(kit: { colours: { accent: string }; fonts: { heading: str
    The form's own panel
    ══════════════════════════════════════════════════════════════════════════ */
 
-function LandingExtras({ widget, sectionId, doc, onChange }: {
-  widget: Widget; sectionId: string; doc: BuilderDocument; onChange: (d: BuilderDocument) => void;
+function LandingExtras({ widget, doc, onChange }: {
+  widget: Widget; doc: BuilderDocument; onChange: (d: BuilderDocument) => void;
 }) {
-  const path = useMemo(() => {
-    for (const s of doc.sections) {
-      if (s.id !== sectionId) continue;
-      for (let c = 0; c < s.columns.length; c++) {
-        const i = s.columns[c].widgets.findIndex((w) => w.id === widget.id);
-        if (i >= 0) return { sectionId, columnIndex: c, widgetIndex: i };
-      }
-    }
-    return null;
-  }, [doc, sectionId, widget.id]);
-  const setProps = (props: Record<string, unknown>) => { if (path) onChange(patchWidget(doc, path, props)); };
+  // BY NODE ID (V-2). The column scan this replaces could not find a form
+  // inside a box, so "What to ask for" changed nothing and said nothing.
+  const setProps = (props: Record<string, unknown>) => { onChange(patchNode(doc, widget.id, props)); };
 
   if (widget.kind === "form") {
     const chosen: string[] = Array.isArray((widget.props as any).fields) && (widget.props as any).fields.length

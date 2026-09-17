@@ -30,7 +30,7 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { BuilderShell } from "../../BuilderShell";
 import { Canvas } from "../../Canvas";
 import {
-  addSection, makeSection, makeWidget, patchWidget,
+  addSection, makeSection, makeWidget, patchNode,
   type BuilderDocument, type Selection, type Widget,
 } from "../../model";
 import { makeContext, type RenderContext } from "../../render";
@@ -707,16 +707,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         label={section?.label || kind}
         deps={deps}
         ctx={ctx}
-        onPatch={(props) => {
-          const section = doc.sections.find((s) => s.id === sectionId);
-          if (!section) return;
-          for (let c = 0; c < section.columns.length; c++) {
-            const idx = section.columns[c].widgets.findIndex((x) => x.id === w.id);
-            if (idx < 0) continue;
-            change(patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, props));
-            return;
-          }
-        }}
+        // BY NODE ID (V-2, §11.12). The column scan this replaces reached the
+        // top of a column only, so a section's fields wrote nothing at all
+        // once that section held a box — silently, with the select moving.
+        onPatch={(props) => change(patchNode(doc, w.id, props))}
       />
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
