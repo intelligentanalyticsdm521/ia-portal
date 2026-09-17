@@ -373,6 +373,59 @@ export function toPayload(doc: BuilderDocument): SectionPayload[] {
   return freshenDuplicates(out);
 }
 
+/**
+ * THE DRAFT'S OWN SHAPE (D-05).
+ *
+ * `toPayload` sends the two things the WEBSITE needs — the fields and the
+ * Elementor node — because that is all a save is. A DRAFT is different: it has
+ * to come back into the builder, and `sectionFor` reads `kind` and `editable`
+ * to decide whether a section is one we can edit or one built on the site
+ * itself. Round-tripping the save payload therefore reopened every section as
+ * `site_custom`: the page came back locked, with no inspector and no catalogue
+ * picker. Found by driving Save → reopen, 2026-09-17.
+ *
+ * So a held draft carries the same rows the detail response sends. The extra
+ * keys ride past arion-api's `buildNodes`, which reads the handle, the fields
+ * and the node and ignores the rest.
+ */
+export function toDraftPayload(doc: BuilderDocument): ArionSection[] {
+  const out: ArionSection[] = [];
+  let index = 0;
+  for (const s of doc.sections) {
+    const node = nodeOf(s);
+    if (!node) continue;
+    const w = sectionWidget(s);
+    const lock: any = w && w.kind === "site_custom" ? (w.props as any)[LOCK_PROP] : null;
+    const kind = arionKindOfSection(s);
+    out.push({
+      index,
+      handle: handleOf(node),
+      // A locked section has no kind we can edit, and saying otherwise is how
+      // somebody else's Elementor work comes back claimed as ours.
+      kind: lock ? null : kind,
+      editable: !lock,
+      reason: lock?.reason ?? null,
+      label: lock?.label || s.label || "Section",
+      fields: lock ? null : fieldsOf(s),
+      node,
+      ...(lock ? {
+        adoptable: !!lock.adoptable,
+        adoptKindLabel: lock.adoptKindLabel ?? null,
+        adoptWhy: lock.why ?? null,
+        adoptPreview: lock.preview ?? null,
+      } : {}),
+    });
+    index += 1;
+  }
+  return out;
+}
+
+/** A section's own `ia:` handle, off the node the website gave us. */
+function handleOf(node: any): string | null {
+  const title = String(node?.settings?._title || "");
+  return title.startsWith("ia:") ? title : null;
+}
+
 /** Builder sections that would be dropped by `toPayload`, for the error line. */
 export function sectionsWithoutNodes(doc: BuilderDocument): Section[] {
   return doc.sections.filter((s) => !nodeOf(s));

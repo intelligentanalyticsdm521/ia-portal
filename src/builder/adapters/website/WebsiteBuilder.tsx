@@ -36,7 +36,7 @@ import { makeContext, type RenderContext } from "../../render";
 import { arionKindOf, type WidgetDef } from "../../registry";
 import type { PremadeSection } from "../../templates";
 import {
-  toDocument, toPayload, sectionFromServer, sectionWidget, arionKindOfSection,
+  toDocument, toPayload, toDraftPayload, sectionFromServer, sectionWidget, arionKindOfSection,
   sectionsWithoutNodes, fieldsOf, NODE_PROP, LOCK_PROP, type ArionSection,
 } from "./siteModel";
 import { renderSiteWidget, SITE_CSS, renderHeaderChrome, renderFooterChrome } from "./siteRender";
@@ -44,6 +44,7 @@ import {
   SITE_PREMADE, SITE_PREMADE_TAGS, SITE_PAGE_TEMPLATES, sitePremade, withCount, repeatFieldFor,
 } from "./siteTemplates";
 import { SiteSectionFields, SiteLockedPanel, type SiteFieldDeps } from "./SiteInspectorExtras";
+import { EMPTY_SITE_CATALOGUE, readSiteCatalogue, type SiteCatalogue } from "./siteCatalogue";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
@@ -62,8 +63,24 @@ export interface WebsiteBuilderApi {
   getPage: (pageId: number) => Promise<any>;
   getCatalog: () => Promise<any>;
   getPricing: () => Promise<any>;
+  /**
+   * THE price list — Products & Services (D-23). The same one call the pricing
+   * section's "Use my current prices" was written for; the services grid now
+   * reads it too rather than filling itself with the fixture's own copy.
+   */
+  getPriceList: () => Promise<any>;
   buildSection: (kind: string, blueprintId?: string) => Promise<any>;
-  save: (pageId: number, body: { sections: any[]; status?: string; title?: string; proposalIds?: string[] }) => Promise<any>;
+  save: (pageId: number, body: { sections: any[]; status?: string; title?: string; unpublish?: boolean; proposalIds?: string[] }) => Promise<any>;
+  /**
+   * D-05: hold this work BESIDE the live page. Nothing reaches the website.
+   *
+   * This is what "Save" means on a page that is already on the internet. The
+   * old spelling — send `status: 'draft'` — is the same wire as Unpublish, so
+   * pressing Save on a live home page 404'd the site with no warning.
+   */
+  saveDraft: (pageId: number, body: { sections: any[]; title?: string }) => Promise<any>;
+  /** Throw the held draft away. The live page was never touched. */
+  discardDraft: (pageId: number) => Promise<any>;
   preview: (pageId: number, body: { sections: any[]; title?: string }) => Promise<any>;
   askSection: (pageId: number, body: any) => Promise<any>;
   askPage: (pageId: number, body: any) => Promise<any>;
@@ -118,6 +135,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const [resetKey, setResetKey] = useState(0);
   const [detail, setDetail] = useState<any>(null);
   const [catalog, setCatalog] = useState<SectionCatalogEntry[]>([]);
+  /** Products & Services, for the services and pricing sections (D-23). */
+  const [catalogue, setCatalogue] = useState<SiteCatalogue>(EMPTY_SITE_CATALOGUE);
   const [chrome, setChrome] = useState<{ businessName: string; logoUrl?: string | null; menu: Array<{ label: string }>; contactLine?: string }>({ businessName: "", menu: [] });
   const [pageEngine, setPageEngine] = useState<{ known: boolean; active: boolean | null; reason: string | null } | null>(null);
   const [aiLocked, setAiLocked] = useState<string | null>(null);
@@ -178,12 +197,23 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const load = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const [page, lib, price]: any[] = await Promise.all([
+      const [page, lib, price, priceList]: any[] = await Promise.all([
         api.getPage(pageId),
         api.getCatalog(),
         api.getPricing().catch(() => null),
+        // D-23. Best effort: a business whose price list we cannot read still
+        // gets a page they can type on, and the picker says so in words.
+        api.getPriceList().catch(() => null),
       ]);
-      const sections: ArionSection[] = page?.data?.sections || [];
+      /* WHAT IS LIVE, and WHAT WAS SAVED BUT NOT PUBLISHED (D-05).
+       *
+       * The builder opens on the draft when there is one — that is the work the
+       * author left — while `detail.status` keeps saying Live, because the
+       * visitor is still seeing the published version. Two facts, both true, and
+       * the header says both. */
+      const live: ArionSection[] = page?.data?.sections || [];
+      const held = page?.data?.draft?.sections;
+      const sections: ArionSection[] = Array.isArray(held) && held.length ? held : live;
       setDoc(toDocument(sections));
       setResetKey((k) => k + 1);
       setDetail(page?.data || null);
@@ -197,6 +227,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       // read here and never computed (feedback_no_fabricated_catalog).
       const pricing = price?.data || null;
       setCredits(pricing?.actions?.page?.credits ?? pricing?.actions?.section?.credits ?? null);
+      // D-23. The reading is pure and lives with the shaping (siteCatalogue.ts),
+      // including the rule that the cadence is carried verbatim (D-09).
+      setCatalogue(priceList?.data ? readSiteCatalogue(priceList.data) : EMPTY_SITE_CATALOGUE);
       const c = lib?.data?.chrome || {};
       setChrome({
         businessName: String(c.businessName || ""),
@@ -325,11 +358,33 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     return toPayload(doc);
   }, [doc]);
 
-  const write = useCallback(async (status?: "draft" | "publish") => {
+  /** The same sections, in the shape a draft has to come back in. */
+  const draftPayload = useCallback(() => {
+    const orphans = sectionsWithoutNodes(doc);
+    if (orphans.length) {
+      throw new Error(
+        `${orphans.length} section${orphans.length === 1 ? " has" : "s have"} not finished being built. `
+        + "Give it a moment and try again — nothing was saved.",
+      );
+    }
+    return toDraftPayload(doc);
+  }, [doc]);
+
+  /**
+   * WRITE TO THE WEBSITE. Publish, or Unpublish, and nothing in between.
+   *
+   * `unpublish` is passed through to arion-api, which refuses `status:"draft"`
+   * on a live page without it (D-05). The old third caller of this — "Save
+   * draft" on a live page — is `holdDraft` below and does not come here at all.
+   */
+  const write = useCallback(async (status?: "draft" | "publish", opts: { unpublish?: boolean } = {}) => {
     setBusy(status === "publish" ? "publish" : "save");
     setErr(null); setOk(null); setLiveUrl(null);
     try {
-      const res: any = await api.save(pageId, { sections: payload(), status, title: detail?.title });
+      const res: any = await api.save(pageId, {
+        sections: payload(), status, title: detail?.title,
+        ...(opts.unpublish ? { unpublish: true } : {}),
+      });
       const written = res?.data?.sectionsWritten ?? doc.sections.length;
       // THE WEBSITE'S OWN ANSWER, never a toast we made up.
       setOk(
@@ -351,6 +406,58 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       setBusy(null);
     }
   }, [api, detail, doc.sections.length, load, onSaved, pageId, payload]);
+
+  /* ── D-05: SAVE THAT NEVER TAKES A PAGE OFF THE INTERNET ───────────────
+   *
+   * The walk's honourable mention, and the most dangerous thing it found:
+   * pressing Save draft on the live home page moved it into a list headed
+   * "Nobody can see these until you publish them" and the public URL started
+   * returning 404. Nothing warned, nothing confirmed.
+   *
+   * On a LIVE page, Save now writes to arion.site_page_draft — beside the
+   * published version, never over it. The visitor sees what they were seeing.
+   * On a page that is not live there is nothing to protect, so Save is the
+   * ordinary save it always was.
+   */
+  const isLive = detail?.status === "publish";
+
+  const holdDraft = useCallback(async () => {
+    setBusy("save"); setErr(null); setOk(null); setLiveUrl(null);
+    try {
+      // The DRAFT carries the rows the detail response sends, not the save
+      // payload: a held draft has to reopen as the page it was, and `kind` and
+      // `editable` are what tell a section we can edit from one built on the
+      // site itself (D-05).
+      await api.saveDraft(pageId, { sections: draftPayload(), title: detail?.title });
+      dirtyRef.current = false;
+      setOk("Saved. Your website has not changed — press Publish when you are ready for visitors to see it.");
+      onSaved?.("Saved as a draft beside the live page.");
+      await load();
+    } catch (e: any) {
+      // Never a tick on a save that did not land.
+      setErr(messageFrom(e, "We could not hold that draft. Nothing on your website changed."));
+    } finally { setBusy(null); }
+  }, [api, detail, load, onSaved, pageId, payload]);
+
+  const discardHeldDraft = useCallback(async () => {
+    setBusy("discard"); setErr(null); setOk(null);
+    try {
+      await api.discardDraft(pageId);
+      setOk("Threw the saved changes away. You are back to what is on your website.");
+      await load();
+    } catch (e: any) {
+      setErr(messageFrom(e, "We could not throw that draft away. Nothing on your website changed."));
+    } finally { setBusy(null); }
+  }, [api, load, pageId]);
+
+  /** The one Save the toolbar shows, whichever kind of page this is. */
+  const saveNow = useCallback(() => {
+    if (isLive) { void holdDraft(); return; }
+    void write("draft");
+  }, [holdDraft, isLive, write]);
+
+  /** Work saved but not published, as the server last told us. */
+  const heldDraft: { savedAt: string | null } | null = detail?.draft || null;
 
   const runPreview = useCallback(async () => {
     setBusy("preview"); setErr(null);
@@ -495,7 +602,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       setSwapFor({ sectionId, kind, blueprintId, label });
     },
     catalogFor: (kind: string) => catalog.find((c) => c.kind === kind) || null,
-  }), [api, catalog, load, pageId, roleSwapBusy, specsFor, swapRoles]);
+    catalogue,
+  }), [api, catalog, catalogue, load, pageId, roleSwapBusy, specsFor, swapRoles]);
 
   const widgetExtras = useCallback((w: Widget, sectionId: string) => {
     if (w.kind === "site_custom") {
@@ -579,8 +687,17 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         title={detail?.title || "Page"}
         subtitle={
           <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <span style={{ background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "2px 9px" }}>
-              {detail?.status === "publish" ? "Live" : detail?.status === "draft" ? "Draft" : detail?.status || "Draft"}
+            {/* D-05: a live page with work saved says BOTH, because both are
+                true. "Draft" on its own is what the walk read as "my website is
+                down", and it was right to. */}
+            <span data-site-status
+              title={isLive && heldDraft
+                ? "Your website still shows the published version. Your saved changes are held here until you publish them."
+                : undefined}
+              style={{ background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "2px 9px" }}>
+              {isLive
+                ? (heldDraft ? "Live · draft saved, not published" : "Live")
+                : detail?.status === "draft" ? "Draft" : detail?.status || "Draft"}
             </span>
             {detail?.permalink && <span style={{ opacity: 0.8 }}>{String(detail.permalink).replace(/^https?:\/\//, "")}</span>}
           </span>
@@ -591,6 +708,25 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         paperWidth="full"
         paperNote={detail?.permalink ? String(detail.permalink).replace(/^https?:\/\//, "") : "your website"}
         extraCss={SITE_CSS}
+        /* D-30. The engine was written for a proposal, so without this a
+           website inspector offers "Start a new page here (when printed or
+           saved as a PDF)" and "the document's own font". A web page has no
+           pages and is not a document. `pageBreakLabel: ""` HIDES the control
+           rather than renaming it — there is nothing here to rename. */
+        copy={{
+          noun: "page",
+          nounPlural: "pages",
+          audience: "the people who visit your website",
+          paneHeading: "Add to this page",
+          paneHint: "Click one to add it where you are, or drag it onto the page.",
+          outlineHeading: "This page, top to bottom",
+          defaultFontLabel: "Your website's own font",
+          pageBreakLabel: "",
+          canvasHint: "Click anything on the page to edit it. Everything here is what a visitor sees.",
+          emptyHeading: "What goes on this page?",
+          emptyHint: "Pick one to start. You can add the rest after.",
+        }}
+        onSave={saveNow}
         canvasHint="Click anything on the page to edit it. Everything here is what a visitor sees."
         chromeTop={renderHeaderChrome({ businessName: chrome.businessName, logoUrl: chrome.logoUrl, menu: chrome.menu })}
         chromeBottom={renderFooterChrome({ businessName: chrome.businessName, menu: chrome.menu, contactLine: chrome.contactLine })}
@@ -622,9 +758,15 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
               title="See the page on your own website, rendered by your own theme. Nothing is published.">
               {busy === "preview" ? "Working…" : "Preview"}
             </button>
-            <button type="button" style={GHOST} disabled={!!busy || cannotPublish} onClick={() => write("draft")}
-              title="Save without publishing. Visitors do not see it yet.">
-              {busy === "save" ? "Working…" : "Save draft"}
+            {/* D-05. On a LIVE page this holds the work beside the published
+                version; it does not touch the website and it does not send
+                `status: draft`, which is the same wire as Unpublish. */}
+            <button type="button" style={GHOST} disabled={!!busy || cannotPublish} onClick={saveNow}
+              data-builder-anchor="save"
+              title={isLive
+                ? "Save your work. Your website keeps showing the published page until you press Publish."
+                : "Save without publishing. Visitors do not see it yet."}>
+              {busy === "save" ? "Working…" : isLive ? "Save" : "Save draft"}
             </button>
             <button type="button" style={GHOST} disabled={!!busy}
               title="The page's address, its layout, what search engines show, and the bin."
@@ -652,16 +794,19 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                 {busy === "undo" ? "Working…" : "Undo last change"}
               </button>
             )}
-            {detail?.status === "publish" ? (
+            {isLive ? (
               <button type="button" style={GHOST} disabled={!!busy || cannotPublish}
-                title="Take this page off your website. It becomes a draft and nothing on it is lost."
+                title="Take this page off your website. Visitors get a 'page not found' until you publish it again."
                 onClick={() => {
+                  // The ONE route off the internet, and it says what happens.
                   if (!window.confirm(
-                    'Take this page off your website? It becomes a draft — nothing on it is lost.',
+                    `Take “${detail?.title || "this page"}” off the internet? `
+                    + "Visitors will get a 'page not found' until you publish it again. "
+                    + "Nothing on the page is lost.",
                   )) return;
-                  void write("draft");
+                  void write("draft", { unpublish: true });
                 }}>
-                Unpublish
+                Take it off the internet
               </button>
             ) : null}
             <button type="button" style={PRIMARY} disabled={!!busy || cannotPublish}
@@ -676,6 +821,43 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             {cannotPublish && (
               <div style={{ color: "#B91C1C", fontWeight: 600, marginBottom: 6 }}>
                 Your website cannot show pages built here yet. {pageEngine?.reason}
+              </div>
+            )}
+            {/* D-05: what is held, and the two things to do about it. */}
+            {isLive && heldDraft && (
+              <div data-draft-strip style={{
+                marginBottom: 8, border: "1px solid #FCD34D", background: "#FFFBEB",
+                borderRadius: 6, padding: "8px 10px", color: "#78350F",
+              }}>
+                <div style={{ fontWeight: 700 }}>Live · draft saved, not published</div>
+                <div style={{ marginTop: 2 }}>
+                  Your website still shows the published page. These changes are here until you publish them.
+                </div>
+                <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
+                  <button type="button" disabled={!!busy || cannotPublish}
+                    onClick={() => setConfirmPublish(true)}
+                    title="Put these changes on your website, where anybody can see them"
+                    style={{
+                      border: "none", background: "#EF6C33", color: "#fff", borderRadius: 4,
+                      padding: "5px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer",
+                    }}>
+                    Publish these changes
+                  </button>
+                  <button type="button" disabled={!!busy}
+                    onClick={() => {
+                      if (!window.confirm(
+                        "Throw your saved changes away and go back to what is on your website? This cannot be undone.",
+                      )) return;
+                      void discardHeldDraft();
+                    }}
+                    title="Go back to the version that is on your website. Your saved changes are thrown away."
+                    style={{
+                      border: "1px solid #CBD5E1", background: "#fff", color: "#7C2D12", borderRadius: 4,
+                      padding: "5px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer",
+                    }}>
+                    {busy === "discard" ? "Working…" : "Discard them"}
+                  </button>
+                </div>
               </div>
             )}
             <div style={{ fontWeight: 600, color: "#0B1C24" }}>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}</div>

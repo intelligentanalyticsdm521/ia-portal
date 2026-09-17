@@ -10,12 +10,14 @@ import { SparkTable } from "../../components/spark/SparkTable";
 import { LandingBuilder, type LandingPageRow } from "../../builder/adapters/landing/LandingBuilder";
 import { SparkFilterPills } from "../../components/spark/SparkFilterPills";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
-import { Plus, FileText, Eye, Send, ExternalLink } from "lucide-react";
+import { Plus, FileText, Eye, Send, ExternalLink, Trash2 } from "lucide-react";
 // THE brand kit. A landing page has exactly one brand hook — theme_json.accent
 // — and until 2026-09-15 nothing ever set it, so LUMEN's default applied and
 // every published page carried #EF6C33, the orange Intelligent Analytics
 // itself retired (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
 import { useBrandKit } from "../../brand/BrandKitProvider";
+// D-16: a link we cannot build absolutely is not shown. See lib/plainValue.ts.
+import { absoluteLink } from "../../lib/plainValue";
 
 interface LandingPage {
   id: number; slug: string; name: string; title: string | null;
@@ -29,7 +31,7 @@ interface LandingPage {
 }
 
 export function SparkLandingPagesPage() {
-  const { get, post, put, ready } = useSparkApi();
+  const { get, post, put, del, ready } = useSparkApi();
   const { kit } = useBrandKit();
   const [list, setList] = useState<LandingPage[]>([]);
   const [error, setError] = useState<unknown>(null);
@@ -50,14 +52,31 @@ export function SparkLandingPagesPage() {
    * the builder is told, and says so with the link.
    */
   const [hasArionSite, setHasArionSite] = useState(false);
+  /** The row a publish or a delete is working on, so its buttons say so. */
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
 
-  const load = useCallback(async () => {
-    if (!ready) return;
-    setLoading(true); setError(null);
+  /**
+   * Reload the list.
+   *
+   * `silent` matters more than it looks. SparkPageShell renders
+   * `!loading ? children : null`, so a refresh that flips `loading` UNMOUNTS
+   * the builder and mounts a new one — which reopens the template library on
+   * an author who was halfway through a page, and looks exactly like "my work
+   * disappeared". Found by driving Publish, 2026-09-17. Anything that refreshes
+   * the list while the builder is open passes `silent`.
+   */
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!ready) return null;
+    if (!opts?.silent) setLoading(true);
+    setError(null);
     try {
       const r = await get<{ data: LandingPage[] }>("/api/v1/landing-pages");
-      setList(r.data || []);
-    } catch (err) { setError(err); } finally { setLoading(false); }
+      const rows = r.data || [];
+      setList(rows);
+      return rows;
+    } catch (err) { setError(err); return null; }
+    finally { if (!opts?.silent) setLoading(false); }
   }, [get, ready]);
   useEffect(() => { load(); }, [load]);
 
@@ -72,26 +91,77 @@ export function SparkLandingPagesPage() {
       .catch(() => setHasArionSite(false));
   }, [get, ready]);
 
+  /**
+   * D-34 (BUILDER_USER_TEST_2026-09-16): *"a name-it-first dialog whose copy
+   * promises 'Name it first — then you’ll build the page itself'. Pressing
+   * Create draft creates the row and dumps you back on the list."*
+   *
+   * The row it just made is opened in the builder, so the dialog does what its
+   * own sentence says.
+   */
   async function create() {
     if (!form.slug || !form.name) return;
-    await post("/api/v1/landing-pages", {
-      slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
-      name: form.name.trim(),
-      title: form.title.trim() || null,
-      blocks_json: [],
-      // Stamp the business's own accent at creation. LUMEN reads the kit too,
-      // so an existing page with no theme still renders in their colour; this
-      // makes the value visible in the row rather than implied.
-      theme_json: { accent: kit.colours.accent },
-    });
-    setForm({ slug: "", name: "", title: "" });
-    setDrawerOpen(false);
-    await load();
+    setCreating(true); setError(null);
+    try {
+      const r = await post<{ data: LandingPage }>("/api/v1/landing-pages", {
+        slug: form.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-"),
+        name: form.name.trim(),
+        title: form.title.trim() || null,
+        blocks_json: [],
+        // Stamp the business's own accent at creation. LUMEN reads the kit too,
+        // so an existing page with no theme still renders in their colour; this
+        // makes the value visible in the row rather than implied.
+        theme_json: { accent: kit.colours.accent },
+      });
+      const row = ((r as any)?.data ?? r) as LandingPage | null;
+      setForm({ slug: "", name: "", title: "" });
+      setDrawerOpen(false);
+      await load();
+      // Straight into the builder, as the dialog promised.
+      if (row?.id) setEditing(row);
+    } catch (err) { setError(err); } finally { setCreating(false); }
   }
 
+  /**
+   * D-17: Publish asks, and answers. Pressing it from the list used to change
+   * a row silently — no confirm, no message, and the chip did not move until
+   * the next load.
+   */
   async function publish(p: LandingPage) {
-    await put(`/api/v1/landing-pages/${p.id}`, { status: "published" });
-    await load();
+    if (!window.confirm(
+      `Put “${p.name}” on the internet? Anybody with the link can see it straight away. `
+      + "You can keep editing it afterwards.",
+    )) return;
+    setBusyId(p.id); setError(null);
+    try {
+      const r: any = await put(`/api/v1/landing-pages/${p.id}`, { status: "published" });
+      const row = (r?.data ?? r) as LandingPage | null;
+      await load();
+      setFlash(row?.published_url
+        ? `Published ✓ — “${p.name}” is live at ${row.published_url}`
+        : `Published ✓ — “${p.name}” is live.`);
+    } catch (err) { setError(err); } finally { setBusyId(null); }
+  }
+
+  /**
+   * D-14: nothing a user creates could ever be deleted — no control on any of
+   * the four surfaces. A published page is taken off the internet first, so a
+   * link in somebody's hand never dies without its owner meaning it.
+   */
+  async function remove(p: LandingPage) {
+    const live = p.status === "published";
+    if (!window.confirm(
+      live
+        ? `Delete “${p.name}”? It is live — anybody holding the link will get a "page not found". `
+          + "The page and every submission on it are gone for good."
+        : `Delete “${p.name}”? The page and every submission on it are gone for good.`,
+    )) return;
+    setBusyId(p.id); setError(null);
+    try {
+      await del(`/api/v1/landing-pages/${p.id}`);
+      await load();
+      setFlash(`Deleted “${p.name}”.`);
+    } catch (err) { setError(err); } finally { setBusyId(null); }
   }
 
   const filtered = filter === "all" ? list : list.filter(p => p.status === filter);
@@ -166,17 +236,38 @@ export function SparkLandingPagesPage() {
           { key: "subs", header: "Subs", width: "narrow", align: "right",
             cell: p => <span className="text-sm font-medium text-emerald-700">{p.submission_count.toLocaleString()}</span>,
           },
-          { key: "url", header: "URL", width: "narrow",
-            cell: p => p.published_url
-              ? <a href={p.published_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-blue-600 inline-flex items-center gap-1">View <ExternalLink className="h-3 w-3" /></a>
+          /* D-16: the link a visitor would follow. Only shown when the server
+             gave the page a real, absolute address — a relative one is
+             resolved against the Portal and serves the Portal, which is what
+             the walk followed. */
+          { key: "url", header: "Link", width: "narrow",
+            cell: p => absoluteLink(p.published_url)
+              ? <a data-landing-view href={absoluteLink(p.published_url)!} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="text-xs text-blue-600 inline-flex items-center gap-1" title="Open the page a visitor sees">View <ExternalLink className="h-3 w-3" /></a>
               : <span className="text-xs text-slate-400">—</span>,
           },
         ]}
-        rowActions={p => p.status !== "published" ? (
-          <button onClick={() => publish(p)} className="spark-btn spark-btn-sm spark-btn-primary">
-            <Send className="h-3 w-3" /> Publish
-          </button>
-        ) : null}
+        rowActions={p => (
+          <div className="flex items-center gap-1.5">
+            <button onClick={e => { e.stopPropagation(); setEditing(p); }}
+              title="Open this page in the builder"
+              className="spark-btn spark-btn-sm spark-btn-secondary">
+              Edit
+            </button>
+            {p.status !== "published" && (
+              <button onClick={e => { e.stopPropagation(); publish(p); }} disabled={busyId === p.id}
+                title="Put this page on the internet at its own address"
+                className="spark-btn spark-btn-sm spark-btn-primary">
+                <Send className="h-3 w-3" /> {busyId === p.id ? "Working…" : "Publish"}
+              </button>
+            )}
+            {/* D-14. Asks first, and the question says what goes. */}
+            <button onClick={e => { e.stopPropagation(); remove(p); }} disabled={busyId === p.id}
+              title="Delete this page and everything somebody sent through it"
+              className="spark-btn spark-btn-sm spark-btn-ghost">
+              <Trash2 className="h-3 w-3" /> Delete
+            </button>
+          </div>
+        )}
       />
 
       <IadmModal
@@ -189,7 +280,9 @@ export function SparkLandingPagesPage() {
         footer={
           <>
             <IadmButton variant="ghost" onClick={() => setDrawerOpen(false)}>Cancel</IadmButton>
-            <IadmButton variant="accent" product="spark" onClick={create} disabled={!form.slug || !form.name}>Create draft</IadmButton>
+            <IadmButton variant="accent" product="spark" onClick={create} disabled={!form.slug || !form.name || creating}>
+              {creating ? "Working…" : "Create it and start building"}
+            </IadmButton>
           </>
         }
       >
@@ -197,7 +290,7 @@ export function SparkLandingPagesPage() {
           <div className="spark-field">
             <label className="spark-field-label">Slug</label>
             <input className="spark-field-input" value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value })} placeholder="summer-promo" autoFocus />
-            <p className="text-[11px] text-slate-500 mt-0.5">Lowercase letters, numbers, hyphens. Page URL will be /landing/&lt;tenant&gt;/{form.slug || "your-slug"}</p>
+            <p className="text-[11px] text-slate-500 mt-0.5">Lowercase letters, numbers, hyphens. This is the end of the page’s web address: …/{form.slug || "your-slug"}</p>
           </div>
           <div className="spark-field">
             <label className="spark-field-label">Internal name</label>
@@ -216,7 +309,18 @@ export function SparkLandingPagesPage() {
         page={editing}
         api={{ get, put }}
         onClose={() => setEditing(null)}
-        onSaved={async (message) => { setFlash(message); await load(); }}
+        /* Silent, and the open row is re-pointed at what the server now holds:
+           the builder reads `page.status` and `page.published_url` off this
+           prop, and a stale copy is why the chip said "Not live yet" about a
+           page that was live (D-17). */
+        onSaved={async (message) => {
+          setFlash(message);
+          const rows = await load({ silent: true });
+          if (rows && editing) {
+            const fresh = rows.find((r) => r.id === editing.id);
+            if (fresh) setEditing(fresh);
+          }
+        }}
         arionSitePath={hasArionSite ? "/app/services/arion_website_pages" : null}
       />
     </SparkPageShell>

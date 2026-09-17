@@ -351,8 +351,14 @@ describe("WidgetPane honours SD-010", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
+    // §11.10 (D-147): the grouping moved to widgetTasks.ts, which groups the
+    // registry's own widgets by the JOB they do rather than by their category
+    // — and the PICKER calls the same function, so the pane and the "+" can
+    // never offer two different vocabularies. The rule is unchanged: no list
+    // of widgets is written down in this file.
     assert.match(pane, /from "\.\/registry"/);
-    assert.match(pane, /groupForPane\(adapter, query\)/);
+    assert.match(pane, /groupByTask\(adapter, query\)/);
+    assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
   });
 
   test("every widget button carries a tooltip AND an accessible name", () => {
@@ -366,8 +372,11 @@ describe("WidgetPane honours SD-010", () => {
     assert.match(pane, /\{w\.description\}/);
   });
 
-  test("it groups by category with a heading", () => {
-    assert.match(pane, /\{group\.category\}/);
+  test("it groups by the job, with a heading", () => {
+    // WAS `group.category` — "Information" and "Trust" are words a developer
+    // wrote down. §11.10 groups by "Customer & property" and "Products &
+    // services", which are the two sentences the business owner said.
+    assert.match(pane, /\{group\.task\}/);
     assert.match(pane, /groups\.map\(\(group\)/);
   });
 

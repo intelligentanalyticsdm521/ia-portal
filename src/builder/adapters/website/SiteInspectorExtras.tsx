@@ -38,6 +38,10 @@ import {
 } from "../../../arion/components/SectionFieldInputs";
 import type { SectionFieldSpec } from "../../../lib/arionApi";
 import { LOCK_PROP, NODE_PROP } from "./siteModel";
+// D-23: Products & Services on a web page. The shaping is pure and lives there.
+import {
+  catalogueHeading, catalogueRowFor, takesCatalogue, type SiteCatalogue,
+} from "./siteCatalogue";
 
 export interface SiteFieldDeps {
   field: FieldContext;
@@ -53,6 +57,16 @@ export interface SiteFieldDeps {
   /** Puts two roles the adapter had to guess at the right way round. */
   onSwapRoles: (sectionId: string, kind: string, list: string, roles: string[]) => void | Promise<void>;
   roleSwapBusy: boolean;
+  /**
+   * THE price list — Products & Services, through arion-api's one
+   * `/pricing-catalogue` (D-23).
+   *
+   * Brandon: *"I need to be able to call products and services."* The proposal
+   * pricing table and the property block do; the website services grid said
+   * "SERVICES — typed on the page" and filled itself with the fixture's own
+   * copy. Same catalogue, same shape, one fetch — not a second reader.
+   */
+  catalogue: SiteCatalogue;
 }
 
 const L: React.CSSProperties = {
@@ -185,12 +199,24 @@ export function SiteSectionFields({
       {/* "How many?" — asked once when the section was added, adjustable here.
           Everything else about an item is typed on the page, so this panel
           only shows an item's sub-fields that have nowhere on it. */}
+      {/* D-23: the price list, on the two sections that are about what you
+          sell. One click per line, the catalogue's own words and its own
+          cadence. Offered ABOVE the count, because picking is the move most
+          people want and typing is the fallback, not the other way round. */}
+      {listSpec && takesCatalogue(kind) && (
+        <CataloguePicker
+          kind={kind}
+          catalogue={deps.catalogue}
+          onAdd={(row) => onPatch({ [listSpec.key]: [...items, row] })}
+        />
+      )}
+
       {listSpec && (
         <div>
           <div style={{ ...L, marginBottom: 6 }}>
             {listSpec.label}{" "}
             <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 400 }}>
-              — typed on the page
+              {takesCatalogue(kind) ? "— from your price list, or typed on the page" : "— typed on the page"}
             </span>
           </div>
           <CountRow
@@ -262,6 +288,77 @@ function CountRow({ value, min, max, onSet }: { value: number; min: number; max:
         ))}
       </div>
       <span style={{ fontSize: 10, color: "#94A3B8" }}>Asked once. Add or remove any time.</span>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE PRICE LIST, ON THE PAGE (D-23)
+
+   Brandon: "I need to be able to call products and services."
+
+   One click per line, out of the same catalogue the proposal pricing table
+   reads. What it shows is the catalogue's own words: the name, the description,
+   the price and — in the catalogue's OWN wording — how it is billed. A cadence
+   we chose for it is how a per-push tier ends up printing "billed monthly"
+   (D-09), so nothing here invents one.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function CataloguePicker({
+  kind, catalogue, onAdd,
+}: {
+  kind: string;
+  catalogue: SiteCatalogue;
+  onAdd: (row: Record<string, unknown>) => void;
+}) {
+  const cta = { text: "Get in touch", href: "#contact" };
+
+  if (!catalogue.available || catalogue.services.length === 0) {
+    return (
+      <div data-catalogue-empty style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
+        <div style={L}>{catalogueHeading(kind)}</div>
+        <p style={{ marginTop: 6 }}>
+          Nothing in your price list yet. Add what you sell under Products &amp; Services and it will be
+          one click from here. You can still type the cards on the page.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div data-catalogue-picker>
+      <div style={{ ...L, marginBottom: 6 }}>{catalogueHeading(kind)}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {catalogue.services.map((s) => (
+          <button
+            key={s.offeringId || s.name}
+            type="button"
+            data-catalogue-item
+            title={`Add “${s.name}” to this section, with the words and price from your price list`}
+            onClick={() => {
+              const row = catalogueRowFor(kind, s, cta);
+              if (row) onAdd(row);
+            }}
+            style={{
+              textAlign: "left", border: "1px solid #CBD5E1", background: "#fff", borderRadius: 6,
+              padding: "7px 9px", cursor: "pointer", fontSize: 11, color: "#0B1C24", lineHeight: 1.35,
+            }}
+          >
+            <span style={{ fontWeight: 700 }}>{s.name}</span>
+            {s.price ? (
+              <span style={{ color: "#0C4A60" }}>
+                {" · "}{s.price}{s.period ? ` ${s.period}` : ""}
+              </span>
+            ) : null}
+            {s.description ? (
+              <span style={{ display: "block", color: "#64748B", marginTop: 2 }}>{s.description}</span>
+            ) : null}
+          </button>
+        ))}
+      </div>
+      <span style={{ fontSize: 10, color: "#94A3B8" }}>
+        Straight from Products &amp; Services. Change a price there and it changes everywhere.
+      </span>
     </div>
   );
 }

@@ -272,9 +272,26 @@ test('publishing asks first, and unpublishing goes back to a draft', () => {
   assert.match(src, /Publish “\$\{detail\?\.title \|\| 'this page'\}”\?/);
   assert.match(src, /where anybody can see (it|them)/);
   assert.match(src, /Yes, publish it/);
-  // Unpublish is a status flip back to draft, and says nothing is lost.
-  assert.match(src, /Unpublish/);
-  assert.match(src, /becomes a draft — nothing on it is lost/);
+  /* Taking a page off the internet is its own button, it is the ONLY route
+     there, and the question says what a visitor will see (D-05, 2026-09-17).
+     It used to read "It becomes a draft — nothing on it is lost", which is what
+     a SAVE also did: pressing Save draft on the live home page 404'd the site.
+     Save now holds a draft beside the live page and only this passes
+     `unpublish: true`, which arion-api requires before it will accept
+     `status: draft` on a live page. */
+  assert.match(src, /Take it off the internet/);
+  assert.match(src, /page not found/);
+  assert.match(src, /Nothing on the page is lost/);
+  assert.match(src, /void write\("draft", \{ unpublish: true \}\)/);
+  // There are exactly two callers of `write("draft")`: the Unpublish confirm
+  // above, and Save on a page that is ALREADY a draft — which is behind
+  // `saveNow`'s live check, so it can never run on a live page.
+  assert.equal((src.match(/void write\("draft"/g) || []).length, 2);
+  assert.match(
+    src,
+    /const saveNow = useCallback\(\(\) => \{\s*if \(isLive\) \{ void holdDraft\(\); return; \}\s*void write\("draft"\);/,
+    'the bare status:draft save is unreachable on a live page',
+  );
   // The live address is shown after a publish.
   assert.match(src, /setLiveUrl\(res\.data\.permalink\)/);
 });

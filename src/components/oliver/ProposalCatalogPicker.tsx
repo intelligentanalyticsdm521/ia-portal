@@ -110,17 +110,75 @@ export function isRecurring(p?: CatalogPrice | null): boolean {
   return !!p && (p.pricing_model === "recurring" || !!p.recurring_interval);
 }
 
-/** How this price bills, in words a customer reads on the document. */
+/**
+ * The units a price LABEL can name, and the words a customer reads for each.
+ *
+ * D-09 (2026-09-16 user test): every row of a snow rate card printed "billed
+ * monthly", including the six per-push tiers, on a contract somebody signs.
+ * The catalogue is not lying — those tiers really are stored
+ * `pricing_model: "recurring", recurring_interval: "month"`, because that is
+ * how they were set up to bill — but the price's own LABEL says "2-3 inch
+ * push", and a push is what the customer is buying. The label wins, because it
+ * is the more specific thing the catalogue carries.
+ *
+ * Ordered longest-first so "cubic yard" is matched before "yard".
+ */
+const LABEL_UNITS: Array<[RegExp, string]> = [
+  [/\bcubic\s+yards?\b/i, "per cubic yard"],
+  [/\bapplications?\b/i, "per application"],
+  [/\boccurrences?\b/i, "per occurrence"],
+  [/\bpushe?s?\b/i, "per push"],
+  [/\bvisits?\b/i, "per visit"],
+  [/\bevents?\b/i, "per event"],
+  [/\btrips?\b/i, "per trip"],
+  [/\bcleanups?\b/i, "per cleanup"],
+  [/\bhours?\b/i, "per hour"],
+  [/\byards?\b/i, "per yard"],
+  [/\bseasons?\b|\bseasonal\b/i, "per season"],
+  [/\bmonthly\b|\bper month\b/i, "monthly"],
+  [/\bannual(ly)?\b|\byearly\b|\bper year\b/i, "annually"],
+];
+
+/** The unit a price label names, or null when it names none. */
+export function unitFromLabel(label?: string | null): string | null {
+  const s = String(label ?? "");
+  if (!s.trim()) return null;
+  for (const [re, words] of LABEL_UNITS) if (re.test(s)) return words;
+  return null;
+}
+
+/**
+ * How this price bills, in words a customer reads on the document.
+ *
+ * PLAIN WORDS, NOT "billed …" (D-09). "per push", "per visit", "monthly",
+ * "annually" — what a home-services owner would write on a rate card. A plain
+ * one-off price with no unit in its label returns null: the amount is the
+ * amount, and "(one-time)" after every line is noise, not information.
+ */
 export function cadenceOf(p?: CatalogPrice | null): string | null {
+  const fromLabel = unitFromLabel(p?.label);
+  if (fromLabel) return fromLabel;
   if (!isRecurring(p)) return null;
   const n = Number(p?.recurring_interval_count) || 1;
   const unit = p?.recurring_interval || "";
-  if (n > 1) return `billed every ${n} ${unit}s`;
-  if (unit === "month") return "billed monthly";
-  if (unit === "year") return "billed annually";
-  if (unit === "week") return "billed weekly";
-  if (unit === "day") return "billed daily";
-  return unit ? `billed per ${unit}` : "recurring";
+  if (n > 1) return `every ${n} ${unit}s`;
+  if (unit === "month") return "monthly";
+  if (unit === "year") return "annually";
+  if (unit === "week") return "weekly";
+  if (unit === "day") return "daily";
+  return unit ? `per ${unit}` : "recurring";
+}
+
+/**
+ * What goes in a rate card's "Basis" column — never blank.
+ *
+ * A rate card has a column headed "Basis" and every row must answer it. Where
+ * `cadenceOf` declines (a plain one-off), the honest answer is "one-time", and
+ * the old fallback — the literal string "Each visit", invented by the builder
+ * for a price that says nothing of the kind — is gone.
+ */
+export function basisOf(p?: CatalogPrice | null): string {
+  return cadenceOf(p) || (isRecurring(p) ? "recurring" : "one-time");
 }
 
 /** Short form for the picker button, where space is tight. */
@@ -131,8 +189,16 @@ function shortCadence(p: CatalogPrice): string {
   return n > 1 ? `/${n}${unit}` : `/${unit}`;
 }
 
-function fmtMoney(n: number) {
-  return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+/**
+ * Money, with thousands separators, everywhere (D-29).
+ *
+ * Exported because the builder used to write a rate-card cell with
+ * `$${n.toFixed(2)}`, which printed **$1200.00** beside $400.00 and $625.00 on
+ * the same signed rate card. `toFixed` has no separator and never will; there
+ * is one formatter and this is it.
+ */
+export function fmtMoney(n: number) {
+  return `$${Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** Features are stored as JSON; malformed data must not break the picker. */

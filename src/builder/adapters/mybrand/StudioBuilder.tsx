@@ -101,6 +101,18 @@ interface Chooser {
   placeholder?: string;
 }
 
+/**
+ * How far above the bottom of the WINDOW the studio's buttons have to finish
+ * (D-31).
+ *
+ * 20px inset + a 44px pill, rounded up — the same number BuilderFrame uses for
+ * the document builders' bottom bar. It is written twice today because
+ * BuilderFrame does not export it and that file belongs to another stream; the
+ * request to export the one constant is in
+ * overnight-report/REBUILD_HANDOFF_2026-09-16.md.
+ */
+const ARGUS_BUBBLE_CLEARANCE = 68;
+
 export function StudioBuilder(p: StudioBuilderProps) {
   const { get, post, put, ready } = useLumenApi();
   const navigate = useNavigate();
@@ -123,21 +135,51 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const [history, setHistory] = useState<History<CanvasDoc>>(() => initHistory(emptyCanvas()));
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
+  /**
+   * THE HISTORY, in a ref as well as in state — D-18 and D-40, one cause.
+   *
+   * BUILDER_USER_TEST_2026-09-16: *"The panel advertises ⌘/Ctrl+S, +D, +Z,
+   * +⇧+Z, Del. Ctrl+D and Delete work. Ctrl+Z does not."* — so the
+   * shortcut table was half true, which is worse than absent.
+   *
+   * Undo was `setHistory(h => { const n = undo(h); setDoc(n.present); return n; })`.
+   * React may run a state updater during another component's render, and a
+   * setState called from inside one is the "Cannot update a component while
+   * rendering a different component" warning (D-40) — and the doc update it
+   * schedules can be dropped, which is Ctrl+Z appearing to do nothing.
+   *
+   * Every write now computes the next history from the ref and sets both. No
+   * updater function anywhere, so nothing of ours runs during a render. This is
+   * the same fix stream A made in BuilderShell; the Studio has its own history
+   * because its document is a canvas rather than a section list, and the fix
+   * has to be made in both or the Studio keeps the bug.
+   */
+  const historyRef = useRef<History<CanvasDoc>>(initHistory(emptyCanvas()));
+  const setHist = useCallback((h: History<CanvasDoc>) => { historyRef.current = h; setHistory(h); }, []);
+
   const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
-    setHistory((h) => push(h, next, mergeKey));
+    setHist(push(historyRef.current, next, mergeKey));
     setDoc(next);
-  }, []);
+  }, [setHist]);
 
   /** A whole new scene — a template opened, a design loaded. The stack restarts
    *  so undo can never walk backwards into a different design. */
   const replaceScene = useCallback((next: CanvasDoc, select: string | null = null) => {
-    setHistory(initHistory(next));
+    setHist(initHistory(next));
     setDoc(next);
     setSelectedId(select);
-  }, []);
+  }, [setHist]);
 
-  const doUndo = useCallback(() => setHistory((h) => { const n = undo(h); setDoc(n.present); return n; }), []);
-  const doRedo = useCallback(() => setHistory((h) => { const n = redo(h); setDoc(n.present); return n; }), []);
+  const doUndo = useCallback(() => {
+    const n = undo(historyRef.current);
+    setHist(n);
+    setDoc(n.present);
+  }, [setHist]);
+  const doRedo = useCallback(() => {
+    const n = redo(historyRef.current);
+    setHist(n);
+    setDoc(n.present);
+  }, [setHist]);
 
   /* ── Record state ────────────────────────────────────────────────────── */
   const [currentDesignId, setCurrentDesignId] = useState<string | null>(p.designId);
@@ -611,7 +653,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
         onClose={p.onClose}
         product="spark"
         eyebrow="MY BRAND · DESIGN STUDIO"
-        title={currentDesignId ? "Edit design" : "New design"}
+        /* The walk: *"The modal title says 'New design' while the name field
+           beside it says 'Spring cleanup promo'."* A design that came from a
+           template is not new and is not untitled — the title says what is
+           actually open. */
+        title={designName?.trim() || (currentDesignId ? "Edit design" : "New design")}
         subtitle={`${doc.width} × ${doc.height}`}
         canUndo={canUndo(history)}
         canRedo={canRedo(history)}
@@ -622,7 +668,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
             {saving ? (
               <span className="text-[11px] text-white/60">Saving…</span>
             ) : lastSavedAt && !saveError ? (
-              <span className="text-[11px] text-white/60">Saved {lastSavedAt.toLocaleTimeString()}</span>
+              /* D-36: one Save behaviour in all four builders — stay open, and
+                 show a tick that says when. */
+              <span data-saved-tick className="text-[11px] text-white/70">
+                Saved ✓ {lastSavedAt.toLocaleTimeString()}
+              </span>
             ) : null}
             <input
               type="text"
@@ -636,7 +686,17 @@ export function StudioBuilder(p: StudioBuilderProps) {
           </>
         }
         footer={
-          <>
+          /* D-31: the Ask ARGUS bubble is `fixed bottom-5 right-5 z-[9000]`
+             and floated ON TOP OF Save — a measured overlap at 1600×900, not
+             a judgement call. Cleared DOWNWARDS, which is the rule the phone
+             pass settled on for the document builders (BuilderFrame's
+             ARGUS_BUBBLE_CLEARANCE): reserving the bubble's WIDTH took 150 of
+             a 390px phone and pushed a button off the screen, while its height
+             is the same at every width. */
+          <div style={{
+            display: "flex", width: "100%", alignItems: "center", justifyContent: "flex-end",
+            gap: 8, flexWrap: "wrap", paddingBottom: ARGUS_BUBBLE_CLEARANCE,
+          }}>
             <IadmButton variant="ghost" title="Download this design, or save it to your Media Library" onClick={() => setExportOpen(true)} disabled={!!exporting} icon={<Download className="h-3 w-3" />}>
               {exporting ? "Exporting…" : "Export"}
             </IadmButton>
@@ -650,13 +710,60 @@ export function StudioBuilder(p: StudioBuilderProps) {
             <IadmButton variant="accent" product="spark" title="Save it, render the picture and open the social composer with it attached" onClick={() => void useInAPost()} disabled={!!exporting || !ready} icon={<Send className="h-3 w-3" />}>
               Use in a post
             </IadmButton>
-          </>
+          </div>
         }
         pane={
           <WidgetPane
             adapter="brand"
             onInsert={onInsert}
+            /* D-30: a social graphic is a PICTURE, not a page and not a
+               document. The engine's generic line says "page". (The per-widget
+               sentences are still the proposal's in places — "optionally
+               numbered like '1. Scope of work'" on a social graphic — and that
+               is a registry entry, which belongs to another stream; the request
+               is in overnight-report/REBUILD_HANDOFF_2026-09-16.md.) */
+            hint="Click one to drop it on the picture, then drag it where you want it."
             header={
+              <>
+              {/* D-36: "Which shape?" opened a SECOND full-screen modal over
+                  the canvas, so the author could not see where the shape would
+                  land, and its bottom half was empty. A three-way choice does
+                  not need a dialog — it belongs beside the button that asked
+                  it, with the canvas still in view. The icon picker keeps its
+                  dialog: it is a searchable grid of hundreds and there is no
+                  room for it here. */}
+              {chooser && chooser.options && (
+                <div data-inline-chooser style={{
+                  border: "1px solid #FDBA74", background: "#FFF7ED", borderRadius: 8,
+                  padding: 10, marginBottom: 10,
+                }}>
+                  <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#7C2D12" }}>{chooser.title}</span>
+                    <button type="button" title="Never mind" onClick={() => setChooser(null)}
+                      style={{ border: "none", background: "transparent", color: "#9A3412", fontSize: 11, cursor: "pointer" }}>
+                      Cancel
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5, marginTop: 7 }}>
+                    {chooser.options.map((o) => (
+                      <button key={o.value} type="button" data-chooser-option={o.value}
+                        title={o.hint ? `${o.label} — ${o.hint}` : o.label}
+                        onClick={() => void answerChooser(o.value)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+                          border: "1px solid #E2E8F0", background: "#fff", borderRadius: 6,
+                          padding: "7px 9px", cursor: "pointer", fontSize: 11, color: "#0B1C24",
+                        }}>
+                        {o.swatch && <span style={{ width: 16, height: 16, borderRadius: 3, border: "1px solid #CBD5E1", background: o.swatch }} />}
+                        <span>
+                          <span style={{ display: "block", fontWeight: 700 }}>{o.label}</span>
+                          {o.hint && <span style={{ display: "block", color: "#64748B" }}>{o.hint}</span>}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <StudioPaneHeader
                 onOpenGallery={() => setGalleryOpen(true)}
                 onUpload={() => fileInputRef.current?.click()}
@@ -667,6 +774,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   setPrompt: setAiPrompt, write: () => void aiWrite(), generate: () => void aiGenerate(), apply: aiApply,
                 }}
               />
+              </>
             }
           />
         }
@@ -772,15 +880,17 @@ export function StudioBuilder(p: StudioBuilderProps) {
         }}
       />
 
-      {chooser && (
+      {/* Only the two that genuinely need the room: the icon grid and the one
+          free-text answer. The list choices are inline in the pane (D-36). */}
+      {chooser && !chooser.options && (
         <IadmModal
           open onClose={() => setChooser(null)} product="spark"
           eyebrow="MY BRAND · DESIGN STUDIO" title={chooser.title} size="nav"
         >
           <div className="p-5">
-            {chooser.options === null && chooser.kind === "icon" ? (
+            {chooser.kind === "icon" ? (
               <IconPicker onPick={(key) => void answerChooser(key)} />
-            ) : chooser.options === null ? (
+            ) : (
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -800,25 +910,6 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 >
                   Add
                 </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 gap-2">
-                {chooser.options.map((o) => (
-                  <button
-                    key={o.value}
-                    type="button"
-                    onClick={() => void answerChooser(o.value)}
-                    title={o.hint ? `${o.label} — ${o.hint}` : o.label}
-                    data-chooser-option={o.value}
-                    className="flex items-center gap-3 rounded-lg border-2 border-slate-200 bg-white p-3 text-left transition-colors hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-                  >
-                    {o.swatch && <span className="h-6 w-6 flex-shrink-0 rounded border border-slate-300" style={{ background: o.swatch }} />}
-                    <span>
-                      <span className="block text-sm font-semibold text-slate-900">{o.label}</span>
-                      {o.hint && <span className="block text-[11px] text-slate-500">{o.hint}</span>}
-                    </span>
-                  </button>
-                ))}
               </div>
             )}
           </div>
