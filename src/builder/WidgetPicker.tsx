@@ -21,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { BuilderAdapter, WidgetDef } from "./registry";
 import { widgetDescription, widgetLabel, widgetTooltip } from "./registry";
+import type { WidgetLock } from "./tier";
 import { groupByTask, flatMatches, TASK_GROUPS, type WidgetTask } from "./widgetTasks";
 import { CONTAINER_PRESETS, type ContainerPreset } from "./treeOps";
 
@@ -68,7 +69,7 @@ export interface WidgetPickerProps {
    * that is missing. Absent means nothing is locked, which is every builder
    * but the website one.
    */
-  lockedKinds?: Record<string, string>;
+  lockedKinds?: Record<string, WidgetLock>;
 }
 
 /**
@@ -253,8 +254,12 @@ export function WidgetPicker(p: WidgetPickerProps) {
                 return (
                 <div key={w.kind}>
                   <button type="button" data-picker-kind={w.kind}
-                    {...(lock ? { "data-picker-locked": lock, disabled: true } : {})}
-                    title={lock || widgetTooltip(w, p.adapter)} aria-label={lock || widgetTooltip(w, p.adapter)}
+                    {...(lock ? {
+                      "data-picker-locked": lock.sentence, "data-widget-state": lock.reason,
+                      "data-widget-tier": lock.tier, disabled: true,
+                    } : { "data-widget-state": "offered" })}
+                    title={lock?.sentence || widgetTooltip(w, p.adapter)}
+                    aria-label={lock?.sentence || widgetTooltip(w, p.adapter)}
                     onClick={() => { if (!lock) choose(w); }}
                     style={{
                       width: "100%", textAlign: "left", background: lock ? "#F8FAFC" : "#fff",
@@ -267,7 +272,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
                       style={{ display: "block", width: "100%", height: 44, objectFit: "contain", background: "#F2F6F9", borderRadius: 4 }} />
                     <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{widgetLabel(w, p.adapter)}</div>
                     <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>
-                      {lock || widgetDescription(w, p.adapter)}
+                      {lock?.sentence || widgetDescription(w, p.adapter)}
                     </div>
                   </button>
 

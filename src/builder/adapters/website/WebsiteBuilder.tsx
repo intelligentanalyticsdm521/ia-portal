@@ -47,6 +47,7 @@ import {
 import { SiteSectionFields, SiteLockedPanel, type SiteFieldDeps } from "./SiteInspectorExtras";
 import { EMPTY_SITE_CATALOGUE, readSiteCatalogue, type SiteCatalogue } from "./siteCatalogue";
 import { EMPTY_PLAN, readSitePlan, lockFor, canAdd, pickerLock, type SitePlan } from "./sitePlan";
+import type { WidgetLock } from "../../tier";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
@@ -329,7 +330,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     // The same plan gate as the pane's own insert: a ready-made section is
     // still a section, and the gallery is the other door into the same build.
     const locked = lockFor(plan, row.kind);
-    if (locked) { setErr(locked); return false; }
+    if (locked) { setErr(locked.sentence); return false; }
     if (row.count) { setAsking({ key: row.key, at, value: row.count.default }); return false; }
     void addFromServer(row.kind, at);
     return false;
@@ -340,9 +341,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   /* Which widgets this plan cannot have, by the BUILDER's name for them.
      Derived from the one plan reply, never from a tier table here. */
   const lockedKinds = useMemo(() => {
-    const out: Record<string, string> = {};
+    const out: Record<string, WidgetLock> = {};
     for (const w of widgetsFor("website")) {
-      const lock = pickerLock(plan, arionKindOf, w.kind);
+      // The whole DEF, not just its kind: a widget with no section behind it
+      // has no server row, and its own `tier` is what says which gate applies.
+      const lock = pickerLock(plan, arionKindOf, w);
       if (lock) out[w.kind] = lock;
     }
     return out;
@@ -358,7 +361,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
      * the build as well — three ends, on purpose, because the one a client
      * finds is never the one you thought of. */
     const locked = lockFor(plan, kind);
-    if (locked) { setErr(locked); return false; }
+    if (locked) { setErr(locked.sentence); return false; }
     if (kind) {
       // A SECTION. It becomes a new section of its own, built by the server.
       void addFromServer(kind, doc.sections.length, count);
@@ -730,10 +733,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     // A section this plan cannot have stays IN the gallery and says why.
     // Hiding it would make "not on your plan" look exactly like a bug, and a
     // business that cannot see what they would get cannot decide to buy it.
-    description: canAdd(plan, p.kind) ? p.description : (lockFor(plan, p.kind) as string),
+    description: canAdd(plan, p.kind) ? p.description : lockFor(plan, p.kind)!.sentence,
     // …and the card is GREYED as well as explained (R-D2). The words alone
     // left a card that looked ready to place and refused after the press.
-    ...(canAdd(plan, p.kind) ? {} : { locked: lockFor(plan, p.kind) as string }),
+    // THE WHOLE REFUSAL travels, not just its words, so the gallery can say
+    // WHICH of the three states this is — the same three the pane shows.
+    ...(canAdd(plan, p.kind) ? {} : { locked: lockFor(plan, p.kind)! }),
     tags: p.tags,
     // The gallery places a section by calling build(); the website adapter
     // cannot build one locally (the SERVER does), so this returns a placeholder

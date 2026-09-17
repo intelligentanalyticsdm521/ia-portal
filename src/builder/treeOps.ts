@@ -46,6 +46,10 @@ import type {
   BuilderDocument, Column, Container, Node, Section, Widget, WidgetPath,
 } from "./model";
 import type { ElementStyle } from "./style";
+/* The ribbon's own module owns what a ribbon IS and what taking one off
+   writes. This file owns the tree, and the one-per-row rule is a fact about
+   siblings — so the rule is here and its vocabulary is there. */
+import { isRecommended, ribbonProps } from "./widgets/ribbon";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ids
@@ -149,7 +153,12 @@ export function holdsLocked(n: Node): boolean {
 export function cloneNode(n: Node): Node {
   if (isContainer(n)) {
     const copy: Container = {
-      id: newId("b"), kind: CONTAINER_KIND, props: {}, children: n.children.map(cloneNode),
+      // The box's own props travel with it. They were dropped here while a
+      // container had none; `html_tag` is one, and a duplicated `<main>` that
+      // came back a `<div>` is a control that works until you copy the box.
+      id: newId("b"), kind: CONTAINER_KIND,
+      props: JSON.parse(JSON.stringify(n.props || {})),
+      children: n.children.map(cloneNode),
     };
     if (n.style) copy.style = JSON.parse(JSON.stringify(n.style));
     return copy;
@@ -467,14 +476,56 @@ export function nudgeNode(doc: BuilderDocument, id: string, delta: -1 | 1): Buil
   return moveNode(doc, id, hit.parentId, delta > 0 ? to + 1 : to);
 }
 
-/** Write a node's props. Widgets only — a container has none by design. */
+/**
+ * Write a node's props — THE one seam every writer goes through.
+ *
+ * A container's props are written here too. They used to be refused ("a
+ * container has none by design"), which was true for a day and stopped being
+ * true the moment `html_tag` existed: the renderer has honoured
+ * `props.html_tag` on a box since stream C, and with the write refused the
+ * only way to set it was to hand-edit the document. One seam, both kinds of
+ * node, and `isContainer` stays the one test for everything else.
+ *
+ * ── AND THE ONE RULE THE MODEL ENFORCES RATHER THAN DOCUMENTS ─────────────
+ * Catalogue F.1.4: *"At most one card in a row may carry `Recommended`. The
+ * model enforces it (setting it on a second card clears the first), because
+ * two recommendations is no recommendation."* This is where it is enforced,
+ * because this is the one function a panel, an inspector, a canvas edit, a
+ * shortcut and a template all reach. Enforcing it in the panel would leave
+ * every other door open.
+ */
 export function patchNode(
   doc: BuilderDocument,
   id: string,
   props: Record<string, unknown>,
 ): BuilderDocument {
-  return editNodeById(doc, id, (n) =>
-    (isContainer(n) ? n : { ...n, props: { ...n.props, ...props } }));
+  const written = editNodeById(doc, id, (n) => ({ ...n, props: { ...n.props, ...props } } as Node));
+  return clearRecommendedSiblings(written, id);
+}
+
+/**
+ * Take the Recommended ribbon off every SIBLING of this node.
+ *
+ * Siblings, i.e. the other children of the same box or column — which is what
+ * "in a row" means once a row is a box. Nothing happens unless the node that
+ * was just written IS the recommended one, so a patch that had nothing to do
+ * with ribbons returns the same document by identity.
+ */
+function clearRecommendedSiblings(doc: BuilderDocument, id: string): BuilderDocument {
+  const hit = findNode(doc, id);
+  if (!hit || !isRecommended(hit.node.props)) return doc;
+  const kids = hostChildren(doc, hit.parentId);
+  if (!kids) return doc;
+  let out = doc;
+  for (const sib of kids) {
+    if (sib.id === id || !isRecommended(sib.props)) continue;
+    // The ribbon comes OFF, and its words come off with it. A card left
+    // carrying "Recommended" behind a switched-off ribbon is a ribbon that
+    // comes back the next time anybody opens the document.
+    out = editNodeById(out, sib.id, (n) =>
+      ({ ...n, props: { ...n.props, ...ribbonProps(null) } } as Node));
+  }
+  return out;
 }
 
 /**

@@ -36,7 +36,11 @@ import { Sparkles, Trash2 } from "lucide-react";
 import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
 import { widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
-import { WIDGETS_BY_KIND, widgetDescription, widgetLabel, type BuilderAdapter } from "./registry";
+import {
+  WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  widgetDescription, widgetLabel,
+  type BuilderAdapter, type WidgetControl,
+} from "./registry";
 import {
   isTypographic, layerFor, resetKeys, seedFromPadding, withLayer,
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
@@ -276,6 +280,33 @@ export function Inspector(p: InspectorProps) {
                     onChange={(e) => patchWidgetStyle({ wrap: e.target.checked ? true : undefined }, "wrap")} />
                   Let them wrap onto a second line
                 </label>
+
+                {/* WHAT THE BOX IS DRAWN AS — `props.html_tag` (conformance,
+                    2026-09-17).
+
+                    The renderer has honoured this since stream C and NOTHING
+                    could set it, so the only way to have a page's main region
+                    be a `<main>` was to hand-edit the document. It is on the
+                    box's props rather than its style because it is the same on
+                    every device: a `<header>` does not become a `<div>` on a
+                    phone. That is also the ONE Elementor-spelled key the
+                    engine reads, and it keeps that name so the publish is a
+                    pass-through. */}
+                <div style={FIELD}>
+                  <span style={L}>What this box is, to a screen reader</span>
+                  <select style={INPUT} data-box-html-tag
+                    title="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
+                    value={String((widget.props as any)?.html_tag ?? "")}
+                    onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
+                    <option value="">Just a box</option>
+                    <option value="header">The top of the page</option>
+                    <option value="main">The main part of the page</option>
+                    <option value="section">A section of the page</option>
+                    <option value="article">A whole article</option>
+                    <option value="aside">Something to one side</option>
+                    <option value="footer">The bottom of the page</option>
+                  </select>
+                </div>
               </Group>
             )}
 
@@ -331,21 +362,42 @@ export function Inspector(p: InspectorProps) {
                   existed because a composite's cards could not be changed
                   afterwards. They can. */}
 
-              {/* Standard controls that are NOT words: toggles, selects, colours. */}
-              {(def?.controls || []).filter((c) => c.type === "toggle" || c.type === "select" || c.type === "colour" || c.type === "number" || c.type === "image" || c.type === "link").map((c) => (
+              {/* Standard controls that are NOT words: toggles, selects, colours,
+                  and the code box. Grouped into the widget's own PANEL SECTIONS
+                  (registry `controlSections`) — the catalogue names a price
+                  table's five Heading · Pricing · Features · Footer · Ribbon,
+                  and an author who has built a pricing card anywhere expects
+                  those five in that order.
+
+                  A section whose controls are all WORDS draws no heading,
+                  because words are typed on the page: that is the engine's one
+                  editing mechanism and a panel field beside it would be a
+                  second one. `hidden` controls draw nothing at all — they are
+                  declared so the Binding section can be read as a whole. */}
+              {controlSections(def?.controls || []).map((grp) => {
+                const shown = grp.controls.filter((c) => PANEL_CONTROL_TYPES.has(c.type));
+                if (!shown.length) return null;
+                return (
+                  <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
+                    {grp.section && (
+                      <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                        {grp.section}
+                      </div>
+                    )}
+                    {shown.map((c) => (
                 <div key={c.key} style={FIELD}>
                   <span style={L}>{c.label}</span>
                   {c.type === "toggle" && (
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={!!(widget.props as any)[c.key]}
+                      <input type="checkbox" checked={isOn((widget.props as any)[c.key])}
                         onChange={(e) => p.onPatchWidget({ [c.key]: e.target.checked })} />
                       {c.help || "On"}
                     </label>
                   )}
-                  {c.type === "select" && (c.options?.length ? (
+                  {c.type === "select" && (controlOptions(c).length ? (
                     <select style={INPUT} value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c.options!, e.target.value) })}>
-                      {c.options.map((o) => <option key={o} value={optionKey(o)}>{o}</option>)}
+                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c, e.target.value) })}>
+                      {controlOptions(c).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   ) : null)}
                   {c.type === "number" && (
@@ -361,9 +413,33 @@ export function Inspector(p: InspectorProps) {
                       value={String((widget.props as any)[c.key] ?? "")}
                       onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
                   )}
+                  {/* A CODE BOX WITH A LIVE PREVIEW. The box is monospace and
+                      does not wrap words in the middle of a tag; the preview
+                      under it is the same markup the page will carry, drawn
+                      here so the author sees what they pasted before anybody
+                      else does. */}
+                  {c.type === "code" && (
+                    <>
+                      <textarea
+                        style={{ ...INPUT, minHeight: 120, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, whiteSpace: "pre", overflowWrap: "normal" }}
+                        data-code-box={c.key}
+                        spellCheck={false}
+                        placeholder="<div>Paste your own HTML here</div>"
+                        value={String((widget.props as any)[c.key] ?? "")}
+                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
+                      <span style={{ fontSize: 10, color: "#5A7A8A" }}>What it looks like</span>
+                      <div
+                        data-code-preview={c.key}
+                        style={{ border: "1px solid #E2E8F0", borderRadius: 4, padding: 8, background: "#fff", overflow: "auto", maxHeight: 220 }}
+                        dangerouslySetInnerHTML={{ __html: String((widget.props as any)[c.key] ?? "") }} />
+                    </>
+                  )}
                   {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
                 </div>
-              ))}
+                    ))}
+                  </div>
+                );
+              })}
 
               <div style={{ display: "flex", gap: 6 }}>
                 {/* The keyboard path, kept (§11.8): HTML5 drag does not fire
@@ -676,12 +752,29 @@ function Swatches({ value, swatches, onPick }: { value: string; swatches: string
   );
 }
 
-/** Human option → stored value. "Dark band" → "dark_band". */
-function optionKey(option: string): string {
-  return option.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-}
-function optionValue(options: string[], chosen: string): string {
-  return options.map(optionKey).includes(chosen) ? chosen : optionKey(chosen);
+/* `optionKey` and `optionValue` LIVED HERE and are now `registry.ts`'s, beside
+   the controls that declare the options. Two copies of "what got saved" is two
+   answers, and the registry is the one a test can pin against the machine
+   files without rendering a panel. */
+
+/**
+ * The control types the PANEL draws.
+ *
+ * Everything else is either typed on the page (`text`, `textarea`, `richtext`,
+ * `list`, `money`, `merge` - the engine's one editing mechanism) or carried by
+ * the widget and never typed at all (`hidden`).
+ */
+const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
+  "toggle", "select", "colour", "number", "image", "link", "code",
+]);
+
+/**
+ * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
+ * writes a boolean. ONE reader, because "yes" is truthy and `false` is not,
+ * and a control that reads only one of the two silently loses the other.
+ */
+function isOn(v: unknown): boolean {
+  return v === true || v === "yes";
 }
 
 export { Sparkles, DeviceSegment };

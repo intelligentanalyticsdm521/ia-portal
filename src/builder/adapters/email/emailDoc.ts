@@ -30,6 +30,7 @@ import {
 } from "../../model";
 import { renderEmailDocument, renderEmailText, type EmailBusiness, type EmailRenderContext } from "./emailRender";
 import { ensureFooter, headerSection } from "./emailTemplates";
+import { freezeOnSend, resolveCatalogCard } from "../../widgets";
 
 const oneCol = (widgets: Widget[], extra: Partial<Section> = {}) =>
   makeSection({
@@ -378,10 +379,27 @@ export function toEmailWire(
   // in "view" mode this body would greet the whole list by the preview
   // contact's name — which is what the 2026-09-16 walk found in the inbox.
   const send: EmailRenderContext = { ...ctx, mode: "send" };
+  /* AND THE DATA WIDGETS JOIN THOSE THREE MODES (catalogue F.2). The same
+     `mode: "send"` that leaves the merge tokens for the server to resolve
+     freezes every catalogue-bound widget: `_ia_snapshot` is written and
+     `refresh` becomes `snapshot_send`, so a price a subscriber was shown does
+     not move the next time somebody edits the catalogue. ONE trigger, the
+     mode; one function, `freezeOnSend`; and a document with nothing bound in it
+     comes back by identity, which is why all 34 email goldens are unchanged. */
+  const frozen = freezeOnSend(doc, "send", (w) => {
+    if (w.kind !== "catalog_card") return null;
+    const r = resolveCatalogCard(w.props, ctx.catalogue);
+    return r.source === "live"
+      ? {
+        title: r.title, price: r.price, per: r.per, description: r.description,
+        bullets: r.bullets, amount: r.amount, cadence: r.cadence, basis: r.basis,
+      }
+      : null;
+  });
   return {
-    document_json: doc,
-    content_html: renderEmailDocument(doc, send, opts),
-    content_text: renderEmailText(doc, send),
+    document_json: frozen,
+    content_html: renderEmailDocument(frozen, send, opts),
+    content_text: renderEmailText(frozen, send),
   };
 }
 

@@ -30,6 +30,7 @@ import {
   widgetDescription,
   widgetLabel,
 } from "./registry";
+import type { WidgetLock } from "./tier";
 import { groupByTask } from "./widgetTasks";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
@@ -72,7 +73,7 @@ export interface WidgetPaneProps {
    * does anything. A drag that landed and was then refused would look like a
    * broken canvas rather than a plan.
    */
-  lockedKinds?: Record<string, string>;
+  lockedKinds?: Record<string, WidgetLock>;
   /**
    * The line under the search box, in the adapter's words (copy.ts, D-30).
    *
@@ -147,6 +148,12 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lock
             </div>
             <div className="space-y-1.5">
               {group.widgets.map((w) => {
+                /* THE THREE STATES (catalogue G.4): offered, not on this
+                   plan, or needs a product this business does not have. The
+                   `reason` is on the row as a data attribute so a test can
+                   tell the two refusals apart, and so can anybody reading the
+                   DOM — they are two different things and the memory rule
+                   says they must never read as one. */
                 const lock = lockedKinds?.[w.kind] ?? null;
                 return (
                 <div key={w.kind}>
@@ -154,10 +161,14 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lock
                     type="button"
                     onClick={() => { if (!lock) pick(w); }}
                     disabled={!!lock}
-                    {...(lock ? { "data-widget-locked": lock } : {})}
+                    {...(lock ? {
+                      "data-widget-locked": lock.sentence,
+                      "data-widget-state": lock.reason,
+                      "data-widget-tier": lock.tier,
+                    } : { "data-widget-state": "offered" })}
                     /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. */
-                    title={lock || widgetTooltip(w, adapter)}
-                    aria-label={lock || widgetTooltip(w, adapter)}
+                    title={lock?.sentence || widgetTooltip(w, adapter)}
+                    aria-label={lock?.sentence || widgetTooltip(w, adapter)}
                     data-widget-kind={w.kind}
                     /* HTML5 drag, the events Canvas already uses to reorder
                        sections. No library: a second drag mechanism is a
@@ -188,7 +199,7 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lock
                       </span>
                       {/* ONE line, in a business owner's words. */}
                       <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                        {lock || widgetDescription(w, adapter)}
+                        {lock?.sentence || widgetDescription(w, adapter)}
                       </span>
                     </span>
                   </button>

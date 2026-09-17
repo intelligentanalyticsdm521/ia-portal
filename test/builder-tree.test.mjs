@@ -104,7 +104,7 @@ describe("Brandon's sentence, one clause at a time (D-156)", () => {
   });
 
   test("three deep renders, and every level is a drop target the canvas can find", () => {
-    const card = makeWidget("card", { title: "Standard" });
+    const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row" }, [card]);
     const box = makeContainer(undefined, [makeWidget("heading", { text: "Choose" }), row]);
     const { doc } = docWith([box]);
@@ -351,7 +351,7 @@ describe("what is stored, and what a document without boxes still looks like", (
   });
 
   test("a box round-trips, children and layout and all", () => {
-    const card = makeWidget("card", { title: "Standard" });
+    const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row", gap: 16 }, [card]);
     const { doc } = docWith([makeWidget("heading", { text: "Choose" }), row]);
     // From the STORED form, which is what the promise is about: reading a
@@ -363,7 +363,7 @@ describe("what is stored, and what a document without boxes still looks like", (
     const back = deserialise(wire);
     const backRow = back.sections[0].columns[0].widgets[1];
     assert.ok(isContainer(backRow));
-    assert.equal(backRow.children[0].props.title, "Standard");
+    assert.equal(backRow.children[0].props.heading, "Standard");
     assert.equal(directionOf(backRow), "row");
   });
 
@@ -383,7 +383,7 @@ describe("what is stored, and what a document without boxes still looks like", (
   });
 
   test("a section duplicate deep-copies the whole tree", () => {
-    const card = makeWidget("card", { title: "Standard" });
+    const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row" }, [card]);
     const { doc } = docWith([row]);
     const copy = cloneNode(row);
@@ -450,7 +450,7 @@ describe("how a box is drawn", () => {
 
 describe("the outline shows the nesting", () => {
   test("every row knows how far in it sits", () => {
-    const card = makeWidget("card", { title: "Standard" });
+    const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row" }, [card]);
     const box = makeContainer(undefined, [makeWidget("heading", { text: "Choose" }), row]);
     const { doc } = docWith([box]);
@@ -471,7 +471,7 @@ describe("the outline shows the nesting", () => {
   });
 
   test("a drop on a row means 'into ITS box, before it' — which is how you get out of one", () => {
-    const card = makeWidget("card", { title: "Standard" });
+    const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row" }, [card]);
     const top = makeWidget("heading", { text: "Top" });
     const { doc, column } = docWith([top, row]);
@@ -572,19 +572,30 @@ describe("composites become trees, and everything else is left exactly alone", (
 
     const [typed, fromCatalogue] = row.children;
     assert.equal(typed.kind, "card");
-    assert.equal(typed.props.title, "Standard");
-    assert.equal(typed.props.was, "$299", "list_price was dropped");
+    // THE CARD'S OWN NAMES, which are the price table's (conformance 2026-09-17).
+    assert.equal(typed.props.heading, "Standard");
+    assert.equal(typed.props.original_price, "$299", "list_price was dropped");
+    assert.equal(typed.props.sale, "yes", "an old price with no saving switch reads as a leftover");
     assert.equal(typed.props.description, "The usual", "pitch was dropped");
-    assert.deepEqual(typed.props.bullets, ["a", "b"], "features were dropped");
-    assert.equal(typed.props.recommended, true);
-    assert.deepEqual(typed.props.tag, { text: "Best Price" });
+    // The price table's REPEATER shape — one `{ item_text }` per line.
+    assert.deepEqual(typed.props.features_list, [{ item_text: "a" }, { item_text: "b" }],
+      "features were dropped");
+    // The ribbon is the price table's four keys, and the older spellings are
+    // GONE rather than left beside them.
+    assert.equal(typed.props.show_ribbon, "yes");
+    assert.equal(typed.props.ribbon_title, "Best Price");
+    assert.equal(typed.props.ribbon_preset, "best_price");
+    for (const old of ["tag", "badge", "recommended"]) {
+      assert.ok(!(old in typed.props), `the old ribbon key \`${old}\` is still on the card`);
+    }
     // A card that NAMES a catalogue item is a CATALOGUE card, bound by the
     // catalogue's own two keys, and carrying what the composite was already
     // showing as its snapshot so it is never blank where there is no catalogue.
     assert.equal(fromCatalogue.kind, "catalog_card");
-    assert.equal(fromCatalogue.props.offeringId, "svc-7");
-    assert.equal(fromCatalogue.props.snapshot.title, "Pro");
-    assert.equal(fromCatalogue.props.snapshot.price, "$399");
+    assert.deepEqual(fromCatalogue.props._ia_selection, { offering_id: "svc-7" });
+    assert.equal(fromCatalogue.props._ia_source, "oliver:catalogue");
+    assert.equal(fromCatalogue.props._ia_snapshot.title, "Pro");
+    assert.equal(fromCatalogue.props._ia_snapshot.price, "$399");
   });
 
   test("no heading and no intro means no empty heading and no empty paragraph", () => {

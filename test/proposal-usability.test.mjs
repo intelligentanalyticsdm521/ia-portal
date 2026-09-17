@@ -162,18 +162,27 @@ describe("D-01 and D-10 · a tier card has a catalogue and a real price field", 
       "a money widget lost its way into Products & Services");
   });
 
-  test("every card field is a real control, in tab order title → price → per → was", () => {
+  test("every card field is a real control, in the price table's own five sections", () => {
     // D-156: a card is its OWN widget, so its fields are its REGISTRY
     // CONTROLS — the shared inspector draws them, with a real input and a
     // label each, and nothing on a card is unreachable. That is the same fix
     // D-01 asked for, in the place a widget's fields belong, and it means the
     // inspector does not carry a hand-built panel per composite any more.
+    //
+    // CONFORMANCE 2026-09-17: the keys and the sections are the catalogue's
+    // `price-table` — Heading · Pricing · Features · Footer · Ribbon, in that
+    // order, so an author who has built a pricing card anywhere finds the same
+    // five groups in the same order.
     const controls = WIDGETS_BY_KIND.card.controls.map((c) => c.key);
-    for (const key of ["title", "price", "per", "was", "description", "bullets"]) {
+    for (const key of ["heading", "price", "period", "original_price", "description", "features_list"]) {
       assert.ok(controls.includes(key), `a card has no ${key} control`);
     }
-    assert.deepEqual(controls.slice(0, 4), ["title", "price", "per", "was"],
-      "the card fields are not in the order Tab should visit them");
+    const sections = [];
+    for (const c of WIDGETS_BY_KIND.card.controls) {
+      if (c.section && sections[sections.length - 1] !== c.section) sections.push(c.section);
+    }
+    assert.deepEqual([...new Set(sections)], ["Heading", "Pricing", "Features", "Footer", "Ribbon"],
+      "the card's controls are not grouped the way every author already knows");
     // The price is the one that measured 0px on the canvas. It is a text
     // control with help beside it, and the RENDERER gives the empty run a
     // placeholder and a minimum width — asserted in builder-usability.

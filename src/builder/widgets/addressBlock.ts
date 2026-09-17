@@ -17,6 +17,7 @@ import { esc, type LocationLite, type RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import { editRun } from "./text";
+import { BINDING_CONTROLS, bindingDefaults, onEmptyOf, selectionOf } from "./binding";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
@@ -50,7 +51,9 @@ export function addressFields(
   locations?: Record<string, LocationLite> | null,
 ): AddressFields {
   const p: any = props || {};
-  const locationId = str(p.locationId).trim().toLowerCase();
+  // WHICH ROW — the shared Binding section's reader (F.2), so a service
+  // address answers "which record is this" exactly as a product card does.
+  const locationId = selectionOf(p).locationId;
   const loc = locationId ? (locations || {})[locationId] : undefined;
   const bound = !!loc;
   return {
@@ -68,7 +71,15 @@ export function renderAddressBlock(w: Widget, ctx: RenderContext): string {
   const p: any = w.props || {};
   const f = addressFields(p, ctx.locations);
   const editing = ctx.mode === "edit";
-  if (!editing && !f.name && !f.address && !f.contact && !f.notes) return "";
+  if (!editing && !f.name && !f.address && !f.contact && !f.notes) {
+    // `on_empty` (F.2), the same three values every bound widget has. A blank
+    // address used to be nothing, full stop; "leave a gap" is now a choice,
+    // and it carries no words — a sentence on a page somebody signs has to be
+    // one the author wrote.
+    return onEmptyOf(p) === "placeholder"
+      ? `<div class="bx-address bx-address-empty" data-empty="placeholder"></div>`
+      : "";
+  }
   const row = (label: string, value: string, path: string, placeholder: string) => {
     if (!value && !editing) return "";
     const cell = f.bound
@@ -103,10 +114,21 @@ export const ADDRESS_BLOCK_DEF: WidgetDef = {
   // (§7, §4 step 3) that a widget cannot join without that adapter's renderer
   // drawing it. D-157 widens them; the handoff carries the ask.
   adapters: ["proposal"],
-  defaults: { locationId: "", heading: "", name: "", address: "", contact: "", notes: "" },
+  /* NO `tier`, deliberately — i.e. free at the widget's own gate.
+     G.4 puts this one on "OLIVER **or** SPARK, either", because
+     `lumen.customer_location` is shared between them. `tier` is one word and
+     cannot say "or", and asserting `ia:oliver` here would refuse the widget to
+     a SPARK-only business that owns the data it reads. WHETHER this business
+     has either product is the server's answer, which is where it belongs; the
+     handoff carries the ask for a two-product gate if one is ever wanted. */
+  defaults: {
+    locationId: "", heading: "", name: "", address: "", contact: "", notes: "",
+    ...bindingDefaults("lumen:locations"),
+  },
   // "Which location" is the adapter's control (D-33): only the adapter knows
-  // which locations THIS customer has.
+  // which locations THIS customer has. The Binding section is the shared one.
   controls: [
     { key: "heading", label: "Heading", type: "text" },
+    ...BINDING_CONTROLS,
   ],
 };

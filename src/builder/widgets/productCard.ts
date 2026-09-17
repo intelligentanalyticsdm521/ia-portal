@@ -38,6 +38,11 @@ import {
   type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
 import { renderCardBody } from "./card";
+import { featureItem, featureTexts } from "./features";
+import {
+  BINDING_CONTROLS, bindingDefaults, bindingSettings, isPinned, onEmptyOf,
+  refreshModeOf, selectionOf, type RefreshMode,
+} from "./binding";
 
 export interface CatalogBinding {
   offeringId: string;
@@ -46,44 +51,19 @@ export interface CatalogBinding {
 }
 
 /**
- * THE SHARED BINDING SECTION (catalogue F.2), on the one widget with a binding.
+ * THE SHARED BINDING SECTION IS NOT HERE ANY MORE — it is
+ * `widgets/binding.ts`, on every bound widget (catalogue F.2, conformance
+ * 2026-09-17).
  *
- * The catalogue's names for the five things every IA data widget carries, and
- * what this widget calls them today:
- *
- *   `_ia_source`     → the kind itself: `catalog_card` is bound to the
- *                      catalogue and to nothing else. When a second source
- *                      appears this becomes a prop; one widget, one source, is
- *                      not worth a field yet.
- *   `_ia_selection`  → `offeringId` + `priceId`
- *   `refresh`        → `refresh`, below
- *   `on_empty`       → `onEmpty`, below
- *   `overrides`      → `overrides`, already here
- *
- * Renaming the two selection keys is a one-line change in `bindingOf` and one
- * in the adapter's picker; the handoff says so. What is NOT cosmetic is
- * `refresh`, and that is why it is built rather than mapped.
+ * It lived here, on the one widget that had a binding, and the other three
+ * bound widgets each kept their own ad-hoc one. A client who learnt the
+ * section on a product card did not find it on a priced line, a service
+ * address or the totals — which is the one thing F.2 exists to prevent. The
+ * five controls, the three refresh modes, the three on-empty values, the
+ * overrides and the freeze-on-send are all in that module now, and this file
+ * re-exports the two readers so its own callers are unchanged.
  */
-export type RefreshMode = "live" | "snapshot";
-export type OnEmpty = "hide" | "placeholder";
-
-/**
- * How this card treats the catalogue.
- *
- * `live` re-reads on every render wherever a catalogue is in the room — the
- * canvas, and a website page. `snapshot` pins the figures the card was loaded
- * with, and is what a document a customer has been SENT must do: *"a price a
- * customer was quoted must not move under them"* (F.2). Absent means live,
- * which is what every card written before this did.
- */
-export function refreshModeOf(props: Record<string, unknown> | undefined | null): RefreshMode {
-  return (props as any)?.refresh === "snapshot" ? "snapshot" : "live";
-}
-
-/** Nothing to show: leave a gap for the author, or nothing at all. */
-export function onEmptyOf(props: Record<string, unknown> | undefined | null): OnEmpty {
-  return (props as any)?.onEmpty === "placeholder" ? "placeholder" : "hide";
-}
+export { type RefreshMode, type OnEmpty, refreshModeOf, onEmptyOf } from "./binding";
 
 export interface CatalogSnapshot {
   title: string;
@@ -99,13 +79,17 @@ export interface CatalogSnapshot {
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
-/** The binding on this widget, or null when nothing is chosen yet. */
+/**
+ * The binding on this widget, or null when nothing is chosen yet.
+ *
+ * Through `selectionOf` — the ONE reader of `_ia_selection` and of the four
+ * loose spellings that preceded it — so a card, a priced line and the totals
+ * all answer "which row is this" the same way.
+ */
 export function bindingOf(props: Record<string, unknown> | undefined | null): CatalogBinding | null {
-  const p: any = props || {};
-  const offeringId = str(p.offeringId || p.offering_id).trim();
-  if (!offeringId) return null;
-  const priceId = str(p.priceId || p.price_id).trim();
-  return { offeringId, priceId: priceId || null };
+  const sel = selectionOf(props);
+  if (!sel.offeringId) return null;
+  return { offeringId: sel.offeringId, priceId: sel.priceId || null };
 }
 
 /** What the catalogue says about one offering + tier, right now. */
@@ -167,10 +151,13 @@ export function resolveCatalogCard(
 ): ResolvedCatalogCard {
   const p: any = props || {};
   const binding = bindingOf(p);
-  // `snapshot` means the figures are pinned: a price a customer was quoted
-  // must not move under them (F.2). The catalogue in the room is ignored.
-  const live = refreshModeOf(p) === "snapshot" ? null : findInCatalogue(binding, offerings);
-  const stored: Partial<CatalogSnapshot> = (p.snapshot && typeof p.snapshot === "object") ? p.snapshot : {};
+  const b = bindingSettings(p);
+  // A PINNED card ignores the catalogue in the room: a price a customer was
+  // quoted must not move under them (F.2). Both pinned modes do it — the one
+  // fixed at publish and the one fixed at send — because the difference
+  // between them is WHEN the snapshot was written, never whether to read it.
+  const live = isPinned(p) ? null : findInCatalogue(binding, offerings);
+  const stored: Partial<CatalogSnapshot> = (b.snapshot || {}) as Partial<CatalogSnapshot>;
   const base: CatalogSnapshot = live
     ? snapshotFrom(live.offering, live.price)
     : {
@@ -182,20 +169,29 @@ export function resolveCatalogCard(
       basis: str(stored.basis),
     };
 
-  const over: any = (p.overrides && typeof p.overrides === "object") ? p.overrides : {};
+  /* THE OVERRIDES ARE KEYED BY THE CARD'S OWN FIELD NAMES (conformance).
+     `overrides.heading` / `.description` / `.features_list` — the same words
+     the card stores and the canvas types into, so the run that writes
+     `overrides.heading` is read back by the same name and `overriddenFields`
+     can say WHICH field is typed rather than a name from a third vocabulary.
+     The snapshot's older spellings are read as aliases. */
+  const over: any = b.overrides;
   const overridden: string[] = [];
-  const pick = (key: "title" | "description", value: string): string => {
-    const o = str(over[key]);
+  const pick = (key: "heading" | "description", legacy: string, value: string): string => {
+    const o = str(over[key] ?? over[legacy]);
     if (o.trim()) { overridden.push(key); return o; }
     return value;
   };
-  const bulletsOverride = Array.isArray(over.bullets) ? over.bullets.map(str) : null;
-  if (bulletsOverride) overridden.push("bullets");
+  const listOverride = [over.features_list, over.bullets]
+    .find((v) => Array.isArray(v)) as unknown[] | undefined;
+  // Either shape: the canvas writes the repeater, `bullets` was flat.
+  const bulletsOverride = listOverride ? featureTexts(listOverride) : null;
+  if (bulletsOverride) overridden.push("features_list");
 
   return {
     ...base,
-    title: pick("title", base.title),
-    description: pick("description", base.description),
+    title: pick("heading", "title", base.title),
+    description: pick("description", "description", base.description),
     bullets: bulletsOverride ?? base.bullets,
     source: live ? "live" : (binding ? "stored" : "none"),
     refresh: refreshModeOf(p),
@@ -214,14 +210,37 @@ export function renderCatalogCard(w: Widget, ctx: RenderContext): string {
   const p: any = w.props || {};
   const r = resolveCatalogCard(p, ctx.catalogue);
   if (r.source === "none") {
-    // `on_empty` (F.2): nothing bound yet. A customer's page shows nothing
-    // either way; the author is told what to do unless they asked otherwise.
-    if (onEmptyOf(p) === "hide" && ctx.mode !== "edit") return "";
-    return ctx.mode === "edit"
-      ? `<div class="bx-card" style="border-style:dashed">
+    /* `on_empty` (F.2), all three values. Nothing bound, or bound to a row
+       that is gone:
+         hide          — nothing, on a customer's page and on the canvas alike
+         placeholder   — the dashed box saying what to do
+         last_snapshot — whatever the widget last had, so a page a visitor is
+                         reading does not lose a price because a catalogue row
+                         was renamed this morning
+       The AUTHOR always gets the placeholder, whatever they chose: a widget
+       that draws nothing on the canvas cannot be clicked to fix. */
+    const empty = onEmptyOf(p);
+    if (empty === "last_snapshot" && ctx.mode !== "edit") {
+      const snap = bindingSettings(p).snapshot;
+      if (snap && String((snap as any).title ?? "").trim()) {
+        return renderCardBody(
+          { ...w, props: { ...p, ...snapshotToCardProps(snap as Partial<CatalogSnapshot>) } },
+          ctx,
+          { readOnlyPrice: true },
+        );
+      }
+    }
+    if (ctx.mode === "edit") {
+      return `<div class="bx-card" style="border-style:dashed">
            <div class="bx-card-name">Product card</div>
            <div class="bx-card-pitch">Pick one of your products or services on the left and its price, what it includes and how it is billed fill in here.</div>
-         </div>`
+         </div>`;
+    }
+    // A CUSTOMER'S placeholder carries no words. It holds the space so the row
+    // beside it does not close up, and says nothing — a sentence on a page
+    // somebody signs has to be one the author wrote.
+    return empty === "placeholder"
+      ? `<div class="bx-card bx-card-empty" data-empty="placeholder"></div>`
       : "";
   }
   const basis = r.basis && r.basis !== r.per ? r.basis : "";
@@ -234,12 +253,33 @@ export function renderCatalogCard(w: Widget, ctx: RenderContext): string {
   // price that no longer matches what you sell.
   const shown: Widget = {
     ...w,
-    props: {
-      ...p,
-      title: r.title, price: r.price, per: r.per, description: r.description, bullets: r.bullets,
-    },
+    props: { ...p, ...snapshotToCardProps(r) },
   };
-  return renderCardBody(shown, ctx, { extra, readOnlyPrice: true });
+  // `into: "overrides"` — the words the author types over a bound card go into
+  // `overrides.*`, which is what makes "typed, not live" and "Put it back"
+  // true (F.2). The price is READ-ONLY: a price you can type over on the card
+  // is a price that no longer matches what you sell.
+  return renderCardBody(shown, ctx, { extra, readOnlyPrice: true, into: "overrides" });
+}
+
+/**
+ * A catalogue snapshot, in the CARD's own field names.
+ *
+ * One place that knows `title → heading`, `per → period` and `bullets →
+ * features_list`, so the live card, the pinned card and the last-snapshot card
+ * are all the same card drawn by `renderCardBody`. A second copy of this map
+ * is a second chance for a price to land in a field nothing draws.
+ */
+export function snapshotToCardProps(s: Partial<CatalogSnapshot>): Record<string, unknown> {
+  return {
+    heading: str(s.title),
+    price: str(s.price),
+    period: str(s.per),
+    description: str(s.description),
+    // The price table's REPEATER shape — `{ item_text }` per line — which is
+    // what a card stores and what both LUMEN renderers stamp into `data-edit`.
+    features_list: (Array.isArray(s.bullets) ? s.bullets : []).map((b) => featureItem(str(b))),
+  };
 }
 
 export const CATALOG_CARD_DEF: WidgetDef = {
@@ -256,16 +296,21 @@ export const CATALOG_CARD_DEF: WidgetDef = {
   // (§7, §4 step 3) that a widget cannot join without that adapter's renderer
   // drawing it. D-157 widens them; the handoff carries the ask.
   adapters: ["proposal"],
+  // It reads the OLIVER catalogue, so a business without OLIVER has nothing
+  // for it to read. WHETHER this business has it is still the server's answer.
+  tier: "ia:oliver",
   defaults: {
-    offeringId: "", priceId: "", snapshot: null, overrides: {}, tag: null,
-    refresh: "live", onEmpty: "hide",
-    note: "", ctaLabel: "", ctaUrl: "",
+    ...bindingDefaults("oliver:catalogue"),
+    footer_additional_info: "", button_text: "", link: "",
+    show_ribbon: "", ribbon_title: "", ribbon_color: "", ribbon_preset: "",
   },
   // "Which product" is the adapter's control — only the adapter knows this
-  // business's catalogue — exactly as D-33 settled for "Which location".
+  // business's catalogue — exactly as D-33 settled for "Which location". The
+  // Binding section is the SHARED one, spread in rather than retyped.
   controls: [
-    { key: "note", label: "Small print under the card", type: "text" },
-    { key: "ctaLabel", label: "Button wording", type: "text", help: "Leave empty for no button." },
-    { key: "ctaUrl", label: "Button address", type: "link" },
+    { key: "footer_additional_info", label: "Small print under the card", type: "text", section: "Footer" },
+    { key: "button_text", label: "Button wording", type: "text", section: "Footer", help: "Leave empty for no button." },
+    { key: "link", label: "Button address", type: "link", section: "Footer" },
+    ...BINDING_CONTROLS,
   ],
 };

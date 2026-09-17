@@ -75,14 +75,96 @@ export const WIDGET_CATEGORIES: WidgetCategory[] = [
   "Sections", "Document", "Text", "Money", "Layout", "Media", "Information", "Capture", "Trust",
 ];
 
+/**
+ * ONE OPTION OF A SELECT — the value that is STORED, and the words a person
+ * reads.
+ *
+ * The catalogue's own controls are exactly this pair (`h3` = "H3",
+ * `space-between` = "Space Between"), and a control whose stored value has to
+ * be the catalogue's cannot have it derived from an English label: "Biggest"
+ * does not slugify to `h2`, and "I type it with the price" does not slugify to
+ * the empty string. So a select may declare its options either way and ONE
+ * normaliser answers for both — `controlOptions` below.
+ */
+export interface WidgetOption {
+  value: string;
+  label: string;
+}
+
+/**
+ * The PANEL SECTION a control belongs to.
+ *
+ * The catalogue groups a widget's controls into named sections — the price
+ * table's Content tab is Heading · Pricing · Features · Footer · Ribbon — and
+ * an author who has built a pricing card anywhere expects those five, in that
+ * order. A control with no section sits in the panel's own body, which is
+ * where every control on the platform sat before this.
+ */
+export type ControlSection = string;
+
 /** One editable property of a widget. Renderers come later; this is the shape. */
 export interface WidgetControl {
   key: string;
   label: string;
-  type: "text" | "textarea" | "richtext" | "number" | "money" | "colour" | "select" | "toggle" | "image" | "link" | "list" | "merge";
+  /**
+   * The control's kind. Eleven of these are the engine's own; two are the
+   * catalogue's own names for shapes the engine did not have:
+   *
+   *   `code`    a box of markup, drawn with a LIVE PREVIEW under it and the
+   *             plain sentence that it goes on the page exactly as typed.
+   *             Elementor's `Controls_Manager::CODE` (A.1).
+   *   `hidden`  a value the widget carries and no author types — the Binding
+   *             section's `_ia_source` / `_ia_selection` / `overrides`. It is
+   *             declared so the section can be READ as a whole, and the
+   *             Inspector draws no field for it. Elementor's
+   *             `Controls_Manager::HIDDEN` (A.1).
+   */
+  type: "text" | "textarea" | "richtext" | "number" | "money" | "colour" | "select" | "toggle"
+      | "image" | "link" | "list" | "merge" | "code" | "hidden";
   /** One line under the field, when the label alone is not enough. */
   help?: string;
-  options?: string[];
+  options?: string[] | WidgetOption[];
+  /** Which named group of the panel it is drawn in. See ControlSection. */
+  section?: ControlSection;
+}
+
+/**
+ * A label → the value it is stored as.
+ *
+ * Lifted out of the Inspector, where it was a private function, because the
+ * registry is what declares the options and a second copy of this rule is a
+ * second answer to "what got saved". Pure, so the tests can pin a control's
+ * values against the machine files without rendering anything.
+ */
+export function optionKey(option: string): string {
+  return option.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+}
+
+/** Every option of a select, in the one shape the Inspector draws. */
+export function controlOptions(control: WidgetControl): WidgetOption[] {
+  const raw = control.options || [];
+  return (raw as Array<string | WidgetOption>).map((o) =>
+    (typeof o === "string" ? { value: optionKey(o), label: o } : o));
+}
+
+/** The value to store for what the author just chose in a select. */
+export function optionValue(control: WidgetControl, chosen: string): string {
+  const opts = controlOptions(control);
+  return opts.some((o) => o.value === chosen) ? chosen : optionKey(chosen);
+}
+
+/** Controls grouped into their panel sections, in declaration order. */
+export function controlSections(
+  controls: WidgetControl[],
+): Array<{ section: ControlSection | null; controls: WidgetControl[] }> {
+  const out: Array<{ section: ControlSection | null; controls: WidgetControl[] }> = [];
+  for (const c of controls) {
+    const section = c.section ?? null;
+    const last = out[out.length - 1];
+    if (last && last.section === section) last.controls.push(c);
+    else out.push({ section, controls: [c] });
+  }
+  return out;
 }
 
 /** The guided question SD-010 asks before inserting a widget that repeats. */
@@ -135,6 +217,17 @@ export interface WidgetDef {
   category: WidgetCategory;
   /** Which builders may offer it. Never empty. */
   adapters: BuilderAdapter[];
+  /**
+   * WHICH GATE applies to this widget — `free`, `pro`, or `ia:<product>`.
+   *
+   * Absent means `free`, which is what every widget on the platform was until
+   * this field existed. It is a fact about the WIDGET (a price table is a paid
+   * page widget wherever it lands; a product card needs a catalogue to read),
+   * never a fact about a business — WHETHER a business passes the gate is the
+   * server's answer and stays there, `adapters/website/sitePlan.ts`. See
+   * `builder/tier.ts` for why the two are separate questions.
+   */
+  tier?: WidgetTier;
   /** The starting content when it is dropped on the canvas. */
   defaults: Record<string, unknown>;
   controls: WidgetControl[];
@@ -163,6 +256,8 @@ export interface WidgetDef {
    `pictureFrom` is re-exported here, so every existing caller is unchanged. */
 export { pictureFrom } from "./pictures";
 import { pictureFrom, bar, box, solid } from "./pictures";
+import type { WidgetTier } from "./tier";
+export type { WidgetTier } from "./tier";
 /* D-156 — the atomic widgets, each declared in its own file beside the
    function that draws it. Spread into WIDGETS below: one vocabulary, still. */
 import { ATOM_WIDGET_DEFS } from "./widgets";

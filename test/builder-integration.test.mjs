@@ -150,16 +150,20 @@ describe("the upgraded widgets are the widgets the registry has (A-B-2)", () => 
       props: { cards: [{ name: "Standard", list_price: "$299", pitch: "The usual", features: ["a"], badge: "Best Price" }] },
     }]));
     const card = d.sections[0].columns[0].widgets[0].children[0].children[0];
+    // EVERY key the upgrade writes is a key the card declares a control for.
+    // No exceptions any more: the ribbon used to be written as `tag` /
+    // `recommended`, which nothing in the panel could set, and it is the price
+    // table's own four keys now (conformance 2026-09-17).
     const controls = WIDGETS_BY_KIND.card.controls.map((c) => c.key);
     for (const key of Object.keys(card.props)) {
-      if (["recommended", "tag"].includes(key)) continue;   // a tick and a ribbon, not typed fields
       assert.ok(controls.includes(key), `the upgrade writes \`${key}\`, which a card has no control for`);
     }
-    assert.equal(card.props.title, "Standard");
-    assert.equal(card.props.was, "$299");
+    assert.equal(card.props.heading, "Standard");
+    assert.equal(card.props.original_price, "$299");
     assert.equal(card.props.description, "The usual");
-    assert.deepEqual(card.props.bullets, ["a"]);
-    assert.deepEqual(card.props.tag, { text: "Best Price" });
+    assert.deepEqual(card.props.features_list, [{ item_text: "a" }]);
+    assert.equal(card.props.show_ribbon, "yes");
+    assert.equal(card.props.ribbon_title, "Best Price");
   });
 
   test("an upgraded catalogue card is bound by the catalogue's own two keys", () => {
@@ -169,12 +173,14 @@ describe("the upgraded widgets are the widgets the registry has (A-B-2)", () => 
     }]));
     const card = d.sections[0].columns[0].widgets[0].children[0].children[0];
     assert.equal(card.kind, "catalog_card");
-    assert.equal(card.props.offeringId, "svc-7");
-    assert.equal(card.props.priceId, "p-2");
+    // THE BINDING SECTION's own two keys (catalogue F.2): one source, one
+    // selection, in one place, on every bound widget.
+    assert.equal(card.props._ia_source, "oliver:catalogue");
+    assert.deepEqual(card.props._ia_selection, { offering_id: "svc-7", price_id: "p-2" });
     // …and it carries what the composite was showing, so it is never blank on
     // a surface that has no catalogue (the PDF worker, the customer's page).
-    assert.equal(card.props.snapshot.title, "Pro");
-    assert.equal(card.props.snapshot.price, "$399");
+    assert.equal(card.props._ia_snapshot.title, "Pro");
+    assert.equal(card.props._ia_snapshot.price, "$399");
     const html = renderSection(d.sections[0], makeContext(d, {}));
     assert.ok(html.includes("Pro") && html.includes("$399"), "an upgraded catalogue card printed blank");
   });
@@ -406,7 +412,10 @@ describe("a locked widget or section says so before the press (R-D1, R-D2)", () 
 
   test("WHAT is locked is the server's answer — the engine holds no tier table", () => {
     assert.match(site, /lockedKinds=\{lockedKinds\}/);
-    assert.match(site, /pickerLock\(plan, arionKindOf, w\.kind\)/);
+    // The whole DEF, not just its kind: a widget with no website section
+    // behind it has no server row, and its own `tier` says which of the three
+    // gates applies (catalogue G.4, conformance 2026-09-17).
+    assert.match(site, /pickerLock\(plan, arionKindOf, w\)/);
     for (const text of [pane, picker, gallery, shell]) {
       assert.ok(!/arion_tier|\bLite\b|\bStandard\b/.test(text),
         "an engine file names a plan, so there are two places the tier is decided");

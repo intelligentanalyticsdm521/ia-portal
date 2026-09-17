@@ -22,6 +22,11 @@ export const ATOM_KINDS = [
   "totals",
   "address_block",
   "key_fact",
+  /* Not a money widget: the free HTML box (catalogue point 9). It is on this
+     list because the list is the index of "a widget that declares itself in
+     its own file under widgets/", which it does — not because it has anything
+     to do with a price. */
+  "html",
 ] as const;
 
 export type AtomKind = (typeof ATOM_KINDS)[number];

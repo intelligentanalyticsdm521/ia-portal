@@ -25,6 +25,7 @@ import {
   type BuilderDocument, type Section, type Widget,
 } from "./model";
 import { upgradeDocument } from "./upgrade";
+import type { WidgetLock } from "./tier";
 import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "./render";
 import {
   SAMPLE_MERGE, blankEntry, type TemplateEntry, type TemplatePreview,
@@ -46,8 +47,13 @@ export interface PremadeSection {
    * it without the reason would make it indistinguishable from a bug. The
    * adapter sets it — WHAT is locked is the server's answer, never a tier
    * table in the engine (adapters/website/sitePlan.ts).
+   *
+   * A `WidgetLock` and not a bare sentence, so the gallery says WHICH of the
+   * three states this is — offered, not on this plan, or needs a product this
+   * business does not have (catalogue G.4). One bucket for two different
+   * refusals is what `reference_nav_visibility_semantics` forbids by name.
    */
-  locked?: string;
+  locked?: WidgetLock;
   /**
    * ONE section, always.
    *

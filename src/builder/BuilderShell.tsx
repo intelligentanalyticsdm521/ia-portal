@@ -58,10 +58,13 @@ import { layerFor, withLayer, type ElementStyle } from "./style";
 import { canRedo, canUndo, initHistory, push, redo, steps, travelTo, undo, type History } from "./history";
 import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
 import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
+import type { WidgetLock } from "./tier";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
 import { FLASH_MS, insertSpotFor, firstSpotIn, type InsertSpot } from "./insertPosition";
-import type { ContainerPreset } from "./treeOps";
+// `patchNode` is the ONE writer of a widget's props, at any depth, and it
+// carries the model's own rules (at most one Recommended in a row) with it.
+import { patchNode, type ContainerPreset } from "./treeOps";
 import type { OutlineDrop } from "./navigatorModel";
 import { resolveCopy, type BuilderCopy } from "./copy";
 import { PROBLEMS_CTA, firstWithFocus, focusSelector, type BuilderProblem } from "./problems";
@@ -149,7 +152,7 @@ export interface BuilderShellProps extends InspectorSlots {
    * carries it — WHAT is locked is the adapter's answer, read from the server
    * (adapters/website/sitePlan.ts), and no tier table lives in the engine.
    */
-  lockedKinds?: Record<string, string>;
+  lockedKinds?: Record<string, WidgetLock>;
   /**
    * WHAT IS STILL MISSING, from the adapter (D-03 / D-35).
    *
@@ -715,24 +718,32 @@ export function BuilderShell(p: BuilderShellProps) {
     select({ kind: "section", sectionId: s.id });
   }, [apply, doc, p, select]);
 
+  /**
+   * WORDS TYPED ON THE PAGE, committed BY NODE ID.
+   *
+   * FOUND BY DRIVING IT (2026-09-17, the conformance pass): this searched
+   * `section.columns[c].widgets` with a FLAT `findIndex`, so a widget inside a
+   * box was never found and the function returned having applied nothing.
+   * Typing into any card in the row that *Choose your plan* places — which is
+   * every card an author meets first — was silently discarded the moment they
+   * clicked away. §11.12 made a column hold boxes; this was the last reader
+   * left counting indexes into the top of one.
+   *
+   * `findNode` and `patchNode` are the tree's own, by id, at any depth — and
+   * the model's rules (at most one Recommended in a row) come with them.
+   */
   const onEditText = useCallback((sectionId: string, widgetId: string, path: string, value: string, mergeKey: string) => {
-    const section = doc.sections.find((s) => s.id === sectionId);
-    if (!section) return;
-    for (let c = 0; c < section.columns.length; c++) {
-      const idx = section.columns[c].widgets.findIndex((w) => w.id === widgetId);
-      if (idx < 0) continue;
-      const widget = section.columns[c].widgets[idx];
-      const nextProps = setPropPath(widget.props, path, value);
-      // One typing burst is one step, and the step is named for the thing being
-      // typed into rather than for the first letter (M-7).
-      const def = WIDGETS_BY_KIND[widget.kind];
-      apply(
-        patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, nextProps),
-        mergeKey,
-        `Typed in the ${(def ? def.label : widget.kind).toLowerCase()}`,
-      );
-      return;
-    }
+    const hit = findNode(doc, widgetId);
+    if (!hit || isContainer(hit.node)) return;
+    const nextProps = setPropPath(hit.node.props, path, value);
+    // One typing burst is one step, and the step is named for the thing being
+    // typed into rather than for the first letter (M-7).
+    const def = WIDGETS_BY_KIND[hit.node.kind];
+    apply(
+      patchNode(doc, widgetId, nextProps),
+      mergeKey,
+      `Typed in the ${(def ? def.label : hit.node.kind).toLowerCase()}`,
+    );
   }, [apply, doc]);
 
   /**
