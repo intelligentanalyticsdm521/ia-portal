@@ -51,7 +51,11 @@ export interface ShippedTemplate {
   name: string;
   /** The badge: what kind of document this is, in the client's words. */
   purpose: string;
-  /** From templateLibrary.BUSINESS_TYPES. "Any business" answers every chip. */
+  /**
+   * Which SEGMENTS this is for, from templateLibraryModel.BUSINESS_TYPES
+   * (D-153: segments, not trades). "Any business" answers every chip; the
+   * trade words live in `tags`, where the search reads them.
+   */
   businessTypes: string[];
   /** Extra words the search should find — a trade, a synonym, a situation. */
   tags: string[];
@@ -321,8 +325,9 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
     key: "service_agreement",
     name: "Seasonal service agreement",
     purpose: "Recurring service agreement",
-    businessTypes: ["Snow & ice", "Lawn & landscape", "Cleaning"],
-    tags: ["contract", "season", "rate card", "recurring", "signature"],
+    businessTypes: ["Service industry"],
+    tags: ["contract", "season", "rate card", "recurring", "signature",
+      "snow & ice", "lawn & landscape", "cleaning"],
     useCase: "The agreement a customer signs before a season of recurring work starts. It carries your numbered terms, a rate card the customer can check a storm invoice against, the service plan for that property, and an electronic signature.",
     bestFor: "Snow and ice contracts, seasonal lawn care, recurring cleaning rounds — anywhere the work repeats and the rate is per visit.",
     featured: true,
@@ -422,8 +427,9 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
     key: "project_proposal",
     name: "One-off project proposal",
     purpose: "One-off project",
-    businessTypes: ["Lawn & landscape", "Home services", "HVAC & plumbing"],
-    tags: ["project", "install", "timeline", "one-off", "deposit"],
+    businessTypes: ["Service industry"],
+    tags: ["project", "install", "timeline", "one-off", "deposit",
+      "lawn & landscape", "home services", "hvac & plumbing"],
     useCase: "For a job with a start and an end: what is being built, what happens in what order, what it costs and when you need paying. The timeline table is the part that stops the phone calls asking how long it will take.",
     bestFor: "A landscaping install, a remodel, a replacement or any quoted project measured in days rather than months.",
     build: () => {
@@ -569,8 +575,9 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
     key: "maintenance_plan",
     name: "Maintenance plan",
     purpose: "Maintenance plan",
-    businessTypes: ["HVAC & plumbing", "Cleaning", "Lawn & landscape", "Snow & ice", "Home services"],
-    tags: ["maintenance", "subscription", "monthly", "visits", "priority"],
+    businessTypes: ["Service industry"],
+    tags: ["maintenance", "subscription", "monthly", "visits", "priority",
+      "hvac & plumbing", "cleaning", "lawn & landscape", "snow & ice", "home services"],
     useCase: "For the plan a customer pays for every month whether they call you or not. It says what is included, when you will visit, what it costs a month and what still gets charged separately.",
     bestFor: "Heating and plumbing cover, cleaning contracts, grounds maintenance, gutter and roof rounds — any agreement billed monthly.",
     build: () => {
@@ -641,8 +648,9 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
     key: "commercial_bid",
     name: "Commercial services bid",
     purpose: "Recurring service agreement",
-    businessTypes: ["Snow & ice", "Cleaning", "Lawn & landscape"],
-    tags: ["multi-site", "bid", "tender", "per site", "commercial"],
+    businessTypes: ["Service industry"],
+    tags: ["multi-site", "bid", "tender", "per site", "commercial",
+      "snow & ice", "cleaning", "lawn & landscape"],
     useCase: "For bidding on more than one property at once. Each site gets its own block with its own line items and its own subtotal, and the document ends with one total for the lot.",
     bestFor: "Property managers, retail groups, housing associations and anyone asking you to price a portfolio rather than a building.",
     build: () => {
@@ -911,7 +919,7 @@ export function proposalPreview(doc: BuilderDocument, o: ProposalLibraryOptions 
 }
 
 /**
- * Every proposal template as a library entry, with the empty page last.
+ * Every proposal template as a library entry, with the empty page FIRST (D-153).
  *
  * The adapter passes its clause library and brand kit; it gets back a list it
  * hands straight to `TemplateLibrary` and a key it hands straight back to

@@ -13,22 +13,38 @@
 //   5  "search and categories"             → the search reads title, use case
 //      AND tags; the two chip rows intersect
 //
+// AND decision D-153 (Brandon, 2026-09-17, walking the library), three asks:
+//   6  "restructure business type to high level businesses … we don't need
+//      specific industries like lawn and landscaping because that will lead to
+//      too many options"  → SEGMENTS, and no trade may be a chip
+//   7  "have the Blank Template as … the first option in the top left or even
+//      just a button on the bottom"  → both: index 0 after sort AND a footer
+//      button
+//   8  "templates should be select and have a button for load xyz template
+//      instead of click automatically loads"  → the gesture state machine
+//
 // MUTATION CHECKS, written down so the next person can re-run them:
 //   · put "Rolling In It" in one template's useCase      → "no client is named" red
 //   · narrow matchesQuery to entry.title only            → "the search reads the use case"
 //                                                          and "…and the tags" red
 //   · make one renderer throw (e.g. `throw` at the top of renderDocument)
 //                                                        → "every template draws" red
-//   · drop the `last` branch from sortTemplates          → "the empty page is last" red
 //   · let matchesBusinessType ignore ANY_BUSINESS        → "Any business answers every chip" red
+//   · D-153: make `cardGesture("click")` return load: true
+//                                                        → "a single click NEVER loads" red
+//   · D-153: flip the blank branch of sortTemplates so the empty card is last
+//                                                        → "the empty page is the FIRST card" red
+//   · D-153: put "Snow & ice" back in BUSINESS_TYPES and on one template
+//                                                        → "no trade name is a chip" red
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 
 import {
-  ALL, ANY_BUSINESS, BLANK_TEMPLATE_ID, BUSINESS_TYPES, blankEntry, buildPreview,
-  businessTypeChips, filterAndSort, filterTemplates, firstSentence, isMounted, makePreviewCache,
-  matchesBusinessType, matchesQuery, nextMounted, previewSrcDoc, purposeChips,
-  sortTemplates, SAMPLE_MERGE, THUMB_RATIO,
+  ALL, ANY_BUSINESS, BLANK_TEMPLATE_ID, BUSINESS_TYPES, RETIRED_TRADE_TYPES,
+  blankButtonLabel, blankEntry, blankEntryOf, buildPreview, businessTypeChips, cardGesture,
+  filterAndSort, filterTemplates, firstSentence, isMounted, keepSelection, loadButtonLabel,
+  makePreviewCache, matchesBusinessType, matchesQuery, moveSelection, nextMounted,
+  previewSrcDoc, purposeChips, selectedEntry, sortTemplates, SAMPLE_MERGE, THUMB_RATIO,
 } from "../src/builder/templateLibraryModel.ts";
 import { SHIPPED_TEMPLATES, proposalLibrary, savedIdOf, savedTemplateEntries } from "../src/builder/templates.ts";
 import { EMAIL_TEMPLATES, emailLibrary } from "../src/builder/adapters/email/emailTemplates.ts";
@@ -164,11 +180,99 @@ describe("the catalogue grew, and every entry says what it is for (asks 2 and 3)
     }
   });
 
-  test("the trades D-146 named are each answered by a template", () => {
+  test("every SEGMENT D-153 named is answered by a template", () => {
     const covered = new Set(EVERY_ENTRY.flatMap((e) => e.businessTypes));
-    for (const t of ["Lawn & landscape", "Snow & ice", "Cleaning", "HVAC & plumbing",
-      "Home services", "Professional services", "Agencies & software", "Non-profit"]) {
+    for (const t of BUSINESS_TYPES) {
       assert.ok(covered.has(t), `nothing in the library is for ${t}`);
+    }
+  });
+});
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6 · SEGMENTS, not trades (D-153)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+describe("business types are SEGMENTS, never trades (D-153)", () => {
+  test("the six segments, and nothing narrower", () => {
+    assert.deepEqual([...BUSINESS_TYPES], [
+      "Service industry", "Non-profit", "Professional services",
+      "Agencies & software", "Retail & hospitality", ANY_BUSINESS,
+    ]);
+  });
+
+  test("no retired trade is a business type any more", () => {
+    for (const trade of RETIRED_TRADE_TYPES) {
+      assert.ok(!BUSINESS_TYPES.includes(trade),
+        `"${trade}" is a trade, and D-153 retired trades as types`);
+    }
+  });
+
+  test("NO TRADE NAME APPEARS AS A CHIP, on any adapter", () => {
+    // The mutation: put "Snow & ice" back in BUSINESS_TYPES and on one
+    // template. This goes red on whichever adapter carries it.
+    for (const [adapter, list] of Object.entries(CATALOGUES)) {
+      const chips = businessTypeChips(list);
+      for (const chip of chips) {
+        assert.ok(chip === ALL || BUSINESS_TYPES.includes(chip),
+          `${adapter} offers "${chip}", which is not a segment`);
+        for (const trade of RETIRED_TRADE_TYPES) {
+          assert.ok(chip.toLowerCase() !== trade.toLowerCase(),
+            `${adapter} still offers the trade chip "${chip}"`);
+        }
+      }
+    }
+  });
+
+  test("every template resolves to at least one segment", () => {
+    for (const entry of EVERY_ENTRY) {
+      assert.ok(entry.businessTypes.length > 0, `${entry.id} is for nobody`);
+      for (const t of entry.businessTypes) {
+        assert.ok(BUSINESS_TYPES.includes(t),
+          `${entry.id} claims "${t}", which is not one of the six segments`);
+      }
+    }
+  });
+
+  test("a template that used to list a trade lists Service industry now", () => {
+    // The five trades all folded into one segment, so the templates that were
+    // written for them are the ones that answer it.
+    const byId = Object.fromEntries(EVERY_ENTRY.map((e) => [e.id, e]));
+    for (const id of ["service_agreement", "project_proposal", "maintenance_plan",
+      "commercial_bid", "seasonal_reminder", "home_lawn", "home_snow",
+      "home_cleaning", "home_hvac", "showcase"]) {
+      assert.ok(byId[id], `${id} is not in the catalogue any more`);
+      assert.ok(byId[id].businessTypes.includes("Service industry"),
+        `${id} was a trade template and does not answer Service industry`);
+    }
+  });
+
+  test("the trade WORDS moved into tags, so the search still finds them", () => {
+    // D-153 removed the chips, not the vocabulary. "snow", "lawn", "cleaning"
+    // are what a business owner types, and each still has to land somewhere.
+    for (const trade of RETIRED_TRADE_TYPES) {
+      const tagged = EVERY_ENTRY.filter((e) =>
+        e.tags.some((t) => t.toLowerCase() === trade.toLowerCase()));
+      assert.ok(tagged.length > 0, `no template carries "${trade}" as a tag any more`);
+    }
+    const hit = (list, q) => filterTemplates(list, { query: q }).map((e) => e.id);
+    assert.ok(hit(CATALOGUES.proposal, "snow").includes("service_agreement"),
+      "typing snow no longer finds the seasonal agreement");
+    assert.ok(hit(CATALOGUES.proposal, "lawn").length > 0, "typing lawn finds nothing");
+    assert.ok(hit(CATALOGUES.website, "snow").includes("home_snow"));
+    assert.ok(hit(CATALOGUES.email, "hvac").includes("seasonal_reminder"));
+  });
+
+  test("Service industry keeps a useful number of templates behind it", () => {
+    // The point of the decision: one chip a client recognises, with enough
+    // behind it to be worth pressing.
+    const n = filterTemplates(CATALOGUES.proposal, { businessType: "Service industry" }).length;
+    assert.ok(n >= 5, `only ${n} proposal templates answer Service industry`);
+  });
+
+  test("the chip row is short enough to read at a glance", () => {
+    for (const [adapter, list] of Object.entries(CATALOGUES)) {
+      assert.ok(businessTypeChips(list).length <= 1 + BUSINESS_TYPES.length - 1,
+        `${adapter}'s chip row is longer than the segment list`);
     }
   });
 });
@@ -227,28 +331,29 @@ describe("the search reads more than the title (ask 5)", () => {
 });
 
 describe("the category chips intersect (ask 5)", () => {
-  test("a business-type chip keeps only that trade", () => {
-    const snow = filterTemplates(CATALOGUES.proposal, { businessType: "Snow & ice" }).map((e) => e.id);
-    assert.ok(snow.includes("service_agreement"));
-    assert.ok(snow.includes("maintenance_plan"));
-    assert.ok(!snow.includes("consulting_engagement"), "a consulting engagement is not snow work");
+  test("a segment chip keeps only that segment", () => {
+    const svc = filterTemplates(CATALOGUES.proposal, { businessType: "Service industry" }).map((e) => e.id);
+    assert.ok(svc.includes("service_agreement"));
+    assert.ok(svc.includes("maintenance_plan"));
+    assert.ok(!svc.includes("consulting_engagement"), "a consulting engagement is professional services");
+    assert.ok(!svc.includes("partnership_proposal"), "a sponsorship ask is a non-profit's document");
   });
 
   test("“Any business” answers EVERY chip", () => {
     assert.ok(matchesBusinessType(entry({ businessTypes: [ANY_BUSINESS] }), "Non-profit"));
-    assert.ok(matchesBusinessType(entry({ businessTypes: [ANY_BUSINESS] }), "Snow & ice"));
-    const snow = filterTemplates(CATALOGUES.proposal, { businessType: "Snow & ice" }).map((e) => e.id);
-    assert.ok(snow.includes("simple_proposal"), "a simple quote suits a snow contractor too");
+    assert.ok(matchesBusinessType(entry({ businessTypes: [ANY_BUSINESS] }), "Service industry"));
+    const svc = filterTemplates(CATALOGUES.proposal, { businessType: "Service industry" }).map((e) => e.id);
+    assert.ok(svc.includes("simple_proposal"), "a simple quote suits a service business too");
   });
 
   test("the two rows INTERSECT: type AND purpose, never either", () => {
     const both = filterTemplates(CATALOGUES.proposal, {
-      businessType: "Snow & ice", purpose: "Maintenance plan",
+      businessType: "Service industry", purpose: "Maintenance plan",
     }).map((e) => e.id);
     assert.deepEqual(both, ["maintenance_plan"]);
 
     const withSearch = filterTemplates(CATALOGUES.proposal, {
-      businessType: "Snow & ice", purpose: "Maintenance plan", query: "consulting",
+      businessType: "Service industry", purpose: "Maintenance plan", query: "consulting",
     });
     assert.deepEqual(withSearch, [], "the search narrows the chips, it does not widen them");
   });
@@ -263,6 +368,7 @@ describe("the category chips intersect (ask 5)", () => {
     const chips = businessTypeChips(CATALOGUES.proposal);
     assert.equal(chips[0], ALL);
     assert.ok(chips.includes("Non-profit"), "a non-profit template is in there");
+    assert.ok(chips.includes("Service industry"), "most of the catalogue is service work");
     assert.ok(!chips.includes(ANY_BUSINESS), "“Any business” answers every chip; it is not one");
     assert.ok(!chips.includes("Retail & hospitality"), "no proposal template is for retail");
     // In BUSINESS_TYPES' order, so the row reads the same on every screen.
@@ -281,7 +387,7 @@ describe("the category chips intersect (ask 5)", () => {
    The order: Featured first, then alphabetical, empty page last
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("Featured first, then alphabetical, the empty page last", () => {
+describe("the empty page FIRST, then featured, then alphabetical (D-153)", () => {
   test("featured entries come first, alphabetically among themselves", () => {
     const sorted = sortTemplates([
       entry({ id: "b", title: "Beta" }),
@@ -292,23 +398,155 @@ describe("Featured first, then alphabetical, the empty page last", () => {
     assert.deepEqual(sorted, ["a", "z", "b", "c"]);
   });
 
-  test("the empty page is last even though “S” sorts early and even if featured", () => {
+  test("the empty page is the FIRST card even though “S” sorts late", () => {
+    // The mutation: flip the blank branch of sortTemplates back to `last`.
     const sorted = sortTemplates([
-      blankEntry({ featured: true }),
-      entry({ id: "a", title: "Alpha" }),
+      entry({ id: "a", title: "Alpha", featured: true }),
+      blankEntry(),
+      entry({ id: "z", title: "Zeta" }),
     ]).map((e) => e.id);
-    assert.deepEqual(sorted, ["a", BLANK_TEMPLATE_ID]);
+    assert.deepEqual(sorted, [BLANK_TEMPLATE_ID, "a", "z"]);
   });
 
-  test("the proposal library opens on its three featured shapes", () => {
+  test("it is index 0 on every adapter that has one, listed last or not", () => {
+    // The adapters append it to the end of their arrays; the SORT is what puts
+    // it top-left, so no adapter has to remember to.
+    for (const [adapter, list] of Object.entries(CATALOGUES)) {
+      const blank = blankEntryOf(list);
+      const shown = filterAndSort(list);
+      if (!blank) {
+        assert.equal(adapter, "landing", "only landing pages have no empty card");
+        continue;
+      }
+      assert.equal(shown[0].id, blank.id, `${adapter}'s empty card is not top-left`);
+    }
+  });
+
+  test("…and stays index 0 after a chip and after a search that keeps it", () => {
+    const withChip = filterAndSort(CATALOGUES.proposal, { businessType: "Non-profit" });
+    assert.equal(withChip[0].id, BLANK_TEMPLATE_ID, "the empty page answers every chip");
+    const withSearch = filterAndSort(CATALOGUES.proposal, { query: "page" });
+    assert.equal(withSearch[0].id, BLANK_TEMPLATE_ID);
+  });
+
+  test("…unless the search excludes it, and then it is simply not there", () => {
+    const shown = filterAndSort(CATALOGUES.proposal, { query: "maintenance" }).map((e) => e.id);
+    assert.ok(!shown.includes(BLANK_TEMPLATE_ID), "a search for maintenance should not keep the empty page");
+    assert.deepEqual(shown, ["maintenance_plan"]);
+  });
+
+  test("the proposal library opens on the empty page then its three featured shapes", () => {
     const shown = filterAndSort(CATALOGUES.proposal).map((e) => e.id);
-    assert.deepEqual(shown.slice(0, 3), ["service_agreement", "simple_proposal", "platform_proposal"]);
-    assert.equal(shown[shown.length - 1], BLANK_TEMPLATE_ID);
+    assert.deepEqual(shown.slice(0, 4),
+      [BLANK_TEMPLATE_ID, "service_agreement", "simple_proposal", "platform_proposal"]);
   });
 
   test("the empty page is still searchable, for whoever wants it", () => {
     const hit = filterTemplates(CATALOGUES.proposal, { query: "empty" }).map((e) => e.id);
     assert.deepEqual(hit, [BLANK_TEMPLATE_ID]);
+  });
+
+  test("the empty page is not a purpose chip", () => {
+    for (const [adapter, list] of Object.entries(CATALOGUES)) {
+      const blank = blankEntryOf(list);
+      if (!blank) continue;
+      assert.ok(!purposeChips(list).includes(blank.purpose),
+        `${adapter} offers "${blank.purpose}" as a category`);
+    }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   8 · Select, then load (D-153)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("a click selects, a second gesture loads (D-153)", () => {
+  test("a single click NEVER loads, whatever was selected before", () => {
+    // THE mutation: make this branch return load: true and this goes red.
+    assert.deepEqual(cardGesture("click", "a", null), { select: "a", load: false });
+    assert.deepEqual(cardGesture("click", "a", "a"), { select: "a", load: false });
+    assert.deepEqual(cardGesture("click", "b", "a"), { select: "b", load: false });
+  });
+
+  test("a double-click loads, selected or not", () => {
+    assert.deepEqual(cardGesture("doubleClick", "a", null), { select: "a", load: true });
+    assert.deepEqual(cardGesture("doubleClick", "a", "a"), { select: "a", load: true });
+  });
+
+  test("Enter loads only the card that is ALREADY selected", () => {
+    assert.deepEqual(cardGesture("enter", "a", "a"), { select: "a", load: true });
+    // Arrowing onto a card and pressing Enter in one motion is one gesture,
+    // which is the thing D-153 removed — so this selects and stops.
+    assert.deepEqual(cardGesture("enter", "b", "a"), { select: "b", load: false });
+    assert.deepEqual(cardGesture("enter", "a", null), { select: "a", load: false });
+  });
+
+  test("every gesture selects what it was aimed at", () => {
+    for (const g of ["click", "doubleClick", "enter"]) {
+      assert.equal(cardGesture(g, "target", "other").select, "target");
+    }
+  });
+
+  test("the footer button names the selected template", () => {
+    assert.equal(loadButtonLabel({ title: "Seasonal service agreement" }),
+      "Load Seasonal service agreement");
+    assert.equal(loadButtonLabel(null), null, "nothing selected, nothing to load");
+    assert.equal(loadButtonLabel(undefined), null);
+  });
+
+  test("the label follows the real catalogue, not a guess", () => {
+    const shown = filterAndSort(CATALOGUES.proposal);
+    const agreement = shown.find((e) => e.id === "service_agreement");
+    assert.equal(loadButtonLabel(selectedEntry(shown, "service_agreement")),
+      `Load ${agreement.title}`);
+    assert.equal(selectedEntry(shown, "not_a_template"), null);
+    assert.equal(selectedEntry(shown, null), null);
+  });
+
+  test("a selection the filters have hidden is dropped, not silently moved", () => {
+    const shown = filterAndSort(CATALOGUES.proposal, { query: "maintenance" });
+    assert.equal(keepSelection(shown, "service_agreement"), null);
+    assert.equal(keepSelection(shown, "maintenance_plan"), "maintenance_plan");
+    assert.equal(keepSelection(shown, null), null);
+  });
+
+  test("arrow keys move the selection and stop at both ends", () => {
+    const list = ["a", "b", "c"].map((id) => entry({ id, title: id }));
+    assert.equal(moveSelection(list, "a", 1), "b");
+    assert.equal(moveSelection(list, "b", -1), "a");
+    assert.equal(moveSelection(list, "a", -1), "a", "clamped, never wrapped");
+    assert.equal(moveSelection(list, "c", 1), "c");
+    assert.equal(moveSelection(list, "a", 2), "c");
+    assert.equal(moveSelection(list, "a", 9), "c", "a whole row past the end lands on the last");
+  });
+
+  test("an arrow with nothing selected starts at one end", () => {
+    const list = ["a", "b", "c"].map((id) => entry({ id, title: id }));
+    assert.equal(moveSelection(list, null, 1), "a");
+    assert.equal(moveSelection(list, null, -1), "c");
+    assert.equal(moveSelection([], null, 1), null);
+  });
+});
+
+describe("the footer's empty-page button (D-153)", () => {
+  test("it says what the adapter's empty page actually is", () => {
+    assert.equal(blankButtonLabel(CATALOGUES.proposal), "Start from an empty page");
+    assert.equal(blankButtonLabel(CATALOGUES.email), "Just the basics");
+    assert.equal(blankButtonLabel(CATALOGUES.website), "Start from one section");
+  });
+
+  test("there is no button where there is no empty page", () => {
+    assert.equal(blankButtonLabel(CATALOGUES.landing), null,
+      "a landing page with no form is not a landing page");
+    assert.equal(blankEntryOf(CATALOGUES.landing), null);
+  });
+
+  test("the button and the card are the same entry, so they cannot drift", () => {
+    for (const list of [CATALOGUES.proposal, CATALOGUES.email, CATALOGUES.website]) {
+      const blank = blankEntryOf(list);
+      assert.equal(blankButtonLabel(list), blank.title);
+      assert.equal(filterAndSort(list)[0].id, blank.id);
+    }
   });
 });
 

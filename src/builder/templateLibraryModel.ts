@@ -28,11 +28,26 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * The business types a template can be for — D-146 item 2, "more templates for
- * different business types", said in the words a client would use about
- * themselves and not in ours.
+ * The business SEGMENTS a template can be for — decision **D-153** (Brandon,
+ * 2026-09-17, walking the template library): *"we need to restructure business
+ * type to high level businesses like Service Industry, Non-Profit,
+ * Professional Services, Agencies, or whatever our high level clients are, we
+ * don't need specific industries like lawn and landscaping because that will
+ * lead to too many options."*
  *
- * `ANY_BUSINESS` is a real type a template carries, not a filler: a simple
+ * D-146 had shipped nine chips, five of which were single trades — Lawn &
+ * landscape, Snow & ice, Cleaning, HVAC & plumbing, Home services. A chip row
+ * of trades can only ever grow (roofing, pest control, pools, tree work…) and
+ * every one of them cuts the grid down to the one or two templates that happen
+ * to name it. A SEGMENT is the level our clients actually come in at, so five
+ * chips cover every business we sell to and each one keeps a useful number of
+ * templates behind it.
+ *
+ * The trade words are not lost: they moved into each template's `tags`, which
+ * is what the search reads (`matchesQuery`), so typing "snow" still finds the
+ * seasonal agreement — it is just not a permanent button on the screen.
+ *
+ * `ANY_BUSINESS` is a real segment a template carries, not a filler: a simple
  * quote is the right answer for a landscaper, an accountant and a caterer
  * alike, so it ANSWERS EVERY CHIP (see `matchesBusinessType`) rather than
  * hiding the moment somebody filters.
@@ -40,19 +55,33 @@
 export const ANY_BUSINESS = "Any business";
 
 export const BUSINESS_TYPES = [
+  "Service industry",
+  "Non-profit",
+  "Professional services",
+  "Agencies & software",
+  "Retail & hospitality",
+  ANY_BUSINESS,
+] as const;
+
+export type BusinessType = (typeof BUSINESS_TYPES)[number];
+
+/**
+ * The trade names D-153 retired as business types.
+ *
+ * Kept here — once — because two rules depend on knowing them: a trade may
+ * never come back as a chip (too many options, which is the whole decision),
+ * and every one of them must still be findable, which means it has to appear
+ * in some template's tags. `test/builder-template-library.test.mjs` asserts
+ * both, so a trade cannot creep back into the chip row and a segment cannot be
+ * remapped without the words following it into the search.
+ */
+export const RETIRED_TRADE_TYPES = [
   "Lawn & landscape",
   "Snow & ice",
   "Cleaning",
   "HVAC & plumbing",
   "Home services",
-  "Professional services",
-  "Agencies & software",
-  "Retail & hospitality",
-  "Non-profit",
-  ANY_BUSINESS,
 ] as const;
-
-export type BusinessType = (typeof BUSINESS_TYPES)[number];
 
 /** The "no filter" chip at the front of both rows. */
 export const ALL = "All";
@@ -90,13 +119,22 @@ export interface TemplateEntry {
   /** Shown before everything else, alphabetically among themselves. */
   featured?: boolean;
   /**
-   * Always last, whatever the sort says.
+   * THE empty-page card — first in the grid, top-left, and the footer button.
    *
-   * "Start from an empty page" is a card in the grid rather than a link under
-   * it — it is one of the things you can start from — but it is never the
-   * first thing offered.
+   * **D-153** (Brandon, 2026-09-17): *"we need to have the Blank Template as a
+   * default or the first option in the top left or even just a button on the
+   * bottom."* He asked for one of the two; the library does both, because they
+   * are two different people arriving: somebody scanning the grid sees it in
+   * the corner where their eye already is, and somebody who came in knowing
+   * they want a blank page does not have to read fourteen cards to find it.
+   *
+   * This REPLACES the `last` flag D-146 shipped, which forced the same card to
+   * the very end of the sort whatever else happened. `sortTemplates` now puts
+   * it first, `purposeChips` still leaves it out of the categories (an empty
+   * page is not a kind of document), and it is still searchable like anything
+   * else. At most one entry in a list carries this.
    */
-  last?: boolean;
+  blank?: boolean;
   /**
    * Build the picture. Called lazily, at most once per id (`makePreviewCache`),
    * and only for a card that has actually been scrolled to (`nextMounted`).
@@ -153,10 +191,18 @@ export function filterTemplates(list: TemplateEntry[], f: TemplateFilter = {}): 
     && (!f.purpose || f.purpose === ALL || e.purpose === f.purpose));
 }
 
-/** Featured first, then alphabetical; the "empty page" card always last. */
+/**
+ * The empty page FIRST, then featured, then alphabetical — D-153.
+ *
+ * "top left" is a sort rule, not a piece of CSS: the grid draws whatever this
+ * hands back in the order it hands it back, so the only way the empty card can
+ * stop being top-left is if this function changes. Break the first line of the
+ * comparator and `test/builder-template-library.test.mjs` goes red on every
+ * adapter that has an empty card.
+ */
 export function sortTemplates(list: TemplateEntry[]): TemplateEntry[] {
   return [...list].sort((a, b) => {
-    if (!!a.last !== !!b.last) return a.last ? 1 : -1;
+    if (!!a.blank !== !!b.blank) return a.blank ? -1 : 1;
     if (!!a.featured !== !!b.featured) return a.featured ? -1 : 1;
     return a.title.localeCompare(b.title);
   });
@@ -184,7 +230,7 @@ export function businessTypeChips(list: TemplateEntry[]): string[] {
 /** The purpose chips, in the order the catalogue lists them. */
 export function purposeChips(list: TemplateEntry[]): string[] {
   const out: string[] = [];
-  for (const e of list) if (!e.last && !out.includes(e.purpose)) out.push(e.purpose);
+  for (const e of list) if (!e.blank && !out.includes(e.purpose)) out.push(e.purpose);
   return [ALL, ...out];
 }
 
@@ -283,20 +329,22 @@ export function firstSentence(text: string): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The empty page — a card, and always the last one
+   The empty page — the FIRST card, and the footer button (D-153)
    ══════════════════════════════════════════════════════════════════════════ */
 
 /** The id every adapter gets back when the author chooses the empty page. */
 export const BLANK_TEMPLATE_ID = "__blank";
 
 /**
- * "Start from an empty page", as a card in the grid.
+ * "Start from an empty page", as the first card in the grid.
  *
- * It is one of the things you can start from, so it belongs in the grid and
- * not in a link underneath it — but §7 is emphatic that a blank page is never
- * the first offer, so it carries `last` and sits at the end whatever the sort
- * and whatever the filters. It is searchable like anything else ("empty",
- * "blank", "nothing"), which is how somebody who wants it finds it fast.
+ * D-153 moved it from the end of the list to the top-left corner and put a
+ * button for it in the footer as well. §7's "never open on a blank page" is
+ * still true and is a different statement: the builder still OPENS on the
+ * library, full of finished documents. Where the empty card sits inside that
+ * library is a question about finding it, and the answer Brandon gave is that
+ * it should be where you look first. It is searchable like anything else
+ * ("empty", "blank", "nothing").
  */
 export function blankEntry(over: Partial<TemplateEntry> = {}): TemplateEntry {
   return {
@@ -307,10 +355,35 @@ export function blankEntry(over: Partial<TemplateEntry> = {}): TemplateEntry {
     tags: ["blank", "empty", "nothing", "from scratch"],
     useCase: "Nothing on the page to begin with. You add every section yourself from the panel, which is the long way round unless you already know exactly what you want.",
     bestFor: "Anyone rebuilding something they have already written, or trying a shape none of the templates covers.",
-    last: true,
+    blank: true,
     preview: blankPreview,
     ...over,
   };
+}
+
+/**
+ * The empty-page entry in a catalogue, if it has one.
+ *
+ * Landing pages deliberately have none (a landing page with no form is not a
+ * landing page), so this returns null there and the footer button is simply
+ * not drawn — rather than drawn and disabled, which would be a button that
+ * exists to say no.
+ */
+export function blankEntryOf(list: TemplateEntry[]): TemplateEntry | null {
+  return list.find((e) => e.blank) || null;
+}
+
+/**
+ * What the footer's empty-page button says.
+ *
+ * The entry's OWN title, not a fixed string: the proposal builder's empty page
+ * really is empty and says "Start from an empty page", but the email's smallest
+ * legal send is a masthead and an unsubscribe footer ("Just the basics") and a
+ * website page starts with a banner ("Start from one section"). A button that
+ * promised an empty page and delivered two blocks would be the button lying.
+ */
+export function blankButtonLabel(list: TemplateEntry[]): string | null {
+  return blankEntryOf(list)?.title ?? null;
 }
 
 /** A picture of nothing: a sheet with a dashed outline where sections go. */
@@ -322,6 +395,97 @@ export function blankPreview(): TemplatePreview {
          align-items:center;justify-content:center;color:#94A3B8;font-size:26px;letter-spacing:.02em}`,
     html: `<div class="e">Your page starts here</div>`,
   };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Select, then load — D-153
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * **D-153** (Brandon, 2026-09-17): *"then the templates should be select and
+ * have a button for load xyz template instead of click automatically loads."*
+ *
+ * D-146's grid opened a template the instant a card was clicked. Every other
+ * grid of choices in the Portal — and every file dialog anyone has ever used —
+ * lets you point at a thing, look at it, then commit. Loading on the first
+ * click means a mis-aimed click throws away whatever the author had started,
+ * and it means the hover panel (the use case, the "best for" line) can only
+ * ever be read by NOT choosing.
+ *
+ * So: one gesture selects, a second commits. The second can be the footer's
+ * "Load …" button, a double-click, or Enter on the card that is already
+ * selected. There is no path through this function where a single click loads,
+ * which is the mutation the tests break on purpose.
+ */
+export type CardGesture = "click" | "doubleClick" | "enter";
+
+export interface GestureResult {
+  /** The card that is selected afterwards. Always the one gestured at. */
+  select: string;
+  /** Whether the adapter's `onPick` fires. */
+  load: boolean;
+}
+
+export function cardGesture(
+  gesture: CardGesture,
+  id: string,
+  selectedId: string | null,
+): GestureResult {
+  if (gesture === "doubleClick") return { select: id, load: true };
+  // Enter loads only what is ALREADY selected. Arrowing onto a card and
+  // pressing Enter in one motion would otherwise load it, which is the same
+  // "one gesture commits" this decision removed — just with a keyboard.
+  if (gesture === "enter") return { select: id, load: selectedId === id };
+  return { select: id, load: false };
+}
+
+/** What the footer's primary button says. Null when nothing is selected yet. */
+export function loadButtonLabel(entry: TemplateEntry | null | undefined): string | null {
+  return entry ? `Load ${entry.title}` : null;
+}
+
+/** The selected entry, looked up in what is currently on screen. */
+export function selectedEntry(
+  shown: TemplateEntry[],
+  selectedId: string | null,
+): TemplateEntry | null {
+  if (!selectedId) return null;
+  return shown.find((e) => e.id === selectedId) || null;
+}
+
+/**
+ * The selection after the grid changed under it.
+ *
+ * A card that a search or a chip has just filtered away cannot stay selected —
+ * the footer would offer to load something nobody can see. Dropped, not moved
+ * to a neighbour: silently selecting a different template than the one the
+ * author picked is worse than selecting none.
+ */
+export function keepSelection(
+  shown: TemplateEntry[],
+  selectedId: string | null,
+): string | null {
+  return selectedId && shown.some((e) => e.id === selectedId) ? selectedId : null;
+}
+
+/**
+ * Arrow keys move the selection between cards.
+ *
+ * `delta` is +1 / -1 for left and right and ±`perRow` for up and down; the
+ * component knows how many cards are on a row and this knows nothing about
+ * pixels. Clamped at both ends rather than wrapping: arrowing off the last
+ * card and landing back on the first is how you lose your place.
+ */
+export function moveSelection(
+  shown: TemplateEntry[],
+  selectedId: string | null,
+  delta: number,
+): string | null {
+  if (!shown.length) return null;
+  const at = selectedId ? shown.findIndex((e) => e.id === selectedId) : -1;
+  if (at < 0) return shown[delta < 0 ? shown.length - 1 : 0].id;
+  const next = Math.min(shown.length - 1, Math.max(0, at + delta));
+  return shown[next].id;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

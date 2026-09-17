@@ -160,6 +160,11 @@ export interface LandingTemplate {
   key: string;
   name: string;
   purpose: string;
+  /**
+   * Which SEGMENTS this is for, from templateLibraryModel.BUSINESS_TYPES
+   * (D-153: segments, not trades). "Any business" answers every chip; the
+   * trade words live in `tags`, where the search reads them.
+   */
   businessTypes: string[];
   tags: string[];
   useCase: string;
@@ -242,8 +247,9 @@ export const LANDING_TEMPLATES: LandingTemplate[] = [
     key: "showcase",
     name: "Show the work",
     purpose: "Showcase",
-    businessTypes: ["Lawn & landscape", "Home services", "Cleaning"],
-    tags: ["gallery", "photos", "portfolio", "before and after", "work"],
+    businessTypes: ["Service industry"],
+    tags: ["gallery", "photos", "portfolio", "before and after", "work",
+      "lawn & landscape", "home services", "cleaning"],
     useCase: "Photographs of what you have done, a quote from a customer, then the form. For trades where the work sells itself as soon as somebody can see it.",
     bestFor: "Landscaping, building, cleaning and anything else with a striking before and after.",
     build: (business, accent) => {
