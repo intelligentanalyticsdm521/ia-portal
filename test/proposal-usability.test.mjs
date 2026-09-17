@@ -1,0 +1,567 @@
+// test/proposal-usability.test.mjs — the 2026-09-16 user test's findings,
+// pinned so they cannot come back.
+//
+// Every describe block below names the finding it answers, from
+// `overnight-report/BUILDER_USER_TEST_2026-09-16.md` §7. The rule these tests
+// follow is the platform's own: **assert the wanted output APPEARS**, not that
+// an error is absent. "No exception was thrown" is what the send that sent no
+// email reported for three weeks.
+//
+// MUTATION CHECKS — each one was made red on purpose and then put back:
+//   · make cadenceOf ignore the price LABEL            → "per push" rows red
+//   · make fmtMoney use toFixed(2)                     → the $1,200.00 row red
+//   · make reconcileDetails skip tokens with no value  → D-03's whole block red
+//   · make writeDetails mark the section "customer"    → the blanks-count row red
+//   · drop the `has("totals")` guard from
+//     withTotalBeforeSignature                         → the "no second total" row red
+import { test, describe } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+import { deserialise, emptyDocument, makeSection, makeWidget, serialise } from "../src/builder/model.ts";
+import { documentTotals } from "../src/builder/totals.ts";
+import { unfilledTokens } from "../src/builder/merge.ts";
+import { templateByKey, withTotalBeforeSignature } from "../src/builder/templates.ts";
+import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
+import {
+  basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
+} from "../src/components/oliver/ProposalCatalogPicker.tsx";
+import {
+  DETAILS_KEY, detailsMerge, documentLogo, packDetail, parseMoney, plainLabel,
+  readDetails, reconcileDetails, tokensUsedBy, writeDetails,
+} from "../src/builder/proposal/documentDetails.ts";
+
+
+const BUILDER = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+const LIST = readFileSync(new URL("../src/pages/oliver/OliverQuotesProposalsPage.tsx", import.meta.url), "utf8");
+const RECORD = readFileSync(new URL("../src/pages/oliver/OliverProposalsPage.tsx", import.meta.url), "utf8");
+
+/** The dev catalogue's six Snow Removal tiers, as the API really answers. */
+const SNOW = {
+  offering_id: "snow", name: "Snow Removal",
+  description: "Commercial lot clearing, priced by snowfall depth.",
+  features_json: JSON.stringify(["Automatic dispatch at your trigger depth", "Salt and de-icing included"]),
+  prices: [
+    { price_id: "p0", label: "Single visit", pricing_model: "one_time", unit_amount: 525 },
+    { price_id: "p1", label: "1-2 inch push", pricing_model: "recurring", unit_amount: 400, recurring_interval: "month", recurring_interval_count: 1 },
+    { price_id: "p2", label: "2-3 inch push", pricing_model: "recurring", unit_amount: 625, recurring_interval: "month", recurring_interval_count: 1 },
+    { price_id: "p5", label: "8+ inch push", pricing_model: "recurring", unit_amount: 1200, recurring_interval: "month", recurring_interval_count: 1 },
+  ],
+};
+const MOWING = {
+  offering_id: "mow", name: "Weekly Mowing", description: "Cut, trim, edge, blow.",
+  prices: [{ price_id: "m0", label: null, pricing_model: "one_time", unit_amount: 65 }],
+};
+const PLATFORM = {
+  offering_id: "plat", name: "Platform", description: "A plan.",
+  prices: [{ price_id: "x", label: null, pricing_model: "recurring", unit_amount: 549, recurring_interval: "month", recurring_interval_count: 1 }],
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-09 — the rate card printed the wrong billing basis
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-09 · the basis on a priced line is the one the catalogue carries", () => {
+  test("a per-push tier says PER PUSH, even though it bills monthly", () => {
+    // This is the whole defect. The tiers really are stored recurring/monthly,
+    // so the old reading was not a bug in the data — but the price's own label
+    // says what the customer is buying, and "billed monthly" on a per-push
+    // line of a signed snow contract is wrong on the paper.
+    const tier = SNOW.prices.find((p) => p.label === "2-3 inch push");
+    assert.equal(cadenceOf(tier), "per push");
+    assert.equal(basisOf(tier), "per push");
+  });
+
+  test("the words \"billed monthly\" are gone from the vocabulary", () => {
+    for (const price of SNOW.prices) {
+      assert.notEqual(cadenceOf(price), "billed monthly");
+      assert.ok(!String(basisOf(price)).startsWith("billed "),
+        `${price.label} still says "${basisOf(price)}"`);
+    }
+  });
+
+  test("a genuinely monthly plan still says monthly, in plain words", () => {
+    assert.equal(cadenceOf(PLATFORM.prices[0]), "monthly");
+  });
+
+  test("a single-visit price says per visit", () => {
+    assert.equal(cadenceOf(SNOW.prices[0]), "per visit");
+  });
+
+  test("a plain one-off with no unit in its label bills ONE-TIME, never \"Each visit\"", () => {
+    // "Each visit" was invented by the builder for a price that says nothing
+    // of the kind, and it went onto rate cards as fact.
+    assert.equal(cadenceOf(MOWING.prices[0]), null);
+    assert.equal(basisOf(MOWING.prices[0]), "one-time");
+    assert.ok(!/\?\?\s*"Each visit"/.test(BUILDER), "the invented fallback is still in the builder");
+    assert.ok(BUILDER.includes("basis: basisOf(price),"), "the rate card does not ask the catalogue for the basis");
+  });
+
+  test("the label reader knows the units a service business prices in", () => {
+    assert.equal(unitFromLabel("Ice melt application"), "per application");
+    assert.equal(unitFromLabel("Per cubic yard installed"), "per cubic yard");
+    assert.equal(unitFromLabel("Seasonal contract"), "per season");
+    assert.equal(unitFromLabel("Standard"), null);
+  });
+
+  test("the cadence reaches the priced line the builder writes", () => {
+    const pick = buildPick(SNOW, SNOW.prices[2]);
+    assert.equal(pick.parts.cadence, "per push");
+    assert.equal(pick.parts.name, "Snow Removal — 2-3 inch push");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-29 — money formatted inconsistently
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-29 · money has thousands separators everywhere", () => {
+  test("$1,200.00, not $1200.00", () => {
+    assert.equal(fmtMoney(1200), "$1,200.00");
+    assert.equal(fmtMoney(625), "$625.00");
+    assert.equal(fmtMoney(0), "$0.00");
+  });
+
+  test("the rate card is written with the formatter, not toFixed", () => {
+    // The exact line that printed $1200.00 beside $400.00 and $625.00 on the
+    // same signed rate card.
+    assert.ok(!/\$\$\{Number\([^)]*\)\.toFixed\(2\)\}/.test(BUILDER),
+      "a `$${n.toFixed(2)}` money string is back in the proposal builder");
+    assert.ok(BUILDER.includes("rate: fmtMoney(pick.parts.unit_price)"),
+      "the rate card no longer formats its own money");
+  });
+
+  test("a price typed on a card reads back as a number, whatever it was typed as", () => {
+    assert.equal(parseMoney("$1,200.00"), 1200);
+    assert.equal(parseMoney("549"), 549);
+    assert.equal(parseMoney(""), 0);
+    assert.equal(parseMoney("nonsense"), 0);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-01 / D-10 — the tier cards
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-01 and D-10 · a tier card has a catalogue and a real price field", () => {
+  test("the comparison block has the SAME catalogue picker the pricing table has", () => {
+    assert.ok(BUILDER.includes('label="Add a plan from your catalogue"'),
+      "the tier cards still have no catalogue picker");
+    // One picker component, three widgets. A second copy of the picker would
+    // be a second mechanism for "call Products & Services".
+    assert.equal((BUILDER.match(/function CatalogPicker\(/g) || []).length, 1);
+  });
+
+  test("every card field is a real input with a placeholder, in tab order name → price → per → was", () => {
+    const order = ["name", "price", "per", "was"]
+      .map((f) => BUILDER.indexOf(`data-card-field={\`\${i}.${f}\`}`));
+    assert.ok(order.every((i) => i > 0), "a card field is missing from the inspector");
+    assert.deepEqual([...order].sort((a, b) => a - b), order,
+      "the card fields are not in source order, so Tab does not visit them in that order");
+    // The price is the one that measured 0px on the canvas. It has a
+    // placeholder AND a minimum width here.
+    const priceField = BUILDER.slice(BUILDER.indexOf("data-card-field={`${i}.price`}") - 200,
+      BUILDER.indexOf("data-card-field={`${i}.price`}") + 120);
+    assert.ok(priceField.includes("minWidth: 90"), "the price field has no minimum width");
+    assert.ok(priceField.includes('placeholder="$0.00"'), "the price field has no placeholder");
+  });
+
+  test("\"Use this plan\" exists and says what it does to the total", () => {
+    assert.ok(BUILDER.includes("Use this plan"));
+    assert.ok(BUILDER.includes('makeWidget("priced_line"'),
+      "the chosen plan does not become a priced line, so the total stays $0.00");
+  });
+
+  test("the honest note is still there, because it is still true", () => {
+    // Cards never sum. That rule did not change and the sentence must not be
+    // quietly dropped once a plan is chosen.
+    assert.ok(BUILDER.includes("Cards never add into the total"));
+    assert.ok(!WIDGETS_BY_KIND.comparison_cards.controls.some((c) => c.key === "price"));
+  });
+
+  test("a card built from a catalogue price carries the name, the money and the cadence", () => {
+    const pick = buildPick(SNOW, SNOW.prices[3]);
+    assert.equal(fmtMoney(pick.parts.unit_price), "$1,200.00");
+    assert.equal(pick.parts.cadence, "per push");
+    assert.ok(pick.parts.features.length >= 2, "the product's own features did not reach the card");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-03 / D-35 — every blank is a field
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function agreementDoc() {
+  const s = makeSection({ label: "Terms", numbered: true });
+  s.columns[0].widgets = [
+    makeWidget("paragraph", {
+      text: "The standard service trigger is {{snow_trigger}} of accumulated snow. "
+        + "The term runs {{contract.start_date}} to {{contract.end_date}} for {{customer.name}}.",
+    }),
+    makeWidget("callout", {
+      panels: [{ title: "Severe events", tone: "warn", body: "Storms over {{severe_event_threshold}} are quoted first." }],
+    }),
+  ];
+  return { ...emptyDocument(), sections: [s] };
+}
+
+describe("D-03 · every blank the document carries is a field somewhere", () => {
+  const AUTO = { "customer.name": "Hope Ministries" };
+
+  test("a token the page uses and the customer pick cannot answer gets a row", () => {
+    const rows = reconcileDetails(agreementDoc(), AUTO);
+    const tokens = rows.map((r) => r.token);
+    assert.deepEqual(tokens, ["snow_trigger", "contract.start_date", "contract.end_date", "severe_event_threshold"]);
+  });
+
+  test("a token the customer pick ALREADY answers gets no row", () => {
+    const rows = reconcileDetails(agreementDoc(), AUTO);
+    assert.ok(!rows.some((r) => r.token === "customer.name"),
+      "the author is being asked to type the customer's own name");
+  });
+
+  test("NO ROW IS EVER LABELLED WITH A RAW TOKEN", () => {
+    // Two of the four names the failed Send printed were `snow_trigger` and
+    // `severe_event_threshold`. That is the sentence Brandon read out.
+    for (const r of reconcileDetails(agreementDoc(), AUTO)) {
+      assert.notEqual(r.label, r.token, `${r.token} is still shown as itself`);
+      assert.ok(!/[_.]/.test(r.label), `"${r.label}" still looks like a token`);
+      assert.ok(/^[A-Z]/.test(r.label), `"${r.label}" does not read like a label`);
+    }
+  });
+
+  test("the snow pack's two tokens get a contractor's words and a line of help", () => {
+    assert.equal(plainLabel("snow_trigger"), "Trigger depth");
+    assert.equal(plainLabel("severe_event_threshold"), "Severe-event threshold");
+    assert.match(packDetail("snow_trigger").help, /inches/);
+  });
+
+  test("an unknown token still never reaches a screen raw", () => {
+    assert.equal(plainLabel("gate_access_window"), "Gate access window");
+  });
+
+  test("the platform's own tags keep the words the platform already uses", () => {
+    assert.equal(plainLabel("contract.start_date"), "Service term starts");
+  });
+
+  test("a typed value fills the token, and survives save → close → reopen", () => {
+    const rows = reconcileDetails(agreementDoc(), AUTO)
+      .map((r) => (r.token === "snow_trigger" ? { ...r, value: "2 inches" } : r));
+    const saved = writeDetails(agreementDoc(), rows);
+    const reopened = deserialise(JSON.parse(serialise(saved)));
+    assert.equal(detailsMerge(readDetails(reopened))["snow_trigger"], "2 inches");
+  });
+
+  test("the store is section META — not a section, not a widget, so nothing can land in it", () => {
+    // It WAS a hidden `visibility:"internal"` section, and a widget added with
+    // nothing selected goes to the LAST section (D-11) — so three priced
+    // property blocks landed inside the store, were counted as internal, and
+    // vanished from the customer's copy, the PDF and the total. Caught by
+    // driving it. The store is `meta` now, which nothing can be appended to.
+    // TWO sections, deliberately: with one, "first" and "last" are the same
+    // place and this test would pass with the store back where it broke the
+    // document.
+    const base = agreementDoc();
+    const acceptance = makeSection({ label: "Acceptance" });
+    acceptance.columns[0].widgets = [makeWidget("signature", { heading: "Acceptance" })];
+    const two = { ...base, sections: [...base.sections, acceptance] };
+
+    const saved = writeDetails(two, reconcileDetails(two, AUTO));
+    assert.equal(saved.sections.length, two.sections.length,
+      "writing a detail added a section to the document");
+    assert.ok(Array.isArray(saved.sections[0].meta?.[DETAILS_KEY]),
+      "the store is not on the FIRST section");
+    assert.ok(!saved.sections.at(-1).meta?.[DETAILS_KEY],
+      "the store is on the LAST section, which is where an unselected widget is appended (D-11)");
+    assert.ok(!saved.sections.some((s) => s.visibility === "internal"),
+      "the store is a section again");
+    // And it is never counted as a blank on the page.
+    const texts = [];
+    for (const s of saved.sections) {
+      if (s.visibility !== "customer") continue;
+      for (const c of s.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
+    }
+    assert.equal(unfilledTokens(texts, AUTO).length, 4);
+  });
+
+  test("there is ONE store however many sections the document has", () => {
+    const doc = agreementDoc();
+    const second = makeSection({ label: "Second" });
+    second.meta = { [DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "stale" }] };
+    const withStale = { ...doc, sections: [...doc.sections, second] };
+    const saved = writeDetails(withStale, [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
+    const stores = saved.sections.filter((s) => s.meta?.[DETAILS_KEY]);
+    assert.equal(stores.length, 1);
+    assert.equal(readDetails(saved)[0].value, "2 inches");
+  });
+
+  test("filling everything in empties the blanks counter — the wanted output APPEARS", () => {
+    const filled = { ...AUTO, snow_trigger: "2 inches", "contract.start_date": "1 November 2026", "contract.end_date": "31 March 2027", severe_event_threshold: "8 inches" };
+    const texts = [];
+    for (const s of agreementDoc().sections) {
+      for (const c of s.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
+    }
+    assert.deepEqual(unfilledTokens(texts, filled), []);
+  });
+
+  test("a document nobody has typed a detail into is the document it always was", () => {
+    const doc = agreementDoc();
+    assert.equal(serialise(writeDetails(doc, [])), serialise(doc));
+  });
+
+  test("a value typed for a token since deleted from the page is KEPT, not thrown away", () => {
+    // The author types a plowing rate, then deletes the paragraph that used it
+    // and undoes their mind. Throwing the number away because the token left
+    // the page for one keystroke is how work is lost.
+    const withValue = writeDetails(agreementDoc(), [{ token: "plow_rate", label: "Plowing rate", value: "$625" }]);
+    assert.equal(reconcileDetails(withValue, AUTO).find((r) => r.token === "plow_rate")?.value, "$625");
+  });
+
+  test("but an EMPTY row for a token that has left the page is dropped", () => {
+    const withEmpty = writeDetails(agreementDoc(), [{ token: "gate_code_note", label: "Gate code note", value: "" }]);
+    assert.ok(!reconcileDetails(withEmpty, AUTO).some((r) => r.token === "gate_code_note"));
+  });
+
+  test("tokensUsedBy reads the page and not the store", () => {
+    const saved = writeDetails(agreementDoc(), [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
+    assert.ok(tokensUsedBy(saved).includes("snow_trigger"));
+    assert.equal(tokensUsedBy(saved).filter((t) => t === "snow_trigger").length, 1);
+  });
+});
+
+describe("D-35 · the blanks counter names them and jumps", () => {
+  test("each blank is a button carrying its token", () => {
+    assert.ok(BUILDER.includes("data-blank-chip={tk}"), "the counter is still a plain div");
+    assert.ok(BUILDER.includes("onClick={() => { setFocusToken(tk); scrollToToken(tk); }}"));
+  });
+
+  test("the chip is labelled in plain words, not with the token", () => {
+    assert.ok(/data-blank-chip=\{tk\}[\s\S]{0,900}\{plainLabel\(tk,/.test(BUILDER));
+  });
+
+  test("the refusal message names them in plain words too", () => {
+    assert.ok(BUILDER.includes("blanks.slice(0, 4).map((t) => plainLabel(t, labels))"));
+    assert.ok(BUILDER.includes("They are in the Details box on the left"),
+      "the refusal still does not say where the fields are");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-04 / D-36 — the way back in
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-04 · a saved draft opens in the builder from the row", () => {
+  test("the row carries an Edit that opens the builder on the document", () => {
+    assert.ok(LIST.includes("data-edit-proposal={r.id}"), "there is still no Edit on the row");
+    assert.ok(LIST.includes("setEditProposalId(r.id)"));
+    assert.ok(LIST.includes("proposalId={editProposalId}"),
+      "Edit opens a NEW proposal rather than the one on the row");
+  });
+
+  test("the record modal has it too, and says no revision is created", () => {
+    assert.ok(RECORD.includes('data-open-in-builder="1"'));
+    assert.ok(RECORD.includes("No revision is created — this is the document itself."));
+  });
+
+  test("\"+ Revise in the builder\" is refused on a draft", () => {
+    assert.ok(RECORD.includes('proposalSummary?.status === "draft"'));
+    assert.ok(RECORD.includes("there is no version to revise"));
+  });
+});
+
+describe("D-36 · Save draft stays in the builder, Save and close is its own button", () => {
+  test("both buttons exist and only one of them closes", () => {
+    assert.ok(BUILDER.includes('data-save-draft="1"'));
+    assert.ok(BUILDER.includes('data-save-close="1"'));
+    assert.ok(BUILDER.includes("onClick={() => save(false, false)}"), "Save draft still closes the builder");
+    assert.ok(BUILDER.includes("onClick={() => save(false, true)}"));
+  });
+
+  test("staying open SAYS so — a tick, not silence", () => {
+    assert.ok(BUILDER.includes('data-saved-tick="1"'));
+    assert.ok(BUILDER.includes("You are still in the builder."));
+  });
+
+  test("saving twice patches one row rather than making a second proposal (D-25)", () => {
+    assert.ok(BUILDER.includes("let id = liveId;"), "the second save still POSTs a new proposal");
+    assert.ok(BUILDER.includes("setLiveId(id);"));
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-06 / D-07 — the money on the document
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-07 · the grand total is above the signature", () => {
+  const priced = () => {
+    const money = makeSection({ label: "Price" });
+    money.columns[0].widgets = [makeWidget("priced_line", { name: "Snow", quantity: 1, unit_price: 1875 })];
+    const accept = makeSection({ label: "Acceptance" });
+    accept.columns[0].widgets = [makeWidget("signature", { heading: "Acceptance" })];
+    return { ...emptyDocument(), sections: [money, accept] };
+  };
+
+  test("a totals widget lands immediately BEFORE the signature", () => {
+    const doc = withTotalBeforeSignature(priced());
+    const widgets = doc.sections.at(-1).columns[0].widgets.map((w) => w.kind);
+    assert.deepEqual(widgets, ["totals", "signature"]);
+  });
+
+  test("and it prints a real number, not $0.00", () => {
+    assert.equal(documentTotals(withTotalBeforeSignature(priced())).total, 1875);
+  });
+
+  test("a document that already has a total does NOT grow a second one", () => {
+    const doc = priced();
+    const t = makeSection({ label: "Your total" });
+    t.columns[0].widgets = [makeWidget("totals", { heading: "Your total" })];
+    doc.sections.splice(1, 0, t);
+    const after = withTotalBeforeSignature(doc);
+    const totals = after.sections.flatMap((s) => s.columns.flatMap((c) => c.widgets)).filter((w) => w.kind === "totals");
+    assert.equal(totals.length, 1);
+  });
+
+  test("a document with no signature is untouched", () => {
+    const doc = { ...emptyDocument(), sections: [makeSection({ label: "Only prose" })] };
+    assert.equal(serialise(withTotalBeforeSignature(doc)), serialise(doc));
+  });
+
+  test("every shipped template that can be signed carries a total above the signature", () => {
+    for (const key of ["service_agreement", "platform_proposal", "simple_proposal", "maintenance_plan"]) {
+      const t = templateByKey(key);
+      if (!t) continue;
+      const doc = withTotalBeforeSignature(t.build());
+      const flat = doc.sections.flatMap((s) => s.columns.flatMap((c) => c.widgets)).map((w) => w.kind);
+      if (!flat.includes("signature")) continue;
+      assert.ok(flat.indexOf("totals") >= 0, `${key} has no total anywhere`);
+      assert.ok(flat.indexOf("totals") < flat.lastIndexOf("signature"),
+        `${key} prints its total AFTER the signature`);
+    }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-37 — the sections that shipped empty
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-37 · a template's sections arrive with real content", () => {
+  const doc = () => templateByKey("service_agreement").build();
+
+  test("\"Agreement at a glance\" is not an empty paragraph and three blank rows", () => {
+    const section = doc().sections.find((s) => s.label === "Agreement at a glance");
+    const [para, facts] = section.columns[0].widgets;
+    assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
+    const rows = facts.props.rows;
+    assert.ok(rows.length >= 5);
+    assert.ok(rows.every((r) => String(r.label).trim() && String(r.value).trim()),
+      "a key-fact row is still blank");
+  });
+
+  test("the glance rows are MERGE FIELDS, so they fill from the customer pick", () => {
+    const section = doc().sections.find((s) => s.label === "Agreement at a glance");
+    const values = section.columns[0].widgets[1].props.rows.map((r) => r.value).join(" ");
+    assert.match(values, /\{\{customer\.name\}\}/);
+    assert.match(values, /\{\{property\.address\}\}/);
+    assert.match(values, /\{\{snow_trigger\}\}/);
+  });
+
+  test("a callout with a title has a body — a heading is not an explanation", () => {
+    const pricing = doc().sections.find((s) => s.label === "Pricing schedule");
+    const callout = pricing.columns[0].widgets.find((w) => w.kind === "callout");
+    for (const panel of callout.props.panels) {
+      assert.ok(String(panel.title).trim(), "a panel has no title");
+      assert.ok(String(panel.body).trim().length > 40, `"${panel.title}" still has no body`);
+    }
+  });
+
+  test("\"Property service plan\" is not a bare heading that prints as an empty page", () => {
+    const plan = doc().sections.find((s) => s.label === "Property service plan");
+    const rows = plan.columns[0].widgets[0].props.rows;
+    assert.ok(rows.length >= 5, "the service plan still ships with no rows");
+    assert.ok(rows.every((r) => String(r.label).trim()), "a plan row has no label");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-14 / D-15 / D-33 / D-39
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("D-14 · a proposal can be deleted, and the button says which", () => {
+  test("there is a Delete on the row", () => {
+    assert.ok(LIST.includes("data-delete-proposal={r.id}"));
+    assert.ok(LIST.includes("api.del(`/proposals/${row.id}`)"));
+  });
+
+  test("a sent or accepted document ARCHIVES, and the word on the button says so", () => {
+    assert.ok(LIST.includes('const CAN_HARD_DELETE = new Set(["draft", "expired"])'));
+    assert.ok(LIST.includes('{CAN_HARD_DELETE.has(r.status) ? "Delete" : "Archive"}'));
+  });
+
+  test("nothing is destroyed without a confirm that names the document", () => {
+    assert.ok(LIST.includes('data-confirm-delete="1"'));
+    assert.ok(LIST.includes("`${confirmDelete.title} · ${confirmDelete.number}`"));
+  });
+
+  test("a delete that fails SAYS so rather than quietly leaving the row", () => {
+    assert.ok(LIST.includes("setFlash(`That failed — ${(e as Error).message}`)"));
+  });
+});
+
+describe("D-15 · a title edit persists", () => {
+  test("a revision save patches the PROPOSAL's title, which is where a title lives", () => {
+    assert.ok(BUILDER.includes("await api.patch(`/proposals/${revision.proposalId}`, { title: title.trim() })"));
+  });
+
+  test("and a title that cannot be saved is an error, not a silent revert", () => {
+    assert.ok(BUILDER.includes("the title could not be saved"));
+  });
+});
+
+describe("D-33 · one control per thing", () => {
+  test("\"Which location\" is declared ONCE — by the adapter, which knows the locations", () => {
+    for (const kind of ["property_block", "property_plan"]) {
+      assert.ok(!WIDGETS_BY_KIND[kind].controls.some((c) => c.key === "locationId"),
+        `${kind} still declares an empty locationId select, so the label prints twice`);
+    }
+    assert.equal((BUILDER.match(/<span style=\{LBL\}>Which location<\/span>/g) || []).length, 1);
+  });
+
+  test("no proposal widget declares a select with no options to fill it", () => {
+    for (const kind of ["priced_line", "pricing_table", "comparison_cards", "totals",
+      "property_block", "property_plan", "key_facts", "clauses", "doc_header", "signature"]) {
+      for (const c of WIDGETS_BY_KIND[kind].controls || []) {
+        if (c.type !== "select") continue;
+        assert.ok(c.options?.length, `${kind}.${c.key} is a select with nothing in it`);
+      }
+    }
+  });
+});
+
+describe("D-39 · the title band has a logo control", () => {
+  test("the three choices are there: the brand logo, none, or a picture", () => {
+    assert.ok(BUILDER.includes('data-logo="brand"'));
+    assert.ok(BUILDER.includes('data-logo="none"'));
+    assert.ok(BUILDER.includes('data-logo-upload="1"'));
+  });
+
+  test("the widget carries the choice, so it saves with the document", () => {
+    assert.ok("logoUrl" in WIDGETS_BY_KIND.doc_header.defaults);
+  });
+
+  test("documentLogo answers the three cases", () => {
+    const withLogo = (v) => {
+      const s = makeSection({ label: "Title" });
+      s.columns[0].widgets = [makeWidget("doc_header", { logoUrl: v })];
+      return { ...emptyDocument(), sections: [s] };
+    };
+    assert.equal(documentLogo(withLogo("")), "");
+    assert.equal(documentLogo(withLogo("none")), "none");
+    assert.equal(documentLogo(withLogo("data:image/png;base64,AAA")), "data:image/png;base64,AAA");
+    assert.equal(documentLogo(emptyDocument()), "");
+  });
+
+  test("an upload larger than the cap is refused in words, not by a failed save", () => {
+    assert.ok(BUILDER.includes("200 * 1024"));
+    assert.ok(BUILDER.includes("larger than 200 KB"));
+  });
+});

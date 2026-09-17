@@ -530,6 +530,15 @@ export function ProposalDetailDrawer({
   // the same URL — the authenticated route cannot be reached from an <a href>,
   // and a second PDF endpoint would be a second PDF.
   const [publicToken, setPublicToken] = useState<string | null>(null);
+  /**
+   * D-04 — the builder, opened on the DOCUMENT, from the record.
+   *
+   * This modal had Close · Open the PDF · Overview · Revisions · Payment
+   * splits and no Edit at all, so the only route back into an unsent draft was
+   * the Revisions tab's "+ Revise in the builder" — which creates a revision.
+   * A draft nobody has seen has nothing to revise.
+   */
+  const [editingDocument, setEditingDocument] = useState(false);
 
   // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
   const parentTotalCents = proposalSummary
@@ -682,6 +691,40 @@ export function ProposalDetailDrawer({
       subtitle={proposalSummary?.proposal_number ?? proposalId}
       width="xl"
     >
+      {/* ── The way back into the document (D-04) ─────────────────────────
+          First thing in the drawer, because "where did my proposal go?" is the
+          question this screen was answering wrongly. It opens the SAME builder
+          the document was written in, on the document — no revision. */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12, flexWrap: "wrap" }}>
+        <button
+          type="button"
+          data-open-in-builder="1"
+          onClick={() => setEditingDocument(true)}
+          title={proposalSummary?.status === "draft"
+            ? "Open this draft in the builder and carry on where you left off"
+            : "Open the document in the builder. Nothing changes for the customer until you send an update."}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6, border: "none", borderRadius: 4,
+            padding: "8px 14px", fontSize: 12, fontWeight: 700, color: "#fff",
+            background: "#EF6C33", cursor: "pointer",
+          }}
+        >
+          {proposalSummary?.status === "draft" ? "Edit in the builder" : "Open in the builder"}
+        </button>
+        <span style={{ fontSize: 11, color: "#5A7A8A" }}>
+          No revision is created — this is the document itself.
+        </span>
+      </div>
+
+      {editingDocument && (
+        <ProposalBuilder
+          api={{ get: api.get, post: api.post, patch: api.patch }}
+          proposalId={proposalId}
+          onClose={() => { setEditingDocument(false); onChanged(); }}
+          onSaved={(msg) => { setEditingDocument(false); setRevsNote(msg); onChanged(); }}
+        />
+      )}
+
       {/* ── Signatures (§8 item 6) ─────────────────────────────────────────
           Who signed, when, from where, to which wording, against which
           version — and the business's own countersign, which is a SECOND row
@@ -905,13 +948,17 @@ export function ProposalDetailDrawer({
             <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal" style={{ margin: 0 }}>
               Revisions
             </h3>
+            {/* D-04/D-21 — a DRAFT has nothing to revise, and this was the
+                only way back into one. It is refused here and in the API. */}
             <Button
               variant="primary"
               onClick={startRevision}
-              disabled={isPaused || !!creatingRevision}
-              title={isPaused
-                ? "Cannot add a revision while paused for payment"
-                : "Open this document in the builder as a new version. Nothing changes for the customer until you send it."}
+              disabled={isPaused || !!creatingRevision || proposalSummary?.status === "draft"}
+              title={proposalSummary?.status === "draft"
+                ? "This one has not been sent yet, so there is no version to revise. Use “Edit in the builder” above and change it directly."
+                : isPaused
+                  ? "Cannot add a revision while paused for payment"
+                  : "Open this document in the builder as a new version. Nothing changes for the customer until you send it."}
             >
               {creatingRevision ? "Opening…" : "+ Revise in the builder"}
             </Button>

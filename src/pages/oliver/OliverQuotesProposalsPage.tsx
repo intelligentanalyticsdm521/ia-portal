@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { FileText, ScrollText } from "lucide-react";
+import { FileText, Pencil, ScrollText, Trash2 } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DataTable, EmptyState, FilterBar, PageHeader, type Column } from "../../components/oliver/ui";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
@@ -57,7 +57,25 @@ const STATUS_PILL: Record<string, { label: string; bg: string; color: string }> 
 };
 
 const fmtMoney = (n?: number | null) =>
-  `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  `$${Number(n ?? 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * Which documents go for good, and which are archived instead (D-14).
+ *
+ * A draft nobody has seen is the author's to destroy. A document that has been
+ * sent, viewed, accepted or invoiced is a record of what was offered and what
+ * was agreed, so "Delete" on it archives: off the list, still in the books.
+ * The button says which, before it is pressed.
+ */
+const CAN_HARD_DELETE = new Set(["draft", "expired"]);
+
+const rowBtn = (danger: boolean): React.CSSProperties => ({
+  display: "inline-flex", alignItems: "center", gap: 4,
+  border: `1px solid ${danger ? "#FECACA" : "#DBE7ED"}`,
+  background: "#fff", borderRadius: 4, padding: "3px 8px",
+  fontSize: 11, fontWeight: 600, cursor: "pointer",
+  color: danger ? "#B91C1C" : "#1A7DB5",
+});
 
 export function OliverQuotesProposalsPage() {
   const insightsPayload = useProductInsightsPayload("oliver").payload;
@@ -79,6 +97,11 @@ export function OliverQuotesProposalsPage() {
   // two — see openProposalBuilder below).
   const [detail, setDetail] = useState<null | { kind: "quote" | "proposal"; id: string }>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  /** D-04 — the builder, opened straight off the row. */
+  const [editProposalId, setEditProposalId] = useState<string | null>(null);
+  /** D-14 — nothing is destroyed without being named first. */
+  const [confirmDelete, setConfirmDelete] = useState<Row | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -224,6 +247,53 @@ export function OliverQuotesProposalsPage() {
       sortable: true,
       sortAccessor: (r) => r.createdAt,
       render: (r) => <span style={{ fontSize: 12, color: "#5A7A8A" }}>{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : "—"}</span>,
+    },
+    {
+      // D-04 and D-14 — the way back in, and the way out.
+      //
+      // Before this the row opened a record modal with Signatures, Total,
+      // Overview, Revisions and Payment splits, and NO Edit anywhere. The only
+      // route back into an unsent draft was Revisions → "+ Revise in the
+      // builder", under the words "Add one if the scope changes after the
+      // client accepts" and a counter reading "Free revisions used: 0 / 1" —
+      // three clicks, fifteen seconds, and a revision history on a document
+      // nobody had ever seen.
+      //
+      // And nothing a user made could ever be deleted, on any surface.
+      key: "actions",
+      header: "",
+      align: "right",
+      render: (r) => (
+        <span style={{ display: "inline-flex", gap: 6, justifyContent: "flex-end" }}
+          onClick={(e) => e.stopPropagation()}>
+          {r.kind === "proposal" && (r.status === "draft" || r.status === "sent" || r.status === "viewed") && (
+            <button
+              type="button"
+              data-edit-proposal={r.id}
+              style={rowBtn(false)}
+              title={r.status === "draft"
+                ? "Open this draft in the builder and carry on where you left off"
+                : "Open it in the builder. It stays exactly as the customer has it until you send an update."}
+              onClick={() => setEditProposalId(r.id)}
+            >
+              <Pencil size={11} /> Edit
+            </button>
+          )}
+          {r.kind === "proposal" && (
+            <button
+              type="button"
+              data-delete-proposal={r.id}
+              style={rowBtn(true)}
+              title={CAN_HARD_DELETE.has(r.status)
+                ? "Delete this proposal. It comes off the list for good."
+                : "Archive this proposal. A document that has been sent or signed is kept, not destroyed — it comes off the list."}
+              onClick={() => setConfirmDelete(r)}
+            >
+              <Trash2 size={11} /> {CAN_HARD_DELETE.has(r.status) ? "Delete" : "Archive"}
+            </button>
+          )}
+        </span>
+      ),
     },
   ];
 
@@ -412,6 +482,68 @@ export function OliverQuotesProposalsPage() {
           onCreated={(msg) => { setCreateOpen(null); setFlash(msg); reload(); }}
           api={api}
         />
+      )}
+
+      {/* D-04 — Edit on the row opens the SAME builder the document was
+          written in, on the document itself. No revision is created. */}
+      {editProposalId && (
+        <CreateProposalDrawer
+          proposalId={editProposalId}
+          onClose={() => { setEditProposalId(null); reload(); }}
+          onCreated={(msg) => { setEditProposalId(null); setFlash(msg); reload(); }}
+          api={api}
+        />
+      )}
+
+      {/* D-14 — a confirm that says the document's name and what will happen
+          to it. "Are you sure?" on its own tells nobody anything. */}
+      {confirmDelete && (
+        <IadmModal
+          open
+          onClose={() => setConfirmDelete(null)}
+          product="oliver"
+          eyebrow="OLIVER · QUOTES & PROPOSALS"
+          title={CAN_HARD_DELETE.has(confirmDelete.status) ? "Delete this proposal?" : "Archive this proposal?"}
+          subtitle={`${confirmDelete.title} · ${confirmDelete.number}`}
+          size="info"
+          footer={
+            <>
+              <button type="button" style={rowBtn(false)} onClick={() => setConfirmDelete(null)}>Keep it</button>
+              <button
+                type="button"
+                data-confirm-delete="1"
+                disabled={deleting}
+                style={{ ...rowBtn(true), background: "#B91C1C", color: "#fff", borderColor: "#B91C1C", padding: "7px 14px" }}
+                onClick={async () => {
+                  setDeleting(true);
+                  const row = confirmDelete;
+                  try {
+                    await api.del(`/proposals/${row.id}`);
+                    setConfirmDelete(null);
+                    setFlash(CAN_HARD_DELETE.has(row.status)
+                      ? `Deleted ${row.number}.`
+                      : `Archived ${row.number}. It is off the list and still in your records.`);
+                    await reload();
+                  } catch (e) {
+                    // A delete that failed and said nothing is how sixteen test
+                    // rows came to sit on the list with no way to shift them.
+                    setFlash(`That failed — ${(e as Error).message}`);
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? "Working…" : CAN_HARD_DELETE.has(confirmDelete.status) ? "Delete it" : "Archive it"}
+              </button>
+            </>
+          }
+        >
+          <div style={{ padding: 20, fontSize: 13, color: "#334155", lineHeight: 1.6 }}>
+            {CAN_HARD_DELETE.has(confirmDelete.status)
+              ? "Nobody has been sent this one, so it comes off the list for good. This cannot be undone."
+              : "This one has already gone to the customer, so it is kept as a record of what you offered — it just comes off this list. Their link stops working."}
+          </div>
+        </IadmModal>
       )}
 
       {/* ── detail drawers ──────────────────────────────────────────────── */}

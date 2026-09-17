@@ -112,9 +112,24 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     name: "Agreement at a glance",
     description: "The short answers up front — trigger, billing, site contact — beside one paragraph of context.",
     tags: ["Terms"],
+    // D-37 — this section used to arrive as ONE EMPTY PARAGRAPH and FOUR BLANK
+    // ROWS, on a template sold as "the shape of the agreement, already
+    // written". Four of the five rows are merge fields that fill themselves
+    // from the customer pick and the Details group, so the section arrives
+    // saying something true about THIS job the moment a customer is chosen.
     build: () => sec([
-      makeWidget("paragraph", { text: "" }),
-      makeWidget("key_facts", { rows: [{ label: "", value: "" }, { label: "", value: "" }, { label: "", value: "" }, { label: "", value: "" }] }),
+      makeWidget("paragraph", {
+        text: "This page is the short version. It says who the work is for, where it happens, when the term runs and what triggers a visit. Everything below it is the detail.",
+      }),
+      makeWidget("key_facts", {
+        rows: [
+          { label: "Prepared for", value: "{{customer.name}}" },
+          { label: "Service address", value: "{{property.address}}" },
+          { label: "Service term", value: "{{contract.start_date}} to {{contract.end_date}}" },
+          { label: "We start plowing at", value: "{{snow_trigger}}" },
+          { label: "Billing", value: "Per visit, invoiced monthly in arrears" },
+        ],
+      }),
     ], { numbered: true, label: "Agreement at a glance" }),
   },
   {
@@ -139,9 +154,17 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
       }),
       makeWidget("callout", {
         heading: "",
+        // A titled panel with an empty body is a heading pretending to be an
+        // explanation. Both of these say the thing the rate card above cannot.
         panels: [
-          { title: "Storm example", tone: "accent", body: "" },
-          { title: "Severe events", tone: "warn", body: "" },
+          {
+            title: "Storm example", tone: "accent",
+            body: "A six-inch storm that falls over two days is two visits, not one: we clear at the trigger depth and again as it keeps falling. Each visit is charged at the rate for the depth cleared on that visit.",
+          },
+          {
+            title: "Severe events", tone: "warn",
+            body: "Snowfall above {{severe_event_threshold}}, declared emergencies and anything needing extra equipment are quoted before the work starts. Nothing above that line is charged without your say-so.",
+          },
         ],
       }),
     ], { numbered: true, label: "Pricing schedule" }),
@@ -168,7 +191,22 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     description: "This location's plowing areas, snow storage, sidewalks and obstacles. The crew sees it too.",
     tags: ["Property"],
     build: () => sec([
-      makeWidget("property_plan", { locationId: "", heading: "Property service plan", rows: [] }),
+      // D-37 — this printed as a bare heading and came out as an empty page 5
+      // of the signed PDF. The rows are the crew's own sheet: choosing the
+      // location in the panel fills whatever the property already has on
+      // record, and whatever it does not is a box to type in rather than a
+      // question nobody knew to ask.
+      makeWidget("property_plan", {
+        locationId: "", heading: "Property service plan",
+        rows: [
+          { label: "Areas we plow", value: "" },
+          { label: "Where the snow goes", value: "" },
+          { label: "Sidewalks and entries", value: "" },
+          { label: "Where we salt", value: "" },
+          { label: "Things to avoid", value: "" },
+          { label: "Anything else the crew should know", value: "" },
+        ],
+      }),
     ], { numbered: true, label: "Property service plan" }),
   },
   {
@@ -336,16 +374,16 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
         intro: "Pick one. The total below counts only the plan you choose.",
         cards: [
           {
-            name: "Essentials", pitch: "Everything you need to get going", price: "$249", per: "per month",
+            name: "Essentials", pitch: "Everything you need to get going", price: "$249.00", per: "per month",
             features: ["One workspace, up to five people", "Email support, next business day", "Monthly summary of what happened"],
           },
           {
-            name: "Growth", pitch: "For a team that is already busy", price: "$549", per: "per month",
+            name: "Growth", pitch: "For a team that is already busy", price: "$549.00", per: "per month",
             features: ["Everything in Essentials", "Up to twenty people", "Priority support, same business day", "A quarterly review with us"],
             recommended: true,
           },
           {
-            name: "Full service", pitch: "We run it with you", price: "$1,150", per: "per month",
+            name: "Full service", pitch: "We run it with you", price: "$1,150.00", per: "per month",
             features: ["Everything in Growth", "Unlimited people", "A named contact who knows your account", "We do the setup and the changes for you"],
           },
         ],
@@ -739,6 +777,43 @@ export const SHIPPED_TEMPLATES: ShippedTemplate[] = [
 
 export function templateByKey(key: string): ShippedTemplate | undefined {
   return SHIPPED_TEMPLATES.find((t) => t.key === key);
+}
+
+/**
+ * THE TOTAL GOES ABOVE THE SIGNATURE (D-07).
+ *
+ * The 2026-09-16 tester signed a $1,875 agreement whose customer copy and
+ * whose five-page PDF carried three per-site subtotals and no grand total
+ * anywhere. The customer put their name to a figure that was not on the paper.
+ *
+ * `totals` is the platform's ONE place money is added up (totals.ts
+ * PRICED_KINDS), and it is a widget, so putting one immediately above the
+ * signature means the canvas, the customer's own page and the PDF all print
+ * the same number — three painters, one decision.
+ *
+ * Applied once, to every shipped template, and only when the document does not
+ * already carry a totals widget: the tiered-plans template has "Your total" as
+ * a section of its own and must not grow a second one. A document assembled
+ * from blank sections still has no total above its signature until the
+ * renderer itself grows the rule — B-A-2 in REBUILD_HANDOFF_2026-09-16.md.
+ */
+export function withTotalBeforeSignature(doc: BuilderDocument): BuilderDocument {
+  const has = (kind: string) =>
+    doc.sections.some((s) => s.columns.some((c) => c.widgets.some((w) => w.kind === kind)));
+  if (has("totals") || !has("signature")) return doc;
+  return {
+    ...doc,
+    sections: doc.sections.map((s) => ({
+      ...s,
+      columns: s.columns.map((c) => {
+        const at = c.widgets.findIndex((w) => w.kind === "signature");
+        if (at < 0) return c;
+        const widgets = [...c.widgets];
+        widgets.splice(at, 0, makeWidget("totals", { heading: "What you are agreeing to" }));
+        return { ...c, widgets };
+      }),
+    })),
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
