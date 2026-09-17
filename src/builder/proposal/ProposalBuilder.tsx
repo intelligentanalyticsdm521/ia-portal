@@ -25,9 +25,13 @@ import { useLumenApi } from "../../hooks/useLumenApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { BuilderShell } from "../BuilderShell";
 import {
-  addSection, deserialise, emptyDocument, makeWidget, setPropPath,
+  addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
   type BuilderDocument, type Widget,
 } from "../model";
+import {
+  detailsMerge, documentLogo, parseMoney, plainLabel, readDetails,
+  reconcileDetails, writeDetails, type DetailRow,
+} from "./documentDetails";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { unfilledTokens, tagLabel } from "../merge";
@@ -35,12 +39,13 @@ import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
   applyBrandDefaults, hydrateClauses, proposalLibrary, savedIdOf, savedTemplateEntries,
-  templateByKey, type ClauseRow,
+  templateByKey, withTotalBeforeSignature, type ClauseRow,
 } from "../templates";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
-  buildPick, cadenceOf, type CatalogOffering, type CatalogPrice,
+  basisOf, buildPick, cadenceOf, fmtMoney,
+  type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
 
 export interface ProposalApi {
@@ -121,6 +126,20 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   const [picking, setPicking] = useState(!proposalId && !revision);   // the "start from" step
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /** D-36 — "Saved" said in the builder, because the builder STAYS OPEN now. */
+  const [saved, setSaved] = useState<string | null>(null);
+  /** Which Details box the blanks counter is sending the author to. */
+  const [focusToken, setFocusToken] = useState<string | null>(null);
+  /**
+   * The id of the row being edited, once one exists.
+   *
+   * A new document used to have no id until Save, and Save closed the builder
+   * — so "save, keep working, save again" made a SECOND proposal. PROP-00068
+   * in the 2026-09-16 test is exactly that: an exact duplicate of 00067 that
+   * could not then be deleted. The id is remembered here the moment the POST
+   * answers, and every later save is a PATCH of the same row.
+   */
+  const [liveId, setLiveId] = useState<string | null>(proposalId ?? null);
 
   /* ── The revision, when this is one ──────────────────────────────────── */
   const [revMeta, setRevMeta] = useState<RevisionMeta | null>(null);
@@ -266,8 +285,12 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     () => locations.filter((l) => pickedLocationIds.includes(String(l.location_id).toLowerCase())),
     [locations, pickedLocationIds]);
 
-  /* ── The one render context ──────────────────────────────────────────── */
-  const ctx: RenderContext = useMemo(() => {
+  /* ── What the CUSTOMER PICK answers, on its own ──────────────────────── */
+  //
+  // Split out from the render context because the Details group needs to know
+  // exactly this: a token these values already fill is not the author's to
+  // type, and must not get a box. One list, two readers.
+  const autoMerge = useMemo(() => {
     const primary = pickedLocations[0];
     const merge: Record<string, string> = {};
     const put = (k: string, v?: string | null) => { if (v && String(v).trim()) merge[k] = String(v); };
@@ -283,9 +306,39 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     put("business.name", identity.name);
     put("business.email", identity.email);
     put("business.phone", identity.phone);
+    return merge;
+  }, [contact, pickedLocations, validUntil, identity]);
+
+  /* ── The Details group: every blank is a field (D-03) ────────────────── */
+  //
+  // The rows live ON the document (documentDetails.ts says where and why), so
+  // they save, close and reopen with it. `details` is the reconciled view the
+  // panel renders: one row per token the page uses that the customer pick does
+  // not already answer, plus any value the author typed for a token they have
+  // since deleted.
+  const details = useMemo(
+    () => reconcileDetails(doc, autoMerge, declaredDetails(doc)),
+    [doc, autoMerge],
+  );
+  const setDetail = useCallback((token: string, value: string) => {
+    setDoc((d) => writeDetails(d, reconcileDetails(d, autoMerge, declaredDetails(d))
+      .map((r) => (r.token === token ? { ...r, value } : r))));
+  }, [autoMerge]);
+
+  /* ── The one render context ──────────────────────────────────────────── */
+  const ctx: RenderContext = useMemo(() => {
+    // The typed Details first, the customer pick over the top: the customer's
+    // own name is authoritative and is never something to type twice.
+    const merge: Record<string, string> = { ...detailsMerge(readDetails(doc)), ...autoMerge };
 
     const locationMap: Record<string, LocationLite> = {};
     for (const l of locations) locationMap[String(l.location_id).toLowerCase()] = l;
+
+    // D-39 — the title band's own logo, when the author chose one, else the
+    // business's. ONE resolver: the same prop the server reads in
+    // lib/proposalContext.js, so the canvas, the customer's page and the PDF
+    // cannot show three different logos.
+    const docLogo = documentLogo(doc);
 
     return makeContext(doc, {
       mode: "edit",
@@ -296,7 +349,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       business: {
         name: identity.name || "Your business",
         tagline: identity.website || "",
-        logoUrl: identity.logoUrl || kit.logo_url,
+        logoUrl: docLogo === "none" ? "" : (docLogo || identity.logoUrl || kit.logo_url),
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
@@ -306,7 +359,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       // different sections.
       ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, contact, pickedLocations, locations, kit, identity, validUntil, taxRate, discount, revision, diff]);
+  }, [doc, autoMerge, locations, kit, identity, taxRate, discount, revision, diff]);
 
   const totals = ctx.totals;
 
@@ -314,7 +367,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   const startFromTemplate = useCallback((key: string) => {
     const t = templateByKey(key);
     if (!t) return;
-    const built = hydrateClauses(t.build(), clauses);
+    const built = withTotalBeforeSignature(hydrateClauses(t.build(), clauses));
     setDoc(applyBrandDefaults(built, brandDefaults(kit)));
     if (!title.trim()) setTitle(t.name);
     setResetKey((k) => k + 1);
@@ -398,17 +451,32 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     return unfilledTokens(texts, ctx.merge);
   }, [doc, ctx.merge]);
 
-  async function save(send: boolean) {
+  /**
+   * Save the document.
+   *
+   * @param send  email it to the customer
+   * @param close leave the builder afterwards. D-36: **Save draft no longer
+   *              closes it.** Three of the four builders stayed open and this
+   *              one did not, so pressing Save felt like losing the document —
+   *              and the only route back burned a "free revision" (D-04).
+   *              "Save and close" is now its own button, which is the whole of
+   *              what that behaviour was ever for.
+   */
+  async function save(send: boolean, close = true) {
     if (!title.trim()) { setErr("Give the document a title at the top first."); return; }
     if (send && !contactId) { setErr("Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
     if (send && blanks.length) {
-      const list = blanks.slice(0, 4).map((t) => tagLabel(t)).join(", ");
+      const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
+      const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
       // Assert the PRESENCE of the thing we want, not just the absence of an
-      // error: a document sent with {{plow_rate}} on it is the failure.
-      setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Fill them in, or remove them, before sending.`);
+      // error: a document sent with {{plow_rate}} on it is the failure. And
+      // the names are PLAIN WORDS now — "snow_trigger" was two of the four
+      // names a first-time user was shown and told to go and find (D-03).
+      setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). They are in the Details box on the left — fill them in, or take them off the page, before sending.`);
+      setFocusToken(blanks[0]);
       return;
     }
-    setErr(null); setBusy(true);
+    setErr(null); setSaved(null); setBusy(true);
     try {
       const w = wire();
       const payload = {
@@ -427,20 +495,29 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         // missing from it gets no job.
         location_ids: [...new Set([...pickedLocationIds, ...locationsUsedBy(doc)])],
       };
-      let id = proposalId;
+      // liveId, not proposalId: a document created earlier in THIS session is
+      // patched, never posted again. That is the whole of D-25's duplicate.
+      let id = liveId;
       let number = "";
       if (id) {
         await api.patch(`/proposals/${id}`, payload);
       } else {
         const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals", payload);
         id = (res as any).proposal_id; number = (res as any).proposal_number;
+        setLiveId(id);
       }
-      let msg = id && number ? `Saved ${number}.` : "Saved.";
+      let msg = number ? `Saved ${number}.` : "Saved.";
       if (send && id) {
-        const sent = await api.post<{ url: string }>(`/proposals/${id}/send`);
-        msg += ` Sent — the customer's link is ${(sent as any).url}`;
+        const sent = await api.post<{ url: string; emailed_to?: string | null }>(`/proposals/${id}/send`);
+        const to = (sent as any).emailed_to;
+        msg += to
+          ? ` Sent to ${to}. Their link is ${(sent as any).url}`
+          : ` Sent — the customer's link is ${(sent as any).url}`;
       }
-      onSaved(msg);
+      if (close || send) { onSaved(msg); return; }
+      // Stay put, and SAY so. A tick that appears and nothing else moving is
+      // what "it saved" looks like in every editor a business owner has used.
+      setSaved(`${msg} You are still in the builder.`);
     } catch (e) {
       setErr(`Could not save: ${apiErrorMessage(e)}`);
     } finally {
@@ -476,14 +553,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       setErr(`${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Fill them in, or remove them, before sending.`);
       return;
     }
-    setErr(null); setBusy(true);
+    setErr(null); setSaved(null); setBusy(true);
     try {
       const w = wire();
+      // D-15 — the title is the PROPOSAL's, not the revision's, so a rename in
+      // this builder used to be typed, saved and silently reverted. A rename is
+      // not a content edit (the same reasoning /link already runs on), so the
+      // API takes a title-only PATCH in any status.
+      if (title.trim()) {
+        await api.patch(`/proposals/${revision.proposalId}`, { title: title.trim() })
+          .catch((e) => { throw new Error(`the title could not be saved (${apiErrorMessage(e)})`); });
+      }
       await api.patch(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}`, {
         document: w.document,
         request_items: requestItems,
       });
-      if (!send) { onSaved("Revision saved. The customer still sees the version they were sent."); return; }
+      if (!send) {
+        setSaved("Revision saved. The customer still sees the version they were sent.");
+        return;
+      }
       const sent = await api.post<any>(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}/send`, {
         document: w.document,
         blocks: w.blocks,
@@ -632,9 +720,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
-                title="Save your changes without sending. The customer still sees the version they were sent.">
+              <button type="button" data-save-draft="1" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
+                title="Save your changes without sending. The builder stays open and the customer still sees the version they were sent.">
                 {busy ? "Working…" : "Save draft"}
+              </button>
+              <button type="button" data-save-close="1" onClick={() => { void saveRevision(false).then(() => onClose()); }}
+                disabled={busy} style={ghostBtn} title="Save and go back to the document.">
+                Save and close
               </button>
               <button type="button" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
                 title={diff.identical
@@ -655,9 +747,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 title="Save this document's sections as a template you can start from next time">
                 Save as template
               </button>
-              <button type="button" onClick={() => save(false)} disabled={busy} style={ghostBtn}
-                title="Save without sending. You can come back to it.">
+              <button type="button" data-save-draft="1" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
+                title="Save your work and carry on. The builder stays open.">
                 {busy ? "Working…" : "Save draft"}
+              </button>
+              <button type="button" data-save-close="1" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
+                title="Save and go back to the list. You can open it again from the row.">
+                Save and close
               </button>
               <button type="button" onClick={() => save(true)} disabled={busy} style={orangeBtn}
                 title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
@@ -668,12 +764,40 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         }
         paneHeader={
           <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.4 }}>
-            <div style={{ fontWeight: 600, color: "#0B1C24" }}>
+            <div data-doc-total={totals.total} style={{ fontWeight: 600, color: "#0B1C24" }}>
               {totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
             </div>
+            {/* D-35 — the counter NAMES them and jumps. It was a plain <div>
+                with cursor:auto, and the names only appeared after a failed
+                Send, by which point the author had already pressed the button
+                and watched nothing happen. */}
             {blanks.length > 0 && (
-              <div style={{ color: "#B45309", marginTop: 2 }} title={blanks.map((t) => tagLabel(t)).join(", ")}>
-                {blanks.length} detail{blanks.length === 1 ? "" : "s"} still blank
+              <div style={{ color: "#B45309", marginTop: 3 }}>
+                <span>{blanks.length} detail{blanks.length === 1 ? "" : "s"} still blank —</span>
+                <span style={{ display: "inline-flex", flexWrap: "wrap", gap: 4, marginLeft: 4 }}>
+                  {blanks.map((tk) => (
+                    <button key={tk} type="button" data-blank-chip={tk}
+                      title={`Fill in “${plainLabel(tk, Object.fromEntries(details.map((d) => [d.token, d.label])))}” — this takes you to its box`}
+                      onClick={() => { setFocusToken(tk); scrollToToken(tk); }}
+                      style={{
+                        border: "1px solid #FCD34D", background: "#FFFBEB", color: "#92400E",
+                        borderRadius: 999, padding: "1px 8px", fontSize: 10, fontWeight: 600, cursor: "pointer",
+                      }}>
+                      {plainLabel(tk, Object.fromEntries(details.map((d) => [d.token, d.label])))}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            )}
+            <DetailsGroup
+              rows={details}
+              onSet={setDetail}
+              focusToken={focusToken}
+              onFocused={() => setFocusToken(null)}
+            />
+            {saved && (
+              <div data-saved-tick="1" style={{ color: "#047857", marginTop: 6, fontWeight: 600 }}>
+                ✓ {saved}
               </div>
             )}
             {revision && (
@@ -980,8 +1104,16 @@ function WidgetExtras({
             patch({
               rows: [...(Array.isArray(p.rows) ? p.rows : []), {
                 name: pick.parts.name,
-                basis: cadenceOf(price) || (price?.label ?? "Each visit"),
-                rate: `$${Number(pick.parts.unit_price).toFixed(2)}`,
+                // D-09: the BASIS the catalogue carries, in plain words — "per
+                // push", "per visit", "monthly", "one-time". It was
+                // `cadenceOf(price) || price.label || "Each visit"`, and
+                // cadenceOf said "billed monthly" for every per-push tier
+                // because that is how the tiers bill; the tier's own label says
+                // what the customer is buying and now wins. "Each visit" was
+                // invented here and is gone.
+                basis: basisOf(price),
+                // D-29: $1,200.00, not $1200.00. toFixed has no separator.
+                rate: fmtMoney(pick.parts.unit_price),
                 offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
               }],
             });
@@ -1007,26 +1139,11 @@ function WidgetExtras({
   }
 
   if (widget.kind === "comparison_cards") {
-    const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
-    const recIndex = cards.findIndex((c) => c?.recommended);
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <span style={LBL}>Recommended</span>
-        <select style={INPUT} value={recIndex >= 0 ? String(recIndex) : ""}
-          title="Which card wears the Recommended badge. Exactly one, or none."
-          onChange={(e) => {
-            const pick = e.target.value === "" ? -1 : Number(e.target.value);
-            patch({ cards: cards.map((c, i) => ({ ...c, recommended: i === pick })) });
-          }}>
-          <option value="">None</option>
-          {cards.map((c, i) => (
-            <option key={i} value={i}>{String(c?.name || `Card ${i + 1}`)}</option>
-          ))}
-        </select>
-        <span style={{ fontSize: 10, color: "#94A3B8" }}>
-          Cards never add into the total — the plan the customer picks becomes the priced line.
-        </span>
-      </div>
+      <ComparisonCardsPanel
+        widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
+        offerings={offerings} patch={patch}
+      />
     );
   }
 
@@ -1084,6 +1201,52 @@ function WidgetExtras({
     );
   }
 
+  // D-39 — the title band's logo. §8 req 1 says every part of the title page
+  // is editable; this was the one part that was not.
+  if (widget.kind === "doc_header") {
+    const current = String(p.logoUrl || "");
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <span style={LBL}>Logo on this document</span>
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+          <button type="button" data-logo="brand"
+            style={{ ...miniBtn, background: !current ? "#0B6E8C" : "#fff", color: !current ? "#fff" : "#334155" }}
+            title="Use the logo from your brand settings — the one every document wears"
+            onClick={() => patch({ logoUrl: "" })}>Your brand logo</button>
+          <button type="button" data-logo="none"
+            style={{ ...miniBtn, background: current === "none" ? "#0B6E8C" : "#fff", color: current === "none" ? "#fff" : "#334155" }}
+            title="No picture — your business name in its place"
+            onClick={() => patch({ logoUrl: "none" })}>No logo</button>
+          <label style={{ ...miniBtn, cursor: "pointer" }}
+            title="Upload a picture for this document only. PNG, JPG or SVG, up to 200 KB.">
+            Upload a picture
+            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" data-logo-upload="1"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                // 200 KB, said out loud: the whole document is capped at 1 MB
+                // on the way into document_json, and a 4 MB logo would take
+                // the save down with a message about bytes.
+                if (file.size > 200 * 1024) {
+                  patch({ logoError: "That picture is larger than 200 KB. Save a smaller copy and try again." });
+                  return;
+                }
+                const reader = new FileReader();
+                reader.onload = () => patch({ logoUrl: String(reader.result || ""), logoError: "" });
+                reader.readAsDataURL(file);
+              }} />
+          </label>
+        </div>
+        {current && current !== "none" && (
+          <img src={current} alt="" style={{ maxHeight: 44, maxWidth: "100%", objectFit: "contain", alignSelf: "flex-start" }} />
+        )}
+        {p.logoError && <span style={{ fontSize: 10, color: "#B91C1C" }}>{String(p.logoError)}</span>}
+      </div>
+    );
+  }
+
   if (locationPicker) return locationPicker;
 
   if (widget.kind === "key_facts" || widget.kind === "key_value_table" || widget.kind === "property_plan") {
@@ -1098,9 +1261,241 @@ function WidgetExtras({
   return null;
 }
 
-function CatalogPicker({ offerings, label, onPick }: {
+/* ══════════════════════════════════════════════════════════════════════════
+   Tier cards — the one money widget that had no catalogue and no price field
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * D-01 and D-10, the third of the 2026-09-16 test's three worst moments.
+ *
+ * What was here: a Recommended dropdown and "how many cards?", and nothing
+ * else. Every plan name, price, bullet and note was typed by hand onto the
+ * page — except the price, which could not be typed at all: an empty
+ * `cards.N.price` run measures 0px, Tab skips it, and clicking where it looks
+ * types into the "/mo" suffix instead. So the one document Brandon named as
+ * acceptance test #2 — tier cards with a real price each and a total at the
+ * end — could not be produced by clicking.
+ *
+ * Three things fix it, and the first two are the design:
+ *
+ *  1. **The same catalogue picker the pricing table has.** Pick a product and
+ *     its tiers arrive as cards, filled with the name, the price, the cadence
+ *     the catalogue carries and the product's own feature list. One click per
+ *     tier, or "Add all N tiers" for a product priced in bands.
+ *  2. **A real field per card**, in the inspector, in tab order
+ *     **name → price → per → was**, each with a placeholder and a minimum
+ *     width, so nothing on a card is unreachable whatever the canvas does.
+ *  3. **"Use this plan"**, which turns that card into the priced line below
+ *     the block, so the grand total is a real number rather than $0.00.
+ *
+ * The block's honest note — *"Comparison only — the plan you choose becomes
+ * the priced line. These figures are not added to any total"* — STAYS after a
+ * plan is chosen, because it is still exactly true: the cards do not sum, the
+ * priced line does. It is the sentence describing what just happened.
+ */
+function ComparisonCardsPanel({
+  widget, sectionId, doc, onChange, offerings, patch,
+}: {
+  widget: Widget; sectionId: string; doc: BuilderDocument;
+  onChange: (d: BuilderDocument) => void;
+  offerings: CatalogOffering[];
+  patch: (props: Record<string, unknown>) => void;
+}) {
+  const p: any = widget.props || {};
+  const cards: any[] = Array.isArray(p.cards) ? p.cards : [];
+  const recIndex = cards.findIndex((c) => c?.recommended);
+  const chosen = String(p.chosenPlan || "");
+
+  const setCard = (i: number, fields: Record<string, unknown>) =>
+    patch({ cards: cards.map((c, n) => (n === i ? { ...c, ...fields } : c)) });
+
+  /** One catalogue price becomes one card. */
+  const cardFrom = (o: CatalogOffering, price: CatalogPrice | null) => {
+    const pick = buildPick(o, price);
+    return {
+      name: pick.parts.name,
+      price: fmtMoney(pick.parts.unit_price),
+      per: pick.parts.cadence || "",
+      pitch: pick.parts.description || "",
+      features: pick.parts.features.slice(0, 6),
+      list_price: "",
+      note: "",
+      recommended: false,
+      offering_id: pick.parts.offering_id,
+      price_id: pick.parts.price_id,
+      unit_price: pick.parts.unit_price,
+    };
+  };
+
+  const addCards = (next: any[]) => patch({ cards: [...cards, ...next] });
+
+  /**
+   * The chosen plan becomes the priced line, right under the cards.
+   *
+   * A second press replaces the line rather than adding another — the block
+   * has one chosen plan, so the document has one line from it, found again by
+   * the marker rather than by position.
+   */
+  const usePlan = (i: number) => {
+    const card = cards[i] || {};
+    const amount = Number(card.unit_price);
+    const unit = Number.isFinite(amount) && amount > 0 ? amount : parseMoney(card.price);
+    const line = makeWidget("priced_line", {
+      name: String(card.name || "Chosen plan"),
+      description: String(card.pitch || ""),
+      features: Array.isArray(card.features) ? card.features.filter(Boolean) : [],
+      quantity: 1,
+      unit_price: unit,
+      cadence: String(card.per || "") || null,
+      recommended: true,
+      ...(card.offering_id ? { offering_id: card.offering_id } : {}),
+      ...(card.price_id ? { price_id: card.price_id } : {}),
+      fromCards: widget.id,
+    });
+
+    const chosenName = String(card.name || `Card ${i + 1}`);
+    // Drop any line this block put down before — the block has ONE chosen
+    // plan, so the document has one line from it — and stamp the cards in the
+    // same pass, so a half-applied state cannot exist.
+    let next: BuilderDocument = {
+      ...doc,
+      sections: doc.sections.map((s) => ({
+        ...s,
+        columns: s.columns.map((c) => ({
+          ...c,
+          widgets: c.widgets
+            .filter((w) => (w.props as any)?.fromCards !== widget.id)
+            .map((w) => (w.id !== widget.id ? w : {
+              ...w,
+              props: {
+                ...w.props,
+                cards: cards.map((cd, n) => ({ ...cd, recommended: n === i })),
+                chosenPlan: chosenName,
+              },
+            })),
+        })),
+      })),
+    };
+    // Place the line immediately after the cards, in the same column.
+    const sec = next.sections.find((s) => s.id === sectionId);
+    let columnIndex = 0;
+    let at = 0;
+    sec?.columns.forEach((c, ci) => {
+      const idx = c.widgets.findIndex((w) => w.id === widget.id);
+      if (idx >= 0) { columnIndex = ci; at = idx + 1; }
+    });
+    onChange(addWidget(next, sectionId, columnIndex, line, at));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <CatalogPicker
+        offerings={offerings}
+        label="Add a plan from your catalogue"
+        bulkLabel={(o) => `Add all ${o.prices?.length ?? 0} tiers as cards`}
+        onPickAll={(o) => addCards((o.prices || []).map((pr) => cardFrom(o, pr)))}
+        onPick={(o, price) => addCards([cardFrom(o, price)])}
+      />
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={LBL}>Recommended</span>
+        <select style={INPUT} value={recIndex >= 0 ? String(recIndex) : ""}
+          title="Which card wears the Recommended badge. Exactly one, or none."
+          onChange={(e) => {
+            const pickIdx = e.target.value === "" ? -1 : Number(e.target.value);
+            patch({ cards: cards.map((c, i) => ({ ...c, recommended: i === pickIdx })) });
+          }}>
+          <option value="">None</option>
+          {cards.map((c, i) => (
+            <option key={i} value={i}>{String(c?.name || `Card ${i + 1}`)}</option>
+          ))}
+        </select>
+      </div>
+
+      {cards.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <span style={LBL}>The cards</span>
+          {cards.map((c, i) => (
+            <div key={i} data-card-fields={i}
+              style={{ border: "1px solid #E2E8F0", borderRadius: 6, padding: 8, display: "flex", flexDirection: "column", gap: 5 }}>
+              {/* Tab order is SOURCE order: name, price, per, was. On the page
+                  the struck-through "was" sits before the price, which is why
+                  Tab from the name used to land on it. */}
+              <input style={{ ...INPUT, fontWeight: 600 }} value={String(c?.name ?? "")}
+                data-card-field={`${i}.name`} placeholder="Plan name — e.g. Standard"
+                title="What this plan is called"
+                onChange={(e) => setCard(i, { name: e.target.value })} />
+              <div style={{ display: "flex", gap: 5 }}>
+                <input style={{ ...INPUT, minWidth: 90, fontWeight: 700 }} value={String(c?.price ?? "")}
+                  data-card-field={`${i}.price`} placeholder="$0.00"
+                  title="The price on the card — the big number the customer reads"
+                  onChange={(e) => setCard(i, { price: e.target.value, unit_price: parseMoney(e.target.value) })} />
+                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.per ?? "")}
+                  data-card-field={`${i}.per`} placeholder="per month"
+                  title="How often they pay it — per push, per visit, monthly"
+                  onChange={(e) => setCard(i, { per: e.target.value })} />
+                <input style={{ ...INPUT, minWidth: 70 }} value={String(c?.list_price ?? "")}
+                  data-card-field={`${i}.was`} placeholder="was…"
+                  title="The list price, struck through beside the price. Leave it empty if there is no discount."
+                  onChange={(e) => setCard(i, { list_price: e.target.value })} />
+              </div>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button type="button" style={{ ...miniBtn, background: chosen === String(c?.name || "") ? "#0B6E8C" : "#fff", color: chosen === String(c?.name || "") ? "#fff" : "#334155" }}
+                  data-use-plan={i}
+                  title="Put this plan on the document as the priced line, so the total is real"
+                  onClick={() => usePlan(i)}>
+                  {chosen === String(c?.name || "") ? "This is the plan" : "Use this plan"}
+                </button>
+                <button type="button" style={{ ...miniBtn, color: "#B91C1C", marginLeft: "auto" }}
+                  title="Take this card off the page"
+                  onClick={() => patch({ cards: cards.filter((_, n) => n !== i) })}>
+                  <X size={11} /> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <span style={{ fontSize: 10, color: "#94A3B8" }}>
+        {chosen
+          ? `“${chosen}” is the plan on this document — it is priced below the cards and it is in the total.`
+          : "Cards never add into the total. Press “Use this plan” on the one they are buying and it becomes the priced line."}
+      </span>
+    </div>
+  );
+}
+
+/**
+ * Put the first place the page says `{{token}}` in front of the author.
+ *
+ * Half of D-35: the counter names the blank AND shows you where it bites. This
+ * is stream B's own scroll until stream A lands a shared problems mechanism
+ * (B-A-4 in the handoff) — it reads the canvas, changes nothing on it, and is
+ * a no-op when the run is not on screen.
+ */
+function scrollToToken(token: string) {
+  if (typeof document === "undefined") return;
+  const canvas = document.querySelector(".bx-doc");
+  if (!canvas) return;
+  const needle = `{{${token}}}`;
+  const walker = document.createTreeWalker(canvas, NodeFilter.SHOW_TEXT);
+  let node: Node | null = walker.nextNode();
+  while (node) {
+    if ((node.textContent || "").includes(needle)) {
+      (node.parentElement as HTMLElement | null)?.scrollIntoView({ block: "center", behavior: "smooth" });
+      return;
+    }
+    node = walker.nextNode();
+  }
+}
+
+function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel }: {
   offerings: CatalogOffering[]; label: string;
   onPick: (o: CatalogOffering, price: CatalogPrice | null) => void;
+  /** Offered only where adding every tier at once makes sense (tier cards). */
+  onPickAll?: (o: CatalogOffering) => void;
+  bulkLabel?: (o: CatalogOffering) => string;
 }) {
   const [q, setQ] = useState("");
   const list = useMemo(() => offerings.filter((o) => !q.trim() || o.name.toLowerCase().includes(q.trim().toLowerCase())), [offerings, q]);
@@ -1108,19 +1503,27 @@ function CatalogPicker({ offerings, label, onPick }: {
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span style={LBL}>{label}</span>
       <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your services…"
-        title="Search Products & Services" />
-      <div style={{ maxHeight: 200, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        title="Search Products & Services" data-catalog-search="1" />
+      <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
         {list.map((o) => (
-          <div key={o.offering_id}>
+          <div key={o.offering_id} data-offering={o.offering_id}>
             <div style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
               {(o.prices?.length ? o.prices : [null]).map((pr, i) => (
                 <button key={pr?.price_id || i} type="button" style={{ ...miniBtn, padding: "2px 7px", fontSize: 10 }}
-                  title={pr ? `Adds at $${Number(pr.unit_amount ?? 0).toFixed(2)}${cadenceOf(pr) ? `, ${cadenceOf(pr)}` : ""} — the cadence is written onto the line` : "No catalogue price — starts at $0 and you type it"}
+                  title={pr ? `Adds at ${fmtMoney(Number(pr.unit_amount ?? 0))}${cadenceOf(pr) ? `, ${cadenceOf(pr)}` : ""} — the basis is written onto the line` : "No catalogue price — starts at $0 and you type it"}
                   onClick={() => onPick(o, pr)}>
-                  {pr ? `${pr.label ? `${pr.label} · ` : ""}$${Number(pr.unit_amount ?? 0).toFixed(2)}` : "No price — type one"}
+                  {pr ? `${pr.label ? `${pr.label} · ` : ""}${fmtMoney(Number(pr.unit_amount ?? 0))}` : "No price — type one"}
                 </button>
               ))}
+              {onPickAll && (o.prices?.length ?? 0) > 1 && (
+                <button type="button" data-add-all={o.offering_id}
+                  style={{ ...miniBtn, padding: "2px 7px", fontSize: 10, borderColor: "#0B6E8C", color: "#0B6E8C" }}
+                  title={`Add every priced tier of ${o.name} as its own card, filled from the catalogue`}
+                  onClick={() => onPickAll(o)}>
+                  {bulkLabel ? bulkLabel(o) : `Add all ${o.prices?.length}`}
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -1213,6 +1616,106 @@ const goldBtn: React.CSSProperties = { display: "inline-flex", alignItems: "cent
 const orangeBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, background: "#EF6C33", border: "1px solid #EF6C33", color: "#fff", borderRadius: 4, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" };
 const ghostBtn: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.25)", color: "#fff", borderRadius: 4, padding: "7px 12px", fontSize: 12, fontWeight: 600, cursor: "pointer" };
 const ghostDark: React.CSSProperties = { ...miniBtn, padding: "7px 12px", fontSize: 12 };
+
+/**
+ * The plain-word labels and help a TEMPLATE declares for its own merge fields.
+ *
+ * A template that writes `{{snow_trigger}}` into a clause is the only thing
+ * that knows the field means "start plowing at this many inches". It says so
+ * in a `meta.details` map on the section it wrote, and the Details group reads
+ * it — which is how the group shows "Trigger depth" and a sentence of help
+ * instead of `snow_trigger`.
+ */
+function declaredDetails(doc: BuilderDocument): Record<string, { label: string; help?: string }> {
+  const out: Record<string, { label: string; help?: string }> = {};
+  for (const s of doc.sections) {
+    const declared = (s as any)?.meta?.details;
+    if (!declared || typeof declared !== "object") continue;
+    for (const [token, spec] of Object.entries(declared as Record<string, any>)) {
+      if (!spec) continue;
+      const label = typeof spec === "string" ? spec : String(spec.label ?? "");
+      if (!label) continue;
+      out[token] = { label, ...(typeof spec === "object" && spec.help ? { help: String(spec.help) } : {}) };
+    }
+  }
+  return out;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The Details group — D-03's answer
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Every blank the document carries, as a box with a plain-word label.
+ *
+ * Nothing in here is a token. "Service term starts", "Trigger depth", "Severe
+ * event threshold" — the words a home-services owner would use — and one line
+ * of help under any the template explained. Filled boxes collapse behind
+ * "N filled", so a document with nine merge fields and two blanks shows the
+ * two.
+ */
+function DetailsGroup({ rows, onSet, focusToken, onFocused }: {
+  rows: DetailRow[];
+  onSet: (token: string, value: string) => void;
+  focusToken: string | null;
+  onFocused: () => void;
+}) {
+  const [showFilled, setShowFilled] = useState(false);
+  const boxes = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    if (!focusToken) return;
+    const el = boxes.current[focusToken];
+    if (el) { el.focus(); el.select(); }
+    onFocused();
+  }, [focusToken, onFocused]);
+
+  if (!rows.length) return null;
+  const blank = rows.filter((r) => !String(r.value ?? "").trim());
+  const filled = rows.filter((r) => String(r.value ?? "").trim());
+  const shown = showFilled ? rows : blank;
+
+  return (
+    <div data-details-group="1" style={{
+      marginTop: 8, border: "1px solid #DBE7ED", background: "#fff",
+      borderRadius: 6, padding: "8px 9px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
+        <span style={{ ...LBL, color: "#0B1C24" }}>Details</span>
+        {filled.length > 0 && (
+          <button type="button" onClick={() => setShowFilled((v) => !v)}
+            title={showFilled ? "Show only the ones still blank" : "Show the ones already filled in too"}
+            style={{ background: "none", border: "none", color: "#1A7DB5", fontSize: 10, cursor: "pointer", padding: 0 }}>
+            {showFilled ? "Hide the filled ones" : `${filled.length} filled`}
+          </button>
+        )}
+      </div>
+      <div style={{ fontSize: 10, color: "#5A7A8A", margin: "2px 0 6px", lineHeight: 1.4 }}>
+        These are the blanks on the page. Type them here — never over the top of the words on the document.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {shown.map((r) => (
+          <label key={r.token} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{r.label}</span>
+            <input
+              ref={(el) => { boxes.current[r.token] = el; }}
+              data-detail-token={r.token}
+              style={{ ...INPUT, borderColor: String(r.value ?? "").trim() ? "#CBD5E1" : "#F59E0B" }}
+              value={r.value}
+              placeholder={r.help || `Type the ${r.label.toLowerCase()}`}
+              title={r.help || `${r.label} — it fills in wherever the document asks for it`}
+              onChange={(e) => onSet(r.token, e.target.value)}
+            />
+            {r.help && <span style={{ fontSize: 10, color: "#94A3B8" }}>{r.help}</span>}
+          </label>
+        ))}
+        {!shown.length && (
+          <div style={{ fontSize: 11, color: "#047857" }}>Nothing is blank. This document is ready to send.</div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function addressLine(l?: LocationRow | null): string {
   if (!l) return "";

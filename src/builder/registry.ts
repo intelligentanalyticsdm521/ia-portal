@@ -643,7 +643,12 @@ export const WIDGETS: WidgetDef[] = [
     picture: pictureFrom(`<rect x="6" y="6" width="52" height="10" rx="2" fill="#64748B" stroke="none"/>` + bar(10, 22, 34, 5) + bar(10, 31, 22)),
     category: "Document",
     adapters: DOCUMENTS,
-    defaults: { style: "dark_band", title: "", subtitle: "", bandRight: "" },
+    // D-39 — `logoUrl` is the title band's own logo: "" means the business's
+    // brand logo, "none" means the name in its place, a data: URL means the
+    // picture the author uploaded. The CONTROL lives in the proposal adapter
+    // beside the preview and the upload button, not here, so there is one of
+    // it (see documentLogo() in proposal/ProposalBuilder.tsx).
+    defaults: { style: "dark_band", title: "", subtitle: "", bandRight: "", logoUrl: "" },
     controls: [
       { key: "style", label: "Look", type: "select", options: ["Dark band", "Light with accent rule"], help: "Two shipped looks. Every part of either one is still editable." },
       { key: "title", label: "Title", type: "text" },
@@ -687,8 +692,13 @@ export const WIDGETS: WidgetDef[] = [
     category: "Document",
     adapters: DOCUMENTS,
     defaults: { locationId: "", heading: "Property service plan", rows: [] },
+    // D-33 — "WHICH LOCATION" appeared TWICE in the inspector. This entry
+    // declared `locationId` as a `select` with no options, so the shared
+    // inspector printed the label with an empty control under it, and the
+    // proposal adapter printed the real picker beside it. The adapter is the
+    // only thing that knows which locations this CUSTOMER has, so the adapter
+    // owns the control and the registry does not declare a second one.
     controls: [
-      { key: "locationId", label: "Which location", type: "select" },
       { key: "heading", label: "Heading", type: "text" },
       { key: "rows", label: "Details", type: "list", help: "Saved on the location, so the crew and the next document get them too." },
     ],
@@ -702,8 +712,8 @@ export const WIDGETS: WidgetDef[] = [
     category: "Document",
     adapters: DOCUMENTS,
     defaults: { locationId: "", heading: "", items: [] },
+    // D-33, same as property_plan above: the adapter owns "Which location".
     controls: [
-      { key: "locationId", label: "Which location", type: "select" },
       { key: "heading", label: "Name on the document", type: "text" },
       { key: "items", label: "Line items", type: "list" },
     ],
