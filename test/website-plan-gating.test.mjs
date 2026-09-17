@@ -27,6 +27,9 @@ import path from "node:path";
 import {
   readSitePlan, lockFor, canAdd, pickerLock, EMPTY_PLAN, DEFAULT_LOCK,
 } from "../src/builder/adapters/website/sitePlan.ts";
+// THE THREE SENTENCES live in ONE module, shared by the website's sections and
+// the engine's widgets (catalogue G.4, conformance 2026-09-17).
+import { PLAN_SENTENCE, ownershipSentence, widgetLock } from "../src/builder/tier.ts";
 
 const SRC = path.join(process.cwd(), "src", "builder", "adapters", "website");
 const BUILDER = readFileSync(path.join(SRC, "WebsiteBuilder.tsx"), "utf8");
@@ -64,7 +67,11 @@ describe("the plan comes off the server's own reply", () => {
     const plan = readSitePlan(LITE_REPLY);
     assert.equal(plan.proAvailable, false);
     assert.deepEqual(Object.keys(plan.locked), ["contact"]);
-    assert.match(plan.locked.contact, /ARION Standard and above/);
+    // THE REFUSAL, not a bare sentence: which of the three states, the words,
+    // and the gate it came from (catalogue G.4).
+    assert.match(plan.locked.contact.sentence, /ARION Standard and above/);
+    assert.equal(plan.locked.contact.reason, "plan");
+    assert.equal(plan.locked.contact.tier, "pro");
   });
 
   test("a Standard business has nothing locked", () => {
@@ -103,7 +110,7 @@ describe("a Lite business cannot insert a pro widget and a Standard one can", ()
 
   test("the section the plan does not carry is refused, with the sentence", () => {
     assert.equal(canAdd(lite, "contact"), false);
-    assert.match(lockFor(lite, "contact"), /ARION Standard and above/);
+    assert.match(lockFor(lite, "contact").sentence, /ARION Standard and above/);
   });
 
   test("the same section on Standard is offered", () => {
@@ -120,10 +127,23 @@ describe("a Lite business cannot insert a pro widget and a Standard one can", ()
 
   test("the picker asks by the BUILDER's name for the widget, not the section's", () => {
     const arionKindOf = (w) => (w === "site_contact" ? "contact" : (w === "site_hero" ? "hero" : null));
-    assert.match(pickerLock(lite, arionKindOf, "site_contact"), /ARION Standard/);
-    assert.equal(pickerLock(lite, arionKindOf, "site_hero"), null);
-    // A widget that is not a website section at all is never locked by this.
-    assert.equal(pickerLock(lite, arionKindOf, "heading"), null);
+    assert.match(pickerLock(lite, arionKindOf, { kind: "site_contact" }).sentence, /ARION Standard/);
+    assert.equal(pickerLock(lite, arionKindOf, { kind: "site_hero" }), null);
+    // A FREE widget that is not a website section at all is never locked.
+    assert.equal(pickerLock(lite, arionKindOf, { kind: "heading" }), null);
+    // A PAID one with no section behind it still is — its own `tier` says
+    // which gate applies and the SITE's own answer says it does not pass it.
+    const paid = pickerLock(lite, arionKindOf, { kind: "card", tier: "pro" });
+    assert.equal(paid.reason, "plan");
+    assert.match(paid.sentence, /website plan/);
+    // …and on Standard the same widget is offered.
+    assert.equal(pickerLock(standard, arionKindOf, { kind: "card", tier: "pro" }), null);
+    // AN OWNERSHIP GATE IS A DIFFERENT REFUSAL, with its own sentence, and it
+    // never reads as "not on your plan" (reference_nav_visibility_semantics).
+    const owned = widgetLock("ia:oliver", true);
+    assert.equal(owned.reason, "ownership");
+    assert.match(owned.sentence, /Needs OLIVER, which this business does not have/);
+    assert.notEqual(owned.sentence, widgetLock("pro", true).sentence);
   });
 });
 
@@ -131,7 +151,13 @@ describe("the lock is visible, and in plain words", () => {
   test("no vendor name reaches a client sentence", () => {
     const vendor = /elementor|wordpress|rank ?math|astra|hostinger|wp-admin/i;
     assert.doesNotMatch(DEFAULT_LOCK, vendor);
-    assert.doesNotMatch(readSitePlan(LITE_REPLY).locked.contact, vendor);
+    assert.doesNotMatch(readSitePlan(LITE_REPLY).locked.contact.sentence, vendor);
+    assert.doesNotMatch(PLAN_SENTENCE, vendor);
+    assert.doesNotMatch(ownershipSentence("OLIVER"), vendor);
+    // AND NEVER THE BARE WORD. "Locked" says nothing a business can act on.
+    for (const words of [PLAN_SENTENCE, ownershipSentence("OLIVER"), DEFAULT_LOCK]) {
+      assert.doesNotMatch(words, /locked/i, `a client sentence says "locked": ${words}`);
+    }
   });
 
   test("the sentence says the plan, which is the only thing the business can act on", () => {
@@ -141,9 +167,14 @@ describe("the lock is visible, and in plain words", () => {
   test("a locked section stays IN the gallery, with the reason as its line", () => {
     assert.match(
       BUILDER,
-      /description: canAdd\(plan, p\.kind\) \? p\.description : \(lockFor\(plan, p\.kind\) as string\)/,
+      /description: canAdd\(plan, p\.kind\) \? p\.description : lockFor\(plan, p\.kind\)!\.sentence/,
       "the gallery hides a locked section instead of explaining it",
     );
+    // …and the gallery card carries WHICH of the three states it is in, the
+    // same three words the pane and the picker carry.
+    const GALLERY = readFileSync(path.join(SRC, "..", "..", "SectionGallery.tsx"), "utf8");
+    assert.match(GALLERY, /"data-widget-state": s\.locked\.reason/);
+    assert.match(GALLERY, /"data-widget-state": "offered"/);
   });
 });
 
@@ -151,7 +182,7 @@ describe("both doors go through the same gate", () => {
   test("the pane's insert asks the plan before anything is built", () => {
     const insert = BUILDER.slice(BUILDER.indexOf("const insertWidget"), BUILDER.indexOf("const payload"));
     assert.match(insert, /const locked = lockFor\(plan, kind\);/);
-    assert.match(insert, /if \(locked\) \{ setErr\(locked\); return false; \}/);
+    assert.match(insert, /if \(locked\) \{ setErr\(locked\.sentence\); return false; \}/);
     assert.ok(
       insert.indexOf("lockFor(plan, kind)") < insert.indexOf("addFromServer"),
       "the section is built before the plan is asked",

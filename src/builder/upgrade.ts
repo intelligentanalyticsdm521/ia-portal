@@ -31,6 +31,11 @@
 import type { BuilderDocument, Node, Section, Widget } from "./model";
 import { isContainer, makeContainer, makeWidget } from "./treeOps";
 import type { ElementStyle } from "./style";
+import { LEGACY_RIBBON_KEYS, ribbonProps, tagOf } from "./widgets/ribbon";
+import { featureItem, featureTexts } from "./widgets/features";
+import {
+  BOUND_KINDS, bindingDefaults, isBound, selectionOf, selectionProps,
+} from "./widgets/binding";
 
 /* ══════════════════════════════════════════════════════════════════════════
    What is being replaced
@@ -97,39 +102,187 @@ function arr(v: unknown): any[] {
  */
 function cardFrom(c: any): Widget {
   const offeringId = str(c?.item_id || c?.service_id || c?.catalogue_id || c?.productId || c?.offering_id || c?.offeringId);
-  const title = str(c?.name ?? c?.title);
+  const title = str(c?.name ?? c?.title ?? c?.heading);
   const price = str(c?.price);
-  const per = str(c?.per);
+  const per = str(c?.per ?? c?.period);
   const description = str(c?.pitch ?? c?.description);
-  const bullets = arr(c?.features ?? c?.bullets).map(str);
+  const bullets = arr(c?.features ?? c?.bullets ?? c?.features_list).map(str);
+  const ribbon = c?.badge ? ribbonProps({ text: str(c.badge) })
+    : (c?.recommended ? ribbonProps({ text: "Recommended", preset: "recommended" }) : {});
   if (offeringId) {
     const props: Record<string, unknown> = {
-      offeringId,
-      priceId: str(c?.tier || c?.price_id || c?.priceId),
+      ...bindingDefaults("oliver:catalogue"),
+      ...selectionProps("oliver:catalogue", {
+        offeringId, priceId: str(c?.tier || c?.price_id || c?.priceId),
+      }),
       // What the composite was showing, kept verbatim so the card is never
       // blank on a surface that has no catalogue.
-      snapshot: { title, price, per, description, bullets, amount: 0, cadence: null, basis: "" },
-      overrides: {},
-      refresh: "live",
-      onEmpty: "hide",
-      note: str(c?.note),
-      recommended: !!c?.recommended,
+      _ia_snapshot: { title, price, per, description, bullets, amount: 0, cadence: null, basis: "" },
+      footer_additional_info: str(c?.note),
+      ...ribbon,
     };
-    if (c?.badge) props.tag = { text: str(c.badge) };
-    if (c?.cta) props.ctaLabel = str(c.cta);
+    if (c?.cta) props.button_text = str(c.cta);
     return makeWidget("catalog_card", props);
   }
   const props: Record<string, unknown> = {
-    title, price, per,
-    was: str(c?.list_price ?? c?.was),
+    // THE CARD'S OWN NAMES, which are the price table's (conformance).
+    heading: title, price, period: per,
+    original_price: str(c?.list_price ?? c?.was ?? c?.original_price),
+    sale: str(c?.list_price ?? c?.was ?? c?.original_price) ? "yes" : "",
     description,
-    bullets,
-    note: str(c?.note),
-    recommended: !!c?.recommended,
+    features_list: bullets.map(featureItem),
+    footer_additional_info: str(c?.note),
+    ...ribbon,
   };
-  if (c?.badge) props.tag = { text: str(c.badge) };
-  if (c?.cta) props.ctaLabel = str(c.cta);
+  if (c?.cta) props.button_text = str(c.cta);
   return makeWidget("card", props);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE RENAMES — old spellings become the card's and the Binding section's
+   ══════════════════════════════════════════════════════════════════════════
+
+   Catalogue point (g): a document saved with `title / per / was / bullets /
+   note / recommended / offeringId / priceId / onEmpty` opens as one saved with
+   `heading / period / original_price / features_list /
+   footer_additional_info / show_ribbon / _ia_selection / on_empty`. Same
+   promise as the composites: a document that never used the old names comes
+   back as THE SAME OBJECT, by identity, so every golden already on the line is
+   byte for byte what it was.
+
+   Nothing is DROPPED, and nothing is renamed twice: a card that already has
+   `heading` keeps it, and the old key is removed in the same write so the
+   tolerant readers stop having two things to choose between. */
+
+/** Old key → the card's own name. In declaration order, applied in order. */
+const CARD_RENAMES: ReadonlyArray<[string, string]> = [
+  ["title", "heading"],
+  ["name", "heading"],
+  ["per", "period"],
+  ["was", "original_price"],
+  ["list_price", "original_price"],
+  ["pitch", "description"],
+  ["bullets", "features_list"],
+  ["features", "features_list"],
+  ["note", "footer_additional_info"],
+  ["ctaLabel", "button_text"],
+  ["ctaUrl", "link"],
+];
+
+/** Old key → the Binding section's name. */
+const BINDING_RENAMES: ReadonlyArray<[string, string]> = [
+  ["onEmpty", "on_empty"],
+  ["snapshot", "_ia_snapshot"],
+];
+
+/**
+ * Old key → the tax vocabulary the three repos speak (shared vocabulary (c)).
+ *
+ * `tax_rate_resolved` is NOT here: it is the server's, written once on send,
+ * and a document that never had one must not be given one on open.
+ */
+const TOTALS_RENAMES: ReadonlyArray<[string, string]> = [
+  ["taxMode", "tax_mode"],
+  ["taxRatePercent", "tax_rate"],
+  ["taxLabel", "tax_label"],
+];
+
+/** Which kinds are cards, i.e. carry the card's own field names. */
+const CARD_KINDS = new Set(["card", "catalog_card"]);
+
+/**
+ * One widget's props, renamed. Returns the SAME object when nothing moved.
+ *
+ * The identity return is the whole of the byte-identical promise: an untouched
+ * widget is the same widget, so an untouched column is the same column and an
+ * untouched document is the same document.
+ */
+export function renameProps(w: Widget): Widget {
+  const p: any = w.props || {};
+  let next: Record<string, unknown> | null = null;
+  const mine = (): Record<string, unknown> => (next = next || { ...p });
+  const write = (k: string, v: unknown) => { mine()[k] = v; };
+  const drop = (k: string) => { delete mine()[k]; };
+
+  if (CARD_KINDS.has(w.kind)) {
+    for (const [from, to] of CARD_RENAMES) {
+      if (!(from in p)) continue;
+      const cur = next ? (next as any)[to] : p[to];
+      const empty = cur === undefined || cur === null || cur === ""
+        || (Array.isArray(cur) && cur.length === 0);
+      if (empty && p[from] !== undefined && p[from] !== null && p[from] !== "") {
+        /* `features_list` is the price table's REPEATER — one `{ item_text }`
+           per line — and `bullets` / `features` were flat strings. The rename
+           has to change the SHAPE as well as the key, or the canvas writes
+           `features_list.0.item_text` into an array of strings and the line
+           the author typed goes into nothing. */
+        write(to, to === "features_list" ? featureTexts(p[from]).map(featureItem) : p[from]);
+      }
+      drop(from);
+    }
+    // A card already ON `features_list` but still holding flat strings — what
+    // this pass wrote for the hours before the shape was agreed with stream O.
+    if (Array.isArray(p.features_list) && p.features_list.some((f: unknown) => typeof f === "string")) {
+      write("features_list", featureTexts(p.features_list).map(featureItem));
+    }
+    // THE RIBBON. `tagOf` is the one reader of all five spellings; whatever it
+    // answers is written back in the card's own names, and the older keys go.
+    if ("tag" in p || "badge" in p || "recommended" in p) {
+      const tag = tagOf(p);
+      for (const [k, v] of Object.entries(ribbonProps(tag ? { text: tag.text, colour: tag.colour, preset: tag.preset } : null))) {
+        write(k, v);
+      }
+      // And the older keys come OFF, rather than being left beside the new
+      // ones holding a falsy value: a key nothing reads is a key somebody will
+      // one day write, and `tagOf` would then have two answers to choose from.
+      for (const k of LEGACY_RIBBON_KEYS) drop(k);
+    }
+  }
+
+  if (w.kind === "totals") {
+    for (const [from, to] of TOTALS_RENAMES) {
+      if (!(from in p)) continue;
+      const cur = next ? (next as any)[to] : p[to];
+      if (cur === undefined || cur === null || cur === "") write(to, p[from]);
+      drop(from);
+    }
+    /* A document that carried a rate and no mode MEANT "this document only" —
+       `totalsSettings` has always read it that way. Writing the mode down is
+       what stops it drifting the day the default changes. */
+    if (!("tax_mode" in p) && !("taxMode" in p)) {
+      const rate = next ? (next as any).tax_rate : undefined;
+      if (rate !== undefined && rate !== null && rate !== "") write("tax_mode", "document");
+    }
+  }
+
+  if (isBound(w.kind)) {
+    for (const [from, to] of BINDING_RENAMES) {
+      if (!(from in p)) continue;
+      const cur = next ? (next as any)[to] : p[to];
+      if (cur === undefined || cur === null) write(to, p[from]);
+      drop(from);
+    }
+    // THE SELECTION. `_ia_selection` is the one home; the four loose spellings
+    // are read by `selectionOf` and written back through `selectionProps`, so
+    // the rename and the reader cannot disagree about what a binding is.
+    const loose = ["offeringId", "priceId", "offering_id", "price_id"].filter((k) => k in p);
+    if (loose.length && w.kind !== "address_block") {
+      const sel = selectionOf(p);
+      if (sel.offeringId) {
+        for (const [k, v] of Object.entries(selectionProps(BOUND_KINDS[w.kind], sel))) write(k, v);
+      }
+      for (const k of loose) drop(k);
+    }
+    // `refresh: "snapshot"` was the one pinned mode before there were two.
+    if (p.refresh === "snapshot") write("refresh", "snapshot_send");
+    /* `_ia_source` is NOT stamped on here. It is what the widget's own
+       defaults carry and what `BOUND_KINDS` answers when it is absent, so
+       stamping it would touch every document that has a priced line in it —
+       and "a document that never used the old names comes back byte-identical"
+       is the promise this whole pass rests on. */
+  }
+
+  return next ? { ...w, props: next } : w;
 }
 
 /**
@@ -245,8 +398,11 @@ function upgradeNode(n: Node): Node {
     case "comparison_cards": return fromComparisonCards(n);
     case "property_block": return fromPropertyBlock(n);
     case "key_facts": return fromKeyFacts(n);
-    case "priced_line": return fromPricedLine(n);
-    default: return n;
+    case "priced_line": return renameProps(fromPricedLine(n) as Widget);
+    // THE RENAMES run on every widget that is not a composite, because a card
+    // written yesterday is not a composite and still spells its fields the old
+    // way. `renameProps` returns the same object when there is nothing to move.
+    default: return renameProps(n);
   }
 }
 
@@ -284,7 +440,10 @@ export function needsUpgrade(doc: BuilderDocument): boolean {
   const look = (nodes: Node[]) => {
     for (const n of nodes) {
       if (isContainer(n)) look(n.children);
-      else if (isComposite(n)) found = true;
+      // A COMPOSITE, or a widget still spelling its fields the old way. Both
+      // are "this document would change if it were opened", which is the one
+      // question this function is asked.
+      else if (isComposite(n) || renameProps(n) !== n) found = true;
     }
   };
   for (const s of doc.sections) for (const c of s.columns) look(c.widgets);

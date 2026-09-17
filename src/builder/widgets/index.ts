@@ -32,11 +32,13 @@ import { CATALOG_CARD_DEF, renderCatalogCard } from "./productCard";
 import { PRICE_LINE_DEF, renderPriceLine } from "./priceLine";
 import { ADDRESS_BLOCK_DEF, renderAddressBlock } from "./addressBlock";
 import { KEY_FACT_DEF, renderKeyFact } from "./keyFact";
-import { TOTALS_DEF, renderTotals } from "./totals";
+import { NO_BUSINESS_RATE_SENTENCE, TOTALS_DEF, renderTotals } from "./totals";
+import { HTML_DEF, renderHtml } from "./html";
 
 /** Every atomic widget, in the order the Products-and-services group shows. */
 export const ATOM_WIDGET_DEFS: WidgetDef[] = [
   CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF, TOTALS_DEF, ADDRESS_BLOCK_DEF, KEY_FACT_DEF,
+  HTML_DEF,
 ];
 
 type Renderer = (w: Widget, ctx: RenderContext) => string;
@@ -54,6 +56,7 @@ const RENDERERS: Record<string, Renderer> = {
   totals: renderTotals,
   address_block: renderAddressBlock,
   key_fact: renderKeyFact,
+  html: renderHtml,
 };
 
 /** The kinds that actually have a renderer here. */
@@ -86,10 +89,24 @@ export function atomKindsAgree(): { onlyNamed: string[]; onlyRendered: string[];
 }
 
 export * from "./tag";
-export { cardFields, bulletsKey } from "./card";
 export {
-  bindingOf, findInCatalogue, resolveCatalogCard, snapshotFrom,
+  CURRENCY_SYMBOLS, bulletsKey, cardFields, currencyGlyph, featureItem, featurePath,
+  featureText, featureTexts, priceWithoutSymbol,
+  type CardFields,
+} from "./card";
+export {
+  bindingOf, findInCatalogue, resolveCatalogCard, snapshotFrom, snapshotToCardProps,
   type CatalogBinding, type CatalogSnapshot, type ResolvedCatalogCard,
 } from "./productCard";
 export { priceLineFields } from "./priceLine";
 export { addressFields, locationAddress } from "./addressBlock";
+export { htmlBody, htmlOf } from "./html";
+export { NO_BUSINESS_RATE_SENTENCE } from "./totals";
+/* THE SHARED BINDING SECTION (catalogue F.2), for every surface that reads a
+   bound widget. One module, re-exported here like every other widget's own. */
+export {
+  BINDING_CONTROLS, BOUND_KINDS, ON_EMPTY_CHOICES, PUT_IT_BACK, REFRESH_MODES, TYPED_NOT_LIVE,
+  bindingDefaults, bindingSettings, freezeOnSend, isBound, isPinned, onEmptyOf,
+  overriddenFields, putItBackProps, refreshModeOf, selectionOf, selectionProps,
+  type BindingSettings, type IaSelection, type IaSource, type OnEmpty, type RefreshMode,
+} from "./binding";

@@ -216,12 +216,12 @@ describe("prop paths — what the canvas types into is where the model stores it
       ] }] }],
     });
     // The composite is upgraded on the way in (D-156), so what the renderer
-    // stamps is the ATOMIC card's own paths — `title`, `bullets.0` — and the
-    // editor writes them back into that card's own props.
+    // stamps is the ATOMIC card's own paths — and those paths are the PRICE
+    // TABLE's names (conformance 2026-09-17): `heading`, `features_list.0`.
     const html = renderSection(doc.sections[0], makeContext(doc, { mode: "edit" }));
     const paths = [...html.matchAll(/data-edit="([^"]+)"/g)].map((m) => m[1]);
-    assert.ok(paths.includes("title"), "the card's name is not editable in place");
-    assert.ok(paths.includes("bullets.0"), "the card's included line is not editable in place");
+    assert.ok(paths.includes("heading"), "the card's name is not editable in place");
+    assert.ok(paths.includes("features_list.0.item_text"), "the card's included line is not editable in place");
     // Every path the renderer stamped writes back into SOME node of the tree —
     // the heading, the card, the box. The vocabulary is the node's own, which
     // is the whole point of an atomic widget.

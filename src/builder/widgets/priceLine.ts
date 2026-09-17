@@ -18,6 +18,7 @@ import { bar, pictureFrom } from "../pictures";
 import { money } from "../totals";
 import { editRun, fillText, proseRun } from "./text";
 import { hasTag, tagBorder, tagHtml } from "./tag";
+import { BINDING_CONTROLS, bindingDefaults, selectionOf } from "./binding";
 
 export interface PriceLineFields {
   name: string;
@@ -37,6 +38,9 @@ const num = (v: unknown, d: number): number => (Number.isFinite(Number(v)) ? Num
 export function priceLineFields(props: Record<string, unknown> | undefined | null): PriceLineFields {
   const p: any = props || {};
   const bullets = Array.isArray(p.bullets) ? p.bullets : Array.isArray(p.features) ? p.features : [];
+  // WHICH CATALOGUE ROW — the shared Binding section's reader, not this
+  // widget's own. `_ia_selection` first, then the loose spellings.
+  const sel = selectionOf(p);
   return {
     name: str(p.name),
     description: str(p.description),
@@ -44,8 +48,8 @@ export function priceLineFields(props: Record<string, unknown> | undefined | nul
     quantity: num(p.quantity, 1),
     unitPrice: num(p.unit_price ?? p.unitPrice, 0),
     cadence: p.cadence == null || p.cadence === "" ? null : str(p.cadence),
-    offeringId: str(p.offering_id ?? p.offeringId),
-    priceId: str(p.price_id ?? p.priceId),
+    offeringId: sel.offeringId,
+    priceId: sel.priceId,
   };
 }
 
@@ -77,8 +81,13 @@ export const PRICE_LINE_DEF: WidgetDef = {
   picture: pictureFrom(bar(8, 12, 30) + bar(44, 12, 12) + bar(8, 24, 24) + bar(44, 24, 12)),
   category: "Money",
   adapters: ["proposal"],
+  // It can be filled from the OLIVER catalogue. A typed line needs nothing,
+  // and WHETHER this business has OLIVER is still the server's answer.
+  tier: "ia:oliver",
   defaults: {
-    name: "", description: "", bullets: [], quantity: 1, unit_price: 0, cadence: null, tag: null,
+    name: "", description: "", bullets: [], quantity: 1, unit_price: 0, cadence: null,
+    show_ribbon: "", ribbon_title: "", ribbon_color: "", ribbon_preset: "",
+    ...bindingDefaults("oliver:catalogue"),
   },
   controls: [
     { key: "name", label: "What it is", type: "text" },
@@ -86,5 +95,8 @@ export const PRICE_LINE_DEF: WidgetDef = {
     { key: "bullets", label: "What is included", type: "list" },
     { key: "quantity", label: "How many", type: "number" },
     { key: "unit_price", label: "Price each", type: "money" },
+    // THE SAME Binding section a product card has (F.2). A client who learnt
+    // it on one finds it on the other, which is the whole point of the section.
+    ...BINDING_CONTROLS,
   ],
 };

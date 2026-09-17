@@ -29,6 +29,9 @@ import {
   addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
+// THE ONE WRITER of a node's props, at any depth, with the model's own rules
+// on it (treeOps). See `patch` below for the walk this replaced.
+import { patchNode } from "../treeOps";
 import {
   detailsMerge, documentLogo, parseMoney, plainLabel, readDetails,
   reconcileDetails, widgetForToken, writeDetails, type DetailRow,
@@ -53,7 +56,10 @@ import {
 /* D-156 — the atomic widgets. The adapter owns the controls only it can draw:
    which product, which location, the business's tax rate and a coupon code. */
 import {
-  TAG_COLOURS, TAG_PRESETS, bindingOf, findInCatalogue, resolveCatalogCard, snapshotFrom, tagOf,
+  ON_EMPTY_CHOICES, PUT_IT_BACK, REFRESH_MODES, RIBBON_PRESETS, TAG_COLOURS, TYPED_NOT_LIVE,
+  bindingOf, findInCatalogue, onEmptyOf, overriddenFields, putItBackProps,
+  NO_BUSINESS_RATE_SENTENCE,
+  resolveCatalogCard, ribbonProps, selectionProps, snapshotFrom, tagOf,
 } from "../widgets";
 import { documentMoneySettings, totalsSettings } from "../totals";
 
@@ -583,7 +589,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [kit, savedTemplates, startFromSaved, startFromTemplate]);
 
   /* ── Saving ──────────────────────────────────────────────────────────── */
-  const wire = useCallback(() => toWire(doc, { ...ctx, mode: "view", ...docMoney }),
+  /**
+   * The wire shape.
+   *
+   * `send` is `merge.fill`'s own mode, and it is what freezes every
+   * catalogue-bound widget on the copy that goes to the customer (F.2). A
+   * draft save passes nothing and the document comes back by identity.
+   */
+  const wire = useCallback((send = false) =>
+    toWire(doc, { ...ctx, mode: "view", ...docMoney, fill: send ? "send" : "view" }),
     [ctx, doc, docMoney]);
 
   const blanks = useMemo(() => {
@@ -647,7 +661,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
     setSaved(null); setRefusal(null); setBusy(true);
     try {
-      const w = wire();
+      const w = wire(send);
       const payload = {
         contact_id: contactId || null,
         title: title.trim(),
@@ -729,7 +743,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
     setSaved(null); setRefusal(null); setBusy(true);
     try {
-      const w = wire();
+      const w = wire(send);
       // D-15 — the title is the PROPOSAL's, not the revision's, so a rename in
       // this builder used to be typed, saved and silently reverted. A rename is
       // not a content edit (the same reasoning /link already runs on), so the
@@ -1294,17 +1308,23 @@ function WidgetExtras({
   onLoadPropertyFields: (locationId: string) => Promise<Array<{ label: string; value: string }>>;
   onSavePropertyFields: (locationId: string, rows: Array<{ label?: string; value?: string }>) => Promise<void>;
 }) {
+  /**
+   * WRITE THIS WIDGET'S PROPS — through `patchNode`, the ONE seam.
+   *
+   * This used to be a hand-rolled walk over `sections → columns → widgets`,
+   * and it was wrong in two ways at once (found by driving it, 2026-09-17):
+   *
+   *   · it only reached the TOP of a column, so a card inside the row that
+   *     *Choose your plan* places could not be patched at all — every button
+   *     in this panel silently did nothing on a nested card;
+   *   · it was a second writer beside `treeOps.patchNode`, so the one rule the
+   *     model enforces there — at most one card in a row carries Recommended
+   *     (catalogue F.1.4) — never ran for anything written from here.
+   *
+   * One seam, by id, at any depth, and the rule comes with it.
+   */
   const patch = (props: Record<string, unknown>) => {
-    onChange({
-      ...doc,
-      sections: doc.sections.map((s) => s.id !== sectionId ? s : {
-        ...s,
-        columns: s.columns.map((c) => ({
-          ...c,
-          widgets: c.widgets.map((w) => (w.id === widget.id ? { ...w, props: { ...w.props, ...props } } : w)),
-        })),
-      }),
-    });
+    onChange(patchNode(doc, widget.id, props));
   };
 
   const p: any = widget.props || {};
@@ -1613,41 +1633,66 @@ const FIELD_COL: React.CSSProperties = { display: "flex", flexDirection: "column
  */
 function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<string, unknown>) => void }) {
   const tag = tagOf(widget.props);
+  /* EVERY WRITE GOES THROUGH `ribbonProps` (widgets/ribbon.ts), which spells
+     the ribbon the way the price table does — `show_ribbon` + `ribbon_title` +
+     `ribbon_color` + `ribbon_preset` — and clears every older spelling in the
+     same write. And the six presets are the module's, not a copy: the
+     one-Recommended-per-row rule is keyed on the PRESET, so a second list
+     here would be a second answer to "which card is the recommended one". */
   return (
     <div style={FIELD_COL}>
-      <span style={LBL}>Tag on this card</span>
+      <span style={LBL}>Ribbon on this card</span>
       <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {TAG_PRESETS.map((preset) => (
-          <button key={preset.text} type="button" data-tag-preset={preset.text}
+        {RIBBON_PRESETS.map((preset) => (
+          <button key={preset.preset} type="button" data-tag-preset={preset.text}
             style={{
               ...miniBtn,
-              background: tag?.text === preset.text ? "#0B6E8C" : "#fff",
-              color: tag?.text === preset.text ? "#fff" : "#334155",
+              background: tag?.preset === preset.preset ? "#0B6E8C" : "#fff",
+              color: tag?.preset === preset.preset ? "#fff" : "#334155",
             }}
-            title={`Put “${preset.text}” on this card`}
-            onClick={() => patch({ tag: { text: preset.text, colour: preset.colour }, recommended: false })}>
+            title={preset.preset === "recommended"
+              ? "Put “Recommended” on this card. Only one card in a row can have it — putting it here takes it off the others."
+              : `Put “${preset.text}” on this card`}
+            onClick={() => patch(ribbonProps({ text: preset.text, colour: preset.colour, preset: preset.preset }))}>
             {preset.text}
           </button>
         ))}
-        <button type="button" data-tag-clear="1" style={miniBtn} title="Take the tag off this card"
-          onClick={() => patch({ tag: null, recommended: false })}>No tag</button>
+        <button type="button" data-tag-clear="1" style={miniBtn} title="Take the ribbon off this card"
+          onClick={() => patch(ribbonProps(null))}>No ribbon</button>
       </div>
       <input style={INPUT} value={tag?.text || ""} data-tag-text="1"
         placeholder="Or type your own — “Best for corner lots”"
         title="The words on the ribbon at the top of the card"
         onChange={(e) => {
           const text = e.target.value;
-          patch({ tag: text.trim() ? { text, colour: tag?.colour || "" } : null, recommended: false });
+          patch(ribbonProps(text.trim() ? { text, colour: tag?.colour || "", preset: "custom" } : null));
         }} />
       {tag && (
         <select style={INPUT} value={tag.colour || ""} data-tag-colour="1"
           title="The colour of the ribbon"
-          onChange={(e) => patch({ tag: { text: tag.text, colour: e.target.value } })}>
+          onChange={(e) => patch({ ribbon_color: e.target.value })}>
           {TAG_COLOURS.map((c) => <option key={c.label} value={c.value}>{c.label}</option>)}
         </select>
       )}
     </div>
   );
+}
+
+/**
+ * A bound field's name, in a business owner's words.
+ *
+ * The Binding section's `overrides` are keyed by the FIELD, and "title" and
+ * "bullets" are the model's words rather than the author's. One map, beside
+ * the sentence that reads them.
+ */
+function plainFieldName(key: string): string {
+  const NAMES: Record<string, string> = {
+    title: "the name", heading: "the name",
+    description: "the description",
+    bullets: "what is included", features_list: "what is included",
+    price: "the price", per: "the billing period", period: "the billing period",
+  };
+  return NAMES[key] || key;
 }
 
 /**
@@ -1677,11 +1722,16 @@ function CatalogCardPanel({
   const binding = bindingOf(p);
   const resolved = resolveCatalogCard(p, offerings);
   const live = findInCatalogue(binding, offerings);
+  const overridden = overriddenFields(p);
 
+  // THE BINDING SECTION's own writer (F.2): `_ia_source` + `_ia_selection` +
+  // `_ia_snapshot`, through `selectionProps`, which also clears the four loose
+  // spellings so a binding cannot come back from a key nothing reads.
   const bind = (o: CatalogOffering, price: CatalogPrice | null) => patch({
-    offeringId: o.offering_id,
-    priceId: price?.price_id || "",
-    snapshot: snapshotFrom(o, price),
+    ...selectionProps("oliver:catalogue", {
+      offeringId: String(o.offering_id), priceId: String(price?.price_id || ""),
+    }),
+    _ia_snapshot: snapshotFrom(o, price),
   });
 
   const usePlan = () => {
@@ -1692,8 +1742,11 @@ function CatalogCardPanel({
       quantity: 1,
       unit_price: resolved.amount,
       cadence: resolved.cadence,
-      ...(binding?.offeringId ? { offering_id: binding.offeringId } : {}),
-      ...(binding?.priceId ? { price_id: binding.priceId } : {}),
+      // The line carries the SAME Binding section the card does, in the same
+      // names — which is what makes "learn it once" true (F.2).
+      ...selectionProps("oliver:catalogue", {
+        offeringId: binding?.offeringId || "", priceId: binding?.priceId || "",
+      }),
       fromCards: widget.id,
     });
     // Any line this card put down before goes first — one card, one line.
@@ -1738,38 +1791,56 @@ function CatalogCardPanel({
             onClick={usePlan}>
             Use this plan
           </button>
-          {resolved.overridden.length > 0 && (
-            <button type="button" style={miniBtn} data-clear-overrides="1"
-              title="Throw away the words you typed over this card and show the catalogue's own again"
-              onClick={() => patch({ overrides: {} })}>
-              Back to the catalogue’s words
-            </button>
+          {/* "TYPED, NOT LIVE" and "PUT IT BACK" (catalogue F.2). The words
+              are the Binding section's own, from `widgets/binding.ts`, so the
+              canvas, the inspector and every other bound widget say the same
+              thing about the same state. */}
+          {overridden.length > 0 && (
+            <div style={FIELD_COL} data-overridden={overridden.join(",")}>
+              <span style={{ fontSize: 11, color: "#B45309", lineHeight: 1.45 }}>
+                {TYPED_NOT_LIVE} — {overridden.map(plainFieldName).join(", ")}.
+                {" "}These stay as you typed them and no longer follow your catalogue.
+              </span>
+              <button type="button" style={miniBtn} data-clear-overrides="1"
+                title="Throw away the words you typed over this card and show the catalogue's own again"
+                onClick={() => patch(putItBackProps())}>
+                {PUT_IT_BACK}
+              </button>
+            </div>
           )}
-          {/* The Binding section's `refresh` (catalogue F.2). A document a
-              customer has been sent must keep the price they were quoted;
-              a draft being written should follow the catalogue. */}
+          {/* The Binding section's `refresh`, all THREE modes (catalogue F.2).
+              A document a customer has been sent must keep the price they were
+              quoted; a published page can be pinned at publish; a draft being
+              written should follow the catalogue. */}
           <div style={FIELD_COL}>
             <span style={LBL}>Keep the price up to date</span>
             <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-              {([["live", "Follow the catalogue"], ["snapshot", "Keep this price"]] as const).map(([mode, label]) => (
-                <button key={mode} type="button" data-refresh={mode}
+              {REFRESH_MODES.map((m) => (
+                <button key={m.value} type="button" data-refresh={m.value}
                   style={{
                     ...miniBtn,
-                    background: resolved.refresh === mode ? "#0B6E8C" : "#fff",
-                    color: resolved.refresh === mode ? "#fff" : "#334155",
+                    background: resolved.refresh === m.value ? "#0B6E8C" : "#fff",
+                    color: resolved.refresh === m.value ? "#fff" : "#334155",
                   }}
-                  title={mode === "live"
-                    ? "Change the price in Products & Services and this card follows it"
-                    : "Pin the figures as they are now — what a customer was quoted must not move under them"}
-                  onClick={() => patch({ refresh: mode })}>
-                  {label}
+                  title={m.help}
+                  onClick={() => patch({ refresh: m.value })}>
+                  {m.label}
                 </button>
               ))}
             </div>
           </div>
+          {/* `on_empty`, all THREE values. A bound card whose row is gone. */}
+          <div style={FIELD_COL}>
+            <span style={LBL}>When there is nothing to show</span>
+            <select style={INPUT} data-on-empty="1" value={onEmptyOf(p)}
+              title="What a customer sees if the product this is bound to is no longer there"
+              onChange={(e) => patch({ on_empty: e.target.value })}>
+              {ON_EMPTY_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </div>
           <button type="button" style={miniBtn} data-unbind="1"
             title="Stop this card following a product. What is on it stays as typed words."
-            onClick={() => patch({ offeringId: "", priceId: "" })}>
+            onClick={() => patch(selectionProps("oliver:catalogue", {}))}>
             Unlink from the catalogue
           </button>
         </>
@@ -1797,7 +1868,9 @@ function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
   const s = totalsSettings(widget.props);
   const [code, setCode] = useState(s.coupon?.code || "");
   const [note, setNote] = useState("");
-  const taxOn = s.taxRatePercent != null;
+  // The rate box is offered whenever the document is taxed at all — in
+  // business mode it is read-only and shows what resolved.
+  const taxOn = s.taxMode !== "none";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1811,15 +1884,25 @@ function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
           title="Where this document's tax rate comes from"
           onChange={(e) => {
             const mode = e.target.value as "business" | "document" | "none";
-            if (mode === "none") return patch({ taxMode: "none", taxRatePercent: null, taxLabel: "" });
+            /* THE CANONICAL NAMES — `tax_mode` / `tax_rate` / `tax_label`
+               (shared vocabulary (c), 2026-09-17). `tax_rate_resolved` is the
+               SERVER's and is never written here: it is stamped once on send,
+               so a figure a customer has already seen cannot move.
+
+               "No tax" KEEPS the number the author typed. A control that
+               forgets is a control you cannot undo, and `totalsSettings`
+               reports it back as `taxRateDocument`. */
+            if (mode === "none") return patch({ tax_mode: "none" });
             if (mode === "business") {
               return patch({
-                taxMode: "business",
-                taxRatePercent: businessTax?.percent ?? 0,
-                taxLabel: businessTax?.label || "",
+                tax_mode: "business",
+                // The live figure, so a draft shows it now. The server resolves
+                // it again on send and its answer wins.
+                tax_rate: businessTax ? businessTax.percent : null,
+                tax_label: businessTax?.label || "",
               });
             }
-            patch({ taxMode: "document", taxRatePercent: s.taxRatePercent ?? businessTax?.percent ?? 0 });
+            patch({ tax_mode: "document", tax_rate: s.taxRateDocument ?? businessTax?.percent ?? 0 });
           }}>
           <option value="none">No tax on this document</option>
           <option value="business">Your business rate</option>
@@ -1833,12 +1916,12 @@ function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
                 ? "This follows your business rate. Choose “a rate for this document only” to type a different one."
                 : "The rate this document is taxed at, as a percentage"}
               value={Number(s.taxRatePercent ?? 0)}
-              onChange={(e) => patch({ taxRatePercent: Number(e.target.value) || 0 })} />
+              onChange={(e) => patch({ tax_rate: Number(e.target.value) || 0 })} />
             <span style={{ fontSize: 10, color: "#94A3B8" }}>
               {s.taxMode === "business"
                 ? (businessTax && businessTax.percent
                   ? `Your business rate is ${businessTax.percent}%${businessTax.label ? ` (${businessTax.label})` : ""}. Change it in your books and every draft follows.`
-                  : "You have no business rate set up yet. Set one up in your books, or choose “a rate for this document only”.")
+                  : NO_BUSINESS_RATE_SENTENCE)
                 : "Typed here, and it stays as typed even if your business rate changes."}
             </span>
           </>

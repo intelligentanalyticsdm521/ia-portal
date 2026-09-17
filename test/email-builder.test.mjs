@@ -645,7 +645,10 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   test("the landing builder offers §7's web set and draws all of it", () => {
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind).sort(), [
       "button", "columns", "divider", "footer_note", "form", "gallery", "heading",
-      "hero", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
+      // `html` — catalogue point 9's free HTML box, added 2026-09-17. A landing
+      // page is an HTML page, so a pasted embed is exactly what the author
+      // means there; a proposal and an email do not offer it.
+      "hero", "html", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
     ]);
     const missing = widgetsFor("landing").map((w) => w.kind)
       .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));

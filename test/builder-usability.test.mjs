@@ -814,7 +814,9 @@ function cardHtml(mode, price) {
   // rather than `cards.N.*` inside a composite. The defect this pins is the
   // same one — an empty price that measures 0px, has no placeholder and is
   // skipped by Tab — and it is pinned on the widget that now carries it.
-  const w = makeWidget("card", { title: "Standard", price, per: "", was: "", bullets: [""] });
+  const w = makeWidget("card", {
+    heading: "Standard", price, period: "", original_price: "", sale: "yes", features_list: [""],
+  });
   return renderWidget(w, makeContext(doc, { mode }));
 }
 
@@ -829,8 +831,8 @@ describe("the tier card's price can be clicked (D-01, B-A-1)", () => {
 
   test("the price comes FIRST, so Tab reaches it before the suffix and the strike-through", () => {
     const html = cardHtml("edit", "");
-    assert.ok(html.indexOf('data-edit="price"') < html.indexOf('data-edit="per"'), "Tab still skips the price");
-    assert.ok(html.indexOf('data-edit="per"') < html.indexOf('data-edit="was"'));
+    assert.ok(html.indexOf('data-edit="price"') < html.indexOf('data-edit="period"'), "Tab still skips the price");
+    assert.ok(html.indexOf('data-edit="period"') < html.indexOf('data-edit="original_price"'));
   });
 
   test("a price that HAS a figure wears no slot classes", () => {

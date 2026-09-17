@@ -158,10 +158,17 @@ export function SectionGallery(p: SectionGalleryProps) {
                    after the click reads as a bug, and a card that is not here
                    at all reads as a missing feature. */
                 <button key={s.key} type="button"
-                  title={s.locked || `${s.name} — ${s.description}`}
-                  aria-label={s.locked || `${s.name} — ${s.description}`}
+                  title={s.locked?.sentence || `${s.name} — ${s.description}`}
+                  aria-label={s.locked?.sentence || `${s.name} — ${s.description}`}
                   disabled={!!s.locked}
-                  {...(s.locked ? { "data-premade-locked": s.locked } : {})}
+                  /* THE THREE STATES, on the gallery too (catalogue G.4):
+                     `data-widget-state` is `offered`, `plan` or `ownership`,
+                     the same three words the pane and the picker carry. */
+                  {...(s.locked ? {
+                    "data-premade-locked": s.locked.sentence,
+                    "data-widget-state": s.locked.reason,
+                    "data-widget-tier": s.locked.tier,
+                  } : { "data-widget-state": "offered" })}
                   onDoubleClick={() => { if (!s.locked) { p.onPlaceSection(s); p.onClose(); } }}
                   onClick={() => { if (!s.locked) setPicked(s.key); }}
                   style={{

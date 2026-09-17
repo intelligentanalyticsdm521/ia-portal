@@ -24,6 +24,7 @@
 import type { BuilderDocument, Container, Node, Widget } from "./model";
 import { walkNodes, walkWidgets } from "./model";
 import { isContainer } from "./treeOps";
+import { selectionOf } from "./widgets/binding";
 
 /**
  * The widget kinds whose money is real.
@@ -72,6 +73,13 @@ function num(v: unknown, fallback = 0): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** A number, or null when nothing was said. `0` is a real answer. */
+function num2(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
@@ -104,6 +112,7 @@ export function lineTotals(doc: BuilderDocument, before?: string): LineTotal[] {
 function widgetLines(widget: Widget): LineTotal[] {
   if (widget.kind === "price_line" || widget.kind === "priced_line") {
     const p: any = widget.props;
+    const sel = selectionOf(p);
     const quantity = num(p.quantity, 1);
     const unit = num(p.unit_price, 0);
     const base = String(p.name || p.description || "").trim();
@@ -112,8 +121,15 @@ function widgetLines(widget: Widget): LineTotal[] {
       description: p.cadence && !base.includes(p.cadence) ? `${base} (${p.cadence})` : base,
       quantity, unit_price: unit, line_total: round2(quantity * unit),
       recommended: !!p.recommended,
-      ...(p.offering_id ? { offering_id: String(p.offering_id) } : {}),
-      ...(p.price_id ? { price_id: String(p.price_id) } : {}),
+      /* WHICH CATALOGUE ROW — through the ONE reader (`widgets/binding.ts`).
+         These two used to be read straight off `p.offering_id` / `p.price_id`,
+         which was one of the four places a selection was kept; the Binding
+         section is one key now (`_ia_selection`) and `selectionOf` reads it
+         plus every older spelling. The wire's `service_offering_id` and
+         `service_price_id` come off THIS, so reading it any other way here is
+         how an accepted proposal stops converting to a quote. */
+      ...(sel.offeringId ? { offering_id: sel.offeringId } : {}),
+      ...(sel.priceId ? { price_id: sel.priceId } : {}),
       cadence: p.cadence ?? null,
     }];
   }
@@ -276,6 +292,26 @@ export interface TotalsSettings {
   taxMode: "business" | "document" | "none";
   /** Per cent. null = this document does not show tax at all. */
   taxRatePercent: number | null;
+  /**
+   * WHAT THE AUTHOR TYPED on this document, kept whatever the mode is.
+   *
+   * Switching to "No tax" must not throw the number away: the author who
+   * switches back expects it, and a control that silently forgets is a
+   * control you cannot undo. Mirrors oliver's `totalsSettings` (stream O).
+   */
+  taxRateDocument: number | null;
+  /**
+   * TRUE when this document says "use the business default" and no rate ever
+   * resolved — i.e. `tax_mode: "business"` with no `tax_rate_resolved`.
+   *
+   * It is the one case the sentence beside the widget is for. This used to be
+   * the audit's point 5: the mode was a stored word that resolved to nothing,
+   * so a proposal saying "taxed at the business default" was taxed at zero
+   * and nothing anywhere said so. The server writes `tax_rate_resolved` ONCE
+   * on send (oliver `routes/proposals.js`); until then the canvas can show the
+   * live figure, and when there is none it shows the sentence.
+   */
+  taxUnresolved: boolean;
   /** What the rate is called where it came from — "Ohio state + Franklin". */
   taxLabel: string;
   /** A straight per-cent discount the author typed. */
@@ -302,7 +338,26 @@ export interface WidgetTotals extends DocumentTotals {
 /** The settings on a `totals` widget, read tolerantly. */
 export function totalsSettings(props: Record<string, unknown> | undefined | null): TotalsSettings {
   const p: any = props || {};
-  const rate = p.taxRatePercent;
+  /* THE CANONICAL NAMES ARE `tax_mode` / `tax_rate` / `tax_rate_resolved`
+     (shared vocabulary (c), agreed with stream O 2026-09-17, and the names
+     oliver's mirror reads). `taxMode` / `taxRatePercent` are what this widget
+     wrote for a day and are still READ; nothing writes them.
+
+     `tax_rate_resolved` is the SERVER's, written once on send, and the widget
+     must never write it — a figure a customer has seen cannot move. */
+  const document = num2(p.tax_rate ?? p.taxRatePercent);
+  const resolved = num2(p.tax_rate_resolved);
+  const declared = p.tax_mode ?? p.taxMode;
+  const mode: TotalsSettings["taxMode"] =
+    declared === "business" || declared === "document" || declared === "none"
+      ? declared
+      // A document written before the mode existed says what it does: it has a
+      // rate, so the rate is this document's own.
+      : (document == null ? "none" : "document");
+  // In BUSINESS mode the number is the server's resolved one, or the live
+  // figure the adapter poured into `tax_rate` from `GET /settings`. In
+  // DOCUMENT mode it is what the author typed. In NONE there is no tax row.
+  const rate = mode === "none" ? null : (mode === "business" ? (resolved ?? document) : document);
   const rawCoupon = p.coupon;
   const coupon: TotalsCoupon | null = rawCoupon && typeof rawCoupon === "object" && String(rawCoupon.code || "").trim()
     ? {
@@ -311,16 +366,14 @@ export function totalsSettings(props: Record<string, unknown> | undefined | null
       amountOff: Number.isFinite(Number(rawCoupon.amountOff)) ? Number(rawCoupon.amountOff) : null,
     }
     : null;
-  const taxRatePercent = rate == null || rate === "" || !Number.isFinite(Number(rate)) ? null : Number(rate);
-  const declared = p.taxMode;
   return {
-    // A document written before the mode existed says what it does: it has a
-    // rate, so the rate is this document's own.
-    taxMode: declared === "business" || declared === "document" || declared === "none"
-      ? declared
-      : (taxRatePercent == null ? "none" : "document"),
-    taxRatePercent,
-    taxLabel: String(p.taxLabel ?? "").trim(),
+    taxMode: mode,
+    taxRatePercent: rate,
+    taxRateDocument: document,
+    // `null` and `0` ARE DIFFERENT ANSWERS and must not be collapsed: 0 is
+    // "this business charges no sales tax", null is "nobody has said".
+    taxUnresolved: mode === "business" && rate == null,
+    taxLabel: String(p.tax_label ?? p.taxLabel ?? "").trim(),
     discountPercent: num(p.discountPercent, 0),
     coupon,
   };
@@ -369,7 +422,10 @@ export function widgetTotals(
     return {
       lines: box.lines, sites: [], subtotal: subtotalOnly, tax: 0, discount: 0,
       total: subtotalOnly,
-      settings: { taxMode: "none", taxRatePercent: null, taxLabel: "", discountPercent: 0, coupon: null },
+      settings: {
+        taxMode: "none", taxRatePercent: null, taxRateDocument: null,
+        taxUnresolved: false, taxLabel: "", discountPercent: 0, coupon: null,
+      },
       discountFromPercent: 0, discountFromCoupon: 0,
       scopedTo: { locationId: box.locationId, name: box.name },
     };

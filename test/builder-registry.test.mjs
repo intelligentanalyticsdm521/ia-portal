@@ -214,6 +214,11 @@ describe("§3.2's union is registered", () => {
     // `totals`, which moved out of this file with its new tax / discount /
     // coupon settings (D-157).
     "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
+    // And 2026-09-17 by the conformance pass — catalogue point 9's free HTML
+    // box. The website emitter has published one since stream D; nobody could
+    // ADD one, and 58 of the 64 page bodies on the estate are one of these and
+    // nothing else (catalogue D.2).
+    "html",
   ];
 
   for (const kind of REQUIRED) {
@@ -446,8 +451,8 @@ describe("WidgetPane honours SD-010", () => {
   test("every widget button carries a tooltip AND an accessible name", () => {
     // A LOCKED row says the reason instead, which is the accessible name that
     // matters when the button cannot be pressed (R-D1).
-    assert.match(pane, /title=\{lock \|\| widgetTooltip\(w, adapter\)\}/);
-    assert.match(pane, /aria-label=\{lock \|\| widgetTooltip\(w, adapter\)\}/);
+    assert.match(pane, /title=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
+    assert.match(pane, /aria-label=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
   });
 
   test("it renders the picture, the label and the one line — in THIS builder's words", () => {
@@ -455,7 +460,7 @@ describe("WidgetPane honours SD-010", () => {
     // is now a map of one per builder for anything offered in more than one.
     assert.match(pane, /src=\{w\.picture\}/);
     assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
-    assert.match(pane, /\{lock \|\| widgetDescription\(w, adapter\)\}/);
+    assert.match(pane, /\{lock\?\.sentence \|\| widgetDescription\(w, adapter\)\}/);
     assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
   });
 

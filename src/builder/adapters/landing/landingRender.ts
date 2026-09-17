@@ -50,7 +50,10 @@ import {
   isContainer, walkTree,
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
-import { resolveCatalogCard, tagOf } from "../../widgets";
+import {
+  cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
+  snapshotToCardProps, tagOf,
+} from "../../widgets";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 
@@ -184,6 +187,8 @@ export const LANDING_RENDERED_KINDS = [
   // leave to build the same thing somewhere else.
   "container", "card", "catalog_card", "price_line", "address_block",
   "key_fact", "totals",
+  // Catalogue point 9 — the free HTML box. A landing page is an HTML page.
+  "html",
 ] as const;
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
@@ -214,6 +219,11 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
         ? `<p class="lp-small"${edit("text", c, "Small print")}>${t(p.text, c)}</p>` : "";
       case "social_links": return lpSocial(p, c);
       case "testimonial": return lpQuote(p, c);
+      /* PASTE YOUR OWN HTML (catalogue point 9). The author's markup, on the
+         page, unchanged — that is the whole widget. Drawn by the widget's own
+         renderer, not a second copy here, so the canvas, the website and this
+         page all put the same bytes out. */
+      case "html": return htmlBody(p, c.mode === "edit");
       default:
         return c.mode === "edit"
           ? `<div class="lp-unknown">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
@@ -255,26 +265,32 @@ interface LpCard {
   cta?: { label: string; url: string } | null;
 }
 
-/** One card's words, in any of the three spellings. See render.ts cardFields. */
+/**
+ * One card's words — through the WIDGET's OWN reader (`widgets/card.ts`).
+ *
+ * It used to be a second copy of `cardFields` with the same picks in the same
+ * order. See the email renderer's note: what is left here is only the parts a
+ * LANDING PAGE decorates on top — the ribbon as a plain string and the CTA as
+ * an object.
+ */
 function lpCardFields(p: any, c: LandingContext): LpCard {
-  const pick = (...vs: unknown[]) => vs.find((v) => v !== undefined && v !== null && v !== "");
-  const list = (...vs: unknown[]) => (vs.find((v) => Array.isArray(v) && v.length) as unknown[]) ?? [];
-  // ONE reader for the ribbon — widgets/tag.ts, the widget's own.
+  const f = cardFields(p);
   const ribbon = tagOf(p);
   const tag = ribbon?.text ?? "";
-  const recommended = !!p?.recommended;
-  const label = pick(p?.cta?.label, p?.button_text);
-  const url = pick(p?.cta?.url, p?.link?.url, p?.link);
+  const glyph = currencyGlyph(p);
+  const price = glyph ? `${glyph}${priceWithoutSymbol(f.price, glyph)}` : f.price;
+  const label = f.button_text;
+  const url = f.link;
   return {
-    title: pick(p?.title, p?.name, p?.heading),
-    price: p?.price,
-    per: pick(p?.per, p?.period),
-    was: pick(p?.was, p?.list_price, p?.original_price),
-    description: pick(p?.description, p?.pitch, p?.sub_heading),
-    bullets: list(p?.bullets, p?.features, p?.features_list),
-    note: pick(p?.note, p?.footer_additional_info),
-    recommended: recommended || !!tag,
-    tag: tag || (recommended ? "Recommended" : ""),
+    title: f.heading,
+    price,
+    per: f.period,
+    was: f.sale ? f.original_price : "",
+    description: f.description,
+    bullets: f.features_list,
+    note: f.footer_additional_info,
+    recommended: !!tag,
+    tag,
     tagColour: (ribbon?.colour ?? "").trim() || c.accent,
     cta: label || url ? { label: String(label || "Choose this"), url: String(url || "#") } : null,
   };
@@ -291,10 +307,11 @@ function lpCardFields(p: any, c: LandingContext): LpCard {
  */
 function lpCatalogCard(p: any, c: LandingContext): LpCard {
   const r = resolveCatalogCard(p, c.catalogue);
+  // `snapshotToCardProps` — the ONE map from a catalogue snapshot to a card's
+  // own field names, shared with the canvas, the mailbox and the PDF.
   return lpCardFields({
     ...p,
-    title: r.title, price: r.price, per: r.per,
-    description: r.description, bullets: r.bullets,
+    ...snapshotToCardProps(r),
     cta: p?.cta ?? (p?.priced ? { label: "Use this plan", url: "#" } : null),
   }, c);
 }

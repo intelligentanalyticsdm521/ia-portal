@@ -140,10 +140,13 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("D-156 · a card is typed, and every part of it is reachable", () => {
+  /* THE CARD'S OWN NAMES, which are the price table's (conformance
+     2026-09-17): `heading / price / period / original_price / sale /
+     features_list / footer_additional_info`. */
   const card = () => makeWidget("card", {
-    title: "Seasonal", price: "$525", per: "/mo", was: "$600",
-    description: "Everything for the season.", bullets: ["24/7 call-out", "Salt included"],
-    note: "Prices hold to 31 March.",
+    heading: "Seasonal", price: "$525", period: "/mo", original_price: "$600", sale: "yes",
+    description: "Everything for the season.", features_list: ["24/7 call-out", "Salt included"],
+    footer_additional_info: "Prices hold to 31 March.",
   });
 
   test("it draws what was typed into it", () => {
@@ -154,8 +157,14 @@ describe("D-156 · a card is typed, and every part of it is reachable", () => {
   });
 
   test("every run is editable, and an empty one can still be clicked", () => {
-    const html = edit(doc([makeWidget("card", {})]));
-    for (const path of ["title", "price", "per", "was", "description", "bullets.0", "note"]) {
+    // `sale` is ON so the original-price run is drawn; behind a saving switch
+    // the author turned off, a leftover number is a draft, not a price.
+    const html = edit(doc([makeWidget("card", { sale: "yes" })]));
+    /* `features_list.0.item_text` is ONE LEVEL DEEPER than the old
+       `bullets.0`: the price table keeps its feature list in a repeater whose
+       per-item field is `item_text`, and that is what all three repos store. */
+    for (const path of ["heading", "price", "period", "original_price", "description",
+      "features_list.0.item_text", "footer_additional_info"]) {
       assert.ok(html.includes(`data-edit="${path}"`), `${path} cannot be typed into`);
     }
     // D-01: the price is the field that measured 0×0 on the old block.
@@ -177,8 +186,8 @@ describe("D-156 · a card is typed, and every part of it is reachable", () => {
   });
 
   test("a card is selectable and removable on its own — it is one widget", () => {
-    const a = makeWidget("card", { title: "One" });
-    const b = makeWidget("card", { title: "Two" });
+    const a = makeWidget("card", { heading: "One" });
+    const b = makeWidget("card", { heading: "Two" });
     const d = doc([a, b]);
     const html = edit(d);
     assert.ok(html.includes(`data-widget="${a.id}"`), "the first card is not its own element");
@@ -193,34 +202,38 @@ describe("D-156 · a card is typed, and every part of it is reachable", () => {
 
 describe("D-157 · add a tag to this card", () => {
   test("Best Price, in orange, on a card", () => {
-    const w = makeWidget("card", { title: "Per-push", tag: { text: "Best Price", colour: "#C2410C" } });
+    const w = makeWidget("card", {
+      heading: "Per-push", show_ribbon: "yes", ribbon_title: "Best Price", ribbon_color: "#C2410C",
+    });
     const html = view(doc([w]));
     assert.ok(html.includes("Best Price"), "the tag is not on the card");
     assert.ok(html.includes("#C2410C"), "the tag lost its colour");
     // MUTATION: return `{ text }` without the colour from tagOf and this goes red.
-    assert.deepEqual(tagOf(w.props), { text: "Best Price", colour: "#C2410C" });
+    assert.deepEqual(tagOf(w.props), { text: "Best Price", colour: "#C2410C", preset: "best_price" });
   });
 
   test("no colour means the business's own", () => {
-    const w = makeWidget("card", { title: "Seasonal", tag: { text: "Most Popular" } });
+    const w = makeWidget("card", { heading: "Seasonal", show_ribbon: "yes", ribbon_title: "Most Popular" });
     const html = renderWidget(w, makeContext(doc([w]), { mode: "view", accent: "#0C4A60" }));
     assert.ok(html.includes("Most Popular"));
     assert.ok(html.includes("#0C4A60"), "a tag with no colour must wear the brand's");
   });
 
   test("`recommended: true` from before D-157 is still a ribbon", () => {
-    const w = makeWidget("card", { title: "Seasonal", recommended: true });
-    assert.deepEqual(tagOf(w.props), { text: "Recommended" });
+    const w = makeWidget("card", { heading: "Seasonal", recommended: true });
+    assert.deepEqual(tagOf(w.props), { text: "Recommended", preset: "recommended" });
     assert.ok(view(doc([w])).includes("Recommended"));
   });
 
   test("a tag on a priced line works the same way — one mechanism", () => {
-    const w = makeWidget("price_line", { name: "Seasonal", unit_price: 525, tag: { text: "Recommended" } });
+    const w = makeWidget("price_line", {
+      name: "Seasonal", unit_price: 525, show_ribbon: "yes", ribbon_title: "Recommended",
+    });
     assert.ok(view(doc([w])).includes("Recommended"));
   });
 
   test("no tag is no ribbon, and no empty element either", () => {
-    const w = makeWidget("card", { title: "Plain" });
+    const w = makeWidget("card", { heading: "Plain" });
     assert.equal(tagOf(w.props), null);
     assert.ok(!view(doc([w])).includes("bx-card-badge"));
   });
@@ -232,8 +245,9 @@ describe("D-157 · add a tag to this card", () => {
 
 describe("D-156 · a product card loads from Products & Services", () => {
   const bound = () => makeWidget("catalog_card", {
-    offeringId: "off-snow", priceId: "p-4-6",
-    snapshot: {
+    _ia_source: "oliver:catalogue",
+    _ia_selection: { offering_id: "off-snow", price_id: "p-4-6" },
+    _ia_snapshot: {
       title: "Snow clearing — 4-6 inch push", price: "$1,200.00", per: "billed monthly",
       description: "old words", bullets: ["old bullet"], amount: 1200, cadence: "billed monthly", basis: "per push",
     },
@@ -263,7 +277,7 @@ describe("D-156 · a product card loads from Products & Services", () => {
   });
 
   test("the catalogue brings the name, what is included and how it is billed", () => {
-    const r = resolveCatalogCard({ offeringId: "off-snow", priceId: "p-2-3" }, [SNOW]);
+    const r = resolveCatalogCard({ _ia_selection: { offering_id: "off-snow", price_id: "p-2-3" } }, [SNOW]);
     assert.equal(r.title, "Snow clearing — 2-3 inch push");
     assert.deepEqual(r.bullets, ["24/7 call-out", "Photos of every visit", "Salt included"]);
     assert.equal(r.description, "We plough, salt and log every visit.");
@@ -271,10 +285,15 @@ describe("D-156 · a product card loads from Products & Services", () => {
   });
 
   test("an override wins over the catalogue, and can be thrown away", () => {
-    const props = { ...bound().props, overrides: { title: "Our winter plan" } };
+    // The overrides are keyed by the CARD's own field names (conformance
+    // 2026-09-17) — `heading`, not `title` — so the canvas run that writes
+    // `overrides.heading` is read back by the same name. The snapshot's older
+    // spelling is still read.
+    const props = { ...bound().props, overrides: { heading: "Our winter plan" } };
     const r = resolveCatalogCard(props, [SNOW]);
     assert.equal(r.title, "Our winter plan");
-    assert.deepEqual(r.overridden, ["title"]);
+    assert.deepEqual(r.overridden, ["heading"]);
+    assert.equal(resolveCatalogCard({ ...bound().props, overrides: { title: "Older" } }, [SNOW]).title, "Older");
     // and the price is NOT overridable: a price you can type over on the card
     // is a price that no longer matches what you sell.
     assert.equal(r.price, "$1,200.00");
@@ -285,9 +304,9 @@ describe("D-156 · a product card loads from Products & Services", () => {
     // Catalogue F.2. "Keep this price" pins the figures the card was loaded
     // with, whatever the catalogue in the room says.
     const moved = { ...SNOW, prices: [SNOW.prices[0], { ...SNOW.prices[1], unit_amount: 1450 }] };
-    const pinned = { ...bound().props, refresh: "snapshot" };
+    const pinned = { ...bound().props, refresh: "snapshot_send" };
     const r = resolveCatalogCard(pinned, [moved]);
-    assert.equal(r.refresh, "snapshot");
+    assert.equal(r.refresh, "snapshot_send");
     assert.equal(r.source, "stored");
     assert.equal(r.price, "$1,200.00", "a pinned card followed the catalogue");
     // and the default, for every card written before the field existed, is live
@@ -423,6 +442,11 @@ describe("D-157 · subtotal, tax rate, discount, coupon", () => {
       // a rate, so the rate is this document's own (catalogue F.1.3).
       taxMode: "document",
       taxRatePercent: 7.25, taxLabel: "Ohio", discountPercent: 5,
+      // `taxRateDocument` is what the author TYPED, kept whatever the mode is,
+      // so switching to "No tax" and back does not throw the number away
+      // (conformance 2026-09-17, mirrored in oliver's `totalsSettings`).
+      taxRateDocument: 7.25,
+      taxUnresolved: false,
       coupon: { code: "X", percentOff: 10, amountOff: null },
     });
   });
@@ -438,6 +462,24 @@ describe("D-157 · subtotal, tax rate, discount, coupon", () => {
     const t = makeWidget("totals", { taxMode: "business", taxRatePercent: 10 });
     const d = doc([makeWidget("price_line", { name: "X", unit_price: 100, quantity: 1 }), t]);
     assert.equal(widgetTotals(d, t.id, t.props).tax, 10);
+
+    /* THE CANONICAL NAMES, and the case the sentence is for (conformance
+       2026-09-17). `tax_mode` / `tax_rate` / `tax_rate_resolved` are what the
+       three repos speak; the two above are read and never written. */
+    assert.equal(totalsSettings({ tax_mode: "document", tax_rate: 8.25 }).taxRatePercent, 8.25);
+    assert.equal(totalsSettings({ tax_mode: "none", tax_rate: 8.25 }).taxRatePercent, null,
+      "No tax still taxed the document");
+    assert.equal(totalsSettings({ tax_mode: "none", tax_rate: 8.25 }).taxRateDocument, 8.25,
+      "switching to No tax threw away the number the author typed");
+    // BUSINESS mode: the SERVER's resolved figure wins, and when nothing
+    // resolved the widget says so rather than taxing at zero in silence.
+    assert.equal(totalsSettings({ tax_mode: "business", tax_rate_resolved: 6.5 }).taxRatePercent, 6.5);
+    assert.equal(totalsSettings({ tax_mode: "business", tax_rate_resolved: 6.5 }).taxUnresolved, false);
+    assert.equal(totalsSettings({ tax_mode: "business" }).taxUnresolved, true,
+      "a document taxed at the business default with no rate resolved said nothing");
+    // `0` and `null` ARE DIFFERENT ANSWERS: 0 is "charges no sales tax".
+    assert.equal(totalsSettings({ tax_mode: "business", tax_rate_resolved: 0 }).taxUnresolved, false);
+    assert.equal(totalsSettings({ tax_mode: "business", tax_rate_resolved: 0 }).taxRatePercent, 0);
   });
 });
 

@@ -34,15 +34,28 @@
  */
 
 import type { SectionCatalogEntry } from "../../../lib/arionApi";
+import { widgetLock, type WidgetLock, type WidgetTier } from "../../tier";
 
-/** The three words a plan answer can be. Same vocabulary as the server's. */
-export type WidgetTier = "free" | "pro" | `ia:${string}`;
+/* The three words a plan answer can be LIVED HERE and are now `builder/tier.ts`'s,
+   beside the three sentences they choose between. One vocabulary for the
+   website's sections and the engine's widgets, because `ia:oliver` means the
+   same thing on both and two copies of the list is two chances for a refusal
+   to read as the wrong one. */
+export type { WidgetTier, WidgetLock };
 
 export interface SitePlan {
   /** What the SITE answered, through the server. Null = we were not told. */
   proAvailable: boolean | null;
-  /** kind → the sentence, for every section this plan cannot add. */
-  locked: Record<string, string>;
+  /**
+   * kind → WHY it cannot be added and the sentence for it.
+   *
+   * A `WidgetLock` and not a bare string, because "not on your website plan"
+   * and "needs a product this business does not have" are two different
+   * refusals and `reference_nav_visibility_semantics` says they must never
+   * collapse into one. It was one `Record<kind, string>` — one bucket — at the
+   * only surface a client reads.
+   */
+  locked: Record<string, WidgetLock>;
 }
 
 /**
@@ -69,10 +82,19 @@ export function readSitePlan(data: {
   sections?: Array<Partial<SectionCatalogEntry> & { tier?: string }>;
   elementorProAvailable?: boolean;
 } | null | undefined): SitePlan {
-  const locked: Record<string, string> = {};
+  const locked: Record<string, WidgetLock> = {};
   for (const row of data?.sections || []) {
     if (!row?.kind) continue;
-    if (row.available === false) locked[row.kind] = row.unavailableReason || DEFAULT_LOCK;
+    if (row.available !== false) continue;
+    /* WHICH of the three refusals this is comes from the row's own `tier`, and
+       the SENTENCE comes from the server when it sent one. `widgetLock` is the
+       one function that decides both, shared with the widget pane, so a
+       section and a widget that need the same product say the same thing. */
+    const lock = widgetLock(
+      (row.tier as WidgetTier) || "pro",
+      row.unavailableReason || true,
+    );
+    if (lock) locked[row.kind] = lock;
   }
   return {
     proAvailable: typeof data?.elementorProAvailable === "boolean" ? data.elementorProAvailable : null,
@@ -80,8 +102,8 @@ export function readSitePlan(data: {
   };
 }
 
-/** The sentence for one section kind, or null when this plan carries it. */
-export function lockFor(plan: SitePlan, kind: string | null | undefined): string | null {
+/** The refusal for one section kind, or null when this plan carries it. */
+export function lockFor(plan: SitePlan, kind: string | null | undefined): WidgetLock | null {
   if (!kind) return null;
   return plan.locked[kind] ?? null;
 }
@@ -99,7 +121,17 @@ export function canAdd(plan: SitePlan, kind: string | null | undefined): boolean
 export function pickerLock(
   plan: SitePlan,
   arionKindOf: (widgetKind: string) => string | null,
-  widgetKind: string,
-): string | null {
-  return lockFor(plan, arionKindOf(widgetKind));
+  widget: { kind: string; tier?: WidgetTier },
+): WidgetLock | null {
+  const fromServer = lockFor(plan, arionKindOf(widget.kind));
+  if (fromServer) return fromServer;
+  /* A WIDGET THAT IS NOT A SECTION. The server answers per SECTION, so a
+     widget with no section behind it has no server row — and a paid page
+     widget on a plan that has no paid page widgets is still refused. `tier`
+     says WHICH gate, `proAvailable` is the SITE's own answer to it, and a site
+     we could not ask locks nothing (the `siteCapability` rule: "we could not
+     ask" is never "there is none"). */
+  const tier = widget.tier || "free";
+  if (tier === "pro" && plan.proAvailable === false) return widgetLock(tier, true);
+  return null;
 }

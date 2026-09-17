@@ -18,11 +18,15 @@
  */
 import {
   deserialise, emptyDocument, makeSection, makeWidget, walkWidgets,
-  type BuilderDocument, type Section,
+  type BuilderDocument, type Section, type Widget,
 } from "./model";
 import { documentTotals, type LineTotal } from "./totals";
 import { upgradeDocument } from "./upgrade";
 import { renderDocument, makeContext, type RenderContext } from "./render";
+import type { FillMode } from "./merge";
+import {
+  addressFields, freezeOnSend, priceLineFields, resolveCatalogCard,
+} from "./widgets";
 
 /* ── 1. Upgrade ──────────────────────────────────────────────────────────── */
 
@@ -196,16 +200,37 @@ export interface ProposalWire {
  */
 export function toWire(
   doc: BuilderDocument,
-  ctx: Partial<RenderContext> & { taxRate?: number; discount?: number } = {},
+  ctx: Partial<RenderContext> & {
+    taxRate?: number; discount?: number;
+    /**
+     * WHICH COPY THIS IS — `merge.fill`'s own three modes (F.2).
+     *
+     * `send` freezes every bound widget: `_ia_snapshot` is written and
+     * `refresh` becomes `snapshot_send`, so *"a price a customer was quoted
+     * must not move under them"* is a value ON the document rather than a
+     * consequence of the PDF worker happening to have no catalogue. Absent is
+     * `view`, which is every draft save, and returns the document unchanged by
+     * identity.
+     *
+     * The RENDER mode stays `view`: a proposal is finished when it is written,
+     * so its merge tags are filled here and not left for a server to resolve
+     * per recipient (which is what `send` means for an email BODY).
+     */
+    fill?: FillMode;
+  } = {},
 ): ProposalWire {
-  const totals = documentTotals(doc, { taxRate: ctx.taxRate, discount: ctx.discount });
-  const rc = makeContext(doc, { ...ctx, mode: "view", totals });
+  // THE ONE FREEZE, at the one seam. `documentTotals` and the renderer below
+  // both read the FROZEN document, so the line items, the narrative and the
+  // stored model are three views of the same copy rather than of two.
+  const sent = freezeOnSend(doc, ctx.fill ?? "view", (w) => proposalSnapshot(w, ctx));
+  const totals = documentTotals(sent, { taxRate: ctx.taxRate, discount: ctx.discount });
+  const rc = makeContext(sent, { ...ctx, mode: "view", totals });
   return {
     // v1 blocks are still written so an older reader (and the 166 lineage) sees
     // something honest. One text block per section, in order.
-    blocks: { v: 1, blocks: legacyBlocks(doc) },
-    document: doc,
-    scope_html: renderDocument(doc, rc),
+    blocks: { v: 1, blocks: legacyBlocks(sent) },
+    document: sent,
+    scope_html: renderDocument(sent, rc),
     line_items: totals.lines.map((l: LineTotal) => ({
       description: l.description,
       quantity: l.quantity,
@@ -219,6 +244,47 @@ export function toWire(
     subtotal: totals.subtotal,
     total: totals.total,
   };
+}
+
+/**
+ * WHAT A BOUND WIDGET'S FROZEN VALUES ARE, in a proposal.
+ *
+ * The catalogue and the locations are HANDED IN, as they are to every renderer
+ * on this platform — `ctx.catalogue`, `ctx.locations` — so this is pure and the
+ * test can freeze a document without a fetch. A widget the caller has no data
+ * for returns null and is left alone: freezing a card to nothing would replace
+ * a live price with a blank one on the copy the customer signs.
+ */
+function proposalSnapshot(
+  w: Widget,
+  ctx: Partial<RenderContext>,
+): Record<string, unknown> | null {
+  if (w.kind === "catalog_card") {
+    const r = resolveCatalogCard(w.props, ctx.catalogue);
+    return r.source === "live"
+      ? {
+        title: r.title, price: r.price, per: r.per, description: r.description,
+        bullets: r.bullets, amount: r.amount, cadence: r.cadence, basis: r.basis,
+      }
+      : null;
+  }
+  if (w.kind === "price_line" || w.kind === "priced_line") {
+    const f = priceLineFields(w.props);
+    if (!f.offeringId) return null;
+    return {
+      name: f.name, description: f.description, bullets: f.bullets,
+      quantity: f.quantity, unit_price: f.unitPrice, cadence: f.cadence,
+    };
+  }
+  if (w.kind === "address_block") {
+    const f = addressFields(w.props, ctx.locations);
+    return f.bound
+      ? { name: f.name, address: f.address, contact: f.contact, notes: f.notes }
+      : null;
+  }
+  // `totals` reads the DOCUMENT, not a table (F.1.3), and the document IS the
+  // copy being sent — there is nothing outside it that could move.
+  return null;
 }
 
 /** The v1 projection, for readers that predate the document model. */

@@ -57,7 +57,10 @@ import {
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B), never a second
 // lite shape that resolves a price its own way.
-import { resolveCatalogCard, tagOf } from "../../widgets";
+import {
+  cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
+  snapshotToCardProps, tagOf,
+} from "../../widgets";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -484,28 +487,38 @@ interface EmCard {
   cta?: { label: string; url: string } | null;
 }
 
-/** One card's words, in any of the three spellings. See render.ts cardFields. */
+/**
+ * One card's words — through the WIDGET's OWN reader (`widgets/card.ts`).
+ *
+ * It used to be a second copy of `cardFields`: the same picks, in the same
+ * order, over its own copy of the list of spellings. Two readers is two
+ * chances to show a blank card in a mailbox, and it was the copy that would
+ * have been forgotten when the card's field names changed. What is left here
+ * is the three things a MAILBOX needs and a page does not — the ribbon as a
+ * plain string, the "recommended" flag the table layout reads, and the CTA as
+ * an object — decorated on top of the one set of words.
+ *
+ * `tagOf` is likewise the widget's own ribbon reader: a tag object, a plain
+ * string, the composite's `badge`, or `show_ribbon` + `ribbon_title`.
+ */
 function emCardFields(p: any, c: EmailRenderContext): EmCard {
-  const pick = (...vs: unknown[]) => vs.find((v) => v !== undefined && v !== null && v !== "");
-  const list = (...vs: unknown[]) => (vs.find((v) => Array.isArray(v) && v.length) as unknown[]) ?? [];
-  // ONE reader for the ribbon, shared with the widget itself (widgets/tag.ts):
-  // a tag object, a plain string, the composite's `badge`, or Elementor's
-  // `ribbon_title` behind its switch — all four, decided in one place.
+  const f = cardFields(p);
   const ribbon = tagOf(p);
   const tag = ribbon?.text ?? "";
-  const recommended = !!p?.recommended;
-  const label = pick(p?.cta?.label, p?.button_text);
-  const url = pick(p?.cta?.url, p?.link?.url, p?.link);
+  const glyph = currencyGlyph(p);
+  const price = glyph ? `${glyph}${priceWithoutSymbol(f.price, glyph)}` : f.price;
+  const label = f.button_text;
+  const url = f.link;
   return {
-    title: pick(p?.title, p?.name, p?.heading),
-    price: p?.price,
-    per: pick(p?.per, p?.period),
-    was: pick(p?.was, p?.list_price, p?.original_price),
-    description: pick(p?.description, p?.pitch, p?.sub_heading),
-    bullets: list(p?.bullets, p?.features, p?.features_list),
-    note: pick(p?.note, p?.footer_additional_info),
-    recommended: recommended || !!tag,
-    tag: tag || (recommended ? "Recommended" : ""),
+    title: f.heading,
+    price,
+    per: f.period,
+    was: f.sale ? f.original_price : "",
+    description: f.description,
+    bullets: f.features_list,
+    note: f.footer_additional_info,
+    recommended: !!tag,
+    tag,
     tagColour: colour(ribbon?.colour, c.accent),
     cta: label || url ? { label: String(label || "Choose this"), url: String(url || "#") } : null,
   };
@@ -522,11 +535,10 @@ function emCardFields(p: any, c: EmailRenderContext): EmCard {
  */
 function emCatalogCard(p: any, c: EmailRenderContext): EmCard {
   const r = resolveCatalogCard(p, c.catalogue);
-  return emCardFields({
-    ...p,
-    title: r.title, price: r.price, per: r.per,
-    description: r.description, bullets: r.bullets,
-  }, c);
+  // `snapshotToCardProps` is the ONE map from a catalogue snapshot to a card's
+  // own field names, so a card in a mailbox is spelled exactly as a card on the
+  // canvas is and `cardFields` reads it without a second vocabulary.
+  return emCardFields({ ...p, ...snapshotToCardProps(r) }, c);
 }
 
 /**
