@@ -127,7 +127,31 @@ export function makeContext(
 
 /** Merge-fill, then escape. Never the other way round. */
 function t(text: unknown, ctx: RenderContext): string {
-  return esc(fill(String(text ?? ""), ctx.merge, ctx.mode));
+  return tokenChips(esc(fill(String(text ?? ""), ctx.merge, ctx.mode)), ctx);
+}
+
+/**
+ * AN UNFILLED MERGE FIELD IS A SLOT, NOT A WORD (D-03, §11.10).
+ *
+ * §9 of the 2026-09-16 walk: "The only way through is to work out for yourself
+ * that you must click the sentence on the page, select the whole paragraph, and
+ * retype it with your numbers in place of the braces. I did that four times."
+ * Four merge fields destroyed, because {{contract.start_date}} looked exactly
+ * like the words around it.
+ *
+ * EDIT MODE ONLY, and AFTER escaping — `esc` does not touch braces, so the
+ * pattern is still there to find and nothing already escaped can be undone. A
+ * customer's copy, a PDF and every stored golden are byte-identical to before,
+ * which is why this is safe to put in the one renderer.
+ *
+ * The chip is a <span> inside a contentEditable run, so `innerText` reads back
+ * {{contract.start_date}} exactly as it was: the model cannot tell the
+ * difference, and the author can.
+ */
+function tokenChips(escaped: string, ctx: RenderContext): string {
+  if (ctx.mode !== "edit" || escaped.indexOf("{{") < 0) return escaped;
+  return escaped.replace(/\{\{\s*([a-zA-Z0-9_. ]+?)\s*\}\}/g, (whole, token) =>
+    `<span class="bx-tok" data-token="${esc(String(token))}" title="Filled in for you when the document is sent. Click to say what goes here.">${whole}</span>`);
 }
 
 /** Plain text with blank lines between paragraphs → <p> runs. */
@@ -139,7 +163,7 @@ function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
       ? `<p class="bx-p bx-empty"${attr} data-placeholder="Type here…"></p>`
       : "";
   }
-  const blocks = filled.split(/\n{2,}/).map((p) => esc(p.trim()).replace(/\n/g, "<br/>"));
+  const blocks = filled.split(/\n{2,}/).map((p) => tokenChips(esc(p.trim()), ctx).replace(/\n/g, "<br/>"));
   // In edit mode the whole run is ONE editable element — splitting it into
   // several <p data-edit> would make the author's second paragraph overwrite
   // the first when it is read back.
@@ -380,9 +404,16 @@ function comparisonCards(p: any, ctx: RenderContext): string {
       ${c?.recommended ? `<div class="bx-card-badge" style="background:${esc(ctx.accent)}">${esc(c?.badge || "Recommended")}</div>` : ""}
       <div class="bx-card-name" data-edit="cards.${i}.name">${t(c?.name, ctx)}</div>
       <div class="bx-card-price">
-        ${opt(c?.list_price, `<span class="bx-was${c?.list_price ? "" : " bx-slot"}" data-edit="cards.${i}.list_price" data-placeholder="was…">${t(c?.list_price, ctx)}</span>`)}
-        <span class="bx-now" data-edit="cards.${i}.price">${t(c?.price, ctx)}</span>
+        ${/* D-01, the worst single moment of the 2026-09-16 walk: an EMPTY price
+             measured 0 x 0, so the one number that matters on a tier card could
+             not be clicked, Tab skipped it, and a click in the space where it
+             visually belongs typed into "/mo". Its two neighbours always had
+             `bx-slot`; this one did not. Wider than they are, because 18px type
+             needs a target you can hit, and FIRST in source order so Tab reads
+             price -> per -> was. */""}
+        <span class="bx-now${c?.price ? "" : " bx-slot bx-now-slot"}" data-edit="cards.${i}.price" data-placeholder="$0.00">${t(c?.price, ctx)}</span>
         ${opt(c?.per, `<span class="bx-per${c?.per ? "" : " bx-slot"}" data-edit="cards.${i}.per" data-placeholder="/mo">${t(c?.per, ctx)}</span>`)}
+        ${opt(c?.list_price, `<span class="bx-was${c?.list_price ? "" : " bx-slot"}" data-edit="cards.${i}.list_price" data-placeholder="was…">${t(c?.list_price, ctx)}</span>`)}
       </div>
       <div class="bx-card-pitch" data-edit="cards.${i}.pitch">${t(c?.pitch, ctx)}</div>
       <ul class="bx-card-feats">${slots.map((f, fi) => `<li${f ? "" : ` class="bx-slot" data-placeholder="add a line…"`} data-edit="cards.${i}.features.${fi}">${t(f, ctx)}</li>`).join("")}</ul>
@@ -631,6 +662,11 @@ export const DOCUMENT_CSS = `
 .bx-prose > .bx-p:last-child { margin-bottom: 0; }
 .bx-empty { min-height: 1.4em; color: #94A3B8; }
 .bx-empty:empty::before { content: attr(data-placeholder); color: #94A3B8; }
+/* AN UNFILLED MERGE FIELD, on the author's screen only. Never in a customer's
+   copy: tokenChips runs in edit mode and nowhere else. */
+.bx-tok { background: #FEF3C7; border-bottom: 1px dashed #B45309; border-radius: 3px;
+  padding: 0 3px; color: #7C2D12; cursor: pointer; }
+.bx-tok:hover { background: #FDE68A; }
 .bx-slot:empty::before { content: attr(data-placeholder); color: #CBD5E1; }
 .bx-slot:empty { min-width: 60px; display: inline-block; }
 .bx-list { margin: 0 0 8px; padding-left: 18px; } .bx-list li { margin-bottom: 3px; }
@@ -667,6 +703,9 @@ export const DOCUMENT_CSS = `
 .bx-card-name { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .bx-card-price { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; }
 .bx-was { text-decoration: line-through; color: #94A3B8; } .bx-now { font-size: 18px; font-weight: 700; } .bx-per { color: #5A7A8A; font-size: 11px; }
+/* The price is the number the customer pays. An empty one has to be as easy to
+   hit as the "was" beside it — see D-01. */
+.bx-now-slot:empty { min-width: 90px; }
 .bx-card-pitch { color: #5A7A8A; margin-bottom: 8px; }
 .bx-card-feats { margin: 0; padding-left: 16px; } .bx-card-feats li { margin-bottom: 3px; }
 .bx-card-note { margin-top: 8px; font-size: 11px; color: #5A7A8A; }

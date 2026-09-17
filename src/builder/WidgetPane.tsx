@@ -24,11 +24,11 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import * as Icons from "lucide-react";
 import {
-  groupForPane,
   widgetTooltip,
   type BuilderAdapter,
   type WidgetDef,
 } from "./registry";
+import { groupByTask } from "./widgetTasks";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
 function WidgetIcon({ name, className }: { name: string; className?: string }) {
@@ -62,14 +62,26 @@ export interface WidgetPaneProps {
    * believing something is still in the air.
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
+  /**
+   * The line under the search box, in the adapter's words (copy.ts, D-30).
+   *
+   * "drop it exactly where you want it" is true of a page and of an email, but
+   * the NOUN differs, and a proposal builder that says "page" is the leak this
+   * prop exists to stop. Absent, the generic sentence is used.
+   */
+  hint?: string;
 }
 
-export function WidgetPane({ adapter, onInsert, header, onDragWidget }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   // Which widget is mid-question, and the number showing in its stepper.
   const [asking, setAsking] = useState<{ kind: string; value: number } | null>(null);
 
-  const groups = useMemo(() => groupForPane(adapter, query), [adapter, query]);
+  /* GROUPED BY THE JOB, NOT BY THE TYPE (D-147). "Information" and "Trust"
+     are words a developer wrote down; "Customer & property" and "Products &
+     services" are the two sentences the business owner said. The picker uses
+     the same call, so the two surfaces cannot drift — widgetTasks.ts. */
+  const groups = useMemo(() => groupByTask(adapter, query), [adapter, query]);
   const total = useMemo(() => groups.reduce((n, g) => n + g.widgets.length, 0), [groups]);
 
   function pick(w: WidgetDef) {
@@ -107,8 +119,8 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget }: WidgetPa
       {/* DRAG TO POSITION (§11.8), said once rather than appended to every
           tooltip — the tooltips are the widget's own words and stay that way. */}
       <div className="border-b border-slate-100 px-3 pb-2 text-[10px] leading-snug text-slate-400">
-        Click a widget to add it, or <strong className="font-semibold text-slate-500">drag it onto the page</strong> to
-        drop it exactly where you want it.
+        {hint ?? <>Click one to add it where you are, or <strong className="font-semibold text-slate-500">drag it onto the page</strong> to
+        drop it exactly where you want it.</>}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
@@ -119,9 +131,9 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget }: WidgetPa
         )}
 
         {groups.map((group) => (
-          <div key={group.category} className="mb-4 last:mb-0">
+          <div key={group.task} className="mb-4 last:mb-0">
             <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              {group.category}
+              {group.task}
             </div>
             <div className="space-y-1.5">
               {group.widgets.map((w) => (

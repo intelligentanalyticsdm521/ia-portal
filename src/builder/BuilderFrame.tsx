@@ -53,10 +53,12 @@
  * find that out before sending it. The width itself is one function in
  * responsive.ts, so no adapter decides what "phone" means.
  */
-import { useEffect, useState, type ReactNode } from "react";
-import { Layers, PanelLeft, Redo2, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { HelpCircle, Layers, PanelLeft, Redo2, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { IadmModal, IadmBuilderPanes, type IadmModalProduct } from "../components/IadmModal";
 import { NARROW_MEDIA_QUERY, PREVIEW_DEVICES, type PreviewKey } from "./responsive";
+import { focusablesIn, firstTabTarget, nextTrapIndex } from "./focusTrap";
+import { matchShortcut, preventsDefault, SHORTCUT_HELP, type BuilderAction } from "./shortcuts";
 
 export interface BuilderFrameProps {
   open: boolean;
@@ -94,6 +96,27 @@ export interface BuilderFrameProps {
    */
   preview?: PreviewKey;
   onPreview?: (key: PreviewKey) => void;
+
+  /* ── THE USABILITY REBUILD (§11.10, D-02 / D-18 / D-19) ────────────────── */
+  /**
+   * Is there work on the page that has not been saved?
+   *
+   * D-02: Escape closed the builder and threw everything away, with no
+   * confirmation. The frame never closes silently now — this is what it asks
+   * about. The ENGINE decides what dirty means (it owns the history); the
+   * frame only knows whether to ask.
+   */
+  dirty?: boolean;
+  /**
+   * A keystroke the map recognised (shortcuts.ts).
+   *
+   * Return TRUE when it was consumed. Escape is the one that matters: the
+   * engine returns true for "I deselected something" and false for "there was
+   * nothing to let go of", and only then does the frame offer to close.
+   */
+  onShortcut?: (action: BuilderAction) => boolean | void;
+  /** The "?" in the header plays the three-step walk-through again. */
+  onReplayHelp?: () => void;
 }
 
 /**
@@ -138,30 +161,98 @@ export function BuilderFrame(p: BuilderFrameProps) {
   const narrow = useNarrowViewport();
   /** Which drawer is open. Only one at a time — two over a 390px canvas is none. */
   const [drawer, setDrawer] = useState<"pane" | "inspector" | null>(null);
+  /** "Close and discard the changes?" — D-02. Never closes silently. */
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [help, setHelp] = useState(false);
+  /**
+   * A node INSIDE the modal, so the frame can find the dialog it is in.
+   *
+   * `display: contents` because the wrapper must not become a box in a flex
+   * layout that was written without it — the panes are sized by the modal's
+   * own grid, and an extra div with a size would fold the canvas.
+   */
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   // A window dragged back to full width must not leave a drawer stranded over
   // the canvas with no bottom bar left to close it.
   useEffect(() => { if (!narrow) setDrawer(null); }, [narrow]);
 
+  /** The dialog element the trap works inside. Found from a node within it. */
+  const dialogRoot = useCallback((): HTMLElement | null =>
+    rootRef.current?.closest<HTMLElement>('[role="dialog"]') ?? null, []);
+
   /**
-   * Escape closes the DRAWER, and only then the builder.
+   * CLOSING IS ALWAYS A QUESTION WHEN THERE IS WORK ON THE PAGE (D-02).
    *
-   * Found by driving it (2026-09-16): IadmModal listens for Escape on the
-   * document, so pressing it with the widget drawer open threw away the whole
-   * document instead of the drawer — the first reflex anybody has for "get
-   * this panel off my screen" was "lose your work". Capture phase, and only
-   * while a drawer is open, so the modal's own Escape is untouched otherwise.
+   * Every route out goes through here — Escape, the modal's own X, and the
+   * backdrop — because the walk proved the point the hard way: "Open a draft,
+   * add a widget, press Escape. Builder closes instantly; reopening shows the
+   * widget gone."
+   */
+  const requestClose = useCallback(() => {
+    if (p.dirty) { setConfirmClose(true); return; }
+    p.onClose();
+  }, [p]);
+
+  /**
+   * THE KEYBOARD, in one listener (D-18), and THE FOCUS TRAP (D-19).
+   *
+   * Capture phase on the document, so the frame sees a key before IadmModal's
+   * own Escape handler does and can decide whether the modal should ever hear
+   * it. That is the same mechanism the drawer's Escape already used; extending
+   * it rather than adding a second listener is the rule.
+   *
+   * Tab is handled here rather than with `onKeyDown` on a wrapper, because the
+   * header's buttons are IadmModal's children and a wrapper inside the body
+   * would not contain them — the trap has to be the whole dialog or it is a
+   * trap with a hole in it.
    */
   useEffect(() => {
-    if (!drawer) return;
+    if (!p.open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
-      e.stopPropagation();
-      setDrawer(null);
+      const root = dialogRoot();
+      if (!root) return;
+
+      if (e.key === "Tab") {
+        const items = focusablesIn(root);
+        if (!items.length) return;
+        const canvas = root.querySelector<HTMLElement>('[data-builder-slot="canvas"]');
+        const current = items.indexOf(document.activeElement as HTMLElement);
+        if (firstTabTarget(current >= 0, !!canvas) === "canvas" && canvas) {
+          e.preventDefault();
+          canvas.tabIndex = -1;
+          canvas.focus();
+          return;
+        }
+        e.preventDefault();
+        items[nextTrapIndex(items.length, current, e.shiftKey)]?.focus();
+        return;
+      }
+
+      // A drawer, the confirm and the help panel each swallow Escape before
+      // anything else can: the first reflex for "get this off my screen" must
+      // never be "lose your work".
+      if (e.key === "Escape") {
+        if (help) { e.stopPropagation(); setHelp(false); return; }
+        if (confirmClose) { e.stopPropagation(); setConfirmClose(false); return; }
+        if (drawer) { e.stopPropagation(); setDrawer(null); return; }
+      }
+
+      const action = matchShortcut(e, e.target as unknown as { tagName?: string; isContentEditable?: boolean });
+      if (!action) return;
+      const consumed = p.onShortcut?.(action) === true;
+      if (action === "escape") {
+        // ALWAYS stopped: the modal's own listener would close the builder
+        // without asking, which is the defect.
+        e.stopPropagation();
+        if (!consumed) requestClose();
+        return;
+      }
+      if (consumed && preventsDefault(action)) { e.preventDefault(); e.stopPropagation(); }
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [drawer]);
+  }, [confirmClose, dialogRoot, drawer, help, p, requestClose]);
 
   /**
    * THE undo control. Defined once and rendered in exactly one place at a
@@ -214,7 +305,9 @@ export function BuilderFrame(p: BuilderFrameProps) {
     <>
       <IadmModal
         open={p.open}
-        onClose={p.onClose}
+        /* EVERY route out asks when there is unsaved work — the X and the
+           backdrop as well as Escape (D-02). */
+        onClose={requestClose}
         product={p.product}
         eyebrow={p.eyebrow}
         title={p.title}
@@ -223,6 +316,13 @@ export function BuilderFrame(p: BuilderFrameProps) {
         size="builder"
         headerActions={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* The three sentences again, plus the keyboard list. Shown once
+                on the first open; this is how it comes back. */}
+            <button type="button" data-builder-help title="How this works, and the keyboard shortcuts"
+              aria-label="How this works, and the keyboard shortcuts"
+              onClick={() => setHelp((v) => !v)} style={ghost(true)}>
+              <HelpCircle size={14} />
+            </button>
             {previewToggle}
             {/* Narrow: undo/redo and the adapter's own buttons move to the
                 bottom bar, where a thumb can reach them. Never both places. */}
@@ -232,6 +332,7 @@ export function BuilderFrame(p: BuilderFrameProps) {
         }
         footer={p.footer}
       >
+        <div ref={rootRef} style={{ display: "contents" }} />
         {narrow ? (
           <div data-builder-layout="narrow" className="relative flex h-full min-h-0 w-full flex-col">
             {/* THE CANVAS, full width. Same node, same props as the wide case. */}
@@ -318,6 +419,72 @@ export function BuilderFrame(p: BuilderFrameProps) {
           </IadmBuilderPanes>
         )}
       </IadmModal>
+
+      {/* D-02. "Open a draft, add a widget, press Escape → builder closes
+          instantly; reopening shows the widget gone." Never again: the way out
+          is a question, and Keep editing is what the Escape key lands on. */}
+      {confirmClose && (
+        <div role="dialog" aria-label="Close and discard the changes?" data-builder-confirmclose
+          style={{ position: "fixed", inset: 0, zIndex: 9600, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(11,28,36,0.5)" }}>
+          <div style={{ width: "min(400px, calc(100vw - 32px))", background: "#fff", borderRadius: 10, padding: 20, boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24" }}>Close and discard the changes?</div>
+            <p style={{ fontSize: 13, lineHeight: 1.5, color: "#334155", marginTop: 8 }}>
+              You have changes on this page that have not been saved. Closing now throws them away.
+            </p>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+              <button type="button" autoFocus title="Go back to the page — nothing is lost"
+                onClick={() => setConfirmClose(false)}
+                style={{ border: "1px solid #CBD5E1", background: "#fff", color: "#0B1C24", borderRadius: 5, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Keep editing
+              </button>
+              <button type="button" title="Close and lose the changes you have made"
+                onClick={() => { setConfirmClose(false); p.onClose(); }}
+                style={{ border: "none", background: "#B91C1C", color: "#fff", borderRadius: 5, padding: "8px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                Close and discard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {help && (
+        <div data-builder-shortcuts role="dialog" aria-label="How this works"
+          style={{ position: "fixed", inset: 0, zIndex: 9550, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(11,28,36,0.5)" }}
+          onClick={() => setHelp(false)}>
+          <div onClick={(e) => e.stopPropagation()}
+            style={{ width: "min(420px, calc(100vw - 32px))", background: "#fff", borderRadius: 10, padding: 20, boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <strong style={{ fontSize: 15, color: "#0B1C24" }}>How this works</strong>
+              <button type="button" onClick={() => setHelp(false)} aria-label="Close" title="Close"
+                style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", color: "#64748B" }}>
+                <X size={15} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "#334155", marginTop: 8 }}>
+              Press <strong>+</strong> anywhere on the page to add something there. Click any words and type —
+              what you see is what the reader gets. Settings for whatever you clicked are on the right.
+            </p>
+            {p.onReplayHelp && (
+              <button type="button" title="Play the three-step walk-through again"
+                onClick={() => { setHelp(false); p.onReplayHelp?.(); }}
+                style={{ marginTop: 6, border: "1px solid #0C4A60", background: "#fff", color: "#0C4A60", borderRadius: 5, padding: "6px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+                Show me the walk-through again
+              </button>
+            )}
+            <table style={{ width: "100%", marginTop: 14, fontSize: 12, borderCollapse: "collapse" }}>
+              <tbody>
+                {SHORTCUT_HELP.map((row) => (
+                  <tr key={row.keys}>
+                    <td style={{ padding: "4px 10px 4px 0", whiteSpace: "nowrap", fontWeight: 700, color: "#0B1C24" }}>{row.keys}</td>
+                    <td style={{ padding: "4px 0", color: "#334155" }}>{row.what}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {p.overlays}
     </>
   );
