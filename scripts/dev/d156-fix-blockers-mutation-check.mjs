@@ -26,6 +26,7 @@ const EMAIL = "src/builder/adapters/email/EmailBuilder.tsx";
 const CANVAS = "src/builder/Canvas.tsx";
 const PLACE = "src/builder/insertPosition.ts";
 const RENDER = "src/builder/render.ts";
+const PICKER = "src/builder/WidgetPicker.tsx";
 
 const BLOCKERS = "test/builder-fix-blockers.test.mjs";
 const USABILITY = "test/builder-usability.test.mjs";
@@ -126,6 +127,14 @@ const MUTATIONS = [
     to: "",
     test: BLOCKERS,
     expects: "the slash command can ask for a Box, a Row or a Grid",
+  },
+  {
+    name: "V3f the Layout group disappears again when only a box matches",
+    file: PICKER,
+    from: '    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;',
+    to: "    if (true) return groups;",
+    test: BLOCKERS,
+    expects: "a search that matches only a BOX still shows the Layout group",
   },
 ];
 

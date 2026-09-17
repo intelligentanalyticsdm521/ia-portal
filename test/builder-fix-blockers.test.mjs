@@ -45,6 +45,8 @@ import {
   boxPlusPlacement, BOX_PLUS_SIZE, BOX_PLUS_STEP, insertSpotFor,
 } from "../src/builder/insertPosition.ts";
 import { resolveCatalogCard } from "../src/builder/widgets/index.ts";
+import { boxMatches } from "../src/builder/WidgetPicker.tsx";
+import { groupByTask } from "../src/builder/widgetTasks.ts";
 import { documentTotals } from "../src/builder/totals.ts";
 
 const SRC = path.join(process.cwd(), "src");
@@ -314,6 +316,29 @@ describe("D-156 · how deep a box may go is ONE number", () => {
       assert.ok(src.includes("MAX_CONTAINER_DEPTH"), `${file} does not use the shared limit`);
       assert.ok(!/MAX_CONTAINER_DEPTH\s*=\s*\d/.test(src), `${file} declares a limit of its own`);
     }
+  });
+
+  test("a search that matches only a BOX still shows the Layout group", () => {
+    // FOUND BY DRIVING IT (2026-09-17): wiring `onPickBox` into the slash
+    // picker was not enough. `groupByTask` returns the groups holding a
+    // matching WIDGET, and a box is not a widget — so typing "/row", which
+    // matches the Row box and nothing else, dropped Layout out of the list
+    // and the picker said "Nothing here matches 'row'" while holding exactly
+    // the thing asked for.
+    assert.equal(boxMatches("row").length, 1, "the Row box does not match the word row");
+    assert.equal(
+      groupByTask("proposal", "row").some((g) => g.task === "Layout"), false,
+      "this test's premise is gone — a widget now matches 'row' too",
+    );
+    const src = readSrc("builder/WidgetPicker.tsx");
+    assert.ok(src.includes("const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : [])"),
+      "the picker does not compute the matching boxes once");
+    assert.ok(/groups\.some\(\(g\) => g\.task === "Layout"\)/.test(src),
+      "the picker does not put the Layout group back when only a box matches");
+    // The empty message must count the boxes too, or it says "nothing matches"
+    // over a list with something in it.
+    assert.ok(/\+ \(shown\.some\(\(g\) => g\.task === "Layout"\) \? boxes\.length : 0\)/.test(src),
+      "the count that decides the empty message does not count the boxes");
   });
 
   test("the slash command can ask for a Box, a Row or a Grid", () => {
