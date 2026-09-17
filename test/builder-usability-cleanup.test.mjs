@@ -17,6 +17,21 @@
 //      updates page — beside a Publish that already asked in an `IadmModal`.
 //      One dialog now, everywhere.
 //
+//   2b. …AND THE GUARD THAT COULD NOT SEE HALF OF THEM (2026-09-17). The sweep
+//      matched `/\bwindow\.(confirm|prompt|alert)\s*\(/` — the QUALIFIED
+//      spelling only. A verifier dropped a bare `confirm("Are you sure?")` into
+//      a swept file and this test stayed green, with 211 live native dialogs
+//      sitting inside the trees it walks. The scanner now matches both
+//      spellings and lives in scripts/dev/native-dialog-scanner.mjs, and:
+//        · src/builder and src/arion/pages/website are asserted at ZERO
+//          (WebsiteSupport's alert() is now a refusal beside its Submit button,
+//           the D-20 way — an alert is a statement, so no dialog replaces it);
+//        · src/pages/spark is a RATCHET at 210 calls across 49 files —
+//          test/fixtures/native-dialog-ratchet.json. SWEEPING THOSE 210 IS
+//          SCHEDULED WORK (tracker, §11.11). This test does not claim they are
+//          gone; it claims the pile can only shrink. Lower the bar with
+//          `npm run ratchet:native-dialogs` after removing some.
+//
 //   3. `createsRecords()` WAS `return false`. A constant in the shape of a
 //      guard. It is now read off the action rows, and `findResults` drops a
 //      flagged row rather than trusting the comment above it. (Driven in
@@ -27,18 +42,27 @@
 //     ("save-template is refused with but never rendered")
 //   · WebsiteBuilder: put one `window.confirm(...)` back                    → RED
 //     (the sweep test names the file and the line)
+//   · WebsiteBuilder: put one BARE `confirm("Are you sure?")` back          → RED
+//     (2026-09-17 — this one was GREEN before this pass; that is the point)
+//   · SparkTasksPage: one bare `confirm(...)` beyond the recorded count     → RED
+//     ("1 recorded, 2 found", with src/pages/spark/…:LINE printed)
 //   · find.ts: `createsRecords` back to `return false`                      → RED
 //     (builder-polish.test.mjs — and it was GREEN before this pass, which is
 //      the whole point)
 //   · find.ts: drop the `createsRecord !== true` filter in findResults      → RED
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
   PROPOSAL_ANCHORS, ANCHORLESS, requestItemAnchor, isRequestItemAnchor,
 } from "../src/builder/proposal/refusalAnchors.ts";
+import {
+  NATIVE_DIALOG_CALL, nativeDialogSites, nativeDialogHits, filesUnder, scanTree,
+} from "../scripts/dev/native-dialog-scanner.mjs";
+
+export { nativeDialogHits };
 
 const SRC_ROOT = path.join(process.cwd(), "src");
 const SRC = (p) => readFileSync(path.join(SRC_ROOT, p), "utf8");
@@ -143,55 +167,80 @@ describe("D-20 · a refusal appears at the control that was pressed — all of t
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * Strip comments, then look for the CALL.
+ * The scanner lives in scripts/dev/native-dialog-scanner.mjs so this guard and
+ * the ratchet regenerator cannot drift apart. Its regex, in full:
  *
- * Comments are stripped because the files that dropped a `window.confirm` say
- * so in the comment above the replacement, and a scanner that cannot tell a
- * mention from a call is a scanner that gets deleted the first time it cries
- * wolf. The fixture below proves both halves: a call is caught, a mention is
- * not.
+ *     /(?<![.\w$])(?:window\s*\.\s*)?(confirm|prompt|alert)\s*\(/g
+ *
+ * BOTH SPELLINGS. Until 2026-09-17 it read `/\bwindow\.(confirm|prompt|alert)\s*\(/`
+ * and therefore saw only half the calls there are. A verifier dropped a bare
+ * `confirm("Are you sure?")` into a swept file and this test stayed green while
+ * 211 live native dialogs sat inside the very trees it walks. That is the
+ * failure mode a sweep test exists to prevent, so the fixture below now asserts
+ * the BARE call is caught, not just the qualified one.
  */
-export function nativeDialogHits(src) {
-  const code = src
-    .replace(/\/\*[\s\S]*?\*\//g, "")           // /* … */ and JSX {/* … */}
-    .split("\n")
-    .map((line) => line.replace(/(^|[^:\w])\/\/.*$/, "$1"))
-    .join("\n");
-  return [...code.matchAll(/\bwindow\.(confirm|prompt|alert)\s*\(/g)].map((m) => m[1]);
-}
-
-const SWEPT = ["builder", path.join("arion", "pages", "website"), path.join("pages", "spark")];
-
-function filesUnder(dir) {
-  const out = [];
-  for (const name of readdirSync(dir)) {
-    const full = path.join(dir, name);
-    if (statSync(full).isDirectory()) out.push(...filesUnder(full));
-    else if (/\.(ts|tsx)$/.test(name)) out.push(full);
-  }
-  return out;
-}
+const ZERO_TREES = ["builder", path.join("arion", "pages", "website")];
+const RATCHET_TREE = "pages/spark";
+const RATCHET = JSON.parse(
+  readFileSync(path.join(process.cwd(), "test", "fixtures", "native-dialog-ratchet.json"), "utf8"),
+);
 
 describe("§11.11 · the builder surfaces ask in the app's own dialog", () => {
-  test("the scanner catches a call and ignores a mention (the known-bad fixture)", () => {
+  test("the scanner catches BOTH spellings of a call, and ignores everything else", () => {
     // PRESENCE, not absence: a sweep test that can only ever say "nothing
     // found" is a sweep test that passes when the regex is broken.
-    const bad = 'function go() {\n  if (!window.confirm("Delete it?")) return;\n}\n';
-    assert.deepEqual(nativeDialogHits(bad), ["confirm"], "a real call must be caught");
+    // ── qualified ──
+    assert.deepEqual(
+      nativeDialogHits('function go() {\n  if (!window.confirm("Delete it?")) return;\n}\n'),
+      ["confirm"], "a real call must be caught");
     assert.deepEqual(nativeDialogHits('const x = window.prompt("name");'), ["prompt"]);
     assert.deepEqual(nativeDialogHits("window.alert('oops')"), ["alert"]);
-    // …and the mentions the swept files legitimately carry are NOT hits.
+    assert.deepEqual(nativeDialogHits("window . confirm('spaced out')"), ["confirm"]);
+    // ── BARE, the half that used to walk straight through ──
+    assert.deepEqual(nativeDialogHits('confirm("Are you sure?")'), ["confirm"],
+      "a BARE confirm is the same grey box — the old regex missed every one of these");
+    assert.deepEqual(nativeDialogHits('if (!confirm("Delete this secret?")) return;'), ["confirm"]);
+    assert.deepEqual(nativeDialogHits("alert(`Failed: ${e.message}`);"), ["alert"]);
+    assert.deepEqual(nativeDialogHits('const name = prompt("Name?");'), ["prompt"]);
+    assert.deepEqual(nativeDialogHits('await x(); alert("done");'), ["alert"]);
+    // ── somebody ELSE's method of the same name is NOT the browser's ──
+    assert.deepEqual(nativeDialogHits('foo.confirm("x")'), [], "a method on another object");
+    assert.deepEqual(nativeDialogHits('dialog.confirm("x")'), []);
+    assert.deepEqual(nativeDialogHits("modal.alert('x')"), []);
+    assert.deepEqual(nativeDialogHits("this.prompt('x')"), []);
+    assert.deepEqual(nativeDialogHits("deps.onConfirm(); reconfirm(); myAlert('x'); alerts(1)"), [],
+      "neither a longer identifier nor a differently-cased one is the global");
+    // ── and a MENTION is not a call ──
+    assert.deepEqual(nativeDialogHits('// it used to be a confirm("x") here'), [],
+      "a line comment naming confirm( must not be a hit");
     assert.deepEqual(nativeDialogHits("// it used to be a window.confirm(…) here"), []);
-    assert.deepEqual(nativeDialogHits("/* window.prompt(\"x\") */"), []);
+    assert.deepEqual(nativeDialogHits('/* confirm("x") and alert("y") */'), []);
     assert.deepEqual(nativeDialogHits(" * It replaces a `window.prompt`, which is grey."), []);
+    // …and in CRLF, which is what every file in this repo actually is. The old
+    // rule was `/(^|[^:\w])\/\/.*$/` — `.` does not match `\r`, so it never
+    // stripped a single line comment here and a mention WAS a hit.
+    assert.deepEqual(nativeDialogHits('  // alert(1)\r\nconst a = 1;\r\n'), [],
+      "a line comment in CRLF must still be a comment");
+    assert.deepEqual(nativeDialogSites('  // alert(1)\r\nalert(2);\r\n'), [{ kind: "alert", line: 2 }]);
+    // A URL in a string is not the start of a comment.
+    assert.deepEqual(nativeDialogHits('const u = "https://x.io/a"; alert(1);'), ["alert"]);
+    // ── the line number is the line a human would open ──
+    assert.deepEqual(nativeDialogSites('const a = 1;\n\nalert("no");\n'), [{ kind: "alert", line: 3 }]);
+    assert.deepEqual(
+      nativeDialogSites('/* two\n   line\n   comment */\nconfirm("x");\n'),
+      [{ kind: "confirm", line: 4 }],
+      "blanking a block comment must not shift the lines below it");
+    // The regex is a literal in the scanner, not something this test rebuilt.
+    assert.equal(NATIVE_DIALOG_CALL.source,
+      "(?<![.\\w$])(?:window\\s*\\.\\s*)?(confirm|prompt|alert)\\s*\\(");
   });
 
-  test("not one native dialog survives under builder, arion/pages/website or pages/spark", () => {
+  test("ZERO native dialogs under src/builder and src/arion/pages/website", () => {
     const offenders = [];
-    for (const rel of SWEPT) {
-      for (const file of filesUnder(path.join(SRC_ROOT, rel))) {
-        const hits = nativeDialogHits(readFileSync(file, "utf8"));
-        if (hits.length) offenders.push(`${path.relative(SRC_ROOT, file)} → window.${hits.join(", window.")}`);
+    for (const rel of ZERO_TREES) {
+      const { sites } = scanTree(SRC_ROOT, rel);
+      for (const [file, found] of Object.entries(sites)) {
+        for (const s of found) offenders.push(`src/${file}:${s.line} → ${s.kind}(`);
       }
     }
     assert.deepEqual(offenders, [],
@@ -200,12 +249,89 @@ describe("§11.11 · the builder surfaces ask in the app's own dialog", () => {
 
   test("the scanner is actually looking at the files it claims to", () => {
     // Belt and braces on the walk itself: if `filesUnder` ever returns nothing
-    // the sweep above passes vacuously.
-    const seen = SWEPT.flatMap((rel) => filesUnder(path.join(SRC_ROOT, rel)));
+    // the sweeps above pass vacuously.
+    const seen = [...ZERO_TREES, RATCHET_TREE]
+      .flatMap((rel) => filesUnder(path.join(SRC_ROOT, rel)));
     assert.ok(seen.length > 40, `expected the three trees to hold real files, saw ${seen.length}`);
     assert.ok(seen.some((f) => f.endsWith("WebsiteBuilder.tsx")));
     assert.ok(seen.some((f) => f.endsWith("SparkAgentsPage.tsx")));
     assert.ok(seen.some((f) => f.endsWith("WebsiteUpdates.tsx")));
+    assert.ok(seen.some((f) => f.endsWith("WebsiteSupport.tsx")));
+  });
+
+  test("the website support form refuses BESIDE its button, not in a grey box", () => {
+    const support = SRC("arion/pages/website/WebsiteSupport.tsx");
+    // It was an alert() — a statement, not a question — so it is neither a
+    // ConfirmDialog (which has a yes and a no) nor a NameBlockDialog (which
+    // takes a name). D-20 says a refusal appears at the control that was
+    // pressed: it now shares the slot the success line already occupies.
+    assert.deepEqual(nativeDialogHits(support), [], "the alert() is gone");
+    assert.match(support, /This used to be `alert\('Failed to submit request/,
+      "…and the comment saying so is a MENTION, which the scanner must not count");
+    assert.match(support, /const \[refusal, setRefusal\] = useState\(''\)/);
+    assert.match(support, /setRefusal\('We could not send that request just now/);
+    assert.match(support, /data-support-refusal=\{refusal \? 'yes' : undefined\}/);
+    assert.match(support, /\{refusal \|\| \(submitted \? 'Request submitted!' : ''\)\}/);
+    // Pressing Submit again must not show yesterday's refusal.
+    assert.match(support, /setSubmitting\(true\);\s*\n\s*setRefusal\(''\);/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   2b — src/pages/spark: a RATCHET, not a claim
+   ──────────────────────────────────────────────────────────────────────────
+   210 native dialogs across 49 files still live under src/pages/spark. This
+   test does NOT say they are gone — SWEEPING THEM IS SCHEDULED WORK, tracked on
+   MASTER_TRACKER_2026-09-04.md beside the rest of §11.11. What it says is that
+   the pile may only ever get smaller: the count per file is checked in at
+   test/fixtures/native-dialog-ratchet.json, and a new dialog in any of those
+   files — or in a file that has none today — is a failure that prints the line.
+
+   When you remove some, run `npm run ratchet:native-dialogs` to lower the bar.
+   The regenerator refuses to RAISE it.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("§11.11 · src/pages/spark native dialogs only ever go down", () => {
+  test("the ratchet baseline is the real shape of the tree, not a guess", () => {
+    assert.equal(RATCHET.tree, "src/pages/spark");
+    assert.ok(RATCHET.total > 0, "a zero baseline would make this test vacuous");
+    assert.equal(RATCHET.fileCount, Object.keys(RATCHET.files).length);
+    assert.equal(
+      Object.values(RATCHET.files).reduce((a, b) => a + b, 0), RATCHET.total,
+      "the per-file counts must add up to the recorded total");
+    assert.match(RATCHET.$comment, /RATCHET, not a claim that they are gone/);
+  });
+
+  test("no file gains a native dialog, and the total never grows", () => {
+    const { counts, sites } = scanTree(SRC_ROOT, RATCHET_TREE);
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+    const grown = [];
+    for (const [file, n] of Object.entries(counts)) {
+      const allowed = RATCHET.files[file] ?? 0;
+      if (n <= allowed) continue;
+      // Every site in the file, not a guessed tail: the ratchet stores a COUNT,
+      // so it cannot say which of these is the new one. Printing all of them is
+      // what lets the reader find it.
+      const lines = sites[file].map((s) => `src/${file}:${s.line} → ${s.kind}(`);
+      grown.push(`${file}: ${allowed} recorded, ${n} found — one of these is new\n      ${lines.join("\n      ")}`);
+    }
+    assert.deepEqual(grown, [],
+      "a native browser dialog was ADDED under src/pages/spark. Use ConfirmDialog, " +
+      "NameBlockDialog, or an inline refusal beside the control:\n    " + grown.join("\n    "));
+
+    assert.ok(total <= RATCHET.total,
+      `src/pages/spark native dialogs went UP: ${RATCHET.total} recorded, ${total} found`);
+  });
+
+  test("when they are removed, the baseline is stale — say so rather than drifting", () => {
+    const { counts } = scanTree(SRC_ROOT, RATCHET_TREE);
+    const total = Object.values(counts).reduce((a, b) => a + b, 0);
+    assert.equal(total, RATCHET.total,
+      total < RATCHET.total
+        ? `${RATCHET.total - total} native dialogs were removed — lower the bar with ` +
+          "`npm run ratchet:native-dialogs` so the next one cannot sneak back in"
+        : `the ratchet is out of date: ${RATCHET.total} recorded, ${total} found`);
   });
 });
 

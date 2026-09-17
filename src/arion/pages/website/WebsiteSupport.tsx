@@ -69,6 +69,12 @@ export function WebsiteSupport() {
   const [requestType] = useState('content_update');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  // §11.11 + D-20. This used to be `alert('Failed to submit request…')` — the
+  // browser's grey box, at the top of the screen, miles from the button that
+  // raised it, with an "OK" that acknowledges nothing. It is not a question, so
+  // it is not a ConfirmDialog; a refusal belongs BESIDE the control that was
+  // pressed, in the slot the success line already uses.
+  const [refusal, setRefusal] = useState('');
 
   // Real history from arion.site_request (migration 055) — this list used to be
   // a hardcoded [] with the comment "no request history endpoint exists yet".
@@ -84,6 +90,7 @@ export function WebsiteSupport() {
   const handleSubmit = async () => {
     if (!activeSiteId || !notes.trim()) return;
     setSubmitting(true);
+    setRefusal('');
     try {
       await arionApi.submitRequest(activeSiteId, requestType, notes);
       setSubmitted(true);
@@ -93,7 +100,7 @@ export function WebsiteSupport() {
       refetch();
       setTimeout(() => setSubmitted(false), 3000);
     } catch {
-      alert('Failed to submit request. Please try again.');
+      setRefusal('We could not send that request just now. Nothing was lost — press Submit Request again.');
     } finally {
       setSubmitting(false);
     }
@@ -110,13 +117,17 @@ export function WebsiteSupport() {
           className="textarea-input"
           placeholder='Describe the change you need — e.g. "Update the phone number on the Contact page to (555) 123-4567."'
           value={notes}
-          onChange={e => setNotes(e.target.value)}
+          onChange={e => { setNotes(e.target.value); if (refusal) setRefusal(''); }}
           rows={3}
           style={{ width: '100%', resize: 'vertical', padding: 8, borderRadius: 6, border: '1px solid var(--border)', fontSize: 13 }}
         />
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-            {submitted ? 'Request submitted!' : ''}
+          <span
+            data-support-refusal={refusal ? 'yes' : undefined}
+            role={refusal ? 'alert' : undefined}
+            style={{ fontSize: 12, color: refusal ? 'var(--danger, #B91C1C)' : 'var(--text-muted)' }}
+          >
+            {refusal || (submitted ? 'Request submitted!' : '')}
           </span>
           <button className="abtn abtn-sky" onClick={handleSubmit} disabled={submitting || !notes.trim()}>
             {submitting ? 'Submitting...' : 'Submit Request'}
