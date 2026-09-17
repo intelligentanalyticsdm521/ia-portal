@@ -649,17 +649,35 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
   const shell = readSrc("builder/BuilderShell.tsx");
   const pane = readSrc("builder/WidgetPane.tsx");
 
+  /* THREE HALVES NOW, not two (§11.12, D-156): a BOX is a third kind of thing
+     that can be selected, and it gets its own two groups above the widget's.
+     The slices are taken from the markers rather than from position, so adding
+     a group cannot silently pass by shifting everything along. */
+  const groupOrder = () => [...inspector.matchAll(/<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|AdvancedGroup)/g)]
+    .map((m) => m[2] || m[1]);
+
+  test("a BOX gets Layout then Style, above everything else (D-156)", () => {
+    const order = groupOrder();
+    assert.deepEqual(order.slice(0, order.indexOf("Content")), ["Layout", "Style"]);
+  });
+
   test("a widget gets Content, Typography, Spacing, Advanced — in that order", () => {
-    const order = [...inspector.matchAll(/<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|AdvancedGroup)/g)]
-      .map((m) => m[2] || m[1]);
-    const widgetHalf = order.slice(0, order.indexOf("Layout"));
+    const order = groupOrder();
+    const widgetHalf = order.slice(order.indexOf("Content"), order.lastIndexOf("Layout"));
     assert.deepEqual(widgetHalf, ["Content", "TypographyGroup", "SpacingGroup", "AdvancedGroup"]);
   });
 
   test("a section gets Layout, Spacing, Style, Typography, Page — in that order", () => {
-    const order = [...inspector.matchAll(/<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|AdvancedGroup)/g)]
-      .map((m) => m[2] || m[1]);
-    assert.deepEqual(order.slice(order.indexOf("Layout")), ["Layout", "SpacingGroup", "Style", "Typography", "Page"]);
+    const order = groupOrder();
+    assert.deepEqual(order.slice(order.lastIndexOf("Layout")), ["Layout", "SpacingGroup", "Style", "Typography", "Page"]);
+  });
+
+  test("a box has NO Content group and NO Typography group (D-156)", () => {
+    // It holds things; it does not say anything. Both are guarded by `!box`,
+    // and a mutation that drops either guard shows an empty Content panel on a
+    // box, which is a control that lies.
+    assert.match(inspector, /\{!box && \(\s*<Group title="Content"/);
+    assert.match(inspector, /\{!box && isTypographic\(widget\.kind\)/);
   });
 
   test("every group can be reset and every group collapses", () => {

@@ -35,6 +35,8 @@
  */
 import type { BuilderDocument, Section, Widget } from "./model";
 import { hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle } from "./style";
+import { isContainer } from "./treeOps";
+import type { Container, Node } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
 import { documentTotals, money, type DocumentTotals } from "./totals";
@@ -195,6 +197,12 @@ export const RENDERED_KINDS = [
 export const UNRENDERED_KINDS = ["columns"] as const;
 
 export function renderWidget(w: Widget, ctx: RenderContext): string {
+  // A BOX IS DRAWN BEFORE ANYTHING ASKS WHAT KIND IT IS (§11.12, D-156).
+  //
+  // Before the adapter's `extra`, before the switch: a container is the
+  // ENGINE's own node and every builder has the same one, so an adapter cannot
+  // be asked to know about it and cannot accidentally claim it.
+  if (isContainer(w)) return renderContainer(w, ctx);
   const p: any = w.props || {};
   const body = (() => {
     // The adapter's own widgets first — see RenderContext.extra.
@@ -248,6 +256,43 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
     ? `<div class="bx-w bx-w-${esc(w.kind)}${sy}" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
     : `<div class="bx-w bx-w-${esc(w.kind)}${sy}">${body}</div>`;
 }
+
+/**
+ * A CONTAINER — the box, and everything in it (§11.12, D-156).
+ *
+ * Brandon's sentence made flesh: "Header, drag that into this box and it's now
+ * its own section inside the box, then a text field under it … then cards."
+ * This is what draws that box, and it is RECURSIVE, so the cards inside the row
+ * inside the box are drawn by exactly the same code as the heading at the top
+ * of the page.
+ *
+ * `data-bx-host` is the one thing the EDITOR needs from it: the canvas reads it
+ * to answer "which box is the pointer over", and the SAME attribute is on a
+ * column (see `renderSection`). One placement rule at every depth, because
+ * there is one kind of drop target and it is spelled the same way everywhere.
+ *
+ * Edit mode ONLY, exactly like `data-widget`: the customer's copy carries no
+ * editor markers, so a document that has never been styled renders today what
+ * it rendered before boxes existed, byte for byte. The golden in
+ * `builder-styling.test.mjs` is what holds that.
+ *
+ * An EMPTY box is not nothing: the author has just dropped it and is about to
+ * put something in it, so in edit mode it keeps a least height and says so. In
+ * the customer's copy an empty box draws nothing at all.
+ */
+function renderContainer(c: Container, ctx: RenderContext): string {
+  const kids = (c.children || []).map((k) => renderWidget(k as Widget, ctx)).join("");
+  if (!kids && ctx.mode !== "edit") return "";
+  const sy = hasStyle(c.style) ? ` ${widgetStyleClass(c.id)}` : "";
+  const empty = kids ? "" : " bx-box-empty";
+  const editor = ctx.mode === "edit"
+    ? ` data-bx-host="${esc(c.id)}" data-widget="${esc(c.id)}" data-kind="${esc(CONTAINER_KIND_ATTR)}"`
+    : "";
+  return `<div class="bx-w bx-box${empty}${sy}"${editor}>${kids}</div>`;
+}
+
+/** Kept as a constant so the attribute and the model cannot drift apart. */
+const CONTAINER_KIND_ATTR = "container";
 
 function docHeader(p: any, ctx: RenderContext): string {
   const dark = (p.style || "dark_band") === "dark_band";
@@ -555,8 +600,14 @@ export function renderSection(s: Section, ctx: RenderContext): string {
   const label = s.numbered && (number || s.label)
     ? `<div class="bx-seclabel" style="color:${esc(ctx.accent)}">${esc([number, s.label].filter(Boolean).join(" · "))}</div>`
     : "";
+  // A COLUMN IS A BOX (§11.12): same `data-bx-host`, so the canvas's one
+  // placement rule finds it the same way it finds a container three deep.
+  // `data-col` stays beside it because the column INDEX is what a legacy
+  // `WidgetPath` is made of, and five adapter files still speak that.
+  const host = (c: { id: string }) => (ctx.mode === "edit" ? ` data-bx-host="${esc(c.id)}"` : "");
   const cols = s.columns.map((c, i) => `
-    <div class="bx-col" data-col="${i}">${c.widgets.map((w) => renderWidget(w, ctx)).join("")}</div>`).join("");
+    <div class="bx-col${hasStyle(c.style) ? ` ${widgetStyleClass(c.id)}` : ""}" data-col="${i}"${host(c)}>${
+    c.widgets.map((w) => renderWidget(w, ctx)).join("")}</div>`).join("");
 
   // THE SECTION'S PADDING, and which of the two owns it (§11.8).
   //
@@ -607,13 +658,32 @@ export function renderSection(s: Section, ctx: RenderContext): string {
  * could hand down. See style.ts.
  */
 function sectionStyleTag(s: Section): string {
-  const widgets = s.columns.flatMap((c) => c.widgets)
-    .filter((w) => hasStyle(w.style))
-    .map((w) => ({
-      selector: `.${widgetStyleClass(w.id)}`,
-      style: w.style!,
-      typographic: isTypographic(w.kind),
-    }));
+  // THE WHOLE TREE (§11.12), boxes and the columns themselves included. A flat
+  // pass over the top of each column would have styled the box and silently
+  // dropped every rule belonging to anything inside it — which is exactly what
+  // "the padding control does nothing" looks like from the author's chair.
+  const styled: Array<{ selector: string; style: any; typographic: boolean; container?: boolean }> = [];
+  const visit = (nodes: Node[]) => {
+    for (const n of nodes) {
+      const box = isContainer(n);
+      if (hasStyle(n.style)) {
+        styled.push({
+          selector: `.${widgetStyleClass(n.id)}`,
+          style: n.style!,
+          typographic: !box && isTypographic(n.kind),
+          ...(box ? { container: true } : {}),
+        });
+      }
+      if (box) visit((n as Container).children || []);
+    }
+  };
+  for (const c of s.columns) {
+    if (hasStyle(c.style)) {
+      styled.push({ selector: `.${widgetStyleClass(c.id)}`, style: c.style!, typographic: false, container: true });
+    }
+    visit(c.widgets);
+  }
+  const widgets = styled;
   if (!hasStyle(s.style) && !widgets.length) return "";
   const css = styleBlockFor({
     sectionSelector: `.bx-sec[data-section="${esc(s.id)}"]`,
@@ -651,6 +721,18 @@ export const DOCUMENT_CSS = `
 .bx-cols-3 .bx-grid { grid-template-columns: repeat(3, minmax(0,1fr)); }
 .bx-w-narrow .bx-grid { max-width: 520px; margin: 0 auto; }
 .bx-w-contained .bx-grid { max-width: 700px; margin: 0 auto; }
+
+/* A BOX (§11.12, D-156). Nothing but a block until the author lays it out —
+   containerLayoutDeclarations() writes the flex or the grid into the section's
+   own stylesheet, and a box nobody has touched must not change the spacing of
+   a document that was written before boxes existed.
+   The empty one is the exception: in the editor it has to be a target you can
+   see and drop into, and .bx-box-empty is only ever emitted in edit mode. */
+.bx-box { display: block; }
+.bx-box > .bx-w:last-child { margin-bottom: 0; }
+.bx-box-empty { min-height: 64px; border: 1px dashed #CBD5E1; border-radius: 8px; }
+/* A row's children share the width rather than each demanding their own. */
+.bx-box > .bx-w { min-width: 0; }
 .bx-rec { position: absolute; top: 8px; right: 12px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
 .bx-changed { box-shadow: inset 3px 0 0 #B45309; }
 .bx-chg { position: absolute; top: 8px; left: 12px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }
@@ -754,6 +836,13 @@ export const DOCUMENT_CSS = `
 ${STACK_QUERY} {
   /* 1. Everything laid out in columns becomes one column. */
   .bx-cols-2 .bx-grid, .bx-cols-3 .bx-grid { grid-template-columns: 1fr; }
+  /* A ROW STACKS ON A PHONE, exactly as the section's columns do — three cards
+     side by side in a 390px window are three unreadable slivers.
+     !important because the box's own desktop rule is written into the
+     section's stylesheet, which comes LATER in source order and would otherwise
+     win here. An author who has said something else FOR PHONES still wins: that
+     override is !important too and later again. */
+  .bx-box { flex-direction: column !important; grid-template-columns: 1fr !important; }
   .bx-panels, .bx-panels-2, .bx-sign, .bx-facts, .bx-cards { grid-template-columns: 1fr; }
   .bx-grid { gap: 16px; }
   .bx-w-narrow .bx-grid, .bx-w-contained .bx-grid { max-width: none; }

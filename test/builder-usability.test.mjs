@@ -32,8 +32,8 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  addSection, addWidget, deserialise, duplicateWidget, emptyDocument, makeSection, makeWidget,
-  resetIds, serialise, widgetAt,
+  addSection, addWidget, deserialise, duplicateWidget, emptyDocument, makeContainer, makeSection,
+  makeWidget, resetIds, serialise, widgetAt,
 } from "../src/builder/model.ts";
 import { makeContext, renderDocument, renderWidget } from "../src/builder/render.ts";
 import {
@@ -97,10 +97,28 @@ function threeSections() {
 }
 
 describe("a widget lands where the author is, never at the end (D-11)", () => {
-  test("a selected WIDGET puts the new one directly after it, in its own column", () => {
+  /* §11.12 (D-156) added `hostId` — THE address of the box a thing lands in,
+     which is a column's id at the top level and a container's below it. The
+     assertions keep the three old fields AND check the new one, because "after
+     the selected widget" and "in the right box" are two different promises and
+     a spot that got one right and the other wrong would put a card at the top
+     of a column instead of beside its neighbour in a row. */
+  test("a selected WIDGET puts the new one directly after it, in its own box", () => {
     const { doc, b } = threeSections();
     const spot = insertSpotFor(doc, { kind: "widget", sectionId: b.id, columnIndex: 0, widgetIndex: 0 });
-    assert.deepEqual(spot, { sectionId: b.id, columnIndex: 0, index: 1 });
+    assert.deepEqual(spot, { hostId: b.columns[0].id, sectionId: b.id, columnIndex: 0, index: 1 });
+  });
+
+  test("a selected widget INSIDE A BOX gets the next one beside it, not at the top of the column", () => {
+    const { doc, b } = threeSections();
+    const box = makeContainer(undefined, [makeWidget("paragraph", { text: "In a box" })]);
+    const withBox = addWidget(doc, b.id, 0, box);
+    const inner = box.children[0];
+    const spot = insertSpotFor(withBox, {
+      kind: "widget", sectionId: b.id, columnIndex: 0, widgetIndex: 0, id: inner.id,
+    });
+    assert.equal(spot.hostId, box.id, "landed outside the box it was told to land in");
+    assert.equal(spot.index, 1);
   });
 
   test("a selected widget in the SECOND column stays in the second column", () => {
@@ -116,13 +134,13 @@ describe("a widget lands where the author is, never at the end (D-11)", () => {
     // widget quietly reappears at the bottom of the page — D-11 again.
     const { doc, a } = threeSections();
     const spot = insertSpotFor(doc, { kind: "widget", sectionId: a.id, columnIndex: 0, widgetIndex: 40 });
-    assert.deepEqual(spot, { sectionId: a.id, columnIndex: 0, index: 1 });
+    assert.deepEqual(spot, { hostId: a.columns[0].id, sectionId: a.id, columnIndex: 0, index: 1 });
   });
 
   test("a selected SECTION appends into its first column", () => {
     const { doc, b } = threeSections();
     const spot = insertSpotFor(doc, { kind: "section", sectionId: b.id });
-    assert.deepEqual(spot, { sectionId: b.id, columnIndex: 0, index: 2 });
+    assert.deepEqual(spot, { hostId: b.columns[0].id, sectionId: b.id, columnIndex: 0, index: 2 });
   });
 
   test("with NOTHING selected it goes into the section on screen", () => {
@@ -569,9 +587,15 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /kind: "newSection", index: 0/);
   });
 
-  test("an empty column offers its own spot, so two columns are not one (D-11)", () => {
+  test("EVERY empty box offers its own spot, a column included (D-11, D-156)", () => {
+    // WAS "an empty column". §11.12 made it every box at every depth, and it is
+    // ONE loop over `[data-bx-host]` rather than two — a column IS a box, and a
+    // second loop for the nested ones is a second place to forget something.
     assert.match(canvas, /data-builder-addhere/);
-    assert.match(canvas, /if \(col\.querySelector\("\[data-widget\]"\)\) continue;/);
+    assert.match(canvas, /if \(box\.querySelector\("\[data-widget\]"\)\) continue;/);
+    assert.match(canvas, /querySelectorAll<HTMLElement>\("\[data-bx-host\]"\)/);
+    // And a box that is NOT empty is not a dead end either.
+    assert.match(canvas, /data-builder-addin/);
   });
 
   test("THE SECTION TOOLBAR IS ON HOVER, not only on selection (D-12)", () => {
@@ -597,8 +621,11 @@ describe("the canvas carries the chrome the walk asked for", () => {
   test("every widget has a handle with drag, duplicate and delete (D-12)", () => {
     assert.match(canvas, /bxc-wtools/);
     assert.match(canvas, /\[data-widget\]:hover > \.bxc-wtools/);
-    assert.match(canvas, /Make a copy of this, right underneath/);
+    assert.match(canvas, /Make a copy of this \$\{noun\}, right underneath/);
     assert.match(canvas, /Remove this from the page/);
+    // §11.12 — ONE loop, so a box wears the same handle as everything else and
+    // only the words differ.
+    assert.match(canvas, /const isBox = el\.dataset\.kind === "container"/);
   });
 
   test("a locked widget's handle SAYS WHY rather than doing nothing", () => {
@@ -684,7 +711,12 @@ describe("the shell wires the rebuild without a second mechanism", () => {
 
   test("the position of an insert comes from ONE module", () => {
     assert.match(shell, /insertSpotFor\(doc, selection, visibleSectionId\)/);
-    assert.equal((shell.match(/insertSpotFor\(/g) || []).length, 1);
+    // THREE call sites now, not one, and all three are `insertSpotFor`:
+    // a widget, a box (§11.12) and the slash command. The rule the original
+    // assertion protected is "nobody works the position out by hand", and that
+    // is what this says — counting to one was only ever a proxy for it.
+    assert.doesNotMatch(shell, /columnIndex: 0, index: 0 \}/,
+      "a spot was built by hand instead of asked for");
   });
 
   test("THE PANE AND THE PICKER SHARE ONE VOCABULARY", () => {
@@ -703,7 +735,7 @@ describe("the shell wires the rebuild without a second mechanism", () => {
     // Two applies in one tick would compute the second from the stale `doc`
     // prop and the typed "/pricing" would come straight back.
     assert.match(shell, /const cleared = patchWidget\(doc, here, setPropPath\(widget\.props, s\.path, ""\)\)/);
-    assert.match(shell, /apply\(addWidget\(cleared,/);
+    assert.match(shell, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
   });
 
   test("the counter is a BUTTON that goes somewhere (D-35)", () => {

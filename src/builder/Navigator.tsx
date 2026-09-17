@@ -14,9 +14,9 @@
  * behaviour it offers already existed somewhere and is reached, not copied.
  */
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen } from "lucide-react";
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen } from "lucide-react";
 import type { BuilderDocument, Selection, WidgetPath } from "./model";
-import { outline, sectionDropIndex, type OutlineRow } from "./navigatorModel";
+import { dropTargetFor, outline, sectionDropIndex, type OutlineDrop, type OutlineRow } from "./navigatorModel";
 import type { Device } from "./style";
 
 export interface NavigatorProps {
@@ -24,6 +24,15 @@ export interface NavigatorProps {
   selection: Selection;
   onSelect: (s: Selection) => void;
   onMoveSection: (sectionId: string, toIndex: number) => void;
+  /**
+   * MOVE ANYTHING ELSE, BETWEEN LEVELS (§11.12).
+   *
+   * A widget or a box, by id, into a box by id. The outline is the surface
+   * where a move between levels is EASY — the nesting is on screen and the
+   * target is a row rather than a few pixels of gap — so it has to be able to
+   * do it, or the only way out of a deep box is to drag on the canvas.
+   */
+  onMoveNode?: (nodeId: string, to: OutlineDrop | null) => void;
   /** The device the canvas is previewing — the one the eye hides on. */
   device: Device;
   onHideSection: (sectionId: string, hidden: boolean) => void;
@@ -86,7 +95,9 @@ export function Navigator(p: NavigatorProps) {
   return (
     <div data-builder-navigator style={{ padding: "10px 8px", fontSize: 12 }}>
       <div style={{ padding: "0 4px 8px", fontSize: 10, color: "#94A3B8", lineHeight: 1.4 }}>
-        {p.heading || "Everything on this page, in order."} Click to jump to it. Drag a section to move it.
+        {p.heading || "Everything on this page, in order."} Click to jump to it.
+        Drag a section to move it, or drag anything else onto a row to put it there — including
+        into a box.
       </div>
 
       {rows.map((row, i) => {
@@ -102,14 +113,21 @@ export function Navigator(p: NavigatorProps) {
             key={`${row.kind}:${row.id}`}
             data-nav-row={row.kind}
             data-nav-id={row.id}
-            draggable={isSection}
-            onDragStart={isSection ? () => setDragId(row.id) : undefined}
-            onDragEnd={isSection ? () => { setDragId(null); setOverIndex(null); } : undefined}
+            draggable
+            onDragStart={() => setDragId(row.id)}
+            onDragEnd={() => { setDragId(null); setOverIndex(null); }}
             onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOverIndex(i); }}
             onDrop={(e) => {
               if (!dragId) return;
               e.preventDefault();
-              p.onMoveSection(dragId, sectionDropIndex(rows, i));
+              /* SECTIONS REORDER, EVERYTHING ELSE MOVES IN THE TREE (§11.12).
+                 Which of the two it is comes from the payload — what was picked
+                 up — and never from what it was dropped on, because the same
+                 gesture meaning two things depending on where it ends is how a
+                 drag becomes a thing nobody trusts. */
+              const from = rows.find((r) => r.id === dragId);
+              if (from?.kind === "section") p.onMoveSection(dragId, sectionDropIndex(rows, i));
+              else if (from) p.onMoveNode?.(dragId, dropTargetFor(rows, i));
               setDragId(null); setOverIndex(null);
             }}
             onClick={() => p.onSelect(isSection
@@ -118,7 +136,13 @@ export function Navigator(p: NavigatorProps) {
             title={isSection ? "Jump to this section" : "Jump to this and edit it"}
             style={{
               display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
-              padding: isSection ? "5px 4px" : "3px 4px 3px 22px",
+              /* THE NESTING, SHOWN (§11.12). One step of indent per level, from
+                 the row's own `depth` — the outline's whole job is to say what
+                 is inside what, and a flat list of a document with boxes in it
+                 is a list that lies. */
+              padding: isSection
+                ? "5px 4px"
+                : `3px 4px 3px ${22 + 14 * ((row as Extract<OutlineRow, { kind: "widget" }>).depth || 0)}px`,
               borderRadius: 4, marginBottom: 1,
               borderTop: overIndex === i && dragId ? "2px solid #2D9CDB" : "2px solid transparent",
               background: selected ? "#E6F2F8" : "transparent",
@@ -139,9 +163,17 @@ export function Navigator(p: NavigatorProps) {
                 </button>
               </>
             )}
+            {!isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container && (
+              <span
+                data-nav-box
+                title="A box. What is under it, indented, is what is inside it."
+                style={{ color: "#64748B", display: "inline-flex" }}
+              ><Box size={12} /></span>
+            )}
             <span style={{
               flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
               textDecoration: hidden ? "line-through" : "none",
+              fontWeight: !isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container ? 600 : undefined,
             }}>{row.label}</span>
 
             {/* M-21 — the padlock SHOWS the state and CHANGES it. A widget the

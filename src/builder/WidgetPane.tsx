@@ -77,7 +77,6 @@ export interface WidgetPaneProps {
 export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   // Which widget is mid-question, and the number showing in its stepper.
-  const [asking, setAsking] = useState<{ kind: string; value: number } | null>(null);
 
   /* GROUPED BY THE JOB, NOT BY THE TYPE (D-147). "Information" and "Trust"
      are words a developer wrote down; "Customer & property" and "Products &
@@ -86,14 +85,14 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
   const groups = useMemo(() => groupByTask(adapter, query), [adapter, query]);
   const total = useMemo(() => groups.reduce((n, g) => n + g.widgets.length, 0), [groups]);
 
+  /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
+     It only existed because the cards inside a composite could not be added or
+     removed once the widget was on the page. They can now: a card is a widget
+     with the same duplicate and delete as everything else, so the thing arrives
+     with its default rows and the author changes them where they can see them.
+     The picker lost the same control in the same pass — two surfaces, one
+     deletion, or one of them keeps asking. */
   function pick(w: WidgetDef) {
-    if (w.count) {
-      // GUIDED INSERTION: ask the number first, in words, once. Inserting three
-      // empty cards and making somebody delete one is the interaction this
-      // replaces.
-      setAsking({ kind: w.kind, value: w.count.default });
-      return;
-    }
     onInsert(w);
   }
 
@@ -179,46 +178,6 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
                     </span>
                   </button>
 
-                  {asking?.kind === w.kind && w.count && (
-                    <div className="mt-1 rounded border border-slate-300 bg-slate-50 p-2">
-                      <div className="text-[11px] font-medium text-slate-700">{w.count.label}</div>
-                      <div className="mt-1.5 flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={w.count.min}
-                          max={w.count.max}
-                          value={asking.value}
-                          onChange={(e) =>
-                            setAsking({
-                              kind: w.kind,
-                              value: Math.max(w.count!.min, Math.min(w.count!.max, Number(e.target.value) || w.count!.min)),
-                            })
-                          }
-                          aria-label={w.count.label}
-                          className="w-16 rounded border border-slate-300 px-2 py-1 text-xs"
-                        />
-                        <span className="text-[10px] text-slate-500">
-                          {w.count.min}–{w.count.max}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => { onInsert(w, asking.value); setAsking(null); }}
-                          title={`Add ${asking.value} to the section`}
-                          className="ml-auto rounded bg-slate-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
-                        >
-                          Add
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setAsking(null)}
-                          title="Cancel"
-                          className="rounded border border-slate-300 bg-white px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-100"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

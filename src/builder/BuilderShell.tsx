@@ -48,7 +48,9 @@ import { type FindAction, type FindResult } from "./find";
 import {
   addSection, addWidget, duplicateSection, duplicateWidget, makeSection, makeWidget, moveSection,
   moveWidget, moveWidgetTo, patchSection, patchWidget, removeSection, removeWidget, setLayout,
-  setPropPath, setWidgetStyle, widgetAt,
+  setPropPath, setWidgetStyle, widgetAt, extendSelection, selectedIds, holdsLocked,
+  insertNode, moveNode, groupNodes, ungroupNode, setDirection, makePreset, findNode,
+  isContainer, directionOf, hostDepth, subtreeHeight, MAX_DEPTH, nodeIdAt,
   setWidgetLocked, cloneSection,
   type BuilderDocument, type Section, type Selection, type Widget, type WidgetPath,
 } from "./model";
@@ -58,7 +60,9 @@ import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
 import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
-import { FLASH_MS, insertSpotFor, type InsertSpot } from "./insertPosition";
+import { FLASH_MS, insertSpotFor, firstSpotIn, type InsertSpot } from "./insertPosition";
+import type { ContainerPreset } from "./treeOps";
+import type { OutlineDrop } from "./navigatorModel";
 import { resolveCopy, type BuilderCopy } from "./copy";
 import { PROBLEMS_CTA, firstWithFocus, focusSelector, type BuilderProblem } from "./problems";
 import { builderTipsAfterClose, shouldShowFirstRun } from "./firstRunModel";
@@ -427,8 +431,17 @@ export function BuilderShell(p: BuilderShellProps) {
   }, [p, select, setHist]);
 
   /** Show the new thing: select it, and let the canvas scroll and glow. */
+  /* A REFUSAL, said beside the control that was pressed (D-20/D-35). Declared
+     HERE, above everything that refuses, because an insert and a drop both do
+     and a `const` used before its line is a blank screen at runtime. */
+  const refuse = useCallback((message: string) => setToast({ anchor: "", message }), []);
+
   const landed = useCallback((sectionId: string, columnIndex: number, index: number, widgetId: string) => {
-    select({ kind: "widget", sectionId, columnIndex, widgetIndex: index });
+    // `id` as well as the three indices (§11.12): the indices reach the top of
+    // a column and the id reaches a card three boxes down, and a thing that
+    // lands somewhere the inspector cannot bind to is a thing that landed
+    // invisibly — which is D-11 wearing a new hat.
+    select({ kind: "widget", sectionId, columnIndex, widgetIndex: index, id: widgetId });
     setFlashId(widgetId);
     setTimeout(() => setFlashId((cur) => (cur === widgetId ? null : cur)), FLASH_MS);
   }, [select]);
@@ -441,18 +454,20 @@ export function BuilderShell(p: BuilderShellProps) {
    * widget starts with" is how one of them ends up without the Recommended
    * badge.
    */
-  const buildWidget = useCallback((def: WidgetDef, count?: number) => {
+  const buildWidget = useCallback((def: WidgetDef) => {
     const props: Record<string, unknown> = JSON.parse(JSON.stringify(def.defaults || {}));
     const repeatKey = repeatKeyFor(def.kind);
+    /* THE "HOW MANY?" QUESTION IS DELETED (D-156, item 4).
+       `def.count.default` is no longer a question, it is how many blank rows
+       the thing arrives with — four clauses, two panels — and the author adds or
+       removes them where they can see them, with the same duplicate and delete
+       as everything else. Asking before the thing is on the page asked for a
+       number nobody can answer yet, and it only existed because a composite's
+       cards could not be changed afterwards. */
     if (repeatKey && def.count) {
-      const n = Math.max(def.count.min, Math.min(def.count.max, count ?? def.count.default));
+      const n = def.count.default;
       const existing = Array.isArray(props[repeatKey]) ? (props[repeatKey] as unknown[]) : [];
       props[repeatKey] = Array.from({ length: n }, (_, i) => existing[i] ?? blankRepeat(def.kind));
-      // The mock's rule: one card is Recommended out of the box, so the badge
-      // is discovered rather than hunted for.
-      if (def.kind === "comparison_cards" && n >= 2) {
-        (props[repeatKey] as any[])[Math.min(1, n - 1)].recommended = true;
-      }
     }
     return makeWidget(def.kind, props);
   }, []);
@@ -474,27 +489,63 @@ export function BuilderShell(p: BuilderShellProps) {
     let next = doc;
     let spot = at ?? insertSpotFor(doc, selection, visibleSectionId);
     if (!spot) {
-      const s = makeSection({ label: "Section" });
-      next = addSection(next, s);
-      spot = { sectionId: s.id, columnIndex: 0, index: 0 };
+      const made = makeSection({ label: "Section" });
+      next = addSection(next, made);
+      spot = firstSpotIn(next, made.id);
     }
+    if (!spot) return;
     // "Columns" is a layout choice, not a thing on the page.
     if (def.kind === "columns") {
       apply(setLayout(next, spot.sectionId, count === 3 ? 3 : 2), null, `Split a section into ${count === 3 ? 3 : 2} columns`);
       select({ kind: "section", sectionId: spot.sectionId });
       return;
     }
-    const widget = buildWidget(def, count);
-    apply(addWidget(next, spot.sectionId, spot.columnIndex, widget, spot.index), null, `Added ${def.label}`);
+    const widget = buildWidget(def);
+    // ONE INSERT, INTO A BOX (§11.12). `spot.hostId` is a column's id or a
+    // container's, and `insertNode` does not care which — which is the whole
+    // point of one placement rule at every depth.
+    apply(insertNode(next, spot.hostId, spot.index, widget), null, `Added ${def.label}`);
     landed(spot.sectionId, spot.columnIndex, spot.index, widget.id);
   }, [apply, buildWidget, doc, landed, p, select, selection, visibleSectionId]);
+
+  /**
+   * PUT A BOX ON THE PAGE (§11.12, D-156).
+   *
+   * Brandon's sentence starts here: *"Header, drag that into this box"* — there
+   * has to be a box before anything can go in one. Beside `insertWidget` and
+   * not inside it, because a container is not a widget: it has no definition,
+   * no adapter decides whether to offer it, and it is built by `makePreset`.
+   * It lands and is SELECTED, so the inspector's Layout group is already open
+   * on the thing that was just made.
+   */
+  const insertBox = useCallback((preset: ContainerPreset, at?: InsertSpot) => {
+    let next = doc;
+    let spot = at ?? insertSpotFor(doc, selection, visibleSectionId);
+    if (!spot) {
+      const made = makeSection({ label: "Section" });
+      next = addSection(next, made);
+      spot = firstSpotIn(next, made.id);
+    }
+    if (!spot) return;
+    const box = makePreset(preset.key);
+    const after = insertNode(next, spot.hostId, spot.index, box);
+    // REFUSED rather than silently dropped: `insertNode` returns the same
+    // document when the box would go deeper than boxes go, and saying nothing
+    // at that moment is the defect, not the refusal.
+    if (after === next) {
+      refuse(`This is already as deep as boxes go (${MAX_DEPTH} levels). Add it further out.`);
+      return;
+    }
+    apply(after, null, `Added a ${preset.label.toLowerCase()}`);
+    landed(spot.sectionId, spot.columnIndex, spot.index, box.id);
+  }, [apply, doc, landed, refuse, select, selection, visibleSectionId]);
 
   /** A "+" on the page: a NEW section holding whatever is chosen. */
   const insertInNewSection = useCallback((def: WidgetDef, count: number | undefined, index: number) => {
     if (p.onInsertWidget && p.onInsertWidget(def, count) === false) return;
     if (def.kind === "columns") { p.onAddBlank?.(index); return; }
     const s = makeSection({ label: def.label });
-    const widget = buildWidget(def, count);
+    const widget = buildWidget(def);
     const next = addWidget(addSection(doc, s, index), s.id, 0, widget, 0);
     apply(next, null, `Added a section with ${def.label} in it`);
     landed(s.id, 0, 0, widget.id);
@@ -508,18 +559,33 @@ export function BuilderShell(p: BuilderShellProps) {
    * widget came from the same column above it, and that arithmetic belongs
    * with the operation it belongs to.
    */
-  const dropWidget = useCallback((spot: { sectionId: string; columnIndex: number; index: number }) => {
+  const dropWidget = useCallback((spot: InsertSpot) => {
     const payload = drag;
     setDrag(null);
     if (!payload) return;
     if (payload.kind === "move") {
-      apply(moveWidgetTo(doc, payload.path, spot));
-      select({ kind: "widget", sectionId: spot.sectionId, columnIndex: spot.columnIndex, widgetIndex: spot.index });
+      const id = nodeIdAt(doc, payload.path);
+      if (!id) return;
+      const after = moveNode(doc, id, spot.hostId, spot.index);
+      // `moveNode` REFUSES a drop into the box's own child, and a drop that
+      // would go deeper than boxes go. Both come back as the same document, and
+      // a drag that appears to do nothing needs a sentence rather than silence.
+      if (after === doc) {
+        refuse("That box cannot go inside itself. Drop it somewhere outside it.");
+        return;
+      }
+      apply(after);
+      select({
+        kind: "widget", sectionId: spot.sectionId, columnIndex: spot.columnIndex,
+        widgetIndex: spot.index, id,
+      });
       return;
     }
+    // A BOX FROM THE PANE, dropped where the line was drawn.
+    if (payload.kind === "new" && payload.box) { insertBox(payload.box, spot); return; }
     const def = WIDGETS_BY_KIND[payload.label];
-    if (def) insertWidget(def, def.count?.default, spot);
-  }, [apply, doc, drag, insertWidget, select]);
+    if (def) insertWidget(def, undefined, spot);
+  }, [apply, doc, drag, insertBox, insertWidget, refuse, select]);
 
   /** The "+" and the empty column both open the ONE picker, anchored there. */
   const openPicker = useCallback((target: PickerTarget, rect: DOMRect) => {
@@ -527,13 +593,38 @@ export function BuilderShell(p: BuilderShellProps) {
     setPicker({ target, anchor: { top: rect.bottom + 6, left: rect.left }, task: null, slash: false });
   }, []);
 
-  const pickFromPicker = useCallback((def: WidgetDef, count?: number) => {
+  const pickFromPicker = useCallback((def: WidgetDef) => {
     const state = picker;
     setPicker(null);
     if (!state) return;
-    if (state.target.kind === "newSection") insertInNewSection(def, count, state.target.index);
-    else insertWidget(def, count, state.target.spot);
+    if (state.target.kind === "newSection") insertInNewSection(def, undefined, state.target.index);
+    else insertWidget(def, undefined, state.target.spot);
   }, [insertInNewSection, insertWidget, picker]);
+
+  /**
+   * A BOX WAS CHOSEN in the picker (§11.12, D-156).
+   *
+   * Its own handler beside `pickFromPicker` and not a branch inside it, because
+   * a container is not a `WidgetDef` and pretending it was one would mean every
+   * `WIDGETS_BY_KIND` lookup in the Portal had to be taught about a kind no
+   * adapter offers. Same two targets, same two calls.
+   */
+  const pickBoxFromPicker = useCallback((preset: ContainerPreset) => {
+    const state = picker;
+    setPicker(null);
+    if (!state) return;
+    if (state.target.kind === "newSection") {
+      const made = makeSection({ label: preset.label });
+      const next = addSection(doc, made, state.target.index);
+      const spot = firstSpotIn(next, made.id);
+      if (!spot) return;
+      const box = makePreset(preset.key);
+      apply(insertNode(next, spot.hostId, 0, box), null, `Added a section with a ${preset.label.toLowerCase()} in it`);
+      landed(made.id, 0, 0, box.id);
+      return;
+    }
+    insertBox(preset, state.target.spot);
+  }, [apply, doc, insertBox, landed, picker]);
 
   /**
    * THE SLASH COMMAND. "/" on an empty line, then Enter.
@@ -571,14 +662,18 @@ export function BuilderShell(p: BuilderShellProps) {
     if (!widget) return;
     const cleared = patchWidget(doc, here, setPropPath(widget.props, s.path, ""));
     if (!def) { apply(cleared, `${s.widgetId}:${s.path}`); return; }
-    if (p.onInsertWidget && p.onInsertWidget(def, def.count?.default) === false) {
+    if (p.onInsertWidget && p.onInsertWidget(def) === false) {
       apply(cleared, `${s.widgetId}:${s.path}`);
       return;
     }
-    const made = buildWidget(def, def.count?.default);
-    const index = here.widgetIndex + 1;
-    apply(addWidget(cleared, here.sectionId, here.columnIndex, made, index));
-    landed(here.sectionId, here.columnIndex, index, made.id);
+    const made = buildWidget(def);
+    // BESIDE WHAT IS BEING TYPED INTO, IN ITS OWN BOX (§11.12). The old line
+    // counted an index inside `columns[n]`, so "/" inside a card in a row put
+    // the new thing at the top of the column instead of next to the card.
+    const spot = insertSpotFor(cleared, { kind: "widget", ...here });
+    if (!spot) return;
+    apply(insertNode(cleared, spot.hostId, spot.index, made));
+    landed(spot.sectionId, spot.columnIndex, spot.index, made.id);
   }, [apply, buildWidget, doc, landed, p, slash]);
 
   /** D-35: take me to the first thing that is still blank. */
@@ -664,21 +759,8 @@ export function BuilderShell(p: BuilderShellProps) {
     apply(patchWidget(doc, selection, props), null, `Changed the ${(def?.label || "block").toLowerCase()}`);
   }, [apply, doc, selection]);
 
-  const setCount = useCallback((n: number) => {
-    if (selection?.kind !== "widget") return;
-    const section = doc.sections.find((s) => s.id === selection.sectionId);
-    const w = section?.columns[selection.columnIndex]?.widgets[selection.widgetIndex];
-    if (!w) return;
-    const key = repeatKeyFor(w.kind);
-    if (!key) return;
-    const current = Array.isArray((w.props as any)[key]) ? [...((w.props as any)[key] as unknown[])] : [];
-    const next = Array.from({ length: n }, (_, i) => current[i] ?? blankRepeat(w.kind));
-    apply(patchWidget(doc, selection, { [key]: next }));
-  }, [apply, doc, selection]);
-
   /** A locked part refuses, and SAYS SO — a button that silently does nothing
    *  is the thing this whole pass exists to delete. */
-  const refuse = useCallback((message: string) => setToast({ anchor: "", message }), []);
 
   const deleteWidget = useCallback((path: WidgetPath) => {
     const w = widgetAt(doc, path);
@@ -839,6 +921,58 @@ export function BuilderShell(p: BuilderShellProps) {
         select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
         setPaneTab("outline");
         return;
+      /* ── BOXES (§11.12, D-156) ──────────────────────────────────
+
+         Five verbs, five one-line calls. Every rule — the ids must be siblings,
+         a box may not go inside itself, nesting stops at six — is in treeOps.ts
+         where it is a test, and a refusal comes back as the same document,
+         which is why each of these says something rather than going quiet. */
+      case "group": {
+        if (target.kind !== "widget") return;
+        const ids = selectedIds(selection);
+        const after = groupNodes(doc, ids);
+        if (after === doc) {
+          refuse(ids.length < 2
+            ? "Hold Shift and click a second thing beside it, then this puts both in one box."
+            : "Those are not beside each other. Pick things that sit in the same place on the page.");
+          return;
+        }
+        apply(after, null, "Put them in a box");
+        // THE BOX is what is selected afterwards, because it is the thing that
+        // was just made and the thing the author will now lay out. It is found
+        // rather than remembered: the new box is whatever now holds the first
+        // of the things that went into it.
+        const inside = findNode(after, ids[0]);
+        const made = inside ? findNode(after, inside.parentId) : null;
+        if (made) {
+          select({
+            kind: "widget", sectionId: made.sectionId, columnIndex: made.columnIndex,
+            widgetIndex: made.index, id: made.node.id,
+          });
+        }
+        return;
+      }
+      case "ungroup": {
+        if (target.kind !== "widget") return;
+        const id = nodeIdAt(doc, target.path);
+        if (!id) return;
+        apply(ungroupNode(doc, id), null, "Took the box away");
+        select(null);
+        return;
+      }
+      case "toRow":
+      case "toColumn":
+      case "toGrid": {
+        if (target.kind !== "widget") return;
+        const id = nodeIdAt(doc, target.path);
+        if (!id) return;
+        const dir = action === "toRow" ? "row" : action === "toGrid" ? "grid" : "column";
+        apply(setDirection(doc, id, dir), null,
+          dir === "row" ? "Laid it out side by side"
+            : dir === "grid" ? "Laid it out in even columns"
+              : "Stacked it top to bottom");
+        return;
+      }
       case "lock": setLocked(target, true); return;
       case "unlock": setLocked(target, false); return;
       case "hide": setHidden(target, true); return;
@@ -849,7 +983,7 @@ export function BuilderShell(p: BuilderShellProps) {
         return;
       default: return;
     }
-  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select, setHidden, setLocked]);
+  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select, selection, setHidden, setLocked]);
 
   /** What the open menu should contain, from the document as it is right now. */
   const menuItems = useMemo(() => {
@@ -859,12 +993,23 @@ export function BuilderShell(p: BuilderShellProps) {
     const sec = doc.sections[index];
     const locked = t.kind === "widget"
       ? !!widgetAt(doc, t.path)?.locked
-      : !!sec?.columns.some((c) => c.widgets.some((w) => w.locked));
+      : !!sec?.columns.some((c) => c.widgets.some(holdsLocked));
     const hidden = t.kind === "widget" ? widgetHidden(t.path) : isHidden(sec?.style);
+    // §11.12: whether this IS a box, which way it runs, how many things are
+    // selected, and whether one more level would be one too many. All four are
+    // read off the document, so the menu cannot offer a verb that would refuse.
+    const node = t.kind === "widget" ? widgetAt(doc, t.path) : null;
+    const box = isContainer(node);
+    const hit = t.kind === "widget" ? findNode(doc, nodeIdAt(doc, t.path) || "") : null;
+    const depth = hit ? hostDepth(doc, hit.parentId) : 0;
     return menuFor({
       kind: t.kind,
       locked,
       hidden,
+      container: box,
+      ...(box ? { direction: directionOf(node) } : {}),
+      selectedCount: selectedIds(selection).length,
+      tooDeep: !!hit && depth + 1 + subtreeHeight(hit.node) >= MAX_DEPTH,
       index,
       total: doc.sections.length,
       canPaste: !!clip,
@@ -873,7 +1018,7 @@ export function BuilderShell(p: BuilderShellProps) {
       deviceWord: hideDeviceWord,
       lockedReason: copy.lockedReason,
     });
-  }, [clip, copy.noun, doc, hideDeviceWord, isHidden, menu, p.onSaveBlock, widgetHidden]);
+  }, [clip, copy.noun, doc, hideDeviceWord, isHidden, menu, p.onSaveBlock, selection, widgetHidden]);
 
   /**
    * THE KEYBOARD. The frame listens; this decides what each action means.
@@ -971,10 +1116,24 @@ export function BuilderShell(p: BuilderShellProps) {
             onLockWidget: (path, locked) => setLocked({ kind: "widget", path }, locked),
             isSectionLocked: (id) => {
               const sec = doc.sections.find((x) => x.id === id);
-              return !!sec?.columns.length && sec.columns.every((c) => c.widgets.every((w) => w.locked))
+              return !!sec?.columns.length && sec.columns.every((c) => c.widgets.every(holdsLocked))
                 && sec.columns.some((c) => c.widgets.length > 0);
             },
             onRowMenu: (target, at) => setMenu({ target, x: at.x, y: at.y }),
+            /* MOVE BETWEEN LEVELS FROM THE OUTLINE (§11.12). The nesting is on
+               screen here and the target is a whole row rather than a few pixels
+               of gap, so this is the easy way OUT of a deep box — and it goes
+               through the same `moveNode` the canvas drag does, refusals and
+               all. */
+            onMoveNode: (id, to) => {
+              if (!to) return;
+              const after = moveNode(doc, id, to.hostId, to.index);
+              if (after === doc) {
+                refuse("That box cannot go inside itself. Drop it on a row outside it.");
+                return;
+              }
+              apply(after, null, "Moved it");
+            },
           }}
         />
       }
@@ -1005,7 +1164,6 @@ export function BuilderShell(p: BuilderShellProps) {
           onPatchWidget={patchSelectedWidget}
           onDeleteWidget={() => { if (selection?.kind === "widget") deleteWidget(selection); }}
           onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); select({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
-          onSetCount={setCount}
         />
       }
       overlays={
@@ -1039,6 +1197,7 @@ export function BuilderShell(p: BuilderShellProps) {
               task={picker.task}
               heading={copy.paneHeading}
               onPick={pickFromPicker}
+              onPickBox={pickBoxFromPicker}
               onClose={() => setPicker(null)}
             />
           )}

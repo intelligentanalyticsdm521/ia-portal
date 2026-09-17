@@ -36,6 +36,15 @@ export type MenuAction =
   | "addBelow"
   | "saveBlock"
   | "showInOutline"
+  /* ── BOXES (§11.12, D-156) ───────────────────────────────────────
+     Gutenberg's "Group" and Elementor's "Create container", said in the words
+     a person uses. Three verbs, and every one of them is an operation in
+     treeOps.ts — the menu presses a function, it does not carry rules. */
+  | "group"
+  | "ungroup"
+  | "toRow"
+  | "toColumn"
+  | "toGrid"
   | "lock"
   | "unlock"
   | "hide"
@@ -78,6 +87,16 @@ export interface MenuFacts {
   canSaveBlock?: boolean;
   /** The width the eye refers to: "on phones", "on tablets", or everywhere. */
   deviceWord?: string;
+
+  /* ── BOXES (§11.12) ───────────────────────────────────────────── */
+  /** This IS a box, so it can be taken away and it can be turned sideways. */
+  container?: boolean;
+  /** Which way it runs now, so the row for that way is not offered twice. */
+  direction?: "row" | "column" | "grid";
+  /** How many things are selected — two or more can be grouped into a box. */
+  selectedCount?: number;
+  /** Putting a box here would go deeper than the builder allows. */
+  tooDeep?: boolean;
 }
 
 const DEFAULT_LOCKED_REASON =
@@ -92,7 +111,7 @@ const DEFAULT_LOCKED_REASON =
  */
 export function menuFor(f: MenuFacts): MenuItem[] {
   const isSection = f.kind === "section";
-  const thing = isSection ? "section" : "block";
+  const thing = isSection ? "section" : f.container ? "box" : "block";
   const lockedReason = f.lockedReason || DEFAULT_LOCKED_REASON;
   const device = f.deviceWord ? ` ${f.deviceWord}` : "";
   const items: MenuItem[] = [];
@@ -128,6 +147,37 @@ export function menuFor(f: MenuFacts): MenuItem[] {
   if (isSection) {
     items.push({ action: "addAbove", label: "Add a section above" });
     items.push({ action: "addBelow", label: "Add a section below" });
+  }
+
+  /* ── THE BOX ROWS (§11.12, D-156) ──────────────────────────────────
+
+     They sit here, after Move and before Save-as-my-own-block, because that is
+     where "change the shape of this" belongs — above the housekeeping and well
+     clear of Delete.
+
+     A DISABLED ROW KEEPS ITS REASON, like every other row in this menu: "Put
+     these in a box" greyed with no explanation teaches nothing, and the author
+     goes looking for it again tomorrow. */
+  if (!isSection) {
+    const many = (f.selectedCount ?? 1) > 1;
+    items.push({
+      action: "group",
+      label: many ? "Put these in a box" : "Put this in a box",
+      separator: true,
+      disabled: !many || !!f.tooDeep,
+      ...(f.tooDeep
+        ? { reason: "This is already as deep as boxes go. Move it out one level first." }
+        : many ? {} : { reason: "Hold Shift and click a second thing beside it, then this puts both in one box." }),
+    });
+    if (f.container) {
+      items.push({
+        action: "ungroup",
+        label: "Take the box away, keep what is in it",
+      });
+      if (f.direction !== "row") items.push({ action: "toRow", label: "Lay it out side by side" });
+      if (f.direction !== "column") items.push({ action: "toColumn", label: "Stack it top to bottom" });
+      if (f.direction !== "grid") items.push({ action: "toGrid", label: "Lay it out in even columns" });
+    }
   }
 
   if (isSection && f.canSaveBlock) {
