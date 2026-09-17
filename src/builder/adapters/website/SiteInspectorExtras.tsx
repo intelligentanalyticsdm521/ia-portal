@@ -151,13 +151,13 @@ export function SiteSectionFields({
             You took charge of it{adoption.adoptedAt ? ` on ${new Date(adoption.adoptedAt).toLocaleDateString()}` : ""}.
             Undo puts back the original bytes exactly.
           </div>
+          {/* It ASKED TWICE: this browser box, and then the adapter's own
+              question behind it. One press, one question — the adapter owns it,
+              because the adapter is the one that knows what the undo does and
+              can say it in the app's own dialog. This one is DELETED. */}
           <button type="button" style={{ ...smallButton, minHeight: 36 }}
             title="Put the original section back, exactly as it was"
-            onClick={() => {
-              if (window.confirm("Put the original section back? Anything you have typed into it here goes with it.")) {
-                void deps.onUndoAdoption(String(adoption.adoptionId));
-              }
-            }}>
+            onClick={() => { void deps.onUndoAdoption(String(adoption.adoptionId)); }}>
             Undo adoption
           </button>
         </div>

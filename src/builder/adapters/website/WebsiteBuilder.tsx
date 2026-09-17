@@ -25,6 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sparkles, ExternalLink } from "lucide-react";
 import { IadmModal } from "../../../components/IadmModal";
+import { ConfirmDialog, type ConfirmAsk } from "../../../components/ConfirmDialog";
 import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { BuilderShell } from "../../BuilderShell";
 import { Canvas } from "../../Canvas";
@@ -177,7 +178,16 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
 
   /* Publishing asks first. It is the one button that changes what the world
      sees, and it is next to Save draft. */
-  const [confirmPublish, setConfirmPublish] = useState(false);
+  /**
+   * THE ONE PLACE THIS BUILDER ASKS "are you sure?".
+   *
+   * It used to ask six times with `window.confirm` — the browser's grey box,
+   * with "OK"/"Cancel" buttons and the dev server's hostname above them — while
+   * Publish, one button along, asked in an `IadmModal`. Six of one, one of the
+   * other, on the same toolbar. Now every question in this builder is the same
+   * dialog: one piece of state, one `ConfirmDialog`, named buttons.
+   */
+  const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
 
   /* "Review sections built on the site (N)" — a checklist, never a bulk
      adopt. Offered only when there IS something to review. */
@@ -559,6 +569,62 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     }
   }, [api, change, doc]);
 
+  /** "Publish" — the longest answer, asked in the same box as the rest. */
+  const askPublish = useCallback(() => {
+    setConfirmAsk({
+      title: `Publish “${detail?.title || "this page"}”?`,
+      body: (
+        <>
+          <p>
+            Everything on the canvas goes onto {detail?.permalink || "your website"} straight away,
+            where anybody can see it.
+          </p>
+          {proposal && (
+            <p style={{ color: "#B45309" }}>
+              ARGUS has a suggestion still waiting for you and will NOT be published with this page.
+            </p>
+          )}
+          <p style={{ color: "#5A7A8A" }}>
+            Your website keeps the version before this one, so &ldquo;Undo last change&rdquo; puts it straight back.
+          </p>
+        </>
+      ),
+      confirmLabel: "Yes, publish it",
+      onConfirm: () => { void write("publish"); },
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.title, detail?.permalink, proposal, write]);
+
+  /** Put the page back to the save before last, once the client says yes. */
+  const undoLastSave = useCallback(async () => {
+    setBusy("undo"); setErr(null); setOk(null);
+    try { await api.undoPage(pageId); setOk("Put the previous version back."); await load(); }
+    catch (e: any) { setErr(messageFrom(e, "We could not undo that.")); }
+    finally { setBusy(null); }
+  }, [api, load, pageId]);
+
+  /** Bin the page on the website, once the client says yes. */
+  const trashPage = useCallback(async () => {
+    setSettingsBusy("trash"); setSettingsErr(null);
+    try { await api.trash(pageId); setSettingsOpen(false); onClose(); }
+    catch (e: any) { setSettingsErr(messageFrom(e, "We could not delete that page.")); }
+    finally { setSettingsBusy(null); }
+  }, [api, onClose, pageId]);
+
+  /** Put an adopted section back, once the client has said yes to it. */
+  const undoAdoption = useCallback(async (adoptionId: string) => {
+    setBusy("adopt"); setErr(null);
+    try {
+      await api.undoAdoption(pageId, adoptionId);
+      setOk("That section is back exactly as it was, byte for byte.");
+      await load();
+    } catch (e: any) {
+      setErr(messageFrom(e, "We could not undo that. Nothing was changed."));
+    } finally {
+      setBusy(null);
+    }
+  }, [api, load, pageId]);
+
   /* ── the inspector's own panel ───────────────────────────────────────── */
 
   const deps: SiteFieldDeps = useMemo(() => ({
@@ -579,21 +645,13 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         setAdoptLoading(false);
       }
     },
-    onUndoAdoption: async (adoptionId: string) => {
-      if (!window.confirm(
-        'Put this section back exactly as it was built on the website? '
-        + 'Anything you have changed on it since will go with it.',
-      )) return;
-      setBusy("adopt"); setErr(null);
-      try {
-        await api.undoAdoption(pageId, adoptionId);
-        setOk("That section is back exactly as it was, byte for byte.");
-        await load();
-      } catch (e: any) {
-        setErr(messageFrom(e, "We could not undo that. Nothing was changed."));
-      } finally {
-        setBusy(null);
-      }
+    onUndoAdoption: (adoptionId: string) => {
+      setConfirmAsk({
+        title: "Put this section back the way your website built it?",
+        body: "Anything you have changed on it since goes with it, and the section stops being editable here.",
+        confirmLabel: "Yes, put it back",
+        onConfirm: () => { void undoAdoption(adoptionId); },
+      });
     },
     onSwapRoles: swapRoles,
     roleSwapBusy,
@@ -603,7 +661,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     },
     catalogFor: (kind: string) => catalog.find((c) => c.kind === kind) || null,
     catalogue,
-  }), [api, catalog, catalogue, load, pageId, roleSwapBusy, specsFor, swapRoles]);
+  }), [api, catalog, catalogue, pageId, roleSwapBusy, specsFor, swapRoles, undoAdoption]);
 
   const widgetExtras = useCallback((w: Widget, sectionId: string) => {
     if (w.kind === "site_custom") {
@@ -678,8 +736,14 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
       <BuilderShell
         open
         onClose={() => {
-          if (dirtyRef.current && !window.confirm("You have changes here that are not on your website yet. Close and lose them?")) return;
-          onClose();
+          if (!dirtyRef.current) { onClose(); return; }
+          setConfirmAsk({
+            title: "Close without saving?",
+            body: "You have changes here that are not on your website yet. Closing now throws them away.",
+            confirmLabel: "Close and lose them",
+            cancelLabel: "Keep editing",
+            onConfirm: onClose,
+          });
         }}
         adapter="website"
         resetKey={resetKey}
@@ -784,33 +848,30 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             {detail?.canUndo && (
               <button type="button" style={GHOST} disabled={!!busy}
                 title="Put back the version of this page from before your last save."
-                onClick={async () => {
-                  if (!window.confirm("Put back the version from before your last save?")) return;
-                  setBusy("undo"); setErr(null); setOk(null);
-                  try { await api.undoPage(pageId); setOk("Put the previous version back."); await load(); }
-                  catch (e: any) { setErr(messageFrom(e, "We could not undo that.")); }
-                  finally { setBusy(null); }
-                }}>
+                onClick={() => setConfirmAsk({
+                  title: "Put back the version from before your last save?",
+                  body: "Everything you have done since that save goes. What is on your website does not change until you publish.",
+                  confirmLabel: "Yes, put it back",
+                  onConfirm: () => { void undoLastSave(); },
+                })}>
                 {busy === "undo" ? "Working…" : "Undo last change"}
               </button>
             )}
             {isLive ? (
               <button type="button" style={GHOST} disabled={!!busy || cannotPublish}
                 title="Take this page off your website. Visitors get a 'page not found' until you publish it again."
-                onClick={() => {
+                onClick={() => setConfirmAsk({
                   // The ONE route off the internet, and it says what happens.
-                  if (!window.confirm(
-                    `Take “${detail?.title || "this page"}” off the internet? `
-                    + "Visitors will get a 'page not found' until you publish it again. "
-                    + "Nothing on the page is lost.",
-                  )) return;
-                  void write("draft", { unpublish: true });
-                }}>
+                  title: `Take “${detail?.title || "this page"}” off the internet?`,
+                  body: "Visitors will get a ‘page not found’ until you publish it again. Nothing on the page is lost — it is all still here.",
+                  confirmLabel: "Yes, take it off",
+                  onConfirm: () => { void write("draft", { unpublish: true }); },
+                })}>
                 Take it off the internet
               </button>
             ) : null}
             <button type="button" style={PRIMARY} disabled={!!busy || cannotPublish}
-              onClick={() => setConfirmPublish(true)}
+              onClick={askPublish}
               title="Put this page live on your website. You are asked to confirm first.">
               {busy === "publish" ? "Working…" : "Publish"}
             </button>
@@ -835,7 +896,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                 </div>
                 <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
                   <button type="button" disabled={!!busy || cannotPublish}
-                    onClick={() => setConfirmPublish(true)}
+                    onClick={askPublish}
                     title="Put these changes on your website, where anybody can see them"
                     style={{
                       border: "none", background: "#EF6C33", color: "#fff", borderRadius: 4,
@@ -844,12 +905,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                     Publish these changes
                   </button>
                   <button type="button" disabled={!!busy}
-                    onClick={() => {
-                      if (!window.confirm(
-                        "Throw your saved changes away and go back to what is on your website? This cannot be undone.",
-                      )) return;
-                      void discardHeldDraft();
-                    }}
+                    onClick={() => setConfirmAsk({
+                      title: "Throw your saved changes away?",
+                      body: "The page goes back to exactly what is on your website now. This cannot be undone.",
+                      confirmLabel: "Yes, discard them",
+                      onConfirm: () => { void discardHeldDraft(); },
+                    })}
                     title="Go back to the version that is on your website. Your saved changes are thrown away."
                     style={{
                       border: "1px solid #CBD5E1", background: "#fff", color: "#7C2D12", borderRadius: 4,
@@ -935,13 +996,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             catch (e: any) { setSettingsErr(messageFrom(e, "Your website would not take that. Nothing was saved.")); }
             finally { setSettingsBusy(null); }
           }}
-          onTrash={async () => {
-            if (!window.confirm("Put this page in your website's bin? It keeps it for 30 days.")) return;
-            setSettingsBusy("trash"); setSettingsErr(null);
-            try { await api.trash(pageId); setSettingsOpen(false); onClose(); }
-            catch (e: any) { setSettingsErr(messageFrom(e, "We could not delete that page.")); }
-            finally { setSettingsBusy(null); }
-          }}
+          onTrash={() => setConfirmAsk({
+            title: "Put this page in your website's bin?",
+            body: "It comes off your website straight away. Your website keeps it in the bin for 30 days, so it can be brought back from there.",
+            confirmLabel: "Yes, bin it",
+            onConfirm: () => { void trashPage(); },
+          })}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1079,36 +1139,16 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         />
       )}
 
-      {confirmPublish && (
-        <IadmModal open onClose={() => setConfirmPublish(false)} product="arion" z={60}
-          eyebrow="Publish" title={`Publish “${detail?.title || 'this page'}”?`} size="confirm"
-          footer={
-            <>
-              <button type="button" style={{ ...GHOST, color: "#334155", border: "1px solid #CBD5E1" }}
-                onClick={() => setConfirmPublish(false)} title="Go back to the builder">Not yet</button>
-              <button type="button" style={PRIMARY} disabled={!!busy}
-                title="Publish this page to your website"
-                onClick={() => { setConfirmPublish(false); void write("publish"); }}>
-                {busy === "publish" ? "Working…" : "Yes, publish it"}
-              </button>
-            </>
-          }>
-          <div style={{ padding: 16, fontSize: 13, lineHeight: 1.55 }}>
-            <p>
-              Everything on the canvas goes onto {detail?.permalink || "your website"} straight away,
-              where anybody can see it.
-            </p>
-            {proposal && (
-              <p style={{ color: "#B45309" }}>
-                ARGUS has a suggestion still waiting for you and will NOT be published with this page.
-              </p>
-            )}
-            <p style={{ color: "#5A7A8A" }}>
-              Your website keeps the version before this one, so &ldquo;Undo last change&rdquo; puts it straight back.
-            </p>
-          </div>
-        </IadmModal>
-      )}
+      {/* Publish is asked in the SAME dialog as every other question here. It
+          used to be the one app modal among six browser boxes on one toolbar;
+          now it is simply the question with the longest answer.
+
+          z=1300 because the questions are raised from three different layers:
+          the builder shell (an IadmModal at z-50), the page-settings sheet
+          (1100) whose bin button asks, and the media picker (1200). A confirm
+          that renders BEHIND the sheet that raised it is a press that does
+          nothing, which is what the browser's box never did. */}
+      <ConfirmDialog ask={confirmAsk} product="arion" z={1300} busy={!!busy} onClose={() => setConfirmAsk(null)} />
 
       {showPreview && (
         <IadmModal open onClose={() => setShowPreview(false)} product="arion" z={60}

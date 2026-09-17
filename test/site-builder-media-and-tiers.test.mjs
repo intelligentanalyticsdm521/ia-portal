@@ -204,8 +204,12 @@ test('leaving the editor with unsaved changes asks first — both ways out', () 
   assert.match(src, /window\.removeEventListener\("beforeunload", warn\)/,
     'and it comes off again, or every later page warns for no reason');
   // And closing the builder, which never leaves the page at all.
-  assert.match(src, /dirtyRef\.current && !window\.confirm\(/);
-  assert.match(src, /Close and lose them\?/);
+  // Asked in the app's own dialog since 2026-09-17: the browser's box
+  // cannot say what is lost and its buttons read OK / Cancel.
+  assert.match(src, /if \(!dirtyRef\.current\) \{ onClose\(\); return; \}/);
+  assert.match(src, /title: "Close without saving\?"/);
+  assert.match(src, /confirmLabel: "Close and lose them"/);
+  assert.match(src, /cancelLabel: "Keep editing"/);
 });
 
 /* ==========================================================================

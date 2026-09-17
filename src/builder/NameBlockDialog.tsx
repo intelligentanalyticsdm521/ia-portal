@@ -11,6 +11,14 @@
  * browser's words and cannot ask a second question — so "name it" could be
  * asked and "what is it for" could not. One dialog, used wherever the builder
  * has to name something the author is keeping.
+ *
+ * ── ONE FIELD OR TWO ──────────────────────────────────────────────────────
+ * 2026-09-17: the last two `window.prompt`s on these surfaces were "Name this
+ * template" (two questions' worth) and "What should this campaign be about?"
+ * (one). Rather than a second dialog for the one-field case, `askNote={false}`
+ * drops the second box and the dialog is the SAME box either way. A separate
+ * one-field component would be the same twenty lines with a different border
+ * radius six months from now.
  */
 import { useEffect, useRef, useState } from "react";
 
@@ -21,7 +29,11 @@ export interface NameBlockDialogProps {
   /** What the name box starts with — the section's own label, usually. */
   defaultName?: string;
   nameLabel?: string;
+  /** What the first box suggests when it is empty. */
+  namePlaceholder?: string;
   noteLabel?: string;
+  /** False when there is only one question to ask. `note` comes back "". */
+  askNote?: boolean;
   confirmLabel?: string;
   onSave: (name: string, note: string) => void;
   onClose: () => void;
@@ -62,20 +74,24 @@ export function NameBlockDialog(p: NameBlockDialogProps) {
           value={name}
           onChange={(e) => setName(e.target.value)}
           data-block-name
-          placeholder="Severe weather clause"
+          placeholder={p.namePlaceholder || "Severe weather clause"}
           style={{ width: "100%", marginTop: 4, border: "1px solid #CBD5E1", borderRadius: 5, padding: "7px 9px", fontSize: 13 }}
         />
 
-        <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#334155", marginTop: 10 }}>
-          {p.noteLabel || "One line about when to use it"}
-        </label>
-        <input
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          data-block-note
-          placeholder="Goes on every winter agreement"
-          style={{ width: "100%", marginTop: 4, border: "1px solid #CBD5E1", borderRadius: 5, padding: "7px 9px", fontSize: 13 }}
-        />
+        {p.askNote !== false && (
+          <>
+            <label style={{ display: "block", fontSize: 11, fontWeight: 700, color: "#334155", marginTop: 10 }}>
+              {p.noteLabel || "One line about when to use it"}
+            </label>
+            <input
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              data-block-note
+              placeholder="Goes on every winter agreement"
+              style={{ width: "100%", marginTop: 4, border: "1px solid #CBD5E1", borderRadius: 5, padding: "7px 9px", fontSize: 13 }}
+            />
+          </>
+        )}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
           <button type="button" onClick={p.onClose} title="Go back without saving it"

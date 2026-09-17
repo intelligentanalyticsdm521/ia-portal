@@ -19,6 +19,7 @@ import { AgentActivityPanel } from "../../components/agents/AgentActivityPanel";
 import { AgentSettingsRow } from "../../components/agents/AgentSettingsRow";
 import { AgentRunHistoryPanel } from "../../components/agents/AgentRunHistoryPanel";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { NameBlockDialog } from "../../builder/NameBlockDialog";
 import type {
   AgentActivityPayload, AgentActivityRow, AgentKnob, AgentRunsPayload,
   AgentSettingsResponse,
@@ -70,6 +71,8 @@ export function SparkAgentsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState<string | null>(null);
+  /** Is the one-line brief being asked for? */
+  const [askingBrief, setAskingBrief] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -149,14 +152,15 @@ export function SparkAgentsPage() {
    * banned by the agent's own design principle 3. So this asks for one rather
    * than inventing it, which is the honest version of the button.
    *
+   * It asked in a `window.prompt` until 2026-09-17 - the browser's grey box,
+   * which cannot say what the brief is for and whose "Cancel" reads as
+   * cancelling the agent. Same one question, asked in the app's own dialog.
+   *
    * The Responder gets no button: it runs when an inquiry arrives, and there is
    * nothing to trigger by hand that would not be a fake inquiry.
    */
-  const runNow = async () => {
-    const brief = window.prompt(
-      "What should this campaign be about? One line is enough.",
-    );
-    if (!brief || !brief.trim()) return;
+  const runNow = async (brief: string) => {
+    setAskingBrief(false);
     setRunning("campaign");
     setNotice(null);
     try {
@@ -226,12 +230,25 @@ export function SparkAgentsPage() {
                 onToggle={agent.read_only ? undefined : (enabled) => saveAgent(agent.key, { enabled })}
                 onKnob={agent.read_only ? undefined : (field, value) => saveAgent(agent.key, { [field]: value })}
                 onResume={agent.paused ? () => saveAgent(agent.key, { paused: false }) : undefined}
-                onRunNow={agent.key === "campaign" ? runNow : undefined}
+                onRunNow={agent.key === "campaign" ? () => setAskingBrief(true) : undefined}
               />
             ))}
           </div>
         </section>
       </div>
+
+      {askingBrief && (
+        <NameBlockDialog
+          title="What should this campaign be about?"
+          intro="One line is enough. Your agent writes the draft from it and leaves it above for you to read - nothing is sent."
+          nameLabel="In one line"
+          namePlaceholder="Spring clean-ups, booking from the first week of April"
+          askNote={false}
+          confirmLabel="Write the draft"
+          onSave={(brief) => { void runNow(brief); }}
+          onClose={() => setAskingBrief(false)}
+        />
+      )}
     </SparkPageShell>
   );
 }
