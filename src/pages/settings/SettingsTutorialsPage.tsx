@@ -496,6 +496,7 @@ export default function SettingsTutorialsPage() {
         <OnboardingWizardModal
           open={onboardingOpen}
           tenantId={activeTenantId}
+          tenantName={active?.tenant?.tenantName || undefined}
           mode="onboarding"
           startAtFirstStep
           onClose={() => setOnboardingOpen(false)}
