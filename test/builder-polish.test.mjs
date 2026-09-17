@@ -19,7 +19,9 @@
 //        → "Delete is last, separated and destructive" red
 //   5. make `setWidgetLocked` unlock a required part
 //        → "a required part cannot be unlocked, however it is asked" red
-//   6. let `findResults` return a "create" row
+//   6. let `findResults` return a "create" row (and: drop the
+//      `createsRecord` filter in findResults, or put `return false` back
+//      into createsRecords — both go RED now, neither did before)
 //        → "Find never creates a record" red
 //   7. put the proposal sentence back on `heading` as a plain string
 //        → four "the … pane never reads like a proposal" rows red at once
@@ -33,7 +35,7 @@ import {
   DEFAULT_STEP, FIRST_STEP, HISTORY_LIMIT,
 } from "../src/builder/history.ts";
 import { menuFor } from "../src/builder/builderMenu.ts";
-import { findResults, ALWAYS_ACTIONS, createsRecords, FIND_GROUP_LABEL } from "../src/builder/find.ts";
+import { findResults, ALWAYS_ACTIONS, createsRecords, recordMakers, FIND_GROUP_LABEL } from "../src/builder/find.ts";
 import {
   makeSection, makeWidget, emptyDocument, serialise, deserialise,
   setWidgetLocked, cloneSection, isRequired, REQUIRED_KINDS,
@@ -305,7 +307,23 @@ describe("M-22 · one box: sections, then things to add, then what to do", () =>
 
   test("it FINDS and JUMPS — it never creates a record (D-25)", () => {
     // MUTATION 6: add a "create" row to ALWAYS_ACTIONS and this goes red.
-    assert.equal(createsRecords(), false);
+    //
+    // `createsRecords` was `return false` until 2026-09-17 — a constant in
+    // the shape of a guard, which passed this line on the day somebody added
+    // a creating action. It now reads the rows, so the three assertions
+    // below are about the real thing.
+    assert.equal(createsRecords(), false, "nothing the ENGINE offers makes a row");
+    const creator = { id: "new-page", label: "Add a page", createsRecord: true };
+    assert.equal(createsRecords([creator]), true,
+      "a flagged action has to be SEEN — a guard that cannot go true is not a guard");
+    assert.deepEqual(recordMakers([...ALWAYS_ACTIONS, creator]), [creator]);
+    // … and Find refuses to offer it, whichever side put it there.
+    const offered = findResults("page", { ...input, actions: [creator] });
+    assert.equal(offered.some((r) => r.actionId === "new-page"), false,
+      "Find must never offer a row that makes a record (D-25)");
+    assert.equal(findResults("", { ...input, actions: [creator] })
+      .some((r) => r.actionId === "new-page"), false,
+      "… including on the empty box, which lists the actions");
     for (const a of ALWAYS_ACTIONS) {
       assert.ok(!/^(new|create|add a page|make)/i.test(a.label),
         `Find offers "${a.label}", which makes a row from inside the editor — that is D-25`);

@@ -32,6 +32,7 @@ import { Plus, Newspaper, ExternalLink, Send, FileText, Trash2 } from "lucide-re
 import { EmailBuilder } from "../../builder/adapters/email/EmailBuilder";
 import type { EmailWire } from "../../builder/adapters/email/emailDoc";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
+import { ConfirmDialog, type ConfirmAsk } from "../../components/ConfirmDialog";
 // D-32: ONE formatter for every date a person reads. See lib/plainValue.ts.
 import { editionLabel } from "../../lib/plainValue";
 
@@ -52,6 +53,9 @@ export function SparkNewsletterPage() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState<number | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+
+  /** The pending "are you sure?", or null. One home for every question. */
+  const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
 
   /** The issue open in the builder. `"new"` means one that does not exist yet. */
   const [editing, setEditing] = useState<NewsletterIssue | "new" | null>(null);
@@ -147,10 +151,24 @@ export function SparkNewsletterPage() {
    * from — come from LUMEN and are shown in its own words, because the reason
    * is the useful part.
    */
+  /**
+   * The question, in the app's own dialog.
+   *
+   * It was a `window.confirm`: the browser's grey box, with the dev
+   * server's hostname above it and an "OK" button for deleting somebody's
+   * work. Same question, same refusals behind it, asked the way the rest of
+   * the product asks.
+   */
+  function askRemove(issue: NewsletterIssue) {
+    setConfirmAsk({
+      title: `Delete issue #${issue.issue_number} “${issue.title}”?`,
+      body: "It goes from this list for good. This cannot be undone. An issue already on your website, or one a send was built from, is refused — and your newsletter says why.",
+      confirmLabel: "Yes, delete it",
+      onConfirm: () => { void remove(issue); },
+    });
+  }
+
   async function remove(issue: NewsletterIssue) {
-    if (!window.confirm(
-      `Delete issue #${issue.issue_number} “${issue.title}”? This cannot be undone.`,
-    )) return;
     setPublishing(issue.id); setFlash(null); setError(null);
     try {
       await del(`/api/v1/newsletters/${issue.id}`);
@@ -269,7 +287,7 @@ export function SparkNewsletterPage() {
             {/* D-14. Asks first; an issue already on the website or already
                 sent is refused by LUMEN, in its own words. */}
             <button
-              onClick={(e) => { e.stopPropagation(); remove(n); }}
+              onClick={(e) => { e.stopPropagation(); askRemove(n); }}
               disabled={publishing === n.id}
               title="Delete this issue"
               className="spark-btn spark-btn-sm spark-btn-ghost"
@@ -315,6 +333,8 @@ export function SparkNewsletterPage() {
           ) : null
         }
       />
+
+      <ConfirmDialog ask={confirmAsk} product="spark" z={70} onClose={() => setConfirmAsk(null)} />
     </SparkPageShell>
   );
 }

@@ -270,8 +270,15 @@ test('an adoption that comes back with no section is a failure, not a green toas
 
 test('undoing an adoption asks first, and says what goes with it', () => {
   const src = readSrc(WB);
-  assert.match(src, /window\.confirm\(\s*\n?\s*'Put this section back exactly as it was built/);
-  assert.match(src, /Anything you have changed on it since will go with it/);
+  // 2026-09-17: asked in the app's own dialog, not the browser's grey box
+  // - and asked ONCE. The inspector used to put its own window.confirm in
+  // front of this one, so a single press asked twice.
+  assert.match(src, /setConfirmAsk\(\{\s*\n\s*title: "Put this section back the way your website built it\?"/);
+  assert.match(src, /Anything you have changed on it since goes with it/);
+  assert.match(src, /confirmLabel: "Yes, put it back"/);
+  const inspector = readSrc('src/builder/adapters/website/SiteInspectorExtras.tsx');
+  assert.doesNotMatch(inspector, /window\.confirm/,
+    'one press, one question - the adapter owns it');
 });
 
 test('the review entry is only offered when there is something to review', () => {

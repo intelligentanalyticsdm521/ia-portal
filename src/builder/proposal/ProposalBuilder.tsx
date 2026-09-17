@@ -33,6 +33,7 @@ import {
   detailsMerge, documentLogo, parseMoney, plainLabel, readDetails,
   reconcileDetails, widgetForToken, writeDetails, type DetailRow,
 } from "./documentDetails";
+import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { unfilledTokens, tagLabel } from "../merge";
@@ -42,6 +43,7 @@ import {
   applyBrandDefaults, hydrateClauses, isSavedBlock, proposalLibrary, savedIdOf,
   savedTemplateEntries, templateByKey, withTotalBeforeSignature, type ClauseRow,
 } from "../templates";
+import { NameBlockDialog } from "../NameBlockDialog";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
@@ -126,21 +128,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   // customer already read.
   const [picking, setPicking] = useState(!proposalId && !revision);   // the "start from" step
   const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
   /**
    * A refusal, reported AT the control that was pressed (D-20 / N-1).
    *
    * The engine owns the popover (`AnchoredToast`) and the jump; this is only
-   * which button and which sentence. `err` stays for the things that are NOT a
-   * refusal of a press — a background save-back that failed — and is shown in
-   * the pane where it always was.
+   * which button and which sentence.
+   *
+   * 2026-09-17 — there is NO second channel any more. The pane-bottom red line
+   * (`err`) was the last three refusals' home: the template save, the two
+   * property-field answers and the request tick all printed at the bottom of
+   * the far-left pane while the control that caused them was somewhere else
+   * entirely, which is D-20 word for word. Every one of them now names its own
+   * anchor, and the pane-bottom line is DELETED rather than left as a second
+   * place a message can land — two homes for one fact is how they disagree.
    */
   const [refusal, setRefusal] = useState<{ anchor: string; message: string; nonce: number } | null>(null);
   const refuseRef = useRef(0);
   /** Refuse a press: the sentence appears beside the button that caused it. */
   const refuse = useCallback((anchor: string, message: string) => {
     refuseRef.current += 1;
-    setErr(null);
     setRefusal({ anchor, message, nonce: refuseRef.current });
   }, []);
   /** D-36 — "Saved" said in the builder, because the builder STAYS OPEN now. */
@@ -182,6 +188,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   const [catalogueLoading, setCatalogueLoading] = useState(true);
   const [savedTemplates, setSavedTemplates] = useState<Array<{ id: string; name: string; description?: string | null; document?: any; body?: any }>>([]);
   const [askOpen, setAskOpen] = useState(false);
+  /** Is the "name this template" dialog up? (It replaced a `window.prompt`.) */
+  const [namingTemplate, setNamingTemplate] = useState(false);
   // The business's own identity for the document header, resolved exactly the
   // way DocumentBrandFrame resolves it (the document template's logo/accent
   // beats the brand kit's — §2 step 0 says that override stays).
@@ -246,7 +254,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       setDoc(applyBrandDefaults(opened, brandDefaults(kit)));
       setResetKey((k) => k + 1);
       setPicking(false);
-    }).catch((e) => setErr(apiErrorMessage(e)));
+    }).catch((e) => refuse("load", `We could not open that document: ${apiErrorMessage(e)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proposalId]);
 
@@ -287,7 +295,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       });
       setResetKey((k) => k + 1);
       setPicking(false);
-    }).catch((e) => setErr(apiErrorMessage(e)));
+    }).catch((e) => refuse("load", `We could not open that revision: ${apiErrorMessage(e)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revision?.revisionId]);
 
@@ -531,7 +539,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
       return;
     }
-    setErr(null); setSaved(null); setRefusal(null); setBusy(true);
+    setSaved(null); setRefusal(null); setBusy(true);
     try {
       const w = wire();
       const payload = {
@@ -591,11 +599,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       await api.patch(`/proposals/${revision.proposalId}/revisions/${revision.revisionId}`, { request_items: next });
     } catch (e) {
       // Put it back. A tick that looks saved and is not is worse than one that
-      // refuses: the author would work from a list that lies to them.
+      // refuses: the author would work from a list that lies to them — and the
+      // sentence goes beside THAT tick, not at the bottom of the pane, because
+      // the box visibly un-ticking itself with no word anywhere near it is the
+      // same "nothing happened" D-20 was written about.
       setRequestItems(requestItems);
-      setErr(`Could not save that tick: ${apiErrorMessage(e)}`);
+      refuse(requestItemAnchor(index), `Could not save that tick: ${apiErrorMessage(e)}`);
     }
-  }, [api, requestItems, revision]);
+  }, [api, refuse, requestItems, revision]);
 
   async function saveRevision(send: boolean) {
     if (!revision) return;
@@ -610,7 +621,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
       return;
     }
-    setErr(null); setSaved(null); setRefusal(null); setBusy(true);
+    setSaved(null); setRefusal(null); setBusy(true);
     try {
       const w = wire();
       // D-15 — the title is the PROPOSAL's, not the revision's, so a rename in
@@ -646,21 +657,30 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
   }
 
-  async function saveAsTemplate() {
-    const name = window.prompt("Name this template", title.trim() || "Untitled document");
-    if (!name?.trim()) return;
-    setBusy(true); setErr(null);
+  /**
+   * "Save as template" — asked in the BUILDER's own dialog, not the browser's.
+   *
+   * It used to be a `window.prompt`: the browser's grey box, in the browser's
+   * words, with a "Cancel" the author reads as cancelling the document. It is
+   * the same question M-23 already answers for a saved block — name it, and one
+   * line about when to use it — so it is the same dialog (`NameBlockDialog`),
+   * and the note is written onto the template so the gallery row says something
+   * useful instead of "Saved from …".
+   */
+  async function saveAsTemplate(name: string, note: string) {
+    setNamingTemplate(false);
+    setBusy(true);
     try {
       const w = wire();
       await api.post("/proposal-templates", {
-        name: name.trim(),
-        description: title.trim() ? `Saved from “${title.trim()}”` : null,
+        name,
+        description: note || (title.trim() ? `Saved from “${title.trim()}”` : null),
         body: { title: title.trim() || null, tax_rate: Number(taxRate) || 0, blocks: w.blocks.blocks },
         document: w.document,
       });
-      onSaved(`Saved “${name.trim()}” as a template. It is in the gallery for your next document.`);
+      onSaved(`Saved “${name}” as a template. It is in the gallery for your next document.`);
     } catch (e) {
-      setErr(`Could not save the template: ${apiErrorMessage(e)}`);
+      refuse(PROPOSAL_ANCHORS.saveTemplate, `Could not save the template: ${apiErrorMessage(e)}`);
     } finally { setBusy(false); }
   }
 
@@ -773,7 +793,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         onFindAction={(id) => {
           if (id === "save-draft") { void save(false, false); return; }
           if (id === "send") { void save(true); return; }
-          if (id === "save-template") { void saveAsTemplate(); return; }
+          if (id === "save-template") { setNamingTemplate(true); return; }
           if (id === "ask-argus") setAskOpen(true);
         }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
@@ -817,15 +837,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 if (r?.field_key) values[r.field_key] = String(r.value ?? "");
               }
               if (!Object.keys(values).length) {
-                setErr("These rows are not property fields yet, so there is nothing to save back. Add them in Settings → Custom fields first.");
+                refuse(PROPOSAL_ANCHORS.propertySave, "These rows are not property fields yet, so there is nothing to save back. Add them in Settings → Custom fields first.");
                 return;
               }
               try {
                 await lumen.put(`/api/v1/custom-fields/values/property/${locationId}`, { values });
-                setErr(null);
                 onSaved("Saved to the property. Your crew sees the same details on the job.");
               } catch (e) {
-                setErr(`Could not save to the property: ${apiErrorMessage(e)}`);
+                refuse(PROPOSAL_ANCHORS.propertySave, `Could not save to the property: ${apiErrorMessage(e)}`);
               }
             }}
           />
@@ -860,7 +879,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" onClick={saveAsTemplate} disabled={busy} style={ghostBtn}
+              <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate}
+                onClick={() => setNamingTemplate(true)} disabled={busy} style={ghostBtn}
                 title="Save this document's sections as a template you can start from next time">
                 Save as template
               </button>
@@ -910,10 +930,28 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 onToggle={toggleRequestItem}
               />
             )}
-            {err && <div style={{ color: "#B91C1C", marginTop: 4 }}>{err}</div>}
+            {/* The pane-bottom red line IS DELETED (2026-09-17). Every refusal
+                this builder can make now names its own control and the engine
+                puts the sentence beside it; a second place for a message to
+                land is a second place to miss it. */}
           </div>
         }
       />
+
+      {/* M-23's dialog, reused: "Save as template" asks the same two questions
+          in the same box, instead of the browser's `window.prompt`. */}
+      {namingTemplate && (
+        <NameBlockDialog
+          title="Save this as a template"
+          intro="It goes in your gallery, in your colours, with your details already on it — pick it as the starting point for your next document."
+          defaultName={title.trim() || "Untitled document"}
+          nameLabel="What do you call it?"
+          noteLabel="One line about when to use it"
+          confirmLabel="Save the template"
+          onSave={(name, note) => { void saveAsTemplate(name, note); }}
+          onClose={() => setNamingTemplate(false)}
+        />
+      )}
 
       {askOpen && (
         <AskArgusModal
@@ -982,6 +1020,7 @@ function RequestedChanges({
                 <input
                   type="checkbox"
                   checked={it.done}
+                  data-builder-anchor={requestItemAnchor(i)}
                   onChange={() => onToggle(i)}
                   title={it.done ? "Mark this as not done yet" : "Tick this off once the document covers it"}
                   style={{ marginTop: 2 }}
@@ -1185,7 +1224,7 @@ function WidgetExtras({
         </select>
       </div>
       {widget.kind === "property_plan" && p.locationId && (
-        <button type="button" style={miniBtn}
+        <button type="button" style={miniBtn} data-builder-anchor={PROPOSAL_ANCHORS.propertySave}
           title="Save what is on this page back to the property, so the crew sees the same sheet on the job"
           onClick={() => onSavePropertyFields(String(p.locationId), Array.isArray(p.rows) ? p.rows : [])}>
           Save these details to the property

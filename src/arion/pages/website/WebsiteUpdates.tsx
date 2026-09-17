@@ -5,6 +5,7 @@ import { Card, Loading, ConsultingUpsell } from '../../components/Ui';
 import { ReportButton } from '../../../components/insights/ReportButton';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import type { PluginAutoUpdateToggleBody } from '../../../lib/arionApi';
+import { ConfirmDialog, type ConfirmAsk } from '../../../components/ConfirmDialog';
 
 type UpdateItem = {
   kind: 'plugin' | 'theme' | 'core';
@@ -113,9 +114,10 @@ export function WebsiteUpdates() {
     }
   }, [activeSiteId, arionApi, flashNotice, refetchAll]);
 
+  // The question is asked in the app's own dialog, not the browser's grey
+  // box - the same ConfirmDialog every builder surface uses.
   const handleUpdateCore = useCallback(async () => {
     if (!activeSiteId) return;
-    if (!window.confirm("Updating your website's core software can take 1-2 minutes. Continue?")) return;
     setBusyFor('core', true);
     try {
       const r: any = await arionApi.updateWpCore(activeSiteId);
@@ -194,6 +196,8 @@ export function WebsiteUpdates() {
   const hasCoreUpdate = !!updates?.core_update;
 
   const pluginConnected = pluginStatus === 'connected';
+  /** The pending "are you sure?", or null. */
+  const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
 
   return (
     <div>
@@ -400,7 +404,12 @@ export function WebsiteUpdates() {
             busy={busy}
             onUpdatePlugin={handleUpdatePlugin}
             onUpdateTheme={handleUpdateTheme}
-            onUpdateCore={handleUpdateCore}
+            onUpdateCore={() => setConfirmAsk({
+              title: "Update your website's core software?",
+              body: "Updating the core software can take 1-2 minutes. Your website stays up while it runs, and nothing you have written changes.",
+              confirmLabel: "Yes, update it",
+              onConfirm: () => { void handleUpdateCore(); },
+            })}
             onToggleAutoUpdate={handleToggleAutoUpdate}
             loading={allPluginsLoading || updatesLoading}
           />
@@ -451,6 +460,8 @@ export function WebsiteUpdates() {
         serviceType="IT & Hosting Management"
         triggerPage="website-updates"
       />
+
+      <ConfirmDialog ask={confirmAsk} product="arion" onClose={() => setConfirmAsk(null)} />
     </div>
   );
 }

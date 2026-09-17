@@ -43,6 +43,18 @@ export interface FindAction {
   id: string;
   label: string;
   hint?: string;
+  /**
+   * TRUE when running this action MAKES A NEW ROW somewhere — a page, a
+   * record, a document that did not exist before the box was opened.
+   *
+   * Find will not offer it. D-25 is what happens when an editor's finder can
+   * create: Elementor's makes new pages from inside the editor, and the
+   * newsletter builder ended up with three orphan rows nobody could delete.
+   * An action that only writes the thing the author is already editing (Save
+   * draft, Send) is NOT one of these — it changes what is in front of them,
+   * it does not mint something else behind their back.
+   */
+  createsRecord?: boolean;
 }
 
 /**
@@ -97,7 +109,11 @@ function score(label: string, q: string): number {
 export function findResults(query: string, input: FindInput): FindResult[] {
   const q = String(query || "").trim();
   const limit = input.limit ?? 6;
-  const actions = [...ALWAYS_ACTIONS, ...(input.actions || [])];
+  // "It finds and jumps; it never creates" is ENFORCED here, not asserted in a
+  // comment: an action that says it makes a row is dropped before the box can
+  // show it, whichever side of the engine/adapter line put it there.
+  const actions = [...ALWAYS_ACTIONS, ...(input.actions || [])]
+    .filter((a) => a.createsRecord !== true);
 
   if (!q) {
     return actions.slice(0, limit * 2).map((a) => ({
@@ -150,13 +166,28 @@ export const FIND_GROUP_LABEL: Record<FindKind, string> = {
 export const FIND_PLACEHOLDER = "Find a section, something to add, or what to do next";
 
 /**
- * Nothing in this module makes a record. Exported so the rule is a test and
- * not a comment: every result either selects something already on the page,
- * inserts a widget the author chose, or runs an action the adapter named.
+ * WHICH OF THESE ACTIONS WOULD MAKE A RECORD?
+ *
+ * This used to be `return false` — a hardcoded constant in the shape of a
+ * guard, which is worse than no guard at all: the test that called it passed
+ * for ever, including on the day somebody added "New page" to `ALWAYS_ACTIONS`.
+ * It is now read off the rows themselves, so it answers the real question and
+ * goes true the moment one is flagged.
  */
-export function createsRecords(): boolean {
-  return false;
+export function recordMakers(actions: FindAction[]): FindAction[] {
+  return actions.filter((a) => a.createsRecord === true);
+}
+
+/**
+ * Does this builder's Find offer anything that makes a record? (D-25.)
+ *
+ * The engine's own actions are always counted; pass the adapter's on top.
+ * `findResults` DROPS every flagged row, so a `true` here is a wiring mistake
+ * the caller should see rather than a row the author can press.
+ */
+export function createsRecords(actions: FindAction[] = []): boolean {
+  return recordMakers([...ALWAYS_ACTIONS, ...actions]).length > 0;
 }
 
 export type { WidgetTask };
-export default { findResults, ALWAYS_ACTIONS, FIND_GROUP_LABEL, FIND_PLACEHOLDER };
+export default { findResults, ALWAYS_ACTIONS, FIND_GROUP_LABEL, FIND_PLACEHOLDER, createsRecords };

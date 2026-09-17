@@ -269,7 +269,10 @@ test('a deleted page is its own list, not a draft and not live', () => {
 test('publishing asks first, and unpublishing goes back to a draft', () => {
   const src = SRC(WB);
   // The confirm is a real dialog with the consequence spelled out, not a toast.
-  assert.match(src, /Publish “\$\{detail\?\.title \|\| 'this page'\}”\?/);
+  assert.match(src, /Publish “\$\{detail\?\.title \|\| "this page"\}”\?/);
+  // The same ConfirmDialog every other question in this builder uses.
+  assert.match(src, /const askPublish = useCallback/);
+  assert.match(src, /<ConfirmDialog ask=\{confirmAsk\}/);
   assert.match(src, /where anybody can see (it|them)/);
   assert.match(src, /Yes, publish it/);
   /* Taking a page off the internet is its own button, it is the ONLY route
