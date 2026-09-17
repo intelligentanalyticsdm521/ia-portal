@@ -34,11 +34,14 @@
  * page can be resolved to a selection without a second model of the layout.
  */
 import type { BuilderDocument, Section, Widget } from "./model";
-import { hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle } from "./style";
+import {
+  hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
+  layerFor, sectionBoxDeclarations, type ElementStyle,
+} from "./style";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
 import { documentTotals, money, type DocumentTotals } from "./totals";
-import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
+import { CONTAINER_ROOT_CSS, STACK_QUERY, deviceContainerQuery } from "./responsive";
 
 /* ── One escaper. The inventory found three. ─────────────────────────────── */
 export function esc(s: unknown): string {
@@ -62,6 +65,25 @@ export interface LocationLite {
   postal_code?: string | null;
   access_notes?: string | null;
   gate_code?: string | null;
+  /** Who is met on site. Printed by `address_block` (D-156). */
+  site_contact?: string | null;
+}
+
+/**
+ * ONE LINE OF THE PRODUCT CATALOGUE, as a renderer needs it.
+ *
+ * Handed in, never fetched: a renderer that could call an API would be a
+ * renderer no test could drive and a customer's page that could be slow. The
+ * adapter reads the catalogue once and puts it here — see `product_card`.
+ */
+export interface CatalogueItemLite {
+  id: string;
+  name?: string | null;
+  description?: string | null;
+  price?: string | null;
+  cadence?: string | null;
+  inclusions?: string[];
+  tiers?: Array<{ id: string; name?: string | null; price?: string | null; cadence?: string | null; inclusions?: string[] }>;
 }
 
 export interface RenderContext {
@@ -76,6 +98,15 @@ export interface RenderContext {
   /** Business identity for the header widget. */
   business: { name: string; tagline?: string; logoUrl?: string | null; contactLine?: string };
   locations?: Record<string, LocationLite>;
+  /**
+   * The business's own products and services, by id (D-156).
+   *
+   * `product_card` draws its price, cadence and inclusions from here, so a
+   * plan re-priced this morning is re-priced on every page that draws it.
+   * Absent on every surface that has no catalogue, and a card then falls back
+   * to the snapshot stored on the widget rather than drawing nothing.
+   */
+  catalogue?: Record<string, CatalogueItemLite>;
   /** Computed once by the caller and handed in — see totals.ts. */
   totals: DocumentTotals;
   /** section id → "01". Computed by the caller from the whole document. */
@@ -118,6 +149,7 @@ export function makeContext(
     currency: partial.currency ?? "USD",
     business: partial.business ?? { name: "" },
     locations: partial.locations ?? {},
+    ...(partial.catalogue ? { catalogue: partial.catalogue } : {}),
     totals: partial.totals ?? documentTotals(doc),
     numbers: partial.numbers ?? sectionNumbers(doc),
     extra: partial.extra,
@@ -182,6 +214,10 @@ export const RENDERED_KINDS = [
   "property_plan", "property_block", "signature", "page_break", "image",
   "spacer", "divider", "key_value_table", "data_table", "testimonial",
   "footer_note", "merge_field", "button",
+  // D-156, the atomic widgets and the box that holds them. `priced_line` above
+  // is what `price_line` folds into — ONE renderer, two spellings, because a
+  // stored document written before the rename must print the same page.
+  "container", "card", "product_card", "price_line", "address_block", "key_fact",
 ] as const;
 
 /**
@@ -194,13 +230,221 @@ export const RENDERED_KINDS = [
  */
 export const UNRENDERED_KINDS = ["columns"] as const;
 
-export function renderWidget(w: Widget, ctx: RenderContext): string {
+/* ══════════════════════════════════════════════════════════════════════════
+   THE TREE (D-156)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Brandon, walking "Choose your plan": "Header, drag that into this box and
+   it's now its own section inside the box, then a text field under it with
+   Pick One, then cards…". That is a CONTAINER holding a heading, a paragraph
+   and a row of cards — and until D-156 the model could not say it: a column
+   held widgets and a widget held nothing, so the five money widgets hid a
+   heading, an intro and three cards inside one box nobody could take apart.
+
+   A container is a WIDGET whose children are widgets. That is the whole
+   change here: `Section` stays the depth-0 container and `Column` stays a
+   container with layout=column, so every stored document is the document it
+   was, and a box inside a column is one more widget in the same list.
+
+     section ── column ── widget
+                          └─ container ── widget
+                                          └─ container ── …
+
+   ONE reader, used by every surface in this repo and mirrored byte for byte
+   by LUMEN-API's builderStyle.js: what a container IS must not be answered
+   twice.
+*/
+
+/** The one kind that holds children. */
+export const CONTAINER_KIND = "container";
+
+/* ── ELEMENTOR'S OWN VOCABULARY, and why it is not ours ───────────────────
+   BUILDER_WIDGET_CATALOG_2026-09-17 (machine-extracted from a running
+   Elementor 4.2.4) is the contract for container shape, and D-157's reason is
+   the whole point: "our website builder needs to then convert to elementor".
+   A container whose keys were called `direction` and `gap` would need a
+   translation table between our tree and the one ARION publishes, and a
+   translation table is a second place for the answer to be wrong.
+
+   So the keys ARE Elementor's, spelled as the machine file spells them, and
+   the VALUES are Elementor's own option values — which happen to be CSS
+   values already (`flex-start`, `space-between`, `stretch`), so there is no
+   mapping table anywhere in this file.
+
+   Two things Elementor also has that we deliberately do NOT read here:
+     · `min_height` — §11.8's `style.minHeight` already owns it, per device,
+       and is already emitted for a box by `containerStyleCss`;
+     · `content_width` — the SECTION's `width` (full / contained / narrow)
+       already owns how wide the words run.
+   Both are one mechanism each, and a second control that set the same
+   property is the defect this whole scope exists to delete. */
+
+/** `container_type`: flex or grid. Elementor's two. */
+export type ContainerType = "flex" | "grid";
+/** `flex_direction`, with Elementor's four options. */
+export type FlexDirection = "row" | "column" | "row-reverse" | "column-reverse";
+
+export interface ContainerLayout {
+  type: ContainerType;
+  /** Meaningful for `type: "flex"`. Column is what a fresh container is. */
+  direction: FlexDirection;
+  /** `flex_justify_content` / `grid_justify_items` — already a CSS value. */
+  justify?: string;
+  /** `flex_align_items` / `grid_align_items` — already a CSS value. */
+  align?: string;
+  /** `flex_gap` / `grid_gaps`, in px. Row first, the order CSS wants. */
+  gap: { row: number; column: number };
+  /** `flex_wrap`. Elementor's default is no wrap; the phone stylesheet is
+   *  what stacks a row, so this is faithful AND safe at 390px. */
+  wrap: "wrap" | "nowrap";
+  /** `grid_columns_grid`, in `fr` tracks. */
+  columns: number;
+  /** `html_tag`, from Elementor's own list. `div` when it says nothing. */
+  tag: string;
+}
+
+const FLEX_DIRECTIONS: readonly FlexDirection[] = ["row", "column", "row-reverse", "column-reverse"];
+const FLEX_JUSTIFY = ["flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly"];
+const FLEX_ALIGN = ["flex-start", "center", "flex-end", "stretch"];
+const GRID_PLACE = ["start", "center", "end", "stretch"];
+/** Elementor's own list, and nothing else: a tag from a document is markup. */
+const HTML_TAGS = ["div", "header", "footer", "main", "article", "section", "aside"];
+
+const DEFAULT_GAP = 16;
+
+/**
+ * HOW DEEP A TREE MAY GO BEFORE THE RENDERER STOPS ASKING.
+ *
+ * Not a limit on what an author may build — twelve levels is far past anything
+ * a page needs. It is the guard against a document that points at itself: a
+ * hand-edited `children` array containing its own parent would otherwise
+ * recurse until the customer's tab died, on a page whose whole job is to be
+ * opened by a stranger. Depth is counted, never identity, because a cycle can
+ * be longer than one hop.
+ */
+export const MAX_CONTAINER_DEPTH = 12;
+
+export function isContainer(w: Widget | null | undefined): boolean {
+  return !!w && w.kind === CONTAINER_KIND;
+}
+
+/**
+ * The children of a container, tolerantly.
+ *
+ * Anything that is not a widget-shaped object is dropped rather than drawn,
+ * for the same reason `deserialise` drops junk: a customer's page must not be
+ * an exception because somebody hand-edited a row.
+ */
+export function childrenOf(w: Widget | null | undefined): Widget[] {
+  if (!isContainer(w)) return [];
+  const raw = (w!.props as any)?.children;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((c: any) => c && typeof c === "object" && typeof c.kind === "string") as Widget[];
+}
+
+/** One of a list, or undefined. Junk never reaches the page. */
+function oneOf(v: unknown, allowed: readonly string[]): string | undefined {
+  const s = String(v ?? "").trim();
+  return allowed.includes(s) ? s : undefined;
+}
+
+/**
+ * Elementor's `gaps` control: `{ column, row, isLinked, unit }`.
+ *
+ * Only px is honoured. An author can type `2em` into Elementor and a mailbox
+ * would have no idea what that is, so a unit this renderer cannot carry to
+ * every surface falls back to the default rather than being half-drawn on one.
+ */
+function readGaps(v: any): { row: number; column: number } {
+  if (!v || typeof v !== "object") return { row: DEFAULT_GAP, column: DEFAULT_GAP };
+  if (v.unit && String(v.unit) !== "px") return { row: DEFAULT_GAP, column: DEFAULT_GAP };
+  const n = (x: unknown, fallback: number) => {
+    const num = Number(x);
+    return Number.isFinite(num) && String(x ?? "").trim() !== "" ? Math.max(0, num) : fallback;
+  };
+  const row = n(v.row, DEFAULT_GAP);
+  return { row, column: v.isLinked === false ? n(v.column, DEFAULT_GAP) : n(v.column, row) };
+}
+
+/** What the box is, read in Elementor's words. */
+export function containerLayout(w: Widget): ContainerLayout {
+  const p: any = w.props || {};
+  const type: ContainerType = String(p.container_type ?? "") === "grid" ? "grid" : "flex";
+  const grid = type === "grid";
+  const size = Number(p.grid_columns_grid?.size);
+  return {
+    type,
+    direction: (oneOf(p.flex_direction, FLEX_DIRECTIONS) as FlexDirection) ?? "column",
+    justify: grid ? oneOf(p.grid_justify_items, GRID_PLACE) : oneOf(p.flex_justify_content, FLEX_JUSTIFY),
+    align: grid ? oneOf(p.grid_align_items, GRID_PLACE) : oneOf(p.flex_align_items, FLEX_ALIGN),
+    gap: readGaps(grid ? p.grid_gaps : p.flex_gap),
+    wrap: String(p.flex_wrap ?? "") === "wrap" ? "wrap" : "nowrap",
+    columns: Number.isFinite(size) ? Math.max(1, Math.min(6, Math.round(size))) : 3,
+    tag: oneOf(p.html_tag, HTML_TAGS) ?? "div",
+  };
+}
+
+/** Which way a FLEX box runs, for the class and for the phone rule. */
+export function containerFlow(l: ContainerLayout): "row" | "column" | "grid" {
+  if (l.type === "grid") return "grid";
+  return l.direction.startsWith("row") ? "row" : "column";
+}
+
+/** The container's display, as declarations. Inline, because it is per box. */
+export function containerLayoutCss(l: ContainerLayout): string {
+  const out: string[] = [];
+  if (l.type === "grid") {
+    out.push("display:grid", `grid-template-columns:repeat(${l.columns},minmax(0,1fr))`);
+    if (l.justify) out.push(`justify-items:${l.justify}`);
+    if (l.align) out.push(`align-items:${l.align}`);
+  } else {
+    out.push("display:flex", `flex-direction:${l.direction}`, `flex-wrap:${l.wrap}`);
+    if (l.justify) out.push(`justify-content:${l.justify}`);
+    if (l.align) out.push(`align-items:${l.align}`);
+  }
+  // Row gap then column gap, which is the order the shorthand takes.
+  out.push(l.gap.row === l.gap.column ? `gap:${l.gap.row}px` : `gap:${l.gap.row}px ${l.gap.column}px`);
+  return out.join(";");
+}
+
+/**
+ * Every widget in a list, containers included, depth first in reading order.
+ *
+ * The one walk. `sectionStyleTag` needs it to find a styled widget three boxes
+ * down, and the customer's page needs it to find the signature block wherever
+ * the author put it — two places that each used to flatten `columns` by hand
+ * and would each have missed everything nested.
+ */
+export function walkTree(widgets: Widget[], depth = 0): Array<{ widget: Widget; depth: number }> {
+  if (depth > MAX_CONTAINER_DEPTH) return [];
+  const out: Array<{ widget: Widget; depth: number }> = [];
+  for (const w of widgets || []) {
+    out.push({ widget: w, depth });
+    if (isContainer(w)) out.push(...walkTree(childrenOf(w), depth + 1));
+  }
+  return out;
+}
+
+/** Every widget in the document, containers included, in reading order. */
+export function walkDocumentTree(doc: BuilderDocument): Widget[] {
+  return doc.sections
+    .flatMap((s) => s.columns.flatMap((c) => walkTree(c.widgets)))
+    .map((x) => x.widget);
+}
+
+export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
   const p: any = w.props || {};
   const body = (() => {
     // The adapter's own widgets first — see RenderContext.extra.
     const own = ctx.extra?.(w, ctx);
     if (own != null) return own;
     switch (w.kind) {
+      case "container": return container(w, ctx, depth);
+      case "card": return card(cardFields(p, ctx), ctx, "");
+      case "product_card": return card(productCardFields(p, ctx), ctx, "");
+      case "price_line": return pricedLine(p, ctx);
+      case "address_block": return addressBlock(p, ctx);
+      case "key_fact": return keyFact(p, ctx);
       case "doc_header": return docHeader(p, ctx);
       case "key_facts": return keyFacts(p, ctx);
       case "key_value_table": return keyFacts({ ...p, auto: false }, ctx);
@@ -543,6 +787,197 @@ function image(p: any, ctx: RenderContext): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   D-156 — the container and the atomic widgets
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A BOX, holding widgets, holding boxes.
+ *
+ * `depth` is carried rather than tracked, so two boxes side by side are each
+ * at their own depth and a document that points at itself stops at
+ * MAX_CONTAINER_DEPTH instead of taking the customer's tab with it. The one
+ * thing a container draws beyond its children is the layout — flex or grid,
+ * inline, because it is a fact about THIS box; everything else it wears
+ * (padding, margin, border, rounded corners, shadow, per-device) comes down
+ * the §11.8 path in `sectionStyleTag`, which is the same path a section uses
+ * and therefore the same answers.
+ */
+function container(w: Widget, ctx: RenderContext, depth: number): string {
+  const kids = childrenOf(w);
+  if (depth >= MAX_CONTAINER_DEPTH) {
+    return ctx.mode === "edit"
+      ? `<div class="bx-unknown">This box is nested too deeply to draw.</div>`
+      : "";
+  }
+  const layout = containerLayout(w);
+  const p: any = w.props || {};
+  // `background_color` is Elementor's own name for it, so ARION publishes the
+  // box without a translation table. A colour, exactly as a Section carries one.
+  const bg = p.background_color ? `;background:${esc(String(p.background_color))}` : "";
+  const inner = kids.map((k) => renderWidget(k, ctx, depth + 1)).join("");
+  const empty = !inner && ctx.mode === "edit"
+    ? `<div class="bx-boxdrop">Drag anything in here.</div>` : "";
+  const tag = layout.tag;
+  return `<${tag} class="bx-box bx-box-${containerFlow(layout)}" data-box="${esc(w.id)}" style="${containerLayoutCss(layout)}${bg}">${inner || empty}</${tag}>`;
+}
+
+/** What a card says, whoever typed it. See `card`. */
+interface CardFields {
+  title: unknown; price: unknown; per: unknown; was: unknown;
+  description: unknown; bullets: unknown[]; note: unknown;
+  recommended: boolean; tag: string; tagColour: string;
+  cta?: { label: string; url: string } | null;
+  /** `cards.2.` for a card inside the old composite, "" for an atomic one. */
+  path: string;
+}
+
+/**
+ * ONE CARD'S WORDS, whoever typed them and whichever door they came in by.
+ *
+ * Three vocabularies reach this function and they are all the same card:
+ *   · D-156's own field names (`title`, `description`, `bullets`, `was`, `tag`);
+ *   · the composite tier card's, so a document the upgrade has not reached yet
+ *     still draws (`name`, `pitch`, `features`, `list_price`, `badge`);
+ *   · Elementor's `price-table`, which is what stream D's website adapter
+ *     PUBLISHES (`heading`, `sub_heading`, `period`, `original_price`,
+ *     `features_list`, `button_text`, `link`, `ribbon_title`) — so a page
+ *     opened back out of a live site shows its card rather than a blank one.
+ *
+ * Reading three spellings is not three mechanisms: there is one card, one
+ * renderer and one set of fields it draws. Which spelling the REGISTRY writes
+ * is stream B's to pick, and the day it picks one the other two become dead
+ * aliases rather than a second answer.
+ *
+ * The TAG is D-157's, and it is one mechanism with `recommended`: a tick gives
+ * a "Recommended" pill in the accent, a typed tag gives those words in the
+ * author's colour, and a card never grows two pills.
+ */
+function cardFields(p: any, ctx: RenderContext, path = ""): CardFields {
+  const pick = (...vs: unknown[]) => vs.find((v) => v !== undefined && v !== null && v !== "");
+  const list = (...vs: unknown[]) => (vs.find((v) => Array.isArray(v) && v.length) as unknown[]) ?? [];
+  const tag = String(pick(p?.tag, p?.badge, p?.show_ribbon === "yes" || p?.show_ribbon === true ? p?.ribbon_title : undefined) ?? "").trim();
+  const recommended = !!p?.recommended;
+  const label = pick(p?.cta?.label, p?.button_text);
+  const url = pick(p?.cta?.url, p?.link?.url, p?.link);
+  return {
+    title: pick(p?.title, p?.name, p?.heading),
+    price: p?.price,
+    per: pick(p?.per, p?.period),
+    was: pick(p?.was, p?.list_price, p?.original_price),
+    description: pick(p?.description, p?.pitch, p?.sub_heading),
+    bullets: list(p?.bullets, p?.features, p?.features_list),
+    note: pick(p?.note, p?.footer_additional_info),
+    recommended: recommended || !!tag,
+    tag: tag || (recommended ? "Recommended" : ""),
+    tagColour: String(pick(p?.tagColour, p?.ribbon_color) ?? "").trim() || ctx.accent,
+    cta: label || url
+      ? { label: String(label || "Choose this"), url: String(url || "#") }
+      : null,
+    path,
+  };
+}
+
+/**
+ * A card bound to the PRODUCT CATALOGUE.
+ *
+ * "or product cards where they can directly load products/services from their
+ * actual OLIVER Product Catalog" (Brandon, D-156). The catalogue is handed to
+ * the renderer, never fetched by it: the price, the cadence and the inclusions
+ * are LIVE, so a plan the business re-priced this morning is re-priced on
+ * every page that draws it. What the author typed over the top wins, because
+ * an override is the author saying "not for this customer" — and when the
+ * catalogue is not there at all (an old PDF worker, an offline render) the
+ * snapshot stored on the widget is drawn rather than a blank card.
+ */
+function productCardFields(p: any, ctx: RenderContext): CardFields {
+  const item = ctx.catalogue?.[String(p?.itemId ?? p?.offering_id ?? "")];
+  const tier = item?.tiers?.find((t) => String(t.id) === String(p?.tierId ?? ""));
+  const live = {
+    title: tier?.name ?? item?.name,
+    price: tier?.price ?? item?.price,
+    per: tier?.cadence ?? item?.cadence,
+    description: item?.description,
+    bullets: tier?.inclusions ?? item?.inclusions,
+  };
+  return cardFields({
+    ...p,
+    title: p?.title ?? live.title,
+    price: p?.price ?? live.price,
+    per: p?.per ?? live.per,
+    description: p?.description ?? live.description,
+    bullets: Array.isArray(p?.bullets) && p.bullets.length ? p.bullets : (live.bullets ?? []),
+    cta: p?.cta ?? (p?.priced ? { label: "Use this plan", url: "#" } : null),
+  }, ctx);
+}
+
+/** The ONE card. Typed, bound to the catalogue, or converted out of a tier. */
+function card(f: CardFields, ctx: RenderContext, _unused: string): string {
+  const editing = ctx.mode === "edit";
+  const at = (field: string) => `${f.path}${field}`;
+  const opt = (cond: unknown, html: string) => (cond || editing ? html : "");
+  const slots = editing ? [...f.bullets, ""] : f.bullets.filter((b) => String(b ?? "").trim());
+  return `
+    <div class="bx-card${f.recommended ? " bx-card-rec" : ""}"${f.recommended ? ` style="border-color:${esc(f.tagColour)}"` : ""}>
+      ${f.tag ? `<div class="bx-card-badge" style="background:${esc(f.tagColour)}">${esc(f.tag)}</div>` : ""}
+      <div class="bx-card-name" data-edit="${esc(at("title"))}">${t(f.title, ctx)}</div>
+      <div class="bx-card-price">
+        <span class="bx-now${f.price ? "" : " bx-slot bx-now-slot"}" data-edit="${esc(at("price"))}" data-placeholder="$0.00">${t(f.price, ctx)}</span>
+        ${opt(f.per, `<span class="bx-per${f.per ? "" : " bx-slot"}" data-edit="${esc(at("per"))}" data-placeholder="/mo">${t(f.per, ctx)}</span>`)}
+        ${opt(f.was, `<span class="bx-was${f.was ? "" : " bx-slot"}" data-edit="${esc(at("was"))}" data-placeholder="was…">${t(f.was, ctx)}</span>`)}
+      </div>
+      <div class="bx-card-pitch" data-edit="${esc(at("description"))}">${t(f.description, ctx)}</div>
+      <ul class="bx-card-feats">${slots.map((b, i) => `<li${b ? "" : ` class="bx-slot" data-placeholder="add a line…"`} data-edit="${esc(at(`bullets.${i}`))}">${t(b, ctx)}</li>`).join("")}</ul>
+      ${opt(f.note, `<div class="bx-card-note${f.note ? "" : " bx-slot"}" data-edit="${esc(at("note"))}" data-placeholder="small note…">${t(f.note, ctx)}</div>`)}
+      ${f.cta ? `<a class="bx-button bx-card-cta" style="background:${esc(ctx.accent)}" href="${esc(f.cta.url)}"><span data-edit="${esc(at("cta.label"))}">${t(f.cta.label, ctx)}</span></a>` : ""}
+    </div>`;
+}
+
+/**
+ * ONE FACT: a label and a value.
+ *
+ * `key_facts` drew four of these inside one widget and the author could not
+ * delete the third. This is the third, on its own, and four of them in a row
+ * container is the "Agreement at a glance" section — which is the whole of
+ * D-156 in one widget.
+ */
+function keyFact(p: any, ctx: RenderContext): string {
+  return `<div class="bx-facts"><div class="bx-fact">
+    <span class="bx-fact-l" data-edit="label">${t(p.label, ctx)}</span>
+    <span class="bx-fact-v" data-edit="value">${t(p.value, ctx)}</span>
+  </div></div>`;
+}
+
+/**
+ * WHERE THE WORK HAPPENS.
+ *
+ * Bound to a location, or typed. Bound wins for the parts the business keeps
+ * in one place — the address, the site contact, how to get in — because a
+ * proposal that prints last year's gate code is worse than one that prints
+ * none. A typed value is used where there is no location, which is how a
+ * one-off address gets onto a document at all.
+ */
+function addressBlock(p: any, ctx: RenderContext): string {
+  const loc = ctx.locations?.[String(p.locationId || "")];
+  const name = loc?.name || p.name;
+  const line = locationLine(loc) || String(p.address ?? "");
+  const contact = loc?.site_contact ?? p.contact;
+  const access = loc?.access_notes ?? p.access;
+  const editing = ctx.mode === "edit";
+  const bound = !!loc;
+  const row = (label: string, value: unknown, path: string) =>
+    (value || editing)
+      ? `<div class="bx-addr-meta"><span class="bx-addr-l">${esc(label)}</span><span${bound ? "" : ` data-edit="${esc(path)}"`}>${t(value, ctx)}</span></div>`
+      : "";
+  if (!name && !line && !contact && !access && !editing) return "";
+  return `<div class="bx-addr">
+    <div class="bx-addr-name"${bound ? "" : ` data-edit="name"`}>${t(name, ctx)}</div>
+    ${line || editing ? `<div class="bx-addr-line"${bound ? "" : ` data-edit="address"`}>${t(line, ctx)}</div>` : ""}
+    ${row("Site contact", contact, "contact")}
+    ${row("Access", access, "access")}
+  </div>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    Sections and the document
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -556,7 +991,7 @@ export function renderSection(s: Section, ctx: RenderContext): string {
     ? `<div class="bx-seclabel" style="color:${esc(ctx.accent)}">${esc([number, s.label].filter(Boolean).join(" · "))}</div>`
     : "";
   const cols = s.columns.map((c, i) => `
-    <div class="bx-col" data-col="${i}">${c.widgets.map((w) => renderWidget(w, ctx)).join("")}</div>`).join("");
+    <div class="bx-col" data-col="${i}">${c.widgets.map((w) => renderWidget(w, ctx, 0)).join("")}</div>`).join("");
 
   // THE SECTION'S PADDING, and which of the two owns it (§11.8).
   //
@@ -607,14 +1042,26 @@ export function renderSection(s: Section, ctx: RenderContext): string {
  * could hand down. See style.ts.
  */
 function sectionStyleTag(s: Section): string {
-  const widgets = s.columns.flatMap((c) => c.widgets)
-    .filter((w) => hasStyle(w.style))
+  // THE WHOLE TREE, not the two levels the columns happen to be (D-156). A
+  // widget three boxes down is styled by the same author with the same
+  // inspector, and a sheet that only reached the top level would be a control
+  // that works until you put it in a box.
+  const inside = s.columns.flatMap((c) => walkTree(c.widgets)).map((x) => x.widget);
+  const widgets = inside
+    .filter((w) => hasStyle(w.style) && !isContainer(w))
     .map((w) => ({
       selector: `.${widgetStyleClass(w.id)}`,
       style: w.style!,
       typographic: isTypographic(w.kind),
     }));
-  if (!hasStyle(s.style) && !widgets.length) return "";
+  // A CONTAINER IS A SECTION, as far as styling goes — §11.12 says so in as
+  // many words ("has the section styling from §11.8"). So it goes down the
+  // section's own path rather than the widget's: an edge, rounded corners, a
+  // shadow and a least height mean something on a box and nothing on a
+  // sentence, and writing a second emitter for them would be the second answer
+  // this scope exists to delete.
+  const boxes = inside.filter((w) => isContainer(w) && hasStyle(w.style));
+  if (!hasStyle(s.style) && !widgets.length && !boxes.length) return "";
   const css = styleBlockFor({
     sectionSelector: `.bx-sec[data-section="${esc(s.id)}"]`,
     gridSelector: `.bx-sec[data-section="${esc(s.id)}"] > .bx-grid`,
@@ -622,8 +1069,33 @@ function sectionStyleTag(s: Section): string {
     sectionStyle: s.style,
     widgets,
     sectionPadding: true,
-  });
+  }) + boxes.map((w) => containerStyleCss(w)).join("");
   return css ? `<style>${css}</style>` : "";
+}
+
+/**
+ * A container's own box, per device.
+ *
+ * `styleBlockFor` cannot be handed this directly: its grid half would read
+ * `columnWidths` and `gap` off the style layer, and a container's gap is a
+ * LAYOUT key that the box already carries inline — two places writing one
+ * property is how a control stops working (§11.8's own lesson). So the box
+ * declarations come from style.ts's emitters, the grid ones never do, and
+ * there is still exactly one piece of arithmetic behind each number.
+ */
+function containerStyleCss(w: Widget): string {
+  const selector = `.${widgetStyleClass(w.id)}`;
+  const out: string[] = [];
+  for (const device of ["desktop", "tablet", "phone"] as const) {
+    const use = device === "desktop" ? resolveStyle(w.style, device) : layerFor(w.style, device);
+    const decls = sectionBoxDeclarations(use);
+    const padding = sidesToCss(use.padding);
+    if (padding) decls.unshift(`padding:${padding}`);
+    if (!decls.length) continue;
+    const body = `${selector}{${decls.map((d) => (device === "desktop" ? d : `${d} !important`)).join(";")}}`;
+    out.push(device === "desktop" ? body : `${deviceContainerQuery(device)}{${body}}`);
+  }
+  return out.join("");
 }
 
 export function renderDocument(doc: BuilderDocument, ctx: RenderContext): string {
@@ -740,6 +1212,20 @@ export const DOCUMENT_CSS = `
 .bx-stars { font-size: 12px; letter-spacing: 2px; }
 .bx-attrib { font-size: 11px; color: #5A7A8A; margin-top: 4px; }
 .bx-unknown { border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px; color: #94A3B8; font-size: 11px; }
+/* ── D-156, the box and the atomic widgets ────────────────────────────────
+   The BOX has no look of its own. Its display, direction and gap are written
+   inline by the renderer because they are facts about that one box; anything
+   an author styles reaches it through the same §11.8 sheet a section uses. A
+   default border here would be a box you could not turn off. */
+.bx-box > .bx-w { margin: 0; }
+.bx-box-row > .bx-w, .bx-box-grid > .bx-w { flex: 1 1 0; min-width: 0; }
+.bx-boxdrop { flex: 1 1 100%; border: 1px dashed #CBD5E1; border-radius: 8px; padding: 18px; text-align: center; color: #94A3B8; }
+.bx-card-cta { margin-top: 10px; }
+.bx-addr { border-left: 3px solid var(--bx-accent, #0C4A60); padding-left: 10px; }
+.bx-addr-name { font-weight: 700; font-size: 14px; }
+.bx-addr-line { color: #5A7A8A; }
+.bx-addr-meta { font-size: 11px; color: #5A7A8A; margin-top: 3px; }
+.bx-addr-l { text-transform: uppercase; letter-spacing: .06em; font-weight: 700; font-size: 10px; margin-right: 6px; }
 @media print { .bx-break { break-before: page; } .bx-internal { display: none; } }
 
 /* ── THE PHONE ─────────────────────────────────────────────────────────────
@@ -755,6 +1241,13 @@ ${STACK_QUERY} {
   /* 1. Everything laid out in columns becomes one column. */
   .bx-cols-2 .bx-grid, .bx-cols-3 .bx-grid { grid-template-columns: 1fr; }
   .bx-panels, .bx-panels-2, .bx-sign, .bx-facts, .bx-cards { grid-template-columns: 1fr; }
+  /* A ROW OF BOXES IS A ROW. Three cards in a box at 390px are three 110px
+     cards, which is the shape of a proposal nobody signs — so the same rule
+     that stacks the section's columns stacks the author's own boxes. The
+     inline flex-direction is beaten with !important for the same reason the
+     section's padding is: the renderer wrote it into the HTML. */
+  .bx-box-row { flex-direction: column !important; }
+  .bx-box-grid { grid-template-columns: 1fr !important; }
   .bx-grid { gap: 16px; }
   .bx-w-narrow .bx-grid, .bx-w-contained .bx-grid { max-width: none; }
 

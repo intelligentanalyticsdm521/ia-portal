@@ -35,7 +35,50 @@ const BUSINESS = {
   ],
 };
 
+/* ── D-156's three handed-in sources ──────────────────────────────────────
+   A product card, an address block and a totals block all read something the
+   RENDERER is given rather than something it fetches — the catalogue, the
+   customer's locations, and the one sum totals.ts already computed. They are
+   in the shared context so the Portal and LUMEN-API are handed exactly the
+   same facts and therefore have to produce exactly the same bytes. */
+const CATALOGUE = {
+  "svc-plow": {
+    id: "svc-plow",
+    name: "Snow & ice — per push",
+    description: "Every 2 inch trigger, plowed and salted.",
+    price: "$185.00", cadence: "per push",
+    inclusions: ["Plowing", "Walks cleared", "Salt applied"],
+    tiers: [
+      { id: "t-basic", name: "Essentials", price: "$185.00", cadence: "per push", inclusions: ["Plowing", "Walks cleared"] },
+      { id: "t-plus", name: "Seasonal", price: "$2,400.00", cadence: "per season", inclusions: ["Plowing", "Walks cleared", "Salt applied", "24h callout"] },
+    ],
+  },
+  "svc-mow": {
+    id: "svc-mow", name: "Grounds care", description: "Mowing, edging and clean-up.",
+    price: "$320.00", cadence: "per month", inclusions: ["Mowing", "Edging"],
+  },
+};
+
+const LOCATIONS = {
+  "loc-1": {
+    location_id: "loc-1", name: "Marshalltown depot",
+    address_line1: "1200 Prairie Ave", address_line2: "Unit 4",
+    city: "Marshalltown", state: "IA", postal_code: "50158",
+    site_contact: "Dana Reyes, 555-0142", access_notes: "Gate code at the north entrance.",
+  },
+};
+
+/** One document's money, as the caller computes it once and hands it in. */
+const TOTALS = {
+  lines: [{ description: "Snow & ice", quantity: 1, unit_price: 2400, line_total: 2400, recommended: false, cadence: null }],
+  sites: [{ locationId: "loc-1", name: "Marshalltown depot", subtotal: 2400, lines: [] }],
+  subtotal: 2400, tax: 168, discount: 100, total: 2468,
+};
+
 const EMAIL_CTX = {
+  catalogue: CATALOGUE,
+  locations: LOCATIONS,
+  totals: TOTALS,
   mode: "view",
   merge: { "first name": "Dana", "business name": "Rolling In It", "contact.first_name": "Dana" },
   accent: "#0C4A60",
@@ -50,6 +93,9 @@ const EMAIL_CTX = {
 };
 
 const LANDING_CTX = {
+  catalogue: CATALOGUE,
+  locations: LOCATIONS,
+  totals: TOTALS,
   mode: "view",
   merge: { "first name": "Dana" },
   accent: "#0C4A60",
@@ -243,6 +289,123 @@ function styledTwoColumnCase() {
 }
 emailCases.push(styledTwoColumnCase());
 
+/* ══════════════════════════════════════════════════════════════════════════
+   D-156 — SIX TREE CASES, ONE SET, DRAWN ON BOTH SURFACES
+   ══════════════════════════════════════════════════════════════════════════
+
+   Brandon's sentence, as a fixture: "Header, drag that into this box and it's
+   now its own section inside the box, then a text field under it with Pick
+   One, then cards … custom cards where they just type the card headers, add a
+   price, and description inside the cards, or product cards where they can
+   directly load products/services from their actual OLIVER Product Catalog."
+
+   Every case is built ONCE, from the same helper, and rendered by the email
+   adapter and by the landing adapter — so the two surfaces are held to the
+   same tree, and LUMEN-API's own copies of both renderers are held to the same
+   bytes. A tree the two repos disagree about is a customer looking at two
+   different documents.
+*/
+
+/**
+ * A box. `kids` are widgets; a box is a widget, so boxes hold boxes.
+ *
+ * The keys are ELEMENTOR'S, per BUILDER_WIDGET_CATALOG_2026-09-17: a fixture
+ * that used a shorter spelling would pin the renderers to a vocabulary the
+ * website adapter would then have to translate.
+ */
+function box(id, props, kids) {
+  return { id, kind: "container", props: { ...props, children: kids } };
+}
+/** A row, at Elementor's spelling, with one gap in px. */
+const row = (gap) => ({ flex_direction: "row", flex_gap: { row: gap, column: gap, isLinked: true, unit: "px" } });
+const column = (gap) => ({ flex_direction: "column", flex_gap: { row: gap, column: gap, isLinked: true, unit: "px" } });
+function widget(id, kind, props) {
+  return { id, kind, props };
+}
+
+/** One section holding one tree. */
+function treeCase(name, root) {
+  resetIds();
+  const doc = emptyDocument({ style: "newsletter", accent: "#0C4A60" });
+  doc.sections = [makeSection({
+    id: "s1", label: "Case", padding: 16, layout: 1,
+    columns: [{ id: "c1", widgets: [root] }],
+  })];
+  return { name, kind: "tree", doc };
+}
+
+const TREE_CASES = [
+  // 1 — three deep: a box, holding a box, holding a box.
+  treeCase("tree · a box three deep, and every level draws", box("b1", column(20), [
+    widget("w1", "heading", { text: "What we will do", level: "Page title" }),
+    box("b2", row(24), [
+      box("b3", column(8), [
+        widget("w2", "heading", { text: "On site", level: "Section" }),
+        widget("w3", "paragraph", { text: "Plough, salt, and clear the walks." }),
+      ]),
+      box("b4", column(8), [
+        widget("w4", "heading", { text: "Off site", level: "Section" }),
+        widget("w5", "paragraph", { text: "We watch the forecast so you do not have to." }),
+      ]),
+    ]),
+  ])),
+
+  // 2 — a row of cards, one of them tagged in the author's own colour.
+  treeCase("tree · a row of typed cards, one carrying a tag", box("b1", row(16), [
+    widget("w1", "card", {
+      title: "Essentials", price: "$185.00", per: "per push",
+      description: "Every 2 inch trigger.", bullets: ["Plowing", "Walks cleared"],
+    }),
+    widget("w2", "card", {
+      title: "Seasonal", price: "$2,400.00", per: "per season", was: "$2,800.00",
+      description: "One figure for the whole winter.",
+      bullets: ["Plowing", "Walks cleared", "Salt applied"],
+      tag: "Best price", tagColour: "#B45309", note: "Billed in four instalments.",
+    }),
+    widget("w3", "card", {
+      title: "On call", price: "Quoted", description: "When you need us and not before.",
+      bullets: ["Same-day callout"],
+    }),
+  ])),
+
+  // 3 — the one total, with tax and a discount, read from the context.
+  treeCase("tree · totals with tax, read from the one sum the caller computed",
+    box("b1", column(12), [
+      widget("w1", "price_line", { name: "Snow & ice — seasonal", quantity: 1, unit_price: 2400, cadence: "per season", description: "The whole winter, one figure." }),
+      widget("w2", "totals", { heading: "What it comes to" }),
+    ])),
+
+  // 4 — an address block bound to a location: the address, the site contact
+  //     and how to get in, none of them retyped.
+  treeCase("tree · an address block bound to a location", box("b1", row(24), [
+    widget("w1", "address_block", { locationId: "loc-1" }),
+    widget("w2", "address_block", { name: "The other yard", address: "88 Second St, Ames, IA 50010", contact: "Sam Okafor" }),
+  ])),
+
+  // 5 — "Agreement at a glance": four facts, four widgets, each deletable.
+  treeCase("tree · key facts as four widgets in a row", box("b1", { ...row(12), flex_wrap: "wrap" }, [
+    widget("w1", "key_fact", { label: "Starts", value: "1 November 2026" }),
+    widget("w2", "key_fact", { label: "Runs for", value: "One winter" }),
+    widget("w3", "key_fact", { label: "Trigger", value: "2 inches" }),
+    widget("w4", "key_fact", { label: "Billed", value: "Monthly" }),
+  ])),
+
+  // 6 — "Choose your plan", as the upgrade leaves it: a heading, a line of
+  //     prose, and a row of cards loaded from the product catalogue.
+  treeCase("tree · a converted Choose your plan, with cards from the catalogue",
+    box("b1", column(16), [
+      widget("w1", "heading", { text: "Choose your plan", level: "Page title" }),
+      widget("w2", "paragraph", { text: "Pick one. Whichever you choose becomes the priced line below." }),
+      box("b2", row(16), [
+        widget("w3", "product_card", { itemId: "svc-plow", tierId: "t-basic" }),
+        widget("w4", "product_card", { itemId: "svc-plow", tierId: "t-plus", tag: "Most popular", tagColour: "#0C4A60", priced: true }),
+        widget("w5", "product_card", { itemId: "svc-mow", description: "Kept on through the summer." }),
+      ]),
+    ])),
+];
+
+for (const c of TREE_CASES) emailCases.push(c);
+
 const emailFixture = {
   note: "Generated by scripts/dev/build-email-fixtures.mjs. Byte-identical in Portal and LUMEN-API.",
   context: EMAIL_CTX,
@@ -380,6 +543,11 @@ function lpStyledSection() {
   return { name: "styled · section spacing, ratios, gap, border, radius, shadow and a phone override", kind: "styled", doc };
 }
 landingCases.push(lpStyledSection());
+
+// The SAME six trees, drawn as a page. One set of documents, two surfaces:
+// a tree the two adapters disagree about is a bug nobody would see until a
+// customer had both open.
+for (const c of TREE_CASES) landingCases.push(c);
 
 const landingFixture = {
   note: "Generated by scripts/dev/build-email-fixtures.mjs. Byte-identical in Portal and LUMEN-API.",

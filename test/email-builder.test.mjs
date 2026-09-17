@@ -89,9 +89,32 @@ const view = (doc, extra = {}) => makeEmailContext(doc, { ...EMAIL.context, ...e
    1. The golden fixtures — one case per widget
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * EVERY KIND A CASE ACTUALLY DRAWS, the whole tree down (D-156).
+ *
+ * `case.kind` is a LABEL — "styled", "tree", "document" — and reading coverage
+ * off it counted a case that draws four widgets as covering one. Since a tree
+ * case draws a box holding cards holding nothing, the only honest answer to
+ * "is this kind pinned by a golden" is the kinds in the document itself.
+ */
+function kindsIn(doc) {
+  const out = [];
+  const walk = (ws, depth) => {
+    if (depth > 12) return;
+    for (const w of ws || []) {
+      out.push(w.kind);
+      if (w.kind === "container" && Array.isArray(w.props && w.props.children)) {
+        walk(w.props.children, depth + 1);
+      }
+    }
+  };
+  for (const s of doc.sections || []) for (const c of s.columns || []) walk(c.widgets, 0);
+  return out;
+}
+
 describe("the renderer draws exactly what the fixture says", () => {
   test("the fixture covers every widget the email builder offers", () => {
-    const covered = new Set(EMAIL.cases.map((c) => c.kind));
+    const covered = new Set(EMAIL.cases.flatMap((c) => kindsIn(c.doc)));
     const missing = widgetsFor("email").map((w) => w.kind)
       .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `no golden case for: ${missing.join(", ")}`);
