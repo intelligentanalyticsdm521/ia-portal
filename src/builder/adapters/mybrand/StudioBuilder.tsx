@@ -36,7 +36,7 @@ import {
   AlertTriangle, Download, FileImage, FileText, Layers, Loader2, Palette, Save, Scaling,
   Send, Sparkles, Upload, BarChart3, Image as ImageIcon, LayoutTemplate,
 } from "lucide-react";
-import { BuilderFrame } from "../../BuilderFrame";
+import { ARGUS_BUBBLE_CLEARANCE, BuilderFrame } from "../../BuilderFrame";
 import { WidgetPane } from "../../WidgetPane";
 import { canRedo, canUndo, initHistory, push, redo, undo, type History } from "../../history";
 import type { WidgetDef } from "../../registry";
@@ -100,18 +100,6 @@ interface Chooser {
   options: Array<{ value: string; label: string; hint?: string; swatch?: string }> | null;
   placeholder?: string;
 }
-
-/**
- * How far above the bottom of the WINDOW the studio's buttons have to finish
- * (D-31).
- *
- * 20px inset + a 44px pill, rounded up — the same number BuilderFrame uses for
- * the document builders' bottom bar. It is written twice today because
- * BuilderFrame does not export it and that file belongs to another stream; the
- * request to export the one constant is in
- * overnight-report/REBUILD_HANDOFF_2026-09-16.md.
- */
-const ARGUS_BUBBLE_CLEARANCE = 68;
 
 export function StudioBuilder(p: StudioBuilderProps) {
   const { get, post, put, ready } = useLumenApi();
@@ -690,7 +678,8 @@ export function StudioBuilder(p: StudioBuilderProps) {
              and floated ON TOP OF Save — a measured overlap at 1600×900, not
              a judgement call. Cleared DOWNWARDS, which is the rule the phone
              pass settled on for the document builders (BuilderFrame's
-             ARGUS_BUBBLE_CLEARANCE): reserving the bubble's WIDTH took 150 of
+             ARGUS_BUBBLE_CLEARANCE, exported from BuilderFrame — C-A-1):
+             reserving the bubble's WIDTH took 150 of
              a 390px phone and pushed a button off the screen, while its height
              is the same at every width. */
           <div style={{

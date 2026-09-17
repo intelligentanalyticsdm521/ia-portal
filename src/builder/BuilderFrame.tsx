@@ -54,7 +54,7 @@
  * responsive.ts, so no adapter decides what "phone" means.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { HelpCircle, Layers, PanelLeft, Redo2, SlidersHorizontal, Undo2, X } from "lucide-react";
+import { Clock, HelpCircle, Layers, PanelLeft, Redo2, Search, SlidersHorizontal, Undo2, X } from "lucide-react";
 import { IadmModal, IadmBuilderPanes, type IadmModalProduct } from "../components/IadmModal";
 import { NARROW_MEDIA_QUERY, PREVIEW_DEVICES, type PreviewKey } from "./responsive";
 import { focusablesIn, firstTabTarget, nextTrapIndex } from "./focusTrap";
@@ -77,6 +77,16 @@ export interface BuilderFrameProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /**
+   * The magnifier (M-22) and the clock (M-7), beside Undo.
+   *
+   * Both are keyboard shortcuts first — `Ctrl+E` and `Ctrl+Shift+H` — and a
+   * shortcut with nothing on screen to press is a shortcut only the person who
+   * wrote it knows about. Optional, so a frame with no Find (the Studio, whose
+   * canvas has no sections to find) simply does not draw one.
+   */
+  onFind?: () => void;
+  onHistory?: () => void;
 
   /** LEFT — the widget pane (WidgetPane, from the registry). */
   pane: ReactNode;
@@ -131,8 +141,13 @@ export interface BuilderFrameProps {
  * 850px and took 150 of a 390px phone's 390, which pushed a button off the
  * screen — measured, 2026-09-16. Its height is the same at every width.
  * 20px inset + a 44px pill, rounded up.
+ *
+ * EXPORTED (C-A-1). The Studio is on this frame but supplies its own footer,
+ * so the bottom-bar padding below does not reach it and it needs the same
+ * number — and one number written in two files is the thing this platform's
+ * rules say not to do.
  */
-const ARGUS_BUBBLE_CLEARANCE = 68;
+export const ARGUS_BUBBLE_CLEARANCE = 68;
 
 /**
  * Is the window narrow enough for drawers?
@@ -271,6 +286,20 @@ export function BuilderFrame(p: BuilderFrameProps) {
         <button type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo (Ctrl+Shift+Z)" disabled={!p.canRedo} onClick={p.onRedo} style={style(p.canRedo)}>
           <Redo2 size={size} />
         </button>
+        {p.onHistory && (
+          <button type="button" data-builder-historybtn
+            title="What you've changed (Ctrl+Shift+H) — every step, and you can go back to any of them"
+            aria-label="What you've changed" onClick={p.onHistory} style={style(true)}>
+            <Clock size={size} />
+          </button>
+        )}
+        {p.onFind && (
+          <button type="button" data-builder-findbtn
+            title="Find (Ctrl+E) — a section, something to add, or what to do next"
+            aria-label="Find" onClick={p.onFind} style={style(true)}>
+            <Search size={size} />
+          </button>
+        )}
       </>
     );
   };

@@ -27,7 +27,9 @@ import assert from "node:assert/strict";
 import { readFileSync, readdirSync } from "node:fs";
 import zlib from "node:zlib";
 import path from "node:path";
-import { widgetsFor, widgetTooltip, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
+import {
+  widgetsFor, widgetTooltip, widgetDescription, widgetLabel, WIDGETS_BY_KIND,
+} from "../src/builder/registry.ts";
 import {
   PREMADE_DESIGNS, PREMADE_BY_KEY, PREMADE_GROUPS, buildPremade, coloursUsed, premadeFor,
 } from "../src/builder/adapters/mybrand/templates.ts";
@@ -88,9 +90,11 @@ describe("the studio's tools are registry entries, like every other builder's", 
   test("each one has a picture, one plain line and a tooltip carrying both", () => {
     for (const w of tools) {
       assert.ok(w.picture.startsWith("data:image/svg+xml,"), `${w.kind} has no picture`);
-      assert.ok(w.description.length >= 25, `${w.kind}'s line is too short to explain anything`);
-      assert.ok(!w.description.includes("\n"), `${w.kind}'s line is not one line`);
-      assert.equal(widgetTooltip(w), `${w.label} — ${w.description}`);
+      // N-4: the sentence is per builder now, so read the STUDIO's one.
+      const line = widgetDescription(w, "brand");
+      assert.ok(line.length >= 25, `${w.kind}'s line is too short to explain anything`);
+      assert.ok(!line.includes("\n"), `${w.kind}'s line is not one line`);
+      assert.equal(widgetTooltip(w, "brand"), `${widgetLabel(w, "brand")} — ${line}`);
       assert.ok(w.controls.length > 0, `${w.kind} has no controls`);
     }
   });

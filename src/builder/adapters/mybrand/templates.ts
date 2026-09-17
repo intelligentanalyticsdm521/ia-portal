@@ -266,6 +266,63 @@ export const PREMADE_DESIGNS: PremadeDesign[] = [
   },
 ];
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTHING COVERS THE WORDS (D-24 / N-3)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A text layer's REAL height, not the one line the builder stored.
+ *
+ * `text()` above writes `h = size * lineHeight`, which is one line — but a
+ * headline in a 920px box at 96px wraps to two, and the second line is the one
+ * a picture slot lands on. This estimates the wrap from an average glyph width
+ * (0.52 em for the headline weights these templates use, which is generous for
+ * the sans faces the brand kit offers) so the check below measures what a
+ * person actually sees rather than what the layer claims.
+ *
+ * Deliberately an OVER-estimate: a false alarm makes somebody move a slot, and
+ * a missed one is the flagship design tool opening with a box over its own
+ * headline, which is what the 2026-09-17 walk found.
+ */
+export function textLayerHeight(l: TextLayer): number {
+  const size = Math.max(1, l.size || 16);
+  const lineHeight = l.lineHeight ?? 1.25;
+  const perLine = Math.max(1, Math.floor((l.w || size) / (size * 0.52)));
+  const lines = String(l.content || "")
+    .split("\n")
+    .reduce((n, line) => n + Math.max(1, Math.ceil(line.length / perLine)), 0);
+  return Math.max(1, lines) * size * lineHeight;
+}
+
+interface Box { left: number; top: number; width: number; height: number }
+
+const overlaps = (a: Box, b: Box) =>
+  a.left < b.left + b.width && b.left < a.left + a.width
+  && a.top < b.top + b.height && b.top < a.top + a.height;
+
+/**
+ * Every place a PICTURE SLOT sits on top of WORDS, for one built scene.
+ *
+ * A slot is an image layer, whether or not the business has a picture in it —
+ * an empty one draws a labelled frame (fabricBridge `emptySlot`) that is
+ * exactly as opaque as a photograph, so "it only looks wrong before they
+ * upload one" is not a defence. Returns the pairs so a failing test can name
+ * the template, the slot and the words it is covering.
+ */
+export function slotsOverText(scene: CanvasDoc): Array<{ slot: string; text: string }> {
+  const out: Array<{ slot: string; text: string }> = [];
+  const slots = scene.layers.filter((l) => l.kind === "image" && l.visible !== false) as ImageLayer[];
+  const words = scene.layers.filter((l) => l.kind === "text" && l.visible !== false) as TextLayer[];
+  for (const s of slots) {
+    const a: Box = { left: s.x, top: s.y, width: s.w, height: s.h };
+    for (const t of words) {
+      const b: Box = { left: t.x, top: t.y, width: t.w, height: textLayerHeight(t) };
+      if (overlaps(a, b)) out.push({ slot: s.id, text: String(t.content || "").slice(0, 40) });
+    }
+  }
+  return out;
+}
+
 export const PREMADE_BY_KEY: Record<string, PremadeDesign> = Object.fromEntries(
   PREMADE_DESIGNS.map((d) => [d.key, d]),
 );

@@ -105,6 +105,33 @@ export interface CanvasProps {
   onDuplicateWidget?: (path: WidgetPath) => void;
   onDeleteWidget?: (path: WidgetPath) => void;
   /**
+   * LOCK AND HIDE, VISIBLY (M-21).
+   *
+   * Both were reachable — lock by construction only, hide from the Outline's
+   * eye — and neither said anything ON THE PAGE, so a section somebody had
+   * hidden on phones looked exactly like one they had not. The widget's own
+   * handle now carries a padlock and an eye that SHOW the state, and pressing
+   * either changes it. Absent, the handle draws what it always drew.
+   */
+  onLockWidget?: (path: WidgetPath, locked: boolean) => void;
+  onHideWidget?: (path: WidgetPath, hidden: boolean) => void;
+  /** Which width the eye is talking about — "on phones", "on tablets", "". */
+  hideDeviceWord?: string;
+  /** Is this widget hidden at the width being previewed? */
+  isWidgetHidden?: (path: WidgetPath) => boolean;
+  /**
+   * RIGHT-CLICK ANYTHING (M-8).
+   *
+   * The canvas says WHAT was right-clicked and WHERE the pointer was; the shell
+   * builds the menu (`builderMenu.ts`) and runs the actions — the same
+   * functions the hover toolbar presses. Two menus over one set of verbs is how
+   * a Duplicate that works on the toolbar and not in the menu happens.
+   */
+  onContextMenu?: (
+    target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
+    at: { x: number; y: number },
+  ) => void;
+  /**
    * A "+" was pressed, or an empty column's "Add here".
    *
    * The canvas says WHERE; the shell opens the one picker and does the insert,
@@ -268,7 +295,13 @@ export function Canvas(props: CanvasProps) {
   const isEmpty = doc.sections.every((s) => s.columns.every((c) => !c.widgets.length));
 
   return (
-    <div ref={rootRef} style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+    <div ref={rootRef}
+      /* M-24 — the one marker the open-time measurement reads. It carries how
+         many sections have been painted, so "the canvas is on screen" and "the
+         canvas has the page on it" are two different, measurable things and a
+         builder cannot report a fast open by showing an empty grey sheet. */
+      data-builder-canvas={doc.sections.length}
+      style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
       <style>{props.canvasCss ?? DOCUMENT_CSS}{CANVAS_CSS}{ADDBAR_CSS}{props.extraCss || ""}</style>
 
       <div style={{ ...paper, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A", gap: 12 }}>
@@ -392,6 +425,7 @@ function SectionHost({
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onMoveSection, onDragStart, onDragEnd, renderSection: renderOne,
   drag, onDragWidget, onDropWidget, onOpenPicker, onDuplicateWidget, onDeleteWidget,
+  onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy,
   flashWidgetId, slash, onSlash, onSlashCommit, onRefuse, onTokenClick,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
@@ -413,11 +447,23 @@ function SectionHost({
     return idx >= 0 ? { sectionId: section.id, columnIndex: col, widgetIndex: idx } : null;
   }, [section]);
 
-  // Paint the section. SKIPPED while the caret is inside it — see the header.
+  // Paint the section. SKIPPED while the caret is inside THE WORDS — see the
+  // header.
+  //
+  // FOUND BY DRIVING IT (2026-09-17, M-21): the test was "is the focus anywhere
+  // inside this section", and a widget's own handle is inside it — so pressing
+  // the padlock focused the button, the repaint was skipped, and the handle
+  // went on showing an open padlock over a widget the model had just locked.
+  // The page said one thing and the document said another, which is the exact
+  // failure the slash command hit in §11.10.
+  //
+  // The rule protects the CARET, so it asks about the caret: an editable run,
+  // not any descendant. A button is not somewhere text is being typed.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    if (host.contains(document.activeElement)) return;
+    const active = document.activeElement as HTMLElement | null;
+    if (active && host.contains(active) && active.closest("[data-bx-editable]")) return;
     host.innerHTML = html;
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-edit]"))) {
       el.contentEditable = "true";
@@ -478,6 +524,64 @@ function SectionHost({
         button("\u{1F512}", "This has to stay on the page — you can change the wording, not remove it",
           () => onRefuse?.("This part has to stay: it carries your unsubscribe link and postal address. You can change the wording."));
       }
+
+      /* M-21 — LOCK AND HIDE, AND THEY SAY WHICH THEY ARE.
+         The eye is filled when the thing is hidden and open when it is not, and
+         the padlock is only offered where the author is allowed to change it:
+         the email footer is locked by construction and the button above already
+         says why, so offering an unlock beside it would be a control that lies. */
+      const device = hideDeviceWord ? ` ${hideDeviceWord}` : "";
+      const hidden = path ? !!isWidgetHidden?.(path) : false;
+      if (onHideWidget && path) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = `bxc-wtool${hidden ? " bxc-wtool-on" : ""}`;
+        b.setAttribute("data-widget-hidden", hidden ? "1" : "0");
+        b.title = hidden
+          ? `Hidden${device}. Press to show it again.`
+          : `Hide this${device}. It stays in the ${copy?.noun || "page"}.`;
+        b.setAttribute("aria-label", b.title);
+        b.textContent = hidden ? "\u{1F648}" : "\u{1F441}";
+        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onHideWidget(path, !hidden); });
+        tools.appendChild(b);
+      }
+      if (onLockWidget && path && !locked) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "bxc-wtool";
+        b.setAttribute("data-widget-locked", "0");
+        b.title = "Lock so it can't be deleted. You can still change the words in it.";
+        b.setAttribute("aria-label", b.title);
+        b.textContent = "\u{1F513}";
+        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onLockWidget(path, true); });
+        tools.appendChild(b);
+      }
+      if (onLockWidget && path && locked) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "bxc-wtool bxc-wtool-on";
+        b.setAttribute("data-widget-locked", "1");
+        b.title = "Locked, so it cannot be deleted by accident. Press to unlock it.";
+        b.setAttribute("aria-label", b.title);
+        b.textContent = "\u{1F512}";
+        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onLockWidget(path, false); });
+        tools.appendChild(b);
+      }
+      if (onContextMenu && path) {
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "bxc-wtool";
+        b.setAttribute("data-widget-more", "1");
+        b.title = "Everything you can do with this — the same as right-clicking it";
+        b.setAttribute("aria-label", b.title);
+        b.textContent = "⋯";
+        b.addEventListener("click", (e) => {
+          e.stopPropagation(); e.preventDefault();
+          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+          onContextMenu({ kind: "widget", path }, { x: r.left, y: r.bottom + 4 });
+        });
+        tools.appendChild(b);
+      }
       el.appendChild(tools);
     }
 
@@ -502,7 +606,8 @@ function SectionHost({
       });
       col.appendChild(b);
     }
-  }, [html, selectedWidgetId, onDragWidget, onDuplicateWidget, onDeleteWidget, onOpenPicker, onRefuse, pathOf, section]);
+  }, [html, selectedWidgetId, onDragWidget, onDuplicateWidget, onDeleteWidget, onOpenPicker, onRefuse,
+      onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy, pathOf, section]);
 
   /**
    * THE NEW THING IS BROUGHT TO THE AUTHOR, not the other way round.
@@ -632,6 +737,24 @@ function SectionHost({
         const at = spot ?? findSpot(e.clientX, e.clientY);
         setSpot(null);
         if (at) onDropWidget?.({ sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index });
+      }}
+      /* M-8 — right-click is the same menu as the ⋯ on the handle and the ⋯ in
+         the Outline. It asks the WIDGET first and falls back to the section, in
+         the same order the click handler below does, so what you right-clicked
+         and what you selected are never two different things. */
+      onContextMenu={(e) => {
+        if (!onContextMenu) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const el = (e.target as HTMLElement).closest<HTMLElement>("[data-widget]");
+        const path = el && hostRef.current?.contains(el) ? pathOf(el) : null;
+        if (path) {
+          onSelect({ kind: "widget", ...path });
+          onContextMenu({ kind: "widget", path }, { x: e.clientX, y: e.clientY });
+          return;
+        }
+        onSelect({ kind: "section", sectionId: section.id });
+        onContextMenu({ kind: "section", sectionId: section.id }, { x: e.clientX, y: e.clientY });
       }}
       onClick={(e) => {
         const target = e.target as HTMLElement;

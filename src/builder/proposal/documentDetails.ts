@@ -18,17 +18,22 @@
  * the Details group, with a plain-word label, and it is filled by typing in a
  * box. Never by editing the page over the top of the token.
  *
- * ── WHERE THE VALUES LIVE, AND WHY THERE ─────────────────────────────────
- * On `sections[0].meta.detailValues` — a plain map of rows on the FIRST
- * section's `meta`, which `makeSection` and both repos' `deserialise` carry
- * verbatim and nothing renders.
+ * ── WHERE THE VALUES LIVE: ONE HOME, `settings.merge` (N-7) ──────────────
+ * `doc.settings.merge` — a flat `token -> value` map on the document's own
+ * settings, carried tolerantly and absent when empty by `model.ts`
+ * `deserialise` (handoff A-3) and by oliver-api `lib/documentModel.js`, and
+ * read by `lib/proposalContext.js` so a value typed here reaches the canvas,
+ * the customer's page AND the PDF.
  *
- * Three other homes were tried and each is worse:
- *   · `settings.merge` is where it belongs, and `model.ts` `deserialise`
- *     carries exactly three optional settings keys and drops the rest.
- *     `model.ts` is the engine stream's file — request B-A-3 in
- *     `overnight-report/REBUILD_HANDOFF_2026-09-16.md`. When it lands, only
- *     `readDetails`/`writeDetails` change.
+ * It used to live on `sections[0].meta.detailValues`, because `model.ts` was
+ * another stream's file and carried only three settings keys. Both halves have
+ * landed, so the second home is gone: `readDetails` still READS the old place
+ * (documents saved between 2026-09-16 and now carry it) and `writeDetails`
+ * only ever writes the new one AND clears the old, so a document is migrated
+ * the first time anybody touches it. Two carriers for one fact is how the
+ * canvas and the PDF started disagreeing (D-03); there is one now.
+ *
+ * Two homes were tried before that and each is worse:
  *   · a hidden `visibility:"internal"` SECTION holding a key_value_table. It
  *     worked, and then broke the document: a widget added with nothing
  *     selected is appended to the LAST section (D-11), the store was the last
@@ -39,16 +44,28 @@
  *   · the same section placed FIRST dodges that and puts a dashed amber box
  *     above the title band on every document.
  *
- * `meta` is none of those things: it is not a section, not a widget, not a
+ * `settings` is none of those things: it is not a section, not a widget, not a
  * render target, and it survives save → close → reopen in both repos.
+ *
+ * LABELS ARE NOT STORED. A row's plain words are derived every time from the
+ * template's declaration, the shipped clause packs and the merge-tag catalogue
+ * (`plainLabel`), so a label improved in one place improves on every document
+ * that ever carried the token — and the store stays the flat map the server
+ * already knows how to read.
  *
  * Pure. No React, no fetch — so all of it is `node --test`.
  */
 import type { BuilderDocument, Section } from "../model";
 import { tokensIn, tagLabel, BUILTIN_TAGS } from "../merge";
 
-/** The key on a section's `meta` that holds the typed values. */
-export const DETAILS_KEY = "detailValues";
+/**
+ * The key the values USED to live under, on `sections[0].meta`.
+ *
+ * Kept only so `readDetails` can still open a document written before N-7 and
+ * so the test that proves the migration has a name for the old place. Nothing
+ * writes it.
+ */
+export const LEGACY_DETAILS_KEY = "detailValues";
 
 /** One blank the document carries. */
 export interface DetailRow {
@@ -124,10 +141,32 @@ export function plainLabel(token: string, declared: Record<string, string> = {})
    Reading the store
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The rows the document is carrying, in the order they were written. */
+/**
+ * The rows the document is carrying, in the order they were written.
+ *
+ * ONE home — `settings.merge` — read TOLERANTLY: a document written before
+ * N-7 carries them on `sections[0].meta.detailValues`, and refusing to read
+ * that would blank every trigger depth a person typed last week. The old place
+ * is read and never written; the first `writeDetails` moves the document over.
+ */
 export function readDetails(doc: BuilderDocument): DetailRow[] {
+  const merge = (doc as any)?.settings?.merge;
+  if (merge && typeof merge === "object" && !Array.isArray(merge)) {
+    const out: DetailRow[] = [];
+    for (const [k, v] of Object.entries(merge as Record<string, unknown>)) {
+      const token = String(k ?? "").trim();
+      if (!token || v == null || typeof v === "object") continue;
+      out.push({ token, label: plainLabel(token), value: String(v) });
+    }
+    if (out.length) return out;
+  }
+  return readLegacyDetails(doc);
+}
+
+/** The pre-N-7 store, on the first section that carries one. Read only. */
+export function readLegacyDetails(doc: BuilderDocument): DetailRow[] {
   for (const s of doc.sections) {
-    const rows = (s as any)?.meta?.[DETAILS_KEY];
+    const rows = (s as any)?.meta?.[LEGACY_DETAILS_KEY];
     if (!Array.isArray(rows)) continue;
     return rows
       .filter((r: any) => r && String(r.token ?? "").trim())
@@ -154,36 +193,40 @@ export function detailsMerge(rows: DetailRow[]): Record<string, string> {
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * The document with exactly these Details rows.
+ * The document with exactly these Details rows, in the ONE home.
  *
- * An EMPTY list removes the section entirely, so "fill nothing in" leaves the
- * document it was — the same discipline `style` follows in §11.8.
+ * Writes `settings.merge` and CLEARS the pre-N-7 `meta.detailValues` from every
+ * section, so a document that has been touched carries the values in exactly
+ * one place. A BLANK value is not stored — the gap rule counts an absent token
+ * as unfilled, and storing `""` would be a second way of saying the same thing.
+ *
+ * An empty list removes the key entirely, so "fill nothing in" leaves the
+ * document byte-identical to what it was — the same discipline `style` follows
+ * in §11.8.
  */
 export function writeDetails(doc: BuilderDocument, rows: DetailRow[]): BuilderDocument {
-  const clean = rows
-    .filter((r) => String(r.token ?? "").trim())
-    .map((r) => ({
-      token: String(r.token).trim(),
-      label: String(r.label ?? "").trim() || plainLabel(String(r.token).trim()),
-      value: String(r.value ?? ""),
-      ...(r.help ? { help: String(r.help) } : {}),
-    }));
-  if (!doc.sections.length) return doc;
+  const merge: Record<string, string> = {};
+  for (const r of rows) {
+    const token = String(r?.token ?? "").trim();
+    const value = String(r?.value ?? "");
+    if (token && value.trim()) merge[token] = value;
+  }
 
-  return {
-    ...doc,
-    sections: doc.sections.map((s, i) => {
-      const meta: Record<string, unknown> = { ...((s as any).meta || {}) };
-      delete meta[DETAILS_KEY];
-      // The FIRST section carries it; any other copy is cleared, so there is
-      // one store however the sections have been moved about.
-      if (i === 0 && clean.length) meta[DETAILS_KEY] = clean;
-      const next: Section = { ...s };
-      if (Object.keys(meta).length) (next as any).meta = meta;
-      else delete (next as any).meta;
-      return next;
-    }),
-  };
+  const settings: BuilderDocument["settings"] = { ...doc.settings };
+  delete settings.merge;
+  if (Object.keys(merge).length) settings.merge = merge;
+
+  const sections = doc.sections.map((s) => {
+    if (!(s as any).meta || !(LEGACY_DETAILS_KEY in ((s as any).meta as object))) return s;
+    const meta: Record<string, unknown> = { ...((s as any).meta as object) };
+    delete meta[LEGACY_DETAILS_KEY];
+    const next: Section = { ...s };
+    if (Object.keys(meta).length) (next as any).meta = meta;
+    else delete (next as any).meta;
+    return next;
+  });
+
+  return { ...doc, settings, sections };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -254,6 +297,32 @@ export function reconcileDetails(
   return out;
 }
 
+/**
+ * WHERE a blank lives on the page, so a problem can jump to it (N-1).
+ *
+ * The first customer-facing widget whose props mention the token, addressed by
+ * the two markers the canvas already edits through — the section's id and the
+ * widget's id. No second addressing scheme.
+ */
+export function widgetForToken(
+  doc: BuilderDocument,
+  token: string,
+): { sectionId: string; widgetId: string } | null {
+  const needle = String(token ?? "").trim();
+  if (!needle) return null;
+  for (const s of doc.sections) {
+    if (s.visibility !== "customer") continue;
+    for (const c of s.columns) {
+      for (const w of c.widgets) {
+        if (tokensIn(JSON.stringify(w.props ?? {})).includes(needle)) {
+          return { sectionId: s.id, widgetId: w.id };
+        }
+      }
+    }
+  }
+  return null;
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    Two more small facts the DOCUMENT itself carries
    ══════════════════════════════════════════════════════════════════════════ */
@@ -295,6 +364,7 @@ export function parseMoney(v: unknown): number {
 }
 
 export default {
-  DETAILS_KEY, plainLabel, packDetail, readDetails, detailsMerge, writeDetails,
-  tokensUsedBy, reconcileDetails, documentLogo, parseMoney,
+  LEGACY_DETAILS_KEY, plainLabel, packDetail, readDetails, readLegacyDetails,
+  detailsMerge, writeDetails, tokensUsedBy, reconcileDetails, widgetForToken,
+  documentLogo, parseMoney,
 };

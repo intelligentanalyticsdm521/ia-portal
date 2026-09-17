@@ -27,6 +27,8 @@ import {
   widgetTooltip,
   type BuilderAdapter,
   type WidgetDef,
+  widgetDescription,
+  widgetLabel,
 } from "./registry";
 import { groupByTask } from "./widgetTasks";
 
@@ -142,8 +144,8 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
                     type="button"
                     onClick={() => pick(w)}
                     /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. */
-                    title={widgetTooltip(w)}
-                    aria-label={widgetTooltip(w)}
+                    title={widgetTooltip(w, adapter)}
+                    aria-label={widgetTooltip(w, adapter)}
                     data-widget-kind={w.kind}
                     /* HTML5 drag, the events Canvas already uses to reorder
                        sections. No library: a second drag mechanism is a
@@ -168,11 +170,11 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
                     <span className="min-w-0">
                       <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
                         <WidgetIcon name={w.icon} className="h-3 w-3 text-slate-400" />
-                        {w.label}
+                        {widgetLabel(w, adapter)}
                       </span>
                       {/* ONE line, in a business owner's words. */}
                       <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                        {w.description}
+                        {widgetDescription(w, adapter)}
                       </span>
                     </span>
                   </button>

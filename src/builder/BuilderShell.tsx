@@ -32,31 +32,43 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BuilderFrame } from "./BuilderFrame";
-import { LeftPane } from "./LeftPane";
+import { LeftPane, type Tab as PaneTab } from "./LeftPane";
 import { Canvas, type CanvasDrag, type PickerTarget, type SlashState } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
 import { WidgetPicker, topMatch } from "./WidgetPicker";
 import { FirstRun } from "./FirstRun";
 import { AnchoredToast } from "./AnchoredToast";
+import { ContextMenu } from "./ContextMenu";
+import { FindBox } from "./FindBox";
+import { HistoryPanel } from "./HistoryPanel";
+import { NameBlockDialog } from "./NameBlockDialog";
+import { menuFor, type MenuAction } from "./builderMenu";
+import { type FindAction, type FindResult } from "./find";
 import {
   addSection, addWidget, duplicateSection, duplicateWidget, makeSection, makeWidget, moveSection,
   moveWidget, moveWidgetTo, patchSection, patchWidget, removeSection, removeWidget, setLayout,
   setPropPath, setWidgetStyle, widgetAt,
-  type BuilderDocument, type Section, type Selection, type WidgetPath,
+  setWidgetLocked, cloneSection,
+  type BuilderDocument, type Section, type Selection, type Widget, type WidgetPath,
 } from "./model";
-import { withLayer, type ElementStyle } from "./style";
-import { canRedo, canUndo, initHistory, push, redo, undo, type History } from "./history";
+import { layerFor, withLayer, type ElementStyle } from "./style";
+import { canRedo, canUndo, initHistory, push, redo, steps, travelTo, undo, type History } from "./history";
 import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
 import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
 import { FLASH_MS, insertSpotFor, type InsertSpot } from "./insertPosition";
 import { resolveCopy, type BuilderCopy } from "./copy";
-import { firstWithFocus, focusSelector, type BuilderProblem } from "./problems";
+import { PROBLEMS_CTA, firstWithFocus, focusSelector, type BuilderProblem } from "./problems";
 import { markFirstRunSeen, readFirstRun, shouldShowFirstRun } from "./firstRunModel";
 import { EMPTY_PAGE_CHOICES, type WidgetTask } from "./widgetTasks";
 import type { BuilderAction } from "./shortcuts";
+
+/** What a menu, a lock or a hide is being applied to (M-8 / M-21). */
+export type MenuTarget =
+  | { kind: "section"; sectionId: string }
+  | { kind: "widget"; path: WidgetPath };
 
 /** Which array a counted widget repeats. One map, so "how many?" works once. */
 export function repeatKeyFor(kind: string): string | null {
@@ -139,6 +151,16 @@ export interface BuilderShellProps extends InspectorSlots {
    */
   refusal?: { anchor: string; message: string } | null;
   onDismissRefusal?: () => void;
+  /**
+   * The engine has just jumped to a problem — the adapter's half.
+   *
+   * The engine selects the widget and scrolls the page to it, because that is
+   * the same for every builder. Some blanks are typed in the ADAPTER'S OWN
+   * panel rather than on the page (the proposal's Details group), and only the
+   * adapter can put the caret in a box the engine has never heard of. Optional:
+   * absent, the jump is the scroll, which is what it has always been.
+   */
+  onFocusProblem?: (problem: BuilderProblem) => void;
   /** Ctrl+S. Absent, the shortcut does nothing rather than pretending. */
   onSave?: () => void;
   /**
@@ -210,6 +232,23 @@ export interface BuilderShellProps extends InspectorSlots {
    * a hero, and guessing is how a widget ends up on the wrong band.
    */
   onSelectionChange?: (selection: Selection) => void;
+  /**
+   * SAVE YOUR OWN BLOCK (M-23).
+   *
+   * Right-click a section → name it and say in one line what it is for → it is
+   * the adapter's to keep, because only the adapter knows where this business's
+   * things are stored. Absent, the row is not offered at all rather than
+   * offered and quietly doing nothing.
+   *
+   * For a snow contractor with one severe-weather clause they use on every
+   * agreement, this is the difference between the builder saving them time and
+   * costing them time.
+   */
+  onSaveBlock?: (section: Section, name: string, note: string) => void | Promise<void>;
+  /** This builder's own rows in Find — Send to customer, Publish (M-22). */
+  findActions?: FindAction[];
+  /** One of them was picked. The engine's own rows it handles itself. */
+  onFindAction?: (id: string) => void;
 }
 
 export function BuilderShell(p: BuilderShellProps) {
@@ -260,6 +299,25 @@ export function BuilderShell(p: BuilderShellProps) {
   /** A refusal, shown AT the control that caused it (D-20). */
   const [toast, setToast] = useState<{ anchor: string; message: string; action?: () => void; actionLabel?: string } | null>(null);
   const [firstRun, setFirstRun] = useState(false);
+  /** The right-click menu: what it is on, and where the pointer was (M-8). */
+  const [menu, setMenu] = useState<{ target: MenuTarget; x: number; y: number } | null>(null);
+  /**
+   * THE CLIPBOARD (M-8's Copy / Paste).
+   *
+   * One widget or one section, held in the builder rather than in the system
+   * clipboard: a section is a tree with ids in it, and putting that on the OS
+   * clipboard would either paste JSON into somebody's email or need a second
+   * serialiser. Copy here, paste here — and `duplicateWidget`/`duplicateSection`
+   * mint the fresh ids, so pasting twice cannot make two things with one id.
+   */
+  const [clip, setClip] = useState<{ kind: "widget"; widget: Widget } | { kind: "section"; section: Section } | null>(null);
+  /** Ctrl+E (M-22) and Ctrl+Shift+H (M-7). */
+  const [find, setFind] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  /** Naming a block the author is keeping (M-23). */
+  const [naming, setNaming] = useState<Section | null>(null);
+  /** Which left-pane tab is showing, so the menu can bring the Outline up. */
+  const [paneTab, setPaneTab] = useState<PaneTab>("add");
   const doc = p.doc;
   const copy = useMemo(() => resolveCopy(p.copy), [p.copy]);
 
@@ -287,16 +345,37 @@ export function BuilderShell(p: BuilderShellProps) {
 
   const closeFirstRun = useCallback(() => { markFirstRunSeen(); setFirstRun(false); }, []);
 
-  /** The adapter's refusal becomes the engine's toast, at its own control. */
+  /**
+   * The adapter's refusal becomes the engine's toast, at its own control.
+   *
+   * M-25: the popover says what is wrong AND carries a button that fixes it,
+   * so the answer to "I pressed Send and nothing happened" is one more press
+   * rather than a hunt. The button is only offered when there is somewhere to
+   * go — a refusal with no problems behind it ("pick a customer first") gets
+   * the sentence alone.
+   */
   useEffect(() => {
     if (!p.refusal) return;
-    setToast({ anchor: p.refusal.anchor, message: p.refusal.message });
+    const problem = firstWithFocus(p.problems);
+    setToast({
+      anchor: p.refusal.anchor,
+      message: p.refusal.message,
+      ...(problem ? { actionLabel: PROBLEMS_CTA, action: jumpToProblem } : {}),
+    });
     jumpToProblem();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.refusal]);
 
-  const apply = useCallback((next: BuilderDocument, mergeKey: string | null = null) => {
-    setHist(push(historyRef.current, next, mergeKey));
+  /**
+   * Write a new document, and NAME the step (M-7).
+   *
+   * The label is the whole of the history panel: it has to be said at the
+   * moment the change happens, because afterwards there are only two documents
+   * and a diff, and a diff cannot tell a move from a delete-and-an-add. A
+   * caller that says nothing gets "Changed the page", which is honest.
+   */
+  const apply = useCallback((next: BuilderDocument, mergeKey: string | null = null, label?: string) => {
+    setHist(push(historyRef.current, next, mergeKey, label));
     p.onChange(next);
   }, [p, setHist]);
 
@@ -312,6 +391,18 @@ export function BuilderShell(p: BuilderShellProps) {
     setHist(n);
     p.onChange(n.present);
   }, [p, setHist]);
+
+  /**
+   * GO TO A STEP (M-7). The same mechanism undo and redo are: undo is travel
+   * one back, redo is travel one on, and the panel is travel to anywhere.
+   */
+  const doTravel = useCallback((index: number) => {
+    const n = travelTo(historyRef.current, index);
+    if (n === historyRef.current) return;
+    setHist(n);
+    select(null);
+    p.onChange(n.present);
+  }, [p, select, setHist]);
 
   /** Show the new thing: select it, and let the canvas scroll and glow. */
   const landed = useCallback((sectionId: string, columnIndex: number, index: number, widgetId: string) => {
@@ -367,12 +458,12 @@ export function BuilderShell(p: BuilderShellProps) {
     }
     // "Columns" is a layout choice, not a thing on the page.
     if (def.kind === "columns") {
-      apply(setLayout(next, spot.sectionId, count === 3 ? 3 : 2));
+      apply(setLayout(next, spot.sectionId, count === 3 ? 3 : 2), null, `Split a section into ${count === 3 ? 3 : 2} columns`);
       select({ kind: "section", sectionId: spot.sectionId });
       return;
     }
     const widget = buildWidget(def, count);
-    apply(addWidget(next, spot.sectionId, spot.columnIndex, widget, spot.index));
+    apply(addWidget(next, spot.sectionId, spot.columnIndex, widget, spot.index), null, `Added ${def.label}`);
     landed(spot.sectionId, spot.columnIndex, spot.index, widget.id);
   }, [apply, buildWidget, doc, landed, p, select, selection, visibleSectionId]);
 
@@ -383,7 +474,7 @@ export function BuilderShell(p: BuilderShellProps) {
     const s = makeSection({ label: def.label });
     const widget = buildWidget(def, count);
     const next = addWidget(addSection(doc, s, index), s.id, 0, widget, 0);
-    apply(next);
+    apply(next, null, `Added a section with ${def.label} in it`);
     landed(s.id, 0, 0, widget.id);
   }, [apply, buildWidget, doc, landed, p]);
 
@@ -471,7 +562,11 @@ export function BuilderShell(p: BuilderShellProps) {
   /** D-35: take me to the first thing that is still blank. */
   function jumpToProblem() {
     const problem = firstWithFocus(p.problems);
-    if (!problem?.focus) return;
+    if (!problem) return;
+    // The adapter's half first: its own panel is already on screen, so the box
+    // takes the caret before the canvas scrolls under it.
+    p.onFocusProblem?.(problem);
+    if (!problem.focus) return;
     const { sectionId, widgetId } = problem.focus;
     const section = doc.sections.find((s) => s.id === sectionId);
     section?.columns.forEach((col, columnIndex) => {
@@ -491,7 +586,7 @@ export function BuilderShell(p: BuilderShellProps) {
   const placeSection = useCallback((premade: PremadeSection, at: number) => {
     if (p.onPlaceSection && p.onPlaceSection(premade, at) === false) return;
     const s = premade.build();
-    apply(addSection(doc, s, at));
+    apply(addSection(doc, s, at), null, `Added “${premade.name}”`);
     select({ kind: "section", sectionId: s.id });
   }, [apply, doc, p, select]);
 
@@ -503,7 +598,14 @@ export function BuilderShell(p: BuilderShellProps) {
       if (idx < 0) continue;
       const widget = section.columns[c].widgets[idx];
       const nextProps = setPropPath(widget.props, path, value);
-      apply(patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, nextProps), mergeKey);
+      // One typing burst is one step, and the step is named for the thing being
+      // typed into rather than for the first letter (M-7).
+      const def = WIDGETS_BY_KIND[widget.kind];
+      apply(
+        patchWidget(doc, { sectionId, columnIndex: c, widgetIndex: idx }, nextProps),
+        mergeKey,
+        `Typed in the ${(def ? def.label : widget.kind).toLowerCase()}`,
+      );
       return;
     }
   }, [apply, doc]);
@@ -526,12 +628,18 @@ export function BuilderShell(p: BuilderShellProps) {
     let next = doc;
     if (layout != null) next = setLayout(next, id, layout);
     if (Object.keys(rest).length) next = patchSection(next, id, rest);
-    apply(next);
+    // A section's NAME is typed letter by letter, so it coalesces like any
+    // other typing; everything else about a section is one step.
+    const renaming = "label" in rest && Object.keys(rest).length === 1;
+    apply(next, renaming ? `section:${id}:label` : null,
+      renaming ? "Renamed a section" : "Changed a section");
   }, [apply, doc]);
 
   const patchSelectedWidget = useCallback((props: Record<string, unknown>) => {
     if (selection?.kind !== "widget") return;
-    apply(patchWidget(doc, selection, props));
+    const w = widgetAt(doc, selection);
+    const def = w ? WIDGETS_BY_KIND[w.kind] : null;
+    apply(patchWidget(doc, selection, props), null, `Changed the ${(def?.label || "block").toLowerCase()}`);
   }, [apply, doc, selection]);
 
   const setCount = useCallback((n: number) => {
@@ -557,7 +665,7 @@ export function BuilderShell(p: BuilderShellProps) {
       refuse("This part has to stay on the page: it carries your unsubscribe link and postal address. You can change the wording.");
       return;
     }
-    apply(removeWidget(doc, path));
+    apply(removeWidget(doc, path), null, "Deleted a block");
     select({ kind: "section", sectionId: path.sectionId });
   }, [apply, doc, refuse, select]);
 
@@ -567,9 +675,183 @@ export function BuilderShell(p: BuilderShellProps) {
       refuse("This section holds a part the law puts on every send, so it stays. You can change the wording inside it.");
       return;
     }
-    apply(removeSection(doc, id));
+    apply(removeSection(doc, id), null, `Deleted ${named(s?.label)}`);
     select(null);
   }, [apply, doc, refuse, select]);
+
+  /* ═══════════════════════════════════════════════════════════════════
+     M-8 / M-21 / M-23 — ONE set of verbs, three ways in
+     ═══════════════════════════════════════════════════════════════════
+
+     The hover toolbar, the right-click menu, the ⋯ on a widget's handle and
+     Find all press the functions below. The MENU'S CONTENTS are
+     `builderMenu.menuFor`, which is arithmetic over the document and therefore
+     a `node --test`; this is only what each verb does. */
+
+  /** Is this part hidden at the width the canvas is previewing? */
+  const isHidden = useCallback(
+    (style: ElementStyle | undefined) => !!layerFor(style, preview).hidden,
+    [preview],
+  );
+  const widgetHidden = useCallback(
+    (path: WidgetPath) => isHidden(widgetAt(doc, path)?.style),
+    [doc, isHidden],
+  );
+
+  /** "on phones" / "on tablets" / "" — nothing is ever hidden silently (M-21). */
+  const hideDeviceWord = preview === "phone" ? "on phones" : preview === "tablet" ? "on tablets" : "";
+
+  const setHidden = useCallback((
+    target: MenuTarget,
+    hidden: boolean,
+  ) => {
+    const word = hidden ? "Hid" : "Showed";
+    const where = hideDeviceWord ? ` ${hideDeviceWord}` : "";
+    if (target.kind === "widget") {
+      const w = widgetAt(doc, target.path);
+      if (!w) return;
+      apply(
+        setWidgetStyle(doc, target.path, withLayer(w.style, preview, { hidden: hidden ? true : undefined })),
+        null,
+        `${word} a block${where}`,
+      );
+      return;
+    }
+    const sec = doc.sections.find((x) => x.id === target.sectionId);
+    if (!sec) return;
+    apply(
+      patchSection(doc, target.sectionId, {
+        style: withLayer(sec.style, preview, { hidden: hidden ? true : undefined }),
+      } as Partial<Section>),
+      null,
+      `${word} ${named(sec.label)}${where}`,
+    );
+  }, [apply, doc, hideDeviceWord, preview]);
+
+  /**
+   * LOCK (M-21). A locked part cannot be deleted and says so on its handle; the
+   * words in it are still the author's. `setWidgetLocked` writes the ONE flag
+   * `removeWidget` and `removeSection` already refuse on — there is no second
+   * idea of "protected" that only this menu knows about.
+   */
+  const setLocked = useCallback((target: MenuTarget, locked: boolean) => {
+    const word = locked ? "Locked" : "Unlocked";
+    if (target.kind === "widget") {
+      apply(setWidgetLocked(doc, target.path, locked), null, `${word} a block`);
+      return;
+    }
+    const sec = doc.sections.find((x) => x.id === target.sectionId);
+    if (!sec) return;
+    // A section is locked by locking what is in it: one flag, on the widget,
+    // read by both remove operations.
+    let next = doc;
+    sec.columns.forEach((col, columnIndex) => {
+      col.widgets.forEach((_, widgetIndex) => {
+        next = setWidgetLocked(next, { sectionId: sec.id, columnIndex, widgetIndex }, locked);
+      });
+    });
+    apply(next, null, `${word} ${named(sec.label)}`);
+  }, [apply, doc]);
+
+  /**
+   * A section's name for a history step, in quotes — or the words "a section"
+   * when it has none, because “a section” in quotation marks reads like
+   * somebody called their section "a section".
+   */
+  const named = useCallback((label?: string) => (label?.trim() ? `“${label.trim()}”` : "a section"), []);
+
+  /** Every verb the menu can name, in one place. */
+  const runMenuAction = useCallback((action: MenuAction, target: MenuTarget) => {
+    const sectionId = target.kind === "section" ? target.sectionId : target.path.sectionId;
+    const index = doc.sections.findIndex((x) => x.id === sectionId);
+    const sec = doc.sections[index];
+    const name = named(sec?.label);
+
+    switch (action) {
+      case "edit":
+        select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
+        return;
+      case "duplicate":
+        if (target.kind === "widget") { apply(duplicateWidget(doc, target.path), null, "Copied a block"); return; }
+        apply(duplicateSection(doc, sectionId), null, `Copied ${name}`);
+        return;
+      case "copy": {
+        if (target.kind === "widget") {
+          const w = widgetAt(doc, target.path);
+          if (w) { setClip({ kind: "widget", widget: w }); refuse("Copied. Right-click where you want it and press Paste."); }
+          return;
+        }
+        if (sec) { setClip({ kind: "section", section: sec }); refuse("Copied. Right-click where you want it and press Paste."); }
+        return;
+      }
+      case "paste": {
+        if (!clip) return;
+        if (clip.kind === "section") {
+          const fresh = cloneSection(clip.section);
+          apply(addSection(doc, fresh, index < 0 ? doc.sections.length : index + 1), null,
+            `Pasted ${named(fresh.label)}`);
+          select({ kind: "section", sectionId: fresh.id });
+          return;
+        }
+        const at = target.kind === "widget"
+          ? { sectionId, columnIndex: target.path.columnIndex, index: target.path.widgetIndex + 1 }
+          : { sectionId, columnIndex: 0, index: sec?.columns[0]?.widgets.length ?? 0 };
+        const made = makeWidget(clip.widget.kind, JSON.parse(JSON.stringify(clip.widget.props || {})));
+        if (clip.widget.style) made.style = JSON.parse(JSON.stringify(clip.widget.style));
+        apply(addWidget(doc, at.sectionId, at.columnIndex, made, at.index), null, "Pasted a block");
+        landed(at.sectionId, at.columnIndex, at.index, made.id);
+        return;
+      }
+      case "moveUp":
+        if (target.kind === "section") { apply(moveSection(doc, sectionId, index - 1), null, `Moved ${name} up`); return; }
+        apply(moveWidget(doc, target.path, -1), null, "Moved a block up");
+        return;
+      case "moveDown":
+        if (target.kind === "section") { apply(moveSection(doc, sectionId, index + 1), null, `Moved ${name} down`); return; }
+        apply(moveWidget(doc, target.path, 1), null, "Moved a block down");
+        return;
+      case "addAbove": setGallery({ at: Math.max(0, index) }); return;
+      case "addBelow": setGallery({ at: index + 1 }); return;
+      case "saveBlock": if (sec) setNaming(sec); return;
+      case "showInOutline":
+        select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
+        setPaneTab("outline");
+        return;
+      case "lock": setLocked(target, true); return;
+      case "unlock": setLocked(target, false); return;
+      case "hide": setHidden(target, true); return;
+      case "show": setHidden(target, false); return;
+      case "delete":
+        if (target.kind === "widget") { deleteWidget(target.path); return; }
+        deleteSection(sectionId);
+        return;
+      default: return;
+    }
+  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select, setHidden, setLocked]);
+
+  /** What the open menu should contain, from the document as it is right now. */
+  const menuItems = useMemo(() => {
+    if (!menu) return [];
+    const t = menu.target;
+    const index = doc.sections.findIndex((x) => x.id === (t.kind === "section" ? t.sectionId : t.path.sectionId));
+    const sec = doc.sections[index];
+    const locked = t.kind === "widget"
+      ? !!widgetAt(doc, t.path)?.locked
+      : !!sec?.columns.some((c) => c.widgets.some((w) => w.locked));
+    const hidden = t.kind === "widget" ? widgetHidden(t.path) : isHidden(sec?.style);
+    return menuFor({
+      kind: t.kind,
+      locked,
+      hidden,
+      index,
+      total: doc.sections.length,
+      canPaste: !!clip,
+      noun: copy.noun,
+      canSaveBlock: !!p.onSaveBlock,
+      deviceWord: hideDeviceWord,
+      lockedReason: copy.lockedReason,
+    });
+  }, [clip, copy.noun, doc, hideDeviceWord, isHidden, menu, p.onSaveBlock, widgetHidden]);
 
   /**
    * THE KEYBOARD. The frame listens; this decides what each action means.
@@ -583,18 +865,21 @@ export function BuilderShell(p: BuilderShellProps) {
       case "undo": doUndo(); return true;
       case "redo": doRedo(); return true;
       case "save": if (p.onSave) { p.onSave(); return true; } return false;
+      case "find": setFind(true); return true;
+      case "history": setHistoryOpen(true); return true;
       case "delete":
         if (selection?.kind === "widget") { deleteWidget(selection); return true; }
         if (selection?.kind === "section") { deleteSection(selection.sectionId); return true; }
         return false;
       case "escape":
+        if (menu) { setMenu(null); return true; }
         if (picker) { setPicker(null); return true; }
         if (slash) { setSlash(null); return true; }
         if (selection) { select(null); return true; }
         return false;
       default: return false;
     }
-  }, [deleteSection, deleteWidget, doRedo, doUndo, p, picker, select, selection, slash]);
+  }, [deleteSection, deleteWidget, doRedo, doUndo, menu, p, picker, select, selection, slash]);
 
   /** The empty page's three choices — the engine's default (D-148). */
   const emptyChoices = useMemo(() => p.emptyChoices ?? EMPTY_PAGE_CHOICES.map((c) => ({
@@ -628,6 +913,8 @@ export function BuilderShell(p: BuilderShellProps) {
          since this document was opened or last replaced. */
       dirty={canUndo(history)}
       onShortcut={onShortcut}
+      onFind={() => setFind(true)}
+      onHistory={() => setHistoryOpen(true)}
       onReplayHelp={() => setFirstRun(true)}
       canvasBackground={p.canvasBackground}
       preview={preview}
@@ -635,6 +922,8 @@ export function BuilderShell(p: BuilderShellProps) {
       pane={
         <LeftPane
           copy={copy}
+          tab={paneTab}
+          onTab={setPaneTab}
           header={p.paneHeader}
           problems={p.problems}
           onJumpToProblem={jumpToProblem}
@@ -648,21 +937,22 @@ export function BuilderShell(p: BuilderShellProps) {
             doc,
             selection,
             onSelect: select,
-            onMoveSection: (id, to) => apply(moveSection(doc, id, to)),
+            onMoveSection: (id, to) => apply(moveSection(doc, id, to), null,
+              `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`),
             device: preview,
             heading: `Everything in this ${copy.noun}, in order.`,
-            onHideSection: (id, hidden) => {
-              const s = doc.sections.find((x) => x.id === id);
-              if (!s) return;
-              apply(patchSection(doc, id, {
-                style: withLayer(s.style, preview, { hidden: hidden ? true : undefined }),
-              } as Partial<Section>));
+            onHideSection: (id, hidden) => setHidden({ kind: "section", sectionId: id }, hidden),
+            onHideWidget: (path, hidden) => setHidden({ kind: "widget", path }, hidden),
+            /* M-21 — the padlock in the outline is a button, and it shows the
+               state. M-8 — the ⋯ is the same menu as right-clicking the page. */
+            onLockSection: (id, locked) => setLocked({ kind: "section", sectionId: id }, locked),
+            onLockWidget: (path, locked) => setLocked({ kind: "widget", path }, locked),
+            isSectionLocked: (id) => {
+              const sec = doc.sections.find((x) => x.id === id);
+              return !!sec?.columns.length && sec.columns.every((c) => c.widgets.every((w) => w.locked))
+                && sec.columns.some((c) => c.widgets.length > 0);
             },
-            onHideWidget: (path, hidden) => {
-              const w = widgetAt(doc, path);
-              if (!w) return;
-              apply(setWidgetStyle(doc, path, withLayer(w.style, preview, { hidden: hidden ? true : undefined })));
-            },
+            onRowMenu: (target, at) => setMenu({ target, x: at.x, y: at.y }),
           }}
         />
       }
@@ -709,6 +999,15 @@ export function BuilderShell(p: BuilderShellProps) {
             onClose={() => setGallery(null)}
             onPlaceSection={(s) => placeSection(s, gallery?.at ?? doc.sections.length)}
             onPlaceWidget={(w, c) => insertWidget(w, c)}
+            /* M-23 — one of the author's own blocks, dropped at the "+" that
+               was pressed. Cloned, so two copies of one block are two sections
+               with their own ids and not two views of the same one. */
+            onPlaceSavedBlock={(t) => {
+              if (!t.section) return;
+              const fresh = cloneSection(t.section);
+              apply(addSection(doc, fresh, gallery?.at ?? doc.sections.length), null, `Added “${t.name}”`);
+              select({ kind: "section", sectionId: fresh.id });
+            }}
           />
           {/* THE ONE PICKER: every "+", every empty column, every slash. */}
           {picker && (
@@ -742,6 +1041,65 @@ export function BuilderShell(p: BuilderShellProps) {
             />
           )}
           {firstRun && <FirstRun noun={copy.noun} onDone={closeFirstRun} />}
+
+          {/* M-8 — right-click, the ⋯ on a handle and the ⋯ in the Outline all
+              open THIS, with the rows `builderMenu.menuFor` worked out. */}
+          {menu && (
+            <ContextMenu
+              x={menu.x}
+              y={menu.y}
+              items={menuItems}
+              onPick={(action) => runMenuAction(action, menu.target)}
+              onClose={() => setMenu(null)}
+            />
+          )}
+
+          {/* M-22 — one box: sections in this document, then things to add,
+              then what to do. It finds and jumps; it never creates a record. */}
+          {find && (
+            <FindBox
+              doc={doc}
+              adapter={p.adapter}
+              actions={p.findActions}
+              onClose={() => setFind(false)}
+              onPick={(r: FindResult) => {
+                if (r.kind === "section" && r.sectionId) {
+                  select({ kind: "section", sectionId: r.sectionId });
+                  setTimeout(() => {
+                    document.querySelector(`[data-section-host="${r.sectionId}"]`)
+                      ?.scrollIntoView({ block: "center", behavior: "smooth" });
+                  }, 30);
+                  return;
+                }
+                if (r.kind === "widget" && r.widget) { insertWidget(r.widget, r.widget.count?.default); return; }
+                if (r.actionId === "outline") { setPaneTab("outline"); return; }
+                if (r.actionId === "history") { setHistoryOpen(true); return; }
+                if (r.actionId === "templates") { setGallery({ at: doc.sections.length }); return; }
+                if (r.actionId === "preview") { setPreview(preview === "desktop" ? "phone" : "desktop"); return; }
+                if (r.actionId) p.onFindAction?.(r.actionId);
+              }}
+            />
+          )}
+
+          {/* M-7 — the steps by name, and you can walk back into any of them. */}
+          {historyOpen && (
+            <HistoryPanel
+              steps={steps(history)}
+              onTravel={doTravel}
+              onClose={() => setHistoryOpen(false)}
+            />
+          )}
+
+          {/* M-23 — name it, and one line about when to use it. */}
+          {naming && p.onSaveBlock && (
+            <NameBlockDialog
+              title="Save this as your own block"
+              intro={`It goes in your template library under “Your own blocks” and in the “+” picker, so you can drop it into any ${copy.noun} without building it again.`}
+              defaultName={naming.label || ""}
+              onClose={() => setNaming(null)}
+              onSave={(name, note) => { const sec = naming; setNaming(null); void p.onSaveBlock?.(sec, name, note); }}
+            />
+          )}
         </>
       }
     >
@@ -777,17 +1135,25 @@ export function BuilderShell(p: BuilderShellProps) {
         emptyChoices={emptyChoices}
         onRefuse={refuse}
         onTokenClick={p.onTokenClick}
-        onDuplicateWidget={(path) => apply(duplicateWidget(doc, path))}
+        onDuplicateWidget={(path) => apply(duplicateWidget(doc, path), null, "Copied a block")}
         onDeleteWidget={deleteWidget}
+        /* M-21 and M-8, on the page itself. */
+        onLockWidget={(path, locked) => setLocked({ kind: "widget", path }, locked)}
+        onHideWidget={(path, hidden) => setHidden({ kind: "widget", path }, hidden)}
+        hideDeviceWord={hideDeviceWord}
+        isWidgetHidden={widgetHidden}
+        onContextMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
         onPatchSection={changeSection}
-        onDuplicateSection={(id) => apply(duplicateSection(doc, id))}
+        onDuplicateSection={(id) => apply(duplicateSection(doc, id), null,
+          `Copied ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
         onDeleteSection={deleteSection}
-        onMoveSection={(id, to) => apply(moveSection(doc, id, to))}
+        onMoveSection={(id, to) => apply(moveSection(doc, id, to), null,
+          `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
         onAddSection={(at, how) => {
           if (how === "premade") { setGallery({ at }); return; }
           if (p.onAddBlank && p.onAddBlank(at) === false) return;
           const s = makeSection({ label: "Section" });
-          apply(addSection(doc, s, at));
+          apply(addSection(doc, s, at), null, "Added a section");
           select({ kind: "section", sectionId: s.id });
         }}
       />

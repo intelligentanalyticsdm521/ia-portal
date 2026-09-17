@@ -31,12 +31,24 @@ export interface LeftPaneProps {
   onJumpToProblem?: () => void;
   /** The adapter's own header — a total, a revision checklist. */
   header?: React.ReactNode;
+  /**
+   * WHICH TAB IS SHOWING, when something outside decides (M-8).
+   *
+   * The right-click menu's "Show it in the outline" has to be able to bring the
+   * Outline forward, and a component that owns its own tab cannot be told. The
+   * pane still keeps the tab when nothing is passed, so nothing else had to
+   * change to add this.
+   */
+  tab?: Tab;
+  onTab?: (tab: Tab) => void;
 }
 
-type Tab = "add" | "outline";
+export type Tab = "add" | "outline";
 
 export function LeftPane(p: LeftPaneProps) {
-  const [tab, setTab] = useState<Tab>("add");
+  const [own, setOwn] = useState<Tab>("add");
+  const tab = p.tab ?? own;
+  const setTab = (t: Tab) => { setOwn(t); p.onTab?.(t); };
   const count = p.problems?.length ?? 0;
 
   return (

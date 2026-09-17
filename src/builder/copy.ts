@@ -41,6 +41,15 @@ export interface BuilderCopy {
   /** What the empty-page screen offers to start with. */
   emptyHeading: string;
   emptyHint: string;
+  /**
+   * WHY A PART CANNOT BE REMOVED, in this medium's words (M-8/M-21).
+   *
+   * The right-click menu greys Delete and Duplicate on a locked part and puts
+   * this on the hover — "the button is grey" is not an explanation. The default
+   * is true of any builder; the email adapter names the unsubscribe link,
+   * because that is what its locked part actually is.
+   */
+  lockedReason: string;
 }
 
 /**
@@ -63,6 +72,7 @@ export const DEFAULT_COPY: BuilderCopy = {
   canvasHint: "Click anything on the page to edit it. This is exactly what your reader sees.",
   emptyHeading: "What goes on this page?",
   emptyHint: "Pick one to start. You can add the rest after.",
+  lockedReason: "This part has to stay. You can change the wording inside it, but it cannot be removed.",
 };
 
 /** The adapter's words over the defaults. Missing keys keep the default. */

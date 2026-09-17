@@ -55,6 +55,23 @@ export function SparkLandingPagesPage() {
   /** The row a publish or a delete is working on, so its buttons say so. */
   const [busyId, setBusyId] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
+  /**
+   * THE QUESTION THIS PAGE ASKS (N-5).
+   *
+   * It asked with `window.confirm`, which is the browser's grey box in the
+   * browser's words \u2014 no brand, no title, an OK button that says OK to
+   * "delete every submission on this page". Everywhere else in the product the
+   * question is `IadmModal size="confirm"` (the website's Publish confirm is
+   * the best-written one in the platform), so this is that same component and
+   * not a second kind of dialog. One piece of state, because there is only ever
+   * one question on screen.
+   */
+  const [ask, setAsk] = useState<{
+    title: string;
+    body: React.ReactNode;
+    confirmLabel: string;
+    run: () => void | Promise<void>;
+  } | null>(null);
 
   /**
    * Reload the list.
@@ -127,11 +144,16 @@ export function SparkLandingPagesPage() {
    * a row silently — no confirm, no message, and the chip did not move until
    * the next load.
    */
+  function askToPublish(p: LandingPage) {
+    setAsk({
+      title: `Put “${p.name}” on the internet?`,
+      body: "Anybody with the link can see it straight away. You can keep editing it afterwards.",
+      confirmLabel: "Yes, publish it",
+      run: () => publish(p),
+    });
+  }
+
   async function publish(p: LandingPage) {
-    if (!window.confirm(
-      `Put “${p.name}” on the internet? Anybody with the link can see it straight away. `
-      + "You can keep editing it afterwards.",
-    )) return;
     setBusyId(p.id); setError(null);
     try {
       const r: any = await put(`/api/v1/landing-pages/${p.id}`, { status: "published" });
@@ -148,14 +170,19 @@ export function SparkLandingPagesPage() {
    * the four surfaces. A published page is taken off the internet first, so a
    * link in somebody's hand never dies without its owner meaning it.
    */
-  async function remove(p: LandingPage) {
+  function askToRemove(p: LandingPage) {
     const live = p.status === "published";
-    if (!window.confirm(
-      live
-        ? `Delete “${p.name}”? It is live — anybody holding the link will get a "page not found". `
-          + "The page and every submission on it are gone for good."
-        : `Delete “${p.name}”? The page and every submission on it are gone for good.`,
-    )) return;
+    setAsk({
+      title: `Delete “${p.name}”?`,
+      body: live
+        ? "It is live — anybody holding the link will get a “page not found”. The page and every submission on it are gone for good."
+        : "The page and every submission on it are gone for good.",
+      confirmLabel: "Yes, delete it",
+      run: () => remove(p),
+    });
+  }
+
+  async function remove(p: LandingPage) {
     setBusyId(p.id); setError(null);
     try {
       await del(`/api/v1/landing-pages/${p.id}`);
@@ -254,14 +281,14 @@ export function SparkLandingPagesPage() {
               Edit
             </button>
             {p.status !== "published" && (
-              <button onClick={e => { e.stopPropagation(); publish(p); }} disabled={busyId === p.id}
+              <button onClick={e => { e.stopPropagation(); askToPublish(p); }} disabled={busyId === p.id}
                 title="Put this page on the internet at its own address"
                 className="spark-btn spark-btn-sm spark-btn-primary">
                 <Send className="h-3 w-3" /> {busyId === p.id ? "Working…" : "Publish"}
               </button>
             )}
             {/* D-14. Asks first, and the question says what goes. */}
-            <button onClick={e => { e.stopPropagation(); remove(p); }} disabled={busyId === p.id}
+            <button onClick={e => { e.stopPropagation(); askToRemove(p); }} disabled={busyId === p.id}
               title="Delete this page and everything somebody sent through it"
               className="spark-btn spark-btn-sm spark-btn-ghost">
               <Trash2 className="h-3 w-3" /> Delete
@@ -323,6 +350,37 @@ export function SparkLandingPagesPage() {
         }}
         arionSitePath={hasArionSite ? "/app/services/arion_website_pages" : null}
       />
+
+      {/* N-5 — the app's own question, in the app's own words. The same
+          component and the same shape as the website's Publish confirm. */}
+      {ask && (
+        <IadmModal
+          open
+          onClose={() => setAsk(null)}
+          product="spark"
+          eyebrow="Landing page"
+          title={ask.title}
+          size="confirm"
+          footer={
+            <>
+              <IadmButton variant="ghost" onClick={() => setAsk(null)}>Not yet</IadmButton>
+              <IadmButton
+                /* IadmButton has three variants and none of them is a
+                   destructive red; what is about to happen is said in WORDS
+                   ("Yes, delete it") and in the sentence above it, which is
+                   how every other confirm in the product says it. */
+                variant="accent"
+                product="spark"
+                onClick={() => { const go = ask.run; setAsk(null); void go(); }}
+              >
+                {ask.confirmLabel}
+              </IadmButton>
+            </>
+          }
+        >
+          <div data-landing-confirm="1" className="p-5 text-sm leading-relaxed text-slate-700">{ask.body}</div>
+        </IadmModal>
+      )}
     </SparkPageShell>
   );
 }

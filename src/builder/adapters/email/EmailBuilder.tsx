@@ -442,6 +442,7 @@ export function EmailBuilder(p: EmailBuilderProps) {
         canvasHint: "Click anything to edit it. This is exactly what lands in the inbox.",
         emptyHeading: "What goes in this email?",
         emptyHint: "Pick one to start. You can add the rest after.",
+        lockedReason: "The footer carries your unsubscribe link and your postal address \u2014 the law asks for both on every email you send \u2014 so it stays. You can change the wording in it.",
       }}
       onSave={() => void save()}
       canvasHint="Click anything to edit it. This is exactly what lands in the inbox."

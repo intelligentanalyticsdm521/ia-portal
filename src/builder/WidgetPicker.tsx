@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { BuilderAdapter, WidgetDef } from "./registry";
-import { widgetTooltip } from "./registry";
+import { widgetDescription, widgetLabel, widgetTooltip } from "./registry";
 import { groupByTask, flatMatches, TASK_GROUPS, type WidgetTask } from "./widgetTasks";
 
 export interface WidgetPickerProps {
@@ -168,7 +168,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {g.widgets.map((w) => (
                 <div key={w.kind}>
-                  <button type="button" data-picker-kind={w.kind} title={widgetTooltip(w)} aria-label={widgetTooltip(w)}
+                  <button type="button" data-picker-kind={w.kind} title={widgetTooltip(w, p.adapter)} aria-label={widgetTooltip(w, p.adapter)}
                     onClick={() => choose(w)}
                     style={{
                       width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E2E8F0",
@@ -177,8 +177,8 @@ export function WidgetPicker(p: WidgetPickerProps) {
                     {/* THE BIG PICTURE — the shape this makes on the page. */}
                     <img src={w.picture} alt="" aria-hidden="true"
                       style={{ display: "block", width: "100%", height: 44, objectFit: "contain", background: "#F2F6F9", borderRadius: 4 }} />
-                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{w.label}</div>
-                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{w.description}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{widgetLabel(w, p.adapter)}</div>
+                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{widgetDescription(w, p.adapter)}</div>
                   </button>
 
                   {asking?.kind === w.kind && w.count && (
