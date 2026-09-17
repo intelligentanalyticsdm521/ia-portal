@@ -99,7 +99,7 @@ export function AccountMenu({
                 Notifications tab that only ever listed alerts nobody sends. Both
                 the tab and this duplicate are gone. */}
             <MenuItem to="/app/account" icon={<User className="h-4 w-4" />} label="Your account & sign-in" onClick={close} />
-            <MenuItem to="/app/settings/tours" icon={<Sparkles className="h-4 w-4" />} label="Tours & Walkthroughs" onClick={close} />
+            <MenuItem to="/app/settings/tutorials" icon={<Sparkles className="h-4 w-4" />} label="Tutorials" onClick={close} />
           </MenuSection>
 
           {/* Business — applies to whole organization */}

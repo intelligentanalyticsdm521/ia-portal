@@ -1,5 +1,5 @@
 /**
- * builder/firstRunModel.ts — the three things to know, said once.
+ * builder/firstRunModel.ts — the three things to know, on every open.
  *
  * The name differs from `FirstRun.tsx` by more than case on purpose: on
  * Windows `FirstRun.tsx` and `firstRun.ts` are the same path, and tsc says so
@@ -7,24 +7,29 @@
  *
  * §9 of BUILDER_USER_TEST_2026-09-16 is three stories about a person who did
  * not know what the builder wanted from them. A builder that has to be
- * explained in a document has already lost, but three sentences on the first
- * open cost nothing and answer the three questions everybody asks: how do I
- * add something, how do I change the words, and how does it reach the
- * customer.
+ * explained in a document has already lost, but three sentences on the open
+ * cost nothing and answer the three questions everybody asks: how do I add
+ * something, how do I change the words, and how does it reach the customer.
  *
- * ── SHOWN ONCE, AND REPLAYABLE ────────────────────────────────────────────
- * Once per browser, under one key. Never a server round trip: this is a
- * preference of the person sitting there, not a fact about the business, and a
- * walk-through that needs an API call to decide whether to appear is a
- * walk-through that appears late.
+ * ── SHOWN UNTIL THEY SAY STOP (§11.12, D-154) ─────────────────────────────
+ * This used to be once per browser, under a localStorage key. Brandon,
+ * 2026-09-17: "lets keep it unless they mark don't show me this again. Like add
+ * a little checkbox with that."
  *
- * `localStorage` throws in a private window and comes back empty after a
- * clear, so every read and write is wrapped and the page renders correctly
- * either way — worst case somebody is shown three sentences twice.
+ * So it opens EVERY time a builder opens, and the way out is the checkbox on
+ * the box itself, which writes `tutorials.builderTips` = false for THE PERSON,
+ * server-side (lib/userPreferences.ts → core.user_preference). A note in one
+ * browser was never the right home: on a second computer the box was back with
+ * no way to stop it, and no setting anywhere could turn it on again.
+ *
+ * The "?" in the header replays the box whatever the switch says — asking for
+ * help is not a preference.
+ *
+ * THE KEY, THE STORAGE AND THE READ/WRITE WRAPPERS THAT USED TO BE HERE ARE
+ * GONE, not deprecated. `usePreference("tutorials.builderTips")` is the one
+ * mechanism; a second one would be a second answer to the same question, and
+ * the two would disagree the first time somebody used two computers.
  */
-
-/** The key. Versioned, so a rewritten walk-through can be shown again. */
-export const FIRST_RUN_KEY = "iadm.builder.firstrun.v1";
 
 export interface FirstRunStep {
   title: string;
@@ -50,29 +55,36 @@ export const FIRST_RUN_STEPS: FirstRunStep[] = [
   },
 ];
 
-/** Should the walk-through open? Only when nothing has been stored. */
-export function shouldShowFirstRun(stored: string | null | undefined): boolean {
-  return !stored;
+/**
+ * Should the box open when a builder opens?
+ *
+ * The person's `tutorials.builderTips` switch, and nothing else. `undefined` is
+ * "the server has not answered yet", and the answer to that is YES: the switch
+ * defaults to on, so a builder opened in the first half-second behaves the same
+ * as one opened later. Only an explicit `false` — somebody ticked the box or
+ * turned the switch off in Settings → Tutorials — keeps it away.
+ */
+export function shouldShowFirstRun(builderTips: boolean | undefined): boolean {
+  return builderTips !== false;
+}
+
+/**
+ * What closing the box MEANS for the person's switch.
+ *
+ * `false` — turn Builder tips off — when and only when they ticked "Don't show
+ * me this again". `null` is "leave the switch alone", which is what Skip, the ×
+ * and "Start building" mean on their own: reading the box is not a request to
+ * stop being shown it.
+ *
+ * It is a function and not two lines inside the shell so that "ticking the box
+ * writes FALSE" is a test rather than something you check by clicking.
+ */
+export function builderTipsAfterClose(dontShowAgain: boolean): boolean | null {
+  return dontShowAgain ? false : null;
 }
 
 /** The next step, or null when the last one has been read. */
 export function nextStep(index: number, total = FIRST_RUN_STEPS.length): number | null {
   const next = index + 1;
   return next < total ? next : null;
-}
-
-/** Read the flag. Never throws — see the header. */
-export function readFirstRun(store?: Pick<Storage, "getItem">): string | null {
-  try {
-    const s = store ?? (typeof localStorage === "undefined" ? null : localStorage);
-    return s ? s.getItem(FIRST_RUN_KEY) : null;
-  } catch { return null; }
-}
-
-/** Remember that it has been seen. Never throws. */
-export function markFirstRunSeen(store?: Pick<Storage, "setItem">): void {
-  try {
-    const s = store ?? (typeof localStorage === "undefined" ? null : localStorage);
-    s?.setItem(FIRST_RUN_KEY, new Date().toISOString());
-  } catch { /* a private window is not a reason to fail an open */ }
 }

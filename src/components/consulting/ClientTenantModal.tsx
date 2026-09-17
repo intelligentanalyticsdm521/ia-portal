@@ -48,8 +48,7 @@ import { SparkContactScoringPage } from "../../pages/spark/SparkContactScoringPa
 import SparkCustomerFlowPage from "../../pages/spark/SparkCustomerFlowPage";
 import SparkLifecyclePage from "../../pages/spark/SparkLifecyclePage";
 import SparkSyncIssuesPage from "../../pages/spark/SparkSyncIssuesPage";
-import WalkthroughsPage from "../../pages/settings/WalkthroughsPage";
-import SettingsToursPage from "../../pages/settings/SettingsToursPage";
+import SettingsTutorialsPage from "../../pages/settings/SettingsTutorialsPage";
 import { PlatformTeamAccess } from "../../pages/settings/PlatformTeamAccess";
 import { AddSiteFlow } from "../../pages/sites/AddSiteFlow";
 import { SiteProvisioningStatus } from "../../pages/sites/SiteProvisioningStatus";
@@ -187,8 +186,9 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
                   <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
                   <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
                   <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
-                  <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
-                  <Route path="settings/tours" element={<SettingsToursPage />} />
+                  <Route path="settings/tutorials" element={<SettingsTutorialsPage />} />
+                  <Route path="settings/tours" element={<Navigate to="/app/settings/tutorials" replace />} />
+                  <Route path="settings/walkthroughs" element={<Navigate to="/app/settings/tutorials" replace />} />
                   <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
                   <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
                   <Route path="admin/argus-margin" element={<ArgusMarginPage />} />

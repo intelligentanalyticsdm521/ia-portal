@@ -653,15 +653,24 @@ export interface OnboardingWizardModalProps {
    *  deferred until the founder marks the project's "Walkthrough & Handover"
    *  milestone complete. Set by the consulting project launch (PB-2). */
   deferWelcome?: boolean;
+  /**
+   * D-154 — "Run onboarding again" from Settings > Tutorials. The wizard
+   * normally RESUMES: the saved `step` from onboarding-progress is where it
+   * reopens, which is right for somebody who pressed "Continue setup" and wrong
+   * for somebody who asked to go through it again. With this set the saved
+   * answers are still loaded (nobody re-types anything) and only the POSITION
+   * is ignored, so it opens on the first question.
+   */
+  startAtFirstStep?: boolean;
 }
 
-export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, cartTier, onClose, onFinished, deferWelcome }: OnboardingWizardModalProps) {
+export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, cartTier, onClose, onFinished, deferWelcome, startAtFirstStep }: OnboardingWizardModalProps) {
   if (!open || !tenantId) return null;
   const ctx: ClientTenantValue = { tenantId, tenantName, mode };
   return (
     <ClientTenantProvider value={ctx}>
       {mode === "onboarding"
-        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} cartTier={cartTier} onClose={onClose} onFinished={onFinished} deferWelcome={deferWelcome} />
+        ? <UnifiedOnboarding tenantId={tenantId} tenantName={tenantName} cart={cart} cartTier={cartTier} onClose={onClose} onFinished={onFinished} deferWelcome={deferWelcome} startAtFirstStep={startAtFirstStep} />
         : <ConsultingModeShell tenantId={tenantId} tenantName={tenantName} onClose={onClose} />}
     </ClientTenantProvider>
   );
@@ -669,10 +678,11 @@ export function OnboardingWizardModal({ open, tenantId, tenantName, mode, cart, 
 
 // ─── Unified onboarding ──────────────────────────────────────────────────
 
-function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFinished, deferWelcome }: {
+function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFinished, deferWelcome, startAtFirstStep }: {
   tenantId: string; tenantName?: string; cart: ProductKey[] | undefined;
   cartTier?: { spark?: string; oliver?: string; arion?: string };
   onClose: () => void; onFinished?: () => void; deferWelcome?: boolean;
+  startAtFirstStep?: boolean;
 }) {
   // get/post/patch are CLIENT-scoped (header = client tenant_id) — used for
   // Stripe Connect, PATCH /settings (business profile), etc.
@@ -783,7 +793,10 @@ function UnifiedOnboarding({ tenantId, tenantName, cart, cartTier, onClose, onFi
               p === "arion" || p === "spark" || p === "oliver" || p === "consulting"));
           }
         }
-        if (typeof data?.step === "number" && data.step >= 0 && data.step < sections.length) {
+        // D-154: "Run onboarding again" asked for the beginning, so the saved
+        // POSITION is the one thing not restored. The answers above still are.
+        if (!startAtFirstStep
+            && typeof data?.step === "number" && data.step >= 0 && data.step < sections.length) {
           setStepIdx(data.step);
         }
       })
