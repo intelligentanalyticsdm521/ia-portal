@@ -76,7 +76,19 @@ export function LandingBuilder(p: LandingBuilderProps) {
   const [said, setSaid] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [business, setBusiness] = useState<LandingBusiness>({ name: "" });
+  /**
+   * WHAT THE SERVER LAST SAID about this page being live (D-17).
+   *
+   * The chip used to read `p.page.status`, a prop from the list, which nothing
+   * updated after a publish — so it kept saying "Not live yet" about a page
+   * that was live. The row the save answers with wins over the prop.
+   */
+  const [live, setLive] = useState<{ status: string; url: string | null } | null>(null);
+  /** Publishing asks first: it is the button that puts this on the internet. */
+  const [confirmPublish, setConfirmPublish] = useState(false);
   const openedFor = useRef<number | null>(null);
+  /** The current public address, for the clipboard, without a stale closure. */
+  const liveUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!p.open) return;
@@ -92,7 +104,7 @@ export function LandingBuilder(p: LandingBuilderProps) {
     if (!p.open || !p.page) { openedFor.current = null; return; }
     if (openedFor.current === p.page.id) return;
     openedFor.current = p.page.id;
-    setErr(null); setSaid(null); setCopied(false);
+    setErr(null); setSaid(null); setCopied(false); setLive(null); setConfirmPublish(false);
 
     const raw = p.page.blocks_json;
     const empty = raw == null
@@ -130,27 +142,43 @@ export function LandingBuilder(p: LandingBuilderProps) {
     setResetKey((k) => k + 1);
   }, [business, kit]);
 
+  /**
+   * SAVE, and PUBLISH.
+   *
+   * D-17 (BUILDER_USER_TEST_2026-09-16): *"Publish gave no feedback at all — no
+   * confirm dialog, no toast, and the header chip still read 'Not live yet'
+   * afterwards. It had in fact published."* Three separate failures: no ask
+   * before, no answer after, and a chip reading off a prop that nobody
+   * refreshed.
+   *
+   * The server's OWN row is read back and kept here, so the chip says what the
+   * database says rather than what this component was handed when it opened.
+   * D-36: the builder stays open either way, with a tick.
+   */
   async function save(alsoPublish: boolean) {
     if (!p.page || !doc) return;
     setBusy(true); setErr(null); setSaid(null);
     try {
-      await p.api.put(`/api/v1/landing-pages/${p.page.id}`, {
+      const r: any = await p.api.put(`/api/v1/landing-pages/${p.page.id}`, {
         blocks_json: doc,
         theme_json: { accent: doc.settings.accent || kit.colours.accent },
         ...(alsoPublish ? { status: "published" } : {}),
       });
+      const row = (r?.data ?? r) as LandingPageRow | null;
+      if (row && row.id) setLive({ status: String(row.status || ""), url: row.published_url || null });
       p.onSaved(alsoPublish
         ? "Published. The page is live at its address."
         : "Saved. It is not live until you press Publish.");
-      setSaid(alsoPublish ? "Published." : "Saved.");
+      setSaid(alsoPublish ? "Published ✓ — anybody with the link can see it now." : "Saved ✓");
     } catch (e) {
       setErr(`Could not save: ${apiErrorMessage(e)}`);
     } finally { setBusy(false); }
   }
 
   async function copyEmbed() {
-    if (!p.page?.published_url) return;
-    const snippet = embedSnippet(p.page.published_url, { title: p.page.title || p.page.name, height: 900 });
+    const url = liveUrlRef.current;
+    if (!url) return;
+    const snippet = embedSnippet(url, { title: p.page?.title || p.page?.name || "Landing page", height: 900 });
     try {
       await navigator.clipboard.writeText(snippet);
       setCopied(true);
@@ -188,9 +216,35 @@ export function LandingBuilder(p: LandingBuilderProps) {
       />
     );
   }
-  const published = p.page.status === "published" && !!p.page.published_url;
+  const status = live?.status || p.page.status;
+  const publicUrl = (live ? live.url : p.page.published_url) || null;
+  const published = status === "published" && !!publicUrl;
+  liveUrlRef.current = publicUrl;
 
   return (
+    <>
+    {/* D-17: Publish asks first, and says exactly what happens. The website
+        builder's confirm is the model, and this is its wording for a hosted
+        page. */}
+    {confirmPublish && (
+      <IadmModal open onClose={() => setConfirmPublish(false)} product="spark" z={60}
+        eyebrow="Publish" title={`Put “${p.page.name}” on the internet?`} size="confirm"
+        footer={
+          <>
+            <IadmButton variant="ghost" onClick={() => setConfirmPublish(false)}>Not yet</IadmButton>
+            <IadmButton variant="accent" product="spark" disabled={busy}
+              onClick={() => { setConfirmPublish(false); void save(true); }}>
+              {busy ? "Working…" : "Yes, publish it"}
+            </IadmButton>
+          </>
+        }>
+        <div style={{ padding: 18, fontSize: 13, lineHeight: 1.55, color: "#334155" }}>
+          Everything on the page goes to its own address straight away, where anybody with the link can
+          see it. You can keep editing afterwards — press <strong>Save &amp; update live</strong> and the
+          change goes out.
+        </div>
+      </IadmModal>
+    )}
     <BuilderShell
       open
       onClose={p.onClose}
@@ -204,6 +258,23 @@ export function LandingBuilder(p: LandingBuilderProps) {
       canvasCss={LANDING_CSS.replace(/__ACCENT__/g, doc.settings.accent || kit.colours.accent)}
       paperWidth={760}
       canvasBackground="#E2E8F0"
+      /* D-30: a landing page is a PAGE. Without this the engine offers "Start a
+         new page here (when printed or saved as a PDF)" and calls the fonts
+         "the document's own" — a proposal's words in a web builder. */
+      copy={{
+        noun: "page",
+        nounPlural: "pages",
+        audience: "the people who land on it",
+        paneHeading: "Add to this page",
+        paneHint: "Click one to add it where you are, or drag it onto the page.",
+        outlineHeading: "This page, top to bottom",
+        defaultFontLabel: "This page's own font",
+        pageBreakLabel: "",
+        canvasHint: "Click anything on the page to edit it. This is the page a visitor gets.",
+        emptyHeading: "What goes on this page?",
+        emptyHint: "A headline, a reason to care, and a form. Pick one to start.",
+      }}
+      onSave={() => void save(false)}
       canvasHint="Click anything on the page to edit it. This is the page a visitor gets."
       paperNote="hosted page"
       premade={LANDING_PREMADE_SECTIONS}
@@ -215,9 +286,9 @@ export function LandingBuilder(p: LandingBuilderProps) {
         <span style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 11 }}>
           <span style={{ background: "rgba(255,255,255,0.12)", borderRadius: 999, padding: "2px 9px" }}>/{p.page.slug}</span>
           {published
-            ? <a href={p.page.published_url!} target="_blank" rel="noreferrer" style={{ color: "#fff", textDecoration: "underline" }}
-              title="Open the live page in a new tab">Live <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a>
-            : <span style={{ opacity: 0.8 }}>Not live yet</span>}
+            ? <a data-landing-chip href={publicUrl!} target="_blank" rel="noreferrer" style={{ color: "#fff", textDecoration: "underline" }}
+              title="Open the live page in a new tab">Live — see it <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a>
+            : <span data-landing-chip style={{ opacity: 0.8 }}>Not live yet</span>}
         </span>
       }
       headerActions={
@@ -232,8 +303,12 @@ export function LandingBuilder(p: LandingBuilderProps) {
             title="Save without making it live">
             {busy ? "Working…" : "Save"}
           </button>
-          <button type="button" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-            title={published ? "Save and update the live page" : "Save and put it on the internet at its address"}>
+          <button type="button" data-builder-anchor="publish"
+            onClick={() => (published ? void save(true) : setConfirmPublish(true))}
+            disabled={busy} style={orangeBtn}
+            title={published
+              ? "Save and update the live page"
+              : "Put this page on the internet at its own address. You are asked to confirm first."}>
             {busy ? "Working…" : published ? "Save & update live" : "Publish"}
           </button>
         </>
@@ -259,6 +334,7 @@ export function LandingBuilder(p: LandingBuilderProps) {
         <LandingExtras widget={w} sectionId={sectionId} doc={doc} onChange={setDoc} />
       )}
     />
+    </>
   );
 }
 

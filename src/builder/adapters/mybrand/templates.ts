@@ -88,9 +88,18 @@ function text(t: TextSpec): TextLayer {
   };
 }
 
+/**
+ * The business's logo, or a slot that says it is one (D-24).
+ *
+ * The id carries `logo` so the canvas can caption the empty slot "Your logo
+ * goes here — add it under My Brand" rather than "Picture goes here", which is
+ * the difference between a design a business owner knows how to finish and a
+ * grey rectangle. `uid` keeps the rest of the id unique, so two logo layers on
+ * one design are still two layers.
+ */
 function logo(brand: StudioBrand, x: number, y: number, w: number): ImageLayer {
   return {
-    id: uid("image"), kind: "image",
+    id: uid("logo"), kind: "image",
     x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(w * 0.4),
     src: brand.logoUrl, blob_ref: null, visible: true,
   };
@@ -262,6 +271,29 @@ export const PREMADE_BY_KEY: Record<string, PremadeDesign> = Object.fromEntries(
 );
 
 export const PREMADE_GROUPS: Array<PremadeDesign["group"]> = ["Social", "Print", "Brand marks"];
+
+/**
+ * WHAT A DESIGN IS CALLED, in English (D-32).
+ *
+ * BUILDER_USER_TEST_2026-09-16: *"The library lists starter templates whose
+ * type is printed as the raw enum 'Ig_post'."* The gallery printed the stored
+ * `kind` with a CSS `capitalize`, which turns a developer token into a
+ * capitalised developer token.
+ *
+ * The premade list already carries the right words — "Instagram post" is
+ * `PREMADE_BY_KEY.ig_post.label` — so this reads them rather than keeping a
+ * second table beside them. A kind nobody has a name for is spaced out and
+ * capitalised properly (`fb_reel` → "Fb reel"), which is a guess, but never a
+ * screenful of underscores.
+ */
+export function designKindLabel(kind: string | null | undefined): string {
+  const key = String(kind || "").trim();
+  if (!key) return "Design";
+  const known = PREMADE_BY_KEY[key];
+  if (known) return known.label;
+  const words = key.replace(/[_-]+/g, " ").trim();
+  return words ? words.charAt(0).toUpperCase() + words.slice(1) : "Design";
+}
 
 /** The gallery's own query: search matches the name AND the sentence. */
 export function premadeFor(query = "", group: PremadeDesign["group"] | "all" = "all"): PremadeDesign[] {

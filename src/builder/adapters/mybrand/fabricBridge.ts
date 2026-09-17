@@ -62,6 +62,50 @@ export function swapPlaceholder(
   canvas.requestRenderAll();
 }
 
+/**
+ * WHAT AN EMPTY PICTURE SLOT SAYS (D-24).
+ *
+ * A dashed frame with one plain sentence in it. Grouped so it drags, scales and
+ * selects as one thing — the author is moving "the picture", not a rectangle
+ * and a caption that can come apart.
+ */
+function emptySlot(
+  baseProps: Record<string, unknown>,
+  w: number,
+  h: number,
+  caption: string,
+): fabric.FabricObject {
+  const frame = new fabric.Rect({
+    left: 0, top: 0, width: w, height: h,
+    fill: "#F1F5F9", stroke: "#94A3B8", strokeWidth: 1, strokeDashArray: [6, 4],
+  });
+  // Scaled to the slot, floored so a tiny logo box still has readable type and
+  // capped so a full-bleed slot does not shout.
+  const size = Math.max(11, Math.min(28, Math.round(Math.min(w, h) * 0.12)));
+  const label = new fabric.Textbox(caption, {
+    left: Math.round(w * 0.08),
+    top: Math.round(h / 2 - size),
+    width: Math.round(w * 0.84),
+    fontSize: size,
+    fontFamily: DEFAULT_FONTS[0],
+    fill: "#64748B",
+    textAlign: "center",
+    lineHeight: 1.25,
+    selectable: false,
+    evented: false,
+  });
+  return new fabric.Group([frame, label], { ...baseProps, width: w, height: h });
+}
+
+/** The sentence in the slot. A logo says so; anything else is "a picture". */
+function slotCaption(il: ImageLayer): string {
+  const isLogo = String((il as unknown as { role?: string }).role || "") === "logo"
+    || /logo/i.test(String(il.id || ""));
+  return isLogo
+    ? "Your logo goes here — add it under My Brand"
+    : "Picture goes here — click the slot, then Replace";
+}
+
 export function layerToFabricObject(
   layer: Layer,
   onSwap?: (obj: fabric.FabricObject) => void,
@@ -129,18 +173,10 @@ export function layerToFabricObject(
   if (layer.kind === "image") {
     const il = layer as ImageLayer;
     if (!il.src) {
-      // Placeholder rect with diagonal lines — matches the server-side
-      // export look so designers see the same slot in editor + export.
-      const placeholder = new fabric.Rect({
-        ...baseProps,
-        width: il.w,
-        height: il.h,
-        fill: "#E5E7EB",
-        stroke: "#9CA3AF",
-        strokeWidth: 1,
-        strokeDashArray: [6, 4],
-      });
-      return placeholder;
+      // An empty picture slot, and it SAYS it is one (D-24). The dashed frame
+      // matches the server-side export look so designers see the same slot in
+      // editor and export.
+      return emptySlot(baseProps, il.w, il.h, slotCaption(il));
     }
     // Image is loaded asynchronously — we return a placeholder rect for the
     // synchronous case and swap in the FabricImage when the load resolves.
@@ -205,7 +241,18 @@ export function layerToFabricObject(
       // Replace the placeholder in the canvas. We have to do this through
       // the live canvas instance from the closure that holds fabricRef.
       swapPlaceholder(placeholder, img, onSwap);
-    }).catch(() => { /* swallow — placeholder stays visible */ });
+    }).catch(() => {
+      /* D-24 (BUILDER_USER_TEST_2026-09-16): *"It opens broken. The logo layer
+       * requests http://localhost:5194/logo.svg — a dead host — so every
+       * template shows a grey broken-image box … First impression of the
+       * flagship design tool is a broken image over the text."*
+       *
+       * A picture that will not load is not an error the author can fix by
+       * staring at a grey rectangle. The slot says what it is and where to put
+       * one, exactly like an empty slot, because to the author those two are
+       * the same situation. */
+      swapPlaceholder(placeholder, emptySlot(baseProps, il.w, il.h, slotCaption(il)), onSwap);
+    });
     return placeholder;
   }
   if (layer.kind === "chart") {

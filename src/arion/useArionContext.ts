@@ -888,6 +888,8 @@ export function useArionContext() {
           sections: Array<{ fields: any; node: any }>;
           title?: string;
           status?: string;
+          /** "Yes, take this page off the internet" — the Unpublish confirm only (D-05). */
+          unpublish?: boolean;
           /** ARGUS suggestions this save carries; stamped applied only if it lands. */
           proposalIds?: string[];
         },
@@ -895,6 +897,24 @@ export function useArionContext() {
         const b = await base();
         const { saveSitePageSections } = await import('../lib/arionApi');
         return saveSitePageSections({ ...b, siteId, pageId, ...params });
+      },
+
+      /** D-05: hold this work beside the live page. Nothing reaches the website. */
+      async saveSitePageDraft(
+        siteId: string,
+        pageId: number,
+        params: { sections: Array<{ fields: any; node: any }>; title?: string },
+      ) {
+        const b = await base();
+        const { saveSitePageDraft } = await import('../lib/arionApi');
+        return saveSitePageDraft({ ...b, siteId, pageId, ...params });
+      },
+
+      /** Throw the held draft away. The live page was never touched. */
+      async discardSitePageDraft(siteId: string, pageId: number) {
+        const b = await base();
+        const { discardSitePageDraft } = await import('../lib/arionApi');
+        return discardSitePageDraft({ ...b, siteId, pageId });
       },
 
       async previewSitePage(
