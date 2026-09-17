@@ -39,6 +39,14 @@ import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
 import { documentTotals, money, type DocumentTotals } from "./totals";
 import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
+/* D-156 stream B — THE ATOMIC WIDGETS (widgets/). Each declares itself and
+   draws itself in one file; the engine asks them before its own switch,
+   exactly as it asks the adapter. The cycle this makes (render -> widgets ->
+   render) crosses only hoisted function declarations, never a const read
+   while a module is still evaluating. */
+import { renderAtom } from "./widgets";
+import { ATOM_KINDS } from "./widgets/kinds";
+import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
 /* ── One escaper. The inventory found three. ─────────────────────────────── */
 export function esc(s: unknown): string {
@@ -78,6 +86,22 @@ export interface RenderContext {
   locations?: Record<string, LocationLite>;
   /** Computed once by the caller and handed in — see totals.ts. */
   totals: DocumentTotals;
+  /**
+   * THE DOCUMENT BEING DRAWN (D-156 stream B).
+   *
+   * A `totals` widget adds up the priced lines ABOVE IT, which it cannot do
+   * from its own props. Handed in by `makeContext` from the document it was
+   * given, so no caller changes and nothing can hand in a different one.
+   */
+  doc?: BuilderDocument;
+  /**
+   * The business's products & services, when the surface has them loaded.
+   *
+   * A `catalog_card` shows the LIVE price from here when it is present and
+   * the snapshot stored on the widget when it is not — which is what makes
+   * the card correct on a server that has no catalogue in the request.
+   */
+  catalogue?: CatalogOffering[];
   /** section id → "01". Computed by the caller from the whole document. */
   numbers: Record<string, string>;
   /**
@@ -119,6 +143,8 @@ export function makeContext(
     business: partial.business ?? { name: "" },
     locations: partial.locations ?? {},
     totals: partial.totals ?? documentTotals(doc),
+    doc,
+    ...(partial.catalogue ? { catalogue: partial.catalogue } : {}),
     numbers: partial.numbers ?? sectionNumbers(doc),
     extra: partial.extra,
     ...(partial.changed ? { changed: partial.changed } : {}),
@@ -126,7 +152,7 @@ export function makeContext(
 }
 
 /** Merge-fill, then escape. Never the other way round. */
-function t(text: unknown, ctx: RenderContext): string {
+export function t(text: unknown, ctx: RenderContext): string {
   return tokenChips(esc(fill(String(text ?? ""), ctx.merge, ctx.mode)), ctx);
 }
 
@@ -155,7 +181,7 @@ function tokenChips(escaped: string, ctx: RenderContext): string {
 }
 
 /** Plain text with blank lines between paragraphs → <p> runs. */
-function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
+export function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
   const filled = fill(String(text ?? ""), ctx.merge, ctx.mode);
   const attr = editPath ? ` data-edit="${esc(editPath)}"` : "";
   if (!filled.trim()) {
@@ -182,6 +208,8 @@ export const RENDERED_KINDS = [
   "property_plan", "property_block", "signature", "page_break", "image",
   "spacer", "divider", "key_value_table", "data_table", "testimonial",
   "footer_note", "merge_field", "button",
+  // D-156's atomic widgets, declared and drawn under widgets/.
+  ...ATOM_KINDS,
 ] as const;
 
 /**
@@ -200,6 +228,10 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
     // The adapter's own widgets first — see RenderContext.extra.
     const own = ctx.extra?.(w, ctx);
     if (own != null) return own;
+    // Then D-156's atomic widgets, each of which lives in one file under
+    // widgets/ with its own definition, controls and renderer.
+    const atom = renderAtom(w, ctx);
+    if (atom != null) return atom;
     switch (w.kind) {
       case "doc_header": return docHeader(p, ctx);
       case "key_facts": return keyFacts(p, ctx);
@@ -214,7 +246,6 @@ export function renderWidget(w: Widget, ctx: RenderContext): string {
       case "callout": return callout(p, ctx);
       case "comparison_cards": return comparisonCards(p, ctx);
       case "priced_line": return pricedLine(p, ctx);
-      case "totals": return totalsBlock(p, ctx);
       case "property_plan": return propertyPlan(p, ctx);
       case "property_block": return propertyBlock(p, ctx, w.id);
       case "signature": return signature(p, ctx);
@@ -439,20 +470,10 @@ function pricedLine(p: any, ctx: RenderContext): string {
   </div>`;
 }
 
-function totalsBlock(p: any, ctx: RenderContext): string {
-  const { sites, subtotal, tax, discount, total } = ctx.totals;
-  const siteRows = sites.map((s) => `
-    <div class="bx-total-row"><span>${esc(s.name)}</span><span>${esc(money(s.subtotal, ctx.currency))}</span></div>`).join("");
-  return `<div class="bx-totals">
-    ${p.heading || ctx.mode === "edit" ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : ""}
-    ${siteRows}
-    <div class="bx-total-row"><span>Subtotal</span><span>${esc(money(subtotal, ctx.currency))}</span></div>
-    ${tax ? `<div class="bx-total-row"><span>Tax</span><span>${esc(money(tax, ctx.currency))}</span></div>` : ""}
-    ${discount ? `<div class="bx-total-row"><span>Discount</span><span>−${esc(money(discount, ctx.currency))}</span></div>` : ""}
-    <div class="bx-total-row bx-total-grand" style="border-top-color:${esc(ctx.accent)}"><span>Total</span><span>${esc(money(total, ctx.currency))}</span></div>
-  </div>`;
-}
-
+/* `totalsBlock` LIVED HERE and is DELETED (D-156 stream B). The total is an
+   atomic widget now and draws itself in widgets/totals.ts, where its own tax
+   rate, per-cent discount and coupon live. Two renderers for one block is how
+   the canvas and the PDF come to disagree about a number. */
 function locationLine(loc?: LocationLite): string {
   if (!loc) return "";
   const line1 = loc.address_line1 ?? loc.address_line_1;

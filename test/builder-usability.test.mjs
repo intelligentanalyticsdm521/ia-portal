@@ -351,8 +351,10 @@ describe("the widget picker groups by the job (D-147)", () => {
     // add sections for service address or property address."
     const property = groupByTask("proposal").find((g) => g.task === "Customer & property");
     const money = groupByTask("proposal").find((g) => g.task === "Products & services");
-    assert.ok(property.widgets.some((w) => w.kind === "property_block"),
-      "the property block is not under Customer & property");
+    // D-156: the property block came apart into an address, priced lines and a
+    // total. The ADDRESS is what answers "add a section for service address".
+    assert.ok(property.widgets.some((w) => w.kind === "address_block"),
+      "the service address is not under Customer & property");
     assert.ok(money.widgets.some((w) => w.kind === "pricing_table"),
       "the pricing table is not under Products & services");
   });

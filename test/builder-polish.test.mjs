@@ -480,8 +480,13 @@ describe("M-24 · nothing waits on the catalogue before the page is on screen", 
 
   test("the pane says “loading your catalogue…” rather than “nothing here”", () => {
     const builder = SRC("builder/proposal/ProposalBuilder.tsx");
-    assert.match(builder, /data-catalogue-loading="1"/);
-    assert.match(builder, /Loading your catalogue…/);
+    // D-156: the picker is ONE component now and lives beside its readers in
+    // components/oliver/ProposalCatalogPicker.tsx. The builder is what hands
+    // it the "still loading" flag, so the two halves are asserted apart.
+    const picker = SRC("components/oliver/ProposalCatalogPicker.tsx");
+    assert.match(picker, /data-catalogue-loading="1"/);
+    assert.match(picker, /Loading your catalogue…/);
+    assert.match(builder, /loading=\{catalogueLoading\}/);
     // And it stops saying it when the read fails, or it says it for ever.
     assert.match(builder, /\.finally\(\(\) => setCatalogueLoading\(false\)\)/);
   });

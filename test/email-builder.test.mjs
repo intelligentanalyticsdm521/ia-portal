@@ -626,7 +626,9 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
 
   test("the proposal builder is untouched by any of this", () => {
     const kinds = widgetsFor("proposal").map((w) => w.kind);
-    for (const k of ["doc_header", "clauses", "priced_line", "totals", "signature", "property_block"]) {
+    // priced_line → price_line and property_block → address_block + price_line
+    // + totals, both by D-156. The proposal builder still has all of it.
+    for (const k of ["doc_header", "clauses", "price_line", "totals", "signature", "address_block"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
     for (const k of ["article_card", "product_card", "email_footer", "hero"]) {

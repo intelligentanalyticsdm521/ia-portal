@@ -153,31 +153,20 @@ export interface WidgetDef {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Pictures
-   ══════════════════════════════════════════════════════════════════════════ */
+   Pictures — moved to ./pictures (D-156 stream B)
+   ===================================================================== */
 
-/**
- * Build a picture from a compact SVG body.
- *
- * Inline data URIs rather than files so the pane has no network dependency and
- * a widget cannot ship without its picture. `currentColor` is deliberately NOT
- * used: the picture is a diagram of a layout, drawn in slate on transparent, so
- * it reads the same on every pane background and never competes with the
- * business's own brand colours sitting next to it in the same panel.
- */
-export function pictureFrom(body: string): string {
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 40" fill="none" ` +
-    `stroke="#64748B" stroke-width="2" stroke-linecap="round">${body}</svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
+/* A widget now declares itself in its own module under `widgets/`, and this
+   file collects those declarations. A widget module reaching back in here for
+   `pictureFrom` would make the two files import each other at evaluation time,
+   so the three picture helpers live in `./pictures`, which neither side owns.
+   `pictureFrom` is re-exported here, so every existing caller is unchanged. */
+export { pictureFrom } from "./pictures";
+import { pictureFrom, bar, box, solid } from "./pictures";
+/* D-156 — the atomic widgets, each declared in its own file beside the
+   function that draws it. Spread into WIDGETS below: one vocabulary, still. */
+import { ATOM_WIDGET_DEFS } from "./widgets";
 
-const bar = (x: number, y: number, w: number, h = 4) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="2" fill="#CBD5E1" stroke="none"/>`;
-const box = (x: number, y: number, w: number, h: number) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="none"/>`;
-const solid = (x: number, y: number, w: number, h: number) =>
-  `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="3" fill="#94A3B8" stroke="none"/>`;
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE registry — §3.2's union, as definitions
@@ -282,6 +271,10 @@ export const WEBSITE_USES_A_SECTION_INSTEAD: Record<string, string> = {
    a website, and that is the website builder's job. ─────────────────────── */
 
 export const WIDGETS: WidgetDef[] = [
+  /* D-156 — THE ATOMIC WIDGETS. Each one declares itself in its own file under
+     `widgets/`, beside the function that draws it, and the list is spread in
+     here so there is still exactly ONE vocabulary. See widgets/index.ts. */
+  ...ATOM_WIDGET_DEFS,
   /* ── Text ──────────────────────────────────────────────────────────── */
   {
     kind: "heading",
@@ -546,6 +539,13 @@ export const WIDGETS: WidgetDef[] = [
       { key: "unit_price", label: "Price each", type: "money" },
       { key: "recommended", label: "Mark Recommended", type: "toggle" },
     ],
+    /* SUPERSEDED BY D-156 — folded into `price_line`.
+       `hidden` means "still in the vocabulary, never offered": a document
+       saved before the upgrade still draws, and nobody can add another one.
+       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
+       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
+       leave here rather than a composite quietly coming back. */
+    hidden: true,
   },
   {
     kind: "comparison_cards",
@@ -564,7 +564,13 @@ export const WIDGETS: WidgetDef[] = [
       { key: "intro", label: "One line of context", type: "textarea" },
       { key: "cards", label: "The options", type: "list" },
     ],
-    count: { min: 2, max: 6, label: "How many cards?", default: 3 },
+    /* SUPERSEDED BY D-156 — decomposed into `card` / `catalog_card` in a row container.
+       `hidden` means "still in the vocabulary, never offered": a document
+       saved before the upgrade still draws, and nobody can add another one.
+       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
+       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
+       leave here rather than a composite quietly coming back. */
+    hidden: true,
   },
   {
     kind: "pricing_table",
@@ -586,17 +592,10 @@ export const WIDGETS: WidgetDef[] = [
       { key: "rows", label: "Rows", type: "list", help: "Pull them from Products & Services, or type your own." },
     ],
   },
-  {
-    kind: "totals",
-    label: "Totals at a glance",
-    description: "Grouped subtotals and a grand total, for when the list of prices is long.",
-    icon: "Calculator",
-    picture: pictureFrom(bar(8, 10, 26) + bar(44, 10, 12) + bar(8, 18, 20) + bar(44, 18, 12) + `<path d="M8 26h48" stroke="#94A3B8"/>` + bar(8, 30, 16) + bar(42, 30, 14, 5)),
-    category: "Money",
-    adapters: DOCUMENTS,
-    defaults: { heading: "Your total" },
-    controls: [{ key: "heading", label: "Heading", type: "text" }],
-  },
+  /* `totals` LIVED HERE and is DELETED (D-156). It declares itself in
+     widgets/totals.ts now, beside the function that draws it and beside its
+     own tax rate, per-cent discount and coupon — which is the whole of
+     D-157's "add totals … subtotal, tax rate, discounts/coupons". */
 
   /* ── Information ───────────────────────────────────────────────────── */
   {
@@ -766,7 +765,13 @@ export const WIDGETS: WidgetDef[] = [
     adapters: DOCUMENTS,
     defaults: { rows: [] },
     controls: [{ key: "rows", label: "Facts", type: "list", help: "A label and a value. Values can be typed or pulled from the customer." }],
-    count: { min: 2, max: 10, label: "How many facts?", default: 4 },
+    /* SUPERSEDED BY D-156 — decomposed into a row of `key_fact`.
+       `hidden` means "still in the vocabulary, never offered": a document
+       saved before the upgrade still draws, and nobody can add another one.
+       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
+       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
+       leave here rather than a composite quietly coming back. */
+    hidden: true,
   },
   {
     kind: "clauses",
@@ -820,6 +825,13 @@ export const WIDGETS: WidgetDef[] = [
       { key: "heading", label: "Name on the document", type: "text" },
       { key: "items", label: "Line items", type: "list" },
     ],
+    /* SUPERSEDED BY D-156 — decomposed into `address_block` + `price_line` + `totals`.
+       `hidden` means "still in the vocabulary, never offered": a document
+       saved before the upgrade still draws, and nobody can add another one.
+       THE ENTRY ITSELF IS DELETED the day stream A's upgrade-on-open lands
+       (D156_HANDOFF_2026-09-17.md, B→A-1), which is what makes this safe to
+       leave here rather than a composite quietly coming back. */
+    hidden: true,
   },
   {
     kind: "page_break",

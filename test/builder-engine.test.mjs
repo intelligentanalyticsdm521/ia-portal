@@ -301,10 +301,14 @@ describe("money, against the fixture oliver-api runs too", () => {
     });
   }
 
-  test("the priced list is the guard — comparison cards and pricing tables are not on it", () => {
-    // MUTATION: add "comparison_cards" to PRICED_KINDS and the first fixture
-    // case goes red. This test says what the list must be.
-    assert.deepEqual([...PRICED_KINDS], ["priced_line", "property_block"]);
+  test("the priced list is the guard — cards and pricing tables are not on it", () => {
+    // MUTATION: add "card" or "catalog_card" to PRICED_KINDS and the first
+    // fixture case goes red. This test says what the list must be.
+    //   price_line   D-156's atomic line of money
+    //   priced_line  the same thing under its old name, until every stored
+    //                document has been through stream A's upgrade-on-open
+    //   property_block  superseded, same reason
+    assert.deepEqual([...PRICED_KINDS], ["price_line", "priced_line", "property_block"]);
   });
 
   test("a site's lines are counted in its subtotal AND in the total, exactly once", () => {
