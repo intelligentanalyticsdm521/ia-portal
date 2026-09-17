@@ -207,6 +207,11 @@ export interface EmailTemplate {
   name: string;
   /** The badge — what kind of send this is, in the client's words. */
   purpose: string;
+  /**
+   * Which SEGMENTS this is for, from templateLibraryModel.BUSINESS_TYPES
+   * (D-153: segments, not trades). "Any business" answers every chip; the
+   * trade words live in `tags`, where the search reads them.
+   */
   businessTypes: string[];
   tags: string[];
   useCase: string;
@@ -403,8 +408,9 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     key: "seasonal_reminder",
     name: "Seasonal reminder",
     purpose: "Seasonal",
-    businessTypes: ["Lawn & landscape", "Snow & ice", "HVAC & plumbing", "Cleaning", "Home services"],
-    tags: ["season", "book early", "reminder", "diary", "weather"],
+    businessTypes: ["Service industry"],
+    tags: ["season", "book early", "reminder", "diary", "weather",
+      "lawn & landscape", "snow & ice", "hvac & plumbing", "cleaning", "home services"],
     useCase: "The email you send a few weeks before the season turns, to fill the diary before the phone starts ringing. It says why booking now is worth it and gives one button to do it.",
     bestFor: "Anyone whose work has a season — heating checks before the cold, the first cut of spring, a snow contract before November.",
     subject: "Book before the season turns",
@@ -499,8 +505,9 @@ export const EMAIL_TEMPLATES: EmailTemplate[] = [
     key: "new_service",
     name: "New service announcement",
     purpose: "Announcement",
-    businessTypes: ["Lawn & landscape", "Snow & ice", "Cleaning", "HVAC & plumbing", "Home services", "Retail & hospitality"],
-    tags: ["new service", "launch", "now offering", "expanded", "price"],
+    businessTypes: ["Service industry", "Retail & hospitality"],
+    tags: ["new service", "launch", "now offering", "expanded", "price",
+      "lawn & landscape", "snow & ice", "cleaning", "hvac & plumbing", "home services"],
     useCase: "For telling your existing customers you now do something you did not do before. It says what it is, who it suits and what it costs, and asks for the booking in the same breath.",
     bestFor: "A trade adding a line — gutter clearing, a maintenance plan, a second van, an extra season.",
     subject: "Something new from us",
@@ -720,12 +727,16 @@ export function emailPreview(
 }
 
 /**
- * Every email template as a library entry, with the basics last.
+ * Every email template as a library entry, with the basics FIRST (D-153).
  *
  * The "empty page" card is not empty here and says so: the smallest email it
  * is legal to send is a masthead, a note and the unsubscribe footer
  * (`startingEmail`), so that is what the card offers and what its picture
- * shows.
+ * shows — and why the footer button here reads "Just the basics" rather than
+ * promising an empty page it cannot give.
+ *
+ * It is listed last and SORTED first: `sortTemplates` owns the order, so no
+ * adapter has to remember to put it anywhere.
  */
 export function emailLibrary(business: EmailBusiness, accent: string): TemplateEntry[] {
   const entries: TemplateEntry[] = EMAIL_TEMPLATES.map((t) => ({

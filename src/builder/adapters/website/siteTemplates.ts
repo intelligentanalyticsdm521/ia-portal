@@ -33,13 +33,21 @@ export interface SitePageTemplate {
   kinds: string[];
   /** The badge — what kind of page this is. */
   purpose: string;
+  /**
+   * Which SEGMENTS this is for, from templateLibraryModel.BUSINESS_TYPES
+   * (D-153: segments, not trades). "Any business" answers every chip; the
+   * trade words live in `tags`, where the search reads them.
+   */
   businessTypes: string[];
   tags: string[];
   useCase: string;
   bestFor: string;
   featured?: boolean;
-  /** The "start from almost nothing" card, which is always offered last. */
-  last?: boolean;
+  /**
+   * The "start from almost nothing" card — FIRST in the grid and the footer
+   * button (D-153). It replaces D-146's `last`, which pinned it to the end.
+   */
+  blank?: boolean;
   /**
    * Words for the GALLERY PICTURE ONLY, per ARION kind.
    *
@@ -76,8 +84,8 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     key: "home_lawn",
     name: "Lawn & landscape home",
     purpose: "Home page",
-    businessTypes: ["Lawn & landscape"],
-    tags: ["lawn", "garden", "landscaping", "grounds", "mowing", "home"],
+    businessTypes: ["Service industry"],
+    tags: ["lawn", "garden", "landscaping", "grounds", "mowing", "home", "lawn & landscape"],
     useCase: "A home page that sells on the work you can see: the banner, what you do, then a gallery of finished jobs before the prices and the reviews. Photographs win landscaping work, so they come early.",
     bestFor: "Lawn care rounds, landscaping and grounds maintenance — anyone whose best argument is a picture of a finished garden.",
     kinds: ["hero", "services", "gallery", "testimonials", "pricing", "cta", "contact"],
@@ -101,8 +109,8 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     key: "home_snow",
     name: "Snow & ice home",
     purpose: "Home page",
-    businessTypes: ["Snow & ice"],
-    tags: ["snow", "plowing", "ice", "winter", "gritting", "home"],
+    businessTypes: ["Service industry"],
+    tags: ["snow", "plowing", "ice", "winter", "gritting", "home", "snow & ice"],
     useCase: "Built for the week it snows: the banner, then the call-to-action band straight underneath, because somebody reading this at six in the morning wants a number, not your story.",
     bestFor: "Snow plowing and ice management, commercial or residential, where contracts are signed in a hurry.",
     kinds: ["hero", "cta", "services", "faq", "stats", "testimonials", "contact"],
@@ -124,7 +132,7 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     key: "home_cleaning",
     name: "Cleaning services home",
     purpose: "Home page",
-    businessTypes: ["Cleaning"],
+    businessTypes: ["Service industry"],
     tags: ["cleaning", "janitorial", "housekeeping", "office", "home"],
     useCase: "A home page that answers the two questions a cleaning customer has — what does it include and what does it cost — before anything else. Prices sit high up, with the questions people ask underneath.",
     bestFor: "Domestic and commercial cleaning rounds, end-of-tenancy work, office contracts.",
@@ -149,8 +157,8 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     key: "home_hvac",
     name: "HVAC & plumbing home",
     purpose: "Home page",
-    businessTypes: ["HVAC & plumbing"],
-    tags: ["heating", "plumbing", "hvac", "boiler", "emergency", "home"],
+    businessTypes: ["Service industry"],
+    tags: ["heating", "plumbing", "hvac", "boiler", "emergency", "home", "hvac & plumbing"],
     useCase: "An emergency-first home page: banner, then how to get somebody out today, then the services, how long you have been doing it and what customers say. The questions section catches the ones that ring up to ask.",
     bestFor: "Heating, cooling and plumbing firms who win work on how fast they answer.",
     kinds: ["hero", "cta", "services", "stats", "faq", "testimonials", "contact"],
@@ -225,7 +233,7 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     tags: ["blank", "empty", "one section", "from scratch"],
     useCase: "A banner and nothing else. You add every other section yourself from the panel, which is the long way round unless you already know exactly what this page is.",
     bestFor: "A page that is nothing like the others — a policy page, a one-off notice, something you are rebuilding by hand.",
-    last: true,
+    blank: true,
     kinds: ["hero"],
   },
 ];
@@ -467,7 +475,7 @@ export function sitePagePreview(
   };
 }
 
-/** Every page template as a library entry, with "one section" last. */
+/** Every page template as a library entry, with "one section" first (D-153). */
 export function siteLibrary(accent = "#0C4A60"): TemplateEntry[] {
   return SITE_PAGE_TEMPLATES.map((t) => ({
     id: t.key,
@@ -478,7 +486,7 @@ export function siteLibrary(accent = "#0C4A60"): TemplateEntry[] {
     useCase: t.useCase,
     bestFor: t.bestFor,
     featured: t.featured,
-    last: t.last,
+    blank: t.blank,
     preview: () => sitePagePreview(t, accent),
   }));
 }
