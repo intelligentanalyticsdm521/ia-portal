@@ -34,7 +34,7 @@ import {
   type BuilderDocument, type Selection, type Widget,
 } from "../../model";
 import { makeContext, type RenderContext } from "../../render";
-import { arionKindOf, type WidgetDef } from "../../registry";
+import { arionKindOf, widgetsFor, type WidgetDef } from "../../registry";
 import type { PremadeSection } from "../../templates";
 import {
   toDocument, toPayload, toDraftPayload, sectionFromServer, sectionWidget, arionKindOfSection,
@@ -46,7 +46,7 @@ import {
 } from "./siteTemplates";
 import { SiteSectionFields, SiteLockedPanel, type SiteFieldDeps } from "./SiteInspectorExtras";
 import { EMPTY_SITE_CATALOGUE, readSiteCatalogue, type SiteCatalogue } from "./siteCatalogue";
-import { EMPTY_PLAN, readSitePlan, lockFor, canAdd, type SitePlan } from "./sitePlan";
+import { EMPTY_PLAN, readSitePlan, lockFor, canAdd, pickerLock, type SitePlan } from "./sitePlan";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
@@ -336,6 +336,17 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   }, [addFromServer, plan]);
 
   /* ── inserting from the pane ─────────────────────────────────────────── */
+
+  /* Which widgets this plan cannot have, by the BUILDER's name for them.
+     Derived from the one plan reply, never from a tier table here. */
+  const lockedKinds = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const w of widgetsFor("website")) {
+      const lock = pickerLock(plan, arionKindOf, w.kind);
+      if (lock) out[w.kind] = lock;
+    }
+    return out;
+  }, [plan]);
 
   const insertWidget = useCallback((def: WidgetDef, count?: number): boolean => {
     const kind = arionKindOf(def.kind);
@@ -720,6 +731,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     // Hiding it would make "not on your plan" look exactly like a bug, and a
     // business that cannot see what they would get cannot decide to buy it.
     description: canAdd(plan, p.kind) ? p.description : (lockFor(plan, p.kind) as string),
+    // …and the card is GREYED as well as explained (R-D2). The words alone
+    // left a card that looked ready to place and refused after the press.
+    ...(canAdd(plan, p.kind) ? {} : { locked: lockFor(plan, p.kind) as string }),
     tags: p.tags,
     // The gallery places a section by calling build(); the website adapter
     // cannot build one locally (the SERVER does), so this returns a placeholder
@@ -823,6 +837,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         premadeTags={SITE_PREMADE_TAGS}
         onSelectionChange={setSelection}
         onInsertWidget={insertWidget}
+        /* R-D1 — the PANE and the PICKER say so before the press. `insertWidget`
+           above is the seam a shortcut, a slash command and a drag all reach,
+           and it refuses; this is the same answer, shown as a greyed row with
+           the reason as its line, so "not on your plan" never arrives looking
+           like a bug. ONE source: the plan the server sent. */
+        lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
         onAddBlank={(at) => { void addFromServer("content", at); return false; }}
         nextUp={null}

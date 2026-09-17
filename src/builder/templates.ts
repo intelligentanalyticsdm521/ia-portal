@@ -38,6 +38,17 @@ export interface PremadeSection {
   /** Gallery filter chips. */
   tags: string[];
   /**
+   * WHY THIS CLIENT'S PLAN CANNOT HAVE IT — the sentence they read.
+   *
+   * Handoff request R-D2. Absent means it can. A locked card stays IN the
+   * gallery, greyed, with the reason as its line: hiding it would make "not on
+   * your plan" indistinguishable from a section that is missing, and greying
+   * it without the reason would make it indistinguishable from a bug. The
+   * adapter sets it — WHAT is locked is the server's answer, never a tier
+   * table in the engine (adapters/website/sitePlan.ts).
+   */
+  locked?: string;
+  /**
    * ONE section, always.
    *
    * `buildAll` lived here for the ready-made patterns that are a heading and a

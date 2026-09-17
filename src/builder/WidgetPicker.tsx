@@ -55,6 +55,20 @@ export interface WidgetPickerProps {
   footer?: React.ReactNode;
   /** The heading, in the adapter's words. */
   heading?: string;
+  /**
+   * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
+   *
+   * Request R-D1 in the handoff, from the website stream, and this is the
+   * door it was missing. The adapter already refuses at `insertWidget`, so
+   * nothing can be added; without this the row still looked available and the
+   * refusal arrived AFTER the press, which reads as a bug rather than a plan.
+   *
+   * A locked row stays IN the list, greyed, with the reason as its line —
+   * HIDING it would make "not on your plan" indistinguishable from a widget
+   * that is missing. Absent means nothing is locked, which is every builder
+   * but the website one.
+   */
+  lockedKinds?: Record<string, string>;
 }
 
 /**
@@ -230,23 +244,36 @@ export function WidgetPicker(p: WidgetPickerProps) {
                   <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{preset.description}</div>
                 </button>
               ))}
-              {g.widgets.map((w) => (
+              {g.widgets.map((w) => {
+                // R-D1 — a widget this plan cannot have. It stays in the list,
+                // greyed, with the reason as its line, and the press does
+                // nothing: a refusal that arrives after the click reads as a
+                // bug, and a row that is hidden reads as a missing feature.
+                const lock = p.lockedKinds?.[w.kind] ?? null;
+                return (
                 <div key={w.kind}>
-                  <button type="button" data-picker-kind={w.kind} title={widgetTooltip(w, p.adapter)} aria-label={widgetTooltip(w, p.adapter)}
-                    onClick={() => choose(w)}
+                  <button type="button" data-picker-kind={w.kind}
+                    {...(lock ? { "data-picker-locked": lock, disabled: true } : {})}
+                    title={lock || widgetTooltip(w, p.adapter)} aria-label={lock || widgetTooltip(w, p.adapter)}
+                    onClick={() => { if (!lock) choose(w); }}
                     style={{
-                      width: "100%", textAlign: "left", background: "#fff", border: "1px solid #E2E8F0",
-                      borderRadius: 8, padding: 8, cursor: "pointer",
+                      width: "100%", textAlign: "left", background: lock ? "#F8FAFC" : "#fff",
+                      border: "1px solid #E2E8F0",
+                      borderRadius: 8, padding: 8, cursor: lock ? "not-allowed" : "pointer",
+                      opacity: lock ? 0.62 : 1,
                     }}>
                     {/* THE BIG PICTURE — the shape this makes on the page. */}
                     <img src={w.picture} alt="" aria-hidden="true"
                       style={{ display: "block", width: "100%", height: 44, objectFit: "contain", background: "#F2F6F9", borderRadius: 4 }} />
                     <div style={{ fontSize: 12, fontWeight: 600, marginTop: 6, color: "#0B1C24" }}>{widgetLabel(w, p.adapter)}</div>
-                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>{widgetDescription(w, p.adapter)}</div>
+                    <div style={{ fontSize: 10.5, lineHeight: 1.35, color: "#5A7A8A", marginTop: 2 }}>
+                      {lock || widgetDescription(w, p.adapter)}
+                    </div>
                   </button>
 
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

@@ -697,7 +697,9 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
   });
 
   test("the pane drags, the canvas draws the line, the shell holds the payload", () => {
-    assert.match(pane, /draggable=\{!!onDragWidget\}/);
+    // A LOCKED row does not drag either (R-D1): a drag that landed and was
+    // then refused would look like a broken canvas rather than a plan.
+    assert.match(pane, /draggable=\{!!onDragWidget && !lock\}/);
     assert.match(pane, /onDragStart=/);
     assert.match(canvas, /className="bxc-dropline"/);
     assert.match(canvas, /data-drop-index=\{spot\.index\}/);

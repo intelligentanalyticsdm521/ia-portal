@@ -444,8 +444,10 @@ describe("WidgetPane honours SD-010", () => {
   });
 
   test("every widget button carries a tooltip AND an accessible name", () => {
-    assert.match(pane, /title=\{widgetTooltip\(w, adapter\)\}/);
-    assert.match(pane, /aria-label=\{widgetTooltip\(w, adapter\)\}/);
+    // A LOCKED row says the reason instead, which is the accessible name that
+    // matters when the button cannot be pressed (R-D1).
+    assert.match(pane, /title=\{lock \|\| widgetTooltip\(w, adapter\)\}/);
+    assert.match(pane, /aria-label=\{lock \|\| widgetTooltip\(w, adapter\)\}/);
   });
 
   test("it renders the picture, the label and the one line — in THIS builder's words", () => {
@@ -453,7 +455,7 @@ describe("WidgetPane honours SD-010", () => {
     // is now a map of one per builder for anything offered in more than one.
     assert.match(pane, /src=\{w\.picture\}/);
     assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
-    assert.match(pane, /\{widgetDescription\(w, adapter\)\}/);
+    assert.match(pane, /\{lock \|\| widgetDescription\(w, adapter\)\}/);
     assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
   });
 

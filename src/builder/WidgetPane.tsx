@@ -65,6 +65,15 @@ export interface WidgetPaneProps {
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
   /**
+   * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
+   *
+   * The pane's half of request R-D1. Same rule as the picker's: the row stays,
+   * greyed, with the reason as its line, and neither the click nor the DRAG
+   * does anything. A drag that landed and was then refused would look like a
+   * broken canvas rather than a plan.
+   */
+  lockedKinds?: Record<string, string>;
+  /**
    * The line under the search box, in the adapter's words (copy.ts, D-30).
    *
    * "drop it exactly where you want it" is true of a page and of an email, but
@@ -74,7 +83,7 @@ export interface WidgetPaneProps {
   hint?: string;
 }
 
-export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lockedKinds }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   // Which widget is mid-question, and the number showing in its stepper.
 
@@ -137,27 +146,33 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
               {group.task}
             </div>
             <div className="space-y-1.5">
-              {group.widgets.map((w) => (
+              {group.widgets.map((w) => {
+                const lock = lockedKinds?.[w.kind] ?? null;
+                return (
                 <div key={w.kind}>
                   <button
                     type="button"
-                    onClick={() => pick(w)}
+                    onClick={() => { if (!lock) pick(w); }}
+                    disabled={!!lock}
+                    {...(lock ? { "data-widget-locked": lock } : {})}
                     /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. */
-                    title={widgetTooltip(w, adapter)}
-                    aria-label={widgetTooltip(w, adapter)}
+                    title={lock || widgetTooltip(w, adapter)}
+                    aria-label={lock || widgetTooltip(w, adapter)}
                     data-widget-kind={w.kind}
                     /* HTML5 drag, the events Canvas already uses to reorder
                        sections. No library: a second drag mechanism is a
                        second set of rules about what a drop means. */
-                    draggable={!!onDragWidget}
+                    draggable={!!onDragWidget && !lock}
                     onDragStart={(e) => {
+                      if (lock) { e.preventDefault(); return; }
                       e.dataTransfer.effectAllowed = "copy";
                       // Some browsers refuse to start a drag with no payload.
                       e.dataTransfer.setData("text/plain", w.label);
                       onDragWidget?.(w);
                     }}
                     onDragEnd={() => onDragWidget?.(null)}
-                    className="flex w-full items-start gap-2.5 rounded border border-slate-200 bg-white p-2 text-left transition-colors hover:border-slate-400 hover:bg-slate-50"
+                    className={`flex w-full items-start gap-2.5 rounded border border-slate-200 p-2 text-left transition-colors ${
+                      lock ? "cursor-not-allowed bg-slate-50 opacity-60" : "bg-white hover:border-slate-400 hover:bg-slate-50"}`}
                   >
                     {/* The PICTURE: the shape this widget makes on the page. */}
                     <img
@@ -173,13 +188,14 @@ export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint }: Wi
                       </span>
                       {/* ONE line, in a business owner's words. */}
                       <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                        {widgetDescription(w, adapter)}
+                        {lock || widgetDescription(w, adapter)}
                       </span>
                     </span>
                   </button>
 
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

@@ -140,6 +140,17 @@ export interface BuilderShellProps extends InspectorSlots {
    */
   copy?: Partial<BuilderCopy>;
   /**
+   * WIDGETS THIS CLIENT'S PLAN CANNOT HAVE — kind → the sentence they read.
+   *
+   * Handoff request R-D1. The website adapter already refuses at its own
+   * insert seam, which is the door a shortcut, a slash command and a drag all
+   * reach; this is what makes the PANE and the PICKER say so before the press,
+   * so "not on your plan" never arrives looking like a bug. The shell only
+   * carries it — WHAT is locked is the adapter's answer, read from the server
+   * (adapters/website/sitePlan.ts), and no tier table lives in the engine.
+   */
+  lockedKinds?: Record<string, string>;
+  /**
    * WHAT IS STILL MISSING, from the adapter (D-03 / D-35).
    *
    * The engine does not know what a blank is; it owns the two behaviours no
@@ -1096,6 +1107,7 @@ export function BuilderShell(p: BuilderShellProps) {
             onInsert: (def, count) => insertWidget(def, count),
             hint: copy.paneHint,
             onDragWidget: (w) => setDrag(w ? { kind: "new", label: w.kind } : null),
+            ...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {}),
           }}
           navigator={{
             doc,
@@ -1193,6 +1205,7 @@ export function BuilderShell(p: BuilderShellProps) {
               anchor={picker.anchor}
               task={picker.task}
               heading={copy.paneHeading}
+              lockedKinds={p.lockedKinds}
               onPick={pickFromPicker}
               onPickBox={pickBoxFromPicker}
               onClose={() => setPicker(null)}
@@ -1203,6 +1216,7 @@ export function BuilderShell(p: BuilderShellProps) {
               adapter={p.adapter}
               anchor={slash.rect}
               query={slash.query}
+              lockedKinds={p.lockedKinds}
               heading="Type to find it, then press Enter"
               onPick={() => slashCommit()}
               onClose={() => setSlash(null)}
