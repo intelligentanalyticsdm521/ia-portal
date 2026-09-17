@@ -61,7 +61,11 @@ import type { PremadeSection } from "./templates";
 import { FLASH_MS, insertSpotFor, type InsertSpot } from "./insertPosition";
 import { resolveCopy, type BuilderCopy } from "./copy";
 import { PROBLEMS_CTA, firstWithFocus, focusSelector, type BuilderProblem } from "./problems";
-import { markFirstRunSeen, readFirstRun, shouldShowFirstRun } from "./firstRunModel";
+import { builderTipsAfterClose, shouldShowFirstRun } from "./firstRunModel";
+// D-154 — the welcome box is a PERSON's switch, kept server-side, so it is the
+// same answer on every computer they sign in on. There is no localStorage key
+// behind it any more.
+import { usePreference } from "../prefs/preferencesContext";
 import { EMPTY_PAGE_CHOICES, type WidgetTask } from "./widgetTasks";
 import type { BuilderAction } from "./shortcuts";
 
@@ -337,13 +341,31 @@ export function BuilderShell(p: BuilderShellProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.resetKey]);
 
-  /** The three sentences, once per browser. Replayed from the "?" in the header. */
+  /**
+   * The three sentences, on EVERY open while this person wants the tips
+   * (D-154). Replayed from the "?" in the header whatever the switch says.
+   */
+  const { value: builderTipsOn, set: setBuilderTips } = usePreference("tutorials.builderTips");
   useEffect(() => {
     if (!p.open) return;
-    if (shouldShowFirstRun(readFirstRun())) setFirstRun(true);
-  }, [p.open]);
+    if (shouldShowFirstRun(builderTipsOn)) setFirstRun(true);
+  }, [p.open, builderTipsOn]);
 
-  const closeFirstRun = useCallback(() => { markFirstRunSeen(); setFirstRun(false); }, []);
+  /**
+   * Closed. `dontShowAgain` is the checkbox on the box: ticked, it turns the
+   * person's "Builder tips" switch off — server-side, so the next builder on
+   * any computer they sign in on opens straight onto the canvas. A save we
+   * could not make is logged and NOT pretended away; the box simply opens
+   * again next time, which is the honest outcome.
+   */
+  const closeFirstRun = useCallback((dontShowAgain: boolean) => {
+    setFirstRun(false);
+    const next = builderTipsAfterClose(dontShowAgain);
+    if (next === null) return;
+    void setBuilderTips(next).catch((err) => {
+      console.warn("[builder] could not turn Builder tips off", err);
+    });
+  }, [setBuilderTips]);
 
   /**
    * The adapter's refusal becomes the engine's toast, at its own control.

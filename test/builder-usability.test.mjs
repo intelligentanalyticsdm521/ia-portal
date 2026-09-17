@@ -51,7 +51,7 @@ import {
   matchesWidgetQuery, taskFor, unmappedCategories,
 } from "../src/builder/widgetTasks.ts";
 import {
-  FIRST_RUN_KEY, FIRST_RUN_STEPS, nextStep, readFirstRun, shouldShowFirstRun,
+  FIRST_RUN_STEPS, nextStep, shouldShowFirstRun,
 } from "../src/builder/firstRunModel.ts";
 import {
   PROBLEMS_CTA, anchorSelector, firstWithFocus, focusSelector, problemsLabel,
@@ -418,26 +418,32 @@ describe("the widget picker groups by the job (D-147)", () => {
    6. the first run, the problems, the copy
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("the first run is shown once and can be replayed", () => {
+describe("the welcome box shows until the person says stop (D-154)", () => {
   test("three steps, and the last one is the last", () => {
     assert.equal(FIRST_RUN_STEPS.length, 3);
     assert.equal(nextStep(0), 1);
     assert.equal(nextStep(2), null);
   });
 
-  test("the key is versioned, so a rewritten walk-through can be shown again", () => {
-    assert.match(FIRST_RUN_KEY, /\.v\d+$/);
+  test("it opens on EVERY builder open while Builder tips are on", () => {
+    assert.equal(shouldShowFirstRun(true), true);
+    // Not loaded yet is not "no": the switch defaults on, so a builder opened
+    // in the first half-second behaves like one opened later.
+    assert.equal(shouldShowFirstRun(undefined), true);
   });
 
-  test("nothing stored means show it; anything stored means do not", () => {
-    assert.equal(shouldShowFirstRun(null), true);
-    assert.equal(shouldShowFirstRun(""), true);
-    assert.equal(shouldShowFirstRun("2026-09-17T00:00:00.000Z"), false);
+  test("only an explicit off keeps it away", () => {
+    assert.equal(shouldShowFirstRun(false), false);
   });
 
-  test("a private window throws and the builder still opens", () => {
-    const hostile = { getItem() { throw new Error("SecurityError"); } };
-    assert.equal(readFirstRun(hostile), null);
+  test("nothing in this module reads or writes a browser store any more", () => {
+    // The once-per-browser key is DELETED, not deprecated. A second mechanism
+    // would disagree with the server switch the first time somebody used two
+    // computers - which is the defect D-154 was raised about.
+    const code = withoutComments(readSrc("builder/firstRunModel.ts"));
+    assert.ok(!/localStorage/.test(code), "firstRunModel still touches localStorage");
+    assert.ok(!/getItem|setItem/.test(code));
+    assert.ok(!/FIRST_RUN_KEY/.test(code));
   });
 
   test("the steps name no other product", () => {

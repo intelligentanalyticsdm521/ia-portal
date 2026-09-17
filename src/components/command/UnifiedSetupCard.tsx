@@ -16,6 +16,10 @@ import { useOliverApi } from "../../hooks/useOliverApi";
 import { OnboardingWizardModal } from "../consulting/OnboardingWizardModal";
 import { WalkthroughRunner } from "../walkthroughs/WalkthroughRunner";
 import { findWalkthrough, Walkthrough } from "../walkthroughs/walkthroughRegistry";
+// D-154 — the welcome walk-through is a PERSON's switch. This queue is the one
+// thing on the platform that starts a tour on its own, so this is what
+// Settings > Tutorials > "Welcome walk-through" turns off.
+import { usePreference } from "../../prefs/preferencesContext";
 
 interface OnboardingProgress {
   state?: Record<string, unknown> | null;
@@ -31,6 +35,7 @@ type ProductKey = "arion" | "spark" | "oliver" | "consulting";
 export function UnifiedSetupCard() {
   const { activeTenantId } = useAppState();
   const { getFounder, ready } = useOliverApi();
+  const { value: welcomeWalkthroughOn } = usePreference("tutorials.welcomeWalkthrough");
   const [progress, setProgress] = useState<OnboardingProgress | null>(null);
   const [reachable, setReachable] = useState<boolean | null>(null);
   const [open, setOpen] = useState(false);
@@ -155,6 +160,10 @@ export function UnifiedSetupCard() {
           // Build a walkthrough queue based on what the tenant has access to.
           // We use the same prefill.cart that drove the modal sections, so
           // the user sees walkthroughs for every product they actually bought.
+          // D-154: they asked not to be walked through anything. Setup still
+          // finishes; nothing starts by itself. Every one of these is still on
+          // Settings > Tutorials to run when they want it.
+          if (!welcomeWalkthroughOn) return;
           const cart: string[] = Array.isArray(progress?.prefill?.cart) ? (progress!.prefill!.cart as string[]) : [];
           const queue: Walkthrough[] = [];
           if (cart.includes("arion")) {

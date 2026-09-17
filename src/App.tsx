@@ -5,6 +5,11 @@ import { AppStateProvider } from './app/AppState';
 // Identity repaints every builder on screen without a reload
 // (BUILDER_PLATFORM_SCOPE_2026-09-15 §2, step 0).
 import { BrandKitProvider } from './brand/BrandKitProvider';
+// D-154 — the signed-in person's own switches (Tutorials). One fetch for the
+// whole shell, inside AppStateProvider because it needs the active business,
+// and outside Routes so turning "Builder tips" on in Settings reaches the next
+// builder that opens without a reload.
+import { PreferencesProvider } from './prefs/PreferencesProvider';
 
 import { LandingPage } from './pages/LandingPage';
 import { DEV_AUTH } from './lib/devAuth';
@@ -74,8 +79,7 @@ import SparkLeadGenTermsPage from './pages/spark/SparkLeadGenTermsPage';
 import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
 import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
 import SparkSyncIssuesPage from './pages/spark/SparkSyncIssuesPage';
-import WalkthroughsPage from './pages/settings/WalkthroughsPage';
-import SettingsToursPage from './pages/settings/SettingsToursPage';
+import SettingsTutorialsPage from './pages/settings/SettingsTutorialsPage';
 
 // Platform admin: team access (role + product gating)
 import { PlatformTeamAccess } from './pages/settings/PlatformTeamAccess';
@@ -178,6 +182,7 @@ export function App() {
     <BrowserRouter>
       <AppStateProvider>
         <BrandKitProvider>
+        <PreferencesProvider>
         <Routes>
           {/* Public routes. Under VITE_DEV_AUTH=1 the bare root goes straight
               into the app — the sign-in landing must never render in local dev
@@ -271,8 +276,12 @@ export function App() {
             <Route path="settings/plan-pricing" element={<PlanPricingSettingsPage />} />
             <Route path="settings/team-members" element={<TeamMembersSettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsSettingsPage />} />
-            <Route path="settings/walkthroughs" element={<WalkthroughsPage />} />
-            <Route path="settings/tours" element={<SettingsToursPage />} />
+            <Route path="settings/tutorials" element={<SettingsTutorialsPage />} />
+            {/* D-154 — Tours and Walkthroughs were two pages for one job, and a
+                third for the switches would have made it three. One page now;
+                both old addresses land on it so bookmarks keep working. */}
+            <Route path="settings/tours" element={<Navigate to="/app/settings/tutorials" replace />} />
+            <Route path="settings/walkthroughs" element={<Navigate to="/app/settings/tutorials" replace />} />
             <Route path="settings/data-privacy" element={<DataPrivacySettingsPage />} />
             <Route path="settings/argus-data-plan" element={<ArgusDataPlanPage />} />
             <Route path="settings/phone-texting" element={<PhoneTextingSettingsPage />} />
@@ -529,6 +538,7 @@ export function App() {
           {/* Fallback */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </PreferencesProvider>
         </BrandKitProvider>
       </AppStateProvider>
     </BrowserRouter>
