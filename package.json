@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "node --import ./scripts/test-ts-loader.mjs --test test",
+    "ratchet:native-dialogs": "node scripts/dev/regen-native-dialog-ratchet.mjs",
     "dev:hestia2": "vite --mode hestia2 --port 5176 --strictPort --host ::",
     "dev:builder": "vite --port 5173 --strictPort --host ::",
     "dev:builder1b": "vite --port 5175 --strictPort --host ::",
