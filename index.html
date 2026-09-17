@@ -5,6 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>IADM Portal</title>
 
+    <!-- THE TAB ICON. `favicon.svg` is the real IA network mark and is listed
+         FIRST on purpose: a browser that understands SVG takes it and stops,
+         and the .ico / .png below are the fallbacks for one that does not.
+         (Production hotfix e8da40d, 2026-09-17.)
+
+         MERGE 2026-09-17 — the release line also had
+             <link rel="icon" type="image/svg+xml" href="/icon-ia.svg" />
+         here. That file is the plain "IA" lettering tile the PWA work added for
+         Home Screen use, and a second rel="icon" SVG competes with this one for
+         the tab: the browser picks one, and the one it picked was the wrong
+         icon — which is the whole reason the hotfix exists. One tab icon, one
+         file. icon-ia.svg keeps its jobs in manifest.webmanifest and sw.js,
+         where it is the install/notification icon and not the tab. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
     <!-- Foundation A2 (web push). iOS/iPadOS only deliver a push to a site
          that has been added to the Home Screen, and Safari only offers "Add to
          Home Screen" as an app when there is a manifest — so this link is not
@@ -22,7 +37,6 @@
          correct — there is only one of it. -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="icon" type="image/svg+xml" href="/icon-ia.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
