@@ -415,6 +415,11 @@ export const TYPOGRAPHIC_KINDS: ReadonlySet<string> = new Set([
   "heading", "paragraph", "list", "callout", "button", "key_facts", "key_value_table",
   "testimonial", "doc_header", "footer_note", "merge_field", "personal_note", "clauses",
   "quote", "site_heading", "site_paragraph", "site_list", "site_button", "site_text",
+  // D-156's atomic widgets. Every one of them is words on a page — a card's
+  // name and price, a priced line, a label and its answer, a total — so every
+  // one of them gets the Typography group, which is the whole promise of
+  // §11.12's "its own Content / Typography / Spacing / Advanced".
+  "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
 ]);
 
 export function isTypographic(kind: string): boolean {

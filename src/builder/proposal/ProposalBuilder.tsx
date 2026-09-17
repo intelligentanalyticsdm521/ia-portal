@@ -47,9 +47,15 @@ import { NameBlockDialog } from "../NameBlockDialog";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
-  basisOf, buildPick, cadenceOf, fmtMoney,
+  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker,
   type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
+/* D-156 — the atomic widgets. The adapter owns the controls only it can draw:
+   which product, which location, the business's tax rate and a coupon code. */
+import {
+  TAG_COLOURS, TAG_PRESETS, bindingOf, findInCatalogue, resolveCatalogCard, snapshotFrom, tagOf,
+} from "../widgets";
+import { documentMoneySettings, totalsSettings } from "../totals";
 
 export interface ProposalApi {
   get: <T>(p: string) => Promise<T>;
@@ -118,8 +124,18 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     const d = new Date(); d.setDate(d.getDate() + 30);
     return d.toISOString().slice(0, 10);
   });
+  // What the proposal ROW arrived with. D-156 moved the two numbers onto the
+  // Totals widget — see `docMoney` below — and these are what a document
+  // written before that keeps until somebody touches the Totals panel.
   const [taxRate, setTaxRate] = useState("0");
   const [discount, setDiscount] = useState("0");
+  /**
+   * The business's own sales-tax rate, for the Totals panel's "Add tax".
+   *
+   * Read ONCE, like the catalogue, and written onto the widget when it is
+   * used — never looked up at render time. See widgets/totals.ts for why.
+   */
+  const [businessTax, setBusinessTax] = useState<{ percent: number; label: string } | null>(null);
 
   /* ── The document ────────────────────────────────────────────────────── */
   const [doc, setDoc] = useState<BuilderDocument>(() => emptyDocument());
@@ -215,6 +231,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       .catch(() => setOfferings([]))
       .finally(() => setCatalogueLoading(false));
     api.get<any>("/proposal-builder/clauses").then((r) => setClauses(rows<ClauseRow>(r))).catch(() => setClauses([]));
+    // The business's default sales-tax rate. A business that has not set one
+    // up answers 0 and the Totals panel says so in words rather than showing
+    // a rate nobody typed.
+    api.get<any>("/proposal-builder/money-settings")
+      .then((r) => {
+        const d = (r && typeof r === "object" && "data" in r ? (r as any).data : r) || {};
+        setBusinessTax({ percent: Number(d.tax_rate_percent) || 0, label: String(d.tax_rate_name || "") });
+      })
+      .catch(() => setBusinessTax({ percent: 0, label: "" }));
     api.get<any>("/proposal-templates").then((r) => setSavedTemplates(rows<any>(r).map((t: any) => ({
       id: t.proposal_template_id || t.template_id, name: t.name, description: t.description,
       document: t.document, body: t.body,
@@ -365,6 +390,86 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       .map((r) => (r.token === token ? { ...r, value } : r))));
   }, [autoMerge]);
 
+  /**
+   * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
+   *
+   * The NUMBER always lives on the widget, because the customer's page and the
+   * PDF are drawn by a server with no tax table. The MODE says whether to keep
+   * it up to date, and this is where that happens: once, when the business's
+   * rate has arrived and the document is in hand. A draft opened after the
+   * rate changed shows the new one; a document set to a rate of its own is
+   * never touched.
+   */
+  useEffect(() => {
+    if (!businessTax) return;
+    setDoc((d) => {
+      let changed = false;
+      const next = {
+        ...d,
+        sections: d.sections.map((sec) => ({
+          ...sec,
+          columns: sec.columns.map((c) => ({
+            ...c,
+            widgets: c.widgets.map((w) => {
+              if (w.kind !== "totals") return w;
+              const st = totalsSettings(w.props);
+              if (st.taxMode !== "business") return w;
+              if (st.taxRatePercent === businessTax.percent && st.taxLabel === businessTax.label) return w;
+              changed = true;
+              return { ...w, props: { ...w.props, taxRatePercent: businessTax.percent, taxLabel: businessTax.label } };
+            }),
+          })),
+        })),
+      };
+      return changed ? next : d;
+    });
+  }, [businessTax]);
+
+  /* ── The document's money ────────────────────────────────── */
+  //
+  // ONE MECHANISM (D-157): tax and discount are set on the Totals widget, and
+  // the proposal row's `tax_rate` / `discount_amount` follow from it. The two
+  // state variables below are what the row arrived with, and they are used
+  // only while no Totals widget declares anything — which is every document
+  // written before today.
+  const docMoney = useMemo(
+    () => documentMoneySettings(doc)
+      ?? { taxRate: Number(taxRate) / 100, discount: Number(discount) || 0 },
+    [doc, taxRate, discount],
+  );
+
+  /**
+   * WHAT A COUPON CODE IS WORTH — a READ, never a redemption.
+   *
+   * `POST /coupons/apply` redeems: it stamps an invoice or a quote, bumps
+   * `times_redeemed` and writes a redemption row. A proposal being written is
+   * none of those things, and a builder that redeemed a coupon every time
+   * somebody typed a code into a draft would burn a business's redemption
+   * limit on documents that were never sent. So this asks what the coupon is
+   * worth, and the discount is written onto the Totals widget as a number the
+   * document carries.
+   */
+  const lookupCoupon = useCallback(async (code: string): Promise<CouponLookup> => {
+    const clean = String(code || "").trim();
+    if (!clean) return { ok: false, message: "Type the code first." };
+    try {
+      const r = await api.get<any>(`/proposal-builder/coupons/${encodeURIComponent(clean)}`);
+      const d = (r && typeof r === "object" && "data" in r ? (r as any).data : r) || {};
+      if (!d.code) return { ok: false, message: "We could not find that code." };
+      return {
+        ok: true,
+        coupon: {
+          code: String(d.code),
+          percentOff: d.percent_off == null ? null : Number(d.percent_off),
+          amountOff: d.amount_off == null ? null : Number(d.amount_off),
+        },
+      };
+    } catch (e: any) {
+      const msg = String(e?.message || "");
+      return { ok: false, message: msg.includes("404") ? "We could not find that code." : "That code could not be checked just now." };
+    }
+  }, [api]);
+
   /* ── The one render context ──────────────────────────────────────────── */
   const ctx: RenderContext = useMemo(() => {
     // The typed Details first, the customer pick over the top: the customer's
@@ -383,6 +488,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     return makeContext(doc, {
       mode: "edit",
       merge,
+      // The catalogue a Product card shows its LIVE price from. Loaded once
+      // when the builder opens; a card falls back to its own snapshot when it
+      // is absent, which is what the customer's page and the PDF do.
+      catalogue: offerings,
       accent: doc.settings.accent || identity.accent || kit.colours.primary,
       headingFont: doc.settings.headingFont || kit.fonts.heading,
       bodyFont: doc.settings.bodyFont || kit.fonts.body,
@@ -393,13 +502,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
-      totals: documentTotals(doc, { taxRate: Number(taxRate) / 100, discount: Number(discount) || 0 }),
+      totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
       // different sections.
       ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, autoMerge, locations, kit, identity, taxRate, discount, revision, diff]);
+  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff]);
 
   const totals = ctx.totals;
 
@@ -474,11 +583,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [kit, savedTemplates, startFromSaved, startFromTemplate]);
 
   /* ── Saving ──────────────────────────────────────────────────────────── */
-  const wire = useCallback(() => toWire(doc, {
-    ...ctx, mode: "view",
-    taxRate: Number(taxRate) / 100,
-    discount: Number(discount) || 0,
-  }), [ctx, discount, doc, taxRate]);
+  const wire = useCallback(() => toWire(doc, { ...ctx, mode: "view", ...docMoney }),
+    [ctx, doc, docMoney]);
 
   const blanks = useMemo(() => {
     const texts: string[] = [];
@@ -549,8 +655,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         blocks: w.blocks,
         document: w.document,
         line_items: w.line_items,
-        tax_rate: Number(taxRate) / 100,
-        discount_amount: Number(discount) || 0,
+        tax_rate: docMoney.taxRate,
+        discount_amount: docMoney.discount,
         valid_until: validUntil || null,
         // The chips the author ticked, PLUS every location a property block or
         // a service plan on the page actually refers to. Accepting opens a job
@@ -645,8 +751,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         blocks: w.blocks,
         scope_html: w.scope_html || null,
         line_items: w.line_items,
-        tax_rate: Number(taxRate) / 100,
-        discount_amount: Number(discount) || 0,
+        tax_rate: docMoney.taxRate,
+        discount_amount: docMoney.discount,
       });
       const url = (sent as any)?.data?.public_url || (sent as any)?.public_url;
       onSaved(`Revision v${revMeta?.document_version ?? 2} sent — they must sign it again.${url ? ` Their link is ${url}` : ""}`);
@@ -734,6 +840,17 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         doc={doc}
         onChange={setDoc}
         ctx={ctx}
+        /* D-156 — a ready-made section that is MORE THAN ONE section.
+           "Choose your plan" is a heading and a line of copy with a ROW of
+           cards under them, and today's model gives a section one set of
+           columns, so the pattern is two sections until nested containers
+           land. Returning false tells the shell this adapter placed it. */
+        onPlaceSection={(premade, at) => {
+          const all = premade.buildAll?.();
+          if (!all || all.length < 2) return true;
+          setDoc((d) => all.reduce((acc, section, i) => addSection(acc, section, at + i), d));
+          return false;
+        }}
         /* N-1 — the engine's problems mechanism, on the surface that needed it
            most. The counter in the pane, the jump, and the refusal beside the
            button that was pressed all come from these three props. */
@@ -810,6 +927,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
             offerings={offerings} clauses={clauses} locations={locations}
             catalogueLoading={catalogueLoading}
+            businessTax={businessTax} lookupCoupon={lookupCoupon}
             onSaveClause={async (c) => {
               const saved = await api.post<any>("/proposal-builder/clauses", c);
               setClauses((prev) => [...prev.filter((x) => x.clause_key !== c.clause_key), (saved as any)]);
@@ -1166,11 +1284,16 @@ function CustomerBar({
 
 function WidgetExtras({
   widget, sectionId, doc, onChange, offerings, clauses, locations, catalogueLoading,
+  businessTax, lookupCoupon,
   onSaveClause, onSeedClauses, onLoadPropertyFields, onSavePropertyFields,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
+  /** The business's own sales-tax rate, for the Totals panel. */
+  businessTax: { percent: number; label: string } | null;
+  /** Read-only: what a coupon code is worth. It is never redeemed from here. */
+  lookupCoupon: (code: string) => Promise<CouponLookup>;
   /** M-24 — the catalogue read has not settled yet. */
   catalogueLoading?: boolean;
   onSaveClause: (c: ClauseRow) => Promise<void>;
@@ -1196,7 +1319,8 @@ function WidgetExtras({
   // A property block needs BOTH: which location it is, and what is being done
   // there. The location picker used to sit in a later branch that an early
   // return never reached, so a block could be priced but never placed.
-  const locationPicker = (widget.kind === "property_plan" || widget.kind === "property_block") ? (
+  const locationPicker = (widget.kind === "property_plan" || widget.kind === "property_block"
+    || widget.kind === "address_block") ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={LBL}>Which location</span>
@@ -1232,6 +1356,63 @@ function WidgetExtras({
       )}
     </div>
   ) : null;
+
+  /* ── D-156's atomic widgets ─────────────────────────────────── */
+
+  if (widget.kind === "card") {
+    return <TagControls widget={widget} patch={patch} />;
+  }
+
+  if (widget.kind === "catalog_card") {
+    return (
+      <CatalogCardPanel
+        widget={widget} sectionId={sectionId} doc={doc} onChange={onChange}
+        offerings={offerings} catalogueLoading={catalogueLoading} patch={patch}
+      />
+    );
+  }
+
+  if (widget.kind === "price_line") {
+    return (
+      <>
+        <CatalogPicker
+          offerings={offerings}
+          loading={catalogueLoading}
+          label="Fill from Products &amp; Services"
+          onPick={(o, price) => {
+            const pick = buildPick(o, price);
+            patch({
+              name: pick.parts.name, description: pick.parts.description,
+              bullets: pick.parts.features, unit_price: pick.parts.unit_price,
+              offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
+              cadence: pick.parts.cadence,
+            });
+          }}
+        />
+        <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ ...FIELD_COL, flex: 1 }}>
+            <span style={LBL}>How many</span>
+            <input type="number" min={0} step="1" style={INPUT} data-price-qty="1"
+              title="How many of these the customer is buying"
+              value={Number(p.quantity ?? 1)}
+              onChange={(e) => patch({ quantity: Number(e.target.value) || 0 })} />
+          </div>
+          <div style={{ ...FIELD_COL, flex: 1 }}>
+            <span style={LBL}>Price each</span>
+            <input type="number" min={0} step="0.01" style={INPUT} data-price-unit="1"
+              title="What one of them costs. The line and the total follow it."
+              value={Number(p.unit_price ?? 0)}
+              onChange={(e) => patch({ unit_price: Number(e.target.value) || 0 })} />
+          </div>
+        </div>
+        <TagControls widget={widget} patch={patch} />
+      </>
+    );
+  }
+
+  if (widget.kind === "totals") {
+    return <TotalsPanel widget={widget} patch={patch} businessTax={businessTax} lookupCoupon={lookupCoupon} />;
+  }
 
   if (widget.kind === "pricing_table" || widget.kind === "priced_line" || widget.kind === "property_block") {
     return (
@@ -1617,60 +1798,318 @@ function ComparisonCardsPanel({
    engine now selects the widget, scrolls the canvas to it and puts the caret in
    this adapter's Details box through `onFocusProblem`. One jump, not two. */
 
-function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel, loading }: {
-  offerings: CatalogOffering[]; label: string;
-  onPick: (o: CatalogOffering, price: CatalogPrice | null) => void;
-  /** Offered only where adding every tier at once makes sense (tier cards). */
-  onPickAll?: (o: CatalogOffering) => void;
-  bulkLabel?: (o: CatalogOffering) => string;
-  /** M-24 — still on its way. Says so instead of reading "nothing here". */
-  loading?: boolean;
-}) {
-  const [q, setQ] = useState("");
-  const list = useMemo(() => offerings.filter((o) => !q.trim() || o.name.toLowerCase().includes(q.trim().toLowerCase())), [offerings, q]);
+/* ══════════════════════════════════════════════════════════════════════════
+   D-156 — the panels the atomic widgets need, and only the adapter can draw
+   ══════════════════════════════════════════════════════════════════════════
+
+   A widget's own fields are typed ON THE PAGE (every run with a `data-edit`
+   path) or in the shared inspector's Content group. What is here is the three
+   things the ENGINE cannot know: which of THIS business's products a card is
+   bound to, what THIS business's tax rate is, and what a coupon code of theirs
+   is worth. Exactly the reasoning D-33 settled for "Which location". */
+
+export interface CouponLookup {
+  ok: boolean;
+  message?: string;
+  coupon?: { code: string; percentOff: number | null; amountOff: number | null };
+}
+
+const FIELD_COL: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
+
+/**
+ * ADD A TAG TO THIS CARD (D-157).
+ *
+ * Brandon: *"cards has a recommended section … add tag to this card … Best
+ * Price & Most Popular"*. Three presets because those are the three he named,
+ * a free-text box because the fourth one is somebody's own words, and a colour
+ * beside it because "Best Price" in the same blue as everything else is not a
+ * tag anybody notices. "Your brand colour" is the default and the first
+ * choice, so a tag belongs to the business unless it is meant to shout.
+ */
+function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<string, unknown>) => void }) {
+  const tag = tagOf(widget.props);
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span style={LBL}>{label}</span>
-      <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your services…"
-        title="Search Products & Services" data-catalog-search="1" />
-      <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-        {loading && !offerings.length && (
-          <div data-catalogue-loading="1" style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
-            Loading your catalogue…
+    <div style={FIELD_COL}>
+      <span style={LBL}>Tag on this card</span>
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {TAG_PRESETS.map((preset) => (
+          <button key={preset.text} type="button" data-tag-preset={preset.text}
+            style={{
+              ...miniBtn,
+              background: tag?.text === preset.text ? "#0B6E8C" : "#fff",
+              color: tag?.text === preset.text ? "#fff" : "#334155",
+            }}
+            title={`Put “${preset.text}” on this card`}
+            onClick={() => patch({ tag: { text: preset.text, colour: preset.colour }, recommended: false })}>
+            {preset.text}
+          </button>
+        ))}
+        <button type="button" data-tag-clear="1" style={miniBtn} title="Take the tag off this card"
+          onClick={() => patch({ tag: null, recommended: false })}>No tag</button>
+      </div>
+      <input style={INPUT} value={tag?.text || ""} data-tag-text="1"
+        placeholder="Or type your own — “Best for corner lots”"
+        title="The words on the ribbon at the top of the card"
+        onChange={(e) => {
+          const text = e.target.value;
+          patch({ tag: text.trim() ? { text, colour: tag?.colour || "" } : null, recommended: false });
+        }} />
+      {tag && (
+        <select style={INPUT} value={tag.colour || ""} data-tag-colour="1"
+          title="The colour of the ribbon"
+          onChange={(e) => patch({ tag: { text: tag.text, colour: e.target.value } })}>
+          {TAG_COLOURS.map((c) => <option key={c.label} value={c.value}>{c.label}</option>)}
+        </select>
+      )}
+    </div>
+  );
+}
+
+/**
+ * THE PRODUCT CARD — bound to the catalogue, live, with "Use this plan".
+ *
+ * Brandon: *"product cards where they can directly load products/services from
+ * their actual Product Catalog"*. Picking a product writes the BINDING plus a
+ * snapshot of what the catalogue said; the card draws the live figure whenever
+ * the builder is holding the catalogue and the snapshot everywhere else (the
+ * customer's page and the PDF, where there is no catalogue in the request).
+ *
+ * "Use this plan" is unchanged in meaning from the old tier block: the card is
+ * an OFFER and never sums, and pressing this puts a `price_line` under it —
+ * which is money, and which the total counts. Pressing it on a second card
+ * replaces the line rather than adding one, because the customer buys one.
+ */
+function CatalogCardPanel({
+  widget, sectionId, doc, onChange, offerings, catalogueLoading, patch,
+}: {
+  widget: Widget; sectionId: string; doc: BuilderDocument;
+  onChange: (d: BuilderDocument) => void;
+  offerings: CatalogOffering[];
+  catalogueLoading?: boolean;
+  patch: (props: Record<string, unknown>) => void;
+}) {
+  const p: any = widget.props || {};
+  const binding = bindingOf(p);
+  const resolved = resolveCatalogCard(p, offerings);
+  const live = findInCatalogue(binding, offerings);
+
+  const bind = (o: CatalogOffering, price: CatalogPrice | null) => patch({
+    offeringId: o.offering_id,
+    priceId: price?.price_id || "",
+    snapshot: snapshotFrom(o, price),
+  });
+
+  const usePlan = () => {
+    const line = makeWidget("price_line", {
+      name: resolved.title,
+      description: resolved.description,
+      bullets: resolved.bullets,
+      quantity: 1,
+      unit_price: resolved.amount,
+      cadence: resolved.cadence,
+      ...(binding?.offeringId ? { offering_id: binding.offeringId } : {}),
+      ...(binding?.priceId ? { price_id: binding.priceId } : {}),
+      fromCards: widget.id,
+    });
+    // Any line this card put down before goes first — one card, one line.
+    const next: BuilderDocument = {
+      ...doc,
+      sections: doc.sections.map((sec) => ({
+        ...sec,
+        columns: sec.columns.map((c) => ({
+          ...c,
+          widgets: c.widgets.filter((w) => (w.props as any)?.fromCards !== widget.id),
+        })),
+      })),
+    };
+    const sec = next.sections.find((x) => x.id === sectionId);
+    let columnIndex = 0;
+    let at = 0;
+    sec?.columns.forEach((c, ci) => {
+      const idx = c.widgets.findIndex((w) => w.id === widget.id);
+      if (idx >= 0) { columnIndex = ci; at = idx + 1; }
+    });
+    onChange(addWidget(next, sectionId, columnIndex, line, at));
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <CatalogPicker
+        offerings={offerings}
+        loading={catalogueLoading}
+        label={binding ? "Load a different product or service" : "Load one of your products or services"}
+        onPick={bind}
+      />
+
+      {binding && (
+        <>
+          <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }} data-catalog-source={resolved.source}>
+            {resolved.source === "live"
+              ? `Showing ${live?.offering.name} at today's catalogue price. Change the price in Products & Services and this card follows it.`
+              : "This card is showing the price it was loaded with — your catalogue is not open here. Reopen the builder to refresh it."}
           </div>
-        )}
-        {!loading && !offerings.length && (
-          <div style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
-            Nothing in Products &amp; Services yet. Add what you sell there and it is here every time.
-          </div>
-        )}
-        {list.map((o) => (
-          <div key={o.offering_id} data-offering={o.offering_id}>
-            <div style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
-              {(o.prices?.length ? o.prices : [null]).map((pr, i) => (
-                <button key={pr?.price_id || i} type="button" style={{ ...miniBtn, padding: "2px 7px", fontSize: 10 }}
-                  title={pr ? `Adds at ${fmtMoney(Number(pr.unit_amount ?? 0))}${cadenceOf(pr) ? `, ${cadenceOf(pr)}` : ""} — the basis is written onto the line` : "No catalogue price — starts at $0 and you type it"}
-                  onClick={() => onPick(o, pr)}>
-                  {pr ? `${pr.label ? `${pr.label} · ` : ""}${fmtMoney(Number(pr.unit_amount ?? 0))}` : "No price — type one"}
+          <button type="button" style={miniBtn} data-use-plan={widget.id}
+            title="Put this plan on the document as a priced line, so it counts towards the total"
+            onClick={usePlan}>
+            Use this plan
+          </button>
+          {resolved.overridden.length > 0 && (
+            <button type="button" style={miniBtn} data-clear-overrides="1"
+              title="Throw away the words you typed over this card and show the catalogue's own again"
+              onClick={() => patch({ overrides: {} })}>
+              Back to the catalogue’s words
+            </button>
+          )}
+          {/* The Binding section's `refresh` (catalogue F.2). A document a
+              customer has been sent must keep the price they were quoted;
+              a draft being written should follow the catalogue. */}
+          <div style={FIELD_COL}>
+            <span style={LBL}>Keep the price up to date</span>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {([["live", "Follow the catalogue"], ["snapshot", "Keep this price"]] as const).map(([mode, label]) => (
+                <button key={mode} type="button" data-refresh={mode}
+                  style={{
+                    ...miniBtn,
+                    background: resolved.refresh === mode ? "#0B6E8C" : "#fff",
+                    color: resolved.refresh === mode ? "#fff" : "#334155",
+                  }}
+                  title={mode === "live"
+                    ? "Change the price in Products & Services and this card follows it"
+                    : "Pin the figures as they are now — what a customer was quoted must not move under them"}
+                  onClick={() => patch({ refresh: mode })}>
+                  {label}
                 </button>
               ))}
-              {onPickAll && (o.prices?.length ?? 0) > 1 && (
-                <button type="button" data-add-all={o.offering_id}
-                  style={{ ...miniBtn, padding: "2px 7px", fontSize: 10, borderColor: "#0B6E8C", color: "#0B6E8C" }}
-                  title={`Add every priced tier of ${o.name} as its own card, filled from the catalogue`}
-                  onClick={() => onPickAll(o)}>
-                  {bulkLabel ? bulkLabel(o) : `Add all ${o.prices?.length}`}
-                </button>
-              )}
             </div>
           </div>
-        ))}
-        {!list.length && <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>}
+          <button type="button" style={miniBtn} data-unbind="1"
+            title="Stop this card following a product. What is on it stays as typed words."
+            onClick={() => patch({ offeringId: "", priceId: "" })}>
+            Unlink from the catalogue
+          </button>
+        </>
+      )}
+
+      <TagControls widget={widget} patch={patch} />
+    </div>
+  );
+}
+
+/**
+ * THE TOTALS PANEL — subtotal, tax rate, discount, coupon (D-157).
+ *
+ * Every number typed here is written ONTO the widget, never looked up at
+ * render time: the customer's page and the signed PDF are drawn by a server
+ * holding no tax table and no coupon table, and a figure that only existed in
+ * the editor is the defect §11.10 recorded twice over.
+ */
+function TotalsPanel({ widget, patch, businessTax, lookupCoupon }: {
+  widget: Widget;
+  patch: (props: Record<string, unknown>) => void;
+  businessTax: { percent: number; label: string } | null;
+  lookupCoupon: (code: string) => Promise<CouponLookup>;
+}) {
+  const s = totalsSettings(widget.props);
+  const [code, setCode] = useState(s.coupon?.code || "");
+  const [note, setNote] = useState("");
+  const taxOn = s.taxRatePercent != null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={FIELD_COL}>
+        <span style={LBL}>Tax</span>
+        {/* THREE STATES, each said out loud (catalogue F.1.3 `tax_mode`). A
+            tick box could only say two of them, and the difference between
+            "your business rate" and "this document's own rate" is whether a
+            rate that changes tomorrow reaches a draft that has not gone out. */}
+        <select style={INPUT} value={s.taxMode} data-tax-mode="1"
+          title="Where this document's tax rate comes from"
+          onChange={(e) => {
+            const mode = e.target.value as "business" | "document" | "none";
+            if (mode === "none") return patch({ taxMode: "none", taxRatePercent: null, taxLabel: "" });
+            if (mode === "business") {
+              return patch({
+                taxMode: "business",
+                taxRatePercent: businessTax?.percent ?? 0,
+                taxLabel: businessTax?.label || "",
+              });
+            }
+            patch({ taxMode: "document", taxRatePercent: s.taxRatePercent ?? businessTax?.percent ?? 0 });
+          }}>
+          <option value="none">No tax on this document</option>
+          <option value="business">Your business rate</option>
+          <option value="document">A rate for this document only</option>
+        </select>
+        {taxOn && (
+          <>
+            <input type="number" min={0} max={100} step="0.001" style={INPUT} data-tax-rate="1"
+              disabled={s.taxMode === "business"}
+              title={s.taxMode === "business"
+                ? "This follows your business rate. Choose “a rate for this document only” to type a different one."
+                : "The rate this document is taxed at, as a percentage"}
+              value={Number(s.taxRatePercent ?? 0)}
+              onChange={(e) => patch({ taxRatePercent: Number(e.target.value) || 0 })} />
+            <span style={{ fontSize: 10, color: "#94A3B8" }}>
+              {s.taxMode === "business"
+                ? (businessTax && businessTax.percent
+                  ? `Your business rate is ${businessTax.percent}%${businessTax.label ? ` (${businessTax.label})` : ""}. Change it in your books and every draft follows.`
+                  : "You have no business rate set up yet. Set one up in your books, or choose “a rate for this document only”.")
+                : "Typed here, and it stays as typed even if your business rate changes."}
+            </span>
+          </>
+        )}
+      </div>
+
+      <div style={FIELD_COL}>
+        <span style={LBL}>Discount</span>
+        <input type="number" min={0} max={100} step="0.1" style={INPUT} data-discount-pct="1"
+          title="A percentage off the subtotal"
+          value={Number(s.discountPercent || 0)}
+          onChange={(e) => patch({ discountPercent: Number(e.target.value) || 0 })} />
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>Per cent off the subtotal. Leave it at 0 for none.</span>
+      </div>
+
+      <div style={FIELD_COL}>
+        <span style={LBL}>Coupon code</span>
+        <div style={{ display: "flex", gap: 5 }}>
+          <input style={{ ...INPUT, flex: 1 }} value={code} data-coupon-code="1"
+            placeholder="SPRING25"
+            title="One of your own coupon codes. We check what it is worth and put it on the document."
+            onChange={(e) => { setCode(e.target.value); setNote(""); }} />
+          <button type="button" style={miniBtn} data-coupon-apply="1"
+            title="Check this code and take it off the total"
+            onClick={async () => {
+              const r = await lookupCoupon(code);
+              if (!r.ok || !r.coupon) { setNote(r.message || "We could not find that code."); return; }
+              patch({ coupon: r.coupon });
+              setNote(r.coupon.percentOff
+                ? `${r.coupon.code} takes ${r.coupon.percentOff}% off.`
+                : `${r.coupon.code} takes ${fmtMoney(Number(r.coupon.amountOff || 0))} off.`);
+            }}>Use it</button>
+        </div>
+        {s.coupon && (
+          <button type="button" style={miniBtn} data-coupon-clear="1"
+            title="Take this coupon off the document"
+            onClick={() => { patch({ coupon: null }); setCode(""); setNote(""); }}>
+            Take “{s.coupon.code}” off
+          </button>
+        )}
+        {note && <span style={{ fontSize: 10, color: "#5A7A8A" }} data-coupon-note="1">{note}</span>}
+        <span style={{ fontSize: 10, color: "#94A3B8" }}>
+          Nothing is redeemed while you are writing. The coupon is counted when the work is invoiced.
+        </span>
       </div>
     </div>
   );
 }
+
+/* `CatalogPicker` LIVED HERE and is DELETED (D-156 stream B). There were two
+   catalogue pickers — this one, which every money widget used, and an
+   unreachable one in components/oliver/ProposalCatalogPicker.tsx that nothing
+   imported. It moved into that file, beside `buildPick` and `cadenceOf`, which
+   are the readers it depends on; the unreachable one is gone. One picker,
+   opened from the product card, the priced line, the pricing table and the
+   property block. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Ask ARGUS

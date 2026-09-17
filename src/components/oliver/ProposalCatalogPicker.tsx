@@ -46,8 +46,7 @@
 // an accepted proposal could not be traced back to the catalogue price it
 // came from. line_items_json passes unknown keys through untouched, so this
 // needs no API or migration change.
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Search, Package } from "lucide-react";
+import { useMemo, useState } from "react";
 
 export interface CatalogPrice {
   price_id: string;
@@ -181,13 +180,10 @@ export function basisOf(p?: CatalogPrice | null): string {
   return cadenceOf(p) || (isRecurring(p) ? "recurring" : "one-time");
 }
 
-/** Short form for the picker button, where space is tight. */
-function shortCadence(p: CatalogPrice): string {
-  const n = Number(p.recurring_interval_count) || 1;
-  const u = p.recurring_interval;
-  const unit = u === "month" ? "mo" : u === "year" ? "yr" : u === "week" ? "wk" : u === "day" ? "day" : u;
-  return n > 1 ? `/${n}${unit}` : `/${unit}`;
-}
+/* `shortCadence` LIVED HERE and is DELETED with the second picker it was the
+   button label for. The one picker says the price and the cadence in the words
+   `cadenceOf` returns — "billed monthly", "per push" — which is what the
+   basis column and the document already say. */
 
 /**
  * Money, with thousands separators, everywhere (D-29).
@@ -259,164 +255,97 @@ export function buildPick(o: CatalogOffering, price: CatalogPrice | null): Picke
   };
 }
 
-interface Props {
-  get: <T>(p: string) => Promise<T>;
-  ready: boolean;
-  onPick: (picked: PickedService) => void;
+/* ══════════════════════════════════════════════════════════════════════════
+   THE PICKER (D-156 stream B) — one component, every widget that loads from
+   Products & Services.
+   ══════════════════════════════════════════════════════════════════════════
+
+   There were TWO. This file exported a `ProposalCatalogPicker` that opened
+   itself from a "+ Add from your services" link, and the builder had its own
+   `CatalogPicker` inside ProposalBuilder.tsx. Nothing imported the one in this
+   file — only its READERS (`buildPick`, `cadenceOf`, `basisOf`, `fmtMoney`)
+   were ever used — so a picker nobody could open sat beside the picker
+   everybody used, and each of them had its own idea of what a price button
+   says. Replace means delete: the builder's is the one that shipped, it moved
+   in here, and the other is gone.
+
+   The product card, the priced line and the pricing table all open THIS, and
+   so does the Products & services group of the widget picker. It takes the
+   offerings it is given rather than fetching: the builder loads the catalogue
+   once when it opens (D-147's one-fetch rule) and every picker on the page
+   reads the same list. */
+
+export interface CatalogPickerProps {
+  offerings: CatalogOffering[];
+  /** The line above the search box, in the words of the widget that opened it. */
+  label: string;
+  onPick: (o: CatalogOffering, price: CatalogPrice | null) => void;
+  /** Offered only where adding every tier at once makes sense (tier cards). */
+  onPickAll?: (o: CatalogOffering) => void;
+  bulkLabel?: (o: CatalogOffering) => string;
+  /** M-24 — still on its way. Says so instead of reading "nothing here". */
+  loading?: boolean;
 }
 
-export function ProposalCatalogPicker({ get, ready, onPick }: Props) {
-  const [open, setOpen] = useState(false);
-  const [offerings, setOfferings] = useState<CatalogOffering[] | null>(null);
-  const [query, setQuery] = useState("");
+const PICK_LBL: React.CSSProperties = {
+  fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A",
+};
+const PICK_INPUT: React.CSSProperties = {
+  border: "1px solid #CBD5E1", borderRadius: 4, padding: "6px 8px", fontSize: 12,
+  background: "#fff", color: "#0B1C24", width: "100%",
+};
+const PICK_BTN: React.CSSProperties = {
+  border: "1px solid #CBD5E1", borderRadius: 6, background: "#fff", color: "#334155",
+  padding: "2px 7px", fontSize: 10, cursor: "pointer",
+};
 
-  useEffect(() => {
-    if (!open || !ready || offerings) return;
-    // The oliver api client auto-unwraps { data: ... }; tolerate both shapes.
-    get<any>("/catalog/offerings?include_prices=1")
-      .then((r) => setOfferings(Array.isArray(r) ? r : (r as any)?.data ?? []))
-      .catch(() => setOfferings([]));
-  }, [open, ready, offerings, get]);
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = offerings || [];
-    return q
-      ? list.filter((o) =>
-          o.name.toLowerCase().includes(q) ||
-          (o.description || "").toLowerCase().includes(q) ||
-          (o.category_name || "").toLowerCase().includes(q))
-      : list;
-  }, [offerings, query]);
-
-  function pick(o: CatalogOffering, price: CatalogPrice | null) {
-    onPick(buildPick(o, price));
-    setOpen(false);
-    setQuery("");
-  }
-
-  if (!open) {
-    return (
-      <button
-        onClick={() => setOpen(true)}
-        style={{
-          fontSize: 11, fontWeight: 600, color: "#1A7DB5", background: "transparent",
-          border: 0, cursor: "pointer", marginTop: 8, marginLeft: 12, padding: 0,
-        }}
-      >
-        + Add from your services
-      </button>
-    );
-  }
-
+export function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel, loading }: CatalogPickerProps) {
+  const [q, setQ] = useState("");
+  const list = useMemo(
+    () => offerings.filter((o) => !q.trim() || o.name.toLowerCase().includes(q.trim().toLowerCase())),
+    [offerings, q],
+  );
   return (
-    <div style={{ marginTop: 8, border: "1px solid #D5E2E8", borderRadius: 6, background: "#FAFDFE" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderBottom: "1px solid #E8F0F4" }}>
-        <Search className="h-3 w-3" style={{ color: "#8AA6B4" }} />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find a service"
-          style={{ flex: 1, border: 0, background: "transparent", fontSize: 12, outline: "none" }}
-        />
-        <span style={{ fontSize: 10, color: "#8AA6B4", whiteSpace: "nowrap" }}>
-          {offerings ? `${filtered.length} of ${offerings.length}` : ""}
-        </span>
-        <button onClick={() => setOpen(false)} style={{ border: 0, background: "none", color: "#8AA6B4", cursor: "pointer", fontSize: 11 }}>
-          Done
-        </button>
-      </div>
-
-      <div style={{ maxHeight: 260, overflowY: "auto" }}>
-        {offerings === null && <div style={{ padding: 10, fontSize: 12, color: "#6B8A99" }}>Loading your services…</div>}
-
-        {offerings !== null && !offerings.length && (
-          <div style={{ padding: 12, fontSize: 12, color: "#6B8A99" }}>
-            No services in your catalogue yet. Add them under Products &amp; Services and their
-            descriptions will flow into proposals from then on.
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <span style={PICK_LBL}>{label}</span>
+      <input style={PICK_INPUT} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search your services…"
+        title="Search Products & Services" data-catalog-search="1" />
+      <div style={{ maxHeight: 220, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        {loading && !offerings.length && (
+          <div data-catalogue-loading="1" style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Loading your catalogue…
           </div>
         )}
-
-        {filtered.map((o) => {
-          const prices = o.prices || [];
-          const features = featuresOf(o);
-          return (
-            <div key={o.offering_id} style={{ padding: "8px 10px", borderBottom: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                <Package className="h-3 w-3" style={{ color: "#1A7DB5", flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>{o.name}</span>
-                {o.category_name && (
-                  <span style={{ fontSize: 10, color: "#8AA6B4" }}>{o.category_name}</span>
-                )}
-                {prices.length > 1 && (
-                  <span style={{ marginLeft: "auto", fontSize: 10, color: "#8AA6B4", whiteSpace: "nowrap" }}>
-                    {prices.length} prices — pick one
-                  </span>
-                )}
-              </div>
-
-              {o.description && (
-                <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2, paddingLeft: 18 }}>
-                  {o.description.length > 120 ? `${o.description.slice(0, 120)}…` : o.description}
-                </div>
-              )}
-              {features.length > 0 && (
-                <div style={{ fontSize: 10, color: "#8AA6B4", marginTop: 2, paddingLeft: 18 }}>
-                  brings {features.length} bullet{features.length === 1 ? "" : "s"} into the proposal
-                </div>
-              )}
-
-              {/* One button per price. A service with six tiers gets six
-                  buttons; the writer chooses, nothing is chosen for them. */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6, paddingLeft: 18 }}>
-                {prices.length === 0 ? (
-                  <button
-                    type="button"
-                    onClick={() => pick(o, null)}
-                    style={{
-                      fontSize: 11, padding: "4px 10px", background: "#fff", color: "#0C4A60",
-                      border: "1px dashed rgba(45,156,219,0.28)", borderRadius: 4, cursor: "pointer",
-                    }}
-                  >
-                    + Add (no catalogue price — set it inline)
-                  </button>
-                ) : prices.map((p) => {
-                  const rec = isRecurring(p);
-                  return (
-                    <button
-                      key={p.price_id}
-                      type="button"
-                      onClick={() => pick(o, p)}
-                      title={rec
-                        ? `Adds at ${fmtMoney(amountOf(p))}, ${cadenceOf(p)} — the cadence is written onto the proposal line`
-                        : `Adds at ${fmtMoney(amountOf(p))} as a one-time charge`}
-                      style={{
-                        fontSize: 11, padding: "4px 10px",
-                        background: rec ? "#FEF3C7" : "#E8F4FB",
-                        color: rec ? "#92400E" : "#0C4A60",
-                        border: `1px solid ${rec ? "rgba(217,119,6,0.4)" : "rgba(45,156,219,0.28)"}`,
-                        borderRadius: 4, cursor: "pointer",
-                      }}
-                    >
-                      <Plus className="h-3 w-3" style={{ display: "inline", verticalAlign: "-2px", marginRight: 2 }} />
-                      {fmtMoney(amountOf(p))}{rec ? shortCadence(p) : ""}
-                      {p.label ? ` · ${p.label}` : ""}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-
-        {offerings !== null && offerings.length > 0 && !filtered.length && (
-          <div style={{ padding: 10, fontSize: 12, color: "#6B8A99" }}>No service matches “{query}”.</div>
+        {!loading && !offerings.length && (
+          <div style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Nothing in Products &amp; Services yet. Add what you sell there and it is here every time.
+          </div>
         )}
-      </div>
-
-      <div style={{ padding: "6px 10px", fontSize: 10, color: "#8AA6B4", borderTop: "1px solid #E8F0F4" }}>
-        Descriptions and bullets come from Products &amp; Services. Editing them here changes this
-        proposal only.
+        {list.map((o) => (
+          <div key={o.offering_id} data-offering={o.offering_id}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{o.name}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 2 }}>
+              {(o.prices?.length ? o.prices : [null]).map((pr, i) => (
+                <button key={pr?.price_id || i} type="button" style={PICK_BTN}
+                  title={pr
+                    ? `Adds at ${fmtMoney(Number(pr.unit_amount ?? 0))}${cadenceOf(pr) ? `, ${cadenceOf(pr)}` : ""} — the basis is written onto the line`
+                    : "No catalogue price — starts at $0 and you type it"}
+                  onClick={() => onPick(o, pr)}>
+                  {pr ? `${pr.label ? `${pr.label} · ` : ""}${fmtMoney(Number(pr.unit_amount ?? 0))}` : "No price — type one"}
+                </button>
+              ))}
+              {onPickAll && (o.prices?.length ?? 0) > 1 && (
+                <button type="button" data-add-all={o.offering_id}
+                  style={{ ...PICK_BTN, borderColor: "#0B6E8C", color: "#0B6E8C" }}
+                  title={`Add every priced tier of ${o.name} as its own card, filled from the catalogue`}
+                  onClick={() => onPickAll(o)}>
+                  {bulkLabel ? bulkLabel(o) : `Add all ${o.prices?.length}`}
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+        {!list.length && <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>}
       </div>
     </div>
   );

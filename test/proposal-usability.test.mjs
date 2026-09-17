@@ -145,12 +145,20 @@ describe("D-29 · money has thousands separators everywhere", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("D-01 and D-10 · a tier card has a catalogue and a real price field", () => {
-  test("the comparison block has the SAME catalogue picker the pricing table has", () => {
-    assert.ok(BUILDER.includes('label="Add a plan from your catalogue"'),
-      "the tier cards still have no catalogue picker");
-    // One picker component, three widgets. A second copy of the picker would
-    // be a second mechanism for "call Products & Services".
-    assert.equal((BUILDER.match(/function CatalogPicker\(/g) || []).length, 1);
+  test("there is ONE catalogue picker, and every money widget opens it", () => {
+    // D-156 moved it out of the builder and into the file that holds its
+    // readers, and DELETED the unreachable second copy that was already
+    // there. A second copy is a second idea of what a price button says.
+    const picker = readFileSync(new URL("../src/components/oliver/ProposalCatalogPicker.tsx", import.meta.url), "utf8");
+    assert.equal((picker.match(/export function CatalogPicker\(/g) || []).length, 1);
+    assert.equal((BUILDER.match(/function CatalogPicker\(/g) || []).length, 0,
+      "the builder kept a second picker");
+    assert.ok(!picker.includes("export function ProposalCatalogPicker("),
+      "the picker nobody could open is still here");
+    // Opened from the product card, the priced line, the pricing table and the
+    // old comparison block — four widgets, one component.
+    assert.ok((BUILDER.match(/<CatalogPicker/g) || []).length >= 4,
+      "a money widget lost its way into Products & Services");
   });
 
   test("every card field is a real input with a placeholder, in tab order name → price → per → was", () => {

@@ -199,6 +199,14 @@ describe("§3.2's union is registered", () => {
     //                   address (never removable)"
     //   hero           the landing page's "hero" in §7's web widget set
     "personal_note", "article_card", "product_card", "email_footer", "hero",
+    // Added 2026-09-17 by §11.12 — D-156's ATOMIC widgets, each declared in
+    // its own file under src/builder/widgets/ beside the function that draws
+    // it. They replace the composites: `card` + `catalog_card` for
+    // comparison_cards, `price_line` for priced_line, `address_block` for the
+    // address half of property_block, `key_fact` for a row of key_facts, and
+    // `totals`, which moved out of this file with its new tax / discount /
+    // coupon settings (D-157).
+    "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
   ];
 
   for (const kind of REQUIRED) {
@@ -330,7 +338,22 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
 });
 
 describe("guided counts — SD-010's \"how many cards?\"", () => {
-  test("comparison cards ask, and the range is 2 to 6", () => {
+  test("D-156 — no widget asks 'how many?' where the answer is a widget", () => {
+    // The count control is DELETED for the card composites (D-156 (4)): a card
+    // is a widget now, so "how many cards?" is "add another card". A widget
+    // that still asks is one that still has hidden sub-parts.
+    for (const kind of ["comparison_cards", "key_facts"]) {
+      assert.ok(!WIDGETS_BY_KIND[kind].count,
+        `${kind} still asks how many — its parts are widgets now`);
+      assert.ok(WIDGETS_BY_KIND[kind].hidden,
+        `${kind} is superseded by D-156 and must not be offered`);
+    }
+    for (const kind of ["card", "catalog_card", "price_line", "key_fact"]) {
+      assert.ok(!WIDGETS_BY_KIND[kind].count, `${kind} is one thing, not a list of them`);
+    }
+  });
+
+  test.skip("comparison cards ask, and the range is 2 to 6", () => {
     const c = WIDGETS_BY_KIND.comparison_cards.count;
     assert.ok(c, "comparison cards must ask how many");
     assert.equal(c.min, 2);
@@ -372,9 +395,10 @@ describe("the pane groups them", () => {
   });
 
   test("search matches the DESCRIPTION, not just the label", () => {
-    // Nothing is called "Recommended"; the comparison-card sentence says it.
-    const hits = groupForPane("proposal", "recommended").flatMap((g) => g.widgets.map((w) => w.kind));
-    assert.ok(hits.includes("comparison_cards"), "searching the words people actually use must work");
+    // Nothing is CALLED "included"; the card's sentence says it. (It used to
+    // be "recommended" against comparison_cards, which D-156 superseded.)
+    const hits = groupForPane("proposal", "included").flatMap((g) => g.widgets.map((w) => w.kind));
+    assert.ok(hits.includes("card"), "searching the words people actually use must work");
   });
 
   test("an unmatched search returns nothing rather than everything", () => {

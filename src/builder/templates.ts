@@ -36,6 +36,20 @@ export interface PremadeSection {
   /** Gallery filter chips. */
   tags: string[];
   build: () => Section;
+  /**
+   * A ready-made section that is MORE THAN ONE section (D-156).
+   *
+   * "Choose your plan" is a heading and a line of copy with a row of cards
+   * under them, and a row is a second container. Today's model gives a section
+   * one set of columns, so the pattern is two sections until stream A's nested
+   * containers land — at which point this collapses into one tree and
+   * `buildAll` goes with it.
+   *
+   * `build()` still returns the first section, so a caller that has not been
+   * taught about this places something real rather than nothing. The proposal
+   * adapter intercepts `onPlaceSection` and puts the whole set down.
+   */
+  buildAll?: () => Section[];
 }
 
 /**
@@ -267,6 +281,96 @@ export const PREMADE_SECTIONS: PremadeSection[] = [
     build: () => sec([makeWidget("footer_note", { text: "" })], { padding: 12 }),
   },
 ];
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-156's ready-made sections — container trees, not composite widgets
+   ══════════════════════════════════════════════════════════════════════════
+
+   §11.12: *"The picker's Ready-made section tab and the + strip offer
+   CONTAINER TREES, not widgets"*. Each of these is the pattern a composite
+   widget used to be, built out of atomic widgets that can each be selected,
+   dragged, tagged and deleted:
+
+     Choose your plan      heading + paragraph, then a row of product cards
+     This property         heading + service address + rate card + a total
+     Agreement at a glance four key facts, two across
+
+   Nothing here is a special kind. Place one and then take a card out of it,
+   or drop a picture between two cards — which is the whole of what Brandon
+   asked for and the whole of what the composites could not do. */
+
+/** A section of `layout` columns, one widget list per column. */
+const row = (columns: Widget[][], extra: Partial<Section> = {}): Section =>
+  makeSection({
+    ...extra,
+    layout: Math.min(3, Math.max(1, columns.length)) as 1 | 2 | 3,
+    columns: columns.map((widgets, i) => ({ id: `c_${i}_${Math.random().toString(36).slice(2, 8)}`, widgets })),
+  });
+
+/** *Choose your plan* — Brandon's sentence, as a ready-made section. */
+export function chooseYourPlanSections(): Section[] {
+  return [
+    sec([
+      makeWidget("heading", { text: "Choose your plan", level: "Section title" }),
+      makeWidget("paragraph", { text: "Pick one. Everything below is included in the price you choose." }),
+    ], { label: "Choose your plan", padding: 24 }),
+    row([
+      [makeWidget("catalog_card", {})],
+      [makeWidget("catalog_card", {})],
+      [makeWidget("catalog_card", {})],
+    ], { label: "The plans" }),
+  ];
+}
+
+/** *This property* — what `property_block` was, as four separate widgets. */
+export function propertySections(): Section[] {
+  return [
+    sec([
+      makeWidget("heading", { text: "This property", level: "Section title" }),
+      makeWidget("address_block", { heading: "Service address" }),
+      makeWidget("pricing_table", { heading: "What we charge here", rows: [] }),
+      makeWidget("totals", { heading: "This property" }),
+    ], { label: "This property", padding: 24 }),
+  ];
+}
+
+/** *Agreement at a glance* — a row of key facts instead of one facts widget. */
+export function atAGlanceSections(): Section[] {
+  const fact = (label: string, value: string) => makeWidget("key_fact", { label, value });
+  return [
+    row([
+      [fact("Customer", "{{customer.name}}"), fact("Service term", "{{contract.start_date}} – {{contract.end_date}}")],
+      [fact("Property", "{{property.address}}"), fact("Prepared by", "{{business.name}}")],
+    ], { label: "At a glance", padding: 24 }),
+  ];
+}
+
+PREMADE_SECTIONS.push(
+  {
+    key: "choose_your_plan",
+    name: "Choose your plan",
+    description: "A heading, a line of copy and three cards loaded from your products and services.",
+    tags: ["Pricing"],
+    build: () => chooseYourPlanSections()[0],
+    buildAll: chooseYourPlanSections,
+  },
+  {
+    key: "this_property",
+    name: "This property",
+    description: "One site: its address, what you charge there and a total for it.",
+    tags: ["Property", "Pricing"],
+    build: () => propertySections()[0],
+    buildAll: propertySections,
+  },
+  {
+    key: "at_a_glance_facts",
+    name: "Agreement at a glance",
+    description: "Four short answers across the top — who, where, how long, who prepared it.",
+    tags: ["Terms"],
+    build: () => atAGlanceSections()[0],
+    buildAll: atAGlanceSections,
+  },
+);
 
 export function premadeByKey(key: string): PremadeSection | undefined {
   return PREMADE_SECTIONS.find((p) => p.key === key);
