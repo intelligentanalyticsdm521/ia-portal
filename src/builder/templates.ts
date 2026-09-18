@@ -21,10 +21,12 @@
  * Pure: no React, no fetch. The adapter supplies the brand kit and the library.
  */
 import {
-  makeContainer, makeSection, makeWidget, emptyDocument,
+  makeContainer, makeSection, makeWidget, emptyDocument, walkWidgets,
   type BuilderDocument, type Section, type Widget,
 } from "./model";
+import { PRICED_KINDS } from "./totals";
 import { upgradeDocument } from "./upgrade";
+import { snowAgreementDocument } from "./snowAgreement";
 import type { WidgetLock } from "./tier";
 import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "./render";
 import {
@@ -467,20 +469,15 @@ function fromKeys(keys: string[], settings: Partial<BuilderDocument["settings"]>
   return doc;
 }
 
-/**
- * Which clause-library keys each terms section of a shipped template wants.
+/* `AGREEMENT_CLAUSE_SLOTS` LIVED HERE and is DELETED (D-164).
  *
- * The keys, not the words. `hydrateClauses` fills them from the business's own
- * library so a clause is edited in one place and every template follows.
- */
-const AGREEMENT_CLAUSE_SLOTS: Record<string, string[]> = {
-  "Scope of services": ["snow_plowing", "service_trigger", "what_a_push_means", "final_cleanup", "snow_storage"],
-  "Ice, deicing & optional services": ["deicing", "material_application", "sidewalks", "snow_hauling", "extra_service"],
-  "Severe weather & special conditions": ["heavy_snow", "blizzard_drifting", "freezing_rain", "extreme_storms", "access_traffic"],
-  "Property responsibilities": ["property_access", "parked_vehicles", "obstacles", "site_conditions"],
-  "Billing & payment": ["invoicing", "payment_terms", "documentation", "disputed_charges", "past_due"],
-  "General terms": ["service_timing", "reasonable_care", "damage_existing", "weather_limitations", "changes_to_scope", "term_cancellation", "entire_agreement"],
-};
+ * It was the list of `oliver.clause_library` keys the seasonal agreement's six
+ * terms sections asked for, and the agreement is the only thing that ever used
+ * it. That template now SHIPS its clauses as words — see `snowAgreement.ts` for
+ * why — so the map described a document that no longer exists. `hydrateClauses`
+ * stays: a stored document, a saved template and the "Terms & conditions"
+ * ready-made section can all still carry `libraryKeys`, and a business that has
+ * written its own clause library still gets its own words in them. */
 
 /* As WRITTEN — a few of these still describe a page with a composite widget.
    `SHIPPED_TEMPLATES` below is this list with the D-156 upgrade applied, which
@@ -489,38 +486,22 @@ const AGREEMENT_CLAUSE_SLOTS: Record<string, string[]> = {
    the pass rather than after it. */
 const SHIPPED_RAW: ShippedTemplate[] = [
   {
+    /* THE KEY STAYS `service_agreement` (D-164). This template REPLACES the
+       "Seasonal service agreement" that shipped before it — see the head of
+       `snowAgreement.ts` for why the two were near-duplicates — and a saved
+       draft, a saved template or a stored row that names the old key still
+       opens on the new document rather than on nothing. */
     key: "service_agreement",
-    name: "Seasonal service agreement",
+    name: "Commercial snow & ice agreement",
     purpose: "Recurring service agreement",
     businessTypes: ["Service industry"],
-    tags: ["contract", "season", "rate card", "recurring", "signature",
-      "snow & ice", "lawn & landscape", "cleaning"],
-    useCase: "The agreement a customer signs before a season of recurring work starts. It carries your numbered terms, a rate card the customer can check a storm invoice against, the service plan for that property, and an electronic signature.",
-    bestFor: "Snow and ice contracts, seasonal lawn care, recurring cleaning rounds — anywhere the work repeats and the rate is per visit.",
+    tags: ["snow", "ice", "commercial", "seasonal", "contract", "plowing",
+      "salting", "deicing", "per push", "rate card", "signature",
+      "snow & ice", "lawn & landscape", "cleaning", "property manager"],
+    useCase: "The agreement a commercial property signs before winter. Ten numbered sections say what brings you out, what a push is, what happens in a bad storm and who looks after what — with a per-event pricing schedule the customer can check a storm invoice against, and an electronic signature.",
+    bestFor: "Snow and ice contractors quoting a car park, a retail site, a dock or an office park — anywhere the work is charged per visit rather than in a lump.",
     featured: true,
-    build: () => {
-      const doc = fromKeys(["title_dark", "at_a_glance"]);
-      for (const [label, keys] of Object.entries(AGREEMENT_CLAUSE_SLOTS)) {
-        if (label === "Billing & payment") continue; // placed below, in order
-        const s = rawPremade("terms")!.build();
-        s.label = label;
-        (s.columns[0].widgets[0].props as any).libraryKeys = keys;
-        doc.sections.push(s);
-        if (label === "Severe weather & special conditions") {
-          doc.sections.push(rawPremade("pricing")!.build());
-        }
-      }
-      const billing = rawPremade("billing")!.build();
-      (billing.columns[0].widgets[0].props as any).libraryKeys = AGREEMENT_CLAUSE_SLOTS["Billing & payment"];
-      // "General terms" was appended by the loop; billing belongs before it.
-      doc.sections.splice(doc.sections.length - 1, 0, billing);
-      doc.sections.push(rawPremade("acceptance")!.build());
-      const plan = rawPremade("property_plan")!.build();
-      plan.pageBreakBefore = true;
-      doc.sections.push(plan);
-      doc.sections.push(rawPremade("footer_notes")!.build());
-      return doc;
-    },
+    build: snowAgreementDocument,
   },
   {
     key: "platform_proposal",
@@ -956,6 +937,35 @@ export function templateByKey(key: string): ShippedTemplate | undefined {
 }
 
 /**
+ * CAN THIS DOCUMENT'S PRICED LINES BE ADDED UP AT ALL? (D-164)
+ *
+ * A total is a promise that the number under it is what the customer will pay.
+ * A snow agreement's pricing schedule is six lines charged on six different
+ * bases — $216 per push, $168 per application, $90 per visit, $95 per event,
+ * $200 per month — and adding those gives a number that is true of no invoice
+ * that will ever be raised. Printing it above a signature is exactly the D-07
+ * defect the rule below exists to prevent, wearing the opposite clothes: a
+ * figure on the paper that the customer is not agreeing to pay.
+ *
+ * So the test is arithmetic, not a flag on the document: amounts charged on
+ * DIFFERENT bases cannot be summed. Every priced line carrying the same
+ * cadence — all of them per month, or all of them with no cadence at all,
+ * which is what a one-off job's lines look like — totals honestly and gets its
+ * total. A mixture does not and gets none.
+ *
+ * `cadence` is read off the widget the author can see and change, so there is
+ * no second place that says whether this document totals.
+ */
+export function pricedOnOneBasis(doc: BuilderDocument): boolean {
+  const bases = new Set<string>();
+  for (const { widget } of walkWidgets(doc)) {
+    if (!PRICED_KINDS.includes(widget.kind as (typeof PRICED_KINDS)[number])) continue;
+    bases.add(String((widget.props as any)?.cadence ?? "").trim());
+  }
+  return bases.size <= 1;
+}
+
+/**
  * THE TOTAL GOES ABOVE THE SIGNATURE (D-07).
  *
  * The 2026-09-16 tester signed a $1,875 agreement whose customer copy and
@@ -972,11 +982,14 @@ export function templateByKey(key: string): ShippedTemplate | undefined {
  * a section of its own and must not grow a second one. A document assembled
  * from blank sections still has no total above its signature until the
  * renderer itself grows the rule — B-A-2 in REBUILD_HANDOFF_2026-09-16.md.
+ *
+ * And NOT when the lines are charged on different bases — see
+ * `pricedOnOneBasis`. A number that is true of no invoice is not a total.
  */
 export function withTotalBeforeSignature(doc: BuilderDocument): BuilderDocument {
   const has = (kind: string) =>
     doc.sections.some((s) => s.columns.some((c) => c.widgets.some((w) => w.kind === kind)));
-  if (has("totals") || !has("signature")) return doc;
+  if (has("totals") || !has("signature") || !pricedOnOneBasis(doc)) return doc;
   return {
     ...doc,
     sections: doc.sections.map((s) => ({

@@ -485,18 +485,45 @@ describe("templates and pre-made sections (§7)", () => {
     }
   });
 
-  test("the seasonal service agreement carries the whole shape: title, terms, pricing, signature, property plan", () => {
+  test("the commercial snow & ice agreement carries the whole shape: cover, terms, pricing, signature, property plan", () => {
     const doc = templateByKey("service_agreement").build();
     const kinds = walkWidgets(doc).map((x) => x.widget.kind);
-    // `key_facts` is `key_fact` now, one widget per row (D-156).
-    for (const k of ["doc_header", "key_fact", "clauses", "pricing_table", "callout", "signature", "property_plan"]) {
+    /* D-164 — the terms are `heading` + `paragraph` per clause now, not one
+       `clauses` widget: the 2026-09-16 tester could not retype item seven of
+       a lump, and every clause on this document is its own two widgets. The
+       money is `price_line`, which is what makes the schedule catalogue-bound
+       and per-event. */
+    for (const k of ["doc_header", "key_fact", "heading", "paragraph",
+      "pricing_table", "price_line", "callout", "signature", "property_plan"]) {
       assert.ok(kinds.includes(k), `the agreement template has no ${k}`);
     }
+    assert.ok(!kinds.includes("clauses"),
+      "the agreement ships a clauses lump again — a clause the author cannot click is the D-03 defect");
     const labels = doc.sections.map((s) => s.label);
-    assert.ok(labels.includes("Billing & payment"));
+    assert.ok(labels.includes("Billing and payment"));
     assert.ok(labels.includes("General terms"));
-    assert.ok(labels.indexOf("Billing & payment") < labels.indexOf("General terms"), "billing must come before general terms");
+    assert.ok(labels.indexOf("Billing and payment") < labels.indexOf("General terms"), "billing must come before general terms");
     assert.ok(doc.sections.some((s) => s.pageBreakBefore), "the property plan does not start a new page");
+  });
+
+  test("…and all ten numbered sections of the agreement, in the client's order", () => {
+    const doc = templateByKey("service_agreement").build();
+    const numbered = doc.sections.filter((s) => s.numbered && s.visibility === "customer")
+      .map((s) => s.label);
+    assert.deepEqual(numbered, [
+      "Agreement at a glance",
+      "Scope of services",
+      "Ice, deicing and optional services",
+      "Severe weather and special conditions",
+      "Property responsibilities",
+      "Pricing schedule",
+      "Billing and payment",
+      "General terms",
+      "Acceptance",
+      "Property service plan",
+    ]);
+    // The NUMBERS are the engine's, so deleting section 04 renumbers the rest.
+    assert.equal(sectionNumbers(doc)[doc.sections.find((s) => s.label === "Pricing schedule").id], "06");
   });
 
   test("the platform proposal carries tier cards and a total", () => {
@@ -507,10 +534,23 @@ describe("templates and pre-made sections (§7)", () => {
     assert.ok(kinds.includes("totals"));
   });
 
+  /* D-164 — these two test `hydrateClauses`, and the shipped agreement no
+     longer asks for library clauses (it ships its words). The fixture is now
+     the "Terms & conditions" ready-made section with keys written onto it,
+     which is exactly what a saved document and an author's own section carry
+     — so the mechanism is still guarded, against the thing that still uses it. */
+  const withLibraryKeys = (keys) => {
+    const section = premadeByKey("terms").build();
+    const clause = walkWidgets({ v: 2, settings: { style: "plain" }, sections: [section] })
+      .find((x) => x.widget.kind === "clauses");
+    clause.widget.props.libraryKeys = keys;
+    return { v: 2, settings: { style: "plain" }, sections: [section] };
+  };
+
   test("clause slots are filled from the business's library, by KEY not by words", () => {
-    const doc = templateByKey("service_agreement").build();
+    const doc = withLibraryKeys(["snow_plowing", "service_trigger"]);
     const library = [
-      { clause_key: "snow_plowing", title: "Snow plowing", body: "Contractor will plow." },
+      { clause_key: "snow_plowing", title: "Snow plowing", body: "We will plow." },
       { clause_key: "service_trigger", title: "Service trigger", body: "Two inches." },
     ];
     const filled = hydrateClauses(doc, library);
@@ -521,7 +561,7 @@ describe("templates and pre-made sections (§7)", () => {
   });
 
   test("a key with no clause in the library is DROPPED, never left as an empty numbered paragraph", () => {
-    const doc = templateByKey("service_agreement").build();
+    const doc = withLibraryKeys(["snow_plowing", "service_trigger"]);
     const filled = hydrateClauses(doc, [{ clause_key: "snow_plowing", title: "Snow plowing", body: "b" }]);
     for (const { widget } of walkWidgets(filled)) {
       if (widget.kind !== "clauses" || !Array.isArray(widget.props.items)) continue;

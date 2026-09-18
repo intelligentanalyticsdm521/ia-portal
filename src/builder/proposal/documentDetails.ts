@@ -108,6 +108,19 @@ const PACK_LABELS: Record<string, { label: string; help: string }> = {
   response_time: { label: "Response time", help: "How long after the trigger you are on site — e.g. 4 hours" },
   season_start: { label: "Season starts", help: "The first date you are on call" },
   season_end: { label: "Season ends", help: "The last date you are on call" },
+  /* The two the commercial snow & ice agreement writes (D-164). The CLAUSE
+     around each of them ships as words in the template — "Invoices are due
+     …", "The smallest amount any single visit is billed at is …" — so what
+     the author types here is the short fact the sentence is missing, not a
+     paragraph squeezed into a one-line box. */
+  payment_terms: {
+    label: "Payment terms",
+    help: "When an invoice is due — e.g. 30 days from the invoice date",
+  },
+  minimum_charge: {
+    label: "Minimum charge",
+    help: "The smallest amount any one visit is billed at — e.g. $175",
+  },
 };
 
 /** The plain-word label and the help line for a token the packs declare. */

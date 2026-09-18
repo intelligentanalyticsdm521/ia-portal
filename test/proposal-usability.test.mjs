@@ -18,10 +18,10 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-import { deserialise, emptyDocument, makeSection, makeWidget, serialise } from "../src/builder/model.ts";
+import { deserialise, emptyDocument, makeSection, makeWidget, serialise, walkWidgets } from "../src/builder/model.ts";
 import { documentTotals } from "../src/builder/totals.ts";
 import { unfilledTokens } from "../src/builder/merge.ts";
-import { templateByKey, withTotalBeforeSignature } from "../src/builder/templates.ts";
+import { pricedOnOneBasis, templateByKey, withTotalBeforeSignature } from "../src/builder/templates.ts";
 import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import {
   basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
@@ -556,8 +556,8 @@ describe("D-07 · the grand total is above the signature", () => {
     assert.equal(serialise(withTotalBeforeSignature(doc)), serialise(doc));
   });
 
-  test("every shipped template that can be signed carries a total above the signature", () => {
-    for (const key of ["service_agreement", "platform_proposal", "simple_proposal", "maintenance_plan"]) {
+  test("every shipped template whose lines add up carries a total above the signature", () => {
+    for (const key of ["platform_proposal", "simple_proposal", "maintenance_plan"]) {
       const t = templateByKey(key);
       if (!t) continue;
       const doc = withTotalBeforeSignature(t.build());
@@ -568,6 +568,41 @@ describe("D-07 · the grand total is above the signature", () => {
         `${key} prints its total AFTER the signature`);
     }
   });
+
+  /* D-164 — the other half of the same promise. D-07 says the figure the
+     customer signs must be ON the paper; this says a figure that is true of no
+     invoice must NOT be. */
+  test("lines charged on ONE basis add up", () => {
+    const doc = priced();
+    assert.equal(pricedOnOneBasis(doc), true, "two lines with no cadence are a plain job and total");
+    const perMonth = priced();
+    for (const w of perMonth.sections[0].columns[0].widgets) w.props.cadence = "per month";
+    assert.equal(pricedOnOneBasis(perMonth), true, "all-per-month totals to a month");
+  });
+
+  test("lines charged on DIFFERENT bases do not, and get no total above the signature", () => {
+    const doc = priced();
+    doc.sections[0].columns[0].widgets.push(
+      makeWidget("price_line", { name: "Salting", quantity: 1, unit_price: 200, cadence: "per application" }),
+    );
+    doc.sections[0].columns[0].widgets[0].props.cadence = "per push";
+    assert.equal(pricedOnOneBasis(doc), false, "per push and per application are not addable");
+    const after = withTotalBeforeSignature(doc);
+    const flat = after.sections.flatMap((s) => s.columns.flatMap((c) => c.widgets)).map((w) => w.kind);
+    assert.ok(!flat.includes("totals"),
+      "a per-push and a per-application line were added together above a signature");
+  });
+
+  test("the snow & ice agreement is per event, so it prints no season total", () => {
+    const doc = withTotalBeforeSignature(templateByKey("service_agreement").build());
+    assert.equal(pricedOnOneBasis(doc), false,
+      "the agreement's six rates are charged on one basis — check the pricing schedule");
+    const kinds = walkWidgets(doc).map((x) => x.widget.kind);
+    assert.ok(kinds.includes("signature"), "the agreement cannot be signed");
+    assert.ok(kinds.includes("price_line"), "the agreement has no priced lines");
+    assert.ok(!kinds.includes("totals"),
+      "the agreement prints a total that is neither a storm nor a season");
+  });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -577,37 +612,92 @@ describe("D-07 · the grand total is above the signature", () => {
 describe("D-37 · a template's sections arrive with real content", () => {
   const doc = () => templateByKey("service_agreement").build();
 
-  test("\"Agreement at a glance\" is not an empty paragraph and three blank rows", () => {
-    const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const [para, box] = section.columns[0].widgets;
-    assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
-    // D-156: one `key_fact` widget per row, in a box, instead of one lump.
+  test("the cover is not four blank rows — every fact on it says something", () => {
+    // D-164: the four cover facts moved off "Agreement at a glance" and onto
+    // the cover, which is where the client's draft puts them.
+    const box = doc().sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
     const rows = box.children.map((w) => w.props);
-    assert.ok(rows.length >= 5);
+    assert.ok(rows.length >= 4, `the cover carries only ${rows.length} facts`);
     assert.ok(rows.every((r) => String(r.label).trim() && String(r.value).trim()),
       "a key-fact row is still blank");
   });
 
-  test("the glance rows are MERGE FIELDS, so they fill from the customer pick", () => {
+  test("\"Agreement at a glance\" is not an empty paragraph and an empty table", () => {
     const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const values = section.columns[0].widgets[1].children.map((w) => w.props.value).join(" ");
+    const [para, table] = section.columns[0].widgets;
+    assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
+    assert.equal(table.kind, "pricing_table");
+    assert.ok(table.props.rows.length >= 4, "the service table ships with no rows");
+    assert.ok(table.props.rows.every((r) => String(r.name).trim() && String(r.basis).trim() && String(r.rate).trim()),
+      "a row of the service table is blank");
+    // The four Service summary sentences, each its own paragraph.
+    const paras = section.columns[0].widgets.filter((w) => w.kind === "paragraph");
+    assert.ok(paras.length >= 5, `only ${paras.length} paragraphs on the glance page`);
+    assert.ok(paras.every((w) => String(w.props.text).trim().length > 40),
+      "a paragraph on the glance page is a blank the author has to write");
+  });
+
+  test("the merge fields are there, so they fill from the customer pick", () => {
+    const d = doc();
+    const cover = d.sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
+    const values = cover.children.map((w) => w.props.value).join(" ");
     assert.match(values, /\{\{customer\.name\}\}/);
     assert.match(values, /\{\{property\.address\}\}/);
-    assert.match(values, /\{\{snow_trigger\}\}/);
+    const glance = JSON.stringify(d.sections.find((s) => s.label === "Agreement at a glance"));
+    assert.match(glance, /\{\{snow_trigger\}\}/);
+  });
+
+  test("the trigger depth ships FILLED, so the document is true the moment it opens", () => {
+    assert.equal(doc().settings.merge.snow_trigger, "2 inches");
   });
 
   test("a callout with a title has a body — a heading is not an explanation", () => {
-    const pricing = doc().sections.find((s) => s.label === "Pricing schedule");
-    const callout = pricing.columns[0].widgets.find((w) => w.kind === "callout");
+    const severe = doc().sections.find((s) => s.label === "Severe weather and special conditions");
+    const callout = severe.columns[0].widgets.find((w) => w.kind === "callout");
     for (const panel of callout.props.panels) {
       assert.ok(String(panel.title).trim(), "a panel has no title");
       assert.ok(String(panel.body).trim().length > 40, `"${panel.title}" still has no body`);
     }
   });
 
+  test("every clause ships as WORDS — nothing on the page has to be retyped", () => {
+    // The 2026-09-16 defect, stated as a rule: an author who picks this
+    // template and picks a customer has a sendable agreement. No heading
+    // without a paragraph, no paragraph that is a stub.
+    const widgets = walkWidgets(doc()).map((x) => x.widget);
+    const paragraphs = widgets.filter((w) => w.kind === "paragraph");
+    assert.ok(paragraphs.length >= 35, `only ${paragraphs.length} clause paragraphs`);
+    for (const w of paragraphs) {
+      // 24, not 40: "Invoices are due {{payment_terms}}." is a whole clause
+      // with one blank in it, which is the shape this build is FOR. A stub is
+      // an empty string or three words, and both are still caught.
+      assert.ok(String(w.props.text).trim().length > 24,
+        `a paragraph ships with "${String(w.props.text).slice(0, 30)}" in it`);
+    }
+    for (const w of widgets.filter((x) => x.kind === "heading")) {
+      assert.ok(String(w.props.text).trim(), "a heading ships blank");
+    }
+  });
+
+  test("the pricing schedule is priced lines that can come from the catalogue", () => {
+    const pricing = doc().sections.find((s) => s.label === "Pricing schedule");
+    const lines = pricing.columns[0].widgets.filter((w) => w.kind === "price_line");
+    assert.ok(lines.length >= 6, `only ${lines.length} priced lines on the schedule`);
+    for (const w of lines) {
+      assert.ok(String(w.props.name).trim(), "a priced line has no name");
+      assert.ok(Number(w.props.unit_price) > 0, `${w.props.name} ships at $0.00`);
+      assert.ok(String(w.props.cadence).trim(), `${w.props.name} does not say what it is charged per`);
+    }
+    // The plowing line is the one the walk loads a catalogue price onto, and
+    // its quantity is the paved area in thousands of square feet.
+    const plow = lines[0];
+    assert.match(String(plow.props.name), /plow/i);
+    assert.ok(Number(plow.props.quantity) > 1, "the plowing line has no area on it");
+  });
+
   test("\"Property service plan\" is not a bare heading that prints as an empty page", () => {
     const plan = doc().sections.find((s) => s.label === "Property service plan");
-    const rows = plan.columns[0].widgets[0].props.rows;
+    const rows = plan.columns[0].widgets.find((w) => w.kind === "property_plan").props.rows;
     assert.ok(rows.length >= 5, "the service plan still ships with no rows");
     assert.ok(rows.every((r) => String(r.label).trim()), "a plan row has no label");
   });
