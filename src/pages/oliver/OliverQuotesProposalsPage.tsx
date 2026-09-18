@@ -41,9 +41,20 @@ interface Row {
   number: string;
   customer: string;
   total: number;
+  /**
+   * TRUE when the document's priced lines are charged on DIFFERENT bases and
+   * cannot honestly be added up (D-164) — a snow & ice agreement is per push
+   * AND per application AND per month. The row prints "Per event" instead of a
+   * figure, and the figure is left out of the pipeline stats, because a number
+   * true of no invoice is worse in a total than it is on a line.
+   */
+  perEvent: boolean;
   status: string;
   createdAt: string;
 }
+
+/** What the amount column says where there is no one total. */
+const PER_EVENT_AMOUNT = "Per event";
 
 const STATUS_PILL: Record<string, { label: string; bg: string; color: string }> = {
   draft:    { label: "Draft",    bg: "#F1F5F9", color: "#5A7A8A" },
@@ -129,6 +140,7 @@ export function OliverQuotesProposalsPage() {
       number: String(q.id).slice(0, 8).toUpperCase(),
       customer: q.customerName || "—",
       total: Number(q.amount) || 0,
+      perEvent: false,
       status: q.status,
       createdAt: q.createdAt,
     }));
@@ -139,6 +151,8 @@ export function OliverQuotesProposalsPage() {
       number: p.proposal_number,
       customer: p.customer_company || p.customer_name || "—",
       total: Number(p.total) || 0,
+      // D-164 — the server's own word, from the document's own rule.
+      perEvent: p.pricing_basis === "per_event",
       status: p.status,
       createdAt: p.created_at,
     }));
@@ -173,7 +187,14 @@ export function OliverQuotesProposalsPage() {
     const childIds = new Set(proposals.map((p) => p.quote_id).filter(Boolean));
     const all = [
       ...quotes.filter((q) => !childIds.has(q.id)).map((q) => ({ status: q.status, total: Number(q.amount) || 0 })),
-      ...proposals.map((p) => ({ status: p.status, total: Number(p.total) || 0 })),
+      /* D-164 — a per-event agreement contributes NOTHING to open or accepted
+         value. It is not worth zero; it has no one figure, and inventing one
+         here would put the same false sum into the pipeline headline that the
+         amount column has stopped printing. */
+      ...proposals.map((p) => ({
+        status: p.status,
+        total: p.pricing_basis === "per_event" ? 0 : Number(p.total) || 0,
+      })),
     ];
     const open = all.filter((r) => r.status === "sent" || r.status === "viewed");
     const accepted = all.filter((r) => r.status === "accepted" || r.status === "invoiced");
@@ -226,8 +247,20 @@ export function OliverQuotesProposalsPage() {
       header: "Total",
       align: "right",
       sortable: true,
-      sortAccessor: (r) => r.total,
-      render: (r) => <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(r.total)}</span>,
+      sortAccessor: (r) => (r.perEvent ? -1 : r.total),
+      /* D-164 — THE SAME RULE THAT KEEPS THE TOTAL OFF THE PAPER. A snow & ice
+         agreement is priced per push, per application and per month; this
+         column used to add the three and print the answer on the list the
+         owner reads their pipeline off. The document decides, the server sends
+         the word, and the column prints the word. */
+      render: (r) => (r.perEvent ? (
+        <span data-per-event="1" style={{ fontSize: 11, color: "#5A7A8A" }}
+          title="The lines on this document are charged on different bases — per push, per application, per month — so there is no one total">
+          {PER_EVENT_AMOUNT}
+        </span>
+      ) : (
+        <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(r.total)}</span>
+      )),
     },
     {
       key: "status",

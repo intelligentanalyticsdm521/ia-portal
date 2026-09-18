@@ -98,7 +98,7 @@ export {
   bindingOf, findInCatalogue, resolveCatalogCard, snapshotFrom, snapshotToCardProps,
   type CatalogBinding, type CatalogSnapshot, type ResolvedCatalogCard,
 } from "./productCard";
-export { priceLineFields } from "./priceLine";
+export { priceLineFields, priceLineUnitNote, priceLinePropsFromCatalogue } from "./priceLine";
 export { addressFields, locationAddress } from "./addressBlock";
 export { htmlBody, htmlOf } from "./html";
 export { NO_BUSINESS_RATE_SENTENCE } from "./totals";

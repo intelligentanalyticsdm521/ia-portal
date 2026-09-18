@@ -55,7 +55,8 @@
  *
  * Pure. No React, no fetch — so all of it is `node --test`.
  */
-import type { BuilderDocument, Section } from "../model";
+import { walkWidgets, type BuilderDocument, type Section } from "../model";
+import { patchNode } from "../treeOps";
 import { tokensIn, tagLabel, BUILTIN_TAGS } from "../merge";
 
 /**
@@ -246,7 +247,18 @@ export function writeDetails(doc: BuilderDocument, rows: DetailRow[]): BuilderDo
    What the document is ASKING for
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** Every token used on a customer-facing page, in reading order. */
+/**
+ * Every token used on a customer-facing page, in reading order.
+ *
+ * ── IT WALKS THE TREE (D-164 follow-up) ───────────────────────────────────
+ * This read `c.widgets` and stopped there, so a merge tag inside a BOX was
+ * invisible to the Details group: the snow & ice agreement's cover puts its
+ * four key facts in a row container, and the two service-term tokens only had
+ * boxes at all because the title band happened to repeat them. Take the
+ * repetition away — one fact, one place — and the service term had no field
+ * anywhere, which is D-03 all over again. `walkWidgets` is the engine's own
+ * walk (§11.12) and finds a widget at any depth.
+ */
 export function tokensUsedBy(doc: BuilderDocument): string[] {
   const out: string[] = [];
   const walk = (v: unknown) => {
@@ -254,9 +266,9 @@ export function tokensUsedBy(doc: BuilderDocument): string[] {
     else if (Array.isArray(v)) v.forEach(walk);
     else if (v && typeof v === "object") Object.values(v).forEach(walk);
   };
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) for (const w of c.widgets) walk(w.props);
+  for (const { widget, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    walk(widget.props);
   }
   return out;
 }
@@ -311,6 +323,57 @@ export function reconcileDetails(
 }
 
 /**
+ * DOES THE DETAILS GROUP OPEN SHOWING THE FILLED ROWS? (D-164 follow-up)
+ *
+ * The group hides filled rows behind "N filled" so nine merge fields and two
+ * blanks show the two. That is right for what the AUTHOR typed — and wrong for
+ * what the TEMPLATE shipped: the commercial snow & ice agreement arrives with
+ * the trigger depth already at "2 inches", and the group opened reading
+ * "1 filled" with the box out of sight. A default nobody can see is a default
+ * nobody checks, and the trigger depth is the number the cover, the scope, the
+ * pricing page and the storm example all quote.
+ *
+ * So: when the document ARRIVES with something already in it, the group opens
+ * with the filled rows showing. The author can still collapse them, and a
+ * document that arrives with everything blank opens as it always did.
+ *
+ * Pure, and read once — when the rows first appear — so typing into the last
+ * blank box does not fold the group up underneath the caret.
+ */
+export function detailsStartOpen(rows: DetailRow[]): boolean {
+  return rows.some((r) => String(r?.value ?? "").trim());
+}
+
+/**
+ * THE LOCATION A PROPERTY PLAN IS ABOUT, defaulted to the DOCUMENT's (D-164).
+ *
+ * Section 10 of the snow & ice agreement is the crew's own sheet, and it is the
+ * only part of the document that writes back to the property record. It shipped
+ * with `locationId: ""`, so a document whose customer and location chip were
+ * already set still opened section 10 saying "Choose a location…" — the author
+ * had to answer, on one widget, a question the document had already answered.
+ *
+ * When the document has a chosen location and a plan has none, the plan is
+ * BOUND to it. A plan the author has pointed somewhere else is left exactly
+ * where they pointed it, and the picker in the panel is how they change it.
+ *
+ * Returns the SAME DOCUMENT by identity when there is nothing to do, so a draft
+ * that is merely opened is byte-identical on save.
+ */
+export function bindPlansToLocation(doc: BuilderDocument, locationId: string): BuilderDocument {
+  const id = String(locationId ?? "").trim().toLowerCase();
+  if (!id) return doc;
+  // `walkWidgets` walks the TREE (D-156), so a plan the author dragged into a
+  // box is found too; `patchNode` is the one writer of a node's props.
+  const unbound = walkWidgets(doc)
+    .filter(({ widget }) => widget.kind === "property_plan"
+      && !String((widget.props as any)?.locationId ?? "").trim())
+    .map(({ widget }) => widget.id);
+  if (!unbound.length) return doc;
+  return unbound.reduce((d, widgetId) => patchNode(d, widgetId, { locationId: id }), doc);
+}
+
+/**
  * WHERE a blank lives on the page, so a problem can jump to it (N-1).
  *
  * The first customer-facing widget whose props mention the token, addressed by
@@ -323,14 +386,12 @@ export function widgetForToken(
 ): { sectionId: string; widgetId: string } | null {
   const needle = String(token ?? "").trim();
   if (!needle) return null;
-  for (const s of doc.sections) {
-    if (s.visibility !== "customer") continue;
-    for (const c of s.columns) {
-      for (const w of c.widgets) {
-        if (tokensIn(JSON.stringify(w.props ?? {})).includes(needle)) {
-          return { sectionId: s.id, widgetId: w.id };
-        }
-      }
+  // The TREE, for the reason `tokensUsedBy` gives: a problem that cannot point
+  // at a token inside a box is a "Take me to the first one" that goes nowhere.
+  for (const { widget, section } of walkWidgets(doc)) {
+    if (section.visibility !== "customer") continue;
+    if (tokensIn(JSON.stringify(widget.props ?? {})).includes(needle)) {
+      return { sectionId: section.id, widgetId: widget.id };
     }
   }
   return null;
@@ -379,5 +440,5 @@ export function parseMoney(v: unknown): number {
 export default {
   LEGACY_DETAILS_KEY, plainLabel, packDetail, readDetails, readLegacyDetails,
   detailsMerge, writeDetails, tokensUsedBy, reconcileDetails, widgetForToken,
-  documentLogo, parseMoney,
+  detailsStartOpen, bindPlansToLocation, documentLogo, parseMoney,
 };

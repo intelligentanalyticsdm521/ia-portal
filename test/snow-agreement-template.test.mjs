@@ -22,14 +22,39 @@
 // report for the exact four.
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
+// THE ONE HOME FOR THE SPELLINGS. This file used to carry a copy of the client
+// names, which meant a client's name was typed into the repository twice in
+// order to forbid it once. It is imported, and a test below reads THIS file off
+// disk and fails if any of them is ever typed back into it.
+import { CLIENT_NAMES } from "./client-names.mjs";
 import { deserialise, serialise, walkWidgets, sectionNumbers } from "../src/builder/model.ts";
 import { makeContext, renderDocument, RENDERED_KINDS } from "../src/builder/render.ts";
 import { tokensIn } from "../src/builder/merge.ts";
-import { SHIPPED_TEMPLATES, PREMADE_SECTIONS, templateByKey } from "../src/builder/templates.ts";
+import {
+  SHIPPED_TEMPLATES, PREMADE_SECTIONS, templateByKey,
+  PER_EVENT_AMOUNT, PER_EVENT_SENTENCE, pricedOnOneBasis, pricingBasisOf,
+} from "../src/builder/templates.ts";
 import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import { SAMPLE_MERGE } from "../src/builder/templateLibraryModel.ts";
-import { plainLabel, reconcileDetails, readDetails, tokensUsedBy } from "../src/builder/proposal/documentDetails.ts";
+import {
+  bindPlansToLocation, detailsStartOpen, plainLabel, reconcileDetails, readDetails, tokensUsedBy,
+} from "../src/builder/proposal/documentDetails.ts";
+import { priceLinePropsFromCatalogue, priceLineUnitNote } from "../src/builder/widgets/priceLine.ts";
+
+/** The cases both repos run, so the one rule cannot grow two answers. */
+const BASIS_CASES = JSON.parse(
+  readFileSync(new URL("./fixtures/pricing-basis-cases.json", import.meta.url), "utf8"));
+
+/** The two screens that must obey the rule as well as the paper does. */
+const BUILDER = readFileSync(
+  new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+const LIST = readFileSync(
+  new URL("../src/pages/oliver/OliverProposalsPage.tsx", import.meta.url), "utf8");
+const UNIFIED = readFileSync(
+  new URL("../src/pages/oliver/OliverQuotesProposalsPage.tsx", import.meta.url), "utf8");
 
 const KEY = "service_agreement";
 const entry = () => templateByKey(KEY);
@@ -95,18 +120,24 @@ describe("the agreement is ONE shipped template, on the key a saved draft names"
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("no client of ours is anywhere near this template", () => {
-  /* The five client names the library's own denylist carries, plus the owner
-     name and the trading words from the draft this was built from. */
-  const FORBIDDEN = [
-    "Rolling In It", "RollingInIt", "Rolling in it",
-    "Nathan", "Dannen", "MS Moments", "Top Maid", "Hestia", "Des Moines",
-  ];
-
   test("none of the names appears in the entry or in the built document", () => {
     const words = allWords();
-    for (const name of FORBIDDEN) {
+    assert.ok(CLIENT_NAMES.length > 4, "the shared denylist came back empty");
+    for (const name of CLIENT_NAMES) {
       assert.ok(!words.toLowerCase().includes(name.toLowerCase()),
         `the template says "${name}"`);
+    }
+  });
+
+  test("…and THIS FILE spells none of them either — the denylist has one home", () => {
+    /* THE GREP, RUN OVER THIS FILE'S OWN SOURCE. A copy of the list here would
+       be a client's name typed into the repository twice in order to forbid it
+       once, which is the defect the list exists to prevent. The fixture
+       business used further down is an invented one for the same reason. */
+    const source = readFileSync(fileURLToPath(import.meta.url), "utf8").toLowerCase();
+    for (const name of CLIENT_NAMES) {
+      assert.ok(!source.includes(name.toLowerCase()),
+        `this file spells "${name}" — import the denylist, never copy it`);
     }
   });
 
@@ -250,7 +281,7 @@ describe("the blanks", () => {
     "customer.contact_name": "Dana Whitfield",
     "property.name": "Harborview — North lot",
     "property.address": "1400 Harbour Way, Riverton",
-    "business.name": "Summit Lawn & Landscape",
+    "business.name": "Northwind Lawn & Snow",
     "contract.start_date": "1 November",
     "contract.end_date": "15 April",
   };
@@ -302,7 +333,7 @@ describe("the blanks", () => {
 describe("the three render modes", () => {
   const ctxFor = (mode, merge) => makeContext(doc(), {
     mode, merge,
-    business: { name: "Summit Lawn & Landscape", contactLine: "office@summit.example" },
+    business: { name: "Northwind Lawn & Snow", contactLine: "office@northwind.example" },
   });
 
   test("view mode draws the whole agreement and leaves NO raw merge tag", () => {
@@ -351,8 +382,10 @@ describe("the three render modes", () => {
 describe("the pricing schedule", () => {
   const lines = () => walkWidgets(doc()).map((x) => x.widget).filter((w) => w.kind === "price_line");
 
-  test("six priced lines, each one catalogue-ready", () => {
-    assert.equal(lines().length, 6);
+  test("eight priced lines, each one catalogue-ready", () => {
+    // Six, plus the two rows of the draft that were missing: the additional
+    // push and the severe / extraordinary event.
+    assert.equal(lines().length, 8);
     // `price_line` IS the catalogue-bound money widget: its registry entry
     // carries the shared Binding section, so the picker opens from every one
     // of these. What a shipped template must NOT do is arrive already pointing
@@ -368,7 +401,71 @@ describe("the pricing schedule", () => {
     const cadences = lines().map((w) => String(w.props.cadence));
     for (const c of cadences) assert.ok(c.trim(), "a priced line does not say what it is charged per");
     assert.ok(new Set(cadences).size > 1,
-      "six rates on one basis — then the document SHOULD carry a total");
+      "every rate on one basis — then the document SHOULD carry a total");
+  });
+
+  /* ── The three rows of the draft that had gone missing ─────────────────── */
+
+  test("the additional push is its OWN line, blank, with words telling the author what to type", () => {
+    const line = lines().find((w) => /additional/i.test(String(w.props.name)));
+    assert.ok(line, "the draft's second pricing row is not on the schedule");
+    assert.match(String(line.props.name), /each additional trigger/i);
+    assert.equal(line.props.unit_price, 0, "a template invented what a second push costs");
+    assert.equal(line.props.cadence, "per push");
+    assert.match(String(line.props.help), /same as the plowing rate/i);
+  });
+
+  test("the severe event is its OWN line, blank, and names the threshold the Details box fills", () => {
+    const line = lines().find((w) => /severe/i.test(String(w.props.name)));
+    assert.ok(line, "the draft's severe / extraordinary event row is not on the schedule");
+    assert.match(String(line.props.name), /\{\{severe_event_threshold\}\}/);
+    assert.match(String(line.props.name), /or more, or special conditions/i);
+    assert.equal(line.props.unit_price, 0);
+    assert.ok(String(line.props.help).trim().length > 20);
+  });
+
+  test("snow hauling is a QUOTED row — no amount, and the words say so", () => {
+    const pricing = doc().sections.find((s) => s.label === "Pricing schedule");
+    const facts = pricing.columns[0].widgets.filter((w) => w.kind === "key_fact");
+    const haul = facts.find((w) => /hauling/i.test(String(w.props.label)));
+    assert.ok(haul, "the draft's snow-hauling row is not on the schedule");
+    assert.equal(haul.props.value, "Quoted separately");
+    // …and it is NOT a priced line, so it adds no basis and no $0.00.
+    assert.ok(!lines().some((w) => /hauling/i.test(String(w.props.name))),
+      "hauling is a priced line showing $0.00, which reads as free");
+  });
+
+  test("the prose does not promise the second push costs the same", () => {
+    const strings = everyString(doc()).join("\n");
+    assert.ok(!/another push at the same rate/i.test(strings),
+      "the page promises a rate the pricing schedule no longer has to honour");
+    assert.match(strings, /additional-push rate/,
+      "nothing sends the reader to the line that prices a second push");
+  });
+
+  test("the at-a-glance table answers its third column on EVERY row", () => {
+    const glance = doc().sections.find((s) => s.label === "Agreement at a glance")
+      .columns[0].widgets.find((w) => w.kind === "pricing_table");
+    assert.equal(glance.props.labelRate, "How it is priced");
+    for (const row of glance.props.rows) {
+      assert.ok(String(row.rate || "").trim(),
+        `"${row.name}" has an empty "How it is priced" cell, which reads as free`);
+    }
+    // The two rows with no one rate to state point at the page that has it.
+    const pointers = glance.props.rows.filter((r) => r.rate === "See the pricing schedule");
+    assert.equal(pointers.length, 2);
+    // …and the glance lists the SAME services the schedule prices.
+    for (const words of ["Additional snow push", "Severe or extraordinary event"]) {
+      assert.ok(glance.props.rows.some((r) => r.name === words),
+        `the glance table does not mention "${words}"`);
+    }
+  });
+
+  test("the service term prints ONCE on the cover", () => {
+    const cover = doc().sections[0];
+    const strings = everyString(cover).join("\n");
+    const hits = (strings.match(/\{\{contract\.start_date\}\}/g) || []).length;
+    assert.equal(hits, 1, "the same dates are printed twice on one cover");
   });
 
   test("the lot services carry the paved area as their quantity", () => {
@@ -399,5 +496,177 @@ describe("the pricing schedule", () => {
       assert.ok(!/lot.?size|paved.?area|square.?feet/i.test(t),
         `"${t}" is a second home for a number the priced line already holds`);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   8 · "How many" is sometimes a MEASUREMENT — and the line says which
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("a quantity can never be read as a count when the catalogue meant a measurement", () => {
+  /** What the picker hands over for "Lot plowing — Per 1,000 sq ft, $18". */
+  const PICK = {
+    name: "Lot plowing — Per 1,000 sq ft",
+    description: "Mechanical clearing.",
+    features: ["Trigger depth 2 inches"],
+    unit_price: 18,
+    offering_id: "off-1",
+    price_id: "pr-1",
+    cadence: "per push",
+    label: "Per 1,000 sq ft",
+  };
+
+  test("loading a catalogue price RESETS How many to 1", () => {
+    // THE DEFECT: the pick wrote name, price and cadence and left whatever was
+    // in the quantity box. A line that said 165 became 165 whole lots.
+    const props = priceLinePropsFromCatalogue(PICK);
+    assert.equal(props.quantity, 1, "a catalogue pick kept the quantity from the last one");
+    assert.equal(props.unit_price, 18);
+    assert.equal(props.cadence, "per push");
+  });
+
+  test("…and brings the price's own unit label with it", () => {
+    assert.equal(priceLinePropsFromCatalogue(PICK).unit_label, "Per 1,000 sq ft");
+    assert.equal(priceLinePropsFromCatalogue({ ...PICK, label: "" }).unit_label, "");
+  });
+
+  test("the line beside the rate prints how many AND what one of them is", () => {
+    const m = (n) => `$${n.toFixed(2)}`;
+    assert.equal(
+      priceLineUnitNote({ quantity: 12, unitPrice: 18, unitLabel: "Per 1,000 sq ft" }, m),
+      "12 × $18.00 · Per 1,000 sq ft");
+    // Quantity 1 still names the unit — that is the whole point.
+    assert.equal(priceLineUnitNote({ quantity: 1, unitPrice: 625, unitLabel: "Per push" }, m), "Per push");
+    // A plain count with no catalogue label reads as it always did.
+    assert.equal(priceLineUnitNote({ quantity: 14, unitPrice: 625, unitLabel: "" }, m), "14 × $625.00");
+    assert.equal(priceLineUnitNote({ quantity: 1, unitPrice: 625, unitLabel: "" }, m), "");
+  });
+
+  test("the CANVAS prints it — the real renderer, on a real document", () => {
+    const d = doc();
+    const line = walkWidgets(d).map((x) => x.widget).find((w) => w.kind === "price_line");
+    line.props.unit_label = "Per 1,000 sq ft";
+    const html = renderDocument(d, makeContext(d, {
+      mode: "view", merge: SAMPLE_MERGE,
+      business: { name: "Northwind Lawn & Snow", contactLine: "office@northwind.example" },
+    }));
+    assert.ok(html.includes("Per 1,000 sq ft"),
+      "the unit the rate is charged on is not on the page anybody reads");
+    assert.ok(html.includes("12 × "), "the quantity is not beside the unit");
+  });
+
+  test("the widget DECLARES the field, so it is not a prop nothing knows about", () => {
+    assert.equal(WIDGETS_BY_KIND.price_line.defaults.unit_label, "");
+    assert.ok(WIDGETS_BY_KIND.price_line.controls.some((c) => c.key === "unit_label"),
+      "there is no way for an author to fix the unit label by hand");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   9 · ONE rule decides whether this document has a total at all
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("priced on one basis, or not at all", () => {
+  test("the snow & ice agreement is per event, and every other template is not", () => {
+    assert.equal(pricingBasisOf(doc()), "per_event");
+    for (const t of SHIPPED_TEMPLATES) {
+      if (t.key === KEY) continue;
+      assert.equal(pricingBasisOf(t.build()), null,
+        `"${t.name}" lost its total — its lines are charged on different bases`);
+    }
+  });
+
+  test("the shared fixture — the SAME answers oliver-api gives", () => {
+    // Both repos run these cases. A rule that lives in two files and is tested
+    // in one is a rule with two answers.
+    assert.ok(BASIS_CASES.cases.length >= 6);
+    for (const c of BASIS_CASES.cases) {
+      assert.equal(pricingBasisOf(c.doc), c.basis, `${c.name}: wrong basis`);
+      assert.equal(pricedOnOneBasis(c.doc), c.basis == null, `${c.name}: wrong one-basis answer`);
+    }
+  });
+
+  test("the sentence the builder's pane prints instead of a figure", () => {
+    assert.equal(PER_EVENT_SENTENCE, "Priced per event — no single total");
+    assert.equal(PER_EVENT_AMOUNT, "Per event");
+    // …and the pane reads the rule rather than a second copy of it.
+    assert.ok(BUILDER.includes("pricingBasisOf(doc)"),
+      "the builder works out for itself whether the document totals");
+    assert.ok(/perEventBasis\s*\?\s*PER_EVENT_SENTENCE/.test(BUILDER),
+      "the running total in the pane still prints a figure for a per-event document");
+  });
+
+  test("the Quotes & Proposals row prints the word, not a sum", () => {
+    // BOTH lists. The unified Quotes & Proposals page is the one the owner
+    // actually opens; `OliverProposalsPage` still serves /oliver_proposals and
+    // its detail drawer, and a rule obeyed by one of two lists is a rule the
+    // owner sees broken half the time.
+    for (const [name, src] of [["Quotes & Proposals", UNIFIED], ["Proposals", LIST]]) {
+      assert.ok(src.includes('pricing_basis === "per_event"'),
+        `the ${name} list does not know about the rule`);
+      assert.ok(src.includes("Per event"), `the ${name} amount column has nothing to print instead`);
+      assert.ok(src.includes('data-per-event="1"'), `the ${name} list cannot be driven for it`);
+    }
+    // …and a per-event agreement is left out of the pipeline headline, rather
+    // than adding its false sum there instead.
+    assert.ok(/pricing_basis === "per_event" \? 0 :/.test(UNIFIED),
+      "the open/accepted value still adds a figure true of no invoice");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10 · The Details group, and the crew's own sheet
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("what the author sees the moment the template loads", () => {
+  test("a SHIPPED default is not hidden behind \"1 filled\"", () => {
+    const rows = reconcileDetails(doc(), {});
+    assert.ok(rows.some((r) => r.token === "snow_trigger" && r.value === "2 inches"));
+    assert.equal(detailsStartOpen(rows), true,
+      "the group opens collapsed, so the trigger depth the template shipped is out of sight");
+    // A document that arrives with nothing filled opens as it always did.
+    assert.equal(detailsStartOpen(rows.map((r) => ({ ...r, value: "" }))), false);
+    assert.equal(detailsStartOpen([]), false);
+  });
+
+  test("the service term has a box even though it lives inside a ROW on the cover", () => {
+    // The tokens are on `key_fact` widgets inside a container. Before the walk
+    // read the tree they were invisible here, and the only reason they had
+    // boxes at all was the title band repeating the same two dates.
+    const cold = reconcileDetails(doc(), {}).map((r) => r.token);
+    assert.ok(cold.includes("contract.start_date"), "the service term has no field anywhere");
+    assert.ok(cold.includes("customer.name"), "a token inside a box is invisible to the Details group");
+  });
+
+  test("section 10 takes the location the DOCUMENT is about", () => {
+    const before = doc();
+    const plan = () => walkWidgets(before).map((x) => x.widget).find((w) => w.kind === "property_plan");
+    assert.equal(plan().props.locationId, "", "the template ships pointed at somebody's location");
+
+    const after = bindPlansToLocation(before, "A1B2C3D4-0000-0000-0000-00000000BEEF");
+    const bound = walkWidgets(after).map((x) => x.widget).find((w) => w.kind === "property_plan");
+    assert.equal(bound.props.locationId, "a1b2c3d4-0000-0000-0000-00000000beef",
+      "the plan did not take the document's location, or did not lower-case it");
+
+    // A plan the author pointed somewhere else is LEFT ALONE…
+    const again = bindPlansToLocation(after, "ffffffff-0000-0000-0000-000000000000");
+    assert.equal(again, after, "binding overwrote a location the author had chosen");
+    // …and a document with nothing to do comes back by identity.
+    assert.equal(bindPlansToLocation(before, ""), before);
+  });
+
+  test("the bound plan draws the property's name and address — lower-cased, like every other reader", () => {
+    const d = bindPlansToLocation(doc(), "AAAA1111-2222-3333-4444-555566667777");
+    const html = renderDocument(d, makeContext(d, {
+      mode: "view", merge: SAMPLE_MERGE,
+      business: { name: "Northwind Lawn & Snow", contactLine: "office@northwind.example" },
+      locations: {
+        "aaaa1111-2222-3333-4444-555566667777": {
+          name: "North lot", address: "1400 Harbour Way", city: "Riverton", state: "IA", postalCode: "50309",
+        },
+      },
+    }));
+    assert.ok(html.includes("North lot"),
+      "the plan is bound and still draws no property name — the id was not lower-cased");
   });
 });

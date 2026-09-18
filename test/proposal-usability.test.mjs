@@ -685,7 +685,16 @@ describe("D-37 · a template's sections arrive with real content", () => {
     assert.ok(lines.length >= 6, `only ${lines.length} priced lines on the schedule`);
     for (const w of lines) {
       assert.ok(String(w.props.name).trim(), "a priced line has no name");
-      assert.ok(Number(w.props.unit_price) > 0, `${w.props.name} ships at $0.00`);
+      /* A PRICE OF ZERO IS ALLOWED ONLY WHERE IT IS DELIBERATE (D-164).
+         Two rows of the draft — the additional push and the severe event —
+         are the business's own to state, and a number invented in a template
+         goes out under somebody's signature. So a blank price must come with
+         the author note that says what to put in it; a blank price with no
+         note is the stub this test was written to catch. */
+      if (!(Number(w.props.unit_price) > 0)) {
+        assert.ok(String(w.props.help || "").trim().length > 20,
+          `${w.props.name} ships at $0.00 with nothing telling the author what goes in it`);
+      }
       assert.ok(String(w.props.cadence).trim(), `${w.props.name} does not say what it is charged per`);
     }
     // The plowing line is the one the walk loads a catalogue price onto, and

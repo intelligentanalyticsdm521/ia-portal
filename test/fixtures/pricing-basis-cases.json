@@ -1,0 +1,96 @@
+{
+  "_why": "D-164. ONE rule decides whether a document's priced lines can be added up at all, and THREE surfaces read it: the builder's running total (Portal templates.ts pricingBasisOf), the paper (withTotalBeforeSignature) and the saved row plus the Quotes & Proposals amount column (oliver-api lib/documentModel.js pricingBasisOf). Both repos run these cases, so the two cannot drift. `basis` null means the document totals normally.",
+  "cases": [
+    {
+      "name": "no priced lines at all",
+      "basis": null,
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Scope", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "paragraph", "props": { "text": "Words." } }
+            ] }] }
+        ]
+      }
+    },
+    {
+      "name": "one line, no cadence — a one-off job",
+      "basis": null,
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Pricing", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "price_line", "props": { "name": "Driveway", "quantity": 1, "unit_price": 400, "cadence": null } }
+            ] }] }
+        ]
+      }
+    },
+    {
+      "name": "three lines, all per month",
+      "basis": null,
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Pricing", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "price_line", "props": { "name": "Mowing", "quantity": 1, "unit_price": 120, "cadence": "per month" } },
+              { "id": "w2", "kind": "price_line", "props": { "name": "Beds", "quantity": 1, "unit_price": 60, "cadence": "per month" } },
+              { "id": "w3", "kind": "price_line", "props": { "name": "Hedges", "quantity": 1, "unit_price": 40, "cadence": "per month" } }
+            ] }] }
+        ]
+      }
+    },
+    {
+      "name": "per push beside per application — nothing to add",
+      "basis": "per_event",
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Pricing", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "price_line", "props": { "name": "Plowing", "quantity": 12, "unit_price": 18, "cadence": "per push" } },
+              { "id": "w2", "kind": "price_line", "props": { "name": "Salting", "quantity": 12, "unit_price": 14, "cadence": "per application" } }
+            ] }] }
+        ]
+      }
+    },
+    {
+      "name": "a line inside a BOX still counts — the walk is the tree's",
+      "basis": "per_event",
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Pricing", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "price_line", "props": { "name": "Plowing", "quantity": 1, "unit_price": 625, "cadence": "per push" } },
+              { "id": "b1", "kind": "container", "props": {}, "children": [
+                { "id": "w2", "kind": "price_line", "props": { "name": "Retainer", "quantity": 1, "unit_price": 200, "cadence": "per month" } }
+              ] }
+            ] }] }
+        ]
+      }
+    },
+    {
+      "name": "one priced, one free-text — a blank cadence beside a real one",
+      "basis": "per_event",
+      "doc": {
+        "v": 2,
+        "settings": { "style": "plain" },
+        "sections": [
+          { "id": "s1", "label": "Pricing", "visibility": "customer", "layout": 1,
+            "columns": [{ "id": "c1", "widgets": [
+              { "id": "w1", "kind": "price_line", "props": { "name": "Plowing", "quantity": 1, "unit_price": 625, "cadence": "per push" } },
+              { "id": "w2", "kind": "price_line", "props": { "name": "Site walk", "quantity": 1, "unit_price": 0, "cadence": null } }
+            ] }] }
+        ]
+      }
+    }
+  ]
+}

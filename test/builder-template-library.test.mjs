@@ -80,14 +80,16 @@ const EVERY_ENTRY = Object.values(CATALOGUES).flat();
  *
  * D-146's first ask. Two of the three proposal templates were literally called
  * "(Rolling In It style)" and "(MS Moments style)" on the screen a client sees.
+ *
+ * ── THE LIST MOVED OUT, AND IS RE-EXPORTED (D-164 follow-up) ──────────────
+ * It was declared here, and a second suite that needed it typed the names
+ * again — a client's name written into the repository twice in order to forbid
+ * it once. It lives in `test/client-names.mjs` now, which declares no tests, so
+ * every suite can import it without running this one a second time. The name is
+ * re-exported so nothing that reads this file has to learn a new one.
  */
-const CLIENT_NAMES = [
-  "Rolling In It",
-  "MS Moments",
-  "Hope Ministries",
-  "Summit Lawn",
-  "Cedarline",
-];
+export { CLIENT_NAMES } from "./client-names.mjs";
+import { CLIENT_NAMES } from "./client-names.mjs";
 
 /** "Service agreement (Rolling In It style)" — the shape, not just the name. */
 const STYLE_SUFFIX = /\([^)]*\bstyle\b[^)]*\)/i;

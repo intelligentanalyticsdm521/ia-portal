@@ -706,7 +706,13 @@ function locationLine(loc?: LocationLite): string {
 }
 
 function propertyPlan(p: any, ctx: RenderContext): string {
-  const loc = ctx.locations?.[String(p.locationId || "")];
+  /* LOWER-CASED, like every other location reader on the platform (D-164).
+     `selectionOf`, the panel's picker and oliver-api's `proposalContext` all
+     key a location by its lower-cased id, because SQL Server hands GUIDs back
+     in whatever case they were written. This one did not, so a plan bound to
+     an upper-cased id drew no property name and no address while the address
+     block two widgets above it drew both. */
+  const loc = ctx.locations?.[String(p.locationId || "").toLowerCase()];
   const rows: any[] = Array.isArray(p.rows) ? p.rows : [];
   const head = p.heading || ctx.mode === "edit"
     ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";

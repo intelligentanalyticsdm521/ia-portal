@@ -30,6 +30,13 @@ export interface Proposal {
   tax_amount: number;
   discount_amount: number;
   total: number;
+  /**
+   * "per_event" when the document's priced lines are charged on DIFFERENT
+   * bases and cannot honestly be added up (D-164). The server sends it, and
+   * sends no figures with it: `total` comes back null rather than a number
+   * that is true of no invoice. Optional so an older API response still types.
+   */
+  pricing_basis?: string | null;
   currency: string;
   valid_until: string | null;
   sent_at: string | null;
@@ -212,10 +219,21 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
       header: "Total",
       align: "right",
       sortable: true,
-      sortAccessor: (p) => Number(p.total),
-      render: (p) => (
+      sortAccessor: (p) => (p.pricing_basis === "per_event" ? -1 : Number(p.total)),
+      /* D-164 — THE SAME RULE THAT KEEPS THE TOTAL OFF THE PAPER. A snow & ice
+         agreement is priced per push, per application and per month, and this
+         column used to add the three and print the answer — a figure true of
+         no invoice, on the list the owner reads their pipeline off. The
+         document says which basis it is on, the server sends the word, and the
+         column prints the word instead of inventing a number. */
+      render: (p) => (p.pricing_basis === "per_event" ? (
+        <span data-per-event="1" style={{ fontSize: 11, color: "#5A7A8A" }}
+          title="The lines on this document are charged on different bases — per push, per application, per month — so there is no one total">
+          Per event
+        </span>
+      ) : (
         <span style={{ fontFamily: "monospace", fontWeight: 600, color: "#0B1C24" }}>{fmtMoney(p.total)}</span>
-      ),
+      )),
     },
     {
       key: "views",
@@ -785,8 +803,11 @@ export function ProposalDetailDrawer({
       <div style={{ marginBottom: 16, padding: 12, background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between" }}>
           <span style={{ color: "#5A7A8A" }}>Total</span>
+          {/* Same rule, same words (D-164): a document priced per event has no
+              one total on the detail panel either. */}
           <span style={{ color: "#0B1C24", fontFamily: "monospace", fontWeight: 700 }}>
-            {fmtMoney(proposalSummary?.total)}
+            {proposalSummary?.pricing_basis === "per_event"
+              ? "Per event" : fmtMoney(proposalSummary?.total)}
           </span>
         </div>
       </div>

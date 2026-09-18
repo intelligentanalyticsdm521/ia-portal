@@ -113,11 +113,28 @@ function rate(
   unitPrice: number,
   cadence: string,
   bullets: string[] = [],
+  /** A note for the AUTHOR, drawn in the panel and on no page. */
+  help = "",
 ): Widget {
   return makeWidget("price_line", {
     name, description, bullets, quantity, unit_price: unitPrice, cadence,
+    ...(help ? { help } : {}),
   });
 }
+
+/**
+ * WHAT THE AT-A-GLANCE TABLE SAYS WHERE THERE IS NO ONE RATE TO STATE.
+ *
+ * The glance table's third column is "How it is priced", and a row whose price
+ * depends on the job — hauling, a severe event — has no figure that belongs on
+ * page one. It used to be left as a basis with an empty cell beside it, which
+ * reads as "free". It points at the page that does have the answer instead, and
+ * a test asserts no cell in that column is ever blank.
+ */
+export const SEE_THE_SCHEDULE = "See the pricing schedule";
+
+/** What a row with no amount at all says, on the schedule itself. */
+export const QUOTED_SEPARATELY = "Quoted separately";
 
 /* ══════════════════════════════════════════════════════════════════════════
    The document
@@ -167,7 +184,9 @@ function cover(): Section {
       style: "dark_band",
       title: "Commercial Snow & Ice Management Agreement",
       subtitle: "A clear, dependable plan for winter weather. Prepared for signature and electronic acceptance.",
-      bandRight: "Service term {{contract.start_date}} – {{contract.end_date}}",
+      /* NO `bandRight`. The service term is one of the four key facts under
+         the band, and it was printed in the band as well — the same dates
+         twice on one cover, three inches apart. One fact, one place. */
     }),
     factRow([
       ["Customer", "{{customer.name}}"],
@@ -192,11 +211,17 @@ function atAGlance(): Section {
       labelBasis: "What brings us out",
       labelRate: "How it is priced",
       columns: { service: true, basis: true, rate: true },
+      /* THE SAME SERVICES THE PRICING SCHEDULE PRICES, in the same order, so
+         page one and page six cannot list different work. Where a row has no
+         one rate to state, the cell points at the schedule rather than being
+         left empty — an empty "How it is priced" cell reads as "free". */
       rows: [
         { name: "Snow plowing", basis: "{{snow_trigger}} of accumulation", rate: "Per 1,000 sq ft of paved area, per push" },
+        { name: "Additional snow push", basis: "Each time the trigger depth is reached again", rate: SEE_THE_SCHEDULE },
         { name: "Lot salting", basis: "Freezing conditions, or when you ask", rate: "Per 1,000 sq ft, per application" },
         { name: "Sidewalks and entries", basis: "If selected on the pricing schedule", rate: "Per 1,000 sq ft, per visit" },
-        { name: "Snow hauling and pile relocation", basis: "If the snow has nowhere left to go", rate: "Quoted before the work starts" },
+        { name: "Snow hauling and pile relocation", basis: "If the snow has nowhere left to go", rate: QUOTED_SEPARATELY },
+        { name: "Severe or extraordinary event", basis: "{{severe_event_threshold}} or more, or special conditions", rate: SEE_THE_SCHEDULE },
       ],
     }),
     makeWidget("heading", { text: "Service summary", level: 3 }),
@@ -308,10 +333,27 @@ function pricingSchedule(): Section {
       text: "This page is the single source of truth for what this property costs. Each line below is priced per event, and the quantity on it is the measurement the rate is charged on — thousands of square feet of paved area for the lot lines, thousands of square feet of walk for the pedestrian lines.",
     }),
     rate(
-      "Snow plowing — per 2-inch push",
-      "Mechanical clearing of the paved areas in the property service plan. Every further 2 inches of accumulation is another push at the same rate.",
+      "Snow plowing — per push at the trigger depth",
+      /* NEUTRAL. This sentence used to read "Every further 2 inches of
+         accumulation is another push at the same rate", which typed the
+         trigger depth into the words (the Details box already carries it) and
+         promised the SAME rate — untrue the moment a business prices the
+         second push differently, which is why the draft carries an additional
+         push rate of its own. It names the line below instead. */
+      "Mechanical clearing of the paved areas in the property service plan. Each time the trigger depth is reached again, that is another push, billed at the additional-push rate shown in the schedule.",
       12, 18, "per push",
       ["Priced on the paved area, not on the storm", "Trigger depth {{snow_trigger}}"],
+    ),
+    /* THE DRAFT'S SECOND PRICING ROW, restored as a line of its own. It ships
+       BLANK because only the business knows whether a second push inside one
+       storm costs what the first did — and a number invented here is a number
+       that goes out under somebody's signature. */
+    rate(
+      "Additional snow push — each additional trigger",
+      "When accumulation reaches the trigger depth again during the same storm, the property is cleared again and that visit is billed at this rate.",
+      12, 0, "per push",
+      [],
+      "Leave it the same as the plowing rate if every push costs the same",
     ),
     rate(
       "Lot salting",
@@ -338,9 +380,31 @@ function pricingSchedule(): Section {
       "We watch the forecast for this property through the season, hold a slot on the route and dispatch without waiting to be called.",
       1, 200, "per month",
     ),
+    /* THE DRAFT'S SIXTH ROW, restored as its own line. Blank for the same
+       reason as the additional push: what an extraordinary storm costs is the
+       business's to state, and it is a rate, not a quote. */
+    rate(
+      "Severe or extraordinary event — {{severe_event_threshold}} or more, or special conditions",
+      "A storm above the severe-event depth, a storm that runs for days, a declared emergency, or anything needing equipment we would not normally bring.",
+      1, 0, "per event",
+      [],
+      "The rate, or the hourly rate, this work is handled at — leave it blank and it is agreed case by case",
+    ),
+    /* A QUOTED ROW, not a priced one. The draft's snow-hauling line carries no
+       amount at all: the work is measured when it is needed. A price line
+       showing $0.00 would read as free, and it would put a seventh basis into
+       `pricedOnOneBasis` for a charge that has none — so it is a plain fact,
+       with the words the draft uses. */
+    makeWidget("key_fact", {
+      label: "Snow hauling — if required",
+      value: QUOTED_SEPARATELY,
+    }),
+    makeWidget("paragraph", {
+      text: "Loading, carrying and tipping snow away from the property is measured and quoted before the work starts, because what it costs depends on how much snow there is and how far it has to go.",
+    }),
     makeWidget("heading", { text: "Storm example", level: 3 }),
     makeWidget("paragraph", {
-      text: "An example, not a charge. If the trigger depth is {{snow_trigger}} and a storm drops enough snow to reach it three times, the property is cleared three times and each completed push is charged at the plowing rate above. That is what per-push pricing means: a long storm is more than one visit.",
+      text: "An example, not a charge. If the trigger depth is {{snow_trigger}} and a storm drops enough snow to reach it three times, the property is cleared three times: the first visit at the plowing rate and each further one at the additional-push rate on the schedule above. That is what per-push pricing means — a long storm is more than one visit.",
     }),
     makeWidget("heading", { text: "Minimum charge", level: 3 }),
     makeWidget("paragraph", {
@@ -463,4 +527,4 @@ function smallPrint(): Section {
   ], { padding: 12, label: "Small print" });
 }
 
-export default { snowAgreementDocument };
+export default { snowAgreementDocument, SEE_THE_SCHEDULE, QUOTED_SEPARATELY };

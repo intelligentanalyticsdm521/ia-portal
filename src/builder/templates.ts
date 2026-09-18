@@ -966,6 +966,33 @@ export function pricedOnOneBasis(doc: BuilderDocument): boolean {
 }
 
 /**
+ * THE MARKER, so the SAME rule serves all three surfaces (D-164 follow-up).
+ *
+ * `pricedOnOneBasis` kept the total off the paper and nothing else knew: the
+ * builder's own running "Total" in the top-left pane and the Quotes & Proposals
+ * row went on adding per-push to per-application to per-month and printing the
+ * answer. Three places, one rule, so the rule now produces a WORD that all
+ * three read — the pane prints `PER_EVENT_SENTENCE`, oliver-api stamps
+ * `pricing_basis: "per_event"` on the stored document and sends no total, and
+ * the list prints "Per event" in the amount column.
+ *
+ * `null` means "this one totals normally", which is every other template.
+ * Mirrored in oliver-api `lib/documentModel.js` and pinned by the shared
+ * fixture `test/fixtures/pricing-basis-cases.json`.
+ */
+export const PER_EVENT_BASIS = "per_event";
+
+/** What the builder's pane says in place of a figure it must not print. */
+export const PER_EVENT_SENTENCE = "Priced per event — no single total";
+
+/** What the Quotes & Proposals row says in the amount column. */
+export const PER_EVENT_AMOUNT = "Per event";
+
+export function pricingBasisOf(doc: BuilderDocument): string | null {
+  return pricedOnOneBasis(doc) ? null : PER_EVENT_BASIS;
+}
+
+/**
  * THE TOTAL GOES ABOVE THE SIGNATURE (D-07).
  *
  * The 2026-09-16 tester signed a $1,875 agreement whose customer copy and

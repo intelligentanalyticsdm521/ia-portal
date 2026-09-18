@@ -92,6 +92,9 @@ export interface PickedService {
     /** "billed monthly" / "billed annually" / null for a one-off. Shown on the
         document so a recurring price cannot read as a one-time total. */
     cadence: string | null;
+    /** The price's OWN label — "Per 1,000 sq ft", "2-3 inch push" — i.e. what
+        one of them is. Empty when the catalogue price carries no label. */
+    label: string;
   };
 }
 
@@ -251,6 +254,10 @@ export function buildPick(o: CatalogOffering, price: CatalogPrice | null): Picke
       offering_id: o.offering_id,
       price_id: price?.price_id ?? null,
       cadence,
+      // THE PRICE'S OWN LABEL — "Per 1,000 sq ft", "2-3 inch push". It is what
+      // ONE of them is, and D-164 prints it beside the rate so a quantity can
+      // never be read as a count when the catalogue meant a measurement.
+      label,
     },
   };
 }

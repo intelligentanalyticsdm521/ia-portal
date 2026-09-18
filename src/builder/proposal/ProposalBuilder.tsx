@@ -34,8 +34,9 @@ import {
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
-  detailsMerge, documentLogo, parseMoney, plainLabel, readDetails,
-  reconcileDetails, widgetForToken, writeDetails, type DetailRow,
+  bindPlansToLocation, detailsMerge, detailsStartOpen, documentLogo, parseMoney,
+  plainLabel, readDetails, reconcileDetails, widgetForToken, writeDetails,
+  type DetailRow,
 } from "./documentDetails";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
@@ -45,7 +46,8 @@ import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
   applyBrandDefaults, hydrateClauses, isSavedBlock, proposalLibrary, savedIdOf,
-  savedTemplateEntries, templateByKey, withTotalBeforeSignature, type ClauseRow,
+  savedTemplateEntries, templateByKey, withTotalBeforeSignature,
+  PER_EVENT_SENTENCE, pricingBasisOf, type ClauseRow,
 } from "../templates";
 import { NameBlockDialog } from "../NameBlockDialog";
 import { TemplateLibrary } from "../TemplateLibrary";
@@ -59,7 +61,7 @@ import {
 import {
   ON_EMPTY_CHOICES, PUT_IT_BACK, REFRESH_MODES, RIBBON_PRESETS, TAG_COLOURS, TYPED_NOT_LIVE,
   bindingOf, findInCatalogue, onEmptyOf, overriddenFields, putItBackProps,
-  NO_BUSINESS_RATE_SENTENCE,
+  NO_BUSINESS_RATE_SENTENCE, priceLinePropsFromCatalogue,
   resolveCatalogCard, ribbonProps, selectionProps, snapshotFrom, tagOf,
 } from "../widgets";
 import { documentMoneySettings, totalsSettings } from "../totals";
@@ -425,6 +427,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [autoMerge]);
 
   /**
+   * SECTION 10 IS ABOUT THE LOCATION THE DOCUMENT IS ABOUT (D-164).
+   *
+   * A property plan shipped with no location, so a document whose customer and
+   * location chip were already chosen still opened its crew sheet saying
+   * "Choose a location…" — asking the author a question the document had
+   * already answered, on the one widget that writes back to the property.
+   *
+   * `bindPlansToLocation` binds only the plans that have NO location of their
+   * own and returns the same document by identity when there is nothing to do,
+   * so this settles in one pass and a plan the author pointed elsewhere is left
+   * alone. The panel's own picker says which location it is and changes it.
+   */
+  const documentLocationId = pickedLocationIds[0] || "";
+  useEffect(() => {
+    if (!documentLocationId) return;
+    setDoc((d) => bindPlansToLocation(d, documentLocationId));
+  }, [documentLocationId]);
+
+  /**
    * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
    *
    * The NUMBER always lives on the widget, because the customer's page and the
@@ -582,6 +603,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff]);
 
   const totals = ctx.totals;
+
+  /**
+   * "per_event", or null when the lines can honestly be added up (D-164).
+   *
+   * Read from the document by the ONE rule in templates.ts, so the pane, the
+   * paper and the saved row cannot disagree about whether this document has a
+   * total at all.
+   */
+  const perEventBasis = useMemo(() => pricingBasisOf(doc), [doc]);
 
   /* ── Starting points ─────────────────────────────────────────────────── */
   const startFromTemplate = useCallback((key: string) => {
@@ -1000,6 +1030,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             offerings={offerings} clauses={clauses} locations={locations}
             catalogueLoading={catalogueLoading}
             businessTax={businessTax} lookupCoupon={lookupCoupon}
+            documentLocationId={documentLocationId}
             onSaveClause={async (c) => {
               const saved = await api.post<any>("/proposal-builder/clauses", c);
               setClauses((prev) => [...prev.filter((x) => x.clause_key !== c.clause_key), (saved as any)]);
@@ -1091,8 +1122,19 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         }
         paneHeader={
           <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.4 }}>
-            <div data-doc-total={totals.total} style={{ fontWeight: 600, color: "#0B1C24" }}>
-              {totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
+            {/* THE SAME RULE THAT KEEPS THE TOTAL OFF THE PAPER (D-164).
+                `withTotalBeforeSignature` obeyed `pricedOnOneBasis` and this
+                pane did not, so a snow agreement printed no total on the
+                document the customer signs and a running "Total $11,438.00"
+                in the corner of the builder — per push plus per application
+                plus per month. One rule, three surfaces: the pane, the stored
+                row's total (oliver-api) and the Quotes & Proposals amount. */}
+            <div data-doc-total={perEventBasis ? "" : totals.total}
+              data-pricing-basis={perEventBasis || ""}
+              style={{ fontWeight: 600, color: "#0B1C24" }}>
+              {perEventBasis
+                ? PER_EVENT_SENTENCE
+                : totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
             </div>
             {/* D-35's chip row LIVED HERE and is deleted: the engine's own
                 "N details still to fill in / Take me to the first one" button
@@ -1356,12 +1398,15 @@ function CustomerBar({
 
 function WidgetExtras({
   widget, sectionId, doc, onChange, offerings, clauses, locations, catalogueLoading,
-  businessTax, lookupCoupon,
+  businessTax, lookupCoupon, documentLocationId,
   onSaveClause, onSeedClauses, onLoadPropertyFields, onSavePropertyFields,
 }: {
   widget: Widget; sectionId: string; doc: BuilderDocument;
   onChange: (d: BuilderDocument) => void;
   offerings: CatalogOffering[]; clauses: ClauseRow[]; locations: LocationRow[];
+  /** The location the WHOLE document is about — the customer/location chip.
+   *  A property plan with none of its own is bound to it (D-164). */
+  documentLocationId: string;
   /** The business's own sales-tax rate, for the Totals panel. */
   /** `percent: null` is "nobody has said" and is NOT 0% (one home, (c)). */
   businessTax: { percent: number | null; label: string } | null;
@@ -1435,6 +1480,18 @@ function WidgetExtras({
           ))}
         </select>
       </div>
+      {/* D-164 — SAY WHICH, and offer the change. A plan that took the
+          document's own location says so in plain words, so the author is
+          never wondering whose property sheet they are filling in. */}
+      {widget.kind === "property_plan" && !!documentLocationId
+        && String(p.locationId || "").toLowerCase() === documentLocationId.toLowerCase() && (
+        <div data-plan-from-document="1" style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
+          This is the location chosen for the whole document
+          {planLocationName(locations, documentLocationId)
+            ? ` — ${planLocationName(locations, documentLocationId)}` : ""}.
+          Pick another above to point this page somewhere else.
+        </div>
+      )}
       {widget.kind === "property_plan" && p.locationId && (
         <button type="button" style={miniBtn} data-builder-anchor={PROPOSAL_ANCHORS.propertySave}
           title="Save what is on this page back to the property, so the crew sees the same sheet on the job"
@@ -1467,15 +1524,12 @@ function WidgetExtras({
           offerings={offerings}
           loading={catalogueLoading}
           label="Fill from Products &amp; Services"
-          onPick={(o, price) => {
-            const pick = buildPick(o, price);
-            patch({
-              name: pick.parts.name, description: pick.parts.description,
-              bullets: pick.parts.features, unit_price: pick.parts.unit_price,
-              offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
-              cadence: pick.parts.cadence,
-            });
-          }}
+          /* ONE WRITER for a catalogue pick (D-164): it resets How many to 1
+             and brings the price's own unit label with it, so a per-1,000-sq-ft
+             rate can never land on a line still counting 165 of something
+             else. `priceLinePropsFromCatalogue` is that writer, and it is the
+             one the pricing table's branch below uses too. */
+          onPick={(o, price) => patch(priceLinePropsFromCatalogue(buildPick(o, price).parts))}
         />
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ ...FIELD_COL, flex: 1 }}>
@@ -1493,6 +1547,23 @@ function WidgetExtras({
               onChange={(e) => patch({ unit_price: Number(e.target.value) || 0 })} />
           </div>
         </div>
+        {/* WHAT ONE OF THEM IS. Filled from the catalogue price's own label,
+            and typeable for a line nobody loaded. It prints beside the rate on
+            the canvas, the customer's page and the PDF, so "How many" can
+            never be read as a count when it is a measurement. */}
+        <div style={FIELD_COL}>
+          <span style={LBL}>What one of them is</span>
+          <input style={INPUT} data-price-unit-label="1"
+            placeholder="e.g. Per 1,000 sq ft, or Per push"
+            title="The unit the price is charged on. It is printed beside the rate."
+            value={String(p.unit_label ?? "")}
+            onChange={(e) => patch({ unit_label: e.target.value })} />
+        </div>
+        {String(p.help ?? "").trim() && (
+          <div data-price-help="1" style={{ fontSize: 10, color: "#94A3B8", lineHeight: 1.4 }}>
+            {String(p.help)}
+          </div>
+        )}
         <TagControls widget={widget} patch={patch} />
       </>
     );
@@ -1533,12 +1604,8 @@ function WidgetExtras({
               }],
             });
           } else {
-            patch({
-              name: pick.parts.name, description: pick.parts.description,
-              features: pick.parts.features, unit_price: pick.parts.unit_price,
-              offering_id: pick.parts.offering_id, price_id: pick.parts.price_id,
-              cadence: pick.parts.cadence,
-            });
+            // The SAME writer the price-line branch above uses (D-164).
+            patch(priceLinePropsFromCatalogue(pick.parts));
           }
         }}
       />
@@ -2143,6 +2210,19 @@ function DetailsGroup({ rows, onSet, focusToken, onFocused }: {
 }) {
   const [showFilled, setShowFilled] = useState(false);
   const boxes = useRef<Record<string, HTMLInputElement | null>>({});
+  /* D-164 — A SHIPPED DEFAULT IS NOT HIDDEN BEHIND "1 filled". The snow & ice
+     agreement arrives with the trigger depth already at "2 inches" and the
+     group opened collapsed, so the one number the cover, the scope and the
+     storm example all quote was out of sight. Decided ONCE, when the rows
+     first arrive, by `detailsStartOpen` — not on every render, or typing into
+     the last blank box would fold the group up under the caret. */
+  const decided = useRef(false);
+
+  useEffect(() => {
+    if (decided.current || !rows.length) return;
+    decided.current = true;
+    if (detailsStartOpen(rows)) setShowFilled(true);
+  }, [rows]);
 
   useEffect(() => {
     if (!focusToken) return;
@@ -2196,6 +2276,13 @@ function DetailsGroup({ rows, onSet, focusToken, onFocused }: {
       </div>
     </div>
   );
+}
+
+/** The name of one of the customer's locations, by id. "" when unknown. */
+function planLocationName(locations: LocationRow[], locationId: string): string {
+  const id = String(locationId ?? "").toLowerCase();
+  const l = locations.find((x) => String(x.location_id).toLowerCase() === id);
+  return String(l?.name ?? "").trim();
 }
 
 function addressLine(l?: LocationRow | null): string {
