@@ -710,7 +710,12 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     /* D-168 added a third: the offer file lists IA OLIVER Invoice under
        `website.ia` only, because a hosted landing page has no signed-in
        customer to show an invoice to. */
-    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
+    /* ...and B-168 F8 added two more, both Elementor's own and both under
+       `website.elementor_pro` in the offer file and not under landing's: a
+       hosted landing page has one job, and a site menu takes the visitor off
+       it. `login` is website-only for a plainer reason still — a landing page
+       has no accounts to sign into, so the box could not do anything. */
+    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "login", "nav_menu"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
     /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of

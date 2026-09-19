@@ -208,6 +208,11 @@ describe("§3.2's union is registered", () => {
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
     "form", "gallery", "social_links", "countdown", "logo_strip",
+    /* B-168 F8 — Elementor's own Login and WordPress Menu, both in the offer
+       file Brandon approved on 2026-09-19 under `website.elementor_pro`. They
+       are declared in `widgets/families/f8-contact-furniture/`, which is why
+       they are not beside the others above. */
+    "login", "nav_menu",
     /* 11.13.3's Terms: saved clauses in, plain Heading + Text Editor out. A
        PANEL TILE, declared in src/builder/proposal/catalogueTiles.ts.
        `clauses` is the widget it replaces on the panel — its kind stays (the

@@ -1228,6 +1228,16 @@ export const PANEL_ORDER: string[] = [
   "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
   "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
   "social_icons", "social_links", "alert", "shortcode", "html", "menu_anchor",
+  /* B-168 F8 — Elementor's Login and WordPress Menu. THE ONLY LINE F8 ADDS TO
+     THIS FILE, and it is here because `PANEL_ORDER` is a hand-written list with
+     no family hook: a family's new kind has nowhere to say where it sits, and
+     `unorderedKinds()` — which `builder-widget-set.test.mjs` asserts is empty —
+     goes red without it. Every one of the ten families hits this. The real fix
+     is for PANEL_ORDER to be cut from `test/fixtures/elementor-widget-names.json`,
+     which is where its own comment says the order comes from; it is written up
+     in D168_HANDOFF_2026-09-19.md. Until then this is two strings, appended, so
+     ten families conflict on one line instead of ten. */
+  "login", "nav_menu",
   "colour_block", "background", "qr_code", "social_handle",
   // Intelligent Analytics — §11.13.3's own order, proposals first
   "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",

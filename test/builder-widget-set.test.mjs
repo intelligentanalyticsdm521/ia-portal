@@ -205,6 +205,11 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "Image Box", "Icon Box", "Rating", "Image Carousel", "Basic Gallery", "Icon List",
       "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion",
       "Social Icons", "Alert", "Shortcode", "HTML", "Menu Anchor",
+      /* B-168 F8. Elementor's own Login and WordPress Menu, both under
+         `website.elementor_pro` in the offer file. They sit at the end of the
+         General group because PANEL_ORDER is appended to rather than
+         interleaved — see the note beside them in registry.ts. */
+      "Login", "WordPress Menu",
       "IA Posts", "Reviews", "Book Now",
       "IA Form",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
@@ -228,7 +233,14 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
     /* D-168 widened this by one: the offer file lists IA OLIVER Invoice under
        `website.ia` only. A hosted landing page has no signed-in customer to
        show an invoice to, which is the same reason the menus are not there. */
-    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice"];
+    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice",
+      /* B-168 F8: Elementor's Login and WordPress Menu. The offer file lists
+         `nav-menu` under `website.elementor_pro` only. `login` it lists under
+         both, and we ship it on the website alone because a SPARK hosted
+         landing page has no accounts to sign in to — a tile that cannot do
+         anything is the dead control this pass is trying not to ship. It is in
+         the handoff for the main session to confirm or overrule. */
+      "Login", "WordPress Menu"];
     assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });
 
