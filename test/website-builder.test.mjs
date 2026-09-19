@@ -160,10 +160,16 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  test("the pane opens with Elementor's own groups, in Elementor's order", () => {
+    /* FIVE, not four, since D-168 item 6 and B-168 wave 2: Elementor Pro draws
+       Layout, Basic, Pro, General, Site, then a plugin's own group. `Pro` is
+       drawn here because this family's five Pro widgets really are in
+       `pro-elements` in the machine file; `Site` is not, because nothing
+       offered on a website page carries that group yet, and `panelGroups`
+       drops an empty one. */
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });
 

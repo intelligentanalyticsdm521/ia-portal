@@ -14,7 +14,15 @@
  * only drawn once it has words is unreachable (D-01, the worst moment of the
  * 2026-09-16 walk), and each new widget would have re-invented the fix.
  */
-import { esc, paras as enginePara, t as engineFill, type RenderContext } from "../render";
+/* NOT `../render` (B-168 wave 2). Every widget file imports this module, so an
+   import of `render.ts` here is an import of `render.ts` from inside every
+   family folder — and `render.ts`'s own `RENDERED_KINDS` reads a const out of
+   `widgets/families/index.ts`, which is the module a family test enters first.
+   `builder/runs.ts` holds the same three functions and imports no renderer;
+   `render.ts` re-exports them, so no other caller changed. See runs.ts. */
+import { esc } from "../esc";
+import { paras as enginePara, t as engineFill } from "../runs";
+import type { RenderContext } from "../render";
 
 /** Merge-fill, then escape. Never the other way round. */
 export function fillText(value: unknown, ctx: RenderContext): string {

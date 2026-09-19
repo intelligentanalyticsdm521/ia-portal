@@ -17,7 +17,11 @@
  * fallback section in this file: there is nothing to fall back FROM.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+/* `esc` from `builder/esc`, a module that imports nothing — NEVER from
+   `builder/render`, which pulls the family index back in while it is still
+   evaluating (D-168 item 5b; wave one had it wrong and the family test threw). */
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { pictureFrom } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 import { flexJustify, str } from "./shared";
@@ -144,7 +148,12 @@ export const SHARE_BUTTONS_DEF: FamilyWidgetDef = {
     `<rect x="6" y="14" width="15" height="13" rx="2" fill="#94A3B8" stroke="none"/>`
     + `<rect x="24" y="14" width="15" height="13" rx="2" fill="#94A3B8" stroke="none"/>`
     + `<rect x="42" y="14" width="15" height="13" rx="2" fill="#CBD5E1" stroke="none"/>`),
-  category: "General",
+  /* ELEMENTOR PRO'S OWN GROUP (D-168 item 6, fixed in wave 2). This widget is
+     `pro-elements` in BUILDER_WIDGET_CATALOG_2026-09-17.pro.json. Wave one put
+     it in General, because at the time General was where every Pro widget sat;
+     the override seam gave Elementor Pro's six groups their real names and the
+     panel test caught it. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

@@ -172,7 +172,16 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
 
 /** Every widget the query matches, best first — what Enter picks. */
 export function flatPanelMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
-  return byRelevance(panelGroups(adapter, query).flatMap((g) => g.widgets), query, adapter);
+  /* FLATTEN, DO NOT RE-RANK (B-168 wave 2). This re-ranked the flat list a
+     second time, ACROSS groups, while the panel draws group by group — so the
+     first card and the thing Enter inserts were two different widgets again as
+     soon as a group other than the first held the best match. The Pro group
+     becoming real (D-168 item 6) is what made it show: searching "pro" drew
+     Call to Action first and inserted Product Cards.
+
+     `byRelevance` has already ordered each group, so flattening IS the one
+     order the comment above asks for, computed once and used by both. */
+  return panelGroups(adapter, query).flatMap((g) => g.widgets);
 }
 
 /**

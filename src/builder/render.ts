@@ -42,6 +42,15 @@ import { isContainer, CONTAINER_KIND, MAX_DEPTH } from "./treeOps";
 import type { Container, Node } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
+/* THE TEXT PIPELINE MOVED to `builder/runs.ts` (B-168 wave 2), for the reason
+   `esc` moved to `builder/esc.ts` at D-168 item 5 and one that only showed up
+   when a family test was RUN: `widgets/text.ts` imported this module, so a
+   family folder reached `render.ts` at run time, and `RENDERED_KINDS` below
+   reads `FAMILY_RENDERED_KINDS` — a const — out of a half-built
+   `widgets/families/index.ts`. Re-exported here, so every caller is unchanged
+   and there is still exactly one of each function. See runs.ts. */
+import { boldRuns, paras, t, tokenChips } from "./runs";
+export { boldRuns, paras, t };
 import { documentTotals, money, type DocumentTotals } from "./totals";
 import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 /* D-156 stream B — THE ATOMIC WIDGETS (widgets/). Each declares itself and
@@ -162,9 +171,6 @@ export function makeContext(
 }
 
 /** Merge-fill, then escape. Never the other way round. */
-export function t(text: unknown, ctx: RenderContext): string {
-  return tokenChips(esc(fill(String(text ?? ""), ctx.merge, ctx.mode)), ctx);
-}
 
 /**
  * AN UNFILLED MERGE FIELD IS A SLOT, NOT A WORD (D-03, §11.10).
@@ -184,11 +190,6 @@ export function t(text: unknown, ctx: RenderContext): string {
  * {{contract.start_date}} exactly as it was: the model cannot tell the
  * difference, and the author can.
  */
-function tokenChips(escaped: string, ctx: RenderContext): string {
-  if (ctx.mode !== "edit" || escaped.indexOf("{{") < 0) return escaped;
-  return escaped.replace(/\{\{\s*([a-zA-Z0-9_. ]+?)\s*\}\}/g, (whole, token) =>
-    `<span class="bx-tok" data-token="${esc(String(token))}" title="Filled in for you when the document is sent. Click to say what goes here.">${whole}</span>`);
-}
 
 /**
  * `**LABEL**` → **LABEL** (D-165).
@@ -210,28 +211,8 @@ function tokenChips(escaped: string, ctx: RenderContext): string {
  * "2 ** 3", because guessing at half a pair is how a document grows a word
  * nobody wrote.
  */
-export function boldRuns(escaped: string): string {
-  return escaped.indexOf("**") < 0
-    ? escaped
-    : escaped.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-}
 
 /** Plain text with blank lines between paragraphs → <p> runs. */
-export function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
-  const filled = fill(String(text ?? ""), ctx.merge, ctx.mode);
-  const attr = editPath ? ` data-edit="${esc(editPath)}"` : "";
-  if (!filled.trim()) {
-    return ctx.mode === "edit"
-      ? `<p class="bx-p bx-empty"${attr} data-placeholder="Type here…"></p>`
-      : "";
-  }
-  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(tokenChips(esc(p.trim()), ctx)).replace(/\n/g, "<br/>"));
-  // In edit mode the whole run is ONE editable element — splitting it into
-  // several <p data-edit> would make the author's second paragraph overwrite
-  // the first when it is read back.
-  if (ctx.mode === "edit") return `<div class="bx-prose"${attr}>${blocks.map((b) => `<p class="bx-p">${b}</p>`).join("")}</div>`;
-  return blocks.map((b) => `<p class="bx-p">${b}</p>`).join("");
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
    Widgets

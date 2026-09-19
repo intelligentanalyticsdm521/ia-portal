@@ -22,7 +22,11 @@
  * is every word the author wrote. No JavaScript is involved on our side at all.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+/* `esc` from `builder/esc`, a module that imports nothing — NEVER from
+   `builder/render`, which pulls the family index back in while it is still
+   evaluating (D-168 item 5b; wave one had it wrong and the family test threw). */
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { pictureFrom, bar, box } from "../../../pictures";
 import { editRun, proseRun } from "../../text";
 import { DEFAULT_ICON, ICON_OPTIONS, glyphFor } from "../../glyph";
@@ -165,7 +169,12 @@ export const FLIP_BOX_DEF: FamilyWidgetDef = {
   picture: pictureFrom(
     box(6, 8, 34, 24) + bar(12, 16, 20, 4) + bar(12, 24, 14)
     + `<rect x="30" y="12" width="28" height="20" rx="3" fill="#94A3B8" stroke="none"/>`),
-  category: "General",
+  /* ELEMENTOR PRO'S OWN GROUP (D-168 item 6, fixed in wave 2). This widget is
+     `pro-elements` in BUILDER_WIDGET_CATALOG_2026-09-17.pro.json. Wave one put
+     it in General, because at the time General was where every Pro widget sat;
+     the override seam gave Elementor Pro's six groups their real names and the
+     panel test caught it. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

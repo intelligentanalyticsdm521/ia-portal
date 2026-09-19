@@ -15,7 +15,11 @@
  * `shared.fallbackCard`.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+/* `esc` from `builder/esc`, a module that imports nothing — NEVER from
+   `builder/render`, which pulls the family index back in while it is still
+   evaluating (D-168 item 5b; wave one had it wrong and the family test threw). */
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { pictureFrom, bar, box, solid } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 import { fallbackCard, str } from "./shared";
@@ -72,7 +76,12 @@ export const FACEBOOK_PAGE_DEF: FamilyWidgetDef = {
   },
   icon: "Facebook",
   picture: pictureFrom(box(8, 6, 48, 28) + solid(8, 6, 48, 9) + bar(14, 20, 34) + bar(14, 27, 24)),
-  category: "General",
+  /* ELEMENTOR PRO'S OWN GROUP (D-168 item 6, fixed in wave 2). This widget is
+     `pro-elements` in BUILDER_WIDGET_CATALOG_2026-09-17.pro.json. Wave one put
+     it in General, because at the time General was where every Pro widget sat;
+     the override seam gave Elementor Pro's six groups their real names and the
+     panel test caught it. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

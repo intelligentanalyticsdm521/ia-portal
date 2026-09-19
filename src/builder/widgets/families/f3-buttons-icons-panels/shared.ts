@@ -15,7 +15,11 @@
  * two friendlier names. This file only holds what neither of those has and what
  * only F3 needs.
  */
-import { esc } from "../../../render";
+/* `esc` comes from `builder/esc`, a module that imports nothing, and NEVER
+   from `builder/render` — D-168 item 5b. `render.ts` imports the family index,
+   so a family folder that reached back into it closed a real cycle and a
+   family's own test threw "Cannot access … before initialization". */
+import { esc } from "../../../esc";
 
 /** `null` and `undefined` become "", never the word "null" on a page. */
 export const str = (v: unknown): string => (v == null ? "" : String(v));
