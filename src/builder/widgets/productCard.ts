@@ -130,6 +130,18 @@ export function findInCatalogue(
   return { offering, price };
 }
 
+/**
+ * THE NAME ON A STORED SNAPSHOT, in either spelling. The ONE reader.
+ *
+ * `snapshotFrom` writes `title`; `upgrade.renameProps` renames it to the price
+ * table's `heading` on every read path, inside `_ia_snapshot` too. Two spellings
+ * of one field, and the customer's page only knew one of them.
+ */
+export function snapshotName(snapshot: Record<string, unknown> | undefined | null): string {
+  const s: any = snapshot || {};
+  return str(s.title) || str(s.heading);
+}
+
 export interface ResolvedCatalogCard extends CatalogSnapshot {
   /** Where each visible value came from — the inspector says so in words. */
   source: "live" | "stored" | "none";
@@ -157,13 +169,28 @@ export function resolveCatalogCard(
   // fixed at publish and the one fixed at send — because the difference
   // between them is WHEN the snapshot was written, never whether to read it.
   const live = isPinned(p) ? null : findInCatalogue(binding, offerings);
-  const stored: Partial<CatalogSnapshot> = (b.snapshot || {}) as Partial<CatalogSnapshot>;
+  const stored: any = (b.snapshot || {}) as Partial<CatalogSnapshot>;
+  /* THE SNAPSHOT IS READ IN BOTH SPELLINGS (found by driving it, 2026-09-19).
+     `snapshotFrom` writes `title` / `per` / `bullets`, and `upgrade.renameProps`
+     walks the whole props object on every read path and renames those three to
+     the PRICE TABLE's names — `heading` / `period` / `features_list` — inside
+     `_ia_snapshot` as well. So a card that had been through the upgrade came
+     back with a snapshot this reader did not recognise, and on the customer's
+     own page and on the PDF the card printed its price and its description with
+     NO NAME above them. The server's `flatCard` already reads both (oliver
+     `lib/documentModel.js`, through `normaliseCardProps`); this is the half that
+     did not, which is why it showed on paper as an almost-right card.
+     One reader, both spellings — the same shape `cardFields` uses above. */
+  const storedBullets = [stored.bullets, stored.features_list]
+    .find((v) => Array.isArray(v)) as unknown[] | undefined;
   const base: CatalogSnapshot = live
     ? snapshotFrom(live.offering, live.price)
     : {
-      title: str(stored.title), price: str(stored.price), per: str(stored.per),
+      title: snapshotName(stored),
+      price: str(stored.price),
+      per: str(stored.per) || str(stored.period),
       description: str(stored.description),
-      bullets: Array.isArray(stored.bullets) ? stored.bullets.map(str) : [],
+      bullets: featureTexts(storedBullets ?? []),
       amount: Number(stored.amount) || 0,
       cadence: stored.cadence ?? null,
       basis: str(stored.basis),
@@ -221,10 +248,13 @@ export function renderCatalogCard(w: Widget, ctx: RenderContext): string {
        that draws nothing on the canvas cannot be clicked to fix. */
     const empty = onEmptyOf(p);
     if (empty === "last_snapshot" && ctx.mode !== "edit") {
-      const snap = bindingSettings(p).snapshot;
-      if (snap && String((snap as any).title ?? "").trim()) {
+      // BOTH SPELLINGS here too — see `resolveCatalogCard`. `snapshotName` is
+      // the one reader, so a snapshot the upgrade renamed is still a card with
+      // a name rather than a silent nothing.
+      const snap: any = bindingSettings(p).snapshot;
+      if (snap && snapshotName(snap).trim()) {
         return renderCardBody(
-          { ...w, props: { ...p, ...snapshotToCardProps(snap as Partial<CatalogSnapshot>) } },
+          { ...w, props: { ...p, ...snapshotToCardProps({ ...snap, title: snapshotName(snap) }) } },
           ctx,
           { readOnlyPrice: true },
         );

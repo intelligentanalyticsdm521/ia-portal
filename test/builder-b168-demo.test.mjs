@@ -35,6 +35,7 @@ import {
   CUSTOM_FIELD_CHOICES, choiceOf, customFieldProps, isRetyped,
   putCustomFieldBackProps, renderCustomFieldWith, resolveCustomField,
 } from "../src/builder/widgets/families/ia/customField.ts";
+import { resolveCatalogCard, snapshotName } from "../src/builder/widgets/productCard.ts";
 import { FAMILY, familyKinds, renderFamily } from "../src/builder/widgets/families/ia/index.ts";
 import {
   PROPOSAL_SECTION_TEMPLATES, SECTION_TEMPLATE_NAMES, sectionTemplateByKey,
@@ -387,6 +388,8 @@ describe("D-168 · the page a person builds in the demo", () => {
    | 4 | `documentDetails.isSiteWidget` answers yes to any Custom Field, the way it used to answer on the kind | 1 red: "a site field takes the document's location; a customer field never does" — the customer's email line is pointed at a yard |
    | 5 | `totals.sitesInTree` stops looking one level into the box | 2 red: "a box of fields still marks a property", and builder-integration's "a property is the BOX its address is in" — both per-property subtotals vanish |
    | 6 | `sectionTemplates` Pricing options drops the row Container | 1 red: "Pricing options is three Product Cards in a row" — three cards stack down the page and no gap can be set on them |
+   | 7 | `productCard.snapshotName` reads only `title` again | 1 red: "a stored product card keeps its NAME on the customer's page" — the card prints its price with nothing above it |
+   | 8 | oliver `routes/proposals.js` writes `JSON.stringify(stamped)` on the send path again | 1 red (in the OTHER repo): oliver's "the send path writes the document through the ONE writer" — a per-event proposal's row and email print $0.00 |
 
    Every one was restored and the same files re-run green (`# fail 0`) before
    the next was broken.
@@ -396,3 +399,61 @@ describe("D-168 · the page a person builds in the demo", () => {
    documentation rather than a dispatch table. `test/builder-widget-set.test.mjs`
    is the one that catches it, which is why the comment on that line says so.
 */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. THE TWO DEFECTS THE DRIVE FOUND (2026-09-19)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("found by driving it", () => {
+  test("a stored product card keeps its NAME on the customer's page", () => {
+    /* WHAT HAPPENED. A card picked from the catalogue, sent, and opened on the
+       customer's own link printed its price and its description with NOTHING
+       above them. `snapshotFrom` writes the snapshot as `title` / `per` /
+       `bullets`; `upgrade.renameProps` runs on every read path and renames those
+       three to the price table's `heading` / `period` / `features_list` INSIDE
+       `_ia_snapshot` as well; and `resolveCatalogCard` read only the first
+       spelling. The server's `flatCard` already read both, so the PDF was right
+       and the page was wrong — one document, two readings, which is the class of
+       defect this whole pass exists to close. */
+    const renamed = {
+      _ia_source: "oliver:catalogue",
+      _ia_selection: { offering_id: "o1", price_id: "p1" },
+      refresh: "snapshot_send",
+      _ia_snapshot: {
+        heading: "Snow Removal — 3-5 inch push",
+        price: "$775.00",
+        period: "per push",
+        description: "Commercial lot clearing.",
+        features_list: [{ item_text: "Salt included" }],
+        amount: 775, cadence: "per push", basis: "per push",
+      },
+      overrides: {},
+    };
+    const r = resolveCatalogCard(renamed, null);
+    assert.equal(r.title, "Snow Removal — 3-5 inch push", "the card lost its name");
+    assert.equal(r.per, "per push");
+    assert.deepEqual(r.bullets, ["Salt included"]);
+    assert.equal(snapshotName(renamed._ia_snapshot), "Snow Removal — 3-5 inch push");
+    // …and the name really is DRAWN, on a customer's copy. Presence, not absence.
+    const doc = docOf([makeWidget("catalog_card", renamed)]);
+    const html = renderDocument(doc, makeContext(doc, { mode: "view" }));
+    assert.ok(html.includes("Snow Removal — 3-5 inch push"), "the name never reached the page");
+    assert.ok(html.includes("775"), "the price never reached the page");
+  });
+
+  test("…and the first spelling still works, so nothing already stored moves", () => {
+    const original = {
+      _ia_source: "oliver:catalogue",
+      _ia_selection: { offering_id: "o1", price_id: "p1" },
+      refresh: "snapshot_send",
+      _ia_snapshot: {
+        title: "Weekly Mowing", price: "$65.00", per: "", description: "Mow and edge.",
+        bullets: ["Same crew"], amount: 65, cadence: null, basis: "one-time",
+      },
+      overrides: {},
+    };
+    const r = resolveCatalogCard(original, null);
+    assert.equal(r.title, "Weekly Mowing");
+    assert.deepEqual(r.bullets, ["Same crew"]);
+  });
+});
