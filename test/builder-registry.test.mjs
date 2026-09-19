@@ -461,57 +461,64 @@ describe("the pane groups them", () => {
   });
 });
 
-describe("WidgetPane honours SD-010", () => {
+describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
   const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
-    // §11.10 (D-147): the grouping moved to widgetTasks.ts, which groups the
-    // registry's own widgets by the JOB they do rather than by their category
-    // — and the PICKER calls the same function, so the pane and the "+" can
-    // never offer two different vocabularies. The rule is unchanged: no list
-    // of widgets is written down in this file.
+    // §11.13.1: the grouping moved to widgetGroups.ts, which groups the
+    // registry's own widgets the way the reference editor groups them —
+    // Layout / Basic / General / Intelligent Analytics — and the PICKER
+    // calls the same function, so the panel and the "+" can never offer two
+    // vocabularies. The rule is unchanged: no list of widgets in this file.
     assert.match(pane, /from "\.\/registry"/);
-    assert.match(pane, /groupByTask\(adapter, query\)/);
+    assert.match(pane, /panelGroups\(adapter, query\)/);
     assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
   });
 
   test("every widget button carries a tooltip AND an accessible name", () => {
-    // A LOCKED row says the reason instead, which is the accessible name that
+    // A LOCKED tile says the reason instead, which is the accessible name that
     // matters when the button cannot be pressed (R-D1).
     assert.match(pane, /title=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
     assert.match(pane, /aria-label=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
   });
 
-  test("it renders the picture, the label and the one line — in THIS builder's words", () => {
-    // N-4: the pane reads the resolved sentence, never `w.description`, which
-    // is now a map of one per builder for anything offered in more than one.
-    assert.match(pane, /src=\{w\.picture\}/);
-    assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
-    assert.match(pane, /\{lock\?\.sentence \|\| widgetDescription\(w, adapter\)\}/);
-    assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
+  test("a tile is an ICON OVER A NAME, two across — no picture, no paragraph", () => {
+    // What the real editor draws, looked at 2026-09-19. The picture strip and
+    // the one-line description are DELETED, not hidden: twenty-six rows of
+    // picture-plus-paragraph is four screens of a panel meant to be scanned.
+    // The sentence is the tooltip, which the test above pins.
+    assert.match(pane, /grid-cols-2/, "tiles are not two across");
+    assert.match(pane, /<WidgetIcon name=\{w\.icon\}/);
+    assert.match(pane, /\{label\}/);
+    assert.doesNotMatch(pane, /w\.picture/, "the picture strip is back");
+    assert.doesNotMatch(pane, /widgetDescription/, "the one-line description is back on the tile");
   });
 
-  test("it groups by the job, with a heading", () => {
-    // WAS `group.category` — "Information" and "Trust" are words a developer
-    // wrote down. §11.10 groups by "Customer & property" and "Products &
-    // services", which are the two sentences the business owner said.
-    assert.match(pane, /\{group\.task\}/);
-    assert.match(pane, /groups\.map\(\(group\)/);
+  test("the groups are ACCORDIONS, in the reference editor's order", () => {
+    assert.match(pane, /data-pane-group-toggle=\{g\.group\}/);
+    assert.match(pane, /aria-expanded=\{isOpen\}/);
+    assert.match(pane, /groups\.map\(\(g\)/);
   });
 
-  test("it has a search box", () => {
+  test("it has a title and a search box, and NOTHING else", () => {
     assert.match(pane, /type="search"/);
     assert.match(pane, /aria-label="Search widgets"/);
+    assert.match(pane, /PANE_TITLE/);
+    // §11.13.1: no outline, no totals, no customer box, no templates list,
+    // no "still to fill in" counter, and no slot to inject one through.
+    for (const gone of [/<Navigator/, /data-builder-problems/, /header\?:/, /p\.header/, /hint\?:/]) {
+      assert.doesNotMatch(pane, gone, `the left panel grew something again: ${gone}`);
+    }
   });
 
   /* WAS "a widget with a count is ASKED before it is inserted".
      D-156 item 4 DELETED that control: it asked, before the thing was on the
      page, a number nobody could answer yet, and it only existed because the
      cards inside a composite could not be added or removed afterwards. They can
-     now — a card is a widget with the same duplicate and delete as everything
-     else. The assertion is inverted rather than removed, because "the question
-     is gone" is the thing that has to stay true. */
+     now — a card is a widget with the same duplicate and delete as
+     everything else. The assertion is inverted rather than removed, because
+     "the question is gone" is the thing that has to stay true. */
   test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
     for (const [name, src] of [["pane", pane], ["picker", picker]]) {
       assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);

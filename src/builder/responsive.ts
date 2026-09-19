@@ -76,6 +76,18 @@ export const PREVIEW_DEVICES: readonly PreviewDevice[] = [
   { key: "phone", label: "Phone", width: 390, title: "390px — how this looks on a phone, which is where most customers open it" },
 ];
 
+/**
+ * The NEXT device, for Ctrl+Shift+M (§11.13.1 item 6, D-165).
+ *
+ * Desktop → tablet → phone → desktop, in PREVIEW_DEVICES' own
+ * order, so the toggle and the keystroke cannot walk the list two ways. An
+ * unknown key starts the round again at desktop.
+ */
+export function nextPreview(key: PreviewKey | string | null | undefined): PreviewKey {
+  const i = PREVIEW_DEVICES.findIndex((d) => d.key === key);
+  return PREVIEW_DEVICES[(i + 1) % PREVIEW_DEVICES.length].key;
+}
+
 /** The device, by key. Unknown keys fall back to desktop rather than throwing. */
 export function previewDevice(key: PreviewKey | string | null | undefined): PreviewDevice {
   return PREVIEW_DEVICES.find((d) => d.key === key) ?? PREVIEW_DEVICES[0];

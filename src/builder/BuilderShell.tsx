@@ -32,7 +32,9 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { BuilderFrame } from "./BuilderFrame";
-import { LeftPane, type Tab as PaneTab } from "./LeftPane";
+import { WidgetPane } from "./WidgetPane";
+import { StructureWindow } from "./Navigator";
+import { AddSection, type SectionLayout, type StructurePreset } from "./AddSection";
 import { Canvas, type CanvasDrag, type PickerTarget, type SlashState } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
@@ -49,7 +51,7 @@ import {
   addSection, addWidget, duplicateSection, duplicateWidget, makeSection, makeWidget, moveSection,
   moveWidget, moveWidgetTo, patchSection, patchWidget, removeSection, removeWidget, setLayout,
   setPropPath, setWidgetStyle, widgetAt, extendSelection, selectedIds, holdsLocked,
-  insertNode, moveNode, groupNodes, ungroupNode, setDirection, makePreset, findNode,
+  insertNode, moveNode, groupNodes, ungroupNode, setDirection, makePreset, findNode, makeContainer,
   isContainer, directionOf, hostDepth, subtreeHeight, MAX_DEPTH, nodeIdAt,
   editWidgetText, widgetById, pathOfNode,
   setWidgetLocked, cloneSection,
@@ -57,7 +59,7 @@ import {
 } from "./model";
 import { layerFor, withLayer, type ElementStyle } from "./style";
 import { canRedo, canUndo, initHistory, push, redo, steps, travelTo, undo, type History } from "./history";
-import { previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
+import { nextPreview, previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
 import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { WidgetLock } from "./tier";
 import type { RenderContext } from "./render";
@@ -74,7 +76,6 @@ import { builderTipsAfterClose, shouldShowFirstRun } from "./firstRunModel";
 // same answer on every computer they sign in on. There is no localStorage key
 // behind it any more.
 import { usePreference } from "../prefs/preferencesContext";
-import { EMPTY_PAGE_CHOICES, type WidgetTask } from "./widgetTasks";
 import type { BuilderAction } from "./shortcuts";
 
 /** What a menu, a lock or a hide is being applied to (M-8 / M-21). */
@@ -132,8 +133,15 @@ export interface BuilderShellProps extends InspectorSlots {
   savedTemplates?: SavedTemplate[];
   onOpenTemplate?: (t: SavedTemplate) => void;
   nextUp?: string | null;
-  /** Rendered above the widget list in the pane. */
-  paneHeader?: ReactNode;
+  /* `paneHeader` WAS HERE AND IS DELETED (§11.13.1, D-165).
+
+     It was the slot an adapter injected its own left-pane groups through, and
+     the proposal builder pushed a "Details" group of typed boxes through it —
+     invented on 2026-09-16, never scope, and the thing Brandon named on the
+     19th. The LEFT PANEL IS THE WIDGETS PANEL AND NOTHING ELSE, so the door is
+     gone rather than the one thing that came through it. Anything an adapter
+     needs to say about the document goes in `documentExtras`, which the
+     inspector shows as Page settings. */
   /**
    * THE WORDS THIS BUILDER USES (D-30).
    *
@@ -310,7 +318,7 @@ export function BuilderShell(p: BuilderShellProps) {
   const [drag, setDrag] = useState<CanvasDrag>(null);
   /** The picker, open at a "+" or on a slash. See WidgetPicker.tsx. */
   const [picker, setPicker] = useState<
-    { target: PickerTarget; anchor: { top: number; left: number } | null; task: WidgetTask | null; slash: boolean } | null>(null);
+    { target: PickerTarget; anchor: { top: number; left: number } | null; slash: boolean } | null>(null);
   /** What just landed: scrolled to, and glowing (D-11). */
   const [flashId, setFlashId] = useState<string | null>(null);
   /** The section on screen, so a pane click lands where the author is looking. */
@@ -336,8 +344,21 @@ export function BuilderShell(p: BuilderShellProps) {
   const [historyOpen, setHistoryOpen] = useState(false);
   /** Naming a block the author is keeping (M-23). */
   const [naming, setNaming] = useState<Section | null>(null);
-  /** Which left-pane tab is showing, so the menu can bring the Outline up. */
-  const [paneTab, setPaneTab] = useState<PaneTab>("add");
+  /**
+   * THE FLOATING STRUCTURE WINDOW (§11.13.1 item 3, D-165).
+   *
+   * It left the left panel. Open it from the top bar, from Ctrl+I, or from
+   * "Show it in the outline" on the right-click menu — three doors, one piece
+   * of state, and nothing that has to be "brought forward" any more.
+   */
+  const [structure, setStructure] = useState(false);
+  /**
+   * IS THE WIDGETS PANEL SHOWING? Ctrl+P, as the reference editor has it: on a
+   * laptop the page is the thing you are trying to look at.
+   */
+  const [panel, setPanel] = useState(true);
+  /** The Add-section pop-up: Blank or Template, and where it landed. */
+  const [addAt, setAddAt] = useState<{ index: number; anchor: { top: number; left: number } | null } | null>(null);
   const doc = p.doc;
   const copy = useMemo(() => resolveCopy(p.copy), [p.copy]);
 
@@ -602,7 +623,7 @@ export function BuilderShell(p: BuilderShellProps) {
   /** The "+" and the empty column both open the ONE picker, anchored there. */
   const openPicker = useCallback((target: PickerTarget, rect: DOMRect) => {
     setSlash(null);
-    setPicker({ target, anchor: { top: rect.bottom + 6, left: rect.left }, task: null, slash: false });
+    setPicker({ target, anchor: { top: rect.bottom + 6, left: rect.left }, slash: false });
   }, []);
 
   const pickFromPicker = useCallback((def: WidgetDef) => {
@@ -747,6 +768,41 @@ export function BuilderShell(p: BuilderShellProps) {
       el.focus?.();
     }, 60);
   }
+
+  /**
+   * "SELECT YOUR STRUCTURE" LANDS ON THE PAGE (§11.13.1 item 5, D-165).
+   *
+   * A preset is a SHAPE — how many cells, how wide each one is. One cell
+   * is a plain section and nothing is nested, because a box holding one box
+   * is a level the author has to get out of for no reason. Two or more cells
+   * become a section holding ONE row container with one box per cell, which is
+   * what §11.12 says a columns section is.
+   *
+   * The percentages ride on the row's `columnWidths`, the same key the section
+   * ratio picker writes, so one renderer reads one fact. Nothing new is
+   * invented here: `makeSection`, `makeContainer` and `withLayer` already
+   * existed and this arranges them.
+   */
+  const addStructure = useCallback((at: number, layout: SectionLayout, preset: StructurePreset) => {
+    if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    const sec = makeSection({ label: "Section" });
+    if (preset.cells.length > 1) {
+      const cells = preset.cells.map(() => makeContainer());
+      const row = makeContainer(
+        withLayer(
+          layout === "grid"
+            ? { direction: "grid", columns: preset.cells.length, gap: 16 }
+            : { direction: "row", gap: 16 },
+          "desktop",
+          { columnWidths: preset.cells.map((n) => n / 100) },
+        ),
+        cells,
+      );
+      sec.columns[0].widgets = [row];
+    }
+    apply(addSection(doc, sec, at), null, `Added a section — ${preset.label.toLowerCase()}`);
+    select({ kind: "section", sectionId: sec.id });
+  }, [apply, doc, p, select]);
 
   const placeSection = useCallback((premade: PremadeSection, at: number) => {
     if (p.onPlaceSection && p.onPlaceSection(premade, at) === false) return;
@@ -981,7 +1037,7 @@ export function BuilderShell(p: BuilderShellProps) {
       case "saveBlock": if (sec) setNaming(sec); return;
       case "showInOutline":
         select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
-        setPaneTab("outline");
+        setStructure(true);
         return;
       /* ── BOXES (§11.12, D-156) ──────────────────────────────────
 
@@ -1090,38 +1146,71 @@ export function BuilderShell(p: BuilderShellProps) {
    * frame only offers to close when nothing was selected to let go of.
    */
   const onShortcut = useCallback((action: BuilderAction): boolean => {
+    /* The selection, as the right-click menu's own target. Copy, Paste and
+       Duplicate go through `runMenuAction` and not through a second copy of
+       those three bodies: one mechanism, so a keyboard paste and a menu paste
+       cannot land in two different places (§11.13.1 item 6). */
+    const target: MenuTarget | null = selection?.kind === "widget"
+      ? { kind: "widget", path: selection }
+      : selection?.kind === "section"
+        ? { kind: "section", sectionId: selection.sectionId }
+        : null;
+
     switch (action) {
       case "undo": doUndo(); return true;
       case "redo": doRedo(); return true;
       case "save": if (p.onSave) { p.onSave(); return true; } return false;
       case "find": setFind(true); return true;
       case "history": setHistoryOpen(true); return true;
+      case "structure": setStructure((v) => !v); return true;
+      case "togglePanel": setPanel((v) => !v); return true;
+      case "cycleDevice": setPreview(nextPreview(preview)); return true;
+      case "copy": case "paste": case "duplicate":
+        if (!target) return false;
+        runMenuAction(action, target);
+        return true;
+      case "pasteStyle": {
+        /* THE LOOK, NOT THE THING. `clip` is whatever Ctrl+C put there; this
+           takes its `style` and nothing else, so the words, the prices and the
+           bindings on what is selected are untouched. Nothing copied, or
+           nothing selected, and it says so rather than going quiet. */
+        if (!clip) { refuse("Copy something first — Ctrl+C — then this puts its look on what you have selected."); return true; }
+        if (selection?.kind !== "widget") { refuse("Click the thing you want to look the same, then press this again."); return true; }
+        const style = clip.kind === "widget" ? clip.widget.style : clip.section.style;
+        apply(setWidgetStyle(doc, selection, style ? JSON.parse(JSON.stringify(style)) : undefined), null, "Pasted the look");
+        return true;
+      }
       case "delete":
         if (selection?.kind === "widget") { deleteWidget(selection); return true; }
         if (selection?.kind === "section") { deleteSection(selection.sectionId); return true; }
         return false;
       case "escape":
         if (menu) { setMenu(null); return true; }
+        if (addAt) { setAddAt(null); return true; }
         if (picker) { setPicker(null); return true; }
         if (slash) { setSlash(null); return true; }
+        if (structure) { setStructure(false); return true; }
         if (selection) { select(null); return true; }
         return false;
       default: return false;
     }
-  }, [deleteSection, deleteWidget, doRedo, doUndo, menu, p, picker, select, selection, slash]);
+  }, [addAt, apply, clip, deleteSection, deleteWidget, doc, doRedo, doUndo, menu, p, picker, preview,
+      refuse, runMenuAction, select, selection, slash, structure]);
 
-  /** The empty page's three choices — the engine's default (D-148). */
-  const emptyChoices = useMemo(() => p.emptyChoices ?? EMPTY_PAGE_CHOICES.map((c) => ({
-    key: c.key,
-    title: c.title,
-    hint: c.hint,
-    onPick: () => setPicker({
-      target: { kind: "newSection", index: doc.sections.length },
-      anchor: null,
-      task: c.task,
-      slash: false,
-    }),
-  })), [doc.sections.length, p.emptyChoices]);
+  /**
+   * THE EMPTY PAGE (D-148, rewritten for §11.13.1 item 5).
+   *
+   * WAS three cards — "Add your customer and property", "Add products and
+   * services", "Add words" — each opening the picker filtered to one of
+   * D-147's job groups. Those groups are gone, and the reference editor's
+   * empty page offers the same two things every other gap offers: a blank
+   * section, or a template. So the empty page is now the "Add section"
+   * strip, and the engine hands in no cards of its own — one door instead
+   * of a second, differently-worded one.
+   *
+   * An ADAPTER may still hand in its own cards; nothing here overrides that.
+   */
+  const emptyChoices = p.emptyChoices;
 
   return (
     <BuilderFrame
@@ -1148,58 +1237,26 @@ export function BuilderShell(p: BuilderShellProps) {
       canvasBackground={p.canvasBackground}
       preview={preview}
       onPreview={setPreview}
-      pane={
-        <LeftPane
-          copy={copy}
-          tab={paneTab}
-          onTab={setPaneTab}
-          header={p.paneHeader}
-          problems={p.problems}
-          onJumpToProblem={jumpToProblem}
-          pane={{
-            adapter: p.adapter,
-            onInsert: (def, count) => insertWidget(def, count),
-            hint: copy.paneHint,
-            onDragWidget: (w) => setDrag(w ? { kind: "new", label: w.kind } : null),
-            ...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {}),
-          }}
-          navigator={{
-            doc,
-            selection,
-            onSelect: select,
-            onMoveSection: (id, to) => apply(moveSection(doc, id, to), null,
-              `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`),
-            device: preview,
-            heading: `Everything in this ${copy.noun}, in order.`,
-            onHideSection: (id, hidden) => setHidden({ kind: "section", sectionId: id }, hidden),
-            onHideWidget: (path, hidden) => setHidden({ kind: "widget", path }, hidden),
-            /* M-21 — the padlock in the outline is a button, and it shows the
-               state. M-8 — the ⋯ is the same menu as right-clicking the page. */
-            onLockSection: (id, locked) => setLocked({ kind: "section", sectionId: id }, locked),
-            onLockWidget: (path, locked) => setLocked({ kind: "widget", path }, locked),
-            isSectionLocked: (id) => {
-              const sec = doc.sections.find((x) => x.id === id);
-              return !!sec?.columns.length && sec.columns.every((c) => c.widgets.every(holdsLocked))
-                && sec.columns.some((c) => c.widgets.length > 0);
-            },
-            onRowMenu: (target, at) => setMenu({ target, x: at.x, y: at.y }),
-            /* MOVE BETWEEN LEVELS FROM THE OUTLINE (§11.12). The nesting is on
-               screen here and the target is a whole row rather than a few pixels
-               of gap, so this is the easy way OUT of a deep box — and it goes
-               through the same `moveNode` the canvas drag does, refusals and
-               all. */
-            onMoveNode: (id, to) => {
-              if (!to) return;
-              const after = moveNode(doc, id, to.hostId, to.index);
-              if (after === doc) {
-                refuse("That box cannot go inside itself. Drop it on a row outside it.");
-                return;
-              }
-              apply(after, null, "Moved it");
-            },
-          }}
+      /* THE LEFT PANEL IS THE WIDGETS PANEL (§11.13.1 item 1, D-165).
+         No tabs, no header slot, no outline, no counter. Ctrl+P hides it and
+         gives the page the width. */
+      pane={panel ? (
+        <WidgetPane
+          adapter={p.adapter}
+          onInsert={(def) => insertWidget(def)}
+          onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
+          /* A BOX FROM THE PANEL lands where a widget from the panel lands:
+             at the selection, through the SAME `insertBox` the "+" picker
+             uses, refusals and all. `pickBoxFromPicker` is the picker's own
+             wrapper and needs a picker to be open. */
+          onPickBox={(preset) => insertBox(preset)}
+          {...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {})}
         />
-      }
+      ) : null}
+      onStructure={() => setStructure((v) => !v)}
+      structureOpen={structure}
+      onTogglePanel={() => setPanel((v) => !v)}
+      panelOpen={panel}
       inspector={
         <Inspector
           doc={doc}
@@ -1257,11 +1314,14 @@ export function BuilderShell(p: BuilderShellProps) {
             <WidgetPicker
               adapter={p.adapter}
               anchor={picker.anchor}
-              task={picker.task}
               heading={copy.paneHeading}
               lockedKinds={p.lockedKinds}
               onPick={pickFromPicker}
-              onPickBox={pickBoxFromPicker}
+              /* A BOX FROM THE PANEL lands where a widget from the panel lands:
+             at the selection, through the SAME `insertBox` the "+" picker
+             uses, refusals and all. `pickBoxFromPicker` is the picker's own
+             wrapper and needs a picker to be open. */
+          onPickBox={(preset) => insertBox(preset)}
               onClose={() => setPicker(null)}
             />
           )}
@@ -1288,6 +1348,58 @@ export function BuilderShell(p: BuilderShellProps) {
             />
           )}
           {firstRun && <FirstRun noun={copy.noun} onDone={closeFirstRun} />}
+
+          {/* STRUCTURE — the tree, floating (§11.13.1 item 3, D-165). Same
+              rows, same handlers; it simply is not in the left panel. */}
+          {structure && (
+            <StructureWindow
+              doc={doc}
+              selection={selection}
+              onSelect={select}
+              onClose={() => setStructure(false)}
+              onMoveSection={(id, to) => apply(moveSection(doc, id, to), null,
+                `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
+              device={preview}
+              heading={`Everything in this ${copy.noun}, in order.`}
+              onHideSection={(id, hidden) => setHidden({ kind: "section", sectionId: id }, hidden)}
+              onHideWidget={(path, hidden) => setHidden({ kind: "widget", path }, hidden)}
+              /* M-21 — the padlock shows the state and changes it. M-8 — the
+                 ⋯ is the same menu as right-clicking the page. */
+              onLockSection={(id, locked) => setLocked({ kind: "section", sectionId: id }, locked)}
+              onLockWidget={(path, locked) => setLocked({ kind: "widget", path }, locked)}
+              isSectionLocked={(id) => {
+                const sec = doc.sections.find((x) => x.id === id);
+                return !!sec?.columns.length && sec.columns.every((c) => c.widgets.every(holdsLocked))
+                  && sec.columns.some((c) => c.widgets.length > 0);
+              }}
+              onRowMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+              /* MOVE BETWEEN LEVELS (§11.12). The nesting is on screen here and
+                 the target is a whole row rather than a few pixels of gap, so
+                 this is the easy way OUT of a deep box — through the same
+                 `moveNode` the canvas drag uses, refusals and all. */
+              onMoveNode={(id, to) => {
+                if (!to) return;
+                const after = moveNode(doc, id, to.hostId, to.index);
+                if (after === doc) {
+                  refuse("That box cannot go inside itself. Drop it on a row outside it.");
+                  return;
+                }
+                apply(after, null, "Moved it");
+              }}
+            />
+          )}
+
+          {/* ADD A SECTION (§11.13.1 item 5, D-165): Blank or Template;
+              Blank → Flexbox or Grid → pick a structure. */}
+          {addAt && (
+            <AddSection
+              anchor={addAt.anchor}
+              noun={copy.noun}
+              onClose={() => setAddAt(null)}
+              onTemplate={() => { const at = addAt.index; setAddAt(null); setGallery({ at }); }}
+              onBlank={(layout, preset) => { const at = addAt.index; setAddAt(null); addStructure(at, layout, preset); }}
+            />
+          )}
 
           {/* M-8 — right-click, the ⋯ on a handle and the ⋯ in the Outline all
               open THIS, with the rows `builderMenu.menuFor` worked out. */}
@@ -1319,7 +1431,7 @@ export function BuilderShell(p: BuilderShellProps) {
                   return;
                 }
                 if (r.kind === "widget" && r.widget) { insertWidget(r.widget, r.widget.count?.default); return; }
-                if (r.actionId === "outline") { setPaneTab("outline"); return; }
+                if (r.actionId === "outline") { setStructure(true); return; }
                 if (r.actionId === "history") { setHistoryOpen(true); return; }
                 if (r.actionId === "templates") { setGallery({ at: doc.sections.length }); return; }
                 if (r.actionId === "preview") { setPreview(preview === "desktop" ? "phone" : "desktop"); return; }
@@ -1396,13 +1508,10 @@ export function BuilderShell(p: BuilderShellProps) {
         onDeleteSection={deleteSection}
         onMoveSection={(id, to) => apply(moveSection(doc, id, to), null,
           `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
-        onAddSection={(at, how) => {
-          if (how === "premade") { setGallery({ at }); return; }
-          if (p.onAddBlank && p.onAddBlank(at) === false) return;
-          const s = makeSection({ label: "Section" });
-          apply(addSection(doc, s, at), null, "Added a section");
-          select({ kind: "section", sectionId: s.id });
-        }}
+        /* ONE door (§11.13.1 item 5): the pop-up asks Blank or Template and
+           the shell does whichever was chosen. `onAddBlank` is still the
+           adapter's veto — it runs inside `addStructure`. */
+        onAddSection={(at, rect) => setAddAt({ index: at, anchor: { top: rect.bottom + 6, left: rect.left } })}
       />
     </BuilderFrame>
   );

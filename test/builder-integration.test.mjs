@@ -396,7 +396,7 @@ describe("a locked widget or section says so before the press (R-D1, R-D2)", () 
 
   test("the pane greys it, says why, and refuses the click", () => {
     assert.match(pane, /const lock = lockedKinds\?\.\[w\.kind\] \?\? null;/);
-    assert.match(pane, /onClick=\{\(\) => \{ if \(!lock\) pick\(w\); \}\}/);
+    assert.match(pane, /onClick=\{\(\) => \{ if \(!lock\) onInsert\(w\); \}\}/);
     assert.match(pane, /data-widget-locked/);
   });
 

@@ -491,14 +491,21 @@ export function EmailBuilder(p: EmailBuilderProps) {
           </button>
         </>
       }
-      paneHeader={
-        <PaneHeader
-          note={note} err={err} said={said}
-          blanks={blanks} unsafe={unsafe}
-          previewName={previewContact ? [previewContact.first_name, previewContact.last_name].filter(Boolean).join(" ") || previewContact.email || "" : null}
-        />
+      /* WAS `paneHeader` (§11.13.1, D-165, stream 1). The left panel is the
+         widgets panel and nothing else, so the slot is deleted and these words
+         ride on `documentExtras` — the one the adapter was already using,
+         so the two are one node rather than two props. Mechanical; where this
+         belongs is this adapter's own stream (D165_HANDOFF_2026-09-19.md). */
+      documentExtras={
+        <>
+          <PaneHeader
+            note={note} err={err} said={said}
+            blanks={blanks} unsafe={unsafe}
+            previewName={previewContact ? [previewContact.first_name, previewContact.last_name].filter(Boolean).join(" ") || previewContact.email || "" : null}
+          />
+          {p.documentExtras}
+        </>
       }
-      documentExtras={p.documentExtras}
       widgetExtras={(w) => (
         <WidgetExtras
           widget={w}

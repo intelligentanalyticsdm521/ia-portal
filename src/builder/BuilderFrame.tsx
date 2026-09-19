@@ -87,6 +87,21 @@ export interface BuilderFrameProps {
    */
   onFind?: () => void;
   onHistory?: () => void;
+  /**
+   * STRUCTURE and the PANEL TOGGLE (§11.13.1 items 3 and 4, D-165).
+   *
+   * The reference editor's top bar carries both: a layers button that opens the
+   * floating tree, and the "+" that brings the widgets panel back. Ctrl+I and
+   * Ctrl+P are the same two doors from the keyboard, and a shortcut with
+   * nothing on screen to press is one only its author knows about.
+   *
+   * Optional, so a frame with no tree — the pixel studio, whose canvas has
+   * no sections — simply does not draw one.
+   */
+  onStructure?: () => void;
+  structureOpen?: boolean;
+  onTogglePanel?: () => void;
+  panelOpen?: boolean;
 
   /** LEFT — the widget pane (WidgetPane, from the registry). */
   pane: ReactNode;
@@ -344,7 +359,21 @@ export function BuilderFrame(p: BuilderFrameProps) {
         /* SD-010 addendum: every builder opens as the largest surface we have. */
         size="builder"
         headerActions={
+          /* THE TOP BAR, IN THE REFERENCE EDITOR'S ORDER (§11.13.1 item 4,
+             D-165). Looked at on 2026-09-19: panel toggle, page settings and
+             history on the left of the middle; the DEVICE SWITCHER centred;
+             then finder, structure, preview and the builder's own verb. Ours
+             reads the same way left to right — the modal owns the far left,
+             so the panel toggle starts this group. */
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {p.onTogglePanel && !narrow && (
+              <button type="button" data-builder-panelbtn={p.panelOpen === false ? "off" : "on"}
+                title="Show or hide the widgets panel (Ctrl+P)"
+                aria-label="Show or hide the widgets panel" aria-pressed={p.panelOpen !== false}
+                onClick={p.onTogglePanel} style={ghost(true)}>
+                <PanelLeft size={14} />
+              </button>
+            )}
             {/* The three sentences again, plus the keyboard list. Shown once
                 on the first open; this is how it comes back. */}
             <button type="button" data-builder-help title="How this works, and the keyboard shortcuts"
@@ -356,6 +385,14 @@ export function BuilderFrame(p: BuilderFrameProps) {
             {/* Narrow: undo/redo and the adapter's own buttons move to the
                 bottom bar, where a thumb can reach them. Never both places. */}
             {narrow ? null : undoRedo("header")}
+            {p.onStructure && (
+              <button type="button" data-builder-structurebtn={p.structureOpen ? "open" : "closed"}
+                title="Structure (Ctrl+I) — everything on the page, in order, in a window you can move"
+                aria-label="Structure" aria-pressed={!!p.structureOpen}
+                onClick={p.onStructure} style={ghost(true)}>
+                <Layers size={14} />
+              </button>
+            )}
             {narrow ? null : p.headerActions}
           </div>
         }

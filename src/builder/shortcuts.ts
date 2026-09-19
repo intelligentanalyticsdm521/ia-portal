@@ -34,7 +34,25 @@ export type BuilderAction =
   /** Remove whatever is selected (a locked widget refuses, and says why). */
   | "delete"
   /** Deselect; with nothing selected, ask to close. */
-  | "escape";
+  | "escape"
+  /* ── ELEMENTOR PARITY (§11.13.1 item 6, D-165) ──────────────────────────
+     Every one of these is a chord the real editor answers, checked against it
+     on 2026-09-19. A builder that advertises "works like Elementor" and then
+     ignores Ctrl+D is D-18 wearing a different hat. */
+  /** Copy what is selected. */
+  | "copy"
+  /** Paste beside what is selected. */
+  | "paste"
+  /** Paste only the STYLE onto what is selected. */
+  | "pasteStyle"
+  /** Duplicate what is selected, in place. */
+  | "duplicate"
+  /** Open or close the floating Structure window. */
+  | "structure"
+  /** Show or hide the widgets panel, to give the page the width. */
+  | "togglePanel"
+  /** Desktop → tablet → phone → desktop. */
+  | "cycleDevice";
 
 /** A keyboard event, reduced to what the map actually reads. */
 export interface KeyLike {
@@ -72,30 +90,31 @@ export function isTypingTarget(t: TargetLike | null | undefined): boolean {
  * `ctrlKey || metaKey` so the same map serves Windows and a Mac; the Portal
  * ships to both and two maps would be two answers.
  *
- * While the author is TYPING, only the chord shortcuts and Escape apply —
- * Ctrl+Z inside a paragraph must still undo, because the browser's own undo
- * does not know about the model — and Delete is left to the text field.
+ * While the author is TYPING, most chord shortcuts still apply — Ctrl+Z inside
+ * a paragraph must still undo, because the browser's own undo does not know
+ * about the model — and Delete is left to the text field.
+ *
+ * THE FOUR THAT DO NOT (D-165): Ctrl+C, Ctrl+V, Ctrl+Shift+V and Ctrl+D. The
+ * caret is in a sentence; "copy" means those words, not the widget around
+ * them, and a builder that duplicated the pricing table because somebody
+ * pressed Ctrl+C mid-word would be unusable. `TYPING_PASSES_THROUGH` names
+ * them once so the map and the test read the same list.
  */
+export const TYPING_PASSES_THROUGH: BuilderAction[] = ["copy", "paste", "pasteStyle", "duplicate"];
+
 export function matchShortcut(e: KeyLike, target?: TargetLike | null): BuilderAction | null {
   const mod = !!(e.ctrlKey || e.metaKey);
   const key = String(e.key || "");
   const lower = key.toLowerCase();
+  const typingNow = isTypingTarget(target);
 
   if (mod && !e.altKey) {
-    if (lower === "z") return e.shiftKey ? "redo" : "undo";
-    if (lower === "y") return "redo";
-    if (lower === "s") return "save";
-    // M-22. `Ctrl+E` and not `Ctrl+F`: the browser's own Find is a useful
-    // thing to leave alone on a page whose whole content is text, and
-    // Elementor's Finder is on this chord for the same reason.
-    if (lower === "e") return "find";
-    // M-7. `Ctrl+Shift+H`, because Ctrl+H is the browser's history.
-    if (lower === "h" && e.shiftKey) return "history";
-    return null;
+    const chord = modChord(lower, !!e.shiftKey);
+    if (chord && typingNow && TYPING_PASSES_THROUGH.includes(chord)) return null;
+    return chord;
   }
   if (e.altKey) return null;
 
-  const typing = isTypingTarget(target);
   /**
    * ESCAPE ALWAYS MEANS ESCAPE — including with the caret in the words.
    *
@@ -106,28 +125,80 @@ export function matchShortcut(e: KeyLike, target?: TargetLike | null): BuilderAc
    * reaching the modal either way, so nothing can close behind the author.
    */
   if (key === "Escape") return "escape";
-  if (key === "Delete" && !typing) return "delete";
+  if (key === "Delete" && !typingNow) return "delete";
+  return null;
+}
+
+/** The Ctrl/Cmd chords, in one place. `lower` is the key, lower-cased. */
+/** The Ctrl/Cmd chords, in one place. `lower` is the key, lower-cased. */
+function modChord(lower: string, shift: boolean): BuilderAction | null {
+  if (lower === "z") return shift ? "redo" : "undo";
+  if (lower === "y") return "redo";
+  if (lower === "s") return "save";
+  // M-22. `Ctrl+E` and not `Ctrl+F`: the browser's own Find is a useful thing
+  // to leave alone on a page whose whole content is text, and the reference
+  // editor's Finder is on this chord for the same reason.
+  if (lower === "e") return "find";
+  // M-7. `Ctrl+Shift+H`, because Ctrl+H is the browser's history.
+  if (lower === "h" && shift) return "history";
+  /* ── D-165, the reference editor's own chords ────────────────────────────
+     SHIFT IS TESTED BEFORE THE PLAIN CHORD on `v`: `Ctrl+Shift+V` is paste
+     style and `Ctrl+V` is paste, and a map that answered "paste" first would
+     make paste-style unreachable — which is how an advertised shortcut
+     becomes a lie. */
+  if (lower === "v") return shift ? "pasteStyle" : "paste";
+  if (lower === "c") return "copy";
+  if (lower === "d") return "duplicate";
+  if (lower === "i") return "structure";
+  if (lower === "p") return "togglePanel";
+  if (lower === "m" && shift) return "cycleDevice";
   return null;
 }
 
 /** Whether this action's default browser behaviour has to be suppressed. */
 export function preventsDefault(action: BuilderAction): boolean {
   // Ctrl+S opens "Save page as…", Ctrl+Z inside the canvas runs the browser's
-  // own text undo behind the model's back, and Delete scrolls some browsers.
+  // own text undo behind the model's back, Ctrl+D bookmarks the page, Ctrl+P
+  // prints it, and Delete scrolls some browsers.
   // Escape does not: the modal's own handler is allowed to see it if the
   // builder does not stop it.
   return action !== "escape";
 }
 
-/** What the "?" panel and the tooltips say, so both read the same list. */
-export const SHORTCUT_HELP: Array<{ keys: string; what: string }> = [
-  { keys: "Ctrl + Z", what: "Undo the last change" },
-  { keys: "Ctrl + Shift + Z", what: "Redo it" },
-  { keys: "Ctrl + S", what: "Save" },
-  { keys: "Ctrl + E", what: "Find a section, something to add, or what to do" },
-  { keys: "Ctrl + Shift + H", what: "What you've changed \u2014 and go back to any of it" },
+/**
+ * What the "?" panel and the tooltips say, so both read the same list.
+ *
+ * `shortcutHelpGaps` pins that every action the map can return has a row
+ * here: an action nobody wrote down is one the author will never find, which
+ * is D-18 with the arrow pointing the other way.
+ */
+export const SHORTCUT_HELP: Array<{ keys: string; what: string; action?: BuilderAction }> = [
+  { keys: "Ctrl + Z", what: "Undo the last change", action: "undo" },
+  { keys: "Ctrl + Shift + Z", what: "Redo it", action: "redo" },
+  { keys: "Ctrl + S", what: "Save", action: "save" },
+  { keys: "Ctrl + C", what: "Copy what is selected", action: "copy" },
+  { keys: "Ctrl + V", what: "Paste it beside what is selected", action: "paste" },
+  { keys: "Ctrl + Shift + V", what: "Paste only the look of it", action: "pasteStyle" },
+  { keys: "Ctrl + D", what: "Make a copy of what is selected, in place", action: "duplicate" },
+  { keys: "Ctrl + I", what: "Show or hide the Structure window", action: "structure" },
+  { keys: "Ctrl + E", what: "Find a section, something to add, or what to do", action: "find" },
+  { keys: "Ctrl + P", what: "Show or hide the widgets panel", action: "togglePanel" },
+  { keys: "Ctrl + Shift + M", what: "Computer, tablet, phone — round again", action: "cycleDevice" },
+  { keys: "Ctrl + Shift + H", what: "What you've changed — and go back to any of it", action: "history" },
   { keys: "Right-click", what: "Everything you can do to a section or a block" },
-  { keys: "Delete", what: "Remove what is selected" },
-  { keys: "Escape", what: "Deselect — press it again to close" },
+  { keys: "Delete", what: "Remove what is selected", action: "delete" },
+  { keys: "Escape", what: "Deselect — press it again to close", action: "escape" },
   { keys: "/", what: "On an empty line, choose something to add" },
 ];
+
+/** Every action the map can return. The help list is checked against this. */
+export const ALL_ACTIONS: BuilderAction[] = [
+  "undo", "redo", "save", "find", "history", "delete", "escape",
+  "copy", "paste", "pasteStyle", "duplicate", "structure", "togglePanel", "cycleDevice",
+];
+
+/** Actions with no row in SHORTCUT_HELP. Empty, or the help is a lie. */
+export function shortcutHelpGaps(): BuilderAction[] {
+  const written = new Set(SHORTCUT_HELP.map((r) => r.action).filter(Boolean));
+  return ALL_ACTIONS.filter((a) => !written.has(a));
+}

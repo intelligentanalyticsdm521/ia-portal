@@ -46,7 +46,8 @@ import {
 } from "../src/builder/insertPosition.ts";
 import { resolveCatalogCard } from "../src/builder/widgets/index.ts";
 import { boxMatches } from "../src/builder/WidgetPicker.tsx";
-import { groupByTask } from "../src/builder/widgetTasks.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
+
 import { documentTotals } from "../src/builder/totals.ts";
 
 const SRC = path.join(process.cwd(), "src");
@@ -336,7 +337,7 @@ describe("D-156 · how deep a box may go is ONE number", () => {
 
   test("a search that matches only a BOX still shows the Layout group", () => {
     // FOUND BY DRIVING IT (2026-09-17): wiring `onPickBox` into the slash
-    // picker was not enough. `groupByTask` returns the groups holding a
+    // picker was not enough. `panelGroups` returns the groups holding a
     // matching WIDGET, and a box is not a widget — so typing "/row", which
     // matches the Row box and nothing else, dropped Layout out of the list
     // and the picker said "Nothing here matches 'row'" while holding exactly
@@ -349,17 +350,17 @@ describe("D-156 · how deep a box may go is ONE number", () => {
        `boxes` computation stays: it is what puts the Row/Grid presets in front
        of the author, and the two lines below still pin it. */
     assert.equal(
-      groupByTask("proposal", "row").some((g) => g.task === "Layout"), true,
+      panelGroups("proposal", "row").some((g) => g.group === "Layout"), true,
       "typing 'row' no longer reaches the Layout group at all",
     );
     const src = readSrc("builder/WidgetPicker.tsx");
     assert.ok(src.includes("const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : [])"),
       "the picker does not compute the matching boxes once");
-    assert.ok(/groups\.some\(\(g\) => g\.task === "Layout"\)/.test(src),
+    assert.ok(/groups\.some\(\(g\) => g\.group === "Layout"\)/.test(src),
       "the picker does not put the Layout group back when only a box matches");
     // The empty message must count the boxes too, or it says "nothing matches"
     // over a list with something in it.
-    assert.ok(/\+ \(shown\.some\(\(g\) => g\.task === "Layout"\) \? boxes\.length : 0\)/.test(src),
+    assert.ok(/\+ \(shown\.some\(\(g\) => g\.group === "Layout"\) \? boxes\.length : 0\)/.test(src),
       "the count that decides the empty message does not count the boxes");
   });
 

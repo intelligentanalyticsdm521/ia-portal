@@ -282,8 +282,9 @@ test('the phone can still add and reorder, where dragging does not fire', () => 
   // every pair of sections, and the inspector's Up/Down for a widget.
   const canvas = readSrc('src/builder/Canvas.tsx');
   assert.match(canvas, /title="Drag to move this section"/);
-  assert.match(canvas, /title="Add a blank section here"/);
-  assert.match(canvas, /title="Add a ready-made section here"/);
+  // ONE "Add section" button now (§11.13.1 item 5, D-165): blank or
+  // template is the pop-up's first question, and it is buttons too.
+  assert.match(canvas, /data-builder-addsection-btn/);
   const inspector = readSrc('src/builder/Inspector.tsx');
   assert.match(inspector, /title="Move this up inside its column"/);
   assert.match(inspector, /title="Move this down inside its column"/);

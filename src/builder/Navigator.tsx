@@ -1,11 +1,18 @@
 /**
- * builder/Navigator.tsx — the outline of the page.
+ * builder/Navigator.tsx — the STRUCTURE of the page, and the window it floats in.
  *
  * D-12 and §9 of BUILDER_USER_TEST_2026-09-16: twelve sections is four screens
  * of scrolling and the only way to reach section nine was to find it with your
- * eyes. This is the second tab of the left pane — every section, every widget
- * under it, click to select, drag a section to move it, and an eye to take
- * something off a phone.
+ * eyes. Every section, every widget under it, click to select, drag to move,
+ * and an eye to take something off a phone.
+ *
+ * ── IT LEFT THE LEFT PANEL (§11.13.1, D-165) ──────────────────────────────
+ * Brandon, 2026-09-19: the left panel is the widgets panel and nothing else.
+ * The real editor, looked at the same day, floats this: a small window titled
+ * "Structure", opened from a top-bar button, draggable by its title bar and
+ * closable with an ×. So the tree is now `StructureWindow` — the same rows in
+ * a window instead of a tab. One component, two callers would have been two
+ * outlines; there is one, and the tab it used to live in is deleted.
  *
  * ── IT OWNS NO RULES ──────────────────────────────────────────────────────
  * The rows and their names are `navigatorModel.ts`; moving a section is
@@ -13,8 +20,8 @@
  * pass's `hidden` flag through `withLayer`. This file draws a list — every
  * behaviour it offers already existed somewhere and is reached, not copied.
  */
-import { useMemo, useState } from "react";
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen, X } from "lucide-react";
 import type { BuilderDocument, Selection, WidgetPath } from "./model";
 import { dropTargetFor, outline, sectionDropIndex, type OutlineDrop, type OutlineRow } from "./navigatorModel";
 import type { Device } from "./style";
@@ -48,7 +55,7 @@ export interface NavigatorProps {
   onLockWidget?: (path: WidgetPath, locked: boolean) => void;
   /** Is this section locked? (Every widget in it is.) */
   isSectionLocked?: (sectionId: string) => boolean;
-  /** The \u22ef \u2014 the SAME menu as right-clicking it on the page (M-8). */
+  /** The ⋯ — the SAME menu as right-clicking it on the page (M-8). */
   onRowMenu?: (
     target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
     at: { x: number; y: number },
@@ -236,13 +243,13 @@ export function Navigator(p: NavigatorProps) {
               {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
 
-            {/* M-8 \u2014 the same menu, from the outline. */}
+            {/* M-8 — the same menu, from the outline. */}
             {p.onRowMenu && (
               <button
                 type="button"
                 data-nav-more="1"
                 aria-label="Everything you can do with this"
-                title="Everything you can do with this \u2014 the same as right-clicking it on the page"
+                title="Everything you can do with this — the same as right-clicking it on the page"
                 onClick={(e) => {
                   e.stopPropagation();
                   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -255,12 +262,111 @@ export function Navigator(p: NavigatorProps) {
                 }}
                 style={{ border: "none", background: "transparent", cursor: "pointer", color: "#CBD5E1", display: "inline-flex", padding: 0, fontSize: 13, lineHeight: 1 }}
               >
-                \u22ef
+                ⋯
               </button>
             )}
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The window it floats in (§11.13.1, D-165)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** Where it opens, measured off the real editor: top right, clear of the panel. */
+export const STRUCTURE_SIZE = { width: 260, height: 460 } as const;
+
+/**
+ * Keep the window on screen.
+ *
+ * A drag that ended off the right edge left the title bar — the ONLY thing
+ * that can drag it back — unreachable. Pure, so the arithmetic is a test
+ * rather than something you find by throwing the window off a monitor.
+ */
+export function clampToViewport(
+  at: { x: number; y: number },
+  viewport: { width: number; height: number },
+  size: { width: number; height: number } = STRUCTURE_SIZE,
+): { x: number; y: number } {
+  // 28px of the title bar must stay on screen at the bottom, and 60px of its
+  // width at either side, so there is always something to grab.
+  const maxX = Math.max(8, viewport.width - 60);
+  const maxY = Math.max(8, viewport.height - 28);
+  return {
+    x: Math.round(Math.min(Math.max(8 - size.width + 60, at.x), maxX)),
+    y: Math.round(Math.min(Math.max(8, at.y), maxY)),
+  };
+}
+
+/** Where it first appears, given the window it is in. */
+export function defaultStructureAt(viewport: { width: number; height: number }): { x: number; y: number } {
+  return clampToViewport({ x: viewport.width - STRUCTURE_SIZE.width - 28, y: 96 }, viewport);
+}
+
+export interface StructureWindowProps extends NavigatorProps {
+  onClose: () => void;
+}
+
+export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
+  const [at, setAt] = useState(() => defaultStructureAt(
+    typeof window === "undefined" ? { width: 1440, height: 900 } : { width: window.innerWidth, height: window.innerHeight }));
+  /** Where in the title bar the pointer took hold. null = not dragging. */
+  const grab = useRef<{ dx: number; dy: number } | null>(null);
+
+  const onMove = useCallback((e: PointerEvent) => {
+    const g = grab.current;
+    if (!g) return;
+    setAt(clampToViewport({ x: e.clientX - g.dx, y: e.clientY - g.dy },
+      { width: window.innerWidth, height: window.innerHeight }));
+  }, []);
+  const onUp = useCallback(() => { grab.current = null; }, []);
+
+  useEffect(() => {
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => { window.removeEventListener("pointermove", onMove); window.removeEventListener("pointerup", onUp); };
+  }, [onMove, onUp]);
+
+  return (
+    <div
+      role="dialog"
+      aria-label="Structure"
+      data-builder-structure="open"
+      style={{
+        position: "fixed", left: at.x, top: at.y, zIndex: 9400,
+        width: STRUCTURE_SIZE.width, maxHeight: STRUCTURE_SIZE.height,
+        display: "flex", flexDirection: "column",
+        background: "#FFFFFF", border: "1px solid #CBD5E1", borderRadius: 8,
+        boxShadow: "0 18px 48px rgba(11,28,36,0.24)", overflow: "hidden",
+      }}
+    >
+      <div
+        data-structure-grip
+        onPointerDown={(e) => {
+          const r = (e.currentTarget.parentElement as HTMLElement).getBoundingClientRect();
+          grab.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+        }}
+        style={{
+          display: "flex", alignItems: "center", gap: 6, cursor: "grab", userSelect: "none",
+          padding: "7px 8px 7px 10px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC",
+        }}
+      >
+        <strong style={{ flex: 1, fontSize: 11.5, fontWeight: 700, color: "#0B1C24" }}>Structure</strong>
+        <button
+          type="button"
+          data-structure-close
+          onClick={onClose}
+          aria-label="Close Structure"
+          title="Close this window (Ctrl+I opens it again)"
+          style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 2 }}
+        ><X size={14} /></button>
+      </div>
+      <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+        <Navigator {...nav} />
+      </div>
     </div>
   );
 }
