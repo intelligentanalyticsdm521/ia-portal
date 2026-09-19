@@ -52,16 +52,16 @@ import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 import { renderAtom } from "./widgets";
 import { FAMILY_RENDERED_KINDS, renderFamily } from "./widgets/families";
 import { ATOM_KINDS } from "./widgets/kinds";
-import { esc } from "./esc";
 import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
-/* ── One escaper. The inventory found three. ───────────────────────────────
-   It now LIVES in `./esc`, a module that imports nothing, so a family widget
-   can escape what it draws without pulling this file — and therefore
-   `widgets/families/index.ts` — into its own graph. See esc.ts for the
-   ReferenceError that proves it. Re-exported here, so every caller is
-   unchanged and there is still one escaper. */
+/* ── One escaper. The inventory found three. ─────────────────────────────── */
+/* THE ESCAPER MOVED to `builder/esc.ts`, a module that imports nothing, and is
+   re-exported here so every existing caller is unchanged. D-168 item 5: a
+   family folder importing it from THIS file pulls `widgets/families/index.ts`
+   into its own graph and reads that index's tables while the family is still
+   evaluating. See esc.ts's own header for the error and who found it. */
 export { esc } from "./esc";
+import { esc } from "./esc";
 
 export interface LocationLite {
   location_id: string;
@@ -250,11 +250,13 @@ export const RENDERED_KINDS = [
   "priced_line",
   // D-165's widgets, each declared and drawn in one file under widgets/.
   ...ATOM_KINDS,
-  /* B-168 §C.1 — THE TEN FAMILIES, which this file already DRAWS (see the
-     `renderFamily` line below). The seam wired the drawing and not the list,
-     so every family widget was "offered and nothing draws it" to the four
-     tests that read this list. One line, beside the atoms' one line, and it is
-     the same claim: a kind a family declares a renderer for is drawn here. */
+  /* B-168 §C.1 / D-168 item 5a — THE FAMILIES. `renderFamily` is asked FIRST in
+     `renderWidget` below, so these were always DRAWN; they were missing from
+     this LIST, which is what four tests read to answer "is this widget offered
+     and nothing draws it?". Six families each reported the same red, and each
+     widened a test rather than edit a file a family may not open. One spread
+     retires all six. Reading it here is safe because this module already
+     imports `renderFamily` from the same index above. */
   ...FAMILY_RENDERED_KINDS,
   // …and the box that holds them, which the engine draws itself.
   "container",

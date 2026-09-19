@@ -1,28 +1,26 @@
 /**
  * builder/esc.ts — THE ONE ESCAPER, in a module that imports nothing.
  *
- * It was a `function esc` in `render.ts` and it still is the same four
- * replacements; `render.ts` re-exports it, so every existing caller is
- * unchanged and there is still exactly one of these on the platform (the
- * inventory found three).
+ * ── WHY IT LEFT render.ts (D-168 item 5, the seam gap five families hit) ──
+ * Every widget file needs `esc`, and `esc` lived in `render.ts`. `render.ts`
+ * imports `widgets/families/index.ts` for `renderFamily`, and that index builds
+ * its tables at module top level. So a family folder that imports `esc` from
+ * `render.ts` closes a real cycle: enter the family first — which is exactly
+ * what that family's own test does — and `families/index.ts` is asked for
+ * `FAMILIES` while the family it is reading is still half-evaluated:
  *
- * ── WHY IT MOVED (B-168, f4-moving, 2026-09-19) ───────────────────────────
- * A family widget under `widgets/families/<family>/` has to escape what it
- * draws. Importing `esc` from `render.ts` pulls `render.ts` into the family's
- * own module graph, and `render.ts` imports `widgets/families/index.ts`, whose
- * body is a top-level `const FAMILIES = [ …every family… ]`. Enter the graph at
- * a family folder — which the family's own test does — and that const is read
- * while the family module is still evaluating:
+ *     ReferenceError: Cannot access 'F5_SLIDERS_REVIEWS' before initialization
  *
- *     ReferenceError: Cannot access 'F4_MOVING' before initialization
+ * Found by RUNNING a family test, not by reading, and reported by f1-words
+ * (§6.6) and f5-sliders-reviews (S5) independently. A module with no imports
+ * cannot be half-built, which is the same reason `widgets/kinds.ts` exists.
  *
- * Proved by running it, not by reading it. A module with no imports cannot be
- * half-built, so this is the same fix `widgets/kinds.ts` already uses for the
- * same reason, and it is what lets `render.ts` read `FAMILY_RENDERED_KINDS` at
- * the top level at all.
- *
- * **A family widget file imports `esc` from HERE, never from `render`.**
+ * `render.ts` re-exports this, so every caller that already says
+ * `import { esc } from "./render"` is unchanged and there is still exactly one
+ * escaper. **A family folder imports it from HERE.**
  */
+
+/** HTML-escape a value for a text node or a double-quoted attribute. */
 export function esc(s: unknown): string {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
