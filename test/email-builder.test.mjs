@@ -67,6 +67,8 @@ import {
 import { widgetsFor, widgetDescription, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import { repeatKeyFor } from "../src/builder/BuilderShell.tsx";
 
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
+
 const FIX = (name) => JSON.parse(readFileSync(path.join(process.cwd(), "test", "fixtures", name), "utf8"));
 const EMAIL = FIX("email-render-cases.json");
 const LANDING = FIX("landing-render-cases.json");
@@ -624,7 +626,14 @@ describe("the email builder never opens on a blank page", () => {
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      // B-168 C.1 — A FAMILY WIDGET IS DRAWN BY THE FAMILY, in BOTH halves.
+      // emailRender.ts's default branch asks renderFamily before it gives up,
+      // and renderEmailText's default branch asks it again for the plain-text
+      // twin. Both lines arrived with f6-money and both are checked: the golden
+      // case for every family widget offered here carries its own html AND its
+      // own text, and checkEmailSafe runs over that html like any other.
+      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k)
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -646,10 +655,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        ADDED AT INTEGRATION 2026-09-19: Icon, Icon Box, Image Box, Star Rating
        and Alert, because `emailRender.ts` now has a TABLE renderer for each —
        the thing they were waiting on. HELD BACK still, for the same reason and
-       no other: Reviews and Book Now. */
+       no other: Reviews and Book Now.
+       ADDED BY B-168 f6-money: `price_table` and `price_list`, which the offer
+       file puts on the newsletter. They pass the same bar as the five above —
+       a TABLE renderer, no flex, no grid, no class, and a plain-text twin —
+       and they meet it from the FAMILY folder rather than from this file, now
+       that the default branch asks `renderFamily` in both halves. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
       "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
       "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
+      "price_list", "price_table",
       "product_card", "social_links", "spacer", "star_rating", "testimonial",
     ].sort());
   });
@@ -710,6 +725,10 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     /* D-168 added a third: the offer file lists IA OLIVER Invoice under
        `website.ia` only, because a hosted landing page has no signed-in
        customer to show an invoice to. */
+    /* …and the two PAYMENT buttons are website-and-landing BOTH, so they are
+       not in here; what IS site-only stays site-only. B-168 f6-money added
+       price_table, price_list, paypal_button and stripe_button to both lists,
+       which is what the offer file says, so this comparison is unchanged. */
     const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
@@ -719,10 +738,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        builder-surfaces-d165. A slug cannot be both an alias and a rendered
        kind, so the alias table is the third place a kind can be accounted
        for. */
+    /* …and B-168 §C.1's TEN FAMILIES are the fourth place a kind is
+       accounted for. `landingRender.ts`'s default branch asks `renderFamily`
+       before it gives up — the same line `render.ts` has — so a family's
+       widget is drawn on a hosted page; it is just not drawn by the switch
+       `LANDING_RENDERED_KINDS` describes. */
     const missing = widgetsFor("landing").map((w) => w.kind)
       .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
-        && !LANDING_KIND_ALIASES[k]);
+        && !LANDING_KIND_ALIASES[k]
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, []);
   });
 

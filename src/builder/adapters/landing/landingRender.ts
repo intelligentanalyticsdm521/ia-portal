@@ -52,6 +52,8 @@ import {
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
 import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — THE TEN FAMILIES. One import, one line in the default branch. */
+import { renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -295,6 +297,15 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
+        /* B-168 §C.1 — THE TEN FAMILIES, asked with the same one line
+           `render.ts` has. Without it, every family widget the offer file
+           gives to a landing page draws the "needs a newer version" note
+           however well it is built: `renderAtom` only knows the widgets under
+           `widgets/`, and a family's widgets are under `widgets/families/`.
+           Found by building f6-money and watching the landing preview refuse
+           all four. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

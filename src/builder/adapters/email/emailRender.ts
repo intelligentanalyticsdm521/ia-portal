@@ -53,7 +53,7 @@ import { fill, type FillMode, type MergeContext } from "../../merge";
 // tables instead of flexbox, which is a difference in PAINT, never in model.
 import {
   MAX_CONTAINER_DEPTH, boldRuns, childrenOf, containerFlow, containerLayout, isContainer,
-  type LocationLite,
+  type LocationLite, type RenderContext,
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B), never a second
 // lite shape that resolves a price its own way.
@@ -61,6 +61,10 @@ import {
   addressFields, cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
   snapshotToCardProps, tagOf,
 } from "../../widgets";
+/* B-168 §C.1 — THE TEN FAMILIES. One import, one line in the switch's default
+   branch (see it there), and every family that is offered in the newsletter
+   draws for real instead of showing the "needs a newer version" note. */
+import { renderFamily } from "../../widgets/families";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -428,12 +432,30 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "image_box": return emImageBox(p, c);
       case "star_rating": return emStarRating(p, c);
       case "alert": return emAlert(p, c);
-      default:
+      default: {
+        /* B-168 §C.1 — THE TEN FAMILIES, asked before giving up.
+         *
+         * THE SAME ONE LINE `render.ts` ALREADY HAS, and the one the seams
+         * pass put in LUMEN's `builderEmailRender.js` and forgot here. Without
+         * it every family widget the offer file gives to the newsletter draws
+         * the "needs a newer version" note in the email builder, however well
+         * it is built — found by building f6-money's Price Table and Price
+         * List and watching the preview refuse them.
+         *
+         * A FAMILY RENDERER REACHING A MAILBOX MUST BE MAILBOX-SAFE: tables,
+         * inline styles, no flex, no grid, no class attribute. That is not a
+         * hope — `checkEmailSafe` runs over every golden case in
+         * test/email-builder.test.mjs and names the widget that breaks it.
+         * A family whose widgets are NOT offered in the newsletter never
+         * reaches this line at all, because the pane never puts them here. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
         return c.mode === "edit"
           ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:10px;color:#94A3B8;font-size:11px;font-family:${bodyStack(c)};">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
           : "";
+      }
     }
   })();
   if (!body && c.mode !== "edit") return "";
@@ -1329,6 +1351,28 @@ ${pre}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bo
  * classifiers, which is the deliverability lesson this platform already paid
  * for once (ACS quota needs under 2% failure; ours was 22.6%).
  */
+/**
+ * MARK-UP → THE LINES A PLAIN-TEXT READER GETS.
+ *
+ * Cells end a column, rows and blocks end a line, everything else is dropped,
+ * entities come back as the characters they stand for and blank lines
+ * collapse. Used by the FAMILY branch of `renderEmailText` below, so a family
+ * writes its words ONCE and its plain-text twin cannot fall behind them.
+ */
+export function textFromMarkup(html: string): string[] {
+  return String(html || "")
+    .replace(/<\/(td|th)>/gi, "\t")
+    .replace(/<\/(tr|p|div|h[1-6]|li)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&")
+    .split("\n")
+    .map((l) => l.split("\t").map((x) => x.trim()).filter(Boolean).join(" — "))
+    .filter(Boolean);
+}
+
 export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): string {
   const out: string[] = [];
   const line = (s: unknown) => {
@@ -1401,7 +1445,26 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
             break;
           case "alert":
             line(p.title); line(p.text ?? p.description); out.push(""); break;
-          default: break;
+          default: {
+            /* B-168 §C.1 — THE TEN FAMILIES, in the PLAIN-TEXT part too.
+             *
+             * BOTH HALVES OR NEITHER. A widget drawn in the HTML part and
+             * missing here is an email whose text/plain alternative is a
+             * footer and nothing else, which is the bulk shape
+             * `reference_acs_email_reality` says costs us the sending quota.
+             * The HTML half was added above and this was NOT, and the golden
+             * fixture caught it the moment the first family widget was put in
+             * a newsletter: `text` came back as the footer alone.
+             *
+             * A family's words ARE its rendered widget with the mark-up taken
+             * out. That is one mechanism, not a second renderer to keep in
+             * step: a cell becomes a line, a row becomes a line, everything
+             * else is dropped, and a family that changes its words cannot
+             * forget to change its text twin because there is only one. */
+            const fam = renderFamily(w, { ...c, mode: "view" } as unknown as RenderContext);
+            if (fam != null) { for (const l of textFromMarkup(fam)) line(l); out.push(""); }
+            break;
+          }
         }
       });
     }

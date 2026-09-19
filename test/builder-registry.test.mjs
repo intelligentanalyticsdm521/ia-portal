@@ -214,6 +214,13 @@ describe("§3.2's union is registered", () => {
        snow agreement places it and D-164 pins its numbering) and its TILE is
        hidden, so there is one Terms door. */
     "terms",
+    /* B-168 / D-168 — f6-money. Elementor's four money widgets, by Elementor's
+       own names, every one listed in BUILDER_OFFERS_2026-09-19.json:
+       price-table and price-list on website, landing, newsletter and proposal;
+       paypal-button and stripe-button on website and landing. "Scoped" means
+       the offer file Brandon approved since D-168 — test/builder-offers.test.mjs
+       is the one that fails on a tile nobody asked for. */
+    "price_table", "price_list", "paypal_button", "stripe_button",
   ];
 
   for (const kind of REQUIRED) {

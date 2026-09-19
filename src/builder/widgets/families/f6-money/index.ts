@@ -24,9 +24,31 @@
  *      under the def's own `kind`.
  *   3. npm test -- test/families-f6-money.test.mjs
  */
-import { EMPTY_FAMILY, type Family } from "../types";
+import { type Family } from "../types";
+import { PRICE_TABLE_DEF, renderPriceTable } from "./priceTable";
+import { PRICE_LIST_DEF, renderPriceList } from "./priceList";
+import { PAYPAL_BUTTON_DEF, STRIPE_BUTTON_DEF, renderPayButton } from "./payButtons";
 
+/**
+ * WHAT IS HERE, AND WHAT IS DELIBERATELY NOT.
+ *
+ * Here: Elementor's four money widgets, by Elementor's own names —
+ * **Price Table**, **Price List**, **PayPal Button**, **Stripe Button**.
+ *
+ * NOT here, and not this agent's to build: the IA twins **Product Cards**,
+ * **Product Line Items** and **Totals**. They are database twins of Price
+ * Table / Call to Action and Price List, they live in `families/ia`, and the
+ * demo agent owns them. They use the SAME Elementor control names these four
+ * use, so the twin and the original look and behave alike — which is the whole
+ * point of a twin.
+ */
 export const FAMILY: Family = {
-  defs: [...EMPTY_FAMILY.defs],
-  renderers: { ...EMPTY_FAMILY.renderers },
+  defs: [PRICE_TABLE_DEF, PRICE_LIST_DEF, PAYPAL_BUTTON_DEF, STRIPE_BUTTON_DEF],
+  renderers: {
+    [PRICE_TABLE_DEF.kind]: renderPriceTable,
+    [PRICE_LIST_DEF.kind]: renderPriceList,
+    /* ONE renderer, two kinds — see payButtons.ts. */
+    [PAYPAL_BUTTON_DEF.kind]: renderPayButton,
+    [STRIPE_BUTTON_DEF.kind]: renderPayButton,
+  },
 };
