@@ -213,7 +213,12 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
     /* D-168 widened this by one: the offer file lists IA OLIVER Invoice under
        `website.ia` only. A hosted landing page has no signed-in customer to
        show an invoice to, which is the same reason the menus are not there. */
-    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice"];
+    /* …and by two more with wave 2: `BUILDER_OFFERS_2026-09-19.json` lists
+       `sidebar` and `read-more` under `website.elementor_free` and NOT under
+       `landing.elementor_free`. Both are WordPress-site concepts — a registered
+       sidebar, and the "read more" cut of a blog post — and a hosted landing
+       page has neither. */
+    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "Sidebar", "Read More"];
     assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });
 

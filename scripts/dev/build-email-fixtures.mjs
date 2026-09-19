@@ -207,6 +207,26 @@ const emailCases = [
   widgetCase("the Elementor spelling reaches the kind we store", "social_icons", {
     links: [{ label: "Facebook", url: "https://facebook.com/x" }], align: "Centre",
   }),
+
+  /* ── B-168 / D-168 wave 2 — the f1-words FAMILY's two mailbox widgets ─────
+     `BUILDER_OFFERS_2026-09-19.json` gives the newsletter `blockquote` and
+     `html`; neither could be drawn in a mailbox before, so the tile was on the
+     panel and the canvas said "this part needs a newer version of the
+     builder". One golden each, so the Portal and LUMEN-API cannot drift, and
+     one for the boxed skin because it is a different cell entirely. */
+  widgetCase("blockquote", "blockquote", {
+    blockquote_skin: "border",
+    blockquote_content: "They cleared the lot before we opened.",
+    author_name: "Dana Reyes",
+  }),
+  widgetCase("blockquote, boxed, with its own colours", "blockquote", {
+    blockquote_skin: "boxed", blockquote_content: "Best winter we have had.",
+    author_name: "Site manager", box_background_color: "#EFF6FF",
+    content_text_color: "#0B1C24", alignment: "center",
+  }),
+  widgetCase("the author's own HTML, in a cell", "html", {
+    html: '<p style="margin:0">A block the author pasted.</p>',
+  }),
 ];
 
 /** Two columns, which is the one thing a widget case cannot show. */

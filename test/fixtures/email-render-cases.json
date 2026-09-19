@@ -1936,6 +1936,142 @@
       "text": "Facebook: https://facebook.com/x\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
+      "name": "blockquote",
+      "kind": "blockquote",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "blockquote",
+                    "props": {
+                      "blockquote_skin": "border",
+                      "blockquote_content": "They cleared the lot before we opened.",
+                      "author_name": "Dana Reyes"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"border-left:3px solid #0C4A60;padding:2px 0 2px 16px;text-align:left\"><div style=\"font-size:16px;line-height:1.6;font-style:italic;color:#111827\">They cleared the lot before we opened.</div><div style=\"margin-top:8px;font-size:13px;color:#64748B\">Dana Reyes</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "They cleared the lot before we opened.\nDana Reyes\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "blockquote, boxed, with its own colours",
+      "kind": "blockquote",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "blockquote",
+                    "props": {
+                      "blockquote_skin": "boxed",
+                      "blockquote_content": "Best winter we have had.",
+                      "author_name": "Site manager",
+                      "box_background_color": "#EFF6FF",
+                      "content_text_color": "#0B1C24",
+                      "alignment": "center"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"background:#EFF6FF;padding:16px;text-align:center\"><div style=\"font-size:16px;line-height:1.6;font-style:italic;color:#0B1C24\">Best winter we have had.</div><div style=\"margin-top:8px;font-size:13px;color:#64748B\">Site manager</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Best winter we have had.\nSite manager\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "the author's own HTML, in a cell",
+      "kind": "html",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "html",
+                    "props": {
+                      "html": "<p style=\"margin:0\">A block the author pasted.</p>"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"padding:0\"><p style=\"margin:0\">A block the author pasted.</p></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "A block the author pasted.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
       "name": "two columns side by side",
       "kind": "columns",
       "doc": {

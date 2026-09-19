@@ -46,7 +46,7 @@ import { fill, tokensIn, unfilledTokens, lookup } from "../src/builder/merge.ts"
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, renderEmailWidget,
   makeEmailContext, checkEmailSafe, assertEmailSafe, altTextFor, contrastInk,
-  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
+  inlineSafe, hasFooter, EMAIL_DRAWN_KINDS, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
 } from "../src/builder/adapters/email/emailRender.ts";
 import {
   EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, emailTemplateByKey, startingEmail,
@@ -59,7 +59,7 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
+  LANDING_DRAWN_KINDS, LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
@@ -623,8 +623,13 @@ describe("the email builder never opens on a blank page", () => {
 
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
+    /* `EMAIL_DRAWN_KINDS`, not `EMAIL_RENDERED_KINDS`: the first is what THIS
+       FILE's switch draws and the second is that plus every kind a FAMILY
+       draws in a mailbox (b168/override item 5b). Reading the narrow one made
+       this go red on Blockquote and HTML, which the f1-words family draws
+       correctly — the list was stale, not the renderer. */
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !EMAIL_DRAWN_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -646,11 +651,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        ADDED AT INTEGRATION 2026-09-19: Icon, Icon Box, Image Box, Star Rating
        and Alert, because `emailRender.ts` now has a TABLE renderer for each —
        the thing they were waiting on. HELD BACK still, for the same reason and
-       no other: Reviews and Book Now. */
+       no other: Reviews and Book Now.
+       ADDED 2026-09-19 (D-168 wave 2): **Blockquote** and **HTML**, which
+       `BUILDER_OFFERS_2026-09-19.json` has always given the newsletter and
+       nothing could draw. The f1-words family draws both in a mailbox now
+       (tables, inline styles, no class), each with its own golden case. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
-      "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
-      "product_card", "social_links", "spacer", "star_rating", "testimonial",
+      "alert", "article_card", "blockquote", "button", "container", "divider",
+      "email_footer", "grid", "heading", "html", "icon", "icon_box", "image",
+      "image_box", "list", "paragraph", "product_card", "social_links", "spacer",
+      "star_rating", "testimonial",
     ].sort());
   });
 
@@ -710,7 +720,10 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     /* D-168 added a third: the offer file lists IA OLIVER Invoice under
        `website.ia` only, because a hosted landing page has no signed-in
        customer to show an invoice to. */
-    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
+    /* …and two more with D-168 wave 2: the offer file lists `sidebar` and
+       `read-more` under `website.elementor_free` and NOT under `landing`.
+       Both are WordPress-site concepts and a hosted landing page has neither. */
+    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "sidebar", "read_more"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
     /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
@@ -719,8 +732,13 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        builder-surfaces-d165. A slug cannot be both an alias and a rendered
        kind, so the alias table is the third place a kind can be accounted
        for. */
+    /* `LANDING_DRAWN_KINDS`, not `LANDING_RENDERED_KINDS`: the second is what
+       the landing adapter's own switch draws, the first is that plus every kind
+       a FAMILY draws (b168/override item 5b). Reading the narrow one made this
+       red on seven f1-words widgets the adapter draws correctly through
+       `renderFamily`. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
+      .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
         && !LANDING_KIND_ALIASES[k]);
     assert.deepEqual(missing, []);

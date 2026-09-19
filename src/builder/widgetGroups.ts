@@ -172,7 +172,16 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
 
 /** Every widget the query matches, best first — what Enter picks. */
 export function flatPanelMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
-  return byRelevance(panelGroups(adapter, query).flatMap((g) => g.widgets), query, adapter);
+  /* READING ORDER, and nothing else. `panelGroups` has already ranked inside
+     each group; ranking the flattened list a SECOND time re-sorts it ACROSS
+     groups, so the top of the flat list can sit in a group the eye reaches
+     third. That is the very drift the comment above `byRelevance` describes,
+     and it became visible the day `b168/override` gave the panel a group
+     literally called "Pro": a search for "pro" put Table of Contents first in
+     the grid (the Pro group is drawn before Intelligent Analytics) and Product
+     Cards first in the flat list (a label match outranks a group match). One
+     order, computed once, used by both — which is what this function was for. */
+  return panelGroups(adapter, query).flatMap((g) => g.widgets);
 }
 
 /**

@@ -26,7 +26,8 @@
  * No JavaScript, on the canvas or on the published page.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 

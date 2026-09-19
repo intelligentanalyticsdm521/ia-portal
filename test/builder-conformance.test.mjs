@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  WIDGETS, WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  WIDGETS, WIDGETS_BY_KIND, controlOptions, controlSections, optionValue, widgetDescription,
 } from "../src/builder/registry.ts";
 import {
   CURRENCY_SYMBOLS, RIBBON_PRESETS, BINDING_CONTROLS, BOUND_KINDS,
@@ -686,23 +686,38 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("point 9 · a person can add their own HTML", () => {
-  test("it is a widget, free, on the two surfaces that are HTML pages", () => {
-    // MUTATION: delete HTML_DEF from ATOM_WIDGET_DEFS → red here.
+  test("it is a widget, free, on the three surfaces that are made of markup", () => {
+    /* WIDENED 2026-09-19 (D-168, wave 2). It was website + landing.
+       `BUILDER_OFFERS_2026-09-19.json` lists `html` under `newsletter.elementor`
+       as well, and the offer file is the contract Brandon approved, so the
+       NEWSLETTER offers it and `f1-words/html.ts` draws it in a mailbox — the
+       gap F1's first wave wrote up as §6.4. A PROPOSAL still does not: the
+       offer file puts `html` under the proposal's
+       `not_offered_because_paper_cannot_do_them`. */
+    // MUTATION: delete HTML_DEF from the f1-words family → red here.
     const def = WIDGETS_BY_KIND.html;
     assert.ok(def, "58 of the 64 page bodies on the estate are one of these and nobody can add one");
-    assert.deepEqual(def.adapters.slice().sort(), ["landing", "website"]);
+    assert.deepEqual(def.adapters.slice().sort(), ["email", "landing", "website"]);
     assert.equal(def.tier, "free", "the free page engine's own widget was gated");
-    // …and NOT on a proposal or an email: arbitrary markup prints as nothing
-    // in a PDF and is what a mailbox reflows worst.
-    for (const a of ["proposal", "email", "brand"]) {
+    // …and NOT on a proposal or a design: arbitrary markup prints as nothing
+    // in a PDF and means nothing on a pixel canvas.
+    for (const a of ["proposal", "brand"]) {
       assert.ok(!def.adapters.includes(a), `raw markup is offered in the ${a} builder`);
     }
   });
 
   test("it says what it is in plain words, and names no vendor", () => {
     const def = WIDGETS_BY_KIND.html;
-    assert.equal(def.description, "Paste your own HTML. It goes on the page exactly as you type it.");
-    assert.doesNotMatch(def.description, /elementor|wordpress|widget/i);
+    /* PER BUILDER since wave 2: an email is not a page, so the newsletter's
+       sentence says "in the email". `widgetDescription` is the one reader of
+       either shape. */
+    assert.equal(widgetDescription(def, "website"),
+      "Paste your own HTML. It goes on the page exactly as you type it.");
+    assert.equal(widgetDescription(def, "email"),
+      "Paste your own HTML. It goes in the email exactly as you type it.");
+    for (const a of ["website", "landing", "email"]) {
+      assert.doesNotMatch(widgetDescription(def, a), /elementor|wordpress|widget/i);
+    }
   });
 
   test("the control is a code box, and the Inspector draws a live preview", () => {

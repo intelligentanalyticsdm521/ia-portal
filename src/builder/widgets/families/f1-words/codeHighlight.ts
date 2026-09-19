@@ -28,7 +28,8 @@
  * `landing.elementor_pro`, and nowhere else.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import type { FamilyWidgetDef } from "../types";
@@ -171,7 +172,11 @@ export const CODE_HIGHLIGHT_DEF: FamilyWidgetDef = {
   icon: "FileCode",
   picture: pictureFrom(box(5, 7, 54, 26)
     + `<path d="M19 15l-5 5 5 5M45 15l5 5-5 5" stroke="#94A3B8"/>` + bar(26, 19, 12, 3)),
-  category: "General",
+  /* Elementor's OWN group. `b168/override` item 6 gave the panel Elementor
+     Pro's `Pro` group, so this widget stops sitting in General behind a padlock
+     — the one difference F1's first wave wrote up under "What I could NOT
+     verify" (§12.2) and could not fix, because the group did not exist yet. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

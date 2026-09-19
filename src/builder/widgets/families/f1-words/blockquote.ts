@@ -33,11 +33,15 @@
  * No JavaScript, anywhere.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import { editRun } from "../../text";
-import type { FamilyWidgetDef } from "../types";
+import type {
+  EmailRenderContext, FamilyWidgetDef, StudioBrandLite, StudioCanvasDoc,
+  StudioInsertOptions, StudioInsertResult,
+} from "../types";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
@@ -137,7 +141,11 @@ export const BLOCKQUOTE_DEF: FamilyWidgetDef = {
   picture: pictureFrom(
     `<path d="M10 12v16" stroke="#94A3B8" stroke-width="3"/>`
     + bar(18, 12, 38) + bar(18, 20, 32) + bar(18, 28, 18)),
-  category: "General",
+  /* Elementor's OWN group. `b168/override` item 6 gave the panel Elementor
+     Pro's `Pro` group, so this widget stops sitting in General behind a padlock
+     — the one difference F1's first wave wrote up under "What I could NOT
+     verify" (§12.2) and could not fix, because the group did not exist yet. */
+  category: "Pro",
   builders: ["website", "landing", "newsletter", "proposal", "mybrand"],
   tier: "pro",
   defaults: { blockquote_skin: "border", blockquote_content: "", author_name: "" },
@@ -158,3 +166,93 @@ export const BLOCKQUOTE_DEF: FamilyWidgetDef = {
     { key: "quote_size", label: "Size", type: "number", tab: "style", section: "Quote" },
   ],
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE OTHER TWO SURFACES — wave 2
+   ══════════════════════════════════════════════════════════════════════════
+
+   The offer file gives Blockquote to all five builders, and the first wave
+   wrote only the page renderer, so the tile sat on the NEWSLETTER panel and
+   drew *"this part needs a newer version of the builder"* on the canvas, and
+   sat on the MY BRAND panel and put nothing at all on the canvas when pressed.
+   `familySurfaceGaps()` (b168/override) names exactly those two, and
+   `test/mybrand-studio.test.mjs` "every tool the pane offers actually places
+   something" goes red on the second one by EXECUTING the insert.
+
+   LUMEN already SENDS this widget correctly — `emailFamilies/f1-words.js`, both
+   halves — so only the Portal's own preview was blank. These two close it. */
+
+/** A mailbox cannot do flex, grid, absolute or a class. A table and a cell can. */
+export function emailBlockquote(w: Widget, ctx: EmailRenderContext): string {
+  const p: any = w.props || {};
+  const f = blockquoteFields(p);
+  if (!f.content.trim() && !f.author.trim() && ctx.mode !== "edit") return "";
+  const skin = blockquoteSkin(p.blockquote_skin);
+  const ink = str(p.content_text_color) || str(ctx.ink) || "#0B1C24";
+  const authorInk = str(p.author_text_color) || "#64748B";
+  const rule = str(p.border_color) || str(ctx.accent) || "#0C4A60";
+  const ruleWidth = Number(p.border_width) > 0 ? Number(p.border_width) : 3;
+  const panel = str(p.box_background_color) || "#F8FAFC";
+  const pad = Number(p.box_padding) >= 0 && p.box_padding !== "" && p.box_padding != null
+    ? Number(p.box_padding) : 16;
+  const align = str(p.alignment) || "left";
+
+  const cell = skin === "border"
+    ? `border-left:${ruleWidth}px solid ${esc(rule)};padding:2px 0 2px ${pad}px;`
+    : skin === "boxed" ? `background:${esc(panel)};padding:${pad}px;` : `padding:0;`;
+  const mark = skin === "quotation"
+    ? `<div style="font-family:Georgia,serif;font-size:${
+      Number(p.quote_size) > 0 ? Number(p.quote_size) : 36}px;line-height:1;color:${
+      esc(str(p.quote_text_color) || rule)}">&ldquo;</div>` : "";
+  const author = f.author.trim()
+    ? `<div style="margin-top:8px;font-size:13px;color:${esc(authorInk)}">${esc(f.author)}</div>` : "";
+
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`
+    + `<td style="${cell}text-align:${esc(align)}">${mark}`
+    + `<div style="font-size:16px;line-height:1.6;font-style:italic;color:${esc(ink)}">${esc(f.content)}</div>`
+    + `${author}</td></tr></table>`;
+}
+
+/**
+ * MY BRAND places LAYERS, not markup — the canvas is absolute pixels.
+ *
+ * Two text layers, the quote and the name under it, sized off the canvas the
+ * way the studio's own text presets are, so a blockquote dropped on a 1080
+ * square and on a 1080×1350 portrait both land in the middle and read.
+ * `adapters/mybrand/insert.ts` is not imported: a family folder never reaches
+ * into an adapter, so the layers are written as the plain data they are.
+ */
+export function studioBlockquote(
+  doc: StudioCanvasDoc,
+  brand: StudioBrandLite,
+  _opts: StudioInsertOptions,
+): StudioInsertResult {
+  const b: any = brand || {};
+  const W = Math.max(1, Number(doc?.width) || 1080);
+  const H = Math.max(1, Number(doc?.height) || 1080);
+  const s = Math.max(0.3, W / 1080);
+  const quoteSize = Math.round(46 * s);
+  const nameSize = Math.round(24 * s);
+  const w = Math.round(W * 0.76);
+  const x = Math.round(W / 2 - w / 2);
+  const top = Math.round(H / 2 - quoteSize * 1.6);
+  const ink = str(b?.colours?.text) || "#0B1C24";
+  const stamp = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+  const quote = {
+    id: `bqq-${stamp}`, kind: "text",
+    x, y: top, w, h: Math.round(quoteSize * 2.8),
+    content: "“What they said”",
+    font: str(b?.fonts?.heading) || str(b?.fonts?.body) || undefined,
+    size: quoteSize, color: ink, weight: "400", align: "center",
+    lineHeight: 1.25, rotation: 0, visible: true,
+  };
+  const author = {
+    id: `bqa-${stamp}`, kind: "text",
+    x, y: top + Math.round(quoteSize * 3.1), w, h: Math.round(nameSize * 1.4),
+    content: "Who said it",
+    font: str(b?.fonts?.body) || undefined,
+    size: nameSize, color: ink, weight: "600", align: "center",
+    lineHeight: 1.2, rotation: 0, visible: true,
+  };
+  return { layers: [quote, author], behind: false, selectId: quote.id };
+}

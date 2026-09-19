@@ -33,7 +33,8 @@
  * `oliver-api/lib/pdfFamilies/f1-words.js`.
  */
 import type { BuilderDocument, Widget } from "../../../model";
-import { esc, walkDocumentTree, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import { walkDocumentTree, type RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import type { FamilyWidgetDef } from "../types";
@@ -170,7 +171,11 @@ export const TABLE_OF_CONTENTS_DEF: FamilyWidgetDef = {
   },
   icon: "ListTree",
   picture: pictureFrom(box(5, 6, 54, 30) + bar(11, 12, 28) + bar(15, 20, 24) + bar(15, 27, 18)),
-  category: "General",
+  /* Elementor's OWN group. `b168/override` item 6 gave the panel Elementor
+     Pro's `Pro` group, so this widget stops sitting in General behind a padlock
+     — the one difference F1's first wave wrote up under "What I could NOT
+     verify" (§12.2) and could not fix, because the group did not exist yet. */
+  category: "Pro",
   builders: ["website", "landing", "proposal"],
   tier: "pro",
   defaults: {

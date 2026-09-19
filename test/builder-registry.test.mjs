@@ -217,6 +217,16 @@ describe("§3.2's union is registered", () => {
        snow agreement places it and D-164 pins its numbering) and its TILE is
        hidden, so there is one Terms door. */
     "terms",
+    /* B-168 / D-168 — the f1-words FAMILY's seven new kinds. Elementor Pro's
+       four word widgets and three free ones, every one by Elementor's own
+       title, all seven in `BUILDER_OFFERS_2026-09-19.json`. This list is the
+       scope of the vocabulary, so a family that lands adds its kinds to it;
+       it is data, and `builder-offers.test.mjs` is the guard that says whether
+       a tile is ALLOWED. The family's other five - heading, paragraph, html,
+       shortcode, menu_anchor - are already above: a family definition REPLACES
+       the legacy one of the same kind and does not add a new one. */
+    "blockquote", "animated_headline", "text_path", "table_of_contents",
+    "code_highlight", "read_more", "sidebar",
   ];
 
   for (const kind of REQUIRED) {
