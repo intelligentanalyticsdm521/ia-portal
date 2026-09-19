@@ -22,7 +22,8 @@
  * engine's own script takes over and the author gets the real fades.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom, solid } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyWidgetDef } from "../types";
@@ -95,7 +96,13 @@ export const SLIDES_DEF: FamilyWidgetDef = {
   icon: "GalleryHorizontalEnd",
   picture: pictureFrom(solid(6, 7, 52, 26) + bar(14, 14, 24, 4) + bar(14, 22, 16, 3)
     + `<path d="M10 20h-2M56 20h-2" />`),
-  category: "General",
+  /* THE GROUP IS **Pro**, not General. D-168 item 6 (b168/override) gave
+     Elementor's 37 pro-elements widgets a group of their own, read off
+     `elementor-panel.json`, because they sat in General behind a padlock
+     and that is a difference a person sees the second our panel is beside
+     the real editor. `panelAt` also refuses to place a tile whose group
+     disagrees with Elementor's, so General here meant "no place at all". */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

@@ -59,7 +59,7 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
+  LANDING_DRAWN_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
@@ -720,7 +720,14 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        kind, so the alias table is the third place a kind can be accounted
        for. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
+      /* LANDING_DRAWN_KINDS, not LANDING_RENDERED_KINDS — D-168 item 5b.
+         The second is this file's own hand-kept list; the first is that list
+         PLUS every kind a family draws here, derived rather than typed. A
+         family widget reaches a hosted landing page through its own landing
+         renderer or, having none, through the engine's, and F5's four Pro
+         sliders and IA Reviews are the first that do. A kind in NEITHER list
+         still fails by name, which is the whole point of the check. */
+      .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
         && !LANDING_KIND_ALIASES[k]);
     assert.deepEqual(missing, []);

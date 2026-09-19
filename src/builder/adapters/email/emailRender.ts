@@ -394,7 +394,21 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
        `renderFamily` was never reached in a newsletter and every family widget
        the offer file gives the newsletter drew that note however well it was
        built. f1-words (§6.4) and f6-money (§2.1) each found it separately. */
-    const fam = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+    /* THE THREE HELPERS A MAILBOX RENDERER CANNOT DO WITHOUT, handed over on
+       the context — 2026-09-19, F5 deep pass.
+       A family folder may not import an adapter (families/types.ts says so, and
+       the import would close the same module cycle `esc.ts` was created to
+       break), so a family that draws a mailbox row had no way to merge-fill,
+       to escape to the mailbox's own allowlist, or to build the font stack. Its
+       choices were a second copy of `inlineSafe` in every family folder, or
+       this. LUMEN's `emailFamilies` already does exactly this, with a lazy
+       `require` of the engine, so there is one pattern and this is the ESM
+       half of it. Data-only fields stay data-only: these three are functions
+       the adapter owns and the family calls, never copies. */
+    const fam = renderEmailFamily(
+      { ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind },
+      { ...c, t, edit, bodyStack } as never,
+    );
     if (fam != null) return fam;
     switch (EMAIL_KIND_ALIASES[w.kind] || w.kind) {
       case "container": return emBox(w, c, depth);
@@ -439,7 +453,6 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "social_links": return emSocial(p, c, ALIGN(p.align, "center"));
       case "email_footer": return emFooter(p, c);
       case "countdown": return emCountdown(p, c);
-      case "testimonial": return emTestimonial(p, c);
       /* D-165 §11.13.3 — the standard set, each one a TABLE.
        *
        * THE ENGINE IS NOT ASKED HERE, and that is the decision. A first cut had
@@ -454,7 +467,6 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "image_box": return emImageBox(p, c);
       case "star_rating": return emStarRating(p, c);
       case "alert": return emAlert(p, c);
-      case "ia_reviews": return emIaReviews(p, c);
       default:
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
@@ -966,48 +978,28 @@ function emCountdown(p: any, c: EmailRenderContext): string {
     + `</tr></table>`;
 }
 
-/**
- * IA REVIEWS, IN A MAILBOX — stacked, not swiped (B-168, F5).
- *
- * The page builders draw this as a strip the visitor scrolls. A mailbox has
- * no scroll box and no script, so every review is drawn, one under the next,
- * in its own table. That is the honest shape rather than a carousel that only
- * ever shows its first slide.
- *
- * The slides are read with the page's own key (`slides`) and with `items`, the
- * spelling a newsletter written before this family carries. Same reader, same
- * bytes as LUMEN's copy in `src/lib/emailFamilies/f5-sliders-reviews.js`.
- */
-function emIaReviews(p: any, c: EmailRenderContext): string {
-  const raw = Array.isArray(p.slides) && p.slides.length ? p.slides
-    : (Array.isArray(p.items) ? p.items : []);
-  if (!raw.length) {
-    return c.mode === "edit"
-      ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#94A3B8;padding:10px;">Your reviews appear here once they are brought in.</div>`
-      : "";
-  }
-  const rows = raw.map((r: any, i: number) => {
-    const stars = Math.max(0, Math.min(5, Math.round(Number(r?.rating) || 0)));
-    const name = r?.name ?? r?.author;
-    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 12px 0;"><tr>`
-      + `<td style="padding:12px 14px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
-      + (stars ? `<div style="font-family:${bodyStack(c)};font-size:13px;letter-spacing:2px;color:${c.accent};">${"&#9733;".repeat(stars)}</div>` : "")
-      + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};"${edit(`slides.${i}.content`, c, "What they said")}>${t(r?.content ?? r?.quote, c)}</div>`
-      + `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;"${edit(`slides.${i}.name`, c, "Who left it")}>${t(name, c)}</div>`
-      + `</td></tr></table>`;
-  });
-  return rows.join("");
-}
-function emTestimonial(p: any, c: EmailRenderContext): string {
-  if (!String(p.quote ?? "").trim() && c.mode !== "edit") return "";
-  const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>`
-    + `<td style="padding:14px 16px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
-    + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};font-style:italic;${c.typeCss ?? ""}"${edit("quote", c, "What they said")}>${t(p.quote, c)}</div>`
-    + (stars ? `<div style="font-family:${bodyStack(c)};font-size:13px;letter-spacing:2px;color:${c.accent};margin-top:6px;">${"&#9733;".repeat(stars)}</div>` : "")
-    + `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;"${edit("attribution", c, "Who said it")}>${t(p.attribution, c)}</div>`
-    + `</td></tr></table>`;
-}
+/* THE MAILBOX HALF OF `testimonial` AND `ia_reviews` MOVED into the
+   f5-sliders-reviews family (D-168 item 5b, deep pass 2026-09-19).
+
+   `emTestimonial` and `emIaReviews` were HERE. The family's definition of
+   Testimonial gained thirty-nine of Elementor's controls in the same pass
+   and this copy knew about none of them: an author who set a size, a
+   weight or a colour watched the canvas change and got none of it in the
+   mail. `familySurfaceGaps()` names exactly that — a widget offered on a
+   surface its family cannot draw on — and the answer is one owner per
+   widget on every surface, not a second renderer here.
+
+   They are `emailTestimonial` in
+   `widgets/families/f5-sliders-reviews/testimonial.ts` and `emailIaReviews`
+   in `.../reviews.ts`, called through `renderEmailFamily` above, which is
+   asked BEFORE this switch. Replace means delete, so the two functions are
+   gone rather than left unreachable.
+
+   THE PLAIN-TEXT HALF OF THE TWO STAYS IN THIS FILE, in the switch at the
+   bottom, and that is deliberate: the default arm reads the words back out
+   of the MARKUP, and this markup writes its stars as `&#9733;`, which
+   `textFromMarkup` does not decode — a plain-text part reading
+   "&#9733;&#9733;&#9733;" is worse than the two hand-written lines. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    D-165 — the standard widget set, in a mailbox (§11.13.3)

@@ -41,10 +41,10 @@
  */
 import type { Family } from "../types";
 import { MEDIA_CAROUSEL_DEF, renderMediaCarousel } from "./mediaCarousel";
-import { IA_REVIEWS_DEF, REVIEWS_DEF, renderIaReviews, renderReviews } from "./reviews";
+import { IA_REVIEWS_DEF, REVIEWS_DEF, emailIaReviews, renderIaReviews, renderReviews } from "./reviews";
 import { SLIDES_DEF, renderSlides } from "./slides";
 import { TESTIMONIAL_CAROUSEL_DEF, renderTestimonialCarousel } from "./testimonialCarousel";
-import { TESTIMONIAL_DEF, renderTestimonial } from "./testimonial";
+import { TESTIMONIAL_DEF, emailTestimonial, renderTestimonial } from "./testimonial";
 
 export const FAMILY: Family = {
   /* Elementor's own registration order inside a group, then ours last - which
@@ -65,6 +65,25 @@ export const FAMILY: Family = {
     media_carousel: renderMediaCarousel,
     ia_reviews: renderIaReviews,
   },
+  /* THE MAILBOX HALF, for the two widgets the offer file gives the newsletter
+     and for no others (D-168 item 5b). Both were `case` arms in
+     `adapters/email/emailRender.ts` and are MOVED, not copied — that file no
+     longer has either function. `familySurfaceGaps()` is the guard: a widget
+     whose `builders` include `newsletter` and whose family declares no mailbox
+     renderer is named by kind, and the list has to be empty.
+
+     There is no `landingRenderers` entry and that is not a gap: the seam falls
+     back to the family's PAGE renderer for a hosted landing page, which is the
+     same drawing with the same controls, so a second one here would be a second
+     answer to one question. There is no `studioInserts` entry either — see
+     TESTIMONIAL_DEF's own note about the absolute-pixel canvas. */
+  emailRenderers: {
+    testimonial: emailTestimonial,
+    ia_reviews: emailIaReviews,
+  },
 };
 
-export { MEDIA_CAROUSEL_DEF, IA_REVIEWS_DEF, REVIEWS_DEF, SLIDES_DEF, TESTIMONIAL_CAROUSEL_DEF, TESTIMONIAL_DEF };
+export {
+  MEDIA_CAROUSEL_DEF, IA_REVIEWS_DEF, REVIEWS_DEF, SLIDES_DEF, TESTIMONIAL_CAROUSEL_DEF,
+  TESTIMONIAL_DEF, emailIaReviews, emailTestimonial,
+};

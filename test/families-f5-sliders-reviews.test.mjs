@@ -28,8 +28,19 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 
-import { FAMILIES, renderFamily } from "../src/builder/widgets/families/index.ts";
+/* ── IMPORT ORDER IS LOAD-BEARING, and this is the whole of the S5 fix ─────
+   `render.ts` comes FIRST on purpose. D-168 item 5a put `...FAMILY_RENDERED_KINDS`
+   in `render.ts`'s module body, and `widgets/text.ts` — which this family's
+   widgets use for `editRun` / `proseRun` — imports `render.ts`. Enter through
+   `families/index.ts` and the cycle is families → f5 → text → render, so
+   render's body runs while `FAMILY_RENDERED_KINDS` is still in its temporal
+   dead zone: "Cannot access 'FAMILY_RENDERED_KINDS' before initialization".
+   Enter through `render.ts`, which is how the app really loads — `registry.ts`
+   and every adapter reach it first — and the families index finishes before
+   render's body runs. Found by RUNNING this file after b168/override merged,
+   not by reading it. Swapping these two lines back reproduces it. */
 import { makeContext } from "../src/builder/render.ts";
+import { FAMILIES, renderFamily } from "../src/builder/widgets/families/index.ts";
 import { emptyDocument, makeWidget } from "../src/builder/model.ts";
 import { assertFamilyContract, SETTINGS_KEYS } from "./helpers/familyContract.mjs";
 

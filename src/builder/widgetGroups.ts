@@ -170,9 +170,30 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
   return groups.map((g) => g.group);
 }
 
-/** Every widget the query matches, best first — what Enter picks. */
+/**
+ * Every widget the query matches, IN THE ORDER THE PANEL DRAWS THEM — what
+ * Enter picks.
+ *
+ * ── ONE ORDER, AND THE SECOND ONE IS GONE (2026-09-19, F5 deep pass) ──────
+ * This used to rank the flattened list a SECOND time, globally, after
+ * `panelGroups` had already ranked inside each group. Two rankings is two
+ * answers, and the whole reason this function exists is the defect its own
+ * comment describes: "the first card and the thing Enter inserted were two
+ * different widgets".
+ *
+ * They disagreed again the moment the panel gained a **Pro** group (D-168 item
+ * 6) and a Pro widget reached the proposal panel: `matchesWidgetQuery` makes a
+ * GROUP NAME searchable, so typing "pro" matches every Pro widget through its
+ * group and Product Cards through its name. The grid drew the Pro group first,
+ * because that is where Elementor puts it; the global re-rank preferred the
+ * name match. Found by running `builder-usability`'s own guard, not by reading.
+ *
+ * Flattening the ranked groups keeps the promise by construction: the first
+ * element of this list IS the first card of the first group, whatever the
+ * query, because there is only one sort left in the system.
+ */
 export function flatPanelMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
-  return byRelevance(panelGroups(adapter, query).flatMap((g) => g.widgets), query, adapter);
+  return panelGroups(adapter, query).flatMap((g) => g.widgets);
 }
 
 /**

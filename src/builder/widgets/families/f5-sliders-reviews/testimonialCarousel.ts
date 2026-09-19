@@ -16,7 +16,8 @@
  * the two share one reader (`slideRows`) and one strip.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom, solid } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyWidgetDef } from "../types";
@@ -97,7 +98,13 @@ export const TESTIMONIAL_CAROUSEL_DEF: FamilyWidgetDef = {
   picture: pictureFrom(`<rect x="4" y="9" width="24" height="22" rx="3" fill="none"/>`
     + `<rect x="34" y="9" width="24" height="22" rx="3" fill="none"/>`
     + solid(9, 14, 8, 8) + bar(9, 25, 14, 3) + solid(39, 14, 8, 8) + bar(39, 25, 14, 3)),
-  category: "General",
+  /* THE GROUP IS **Pro**, not General. D-168 item 6 (b168/override) gave
+     Elementor's 37 pro-elements widgets a group of their own, read off
+     `elementor-panel.json`, because they sat in General behind a padlock
+     and that is a difference a person sees the second our panel is beside
+     the real editor. `panelAt` also refuses to place a tile whose group
+     disagrees with Elementor's, so General here meant "no place at all". */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

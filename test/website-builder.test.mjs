@@ -158,10 +158,19 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  /* FOUR GROUPS BECAME FIVE, 2026-09-19 (D-168 item 6, b168/override).
+     Elementor's 37 pro-elements widgets have a **Pro** group of their own now,
+     read off the machine-cut `elementor-panel.json`, because they sat in
+     General behind a padlock and that is a difference a person sees the moment
+     our panel is beside the real editor. The group only DRAWS when a builder
+     offers something in it, and the website panel gained its first four —
+     Slides, Media Carousel, Testimonial Carousel and Reviews — when F5 landed.
+     **Site** is Elementor's sixth and is still not drawn here: nothing on the
+     website panel is a theme piece yet. */
+  test("the pane opens with Elementor's groups, in Elementor's order", () => {
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });
 
