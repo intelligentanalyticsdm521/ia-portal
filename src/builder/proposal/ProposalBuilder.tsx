@@ -17,8 +17,8 @@
  * OliverProposalsPage.tsx in the same pass. Same route, same list, same
  * buttons — a different editor behind them. "Replace means delete."
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
 import { IadmModal } from "../../components/IadmModal";
 import { useBrandKit } from "../../brand/BrandKitProvider";
 import { useLumenApi } from "../../hooks/useLumenApi";
@@ -114,6 +114,7 @@ export interface ProposalBuilderProps {
   onSaved: (message: string) => void;
 }
 
+
 /** The customer's words, one line at a time, with a tick beside each. */
 interface RequestItem { text: string; done: boolean }
 
@@ -134,6 +135,62 @@ interface ContactRow {
 interface LocationRow extends LocationLite { is_default?: boolean }
 
 const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+
+/**
+ * SAVE OPTIONS — the reference editor's chevron beside the verb (D-172).
+ *
+ * One button, one menu. It exists because the bar had three flat save buttons
+ * in it and the reference has none: Publish, then a chevron holding Save
+ * Draft, Save as Template and View Page. The rows are handed in, so the
+ * revision bar and the draft bar are the same control with different verbs and
+ * there is no second copy of the popover.
+ */
+function SaveOptions({ busy, children }: { busy: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        data-save-options={open ? "open" : "closed"}
+        aria-label="Save Options"
+        aria-expanded={open}
+        title="Save Options"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 26, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+          background: "transparent", color: "#fff", cursor: busy ? "default" : "pointer",
+          opacity: busy ? 0.35 : 1,
+        }}
+      >
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <>
+          <div onMouseDown={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9490 }} />
+          <div role="menu" data-save-options-menu="open"
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute", top: 32, right: 0, zIndex: 9500, width: 210,
+              background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8,
+              boxShadow: "0 18px 44px rgba(11,28,36,0.24)", padding: "5px 0",
+              display: "flex", flexDirection: "column",
+            }}>
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One row inside the Save Options menu. */
+const saveRow: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left", border: "none",
+  background: "transparent", padding: "7px 12px", fontSize: 12.5,
+  color: "#0B1C24", cursor: "pointer",
+};
 
 export function ProposalBuilder({ api, proposalId = null, revision = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
@@ -1013,10 +1070,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   if (picking) {
     return (
       <TemplateLibrary
+        eyebrow="OLIVER · Document builder"
         open
         onClose={onClose}
         product="oliver"
-        eyebrow="OLIVER · Document builder"
         title="Start your document"
         subtitle="Every one of these opens in your colours with your details already on it. Pick the one closest to the job, change anything, and save it as your own."
         entries={libraryEntries}
@@ -1051,9 +1108,19 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
         }}
         resetKey={resetKey}
-        eyebrow={revision
-          ? `OLIVER · Revision v${revMeta?.document_version ?? 2}${revMeta?.requested_by === "customer" ? " · asked for by the customer" : ""}`
-          : "OLIVER · Document builder"}
+        /* OUR ANGIE: one door to the AI, in the bar (D-172). */
+        askArgus={
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS"
+            aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#FEC82C", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
+          </button>
+        }
         title={
           <input
             value={title}
@@ -1064,14 +1131,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
               color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 420, padding: "0 0 2px",
             }}
-          />
-        }
-        subtitle={
-          <CustomerBar
-            search={contactSearch} onSearch={setContactSearch}
-            contact={contact} contacts={contacts}
-            onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
-            locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
           />
         }
         doc={doc}
@@ -1161,13 +1220,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           if (id === "ask-argus") setAskOpen(true);
         }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
-        askArgus={
-          <button type="button" onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write, rewrite or build a section. Uses AI credits."
-            style={goldBtn}>
-            <Sparkles size={12} /> Ask ARGUS
-          </button>
-        }
         widgetExtras={(w, sectionId) => (
           <WidgetExtras
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
@@ -1215,20 +1267,35 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           />
         )}
         headerActions={
-          revision ? (
+          <>
+            {/* THE CUSTOMER PICKER — one of the agreed differences from the
+                reference (D-165 (c)): the reference editor has no customer to
+                choose. It used to ride in the modal's `subtitle`, which the
+                reference bar has no room for, so it is a control in the bar. */}
+            <CustomerBar
+              search={contactSearch} onSearch={setContactSearch}
+              contact={contact} contacts={contacts}
+              onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
+              locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
+            />
+            {revision ? (
             <>
               <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
-                title="Save your changes without sending. The builder stays open and the customer still sees the version they were sent.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => { void saveRevision(false).then(() => onClose()); }}
-                disabled={busy} style={ghostBtn} title="Save and go back to the document.">
-                Save and close
-              </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => { void saveRevision(false); }} disabled={busy}
+                  title="Save this revision and carry on.">
+                  {busy ? "Working…" : "Save draft"}
+                </button>
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => { void saveRevision(false).then(() => onClose()); }} disabled={busy}
+                  title="Save and go back to the document.">
+                  Save and close
+                </button>
+              </SaveOptions>
               <button type="button" data-builder-anchor="send" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
                 title={diff.identical
                   ? "Nothing has changed yet — edit the document first"
@@ -1240,29 +1307,38 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
-                title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
-                <Sparkles size={13} /> Ask ARGUS
-              </button>
-              <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate}
-                onClick={() => setNamingTemplate(true)} disabled={busy} style={ghostBtn}
-                title="Save this document's sections as a template you can start from next time">
-                Save as template
-              </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
-                title="Save your work and carry on. The builder stays open.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
-                title="Save and go back to the list. You can open it again from the row.">
-                Save and close
-              </button>
+              {/* THE VERB, AND ONE CHEVRON BESIDE IT (D-172).
+                  The reference editor's bar ends with Publish and a "Save
+                  Options" chevron holding Save Draft, Save as Template and
+                  View Page. Ours had three flat buttons in the strip —
+                  "Save as template", "Save draft", "Save and close" — which is
+                  three of the four widest things in the bar. Ask ARGUS moved
+                  to the bar's own AI position, where the reference keeps
+                  Angie. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
                 title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => save(false, false)} disabled={busy}
+                  title="Save your work and carry on. The builder stays open.">
+                  {busy ? "Working…" : "Save draft"}
+                </button>
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => save(false, true)} disabled={busy}
+                  title="Save and go back to the list. You can open it again from the row.">
+                  Save and close
+                </button>
+                <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate} style={saveRow}
+                  onClick={() => setNamingTemplate(true)} disabled={busy}
+                  title="Save this document's sections as a template you can start from next time">
+                  Save as template
+                </button>
+              </SaveOptions>
             </>
-          )
+            )}
+          </>
         }
         /* PAGE SETTINGS (§11.13.1 item 2). The left panel is the widgets panel
            and nothing else, so what is true of the DOCUMENT — what it totals,

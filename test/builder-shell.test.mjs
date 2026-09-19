@@ -159,9 +159,14 @@ describe("every builder opens through ONE frame", () => {
     }
   });
 
-  test("the frame carries exactly ONE undo and ONE redo control", () => {
-    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
-    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
+  test("the frame carries NO undo control — the reference editor has none (D-172)", () => {
+    // SD-010 said "exactly one undo control". Driven in the real editor on
+    // 2026-09-19, the answer is none: undo is the chord and the History panel.
+    // ABSENT, so a second one cannot arrive by being "the only one".
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 0);
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 0);
+    // PRESENT: the one door that replaced them.
+    assert.match(frame, /title="History" aria-label="History"/);
   });
 
   test("both engines open it", () => {

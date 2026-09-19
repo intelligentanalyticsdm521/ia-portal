@@ -198,10 +198,10 @@ export function LandingBuilder(p: LandingBuilderProps) {
   if (picking || !doc) {
     return (
       <TemplateLibrary
+        eyebrow="SPARK · Landing page"
         open
         onClose={p.onClose}
         product="spark"
-        eyebrow="SPARK · Landing page"
         title={`Start ${p.page.name}`}
         subtitle="Each of these opens with a headline, some copy and a form — the shape that actually converts. Pick one and change anything on it."
         entries={libraryEntries}
@@ -254,7 +254,6 @@ export function LandingBuilder(p: LandingBuilderProps) {
       onClose={p.onClose}
       adapter="landing"
       resetKey={resetKey}
-      eyebrow="SPARK · Landing page"
       doc={doc}
       onChange={setDoc}
       ctx={ctx as unknown as RenderContext}
@@ -283,15 +282,6 @@ export function LandingBuilder(p: LandingBuilderProps) {
       swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}
       fonts={kit.fonts.catalog.map((f) => f.value)}
       title={<span style={{ fontSize: 15, fontWeight: 600 }}>{p.page.name}</span>}
-      subtitle={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 11 }}>
-          <span style={{ background: "rgba(255,255,255,0.12)", borderRadius: 999, padding: "2px 9px" }}>/{p.page.slug}</span>
-          {published
-            ? <a data-landing-chip href={publicUrl!} target="_blank" rel="noreferrer" style={{ color: "#fff", textDecoration: "underline" }}
-              title="Open the live page in a new tab">Live — see it <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a>
-            : <span data-landing-chip style={{ opacity: 0.8 }}>Not live yet</span>}
-        </span>
-      }
       headerActions={
         <>
           {published && (

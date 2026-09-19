@@ -43,6 +43,20 @@ interface Props {
   subtitle?: ReactNode;
   /** Rendered on the right side of the header row, before the close X. */
   headerActions?: ReactNode;
+  /**
+   * THE WHOLE HEADER, for a surface that owns its own bar (D-172).
+   *
+   * The builder's top bar is a copy of the reference editor's: a menu at the
+   * far left, the page's name CENTRED with a chevron, the device switcher
+   * centred beside it, and the verb at the right. That is not an eyebrow, a
+   * title and a row of actions with a close X on the end — it is one bar, and
+   * a header built out of the four slots above cannot be made to read like it.
+   *
+   * When this is supplied it REPLACES eyebrow, title, subtitle, headerActions
+   * and the close X; the caller owns every control in the strip, the way out
+   * included. One additive prop, so no existing call site moves.
+   */
+  chrome?: ReactNode;
   /** Footer area. Caller is responsible for button order (Core Blue first,
    *  Platform color second). Sticky to bottom. */
   footer?: ReactNode;
@@ -79,7 +93,7 @@ export const CORE_BLUE = "#2563eb";
 
 export function IadmModal({
   open, onClose, product, eyebrow, title, subtitle,
-  headerActions, footer, size = "lg", z, children,
+  headerActions, chrome, footer, size = "lg", z, children,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -133,36 +147,43 @@ export function IadmModal({
           maxHeight: dims.height === "auto" ? "90vh" : undefined,
         }}
       >
-        {/* Ink gradient header */}
+        {/* Ink gradient header. A surface that owns its own bar (the builder,
+            D-172) hands one in through `chrome` and gets the strip to itself. */}
         <div
-          className="flex items-center justify-between gap-3 px-5 py-3 text-white"
+          className={chrome
+            ? "flex items-center gap-2 px-3 py-2 text-white"
+            : "flex items-center justify-between gap-3 px-5 py-3 text-white"}
           style={{ background: "linear-gradient(to right, #0B1C24, #1a3540)" }}
         >
-          <div className="min-w-0">
-            <div
-              className="text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: accent }}
-            >
-              {eyebrowText}
-            </div>
-            <h2 className="mt-0.5 truncate text-base font-semibold">{title}</h2>
-            {subtitle && (
-              <div className="mt-0.5 truncate text-[11px] text-white/60">{subtitle}</div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {headerActions}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              // SD-010: a tooltip on every button, the close X included.
-              title="Close"
-              className="rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          {chrome ?? (
+            <>
+              <div className="min-w-0">
+                <div
+                  className="text-[10px] font-bold uppercase tracking-wider"
+                  style={{ color: accent }}
+                >
+                  {eyebrowText}
+                </div>
+                <h2 className="mt-0.5 truncate text-base font-semibold">{title}</h2>
+                {subtitle && (
+                  <div className="mt-0.5 truncate text-[11px] text-white/60">{subtitle}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {headerActions}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  // SD-010: a tooltip on every button, the close X included.
+                  title="Close"
+                  className="rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Body — internal scroll only. Fixed-size canvas means short

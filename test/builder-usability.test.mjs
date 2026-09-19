@@ -789,9 +789,20 @@ describe("the frame never closes silently, and Tab stays inside (D-02 / D-19)", 
       "a second keyboard listener is a second set of rules");
   });
 
-  test('the "?" replays the walk-through and lists the shortcuts', () => {
-    assert.match(frame, /data-builder-help/);
-    assert.match(frame, /data-builder-shortcuts/);
+  test("the shortcuts live behind the MAIN MENU, and the panel is only shortcuts (D-172)", () => {
+    // ABSENT: the "?" in the top bar, and everything that was in the panel
+    // besides the table. The reference bar has no help button, and its
+    // shortcuts panel is a shortcuts panel.
+    assert.doesNotMatch(frame, /data-builder-help/, "the ? button is back in the top bar");
+    assert.doesNotMatch(frame, /How this works/, "the How this works heading is back");
+    assert.doesNotMatch(frame, /Press <strong>\+<\/strong> anywhere/, "the coaching paragraph is back");
+    // PRESENT: the menu the reference keeps that kind of thing behind, with
+    // the shortcuts and the walk-through as its rows, and Exit at the bottom.
+    assert.match(frame, /data-builder-mainmenu="open"/);
+    assert.match(frame, /data-mainmenu="shortcuts"/);
+    assert.match(frame, /data-mainmenu="walkthrough"/);
+    assert.match(frame, /data-mainmenu="exit"/);
+    assert.match(frame, /aria-label="Keyboard Shortcuts"/);
     assert.match(frame, /SHORTCUT_HELP\.map/);
   });
 });

@@ -68,8 +68,10 @@ import {
 export interface InspectorSlots {
   /** Rendered inside the selected widget's panel, above the standard controls. */
   widgetExtras?: (w: Widget, sectionId: string) => ReactNode;
-  /** Rendered at the top of the panel — the gold Ask ARGUS button. */
-  askArgus?: ReactNode;
+  /* THE GOLD Ask ARGUS BUTTON IN THIS HEADER IS DELETED (D-172). The
+     reference editor has ONE door to its AI, in the top bar; we had three.
+     The bar's is the one that stays, so the slot is gone rather than
+     emptied — an empty slot is how the second button comes back. */
   /**
    * The DOCUMENT's own settings, shown whatever is selected — including when
    * nothing is.
@@ -215,7 +217,6 @@ export function Inspector(p: InspectorProps) {
           times. The rule lives here now, once. */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Edit {name}</div>
-        {p.askArgus}
       </div>
 
       <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} disabled={disabled} />

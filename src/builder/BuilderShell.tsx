@@ -113,10 +113,15 @@ export interface BuilderShellProps extends InspectorSlots {
   onClose: () => void;
   adapter: BuilderAdapter;
   /** Modal chrome. */
-  eyebrow: string;
   title: ReactNode;
-  subtitle?: ReactNode;
-  /** Buttons on the right of the header: Ask ARGUS, Preview, Save, Send. */
+  /**
+   * OUR COUNTERPART OF THE REFERENCE'S Angie, in the bar (D-172).
+   *
+   * It used to be drawn in the settings panel's header as well, and the
+   * platform's floating bubble made a third. One door.
+   */
+  askArgus?: ReactNode;
+  /** Buttons on the right of the header: Preview, Save, Send. */
   headerActions?: ReactNode;
   footer?: ReactNode;
   /** The document and how to render it — the adapter owns both. */
@@ -1095,9 +1100,7 @@ export function BuilderShell(p: BuilderShellProps) {
       open={p.open}
       onClose={p.onClose}
       product="oliver"
-      eyebrow={p.eyebrow}
       title={p.title}
-      subtitle={p.subtitle}
       headerActions={p.headerActions}
       footer={p.footer}
       canUndo={canUndo(history)}
@@ -1112,6 +1115,15 @@ export function BuilderShell(p: BuilderShellProps) {
       onFind={() => setFind(true)}
       onHistory={() => setHistoryOpen(true)}
       onReplayHelp={() => setFirstRun(true)}
+      /* PAGE SETTINGS (D-172) — the reference's own top-bar button and the
+         chevron beside the page's name. Deselecting IS page settings here:
+         the panel on the right shows the document's own settings when
+         nothing is selected (Inspector, the no-selection branch). */
+      onPageSettings={() => select(null)}
+      /* ONE DOOR TO THE AI (D-172): the bar's. The gold button that used to
+         sit in the settings panel's header is gone, and the floating bubble
+         steps aside while a builder is open (ArgusChatbot). */
+      askArgus={p.askArgus}
       canvasBackground={p.canvasBackground}
       preview={preview}
       onPreview={setPreview}
@@ -1152,7 +1164,6 @@ export function BuilderShell(p: BuilderShellProps) {
             if (selection?.kind !== "widget") return;
             apply(setWidgetStyle(doc, selection, style), mergeKey ?? null);
           }}
-          askArgus={p.askArgus}
           widgetExtras={p.widgetExtras}
           documentExtras={p.documentExtras}
           onPatchSection={changeSection}

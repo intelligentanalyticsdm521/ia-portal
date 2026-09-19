@@ -357,3 +357,100 @@ describe("SCREEN LAW 6 — the add area's corners are the reference's", () => {
     assert.match(a, /const back = view === "structure" \? \(\) => setView\("layout"\) : null;/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 7 — THE TOP BAR (D-172, round 1)
+
+   Driven in the live editor on 2026-09-19. Left to right its bar is:
+
+     logo/menu | Add Element  Angie  Page Settings  History  Design System |
+     the page's name, CENTRED | Desktop / Tablet / Mobile, icons, the active
+     one underlined | Checklist  What's New  Finder  Structure
+     Preview Changes | Publish  Save Options
+
+   There is no Undo, no Redo, no "?" and no eyebrow in it, and the way out is
+   the menu's Exit rather than an X on the end of the strip.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 7 — the top bar is the reference editor's", () => {
+  const frame = readSrc("builder/BuilderFrame.tsx");
+  const frameCode = code(frame);
+
+  test("the eyebrow, the undo pair and the help ? are DELETED", () => {
+    assert.ok(!frameCode.includes("eyebrow"), "the eyebrow is back on the builder chrome");
+    assert.ok(!frame.includes('title="Undo (Ctrl+Z)"'), "the Undo button is back");
+    assert.ok(!frame.includes('title="Redo (Ctrl+Shift+Z)"'), "the Redo button is back");
+    assert.ok(!frame.includes("data-builder-help"), "the help ? is back in the bar");
+    for (const f of ["builder/BuilderShell.tsx", "builder/proposal/ProposalBuilder.tsx",
+                     "builder/adapters/email/EmailBuilder.tsx",
+                     "builder/adapters/landing/LandingBuilder.tsx",
+                     "builder/adapters/website/WebsiteBuilder.tsx",
+                     "builder/adapters/mybrand/StudioBuilder.tsx"]) {
+      const t = code(readSrc(f));
+      const bar = t.slice(t.search(/<Builder(Shell|Frame)/));
+      assert.ok(!/^\s*eyebrow=/m.test(bar.slice(0, 3000)), `${f} still hands the builder an eyebrow`);
+    }
+  });
+
+  test("every control the reference has is there, with its own short tooltip", () => {
+    for (const label of ["Menu", "Add Element", "Page Settings", "History",
+                         "Finder", "Structure", "Preview Changes"]) {
+      assert.ok(frame.includes(`title="${label}"`), `the top bar lost: ${label}`);
+    }
+    // ABSENT: the sentences those buttons used to carry.
+    for (const sentence of ["Show or hide the widgets panel (Ctrl+P)",
+                            "What you've changed (Ctrl+Shift+H)",
+                            "Structure (Ctrl+I) — everything on the page",
+                            "Find (Ctrl+E) — a section, something to add"]) {
+      assert.ok(!frame.includes(sentence), `a top-bar tooltip is a sentence again: ${sentence}`);
+    }
+  });
+
+  test("the page's name is CENTRED with a chevron, and the devices are icons", () => {
+    assert.match(frame, /data-builder-doctitle/);
+    assert.match(frame, /data-builder-titlechevron/);
+    assert.match(frame, /justifyContent: "center"/);
+    // ABSENT: the white text pill. PRESENT: three icons, the active underlined.
+    assert.ok(!frame.includes('{d.label}\n        </button>'), "the device switcher is text buttons again");
+    assert.match(frame, /const Icon = d\.key === "desktop" \? Monitor : d\.key === "tablet" \? Tablet : Smartphone;/);
+    // ...and it is RENDERED, in the centre group beside the name. A switcher
+    // that is only defined is a switcher nobody can press.
+    assert.match(frame, /\{!narrow && previewToggle\}/);
+    assert.match(frame, /borderBottom: `2px solid \$\{on \? "#FFFFFF" : "transparent"\}`/);
+  });
+
+  test("the way out is the menu's Exit, and the shortcuts are behind it too", () => {
+    assert.match(frame, /data-mainmenu="exit"/);
+    assert.match(frame, />\s*Exit\s*</, "the way out is not called Exit");
+    assert.match(frame, /data-mainmenu="shortcuts"/);
+    // The modal's own X is gone because the frame owns the whole strip.
+    assert.match(frame, /chrome=\{/);
+    assert.match(code(readSrc("components/IadmModal.tsx")), /\{chrome \?\? \(/);
+  });
+
+  test("there is ONE door to the AI on the screen", () => {
+    // The bar's. The gold button in the settings panel's header is deleted and
+    // the platform's floating bubble steps aside while a builder is open.
+    assert.match(frame, /askArgus\?: ReactNode;/);
+    assert.ok(!code(readSrc("builder/Inspector.tsx")).includes("askArgus"),
+      "the settings panel has an Ask ARGUS button again");
+    assert.match(code(readSrc("components/argus/ArgusChatbot.tsx")), /!open && !builderOpen/);
+  });
+
+  test("the save actions are ONE chevron beside the verb", () => {
+    const pb = code(readSrc("builder/proposal/ProposalBuilder.tsx"));
+    assert.match(pb, /data-save-options=/);
+    assert.match(pb, /aria-label="Save Options"/);
+    // ABSENT: three flat buttons in the strip. They are rows in the menu now,
+    // so the anchors stay and the ghost-button styling on them does not.
+    assert.ok(!/data-save-draft="1" data-builder-anchor="save" onClick=\{\(\) => save\(false, false\)\} disabled=\{busy\} style=\{ghostBtn\}/.test(pb),
+      "Save draft is a flat button in the bar again");
+    assert.match(pb, /data-builder-anchor="save" style=\{saveRow\}/);
+    assert.match(pb, /data-builder-anchor="save-close" style=\{saveRow\}/);
+    // every save action is a MENU row, so none of them wears the bar button.
+    assert.ok(!/data-save-draft="1"[^>]*style=\{ghostBtn\}/.test(pb),
+      "Save draft is a flat button in the bar again");
+    assert.ok(!/data-save-close="1"[^>]*style=\{ghostBtn\}/.test(pb),
+      "Save and close is a flat button in the bar again");
+  });
+});

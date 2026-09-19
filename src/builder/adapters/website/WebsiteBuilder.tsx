@@ -811,25 +811,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         }}
         adapter="website"
         resetKey={resetKey}
-        eyebrow="ARION · Website builder"
         title={detail?.title || "Page"}
-        subtitle={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {/* D-05: a live page with work saved says BOTH, because both are
-                true. "Draft" on its own is what the walk read as "my website is
-                down", and it was right to. */}
-            <span data-site-status
-              title={isLive && heldDraft
-                ? "Your website still shows the published version. Your saved changes are held here until you publish them."
-                : undefined}
-              style={{ background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "2px 9px" }}>
-              {isLive
-                ? (heldDraft ? "Live · draft saved, not published" : "Live")
-                : detail?.status === "draft" ? "Draft" : detail?.status || "Draft"}
-            </span>
-            {detail?.permalink && <span style={{ opacity: 0.8 }}>{String(detail.permalink).replace(/^https?:\/\//, "")}</span>}
-          </span>
-        }
         doc={doc}
         onChange={change}
         ctx={ctx}

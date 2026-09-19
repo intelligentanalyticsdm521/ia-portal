@@ -376,7 +376,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
           open
           onClose={() => setPending(null)}
           product="spark"
-          eyebrow="SPARK · Email builder"
           title={`How many, for “${pendingTemplate.name}”?`}
           subtitle="Answered once, before the page is built. You can add or remove one at any time afterwards."
           size="info"
@@ -423,7 +422,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
       onClose={p.onClose}
       adapter="email"
       resetKey={resetKey}
-      eyebrow={p.eyebrow}
       doc={doc}
       onChange={applyDoc}
       ctx={shellCtx}
