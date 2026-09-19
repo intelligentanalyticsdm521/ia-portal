@@ -891,6 +891,726 @@
       "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"></div></div></section>"
     },
     {
+      "name": "icon",
+      "kind": "icon",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon",
+                    "props": {
+                      "icon": "check",
+                      "size": 40
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-icon lp-icon-default\" style=\"color:#0C4A60;font-size:40px\">✓</div></div></div></section>"
+    },
+    {
+      "name": "icon, framed",
+      "kind": "icon",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon",
+                    "props": {
+                      "icon": "snowflake",
+                      "view": "framed",
+                      "colour": "#B45309"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-icon lp-icon-framed\" style=\"border:2px solid #B45309;color:#B45309;font-size:32px\">❄</div></div></div></section>"
+    },
+    {
+      "name": "icon box",
+      "kind": "icon_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon_box",
+                    "props": {
+                      "icon": "clock",
+                      "title": "24-hour response",
+                      "description": "Somebody is on the road within the hour."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-bx lp-bx-top\"><div class=\"lp-bx-lead\"><div class=\"lp-icon lp-icon-default\" style=\"color:#0C4A60;font-size:32px\">⏱</div></div><div class=\"lp-bx-body\"><div class=\"lp-bx-t\">24-hour response</div><div class=\"lp-bx-d\">Somebody is on the road within the hour.</div></div></div></div></div></section>"
+    },
+    {
+      "name": "icon box, icon beside the words",
+      "kind": "icon_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon_box",
+                    "props": {
+                      "icon": "shield-alt",
+                      "position": "left",
+                      "title": "Fully insured",
+                      "description": "Certificates on file."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-bx lp-bx-left\"><div class=\"lp-bx-lead\"><div class=\"lp-icon lp-icon-default\" style=\"color:#0C4A60;font-size:32px\">⛨</div></div><div class=\"lp-bx-body\"><div class=\"lp-bx-t\">Fully insured</div><div class=\"lp-bx-d\">Certificates on file.</div></div></div></div></div></section>"
+    },
+    {
+      "name": "image box",
+      "kind": "image_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "image_box",
+                    "props": {
+                      "src": "https://cdn.example.test/crew.jpg",
+                      "alt": "The crew",
+                      "title": "The crew",
+                      "description": "The same people, every visit."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-bx lp-bx-top\"><div class=\"lp-bx-lead\"><img src=\"https://cdn.example.test/crew.jpg\" alt=\"The crew\"></div><div class=\"lp-bx-body\"><div class=\"lp-bx-t\">The crew</div><div class=\"lp-bx-d\">The same people, every visit.</div></div></div></div></div></section>"
+    },
+    {
+      "name": "star rating",
+      "kind": "star_rating",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "star_rating",
+                    "props": {
+                      "rating": 4.5,
+                      "scale": 5,
+                      "title": "Our reviews"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-stars\" style=\"color:#0C4A60\" role=\"img\" aria-label=\"4.5 out of 5\"><span class=\"lp-stars-t\">Our reviews</span><span aria-hidden=\"true\">★★★★⯪</span></div></div></div></section>"
+    },
+    {
+      "name": "alert",
+      "kind": "alert",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "alert",
+                    "props": {
+                      "type": "warning",
+                      "title": "Storm watch",
+                      "text": "Routes run an hour early tomorrow."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-alert lp-alert-warning\" role=\"note\"><div class=\"lp-alert-t\">Storm watch</div><p>Routes run an hour early tomorrow.</p></div></div></div></section>"
+    },
+    {
+      "name": "counter",
+      "kind": "counter",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "counter",
+                    "props": {
+                      "value": 1240,
+                      "prefix": "",
+                      "suffix": "+",
+                      "label": "Lots cleared last winter"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-count\"><div class=\"lp-count-n\" style=\"color:#0C4A60\"><span>1240</span>+</div><div class=\"lp-count-l\">Lots cleared last winter</div></div></div></div></section>"
+    },
+    {
+      "name": "progress bar",
+      "kind": "progress_bar",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "progress_bar",
+                    "props": {
+                      "title": "Season booked",
+                      "percent": 72
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-prog-t\">Season booked</div><div class=\"lp-prog\" role=\"progressbar\" aria-valuenow=\"72\" aria-valuemin=\"0\" aria-valuemax=\"100\"><div class=\"lp-prog-b\" style=\"width:72%;background:#0C4A60\"><span class=\"lp-prog-p\">72%</span></div></div></div></div></section>"
+    },
+    {
+      "name": "tabs",
+      "kind": "tabs",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "tabs",
+                    "props": {
+                      "items": [
+                        {
+                          "title": "Commercial",
+                          "body": "Lots, walks and salting."
+                        },
+                        {
+                          "title": "Residential",
+                          "body": "Drives and paths."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-tabs\" style=\"--accent:#0C4A60\"><input class=\"lp-tab-r\" type=\"radio\" name=\"tabs_w1\" id=\"tabs_w1_0\" checked><label class=\"lp-tab-l\" for=\"tabs_w1_0\">Commercial</label><input class=\"lp-tab-r\" type=\"radio\" name=\"tabs_w1\" id=\"tabs_w1_1\"><label class=\"lp-tab-l\" for=\"tabs_w1_1\">Residential</label><div class=\"lp-tab-p\">Lots, walks and salting.</div><div class=\"lp-tab-p\">Drives and paths.</div></div></div></div></section>"
+    },
+    {
+      "name": "accordion",
+      "kind": "accordion",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "accordion",
+                    "props": {
+                      "items": [
+                        {
+                          "title": "When do you come out?",
+                          "body": "At a two-inch trigger."
+                        },
+                        {
+                          "title": "Do you salt?",
+                          "body": "Yes, on every visit."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-acc\"><details class=\"lp-acc-i\" open><summary>When do you come out?</summary><div class=\"lp-acc-b\">At a two-inch trigger.</div></details><details class=\"lp-acc-i\"><summary>Do you salt?</summary><div class=\"lp-acc-b\">Yes, on every visit.</div></details></div></div></div></section>"
+    },
+    {
+      "name": "a toggle opens nothing until it is pressed",
+      "kind": "toggle",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "toggle",
+                    "props": {
+                      "items": [
+                        {
+                          "title": "The small print",
+                          "body": "Prices exclude tax."
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-acc\"><details class=\"lp-acc-i\"><summary>The small print</summary><div class=\"lp-acc-b\">Prices exclude tax.</div></details></div></div></div></section>"
+    },
+    {
+      "name": "image carousel",
+      "kind": "image_carousel",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "image_carousel",
+                    "props": {
+                      "images": [
+                        "https://cdn.example.test/1.jpg",
+                        {
+                          "src": "https://cdn.example.test/2.jpg",
+                          "alt": "After"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-carousel\"><img src=\"https://cdn.example.test/1.jpg\" alt=\"1\"><img src=\"https://cdn.example.test/2.jpg\" alt=\"After\"></div></div></div></section>"
+    },
+    {
+      "name": "a place on the page to jump to",
+      "kind": "menu_anchor",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "menu_anchor",
+                    "props": {
+                      "anchor": "prices"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><span class=\"lp-anchor\" id=\"prices\"></span></div></div></section>"
+    },
+    {
+      "name": "a map is the address and a link, never an embed",
+      "kind": "google_maps",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "google_maps",
+                    "props": {
+                      "address": "1200 Prairie Ave, Marshalltown, IA"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><p class=\"lp-map\"><span>1200 Prairie Ave, Marshalltown, IA</span> <a href=\"https://maps.google.com/maps?q=1200%20Prairie%20Ave%2C%20Marshalltown%2C%20IA\" target=\"_blank\" rel=\"noopener noreferrer\">Open the map</a></p></div></div></section>"
+    },
+    {
+      "name": "the Elementor spelling reaches the kind we store",
+      "kind": "text_editor",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "text_editor",
+                    "props": {
+                      "text": "Same widget, Elementor's name."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><p>Same widget, Elementor&#39;s name.</p></div></div></section>"
+    },
+    {
       "name": "two columns",
       "kind": "columns",
       "doc": {
@@ -1018,7 +1738,7 @@
           }
         ]
       },
-      "html": "<!doctype html><html lang=\"en\"><head>\n<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Snow &amp; ice — Rolling In It</title>\n<meta name=\"description\" content=\"Commercial plowing across central Iowa.\">\n<style>\n:root{--accent:#0C4A60}\n*{box-sizing:border-box}\nbody{margin:0;font:16px/1.6 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0f172a;background:#fff}\n/* The container the phone block below asks about: .bx-doc as well as\n   .lp-page, because the canvas host carries the engine's class and the\n   published page carries this one — one stylesheet, both surfaces, so the\n   phone preview cannot show a layout the visitor never gets. */\n.lp-page,.bx-doc{container-type:inline-size}\n.lp-page{max-width:760px;margin:0 auto;padding:0 20px}\n.lp-sec{position:relative}\n.lp-grid{display:grid;gap:24px;max-width:720px;margin:0 auto}\n.lp-cols-2 .lp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}\n.lp-cols-3 .lp-grid{grid-template-columns:repeat(3,minmax(0,1fr))}\n.lp-w-narrow .lp-grid{max-width:520px}\n.lp-w-full .lp-grid{max-width:none}\n.lp-hero{margin-bottom:1.5rem}\n.lp-hero img{max-width:100%;border-radius:12px;margin-bottom:1.25rem}\n.lp-hero h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem}\n.lp-sub{font-size:1.125rem;color:#475569;margin:0}\n.lp-h{margin:0 0 .6rem;line-height:1.25}\nh2.lp-h{font-size:1.4rem}h3.lp-h{font-size:1.1rem}\n.lp-prose p,.lp-page p{margin:0 0 1rem}\n.lp-list{padding-left:1.1rem;margin:0 0 1rem}.lp-list li{margin:.35rem 0}\n.lp-fig{margin:0 0 1rem}.lp-fig img{max-width:100%;border-radius:10px;display:block}\n.lp-fig figcaption{font-size:.85rem;color:#64748b;margin-top:.4rem}\n.lp-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.6rem;margin:0 0 1rem}\n.lp-gal img{width:100%;border-radius:8px;display:block}\n.lp-hr{border:0;border-top:1px solid #e2e8f0;margin:1.5rem 0}\n.lp-cta{text-align:center;margin:2rem 0}\n.lp-btn{display:inline-block;color:#fff;text-decoration:none;padding:.85rem 1.75rem;border-radius:8px;font-weight:600;border:2px solid transparent}\n.lp-btn-out{background:transparent;border-style:solid}\n.lp-btn-plain{background:transparent;border-color:transparent;text-decoration:underline;padding:0}\n.lp-quote{margin:0 0 1rem;padding:.9rem 1.1rem;border-left:3px solid var(--accent);background:#f8fafc}\n.lp-quote p{margin:0 0 .4rem;font-style:italic}\n.lp-quote footer{font-size:.85rem;color:#64748b}\n.lp-social a{margin-right:1rem;color:var(--accent);font-weight:600;text-decoration:none}\n.lp-video a{color:var(--accent);font-weight:600}\n.lp-small{font-size:.8rem;color:#64748b}\n.lp-form{margin-top:2rem;padding:1.5rem;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}\n.lp-form h2{margin:0 0 1rem;font-size:1.25rem}\n.lp-form input,.lp-form textarea{width:100%;padding:.65rem .75rem;margin-bottom:.75rem;border:1px solid #cbd5e1;border-radius:6px;font:inherit}\n.lp-form button{color:#fff;border:0;padding:.75rem 1.5rem;border-radius:6px;font-weight:600;font-size:1rem;cursor:pointer}\n.lp-drop{border:1px dashed #cbd5e1;border-radius:8px;padding:18px;text-align:center;color:#94a3b8}\n.lp-unknown{border:1px dashed #cbd5e1;border-radius:6px;padding:10px;color:#94a3b8;font-size:.8rem}\n/* D-156 — the box has no look of its own; its display, direction and gap are\n   written inline because they are facts about that one box. */\n.lp-box-row>*,.lp-box-grid>*{flex:1 1 0;min-width:0}\n.lp-card{position:relative;border:1px solid #e2e8f0;border-radius:12px;padding:1rem;background:#fff}\n.lp-card-rec{border-width:2px}\n.lp-tag{position:absolute;top:-.6rem;left:1rem;color:#fff;font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:.15rem .6rem}\n.lp-card-name{font-weight:700;font-size:1.05rem;margin-bottom:.25rem}\n.lp-card-price{display:flex;align-items:baseline;gap:.4rem;margin-bottom:.25rem}\n.lp-now{font-size:1.3rem;font-weight:700}.lp-per{color:#64748b;font-size:.8rem}.lp-was{text-decoration:line-through;color:#94a3b8}\n.lp-card-pitch{color:#475569;margin-bottom:.5rem}\n.lp-line{border:1px solid #e2e8f0;border-radius:8px;padding:.75rem;margin-bottom:.5rem}\n.lp-line-head{display:flex;justify-content:space-between;gap:.75rem;align-items:baseline;font-weight:700}\n.lp-fact{display:flex;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid #e2e8f0}\n.lp-fact-l{color:#64748b;text-transform:uppercase;font-size:.7rem;letter-spacing:.06em;font-weight:700}\n.lp-fact-v{font-weight:600;text-align:right}\n.lp-addr{border-left:3px solid var(--accent);padding-left:.7rem}\n.lp-addr-name{font-weight:700}.lp-addr-line{color:#64748b}\n.lp-addr-meta{font-size:.8rem;color:#64748b;margin-top:.2rem}\n.lp-addr-l{text-transform:uppercase;letter-spacing:.06em;font-weight:700;font-size:.65rem;margin-right:.4rem}\n.lp-total-row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #e2e8f0}\n.lp-total-grand{border-bottom:0;border-top:2px solid var(--accent);margin-top:.25rem;padding-top:.5rem;font-weight:700;font-size:1.1rem}\n.lp-empty:empty::before{content:attr(data-placeholder);color:#94a3b8}\n[data-placeholder]:empty::before{content:attr(data-placeholder);color:#cbd5e1}\n/* The phone. NOTE: .lp-page is itself the container, and a container query\n   never matches the element it is asked about — so the page's own gutter is\n   the base rule above (20px at every width) and everything here is a\n   DESCENDANT of it. Measured, not assumed: the first version put\n   .lp-page{padding:0 16px} in here and the browser reported 20px. */\n@container (max-width: 720px){.lp-box-row{flex-direction:column !important}.lp-box-grid{grid-template-columns:1fr !important}.lp-cols-2 .lp-grid,.lp-cols-3 .lp-grid{grid-template-columns:1fr}.lp-hero h1{font-size:1.5rem}.lp-grid{gap:18px}.lp-gal{grid-template-columns:repeat(2,minmax(0,1fr))}.lp-form{padding:1.1rem}.lp-page img{max-width:100%;height:auto}.lp-social a{display:inline-block;margin:0 1rem .4rem 0}}\n</style>\n</head><body><main class=\"lp-page\">\n<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:32px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><header class=\"lp-hero\" style=\"text-align:center\">\n    \n    <h1>Snow cleared before you open</h1>\n    <p class=\"lp-sub\">Central Iowa.</p>\n  </header></div></div></section>\n<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><form id=\"form\" class=\"lp-form\" method=\"post\" action=\"/api/v1/landing/biz-1/summer/submit\">\n    <h2>Get in touch</h2><input type=\"hidden\" name=\"p\" value=\"abc123\"><input type=\"hidden\" name=\"utm_source\" value=\"postcard\">\n    <input name=\"name\" type=\"text\" placeholder=\"Your name\" required><input name=\"email\" type=\"email\" placeholder=\"Your email\" required><input name=\"phone\" type=\"tel\" placeholder=\"Phone\"><textarea name=\"message\" rows=\"4\" placeholder=\"How can we help?\"></textarea>\n    <button type=\"submit\" style=\"background:#0C4A60\">Send</button>\n  </form></div></div></section>\n</main><script>\n(function () {\n  if (window.parent === window) return;\n  var last = 0;\n  function tell() {\n    var h = Math.ceil(document.documentElement.scrollHeight);\n    if (h === last) return;\n    last = h;\n    window.parent.postMessage({ type: \"ia-landing-height\", height: h }, \"*\");\n  }\n  window.addEventListener(\"load\", tell);\n  window.addEventListener(\"resize\", tell);\n  setInterval(tell, 1000);\n})();\n</script></body></html>"
+      "html": "<!doctype html><html lang=\"en\"><head>\n<meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n<title>Snow &amp; ice — Rolling In It</title>\n<meta name=\"description\" content=\"Commercial plowing across central Iowa.\">\n<style>\n:root{--accent:#0C4A60}\n*{box-sizing:border-box}\nbody{margin:0;font:16px/1.6 system-ui,-apple-system,\"Segoe UI\",sans-serif;color:#0f172a;background:#fff}\n/* The container the phone block below asks about: .bx-doc as well as\n   .lp-page, because the canvas host carries the engine's class and the\n   published page carries this one — one stylesheet, both surfaces, so the\n   phone preview cannot show a layout the visitor never gets. */\n.lp-page,.bx-doc{container-type:inline-size}\n.lp-page{max-width:760px;margin:0 auto;padding:0 20px}\n.lp-sec{position:relative}\n.lp-grid{display:grid;gap:24px;max-width:720px;margin:0 auto}\n.lp-cols-2 .lp-grid{grid-template-columns:repeat(2,minmax(0,1fr))}\n.lp-cols-3 .lp-grid{grid-template-columns:repeat(3,minmax(0,1fr))}\n.lp-w-narrow .lp-grid{max-width:520px}\n.lp-w-full .lp-grid{max-width:none}\n.lp-hero{margin-bottom:1.5rem}\n.lp-hero img{max-width:100%;border-radius:12px;margin-bottom:1.25rem}\n.lp-hero h1{font-size:2rem;line-height:1.2;margin:0 0 .5rem}\n.lp-sub{font-size:1.125rem;color:#475569;margin:0}\n.lp-h{margin:0 0 .6rem;line-height:1.25}\nh2.lp-h{font-size:1.4rem}h3.lp-h{font-size:1.1rem}\n.lp-prose p,.lp-page p{margin:0 0 1rem}\n.lp-list{padding-left:1.1rem;margin:0 0 1rem}.lp-list li{margin:.35rem 0}\n.lp-fig{margin:0 0 1rem}.lp-fig img{max-width:100%;border-radius:10px;display:block}\n.lp-fig figcaption{font-size:.85rem;color:#64748b;margin-top:.4rem}\n.lp-gal{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:.6rem;margin:0 0 1rem}\n.lp-gal img{width:100%;border-radius:8px;display:block}\n.lp-hr{border:0;border-top:1px solid #e2e8f0;margin:1.5rem 0}\n.lp-cta{text-align:center;margin:2rem 0}\n.lp-btn{display:inline-block;color:#fff;text-decoration:none;padding:.85rem 1.75rem;border-radius:8px;font-weight:600;border:2px solid transparent}\n.lp-btn-out{background:transparent;border-style:solid}\n.lp-btn-plain{background:transparent;border-color:transparent;text-decoration:underline;padding:0}\n.lp-quote{margin:0 0 1rem;padding:.9rem 1.1rem;border-left:3px solid var(--accent);background:#f8fafc}\n.lp-quote p{margin:0 0 .4rem;font-style:italic}\n.lp-quote footer{font-size:.85rem;color:#64748b}\n.lp-social a{margin-right:1rem;color:var(--accent);font-weight:600;text-decoration:none}\n.lp-video a{color:var(--accent);font-weight:600}\n.lp-small{font-size:.8rem;color:#64748b}\n.lp-form{margin-top:2rem;padding:1.5rem;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}\n.lp-form h2{margin:0 0 1rem;font-size:1.25rem}\n.lp-form input,.lp-form textarea{width:100%;padding:.65rem .75rem;margin-bottom:.75rem;border:1px solid #cbd5e1;border-radius:6px;font:inherit}\n.lp-form button{color:#fff;border:0;padding:.75rem 1.5rem;border-radius:6px;font-weight:600;font-size:1rem;cursor:pointer}\n.lp-drop{border:1px dashed #cbd5e1;border-radius:8px;padding:18px;text-align:center;color:#94a3b8}\n.lp-unknown{border:1px dashed #cbd5e1;border-radius:6px;padding:10px;color:#94a3b8;font-size:.8rem}\n/* D-156 — the box has no look of its own; its display, direction and gap are\n   written inline because they are facts about that one box. */\n.lp-box-row>*,.lp-box-grid>*{flex:1 1 0;min-width:0}\n.lp-card{position:relative;border:1px solid #e2e8f0;border-radius:12px;padding:1rem;background:#fff}\n.lp-card-rec{border-width:2px}\n.lp-tag{position:absolute;top:-.6rem;left:1rem;color:#fff;font-size:.65rem;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:.15rem .6rem}\n.lp-card-name{font-weight:700;font-size:1.05rem;margin-bottom:.25rem}\n.lp-card-price{display:flex;align-items:baseline;gap:.4rem;margin-bottom:.25rem}\n.lp-now{font-size:1.3rem;font-weight:700}.lp-per{color:#64748b;font-size:.8rem}.lp-was{text-decoration:line-through;color:#94a3b8}\n.lp-card-pitch{color:#475569;margin-bottom:.5rem}\n.lp-line{border:1px solid #e2e8f0;border-radius:8px;padding:.75rem;margin-bottom:.5rem}\n.lp-line-head{display:flex;justify-content:space-between;gap:.75rem;align-items:baseline;font-weight:700}\n.lp-fact{display:flex;justify-content:space-between;gap:.75rem;padding:.4rem 0;border-bottom:1px solid #e2e8f0}\n.lp-fact-l{color:#64748b;text-transform:uppercase;font-size:.7rem;letter-spacing:.06em;font-weight:700}\n.lp-fact-v{font-weight:600;text-align:right}\n.lp-addr{border-left:3px solid var(--accent);padding-left:.7rem}\n.lp-addr-name{font-weight:700}.lp-addr-line{color:#64748b}\n.lp-addr-meta{font-size:.8rem;color:#64748b;margin-top:.2rem}\n.lp-addr-l{text-transform:uppercase;letter-spacing:.06em;font-weight:700;font-size:.65rem;margin-right:.4rem}\n.lp-total-row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #e2e8f0}\n.lp-total-grand{border-bottom:0;border-top:2px solid var(--accent);margin-top:.25rem;padding-top:.5rem;font-weight:700;font-size:1.1rem}\n/* D-165 §11.13.3 — the standard set. No script anywhere in here. */\n.lp-icon{line-height:1;display:inline-block;margin:0 0 .6rem}\n.lp-icon-stacked,.lp-icon-framed{padding:.45em;border-radius:999px}\n.lp-bx{margin:0 0 1rem}\n.lp-bx-top{text-align:center}\n.lp-bx-left,.lp-bx-right{display:flex;gap:.9rem;align-items:flex-start;text-align:left}\n.lp-bx-right{flex-direction:row-reverse}\n.lp-bx-left .lp-bx-lead,.lp-bx-right .lp-bx-lead{flex:0 0 auto;max-width:180px}\n.lp-bx-left .lp-bx-body,.lp-bx-right .lp-bx-body{flex:1 1 auto;min-width:0}\n.lp-bx img{max-width:100%;border-radius:10px;display:block}\n.lp-bx-t{font-weight:700;font-size:1.05rem;margin-bottom:.3rem}\n.lp-bx-d{color:#475569}\n.lp-bx-link{text-decoration:none;color:inherit}\n.lp-stars{font-size:1.15rem;letter-spacing:.12em;margin:0 0 .6rem}\n.lp-stars-t{font-size:.9rem;color:#0f172a;letter-spacing:normal;margin-right:.5rem}\n.lp-alert{border-left:4px solid;padding:.8rem 1rem;margin:0 0 1rem;border-radius:0 8px 8px 0}\n.lp-alert p{margin:0}\n.lp-alert-t{font-weight:700;margin-bottom:.2rem}\n.lp-alert-info{background:#eff6ff;border-color:#3b82f6;color:#1e3a8a}\n.lp-alert-success{background:#ecfdf5;border-color:#10b981;color:#065f46}\n.lp-alert-warning{background:#fffbeb;border-color:#f59e0b;color:#78350f}\n.lp-alert-danger{background:#fef2f2;border-color:#ef4444;color:#7f1d1d}\n.lp-count{text-align:center;margin:0 0 1rem}\n.lp-count-n{font-size:2.2rem;font-weight:700;line-height:1.1}\n.lp-count-l{color:#64748b;font-size:.9rem}\n.lp-prog-t{font-weight:600;margin-bottom:.3rem}\n.lp-prog{background:#e2e8f0;border-radius:999px;overflow:hidden;margin:0 0 1rem}\n.lp-prog-b{min-width:2.5rem;color:#fff;font-size:.75rem;font-weight:700;text-align:right;padding:.25rem .5rem}\n.lp-tabs{display:flex;flex-wrap:wrap;margin:0 0 1rem;border-bottom:1px solid #e2e8f0}\n.lp-tab-r{position:absolute;opacity:0;pointer-events:none}\n.lp-tab-l{order:-1;padding:.55rem .9rem;cursor:pointer;font-weight:600;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-1px}\n.lp-tab-p{display:none;width:100%;padding:.9rem 0 0}\n.lp-tab-r:checked+.lp-tab-l{color:var(--accent);border-bottom-color:var(--accent)}\n.lp-tab-r:nth-of-type(1):checked~.lp-tab-p:nth-of-type(1),\n.lp-tab-r:nth-of-type(2):checked~.lp-tab-p:nth-of-type(2),\n.lp-tab-r:nth-of-type(3):checked~.lp-tab-p:nth-of-type(3),\n.lp-tab-r:nth-of-type(4):checked~.lp-tab-p:nth-of-type(4),\n.lp-tab-r:nth-of-type(5):checked~.lp-tab-p:nth-of-type(5),\n.lp-tab-r:nth-of-type(6):checked~.lp-tab-p:nth-of-type(6){display:block}\n.lp-acc{margin:0 0 1rem;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}\n.lp-acc-i+.lp-acc-i{border-top:1px solid #e2e8f0}\n.lp-acc summary{cursor:pointer;padding:.7rem .9rem;font-weight:600;list-style:none}\n.lp-acc summary::-webkit-details-marker{display:none}\n.lp-acc summary::after{content:\"+\";float:right;color:#94a3b8}\n.lp-acc-i[open] summary::after{content:\"\\2212\"}\n.lp-acc-b{padding:0 .9rem .8rem;color:#475569}\n.lp-carousel{display:flex;gap:.6rem;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 0 1rem;padding-bottom:.4rem}\n.lp-carousel img{flex:0 0 auto;width:min(100%,320px);border-radius:10px;scroll-snap-align:start;display:block}\n.lp-map a{color:var(--accent);font-weight:600}\n.lp-anchor{display:block;height:0;overflow:hidden}\n.lp-empty:empty::before{content:attr(data-placeholder);color:#94a3b8}\n[data-placeholder]:empty::before{content:attr(data-placeholder);color:#cbd5e1}\n/* The phone. NOTE: .lp-page is itself the container, and a container query\n   never matches the element it is asked about — so the page's own gutter is\n   the base rule above (20px at every width) and everything here is a\n   DESCENDANT of it. Measured, not assumed: the first version put\n   .lp-page{padding:0 16px} in here and the browser reported 20px. */\n@container (max-width: 720px){.lp-box-row{flex-direction:column !important}.lp-box-grid{grid-template-columns:1fr !important}.lp-cols-2 .lp-grid,.lp-cols-3 .lp-grid{grid-template-columns:1fr}.lp-hero h1{font-size:1.5rem}.lp-grid{gap:18px}.lp-gal{grid-template-columns:repeat(2,minmax(0,1fr))}.lp-form{padding:1.1rem}.lp-page img{max-width:100%;height:auto}.lp-social a{display:inline-block;margin:0 1rem .4rem 0}}\n</style>\n</head><body><main class=\"lp-page\">\n<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:32px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><header class=\"lp-hero\" style=\"text-align:center\">\n    \n    <h1>Snow cleared before you open</h1>\n    <p class=\"lp-sub\">Central Iowa.</p>\n  </header></div></div></section>\n<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><form id=\"form\" class=\"lp-form\" method=\"post\" action=\"/api/v1/landing/biz-1/summer/submit\">\n    <h2>Get in touch</h2><input type=\"hidden\" name=\"p\" value=\"abc123\"><input type=\"hidden\" name=\"utm_source\" value=\"postcard\">\n    <input name=\"name\" type=\"text\" placeholder=\"Your name\" required><input name=\"email\" type=\"email\" placeholder=\"Your email\" required><input name=\"phone\" type=\"tel\" placeholder=\"Phone\"><textarea name=\"message\" rows=\"4\" placeholder=\"How can we help?\"></textarea>\n    <button type=\"submit\" style=\"background:#0C4A60\">Send</button>\n  </form></div></div></section>\n</main><script>\n(function () {\n  if (window.parent === window) return;\n  var last = 0;\n  function tell() {\n    var h = Math.ceil(document.documentElement.scrollHeight);\n    if (h === last) return;\n    last = h;\n    window.parent.postMessage({ type: \"ia-landing-height\", height: h }, \"*\");\n  }\n  window.addEventListener(\"load\", tell);\n  window.addEventListener(\"resize\", tell);\n  setInterval(tell, 1000);\n})();\n</script></body></html>"
     },
     {
       "name": "styled · a widget's typography, margin and alignment, with tablet and phone overrides",

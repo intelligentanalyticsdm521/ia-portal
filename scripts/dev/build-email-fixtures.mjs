@@ -15,7 +15,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { emptyDocument, makeSection, makeWidget, resetIds } from "../../src/builder/model.ts";
+import { deserialise, emptyDocument, makeSection, makeWidget, resetIds } from "../../src/builder/model.ts";
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, makeEmailContext,
 } from "../../src/builder/adapters/email/emailRender.ts";
@@ -176,6 +176,37 @@ const emailCases = [
   widgetCase("narrow section", "paragraph", { text: "Held in." }, { width: "narrow" }),
   widgetCase("internal section never reaches the mailbox", "paragraph", { text: "A note to the crew." },
     { visibility: "internal" }),
+
+  /* ── D-165 §11.13.3 — the standard set, in a mailbox ──────────────────────
+     One case per NEW standard widget, plus one for the alias table, because
+     the Portal and LUMEN-API have to draw all of them byte for byte and a
+     widget with no golden is a widget the two copies may already disagree
+     about. Testimonial, Icon List (`list`) and Social Icons (`social_links`)
+     already had cases above and keep them. */
+  widgetCase("icon", "icon", { icon: "check", size: 32, align: "Centre" }),
+  widgetCase("icon, a name we do not know is a dot and never the word", "icon", { icon: "wombat", size: 28 }),
+  widgetCase("icon, stacked, in the author's own colour", "icon", { icon: "snowflake", view: "stacked", size: 24, colour: "#B45309", align: "Left" }),
+  widgetCase("icon box, icon above the words", "icon_box", {
+    icon: "clock", title: "24-hour response", description: "Somebody is on the road within the hour, every time.", align: "Centre",
+  }),
+  widgetCase("icon box, icon beside the words", "icon_box", {
+    icon: "shield-alt", position: "left", title: "Fully insured", description: "Certificates on file before we start.",
+  }),
+  widgetCase("image box", "image_box", {
+    src: "https://cdn.example.test/crew.jpg", alt: "Two crew loading salt",
+    title: "The crew", description: "The same people, every visit.",
+  }),
+  widgetCase("image box, picture beside the words", "image_box", {
+    src: "https://cdn.example.test/crew.jpg", alt: "Two crew loading salt", position: "left",
+    title: "The crew", description: "The same people, every visit.", url: "https://example.test/crew",
+  }),
+  widgetCase("star rating", "star_rating", { rating: 4.5, scale: 5, title: "Our reviews", align: "Left" }),
+  widgetCase("star rating out of ten", "star_rating", { rating: 8, scale: 10, align: "Centre" }),
+  widgetCase("alert", "alert", { type: "warning", title: "Storm watch", text: "We are running the routes an hour early tomorrow." }),
+  widgetCase("alert, the plainest one", "alert", { text: "Prices hold until the end of the season." }),
+  widgetCase("the Elementor spelling reaches the kind we store", "social_icons", {
+    links: [{ label: "Facebook", url: "https://facebook.com/x" }], align: "Centre",
+  }),
 ];
 
 /** Two columns, which is the one thing a widget case cannot show. */
@@ -420,15 +451,22 @@ const emailFixture = {
   context: EMAIL_CTX,
   subject: "What's new this month",
   preheader: "A short note, and what we've been up to.",
-  cases: emailCases.map((c) => ({
-    name: c.name,
-    kind: c.kind,
-    doc: c.doc,
-    html: c.whole
-      ? renderEmailDocument(c.doc, makeEmailContext(c.doc, EMAIL_CTX), { subject: "What's new this month", preheader: "A short note, and what we've been up to." })
-      : renderEmailSection(c.doc.sections[0], makeEmailContext(c.doc, EMAIL_CTX)),
-    text: renderEmailText(c.doc, makeEmailContext(c.doc, EMAIL_CTX)),
-  })),
+  /* RENDERED FROM THE DESERIALISED DOCUMENT, which is what every reader does
+     — `deserialise` runs the card rename, so a fixture drawn from the raw
+     object was pinning bytes no surface actually produces. Found by the
+     Portal's own suite the first time a card's words reached the text part. */
+  cases: emailCases.map((c) => {
+    const doc = deserialise(c.doc);
+    return {
+      name: c.name,
+      kind: c.kind,
+      doc: c.doc,
+      html: c.whole
+        ? renderEmailDocument(doc, makeEmailContext(doc, EMAIL_CTX), { subject: "What's new this month", preheader: "A short note, and what we've been up to." })
+        : renderEmailSection(doc.sections[0], makeEmailContext(doc, EMAIL_CTX)),
+      text: renderEmailText(doc, makeEmailContext(doc, EMAIL_CTX)),
+    };
+  }),
 };
 
 /* ── Landing ─────────────────────────────────────────────────────────────── */
@@ -463,6 +501,26 @@ const landingCases = [
   lpCase("social links", "social_links", { links: [{ label: "Facebook", url: "https://facebook.com/x" }] }),
   lpCase("review", "testimonial", { quote: "Never had to call twice.", attribution: "Hope Ministries" }),
   lpCase("a widget from a newer build is inert", "hologram", {}),
+
+  /* ── D-165 §11.13.3 — the standard set, and the page widgets with it ──────
+     One golden per widget, because the Portal and LUMEN-API draw each of them
+     twice and the fixture is the only thing that says the two agree. */
+  lpCase("icon", "icon", { icon: "check", size: 40 }),
+  lpCase("icon, framed", "icon", { icon: "snowflake", view: "framed", colour: "#B45309" }),
+  lpCase("icon box", "icon_box", { icon: "clock", title: "24-hour response", description: "Somebody is on the road within the hour." }),
+  lpCase("icon box, icon beside the words", "icon_box", { icon: "shield-alt", position: "left", title: "Fully insured", description: "Certificates on file." }),
+  lpCase("image box", "image_box", { src: "https://cdn.example.test/crew.jpg", alt: "The crew", title: "The crew", description: "The same people, every visit." }),
+  lpCase("star rating", "star_rating", { rating: 4.5, scale: 5, title: "Our reviews" }),
+  lpCase("alert", "alert", { type: "warning", title: "Storm watch", text: "Routes run an hour early tomorrow." }),
+  lpCase("counter", "counter", { value: 1240, prefix: "", suffix: "+", label: "Lots cleared last winter" }),
+  lpCase("progress bar", "progress_bar", { title: "Season booked", percent: 72 }),
+  lpCase("tabs", "tabs", { items: [{ title: "Commercial", body: "Lots, walks and salting." }, { title: "Residential", body: "Drives and paths." }] }),
+  lpCase("accordion", "accordion", { items: [{ title: "When do you come out?", body: "At a two-inch trigger." }, { title: "Do you salt?", body: "Yes, on every visit." }] }),
+  lpCase("a toggle opens nothing until it is pressed", "toggle", { items: [{ title: "The small print", body: "Prices exclude tax." }] }),
+  lpCase("image carousel", "image_carousel", { images: ["https://cdn.example.test/1.jpg", { src: "https://cdn.example.test/2.jpg", alt: "After" }] }),
+  lpCase("a place on the page to jump to", "menu_anchor", { anchor: "prices" }),
+  lpCase("a map is the address and a link, never an embed", "google_maps", { address: "1200 Prairie Ave, Marshalltown, IA" }),
+  lpCase("the Elementor spelling reaches the kind we store", "text_editor", { text: "Same widget, Elementor's name." }),
 ];
 
 function lpTwoColumn() {
@@ -562,14 +620,18 @@ const landingFixture = {
   note: "Generated by scripts/dev/build-email-fixtures.mjs. Byte-identical in Portal and LUMEN-API.",
   context: LANDING_CTX,
   meta: { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." },
-  cases: landingCases.map((c) => ({
-    name: c.name,
-    kind: c.kind,
-    doc: c.doc,
-    html: c.whole
-      ? renderLandingPage(c.doc, makeLandingContext(c.doc, LANDING_CTX), { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." })
-      : renderLandingSection(c.doc.sections[0], makeLandingContext(c.doc, LANDING_CTX)),
-  })),
+  /* The deserialised document, for the reason the email half gives. */
+  cases: landingCases.map((c) => {
+    const doc = deserialise(c.doc);
+    return {
+      name: c.name,
+      kind: c.kind,
+      doc: c.doc,
+      html: c.whole
+        ? renderLandingPage(doc, makeLandingContext(doc, LANDING_CTX), { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." })
+        : renderLandingSection(doc.sections[0], makeLandingContext(doc, LANDING_CTX)),
+    };
+  }),
 };
 
 const dir = path.join(process.cwd(), "test", "fixtures");

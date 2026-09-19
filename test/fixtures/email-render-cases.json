@@ -1386,6 +1386,556 @@
       "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
+      "name": "icon",
+      "kind": "icon",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon",
+                    "props": {
+                      "icon": "check",
+                      "size": 32,
+                      "align": "Centre"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" align=\"center\" style=\"margin:0 0 12px 0;\"><tr><td align=\"center\" valign=\"middle\" style=\"color:#0C4A60;padding:0px;font-family:Helvetica, Arial, sans-serif;font-size:32px;line-height:1;\">✓</td></tr></table></td></tr></table></td></tr></table>",
+      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "icon, a name we do not know is a dot and never the word",
+      "kind": "icon",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon",
+                    "props": {
+                      "icon": "wombat",
+                      "size": 28
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" align=\"center\" style=\"margin:0 0 12px 0;\"><tr><td align=\"center\" valign=\"middle\" style=\"color:#0C4A60;padding:0px;font-family:Helvetica, Arial, sans-serif;font-size:28px;line-height:1;\">●</td></tr></table></td></tr></table></td></tr></table>",
+      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "icon, stacked, in the author's own colour",
+      "kind": "icon",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon",
+                    "props": {
+                      "icon": "snowflake",
+                      "view": "stacked",
+                      "size": 24,
+                      "colour": "#B45309",
+                      "align": "Left"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" align=\"left\" style=\"margin:0 0 12px 0;\"><tr><td align=\"center\" valign=\"middle\" style=\"background:#B45309;color:#FFFFFF;padding:11px;font-family:Helvetica, Arial, sans-serif;font-size:24px;line-height:1;\">❄</td></tr></table></td></tr></table></td></tr></table>",
+      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "icon box, icon above the words",
+      "kind": "icon_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon_box",
+                    "props": {
+                      "icon": "clock",
+                      "title": "24-hour response",
+                      "description": "Somebody is on the road within the hour, every time.",
+                      "align": "Centre"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:0 0 10px 0;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:28px;line-height:1;color:#0C4A60;text-align:center;\">⏱</div></td></tr><tr><td valign=\"top\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:17px;font-weight:700;line-height:1.3;color:#111827;text-align:center;margin:0 0 6px 0;\">24-hour response</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#374151;text-align:center;\">Somebody is on the road within the hour, every time.</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "24-hour response\nSomebody is on the road within the hour, every time.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "icon box, icon beside the words",
+      "kind": "icon_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "icon_box",
+                    "props": {
+                      "icon": "shield-alt",
+                      "position": "left",
+                      "title": "Fully insured",
+                      "description": "Certificates on file before we start."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td valign=\"top\" width=\"44\" style=\"width:44px;padding:0 12px 0 0;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:28px;line-height:1;color:#0C4A60;text-align:center;\">⛨</div></td><td valign=\"top\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:17px;font-weight:700;line-height:1.3;color:#111827;text-align:left;margin:0 0 6px 0;\">Fully insured</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#374151;text-align:left;\">Certificates on file before we start.</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Fully insured\nCertificates on file before we start.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "image box",
+      "kind": "image_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "image_box",
+                    "props": {
+                      "src": "https://cdn.example.test/crew.jpg",
+                      "alt": "Two crew loading salt",
+                      "title": "The crew",
+                      "description": "The same people, every visit."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td align=\"center\" style=\"padding:0 0 10px 0;\"><img src=\"https://cdn.example.test/crew.jpg\" alt=\"Two crew loading salt\" width=\"552\" style=\"display:block;width:100%;max-width:552px;height:auto;border:0;\" /></td></tr><tr><td valign=\"top\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:17px;font-weight:700;line-height:1.3;color:#111827;text-align:center;margin:0 0 6px 0;\">The crew</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#374151;text-align:center;\">The same people, every visit.</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "The crew\nThe same people, every visit.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "image box, picture beside the words",
+      "kind": "image_box",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "image_box",
+                    "props": {
+                      "src": "https://cdn.example.test/crew.jpg",
+                      "alt": "Two crew loading salt",
+                      "position": "left",
+                      "title": "The crew",
+                      "description": "The same people, every visit.",
+                      "url": "https://example.test/crew"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td valign=\"top\" width=\"180\" style=\"width:180px;padding:0 12px 0 0;\"><img src=\"https://cdn.example.test/crew.jpg\" alt=\"Two crew loading salt\" width=\"180\" style=\"display:block;width:100%;max-width:180px;height:auto;border:0;\" /></td><td valign=\"top\"><a href=\"https://example.test/crew\" style=\"text-decoration:none;color:inherit;\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:17px;font-weight:700;line-height:1.3;color:#111827;text-align:left;margin:0 0 6px 0;\">The crew</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#374151;text-align:left;\">The same people, every visit.</div></a></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "The crew\nThe same people, every visit.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "star rating",
+      "kind": "star_rating",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "star_rating",
+                    "props": {
+                      "rating": 4.5,
+                      "scale": 5,
+                      "title": "Our reviews",
+                      "align": "Left"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 12px 0;\"><tr><td align=\"left\" style=\"font-family:Helvetica, Arial, sans-serif;font-size:18px;line-height:1.2;letter-spacing:2px;color:#0C4A60;\"><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;color:#111827;margin-right:8px;\">Our reviews</span>&#9733;&#9733;&#9733;&#9733;&#11242;</td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Our reviews: 4.5 / 5\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "star rating out of ten",
+      "kind": "star_rating",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "star_rating",
+                    "props": {
+                      "rating": 8,
+                      "scale": 10,
+                      "align": "Centre"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 12px 0;\"><tr><td align=\"center\" style=\"font-family:Helvetica, Arial, sans-serif;font-size:18px;line-height:1.2;letter-spacing:2px;color:#0C4A60;\">&#9733;&#9733;&#9733;&#9733;&#9733;&#9733;&#9733;&#9733;&#9734;&#9734;</td></tr></table></td></tr></table></td></tr></table>",
+      "text": "8 / 10\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "alert",
+      "kind": "alert",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "alert",
+                    "props": {
+                      "type": "warning",
+                      "title": "Storm watch",
+                      "text": "We are running the routes an hour early tomorrow."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:12px 14px;background:#FFFBEB;border-left:4px solid #F59E0B;\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:15px;font-weight:700;line-height:1.3;color:#78350F;margin:0 0 4px 0;\">Storm watch</div><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#78350F;margin:0 0 12px 0;\">We are running the routes an hour early tomorrow.</p></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Storm watch\nWe are running the routes an hour early tomorrow.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "alert, the plainest one",
+      "kind": "alert",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "alert",
+                    "props": {
+                      "text": "Prices hold until the end of the season."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:12px 14px;background:#EFF6FF;border-left:4px solid #3B82F6;\"><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:14px;line-height:1.6;color:#1E3A8A;margin:0 0 12px 0;\">Prices hold until the end of the season.</p></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Prices hold until the end of the season.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "the Elementor spelling reaches the kind we store",
+      "kind": "social_icons",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "social_icons",
+                    "props": {
+                      "links": [
+                        {
+                          "label": "Facebook",
+                          "url": "https://facebook.com/x"
+                        }
+                      ],
+                      "align": "Centre"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" align=\"center\" style=\"margin:0 auto;\"><tr><td style=\"padding:0 8px;\"><a href=\"https://facebook.com/x\" style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;font-weight:600;color:#0C4A60;text-decoration:none;\">Facebook</a></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Facebook: https://facebook.com/x\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
       "name": "two columns side by side",
       "kind": "columns",
       "doc": {
@@ -1967,7 +2517,7 @@
         ]
       },
       "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\" style=\"padding-bottom:20px;\"><h1 style=\"margin:0 0 12px 0;font-family:Georgia, Helvetica, Arial, sans-serif;font-size:26px;line-height:1.25;font-weight:700;color:#111827;text-align:left;\">What we will do</h1></td></tr><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"left\" style=\"font-size:0;line-height:0;\"><!--[if mso]><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td width=\"276\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:276px;vertical-align:top;box-sizing:border-box;padding:0 12px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\" style=\"padding-bottom:8px;\"><h2 style=\"margin:0 0 12px 0;font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;line-height:1.25;font-weight:700;color:#111827;text-align:left;\">On site</h2></td></tr><tr><td valign=\"top\"><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;text-align:left;margin:0 0 12px 0;\">Plough, salt, and clear the walks.</p></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"276\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:276px;vertical-align:top;box-sizing:border-box;padding:0 12px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\" style=\"padding-bottom:8px;\"><h2 style=\"margin:0 0 12px 0;font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;line-height:1.25;font-weight:700;color:#111827;text-align:left;\">Off site</h2></td></tr><tr><td valign=\"top\"><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;text-align:left;margin:0 0 12px 0;\">We watch the forecast so you do not have to.</p></td></tr></table></td></tr></table></div><!--[if mso]></td></tr></table><![endif]--></td></tr></table></td></tr></table></td></tr></table></td></tr></table>",
-      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+      "text": "WHAT WE WILL DO\n\nON SITE\n\nPlough, salt, and clear the walks.\n\nOFF SITE\n\nWe watch the forecast so you do not have to.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
       "name": "tree · a row of typed cards, one carrying a tag",
@@ -2059,7 +2609,7 @@
         ]
       },
       "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"left\" style=\"font-size:0;line-height:0;\"><!--[if mso]><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:1px solid #E5E7EB;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">Essentials</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">$185.00</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;\">&nbsp;per push</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">Every 2 inch trigger.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Plowing</li><li>Walks cleared</li></ul></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:2px solid #B45309;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"padding:0 0 8px 0;\"><span style=\"display:inline-block;background:#B45309;color:#FFFFFF;font-family:Helvetica, Arial, sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 10px;\">Best price</span></td></tr><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">Seasonal</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">$2,400.00</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;\">&nbsp;per season</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#9CA3AF;text-decoration:line-through;\">&nbsp;$2,800.00</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">One figure for the whole winter.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Plowing</li><li>Walks cleared</li><li>Salt applied</li></ul></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#6B7280;padding:0 0 4px 0;\">Billed in four instalments.</td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:1px solid #E5E7EB;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">On call</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">Quoted</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">When you need us and not before.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Same-day callout</li></ul></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td></tr></table><![endif]--></td></tr></table></td></tr></table></td></tr></table>",
-      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+      "text": "Essentials — $185.00\nEvery 2 inch trigger.\n\nSeasonal — $2,400.00\nOne figure for the whole winter.\n\nOn call — Quoted\nWhen you need us and not before.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
       "name": "tree · totals with tax, read from the one sum the caller computed",
@@ -2369,7 +2919,7 @@
         ]
       },
       "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\" style=\"padding-bottom:16px;\"><h1 style=\"margin:0 0 12px 0;font-family:Georgia, Helvetica, Arial, sans-serif;font-size:26px;line-height:1.25;font-weight:700;color:#111827;text-align:left;\">Choose your plan</h1></td></tr><tr><td valign=\"top\" style=\"padding-bottom:16px;\"><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;text-align:left;margin:0 0 12px 0;\">Pick one. Whichever you choose becomes the priced line below.</p></td></tr><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"left\" style=\"font-size:0;line-height:0;\"><!--[if mso]><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:1px solid #E5E7EB;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">Snow &amp; ice — Essentials, per push</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">$185.00</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;\">&nbsp;per push</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">Every 2 inch trigger, plowed and salted.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Plowing</li><li>Walks cleared</li><li>Salt applied</li></ul></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:2px solid #0C4A60;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"padding:0 0 8px 0;\"><span style=\"display:inline-block;background:#0C4A60;color:#FFFFFF;font-family:Helvetica, Arial, sans-serif;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;border-radius:999px;padding:3px 10px;\">Most popular</span></td></tr><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">Snow &amp; ice — Seasonal</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">$2,400.00</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;\">&nbsp;per season</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">Every 2 inch trigger, plowed and salted.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Plowing</li><li>Walks cleared</li><li>Salt applied</li></ul></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"184\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:184px;vertical-align:top;box-sizing:border-box;padding:0 8px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:168px;border:1px solid #E5E7EB;border-radius:8px;background:#FFFFFF;\"><tr><td style=\"padding:14px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:16px;font-weight:700;color:#111827;padding:0 0 4px 0;\">Grounds care</td></tr><tr><td style=\"padding:0 0 6px 0;\"><span style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:20px;font-weight:700;color:#111827;\">$320.00</span><span style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;\">&nbsp;monthly</span></td></tr><tr><td style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.55;color:#374151;padding:0 0 8px 0;\">Kept on through the summer.</td></tr><tr><td style=\"padding:0 0 8px 0;\"><ul style=\"margin:0;padding-left:18px;font-family:Helvetica, Arial, sans-serif;font-size:13px;line-height:1.6;color:#111827;\"><li>Mowing</li><li>Edging</li></ul></td></tr></table></td></tr></table></td></tr></table></div><!--[if mso]></td></tr></table><![endif]--></td></tr></table></td></tr></table></td></tr></table></td></tr></table>",
-      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+      "text": "CHOOSE YOUR PLAN\n\nPick one. Whichever you choose becomes the priced line below.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     }
   ]
 }

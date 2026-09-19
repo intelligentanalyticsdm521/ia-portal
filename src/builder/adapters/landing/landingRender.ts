@@ -56,6 +56,11 @@ import {
 } from "../../widgets";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
+/* ONE glyph table for the two surfaces that have no icon font (D-165). It was
+   written for the mailbox and a hosted page is the same problem, so this
+   imports it rather than keeping a second list that can drift. The website
+   publishes the author's icon NAME to Elementor and never reads this. */
+import { iconGlyph } from "../email/emailRender";
 
 export function esc(s: unknown): string {
   return String(s ?? "")
@@ -189,14 +194,36 @@ export const LANDING_RENDERED_KINDS = [
   "key_fact", "totals",
   // Catalogue point 9 — the free HTML box. A landing page is an HTML page.
   "html",
+  /* D-165 §11.13.3 — "the website's list without the menus". The standard set
+     every builder offers, plus the page widgets a hosted page can really
+     draw. Nothing here needs JavaScript: a landing page is one HTML file and
+     a stylesheet, so the tabs are radio buttons, the accordion is <details>
+     and the carousel is a scroll-snap strip. */
+  "icon", "icon_box", "image_box", "star_rating", "alert",
+  "counter", "progress_bar", "tabs", "accordion", "toggle",
+  "image_carousel", "menu_anchor", "google_maps",
 ] as const;
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
 
+/**
+ * ELEMENTOR'S SPELLING → THE KIND WE STORE (§11.13 shared vocabulary).
+ *
+ * Same table as the email renderer's, plus the two page widgets that already
+ * existed here under our own name. One resolution, at the top of the switch.
+ */
+export const LANDING_KIND_ALIASES: Record<string, string> = {
+  text_editor: "paragraph",
+  icon_list: "list",
+  social_icons: "social_links",
+  basic_gallery: "gallery",
+  map: "google_maps",
+};
+
 export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): string {
   const p: any = w.props || {};
   const body = (() => {
-    switch (w.kind) {
+    switch (LANDING_KIND_ALIASES[w.kind] || w.kind) {
       case "container": return lpBox(w, c, depth);
       case "card": return lpCard(lpCardFields(p, c), c);
       case "catalog_card": return lpCard(lpCatalogCard(p, c), c);
@@ -224,6 +251,19 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
          renderer, not a second copy here, so the canvas, the website and this
          page all put the same bytes out. */
       case "html": return htmlBody(p, c.mode === "edit");
+      /* D-165 §11.13.3 — the standard set, and the page widgets with it. */
+      case "icon": return lpIcon(p, c);
+      case "icon_box": return lpIconBox(p, c);
+      case "image_box": return lpImageBox(p, c);
+      case "star_rating": return lpStars(p, c);
+      case "alert": return lpAlert(p, c);
+      case "counter": return lpCounter(p, c);
+      case "progress_bar": return lpProgress(p, c);
+      case "tabs": return lpTabs(w, p, c);
+      case "accordion": case "toggle": return lpAccordion(w, p, c);
+      case "image_carousel": return lpCarousel(p, c);
+      case "menu_anchor": return `<span class="lp-anchor" id="${esc(String(p.anchor || p.id || w.id))}"></span>`;
+      case "google_maps": return lpMap(p, c);
       default:
         return c.mode === "edit"
           ? `<div class="lp-unknown">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
@@ -487,6 +527,161 @@ function lpQuote(p: any, c: LandingContext): string {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   D-165 §11.13.3 — the standard set, on a hosted page
+
+   NO JAVASCRIPT. A landing page is one HTML file and one stylesheet, served
+   from our own host: the tabs are radio buttons and labels, the accordion is
+   `<details>`, and the carousel is a scroll-snap strip. Each of those is a
+   browser behaviour rather than a script we would then have to ship, cache
+   and debug on somebody else's phone.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** One icon. `view` is Elementor's: default · stacked · framed. */
+function lpIcon(p: any, c: LandingContext): string {
+  const view = String(p.view || "default").toLowerCase();
+  const size = Math.max(10, Math.min(96, Number(p.size) || 32));
+  const col = esc(String(p.colour || c.accent));
+  const glyph = esc(iconGlyph(p.icon));
+  const skin = view === "stacked" ? `background:${col};color:#fff;` : view === "framed" ? `border:2px solid ${col};color:${col};` : `color:${col};`;
+  const inner = p.url ? `<a href="${esc(p.url)}" style="color:inherit;text-decoration:none">${glyph}</a>` : glyph;
+  return `<div class="lp-icon lp-icon-${esc(view)}" style="${skin}font-size:${size}px">${inner}</div>`;
+}
+
+/** The words of an icon box or an image box. One shape, two leading parts. */
+function lpBoxWords(p: any, c: LandingContext): string {
+  const title = p.title || c.mode === "edit"
+    ? `<div class="lp-bx-t"${edit("title", c, "A short heading")}>${t(p.title, c)}</div>` : "";
+  const desc = p.description || c.mode === "edit"
+    ? `<div class="lp-bx-d"${edit("description", c, "A line or two about it…")}>${t(p.description, c)}</div>` : "";
+  const words = `${title}${desc}`;
+  return p.url && words ? `<a class="lp-bx-link" href="${esc(p.url)}">${words}</a>` : words;
+}
+
+function lpIconBox(p: any, c: LandingContext): string {
+  const position = String(p.position || "top").toLowerCase();
+  return `<div class="lp-bx lp-bx-${esc(position)}"><div class="lp-bx-lead">${lpIcon(p, c)}</div><div class="lp-bx-body">${lpBoxWords(p, c)}</div></div>`;
+}
+
+function lpImageBox(p: any, c: LandingContext): string {
+  const position = String(p.position || "top").toLowerCase();
+  const pic = p.src
+    ? `<img src="${esc(p.src)}" alt="${esc(altOf(p))}">`
+    : (c.mode === "edit" ? `<div class="lp-drop">Choose a picture in the panel on the right.</div>` : "");
+  return `<div class="lp-bx lp-bx-${esc(position)}"><div class="lp-bx-lead">${pic}</div><div class="lp-bx-body">${lpBoxWords(p, c)}</div></div>`;
+}
+
+/** A star rating, out of five or out of ten, halves included. */
+function lpStars(p: any, c: LandingContext): string {
+  const scale = Number(p.scale) === 10 ? 10 : 5;
+  const rating = Math.max(0, Math.min(scale, Number(p.rating ?? scale)));
+  let stars = "";
+  for (let i = 1; i <= scale; i += 1) {
+    stars += rating >= i ? "★" : (rating >= i - 0.5 ? "⯪" : "☆");
+  }
+  const title = p.title || c.mode === "edit"
+    ? `<span class="lp-stars-t"${edit("title", c, "What this is a rating of")}>${t(p.title, c)}</span>` : "";
+  return `<div class="lp-stars" style="color:${esc(String(p.colour || c.accent))}" role="img" aria-label="${esc(`${rating} out of ${scale}`)}">${title}<span aria-hidden="true">${stars}</span></div>`;
+}
+
+/** An alert — the proposal builder's call-out, under Elementor's name. */
+function lpAlert(p: any, c: LandingContext): string {
+  const tone = String(p.type || "info").toLowerCase();
+  const known = tone === "success" || tone === "warning" || tone === "danger" ? tone : "info";
+  const title = p.title || c.mode === "edit"
+    ? `<div class="lp-alert-t"${edit("title", c, "What this says")}>${t(p.title, c)}</div>` : "";
+  const body = paras(p.text ?? p.description, c, "text");
+  if (!title && !body) return "";
+  return `<div class="lp-alert lp-alert-${known}" role="note">${title}${body}</div>`;
+}
+
+/**
+ * A number. STATIC, and that is the honest answer here.
+ *
+ * Elementor's counter animates from a starting number when it scrolls into
+ * view, which is a script. A hosted landing page ships none, so the figure is
+ * simply the figure — the same number, without the count-up.
+ */
+function lpCounter(p: any, c: LandingContext): string {
+  const value = String(p.value ?? p.number ?? "");
+  const label = p.label || c.mode === "edit"
+    ? `<div class="lp-count-l"${edit("label", c, "What this counts")}>${t(p.label, c)}</div>` : "";
+  return `<div class="lp-count"><div class="lp-count-n" style="color:${esc(c.accent)}">`
+    + `${esc(String(p.prefix ?? ""))}<span${edit("value", c, "0")}>${esc(value)}</span>${esc(String(p.suffix ?? ""))}`
+    + `</div>${label}</div>`;
+}
+
+function lpProgress(p: any, c: LandingContext): string {
+  const pct = Math.max(0, Math.min(100, Number(p.percent ?? 0)));
+  const title = p.title || c.mode === "edit"
+    ? `<div class="lp-prog-t"${edit("title", c, "What this measures")}>${t(p.title, c)}</div>` : "";
+  const shown = p.show_percent === false ? "" : `<span class="lp-prog-p">${pct}%</span>`;
+  return `${title}<div class="lp-prog" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">`
+    + `<div class="lp-prog-b" style="width:${pct}%;background:${esc(c.accent)}">${shown}</div></div>`;
+}
+
+/** The repeater every panelled widget shares: `{ tab_title, tab_content }`. */
+function panelItems(p: any): Array<{ title: unknown; body: unknown }> {
+  const raw = Array.isArray(p.items) ? p.items : (Array.isArray(p.tabs) ? p.tabs : []);
+  return raw.map((x: any) => ({
+    title: x?.title ?? x?.tab_title ?? x?.question,
+    body: x?.body ?? x?.tab_content ?? x?.answer,
+  }));
+}
+
+/** Tabs, with radio buttons instead of a script. */
+function lpTabs(w: Widget, p: any, c: LandingContext): string {
+  const items = panelItems(p);
+  if (!items.length) return c.mode === "edit" ? `<div class="lp-drop">Add the first tab in the panel on the right.</div>` : "";
+  const name = `tabs_${esc(w.id)}`;
+  const heads = items.map((it, i) =>
+    `<input class="lp-tab-r" type="radio" name="${name}" id="${name}_${i}"${i === 0 ? " checked" : ""}>`
+    + `<label class="lp-tab-l" for="${name}_${i}"${edit(`items.${i}.title`, c, "Tab")}>${t(it.title, c)}</label>`).join("");
+  const panels = items.map((it, i) =>
+    `<div class="lp-tab-p"${edit(`items.${i}.body`, c, "What is on this tab")}>${t(it.body, c)}</div>`).join("");
+  return `<div class="lp-tabs" style="--accent:${esc(c.accent)}">${heads}${panels}</div>`;
+}
+
+/** An accordion — and a toggle, which is the same widget with one panel open. */
+function lpAccordion(w: Widget, p: any, c: LandingContext): string {
+  const items = panelItems(p);
+  if (!items.length) return c.mode === "edit" ? `<div class="lp-drop">Add the first question in the panel on the right.</div>` : "";
+  return `<div class="lp-acc">` + items.map((it, i) =>
+    `<details class="lp-acc-i"${i === 0 && w.kind !== "toggle" ? " open" : ""}>`
+    + `<summary${edit(`items.${i}.title`, c, "A question")}>${t(it.title, c)}</summary>`
+    + `<div class="lp-acc-b"${edit(`items.${i}.body`, c, "The answer")}>${t(it.body, c)}</div>`
+    + `</details>`).join("") + `</div>`;
+}
+
+/** A carousel that scrolls, because a browser already knows how to do that. */
+function lpCarousel(p: any, c: LandingContext): string {
+  const images: any[] = Array.isArray(p.images) ? p.images : [];
+  if (!images.length) return c.mode === "edit" ? `<div class="lp-drop">Add the pictures in the panel on the right.</div>` : "";
+  const slides = images.map((im: any) => {
+    const src = typeof im === "string" ? im : im?.src ?? im?.url;
+    if (!src) return "";
+    return `<img src="${esc(String(src))}" alt="${esc(altOf(typeof im === "string" ? { src } : im))}">`;
+  }).join("");
+  return `<div class="lp-carousel">${slides}</div>`;
+}
+
+/**
+ * A map of one address — as the ADDRESS and a link, not an embed.
+ *
+ * The same rule `lpVideo` already applies two functions up, for the same
+ * reason: an iframe from a map provider on a page WE host drops that
+ * provider's cookies on a visitor the business is answerable for. On the
+ * client's own WordPress site the website adapter publishes Elementor's real
+ * `google_maps` widget, because that page is theirs and the choice is theirs.
+ */
+function lpMap(p: any, c: LandingContext): string {
+  const address = String(p.address ?? "").trim();
+  if (!address) return c.mode === "edit" ? `<div class="lp-drop">Type the address in the panel on the right.</div>` : "";
+  const href = `https://maps.google.com/maps?q=${encodeURIComponent(address)}`;
+  return `<p class="lp-map"><span${edit("address", c, "Where you are")}>${t(p.address, c)}</span> `
+    + `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">Open the map</a></p>`;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    Sections and the page
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -657,6 +852,56 @@ h2.lp-h{font-size:1.4rem}h3.lp-h{font-size:1.1rem}
 .lp-addr-l{text-transform:uppercase;letter-spacing:.06em;font-weight:700;font-size:.65rem;margin-right:.4rem}
 .lp-total-row{display:flex;justify-content:space-between;padding:.35rem 0;border-bottom:1px solid #e2e8f0}
 .lp-total-grand{border-bottom:0;border-top:2px solid var(--accent);margin-top:.25rem;padding-top:.5rem;font-weight:700;font-size:1.1rem}
+/* D-165 §11.13.3 — the standard set. No script anywhere in here. */
+.lp-icon{line-height:1;display:inline-block;margin:0 0 .6rem}
+.lp-icon-stacked,.lp-icon-framed{padding:.45em;border-radius:999px}
+.lp-bx{margin:0 0 1rem}
+.lp-bx-top{text-align:center}
+.lp-bx-left,.lp-bx-right{display:flex;gap:.9rem;align-items:flex-start;text-align:left}
+.lp-bx-right{flex-direction:row-reverse}
+.lp-bx-left .lp-bx-lead,.lp-bx-right .lp-bx-lead{flex:0 0 auto;max-width:180px}
+.lp-bx-left .lp-bx-body,.lp-bx-right .lp-bx-body{flex:1 1 auto;min-width:0}
+.lp-bx img{max-width:100%;border-radius:10px;display:block}
+.lp-bx-t{font-weight:700;font-size:1.05rem;margin-bottom:.3rem}
+.lp-bx-d{color:#475569}
+.lp-bx-link{text-decoration:none;color:inherit}
+.lp-stars{font-size:1.15rem;letter-spacing:.12em;margin:0 0 .6rem}
+.lp-stars-t{font-size:.9rem;color:#0f172a;letter-spacing:normal;margin-right:.5rem}
+.lp-alert{border-left:4px solid;padding:.8rem 1rem;margin:0 0 1rem;border-radius:0 8px 8px 0}
+.lp-alert p{margin:0}
+.lp-alert-t{font-weight:700;margin-bottom:.2rem}
+.lp-alert-info{background:#eff6ff;border-color:#3b82f6;color:#1e3a8a}
+.lp-alert-success{background:#ecfdf5;border-color:#10b981;color:#065f46}
+.lp-alert-warning{background:#fffbeb;border-color:#f59e0b;color:#78350f}
+.lp-alert-danger{background:#fef2f2;border-color:#ef4444;color:#7f1d1d}
+.lp-count{text-align:center;margin:0 0 1rem}
+.lp-count-n{font-size:2.2rem;font-weight:700;line-height:1.1}
+.lp-count-l{color:#64748b;font-size:.9rem}
+.lp-prog-t{font-weight:600;margin-bottom:.3rem}
+.lp-prog{background:#e2e8f0;border-radius:999px;overflow:hidden;margin:0 0 1rem}
+.lp-prog-b{min-width:2.5rem;color:#fff;font-size:.75rem;font-weight:700;text-align:right;padding:.25rem .5rem}
+.lp-tabs{display:flex;flex-wrap:wrap;margin:0 0 1rem;border-bottom:1px solid #e2e8f0}
+.lp-tab-r{position:absolute;opacity:0;pointer-events:none}
+.lp-tab-l{order:-1;padding:.55rem .9rem;cursor:pointer;font-weight:600;color:#64748b;border-bottom:2px solid transparent;margin-bottom:-1px}
+.lp-tab-p{display:none;width:100%;padding:.9rem 0 0}
+.lp-tab-r:checked+.lp-tab-l{color:var(--accent);border-bottom-color:var(--accent)}
+.lp-tab-r:nth-of-type(1):checked~.lp-tab-p:nth-of-type(1),
+.lp-tab-r:nth-of-type(2):checked~.lp-tab-p:nth-of-type(2),
+.lp-tab-r:nth-of-type(3):checked~.lp-tab-p:nth-of-type(3),
+.lp-tab-r:nth-of-type(4):checked~.lp-tab-p:nth-of-type(4),
+.lp-tab-r:nth-of-type(5):checked~.lp-tab-p:nth-of-type(5),
+.lp-tab-r:nth-of-type(6):checked~.lp-tab-p:nth-of-type(6){display:block}
+.lp-acc{margin:0 0 1rem;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden}
+.lp-acc-i+.lp-acc-i{border-top:1px solid #e2e8f0}
+.lp-acc summary{cursor:pointer;padding:.7rem .9rem;font-weight:600;list-style:none}
+.lp-acc summary::-webkit-details-marker{display:none}
+.lp-acc summary::after{content:"+";float:right;color:#94a3b8}
+.lp-acc-i[open] summary::after{content:"\\2212"}
+.lp-acc-b{padding:0 .9rem .8rem;color:#475569}
+.lp-carousel{display:flex;gap:.6rem;overflow-x:auto;scroll-snap-type:x mandatory;margin:0 0 1rem;padding-bottom:.4rem}
+.lp-carousel img{flex:0 0 auto;width:min(100%,320px);border-radius:10px;scroll-snap-align:start;display:block}
+.lp-map a{color:var(--accent);font-weight:600}
+.lp-anchor{display:block;height:0;overflow:hidden}
 .lp-empty:empty::before{content:attr(data-placeholder);color:#94a3b8}
 [data-placeholder]:empty::before{content:attr(data-placeholder);color:#cbd5e1}
 /* The phone. NOTE: .lp-page is itself the container, and a container query
