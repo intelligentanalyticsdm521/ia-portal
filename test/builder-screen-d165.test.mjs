@@ -35,6 +35,8 @@ import {
   LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor, openGroups,
   panelGroups, unmappedKinds,
 } from "../src/builder/widgetGroups.ts";
+/* D-168 item 6 - the groups are Elementor's, read from the machine file. */
+import { GROUPS as MACHINE_GROUPS } from "./helpers/panelOrder.mjs";
 import {
   ALL_ACTIONS, SHORTCUT_HELP, TYPING_PASSES_THROUGH, matchShortcut, preventsDefault,
   shortcutHelpGaps,
@@ -61,18 +63,33 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
   const pane = readSrc("builder/WidgetPane.tsx");
   const shell = readSrc("builder/BuilderShell.tsx");
 
-  test("the groups are the reference editor's four, in its order", () => {
-    // Elementor's own panel, read out of the live editor on 2026-09-19:
-    // Layout (Container, Grid) · Basic (9) · General (21) · then the plugin
-    // groups.
+  test("the groups are the reference editor's, in its order", () => {
+    // Elementor Pro's own panel, machine-cut from a real install into
+    // `test/fixtures/elementor-panel.json`: Layout (2) · Basic (10) · Pro (37)
+    // · General (20) · Site (13) · then the plugin groups, of which we have one.
     //
-    // There is no "Pro" group (integration, 2026-09-19). No widget carries
-    // that category, and a group with nothing behind it is a door onto a wall;
-    // the website's Pro rows live in arion's emitter, which shows them and
-    // refuses them by name on Lite (§11.12). PANEL_GROUPS is the REGISTRY's
-    // own list, so a fifth group cannot be invented in the panel's file.
-    assert.deepEqual([...PANEL_GROUPS],
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+    // CHANGED 2026-09-19 (D-168 item 6). This said FOUR, and gave a reason:
+    // "no widget carries that category, and a group with nothing behind it is
+    // a door onto a wall". The first half stopped being true when the families
+    // landed Elementor's Pro widgets, and the second half is answered by
+    // `panelGroups`, which drops a group with nothing offered for THAT builder
+    // — so a proposal panel still has no Pro or Site group, and the website
+    // panel has both, which is what the reference editor does.
+    //
+    // PANEL_GROUPS is the REGISTRY's own list, so a group cannot be invented in
+    // the panel's file; the list itself is pinned against the machine file.
+    assert.deepEqual([...PANEL_GROUPS], [...MACHINE_GROUPS]);
+  });
+
+  test("a group with nothing offered for this builder is not drawn", () => {
+    // The other half of the reason the four were four. Executed, per adapter:
+    // the proposal has no Site tile and no Pro tile, so neither heading is on
+    // its panel, and nothing draws an accordion onto a wall.
+    const drawn = (a) => panelGroups(a).map((g) => g.group);
+    assert.equal(drawn("proposal").includes("Site"), false);
+    for (const a of ["proposal", "email", "website", "landing", "brand"]) {
+      for (const g of panelGroups(a)) assert.ok(g.widgets.length > 0, `${a} ${g.group}`);
+    }
   });
 
   test("every kind every adapter offers is placed — nothing falls in silently", () => {
@@ -109,10 +126,16 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
     }
   });
 
-  test("a search opens what matched; an empty box opens only the first", () => {
+  test("every group starts open, with or without a search", () => {
+    /* CHANGED (D-172, kept by D-168 item 6). This asserted that an empty search
+       opens the FIRST accordion only, on the belief that the reference editor
+       does. It does not — open Elementor and every category is expanded — and
+       with six groups now, opening one left five headings shut, so the panel
+       read as empty and the author went looking for the pop-up list D-172
+       deleted. The rule is the same with a search running and always was. */
     const all = panelGroups("proposal");
-    assert.deepEqual(openGroups(all, ""), [all[0].group],
-      "an empty search must open one accordion, not all of them");
+    assert.deepEqual(openGroups(all, ""), all.map((g) => g.group),
+      "every accordion starts open, as the reference editor's do");
     const hits = panelGroups("proposal", "heading");
     assert.ok(hits.length > 0, "this test's premise is gone — nothing matches 'heading'");
     assert.deepEqual(openGroups(hits, "heading"), hits.map((g) => g.group));

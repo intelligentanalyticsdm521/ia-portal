@@ -74,15 +74,33 @@ export const BUILDER_ADAPTERS: BuilderAdapter[] = ["proposal", "website", "email
 export type WidgetCategory =
   /** The box everything else goes in: Container, and Grid. */
   | "Layout"
-  /** Elementor's Basic: heading, image, text, video, button, divider… */
+  /** Elementor's Basic: Inner Section, heading, image, text, video, button… */
   | "Basic"
+  /** Elementor Pro's own group: Posts, Form, Price Table, Reviews, Slides… */
+  | "Pro"
   /** Elementor's General: the boxes, the lists, the panels, the embeds. */
   | "General"
+  /** Elementor's theme pieces: Site Logo, Site Title, Page Title, Post Title… */
+  | "Site"
   /** Ours. A plugin's own group, exactly as Elementor draws one. */
   | "Intelligent Analytics";
 
+/**
+ * THE GROUPS, IN ELEMENTOR PRO'S OWN ORDER — CHANGED 2026-09-19 (D-168, item 6).
+ *
+ * Read off `elementorPanel.ts`, machine-cut from a real Pro install: Layout,
+ * Basic, Pro, General, Site, then a plugin's own group, which is ours.
+ *
+ * WHAT THIS REPLACES. Four groups, with Elementor's 37 Pro widgets sitting in
+ * **General** behind a padlock and its 13 theme widgets with nowhere to go.
+ * That was a difference a person sees the second they open the panel beside the
+ * real editor, and the reason given for it — "no widget carries that category
+ * yet" — stopped being true the moment the families landed. A group with
+ * nothing offered for THIS builder is still not drawn: `widgetGroups.panelGroups`
+ * drops an empty one, so a proposal panel has no Site group and never did.
+ */
 export const WIDGET_CATEGORIES: WidgetCategory[] = [
-  "Layout", "Basic", "General", "Intelligent Analytics",
+  "Layout", "Basic", "Pro", "General", "Site", "Intelligent Analytics",
 ];
 
 /**
@@ -251,6 +269,23 @@ export interface WidgetDef {
   /** A small inline SVG data URI showing the SHAPE this widget makes. */
   picture: string;
   category: WidgetCategory;
+  /**
+   * WHERE THIS TILE SITS INSIDE ITS GROUP, from zero. B-168 / D-168 item 3.
+   *
+   * For an Elementor widget it is the position Elementor's own panel gives it,
+   * read from `elementorPanel.ts` — a family need not even write it: `panelAt`
+   * below looks the label up when the definition is silent. For one of OURS it
+   * is the position in the Intelligent Analytics group, which Elementor cannot
+   * answer for, so an IA widget declares it.
+   *
+   * WHAT THIS REPLACES: `PANEL_ORDER`, one flat list in this file that every
+   * one of the ten family agents had to append its kinds to — ten conflicts in
+   * one line, and a widget that sorted LAST in its group whenever somebody
+   * forgot. `PANEL_ORDER` is still read, for the widgets that were here before
+   * the families and do not carry an `order`, and `panelAt` is the one place
+   * the two are reconciled.
+   */
+  order?: number;
   /** Which builders may offer it. Never empty. */
   adapters: BuilderAdapter[];
   /**
@@ -301,6 +336,12 @@ import { ATOM_WIDGET_DEFS } from "./widgets";
    Ten agents add widgets in ten folders under `widgets/families/` and none of
    them ever opens this file again. */
 import { FAMILY_WIDGET_DEFS } from "./widgets/families";
+/* D-168 item 3 and item 6 — ELEMENTOR'S OWN PANEL, machine-cut from the two
+   2026-09-17 scrapes by `scripts/gen-elementor-panel.mjs`. Which group a tile
+   is in and where in that group it sits are Elementor's answers, not ours. */
+import { elementorPlace } from "./elementorPanel";
+export { ELEMENTOR_PANEL, elementorPlace } from "./elementorPanel";
+export type { ElementorGroup } from "./elementorPanel";
 /* The one name for the one node that holds children. `treeOps` owns it; the
    panel's Container tile is that node and must not spell it a second time. */
 import { CONTAINER_KIND } from "./treeOps";
@@ -416,12 +457,13 @@ const SENDS: BuilderAdapter[] = ["email"];
    copy, a picture, a button and a way to be contacted" — anything past that is
    a website, and that is the website builder's job. ─────────────────────── */
 
-export const WIDGETS: WidgetDef[] = [
-  /* B-168 §C.1 — THE FAMILIES, FIRST. The ten folders under
-     `widgets/families/` each declare their own widgets and `families/index.ts`
-     collects them; this spread is the whole of their footprint in this file.
-     It is first so that a merge with any other stream's line is trivial. */
-  ...FAMILY_WIDGET_DEFS,
+/**
+ * THE WIDGETS THAT WERE HERE BEFORE THE FAMILIES.
+ *
+ * Not the list the panel reads — `WIDGETS` below is, and a family definition of
+ * the same `kind` REPLACES the entry here. See `mergeWidgetDefs`.
+ */
+const LEGACY_WIDGETS: WidgetDef[] = [
   /* ══════════════════════════════════════════════════════════════════════
      LAYOUT — Elementor's first group, and it holds exactly two things.
      ══════════════════════════════════════════════════════════════════════
@@ -692,29 +734,11 @@ export const WIDGETS: WidgetDef[] = [
     defaults: { ends_at: "" },
     controls: [{ key: "ends_at", label: "Counts down to", type: "text", help: "Email clients that cannot show a timer see the date instead." }],
   },
-  {
-    kind: "social_links",
-    label: "Social Icons",
-    description: {
-      email: "Icons linking to your Facebook, Instagram and the rest.",
-      landing: "Icons linking to your Facebook, Instagram and the rest.",
-    },
-    icon: "Share2",
-    picture: pictureFrom(`<circle cx="18" cy="20" r="5" fill="#94A3B8" stroke="none"/><circle cx="32" cy="20" r="5" fill="#94A3B8" stroke="none"/><circle cx="46" cy="20" r="5" fill="#94A3B8" stroke="none"/>`),
-    category: "General",
-    /* EMAIL ONLY (D-165). §11.13.3 gives every builder **Social Icons**, and
-       this is the one the MAILBOX draws — `emSocial`, as tables. The standard
-       `social_icons` widget serves the other four; offering both to a landing
-       page would be two tiles with one name. */
-    adapters: ["email"],
-    defaults: { links: [] },
-    // Not "we use the accounts connected in My Brand": those are OAuth
-    // identities (a numeric Facebook page id, an Instagram account id), not
-    // public addresses, and only one of the four can be turned into a working
-    // link. A row of dead links in a client's email to their own customers is
-    // worse than no row, so the author gives the addresses.
-    controls: [{ key: "links", label: "Accounts", type: "list", help: "Paste the address of each account you want people to follow." }],
-  },
+  /* `social_links` LIVED HERE and is DELETED (D-168 item 4).
+     Two definitions wore the label "Social Icons": this one, email-only, with a
+     `links` list, and the Elementor-spelled one in `widgets/icons.ts`. One tile
+     means one definition, and the one that survives keeps THIS one's stored
+     `kind` — see the header over `SOCIAL_ICONS_DEF`. Replace means delete. */
 
   /* ── Capture ───────────────────────────────────────────────────────── */
   {
@@ -1167,6 +1191,64 @@ export const WIDGETS: WidgetDef[] = [
   },
 ];
 
+/**
+ * ONE LIST, DE-DUPLICATED BY KIND, AND THE FAMILY WINS. B-168 / D-168 item 1.
+ *
+ * ── THE PROBLEM THIS SOLVES, MEASURED ─────────────────────────────────────
+ * The seams commit spread `...FAMILY_WIDGET_DEFS` in front of the list above,
+ * which is fine for a kind that is NEW and useless for a kind that already
+ * exists — and deepening an existing widget to Elementor's own controls is most
+ * of what D-168 asks for. The first family to finish (f2-pictures) could not
+ * touch Image, Image Box, Image Carousel, Basic Gallery or Video: a second
+ * definition of a kind fails `builder-registry.test.mjs` "kinds are unique",
+ * and the only way to remove the first was to open `registry.ts` or a shared
+ * atom file, which the family contract forbids. Every one of the ten would have
+ * hit it.
+ *
+ * ── THE RULE ──────────────────────────────────────────────────────────────
+ * A family definition REPLACES the legacy definition of the same kind, in the
+ * legacy one's own place, and the legacy one is **dropped from the result**.
+ * It is not deleted from this FILE — that is the lander's mechanical pass, once
+ * the families have landed — so nothing here has to be timed against ten
+ * branches. `kinds are unique` now asks THIS list, which is the one the panel,
+ * the renderer and every stored document read.
+ *
+ * Two families claiming one kind is still a throw, and it throws earlier, in
+ * `families/index.ts`. This function only reconciles family with legacy.
+ */
+export function mergeWidgetDefs(family: WidgetDef[], legacy: WidgetDef[]): WidgetDef[] {
+  const byKind = new Map<string, WidgetDef>();
+  for (const d of family) byKind.set(d.kind, d);
+  const out: WidgetDef[] = [];
+  const placed = new Set<string>();
+  /* The legacy entry's POSITION is kept, because the array's own order is what
+     `widgetsFor` falls back to for a widget with no place of its own, and a
+     replacement that jumped to the front would move a tile nobody touched. */
+  for (const d of legacy) {
+    const won = byKind.get(d.kind);
+    out.push(won ?? d);
+    if (won) placed.add(d.kind);
+  }
+  /* …and a family's NEW kinds go first, which is where the seam put them. */
+  const fresh = family.filter((d) => !placed.has(d.kind));
+  return [...fresh, ...out];
+}
+
+/** Which kinds a family took over from the list above. Read by the tests. */
+export function shadowedLegacyKinds(): string[] {
+  const family = new Set(FAMILY_WIDGET_DEFS.map((d) => d.kind));
+  return LEGACY_WIDGETS.filter((d) => family.has(d.kind)).map((d) => d.kind);
+}
+
+/**
+ * EVERY WIDGET THE PLATFORM HAS — the families' and the ones that predate them.
+ *
+ * B-168 §C.1: the ten folders under `widgets/families/` each declare their own
+ * widgets and `families/index.ts` collects them. This is the whole of their
+ * footprint in this file.
+ */
+export const WIDGETS: WidgetDef[] = mergeWidgetDefs(FAMILY_WIDGET_DEFS, LEGACY_WIDGETS);
+
 /* ══════════════════════════════════════════════════════════════════════════
    Reading the registry
    ══════════════════════════════════════════════════════════════════════════ */
@@ -1252,18 +1334,71 @@ export const PANEL_ORDER: string[] = [
 
 const PANEL_INDEX: Record<string, number> = Object.fromEntries(PANEL_ORDER.map((k, i) => [k, i]));
 
-/** Every widget a given builder may offer, in the PANEL's order. */
-export function widgetsFor(adapter: BuilderAdapter): WidgetDef[] {
-  const at = (w: WidgetDef) => (PANEL_INDEX[w.kind] ?? PANEL_ORDER.length + WIDGETS.indexOf(w));
-  return WIDGETS
-    .filter((w) => w.adapters.includes(adapter) && !w.hidden)
-    .sort((a, b) => at(a) - at(b));
+/**
+ * WHERE A TILE SITS, in one function. B-168 / D-168 item 3.
+ *
+ * Three answers, asked in this order, and the FIRST one that speaks wins:
+ *
+ *   1. the definition's own `order` — what a family writes;
+ *   2. Elementor's own panel, by the widget's LABEL (`elementorPanel.ts`,
+ *      machine-cut) — so a family that writes Elementor's title, which D-168
+ *      requires, gets Elementor's position for nothing and never touches this
+ *      file;
+ *   3. `PANEL_ORDER`, for the widgets that were here before the families.
+ *      Its flat list is read as a per-GROUP position, which is what it always
+ *      described: it is written group by group and its own header says so.
+ *
+ * `null` means nowhere — the tile still draws, LAST in its group, and
+ * `unorderedKinds()` names it so a test goes red instead of the screen going
+ * quietly wrong.
+ */
+export function panelAt(w: WidgetDef): number | null {
+  if (typeof w.order === "number") return w.order;
+  const place = elementorPlace(w.label);
+  if (place && place.group === w.category) return place.order;
+  const flat = PANEL_INDEX[w.kind];
+  return flat === undefined ? null : LEGACY_WITHIN_GROUP[w.kind] ?? flat;
 }
 
-/** Offered somewhere and missing from `PANEL_ORDER`. Empty, and a test says so. */
+/**
+ * `PANEL_ORDER`'s flat position, read as a position INSIDE the widget's group.
+ *
+ * The list is written group by group (its header says so), so walking it once
+ * and counting per category turns one flat list into the five per-group lists
+ * it already was. Computed, never typed twice.
+ */
+const LEGACY_WITHIN_GROUP: Record<string, number> = (() => {
+  const out: Record<string, number> = {};
+  const seen: Record<string, number> = {};
+  const byKind = new Map(LEGACY_WIDGETS.map((d) => [d.kind, d] as const));
+  for (const kind of PANEL_ORDER) {
+    const group = byKind.get(kind)?.category ?? "General";
+    seen[group] = seen[group] ?? 0;
+    out[kind] = seen[group]++;
+  }
+  return out;
+})();
+
+/** Every widget a given builder may offer, in the PANEL's order. */
+export function widgetsFor(adapter: BuilderAdapter): WidgetDef[] {
+  const list = WIDGETS.filter((w) => w.adapters.includes(adapter) && !w.hidden);
+  /* GROUP first, then position inside it. `panelGroups` draws the groups in
+     `WIDGET_CATEGORIES` order, and this list has to read the same way for the
+     flat one — the slash command's Enter and the pane's first tile were two
+     different widgets the last time these two orders disagreed. */
+  const rank = (w: WidgetDef) => {
+    const group = WIDGET_CATEGORIES.indexOf(w.category);
+    const within = panelAt(w);
+    return (group < 0 ? WIDGET_CATEGORIES.length : group) * 10_000
+      + (within ?? 5_000 + list.indexOf(w));
+  };
+  return list.sort((a, b) => rank(a) - rank(b));
+}
+
+/** Offered somewhere and with no place of its own. Empty, and a test says so. */
 export function unorderedKinds(): string[] {
   return WIDGETS
-    .filter((w) => !w.hidden && !(w.kind in PANEL_INDEX))
+    .filter((w) => !w.hidden && panelAt(w) === null)
     .map((w) => w.kind);
 }
 

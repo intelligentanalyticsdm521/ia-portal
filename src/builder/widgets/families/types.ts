@@ -98,10 +98,90 @@ export interface FamilyWidgetDef extends Omit<WidgetDef, "adapters"> {
 /** Draw one widget. `null` means "not mine" and the caller tries the next. */
 export type FamilyRenderer = (w: Widget, ctx: RenderContext) => string;
 
+/**
+ * THE OTHER TWO SURFACES A WIDGET IS DRAWN ON. D-168 item 5b.
+ *
+ * A page is not the only place a family widget lands. The offer file gives the
+ * NEWSLETTER twenty-one Elementor widgets and a LANDING page thirty, and each
+ * of those surfaces has its own renderer with its own rules — a mailbox is
+ * built out of tables with inline styles and no classes, a hosted landing page
+ * is served by LUMEN from stored JSON. Before this, a family could only declare
+ * the page renderer, so a Blockquote offered on the newsletter panel drew
+ * *"This part needs a newer version of the builder to show."* on the canvas.
+ *
+ * The context is the adapter's own, imported as a TYPE so nothing at run time
+ * crosses between a family folder and an adapter.
+ */
+export type FamilyEmailRenderer = (w: Widget, ctx: EmailRenderContext) => string;
+export type FamilyLandingRenderer = (w: Widget, ctx: LandingRenderContext) => string;
+
+/**
+ * What a mailbox renderer is handed. Structural on purpose: `adapters/email`
+ * owns the real shape and a family folder must not import an adapter.
+ */
+export interface EmailRenderContext {
+  mode?: string;
+  accent?: string;
+  [key: string]: unknown;
+}
+
+/** …and the hosted landing page's, for the same reason. */
+export interface LandingRenderContext {
+  mode?: string;
+  accent?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * THE THIRD SURFACE: the My Brand studio. D-168 item 5b.
+ *
+ * The studio is an ABSOLUTE-PIXEL canvas — every object carries its own x, y, w
+ * and h — so a widget does not "render" there, it becomes LAYERS.
+ * `adapters/mybrand/insert.ts` turns a kind into them and its `default` branch
+ * returns nothing at all, silently: the offer file gives My Brand ten Elementor
+ * widgets, so without this door a family's tile is on that panel and pressing
+ * it puts nothing on the canvas. Found by f1-words (§6.5).
+ *
+ * The adapter's own types, imported as TYPES so nothing at run time crosses
+ * from a family folder into an adapter.
+ */
+export type FamilyStudioInsert = (
+  doc: StudioCanvasDoc,
+  brand: StudioBrandLite,
+  opts: StudioInsertOptions,
+) => StudioInsertResult;
+
+/** The canvas being placed on. The adapter owns the real shape. */
+export interface StudioCanvasDoc { width: number; height: number; [key: string]: unknown }
+/** The brand kit the studio draws with. */
+export interface StudioBrandLite { [key: string]: unknown }
+/** How many, and where. */
+export interface StudioInsertOptions { count?: number; [key: string]: unknown }
+/** Layers to place, whether they go behind, and which one to select. */
+export interface StudioInsertResult {
+  layers: unknown[];
+  behind?: boolean;
+  selectId?: string | null;
+}
+
 /** What a `families/<name>/index.ts` exports, and the only thing it exports. */
 export interface Family {
   defs: FamilyWidgetDef[];
   renderers: Record<string, FamilyRenderer>;
+  /**
+   * The mailbox half, beside the page half. Optional: a family that is offered
+   * on no newsletter panel writes nothing, and the offer test is what says
+   * whether it should have.
+   *
+   * A renderer here must be MAILBOX-SAFE — tables, inline styles, no flex, no
+   * grid, no `class` — because `adapters/email/emailRender.ts` checks and
+   * refuses. That check is not weakened for families.
+   */
+  emailRenderers?: Record<string, FamilyEmailRenderer>;
+  /** The hosted landing page's half. Same rule, same reason. */
+  landingRenderers?: Record<string, FamilyLandingRenderer>;
+  /** The My Brand studio's half: a kind becomes canvas layers. */
+  studioInserts?: Record<string, FamilyStudioInsert>;
 }
 
 /** An empty family — what a folder exports until its first widget lands. */

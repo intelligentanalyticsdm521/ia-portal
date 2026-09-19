@@ -45,6 +45,10 @@ import { documentTotals } from "../src/builder/totals.ts";
 import { PREMADE_SECTIONS, SHIPPED_TEMPLATES, documentHeaderSections } from "../src/builder/templates.ts";
 import { snowAgreementDocument } from "../src/builder/snowAgreement.ts";
 import { isRecordKind, renderRecordBlock } from "../src/builder/proposal/recordWidgets.ts";
+/* D-168 item 7 — THE ORDER IS READ, not typed. See the helper's own header. */
+import {
+  GROUPS as PANEL_GROUPS_EXPECTED, groupFaults, panelOrderFaults,
+} from "./helpers/panelOrder.mjs";
 
 const NAMES = JSON.parse(readFileSync(
   path.join(process.cwd(), "test/fixtures/elementor-widget-names.json"), "utf8"));
@@ -83,9 +87,16 @@ const labels = (adapter) => widgetsFor(adapter).map((w) => widgetLabel(w, adapte
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("the left panel is Elementor's", () => {
-  test("the groups are Layout / Basic / General / Intelligent Analytics, in that order", () => {
-    assert.deepEqual([...WIDGET_CATEGORIES],
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+  test("the groups are Elementor Pro's, in that order, with ours last", () => {
+    /* CHANGED 2026-09-19 (D-168 item 6). Four groups became six: Elementor's
+       37 Pro widgets have a **Pro** group of their own and its 13 theme pieces
+       a **Site** group, both read off `elementor-panel.json`, machine-cut from
+       a real install with Pro. They were in General behind a padlock, which is
+       a difference a person sees the moment our panel is beside the real
+       editor. A group with nothing offered for a builder is still not drawn —
+       see "the groups a builder draws are in Elementor's order and never
+       empty" below. */
+    assert.deepEqual([...WIDGET_CATEGORIES], [...PANEL_GROUPS_EXPECTED]);
     // ONE grouping, in ONE module. `widgetGroups` reads the registry's own
     // `category` and keeps no second list; `widgetTasks.ts`, which held the
     // other half of it, is deleted (integration, 2026-09-19).
@@ -151,69 +162,40 @@ describe("the left panel is Elementor's", () => {
  * registration order inside a group is a real part of the parity score.
  */
 describe("each builder's panel, in order (membership: builder-offers.test.mjs)", () => {
-  test("proposals and quotes", () => {
-    assert.deepEqual(labels("proposal"), [
-      "Container", "Grid",
-      "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
-      "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
-      "Product Cards", "Product Line Items", "Totals", "Signature", "Page Break",
-    ]);
-  });
-
-  /**
-   * THE EMAIL ROW, AND WHY IT IS STILL SHORT OF TWO THINGS.
+  /*
+   * WHO DECIDES WHAT ORDER — CHANGED 2026-09-19 (D-168 item 7).
    *
-   * §11.13.3 gives email *"the set above minus what email programs cannot
-   * show"*. `adapters/email/emailRender.ts` builds a mailbox out of TABLES and
-   * its own guards refuse flex, grid and CSS classes — a fallback to the
-   * engine's renderer was tried and those guards caught it by name. So a
-   * widget reaches this panel when this file has a TABLE renderer for it, and
-   * Icon, Icon Box, Image Box, Star Rating and Alert now do (integration,
-   * 2026-09-19). **Reviews** and **Book Now** still do not, and are the two
-   * subtractions left — item S2 in the handoff.
+   * These tests held a hand-typed list of every tile on a panel, in order. Ten
+   * family agents landed widgets into those panels the same afternoon and every
+   * list was stale within the hour; f1-words (handoff §6.3) asked for one pass
+   * by one agent rather than ten half-passes, and this is it — but not by
+   * re-typing the kinds, which would be stale again by the next family.
    *
-   * The IA column uses the ids the mailbox already draws: **Product Cards** is
-   * `product_card`, **IA Posts** is `article_card`, **Unsubscribe Footer** is
-   * `email_footer`. That is the shared vocabulary's first rule, not a shortcut:
-   * an id that exists keeps its id and takes the new label.
+   * The order is READ, from `test/fixtures/elementor-panel.json` (machine-cut
+   * from the two 2026-09-17 scrapes of a real Elementor install with Pro) and,
+   * for the Intelligent Analytics group, from the definition's own `order`.
+   * Elementor decides where Elementor's widgets go; we decide where ours do.
+   * See `test/helpers/panelOrder.mjs`.
+   *
+   * MEMBERSHIP is `builder-offers.test.mjs`'s question, against the offer file
+   * Brandon approved at 12:58 on 2026-09-19. This one is ORDER, and only order.
    */
-  test("email and newsletters", () => {
-    assert.deepEqual(labels("email"), [
-      "Container", "Grid",
-      "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
-      "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
-      "Product Cards", "IA Posts", "Unsubscribe Footer",
-    ]);
-  });
+  for (const adapter of CONTRACT_ADAPTERS) {
+    test(`${adapter}: every tile is in the group Elementor puts it in`, () => {
+      assert.deepEqual(groupFaults(widgetsFor(adapter), (w) => widgetLabel(w, adapter)), []);
+    });
 
-  /**
-   * PRODUCT CARDS IS NOT ON THIS LIST, and that is the one place the panel is
-   * short of §11.13.3 (integration, 2026-09-19).
-   *
-   * The tile IS the catalogue picker — it has no stored form of its own, and
-   * pressing it opens the multi-select and drops atoms. That picker is wired
-   * into the proposal builder and nowhere else, so on a website page the tile
-   * would be a button that opens nothing and leaves a node the emitter has to
-   * publish empty. Two streams reached this independently and for the same
-   * reason; the ask is R-3.5 in D165_HANDOFF_2026-09-19.md. arion's emitter
-   * for it is already written, so this is the picker and not the plumbing.
-   */
-  test("website pages", () => {
-    assert.deepEqual(labels("website"), [
-      "Container", "Grid",
-      "Heading", "Image", "Text Editor", "Video", "Button", "Divider", "Spacer", "Google Maps", "Icon",
-      "Image Box", "Icon Box", "Rating", "Image Carousel", "Basic Gallery", "Icon List",
-      "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion",
-      "Social Icons", "Alert", "Shortcode", "HTML", "Menu Anchor",
-      /* B-168 F8. Elementor's own Login and WordPress Menu, both under
-         `website.elementor_pro` in the offer file. They sit at the end of the
-         General group because PANEL_ORDER is appended to rather than
-         interleaved — see the note beside them in registry.ts. */
-      "Login", "WordPress Menu",
-      "IA Posts", "Reviews", "Book Now",
-      "IA Form",
-      "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
-    ]);
+
+    test(`${adapter}: the tiles are in Elementor's own order`, () => {
+      assert.deepEqual(panelOrderFaults(widgetsFor(adapter), (w) => widgetLabel(w, adapter)), []);
+    });
+  }
+
+  test("the box comes first on every panel, as Elementor's does", () => {
+    for (const adapter of CONTRACT_ADAPTERS) {
+      assert.equal(labels(adapter)[0], "Container", adapter);
+    }
+
   });
 
   test("Product Cards is offered where its picker is, and nowhere else", () => {
@@ -569,7 +551,7 @@ describe("every widget the panel offers draws something", () => {
     testimonial: { quote: "They turned up at 4am.", attribution: "A customer", rating: 5 },
     star_rating: { rating: 4, title: "Our rating" },
     alert: { alert_type: "warning", alert_title: "Important", alert_description: "Read this." },
-    social_icons: { social_icon_list: [{ social: "facebook", link: "https://example.test/fb" }] },
+    social_links: { social_icon_list: [{ social: "facebook", link: "https://example.test/fb" }] },
     video: { url: "https://www.youtube.com/watch?v=abc123" },
     google_maps: { address: "Columbus, OH" },
     counter: { ending_number: 1200, suffix: "+", title: "Jobs done" },
