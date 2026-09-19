@@ -36,7 +36,9 @@ export const ATOM_KINDS = [
   "testimonial",
   "star_rating",
   "alert",
-  "social_icons",
+  /* Elementor calls it Social Icons; the STORED id is `social_links`, which
+     is what the templates place and both goldens hold. D-168 item 4. */
+  "social_links",
 
   /* ── Website and landing only. ──────────────────────────────────────── */
   "video",

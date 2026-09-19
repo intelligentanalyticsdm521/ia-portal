@@ -20,6 +20,9 @@
  * Brand Identity is the one writer, and a per-design override is an override,
  * never a second brand).
  */
+/* B-168 / D-168 item 5b — the families' STUDIO half. One import, one call in
+   the `default` branch below, and no family ever opens this file. */
+import { insertFamilyWidget } from "../../widgets/families";
 import {
   DEFAULT_FONTS, ICON_PATHS, TEXT_PRESETS, uid,
   type CanvasDoc, type ChartLayer, type ImageLayer, type Layer, type ShapeLayer, type TextLayer,
@@ -273,8 +276,24 @@ export function insertWidget(
       ]);
     }
 
-    default:
+    default: {
+      /* B-168 / D-168 item 5b — THE FAMILIES' STUDIO HALF.
+         The offer file gives My Brand ten Elementor widgets, and before this
+         door a family's tile was on that panel and pressing it put nothing on
+         the canvas — silently, because this branch returned EMPTY. Found by
+         f1-words (§6.5), and it would have hit every family that owns one of
+         the ten. `families/familySurfaceGaps()` names any that still has no
+         insert, so the silence is a red test rather than a dead button. */
+      const fam = insertFamilyWidget(kind, doc as never, brand as never, opts as never);
+      if (fam) {
+        return {
+          layers: fam.layers as Layer[],
+          behind: fam.behind ?? false,
+          selectId: fam.selectId ?? null,
+        };
+      }
       return EMPTY;
+    }
   }
 }
 

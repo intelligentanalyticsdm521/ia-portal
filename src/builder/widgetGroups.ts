@@ -41,12 +41,17 @@ import {
  * The groups, in the order the panel draws them.
  *
  * Elementor's own order is Layout, Basic, Pro, General, Site, then the plugin
- * groups. Ours is Layout, Basic, General, then the one plugin group we have.
- * There is no Pro group here because no widget carries that category yet: the
- * website's Pro rows live in arion's emitter, which shows them and refuses them
- * by name on Lite (§11.12). A group with nothing behind it is a door onto a
- * wall, and `PANEL_GROUPS` is the registry's own list precisely so one cannot
- * be invented here.
+ * groups — and since D-168 item 6 so is ours, read off `elementorPanel.ts`,
+ * machine-cut from a real install with Pro. It said four here, and gave a
+ * reason: "no widget carries that category yet". That stopped being true when
+ * the families landed Elementor's 37 Pro widgets and its 13 theme pieces, and
+ * the rest of the reason — "a group with nothing behind it is a door onto a
+ * wall" — is answered by `panelGroups` below, which drops a group with nothing
+ * offered for THAT builder. A proposal panel has no Pro or Site group; the
+ * website panel has both, which is what the reference editor draws.
+ *
+ * `PANEL_GROUPS` is the registry's own list precisely so a group cannot be
+ * invented here.
  */
 export const PANEL_GROUPS: readonly WidgetCategory[] = WIDGET_CATEGORIES;
 
@@ -149,15 +154,20 @@ function byRelevance(list: WidgetDef[], query: string, adapter?: BuilderAdapter)
 }
 
 /**
- * Which accordions start open.
+ * Which accordions start open. EVERY ONE OF THEM.
  *
- * Elementor opens the first group and leaves the rest shut. With a search
- * running, every group that matched is open — a person who typed "price" is
- * not then going to click three headings to find out where it went.
+ * CHANGED (D-172, and kept here). This opened the first group only, on the
+ * belief that the reference editor does. It does not: open Elementor and every
+ * category is expanded, which is why a person can scroll one list and see all
+ * of it. Opening one left five headings closed, so the panel looked empty and
+ * the author went looking for the pop-up list that D-172 deleted.
+ *
+ * With a search running it is the same answer, for the same reason: somebody
+ * who typed "price" is not going to click three headings to find out where it
+ * went.
  */
-export function openGroups(groups: PanelGroupList[], query: string): PanelGroup[] {
-  if (String(query || "").trim()) return groups.map((g) => g.group);
-  return groups.length ? [groups[0].group] : [];
+export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup[] {
+  return groups.map((g) => g.group);
 }
 
 /** Every widget the query matches, best first — what Enter picks. */

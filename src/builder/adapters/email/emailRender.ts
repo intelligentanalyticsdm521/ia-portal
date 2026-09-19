@@ -59,8 +59,11 @@ import {
 // lite shape that resolves a price its own way.
 import {
   addressFields, cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
-  snapshotToCardProps, tagOf,
+  snapshotToCardProps, socialRows, tagOf,
 } from "../../widgets";
+/* B-168 / D-168 item 5b — the families' MAILBOX half. One import, one call at
+   the top of the switch below, and no family ever opens this file. */
+import { FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily } from "../../widgets/families";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -353,6 +356,17 @@ export const EMAIL_RENDERED_KINDS = [
   "icon", "icon_box", "image_box", "star_rating", "alert",
 ] as const;
 
+/**
+ * …AND EVERY KIND A FAMILY DRAWS IN A MAILBOX. D-168 item 5b.
+ *
+ * Derived, never typed: a family declares its mailbox renderer beside its page
+ * one and this list follows. `EMAIL_RENDERED_KINDS` above stays the hand-kept
+ * list of what THIS file draws, so a kind in neither still fails by name.
+ */
+export const EMAIL_DRAWN_KINDS: readonly string[] = [
+  ...EMAIL_RENDERED_KINDS, ...FAMILY_EMAIL_RENDERED_KINDS,
+];
+
 /** Deliberately not drawn: `columns` is the SECTION's column count. */
 export const EMAIL_UNRENDERED_KINDS = ["columns"] as const;
 
@@ -370,6 +384,15 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
   const type = hasStyle(w.style) ? typographyDeclarations(resolveStyle(w.style, "desktop").typography) : [];
   const c: EmailRenderContext = type.length ? { ...outer, typeCss: `${type.join(";")};` } : outer;
   const body = (() => {
+    /* B-168 / D-168 item 5b — THE FAMILIES, BEFORE THIS SWITCH, exactly as
+       LUMEN's `builderEmailRender.js` already asks them.
+       This door was missing and the `default` branch below returns the
+       "needs a newer version" note, which is NOT null — so `render.ts`'s
+       `renderFamily` was never reached in a newsletter and every family widget
+       the offer file gives the newsletter drew that note however well it was
+       built. f1-words (§6.4) and f6-money (§2.1) each found it separately. */
+    const fam = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+    if (fam != null) return fam;
     switch (EMAIL_KIND_ALIASES[w.kind] || w.kind) {
       case "container": return emBox(w, c, depth);
       case "card": return emCard(emCardFields(p, c), c, emWidth(c));
@@ -906,7 +929,10 @@ function emProducts(p: any, c: EmailRenderContext): string {
 }
 
 function emSocial(p: any, c: EmailRenderContext, align: string): string {
-  const declared: any[] = Array.isArray(p?.links) ? p.links.filter((l: any) => l?.url) : [];
+  /* BOTH SPELLINGS (D-168 item 4). One widget wears the label Social Icons
+     now; a newsletter saved before the merge stores `links` and a page saved
+     after it stores Elementor's own `social_icon_list`. */
+  const declared: any[] = socialRows(p).filter((l: any) => l?.url || l?.link);
   const links = declared.length ? declared : (c.business.social || []);
   if (!links.length) {
     return c.mode === "edit"
@@ -914,7 +940,7 @@ function emSocial(p: any, c: EmailRenderContext, align: string): string {
       : "";
   }
   const cells = links.slice(0, 8).map((l: any) =>
-    `<td style="padding:0 8px;"><a href="${esc(l.url)}" style="font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.accent};text-decoration:none;">${esc(l.label || "Follow")}</a></td>`).join("");
+    `<td style="padding:0 8px;"><a href="${esc(l.url || l.link)}" style="font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.accent};text-decoration:none;">${esc(l.label || "Follow")}</a></td>`).join("");
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="${align}" style="margin:0 auto;"><tr>${cells}</tr></table>`;
 }
 
@@ -1329,6 +1355,27 @@ ${pre}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bo
  * classifiers, which is the deliverability lesson this platform already paid
  * for once (ACS quota needs under 2% failure; ours was 22.6%).
  */
+/**
+ * THE WORDS OUT OF A PIECE OF MAILBOX HTML. D-168 item 5b, the text half.
+ *
+ * Not a parser and not trying to be: tags out, block edges become line breaks,
+ * entities back to characters. It exists so a family declares its mailbox
+ * renderer ONCE and the text/plain part follows, instead of ten families each
+ * writing a second set of sentences that drifts from the first.
+ */
+export function textFromMarkup(html: string): string[] {
+  return String(html ?? "")
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+}
+
 export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): string {
   const out: string[] = [];
   const line = (s: unknown) => {
@@ -1401,7 +1448,18 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
             break;
           case "alert":
             line(p.title); line(p.text ?? p.description); out.push(""); break;
-          default: break;
+          /* B-168 / D-168 item 5b — THE FAMILIES' PLAIN-TEXT HALF.
+             Both halves, always: a text part holding the footer and nothing
+             else is the bulk shape `reference_acs_email_reality` says costs us
+             the sending quota, and that is exactly what a newsletter made of
+             family widgets produced. The family writes ONE mailbox renderer and
+             the words are read back out of it, rather than every family writing
+             a second, drifting copy of its own sentences. */
+          default: {
+            const markup = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+            if (markup != null) for (const l of textFromMarkup(markup)) line(l);
+            break;
+          }
         }
       });
     }
