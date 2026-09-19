@@ -466,7 +466,14 @@ describe("the atomic widgets that replace the composites", () => {
   });
 
   test("an address block bound to a location prints it, and does not invite retyping", () => {
-    const d = doc([w("w1", "service_location", { locationId: "loc-1" })]);
+    /* D-167 — the block is a Container of **Custom Fields**, one per field,
+       and every one of them carries the location id. */
+    const d = doc([
+      w("w1", "custom_field", { field: "service_location.name", locationId: "loc-1" }),
+      w("w2", "custom_field", { field: "service_location.address", locationId: "loc-1" }),
+      w("w3", "custom_field", { field: "service_location.site_contact", locationId: "loc-1" }),
+      w("w4", "custom_field", { field: "service_location.access_notes", locationId: "loc-1" }),
+    ]);
     const out = renderSection(d.sections[0], makeContext(d, { locations: LOCATIONS, mode: "edit" }));
     for (const words of ["Marshalltown depot", "1200 Prairie Ave", "Dana Reyes", "Gate code at the north entrance."]) {
       assert.ok(out.includes(words), `"${words}" is not in the address block`);
@@ -486,7 +493,11 @@ describe("the atomic widgets that replace the composites", () => {
   });
 
   test("an address block with no location takes what is typed", () => {
-    const out = html(doc([w("w1", "service_location", { name: "The other yard", address: "88 Second St", contact: "Sam Okafor" })]), "edit");
+    const out = html(doc([
+      w("w1", "custom_field", { field: "service_location.name", overrides: { name: "The other yard" } }),
+      w("w2", "custom_field", { field: "service_location.address", overrides: { address: "88 Second St" } }),
+      w("w3", "custom_field", { field: "service_location.site_contact", overrides: { site_contact: "Sam Okafor" } }),
+    ]), "edit");
     assert.ok(out.includes("The other yard") && out.includes("88 Second St") && out.includes("Sam Okafor"));
     assert.match(out, /data-edit="overrides\.address"/);
   });
@@ -499,9 +510,11 @@ describe("the atomic widgets that replace the composites", () => {
        would come back blank the first time somebody opened it. Asserted here
        because a golden case would only prove the shape one document happens to
        have. */
-    const out = html(doc([w("w1", "service_location", {
-      overrides: { name: "The other yard", address: "88 Second St", site_contact: "Sam Okafor" },
-    })]), "view");
+    const out = html(doc([
+      w("w1", "custom_field", { field: "service_location.name", overrides: { name: "The other yard" } }),
+      w("w2", "custom_field", { field: "service_location.address", overrides: { address: "88 Second St" } }),
+      w("w3", "custom_field", { field: "service_location.site_contact", overrides: { site_contact: "Sam Okafor" } }),
+    ]), "view");
     assert.ok(out.includes("The other yard"), "an override for the name never reached the page");
     assert.ok(out.includes("88 Second St"), "an override for the address never reached the page");
     assert.ok(out.includes("Sam Okafor"), "an override for the site contact never reached the page");
@@ -542,7 +555,7 @@ describe("the new kinds draw on every surface", () => {
   ])];
 
   test("the document renderer offers every one of them", () => {
-    for (const kind of ["container", "card", "catalog_card", "price_line", "totals", "service_location", "customer"]) {
+    for (const kind of ["container", "card", "catalog_card", "price_line", "totals", "custom_field"]) {
       assert.ok(RENDERED_KINDS.includes(kind), `the engine does not draw ${kind}`);
     }
   });

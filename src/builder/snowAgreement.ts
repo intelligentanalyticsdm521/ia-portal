@@ -46,6 +46,7 @@ import {
   type BuilderDocument, type Section, type Widget,
 } from "./model";
 import { DEFAULT_CONSENT } from "./render";
+import { customFields } from "./proposal/upgradeRecordBlocks";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Small builders
@@ -522,7 +523,11 @@ function propertyServicePlan(): Section {
        have no location when the author picks the document's, and it looks for
        the key being PRESENT and empty — a widget without it is a section 10
        that never takes the document's address. */
-    makeWidget("service_location", { heading: "", locationId: "" }),
+    /* D-167 — four **Custom Fields**, flat, not one block widget. Every one
+       of them carries `locationId`, empty, so `bindPlansToLocation` can fill
+       it when the author picks the document's site.
+       PRESENT AND EMPTY, not absent: the binder looks for the key. */
+    ...customFields("service_location"),
     makeWidget("paragraph", { text: "**Areas we plow** " }),
     makeWidget("paragraph", { text: "**Where the snow goes** " }),
     makeWidget("paragraph", { text: "**Sidewalks and entries** " }),

@@ -50,6 +50,10 @@ import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
    render) crosses only hoisted function declarations, never a const read
    while a module is still evaluating. */
 import { renderAtom } from "./widgets";
+/* b168/demo TEMP: the lander replaces this with the family index
+   (`widgets/families/index.ts`). Until it exists the IA family is reached
+   from here and from `registry.ts`, and nothing else in this file moves. */
+import { renderFamily } from "./widgets/families/ia";
 import { ATOM_KINDS } from "./widgets/kinds";
 import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
@@ -255,7 +259,17 @@ export const RENDERED_KINDS = [
      hand. They are on this list because the list answers "does something draw
      this?", and something does: the hook this file declares. The renderer is
      `proposal/recordWidgets.ts renderRecordBlock`. */
-  "customer", "service_location", "business_info",
+  /* D-167 — the three block widgets are DELETED and one fact is a **Custom
+     Field**, drawn by the IA family. A stored block unpacks into a Container
+     of them on open, so nothing that was on a page stops being drawn. */
+  // b168/demo TEMP: the lander replaces this with the family index
+  /* WRITTEN OUT, NOT SPREAD FROM THE FAMILY, and the reason is the import
+     cycle this file's own header describes: a family index is reached from
+     here AND from `registry.ts`, so it can still be evaluating when this
+     module body runs, and a `const` read across that edge throws. Only
+     HOISTED FUNCTIONS may cross it, which is why `renderFamily` may and a
+     list of names may not. The family test asserts the two agree. */
+  "custom_field",
 ] as const;
 
 /**
@@ -272,10 +286,10 @@ export const UNRENDERED_KINDS = [
      a grid layout before anything is stored, so no document ever holds one and
      there is nothing here to draw. A test asserts that. */
   "grid",
-  /* 11.13.2 (D-165) — the three TILES. Pressing one opens a picker and drops
+  /* 11.13.2 (D-165) — the two TILES. Pressing one opens a picker and drops
      an atomic widget; neither `product_cards`, `product_line_items` nor
      `terms` is ever on a page or in a stored document, so nothing draws one. */
-  "product_cards", "product_line_items", "terms",
+  "product_cards", "product_line_items",
 ] as const;
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -474,6 +488,9 @@ export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
     // widgets/ with its own definition, controls and renderer.
     const atom = renderAtom(w, ctx);
     if (atom != null) return atom;
+    // b168/demo TEMP: the lander replaces this with the family index
+    const fam = renderFamily(w, ctx);
+    if (fam != null) return fam;
     switch (w.kind) {
       case "data_table": return dataTable(p, ctx);
       case "heading": return heading(p, ctx);

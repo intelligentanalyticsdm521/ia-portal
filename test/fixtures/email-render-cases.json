@@ -2677,69 +2677,6 @@
       "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
-      "name": "tree · an address block bound to a location",
-      "kind": "tree",
-      "doc": {
-        "v": 2,
-        "settings": {
-          "style": "newsletter",
-          "accent": "#0C4A60"
-        },
-        "sections": [
-          {
-            "id": "s1",
-            "label": "Case",
-            "numbered": false,
-            "layout": 1,
-            "width": "contained",
-            "background": "",
-            "headingFont": "",
-            "padding": 16,
-            "theme": "light",
-            "recommended": false,
-            "pageBreakBefore": false,
-            "visibility": "customer",
-            "columns": [
-              {
-                "id": "c1",
-                "widgets": [
-                  {
-                    "id": "b1",
-                    "kind": "container",
-                    "props": {},
-                    "style": {
-                      "direction": "row",
-                      "gap": 24
-                    },
-                    "children": [
-                      {
-                        "id": "w1",
-                        "kind": "address_block",
-                        "props": {
-                          "locationId": "loc-1"
-                        }
-                      },
-                      {
-                        "id": "w2",
-                        "kind": "address_block",
-                        "props": {
-                          "name": "The other yard",
-                          "address": "88 Second St, Ames, IA 50010",
-                          "contact": "Sam Okafor"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"left\" style=\"font-size:0;line-height:0;\"><!--[if mso]><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td width=\"276\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:276px;vertical-align:top;box-sizing:border-box;padding:0 12px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"border-left:3px solid #0C4A60;padding:0 0 0 10px;\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:14px;font-weight:700;color:#111827;\">Marshalltown depot</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;color:#6B7280;\">1200 Prairie Ave, Unit 4, Marshalltown, IA, 50158</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#6B7280;margin-top:3px;\"><span style=\"text-transform:uppercase;letter-spacing:.06em;font-weight:700;\">Site contact</span> Dana Reyes, 555-0142</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#6B7280;margin-top:3px;\"><span style=\"text-transform:uppercase;letter-spacing:.06em;font-weight:700;\">Access</span> Gate code at the north entrance.</div></td></tr></table></td></tr></table></div><!--[if mso]></td><![endif]--><!--[if mso]><td width=\"276\" valign=\"top\"><![endif]--><div style=\"display:inline-block;width:100%;max-width:276px;vertical-align:top;box-sizing:border-box;padding:0 12px;font-size:15px;line-height:1.6;text-align:left;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td valign=\"top\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\"><tr><td style=\"border-left:3px solid #0C4A60;padding:0 0 0 10px;\"><div style=\"font-family:Georgia, Helvetica, Arial, sans-serif;font-size:14px;font-weight:700;color:#111827;\">The other yard</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;color:#6B7280;\">88 Second St, Ames, IA 50010</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:11px;color:#6B7280;margin-top:3px;\"><span style=\"text-transform:uppercase;letter-spacing:.06em;font-weight:700;\">Site contact</span> Sam Okafor</div></td></tr></table></td></tr></table></div><!--[if mso]></td></tr></table><![endif]--></td></tr></table></td></tr></table></td></tr></table>",
-      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
-    },
-    {
       "name": "tree · key facts as four widgets in a row",
       "kind": "tree",
       "doc": {

@@ -40,10 +40,18 @@ import {
 /* 11.13.2 — the three widgets that fill themselves from the database. They
    are what the DELETED Details group is replaced by, so the adapter draws
    them (`ctx.extra`) and keeps their live values in one place. */
+import { type RecordBook } from "./recordWidgets";
+/* D-167 — ONE widget shows ONE database field. The three block widgets it
+   replaced are deleted; a stored one unpacks into a Container of these on
+   open. The family folder is where the lander expects a widget to live. */
 import {
-  RECORD_WIDGET_DEFS, fieldsOf, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
-  type RecordBook,
-} from "./recordWidgets";
+  CUSTOM_FIELD_KIND, choiceOf, isRetyped, putCustomFieldBackProps, renderCustomFieldWith,
+} from "../widgets/families/ia/customField";
+/* D-168 — the offer file's nine section templates, each a Container tree of
+   normal widgets the author can pull apart. */
+import {
+  CLAUSE_TEMPLATE_KEY, PROPOSAL_SECTION_TEMPLATES, SECTION_TEMPLATE_TAGS,
+} from "./sectionTemplates";
 /* THE SECOND UPGRADE TABLE IS DELETED (integration, 2026-09-19).
    `upgradeProposal.ts` converted six kinds on open; `src/builder/upgrade.ts`
    converts eleven INSIDE `deserialise`, which is the one door a stored
@@ -52,7 +60,7 @@ import {
    widgets never read. There is one now, and `openProposalDocument` /
    `deserialise` already run it. */
 import {
-  TERMS_TILE_KIND, isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
+  isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
   type CatalogueTileKind,
 } from "./catalogueTiles";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
@@ -676,11 +684,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
-      /* 11.13.2 — the three record widgets, drawn by the adapter because only
-         the adapter has the customer, the site and the business in its hand.
-         `extra` is the engine's own hook for exactly this (render.ts), so
-         render.ts gains no `case` and there is no second renderer table. */
-      extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, recordBook) : null),
+      /* THE CUSTOM FIELD, drawn by the adapter because only the adapter has the
+         customer, the site and the business in its hand. `extra` is the
+         engine's own hook for exactly this (render.ts), so render.ts gains no
+         `case` and there is no second renderer table. Everywhere else — the
+         customer's own copy, the sent wire, a template preview — the family's
+         own renderer builds the book out of the context instead. */
+      extra: (w, c) => (w.kind === CUSTOM_FIELD_KIND ? renderCustomFieldWith(w, c, recordBook) : null),
       totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
@@ -1084,9 +1094,21 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
            of inserting a widget. `false` is the engine's own "I handled it". */
         onInsertWidget={(def) => {
           if (!isPickerTile(def.kind)) return true;
-          if (def.kind === TERMS_TILE_KIND) { setPickingTerms(true); return false; }
           setPickingCatalogue(def.kind as CatalogueTileKind);
           return false;
+        }}
+        /* THE NINE SECTION TEMPLATES (D-168). Add section — Template shows
+           exactly the offer file's list, and every one of them is a Container
+           tree of normal widgets the author can take apart. */
+        premade={PROPOSAL_SECTION_TEMPLATES}
+        premadeTags={SECTION_TEMPLATE_TAGS}
+        /* ...and placing **Terms and conditions** opens the clause picker, which
+           is where the deleted Terms TILE went. What it drops is still plain
+           Heading + Text Editor, with no live link back to the library: a term
+           somebody signed must not change because the library did. */
+        onPlaceSection={(t) => {
+          if (t.key === CLAUSE_TEMPLATE_KEY) setPickingTerms(true);
+          return true;
         }}
         onSelectionChange={(s) => setSelectedSectionId(s?.sectionId ?? null)}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
@@ -1722,16 +1744,16 @@ function WidgetExtras({
 
   /* ── 11.13.2 — the three record-bound widgets ────────────────────────── */
 
-  if (isRecordKind(widget.kind)) {
-    const retyped = overriddenOn(widget.kind, p);
+  if (widget.kind === CUSTOM_FIELD_KIND) {
+    const choice = choiceOf(p);
+    const retyped = isRetyped(p) && choice ? [choice.field] : [];
     return (
-      <div data-record-panel={widget.kind} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {/* The ONE location control, shared with every other site widget. */}
-        {locationPicker}
-        {/* `locationPicker` above is null for Customer and Business Info: the
-            document has ONE customer and ONE business, chosen in the top bar,
-            and a picker for either would be asking a question that is already
-            answered. Only Service Location has a choice to make. */}
+      <div data-record-panel={choice ? choice.record : ""} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* The ONE location control, shared with every other site widget. It is
+            null unless this field comes out of a SERVICE LOCATION: the document
+            has one customer and one business, chosen in the top bar, and a
+            picker for either would ask a question already answered. */}
+        {choice && choice.record === "service_location" ? locationPicker : null}
         {/* PUT IT BACK, per field. F.2's own words and F.2's own writer, so a
             field retyped on a Customer block is undone exactly the way a price
             retyped on a product card is. */}
@@ -1743,16 +1765,17 @@ function WidgetExtras({
             </div>
             {retyped.map((key) => (
               <button key={key} type="button" style={miniBtn} data-put-back={key}
-                title={`${PUT_IT_BACK} — this field follows the customer's record again`}
-                onClick={() => patch(putFieldBackProps(p, key))}>
-                {PUT_IT_BACK}: {recordFieldLabel(widget.kind, key)}
+                title={`${PUT_IT_BACK} — this field follows your own record again`}
+                onClick={() => patch(putCustomFieldBackProps(p))}>
+                {PUT_IT_BACK}: {choice ? choice.label : key}
               </button>
             ))}
           </div>
         ) : (
           <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
-            Every field here comes straight from your own records. Type over one on the
-            page and it stops following — you can put it back from here.
+            This comes straight from your own records and changes when the customer
+            does. Type over it on the page and it stops following — you can put it
+            back from here.
           </div>
         )}
       </div>
@@ -2092,9 +2115,9 @@ function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<
  * here. The widget's own field list already holds the words, so there is one
  * place they are written and the panel and the page cannot disagree.
  */
-function recordFieldLabel(kind: string, key: string): string {
-  return fieldsOf(kind).find((f) => f.key === key)?.label || key;
-}
+/* `recordFieldLabel` LIVED HERE and is DELETED (D-167). A Custom Field knows
+   its own field, so the panel reads the choice's label and there is nothing
+   to look up. */
 
 function plainFieldName(key: string): string {
   const NAMES: Record<string, string> = {

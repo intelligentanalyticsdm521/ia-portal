@@ -194,7 +194,7 @@ describe("§3.2's union is registered", () => {
     "social_icons", "alert", "shortcode", "html", "menu_anchor",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
-    "customer", "service_location", "business_info", "clauses", "signature", "page_break",
+    "custom_field", "data_table", "clauses", "signature", "page_break",
     "ia_posts", "reviews", "book_now",
     "ia_form", "newsletter_signup", "hours_location",
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
@@ -202,18 +202,18 @@ describe("§3.2's union is registered", () => {
     // builders, so they keep their own words.
     "brand_logo", "shape", "colour_block", "background", "qr_code", "social_handle",
     // Understood, never offered. Each one's reason is in registry.ts.
-    "data_table", "site_custom",
+    // `data_table` is OFFERED now (the offer file's proposal list), so it
+    // moved up into the Intelligent Analytics block above.
+    "site_custom",
     "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
     "form", "gallery", "social_links", "countdown", "logo_strip",
-    /* 11.13.3's Terms: saved clauses in, plain Heading + Text Editor out. A
-       PANEL TILE, declared in src/builder/proposal/catalogueTiles.ts.
-       `clauses` is the widget it replaces on the panel — its kind stays (the
-       snow agreement places it and D-164 pins its numbering) and its TILE is
-       hidden, so there is one Terms door. */
-    "terms",
+    /* `terms` WAS HERE and the TILE is DELETED (D-168): the approved offer
+       file does not list it, and the clause picker belongs to the **Terms and
+       conditions** section template now. `clauses` stays a KIND, because the
+       snow agreement places one and D-164 pins its numbering. */
   ];
 
   for (const kind of REQUIRED) {
@@ -360,9 +360,12 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
        are DELETED; the first became Customer or Service Location by its
        binding, and those two are the proposal's. */
     assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.customer.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.service_location.adapters].sort(), ["proposal"]);
-    for (const gone of ["address_block", "key_fact", "pricing_table", "callout"]) {
+    /* D-167 — and the three that replaced the address block are themselves
+       gone. ONE widget shows one database field, and it is the proposal's
+       until an email or a page has a customer picked for it to read. */
+    assert.deepEqual([...WIDGETS_BY_KIND.custom_field.adapters].sort(), ["proposal"]);
+    for (const gone of ["address_block", "key_fact", "pricing_table", "callout",
+      "customer", "service_location", "business_info", "terms"]) {
       assert.equal(WIDGETS_BY_KIND[gone], undefined, `${gone} must be gone, not hidden`);
     }
   });

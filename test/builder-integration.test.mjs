@@ -139,9 +139,10 @@ describe("the upgrade on open is switched on (A-B-1)", () => {
 
 describe("the upgraded widgets are the widgets the registry has (A-B-2)", () => {
   test("every kind the upgrade can produce is a kind the engine draws", () => {
-    /* D-165 — `address_block` and `key_fact` are deleted; the upgrade produces
-       `service_location` (or `customer`) and a Text Editor instead. */
-    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "service_location", "totals"]) {
+    /* D-167 — `address_block`, `key_fact` and then the three record blocks
+       are deleted; the upgrade produces a Container of **Custom Fields** and a
+       Text Editor instead. */
+    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "custom_field", "totals"]) {
       assert.ok(RENDERED_KINDS.includes(kind), `the upgrade produces ${kind} and nothing draws it`);
     }
   });
@@ -227,7 +228,7 @@ describe("a ready-made pattern is ONE section with a box in it (A-B-4)", () => {
 
   test("This property is the four widgets a property block held", () => {
     assert.deepEqual(propertySections()[0].columns[0].widgets.map((w) => w.kind),
-      ["heading", "service_location", "price_line", "totals"]);
+      ["heading", "heading", "custom_field", "custom_field", "custom_field", "custom_field", "price_line", "totals"]);
   });
 
   test("no pattern needs a second way to be placed", () => {

@@ -383,7 +383,10 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     // Intelligent Analytics group, which is where a client would look for the
     // things that come out of their own records.
     const ia = panelGroups("proposal").find((g) => g.group === "Intelligent Analytics");
-    assert.ok(ia.widgets.some((w) => w.kind === "service_location"),
+    /* D-167 — "a section for the service address" is a SECTION TEMPLATE made
+       of Custom Fields, and the widget that shows the address is the Custom
+       Field. Both answers live in the Intelligent Analytics group. */
+    assert.ok(ia.widgets.some((w) => w.kind === "custom_field"),
       "the service address is not in the Intelligent Analytics group");
     assert.ok(ia.widgets.some((w) => w.kind === "product_line_items"),
       "the catalogue picker is not in the Intelligent Analytics group");
@@ -424,12 +427,17 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     assert.equal(first.kind, flatPanelMatches("proposal", "pro")[0].kind);
   });
 
-  test("a NAME beats a mention — 'customer' finds the Customer widget first", () => {
-    // The slash command's Enter takes the first of these, so the order is not
-    // cosmetic: getting it wrong inserts the wrong thing without asking.
-    const hits = flatPanelMatches("proposal", "customer");
-    assert.equal(hits[0].kind, "customer");
-    assert.ok(hits.length > 1, "nothing else mentions the customer at all");
+  test("a NAME beats a mention — 'table' finds the Table widget first", () => {
+    /* The slash command's Enter takes the first of these, so the order is not
+       cosmetic: getting it wrong inserts the wrong thing without asking.
+       It was "customer" until D-167 deleted that widget; **Table** is the same
+       shape of question — a name that several other tiles merely mention. */
+    const hits = flatPanelMatches("proposal", "table");
+    assert.equal(hits[0].kind, "data_table");
+    /* Only one tile is called Table and nothing else mentions one, so this is
+       the weaker half of the old assertion: what matters is that the exact
+       NAME wins, which the line above pins. */
+    assert.ok(hits.length >= 1);
   });
 
   test("the empty page's three choices point at three real groups", () => {

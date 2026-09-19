@@ -263,6 +263,24 @@ export function widgetForToken(
 const SITE_KINDS = new Set(["property_plan", "service_location", "address_block"]);
 
 /**
+ * IS THIS WIDGET POINTED AT A SITE? (D-167)
+ *
+ * The three block widgets are gone and a site fact is a **Custom Field** whose
+ * chosen field starts `service_location.`. A Custom Field showing the
+ * CUSTOMER's email has a `locationId` too, and it must never be written to,
+ * or picking the document's location would quietly point an email line at a
+ * yard. So the question is the FIELD, not the kind.
+ *
+ * The three old kinds stay on the list for the reason the comment above gives:
+ * a document can reach here without passing through `deserialise`.
+ */
+function isSiteWidget(w: { kind: string; props?: Record<string, unknown> }): boolean {
+  if (SITE_KINDS.has(w.kind)) return true;
+  if (w.kind !== "custom_field") return false;
+  return String((w.props as any)?.field ?? "").startsWith("service_location.");
+}
+
+/**
  * A SITE WIDGET POINTS AT A SITE THIS CUSTOMER HAS (D-164, and 2026-09-19).
  *
  * Two cases, one rule, because they are the same fact:
@@ -299,7 +317,7 @@ export function bindPlansToLocation(
   const valid = new Set([...(known ?? [])].map((x) => String(x).trim().toLowerCase()).filter(Boolean));
   const move = walkWidgets(doc)
     .filter(({ widget }) => {
-      if (!SITE_KINDS.has(widget.kind)) return false;
+      if (!isSiteWidget(widget as any)) return false;
       const on = String((widget.props as any)?.locationId ?? "").trim().toLowerCase();
       if (!on) return true;
       // PRESENCE, not absence: only re-point when we actually know the list.

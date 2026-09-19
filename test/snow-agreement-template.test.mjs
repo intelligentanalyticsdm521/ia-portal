@@ -745,12 +745,14 @@ describe("what the author sees the moment the template loads", () => {
 
   test("section 10 takes the location the DOCUMENT is about", () => {
     const before = doc();
-    // D-165 — the plan's location is the Service Location widget's now.
-    const plan = () => walkWidgets(before).map((x) => x.widget).find((w) => w.kind === "service_location");
-    assert.equal(plan().props.locationId, "", "the template ships pointed at somebody's location");
+    /* D-167 — the plan's location rides on each **Custom Field** pointed at
+       the site. The rule is unchanged: ships empty, takes the document's. */
+    const siteField = (d) => walkWidgets(d).map((x) => x.widget).find((w) => w.kind === "custom_field"
+      && String(w.props.field || "").startsWith("service_location."));
+    assert.equal(siteField(before).props.locationId, "", "the template ships pointed at somebody's location");
 
     const after = bindPlansToLocation(before, "A1B2C3D4-0000-0000-0000-00000000BEEF");
-    const bound = walkWidgets(after).map((x) => x.widget).find((w) => w.kind === "service_location");
+    const bound = siteField(after);
     assert.equal(bound.props.locationId, "a1b2c3d4-0000-0000-0000-00000000beef",
       "the plan did not take the document's location, or did not lower-case it");
 

@@ -16,6 +16,11 @@
 //     withTotalBeforeSignature                         → the "no second total" row red
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+/* D-167 — the ONE widget that shows ONE database field. */
+import {
+  CUSTOM_FIELD_CHOICES, customFieldProps, renderCustomFieldWith,
+} from "../src/builder/widgets/families/ia/customField.ts";
+import { makeContext } from "../src/builder/render.ts";
 import { readFileSync } from "node:fs";
 
 import { deserialise, emptyDocument, makeSection, makeWidget, serialise, walkWidgets } from "../src/builder/model.ts";
@@ -615,8 +620,12 @@ describe("D-37 · a template's sections arrive with real content", () => {
        Location + Text Editor rows"). The location fills itself in from the
        customer's own record; the crew's six questions are labelled lines on the
        page, which is what stops section 10 printing as an empty sheet. */
+    /* D-167 — and the Service Location widget is itself deleted: the address
+       is one **Custom Field** per field, which the author can pull apart. */
     const widgets = plan.columns[0].widgets;
-    assert.ok(widgets.some((w) => w.kind === "service_location"), "the plan lost its service address");
+    const fields = widgets.filter((w) => w.kind === "custom_field"
+      && String(w.props.field || "").startsWith("service_location."));
+    assert.ok(fields.length >= 2, "the plan lost its service address");
     const rows = widgets.filter((w) => w.kind === "paragraph" && /^\*\*[^*]+\*\*/.test(String(w.props.text || "")));
     assert.ok(rows.length >= 5, "the service plan still ships with no rows");
   });
@@ -663,7 +672,10 @@ describe("D-33 · one control per thing", () => {
     // address block inside it is what is bound to a location.
     // D-165 — the address block is `service_location` and `property_plan` is
     // deleted; the rule is the same and the adapter still owns the picker.
-    for (const kind of ["service_location"]) {
+    /* D-167 — the address block is a **Custom Field**, and the rule is the
+       same: it carries `locationId` as a value and declares NO control for it,
+       because only the adapter knows this customer's sites. */
+    for (const kind of ["custom_field"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].controls.some((c) => c.key === "locationId"),
         `${kind} still declares an empty locationId select, so the label prints twice`);
     }
@@ -672,7 +684,7 @@ describe("D-33 · one control per thing", () => {
 
   test("no proposal widget declares a select with no options to fill it", () => {
     for (const kind of ["price_line", "card", "catalog_card", "totals",
-      "service_location", "customer", "business_info", "clauses", "signature",
+      "custom_field", "clauses", "signature",
       "icon", "icon_box", "image_box", "alert", "testimonial", "star_rating", "social_icons"]) {
       for (const c of WIDGETS_BY_KIND[kind].controls || []) {
         if (c.type !== "select") continue;
@@ -695,13 +707,17 @@ describe("D-39 · the title band has a logo control", () => {
        own `src` and saves with the document exactly as before. `business_info`
        carries the other half of D-39: use the brand logo, or a different one. */
     assert.ok("src" in WIDGETS_BY_KIND.image.defaults);
-    // "A different logo" is stored under the FIELD's own key, so it is an
-    // override like any other retyped value and *Put it back* returns to the
-    // mark in Brand Identity. "None" is the Show-logo toggle.
-    assert.ok("logo" in WIDGETS_BY_KIND.business_info.defaults);
-    assert.ok("show_logo" in WIDGETS_BY_KIND.business_info.defaults);
-    assert.ok(WIDGETS_BY_KIND.business_info.controls.some((c) => c.key === "logo" && c.type === "image"),
-      "there is no way to choose a different logo");
+    /* D-167 — the other half of D-39 is a **Custom Field** pointed at
+       `business_info.logo`. Left alone it draws the mark from Brand Identity;
+       typed over, it is an override like any other retyped value, with
+       *Put it back*; and the label is the Show-label toggle. */
+    const logo = CUSTOM_FIELD_CHOICES.find((c) => c.key === "business_info.logo");
+    assert.ok(logo, "there is no way to put the business logo on a document");
+    assert.equal(logo.picture, true, "the logo would print as a web address");
+    const w = { props: customFieldProps("business_info.logo") };
+    const drawn = renderCustomFieldWith(w, makeContext(emptyDocument(), { mode: "view" }),
+      { business_info: { logo: "data:image/png;base64,AA" } });
+    assert.match(drawn, /<img src="data:image\/png;base64,AA"/);
   });
 
   test("documentLogo answers the three cases", () => {

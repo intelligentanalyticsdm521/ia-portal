@@ -33,6 +33,12 @@ import { isContainer, makeContainer, makeWidget } from "./treeOps";
 import type { ElementStyle } from "./style";
 import { LEGACY_RIBBON_KEYS, ribbonProps, tagOf } from "./widgets/ribbon";
 import { featureItem, featureTexts } from "./widgets/features";
+/* D-168 (b168/demo) — the three block widgets are DELETED and every stored one
+   becomes a Container of Custom Fields. The building is in the proposal folder
+   beside the record book it reads; this file decides WHEN. */
+import {
+  fieldsContainer, recordBlockToContainer,
+} from "./proposal/upgradeRecordBlocks";
 import {
   BOUND_KINDS, bindingDefaults, isBound, selectionOf, selectionProps,
 } from "./widgets/binding";
@@ -74,6 +80,12 @@ export const DELETED_KINDS = [
   "doc_header", "footer_note", "merge_field", "personal_detail", "property_plan",
   "pricing_table", "callout", "key_value_table", "key_fact", "address_block",
   "map", "columns",
+  /* D-168 - Customer, Service Location and Business Info. Built on the morning
+     of 2026-09-19 and deleted the same afternoon (D-167): a block of facts is a
+     special-purpose widget, and one fact is a Custom Field. Every stored one
+     unpacks into a Container of Custom Fields, so nothing it showed is lost and
+     the author can pull the result apart. */
+  "customer", "service_location", "business_info",
 ] as const;
 
 export function isDeletedKind(n: Node): boolean {
@@ -502,15 +514,16 @@ function fromDocHeader(w: Widget): Node {
  */
 function fromPropertyPlan(w: Widget): Node {
   const p: any = w.props || {};
-  const kids: Node[] = [];
-  if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 3 }));
-  kids.push(makeWidget("service_location", {
-    ...bindingDefaults("lumen:locations"),
-    ...selectionProps("lumen:locations", { locationId: str(p.locationId) }),
-    heading: "", layout: "stacked", locationId: str(p.locationId), overrides: {},
-  }));
-  for (const r of arr(p.rows)) kids.push(labelledLine(str(r?.label), str(r?.value)));
-  return asBox(w, undefined, kids);
+  /* ONE HOP, NOT TWO (D-168). This used to make a `service_location` widget,
+     which is itself a deleted kind now, and a conversion onto a deleted kind
+     only works if the second pass also runs - the pass that ran second is the
+     one nobody remembered to call. So it goes straight to the Custom Fields. */
+  return fieldsContainer("service_location", {
+    id: w.id,
+    heading: str(p.heading),
+    locationId: str(p.locationId),
+    after: arr(p.rows).map((r: any) => labelledLine(str(r?.label), str(r?.value))),
+  });
 }
 
 /**
@@ -611,14 +624,15 @@ function fromAddressBlock(w: Widget): Node {
     if (str(p.notes)) overrides.access_notes = str(p.notes);
     if (str(p.contact)) overrides[kind === "customer" ? "contact" : "site_contact"] = str(p.contact);
   }
-  return asWidget(w, kind, {
-    ...bindingDefaults(kind === "customer" ? "lumen:customer" : "lumen:locations"),
-    ...(kind === "customer" ? {} : selectionProps("lumen:locations", { locationId: sel.locationId })),
+  /* ONE HOP (D-168) - straight to a Container of Custom Fields, for the
+     reason `fromPropertyPlan` gives above. The typed words keep travelling as
+     overrides on the field they belong to, which is the whole care this
+     function ever had: a stored agreement must not open with the address
+     silently replaced by whatever the record says today. */
+  return fieldsContainer(kind, {
+    id: w.id,
     heading: str(p.heading),
-    layout: "stacked",
-    ...(kind === "customer" ? {} : { locationId: sel.locationId }),
-    refresh: p.refresh ?? "live",
-    on_empty: p.on_empty ?? p.onEmpty ?? "hide",
+    locationId: sel.locationId,
     overrides,
   });
 }
@@ -641,6 +655,14 @@ function upgradeNode(n: Node): Node {
     case "callout": return fromCallout(n);
     case "key_value_table": return fromKeyValueTable(n);
     case "address_block": return fromAddressBlock(n);
+    /* D-168 - the three block widgets. One Container of Custom Fields per
+       block, one Custom Field per field it showed, the typed words carried
+       across as that field's own override. Mirrored by oliver-api
+       `lib/deletedKinds.js` on the server's own door. */
+    case "customer":
+    case "service_location":
+    case "business_info":
+      return recordBlockToContainer(n);
     // One for one: the words survive, the widget does not.
     case "footer_note": return asWidget(n, "paragraph", { text: str((n.props as any)?.text) });
     case "key_fact":

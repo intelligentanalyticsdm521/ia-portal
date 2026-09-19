@@ -77,8 +77,11 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
      a proposal is the CUSTOMER's or the SERVICE LOCATION's, and a key fact is a
      line of text (§11.13.3). They still have to be one widget each, still
      selectable and still drawn — that is what this block asks. */
-  for (const kind of ["card", "catalog_card", "price_line", "totals", "customer", "service_location"]) {
-    const OFFERED = ["card", "totals", "customer", "service_location"];
+  /* D-167 TOOK THE THREE BLOCK WIDGETS OUT AGAIN. Customer, Service Location
+     and Business Info lasted one morning: a block of facts is a
+     special-purpose widget, and one fact is a **Custom Field**. */
+  for (const kind of ["card", "catalog_card", "price_line", "totals", "custom_field"]) {
+    const OFFERED = ["card", "totals", "custom_field"];
     test(`${kind} is one widget the proposal builder offers`, () => {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
@@ -129,9 +132,14 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
     for (const kind of ["address_block", "key_fact"]) {
       assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
     }
-    for (const kind of ["customer", "service_location"]) {
-      assert.ok(WIDGETS_BY_KIND[kind], `${kind} should have replaced the address block and is missing`);
+    /* AND D-167 DELETED THE THREE THAT REPLACED IT, for the same rule. An
+       address is not a widget: it is a Custom Field pointed at
+       `service_location.address`, and a stored block unpacks into a Container
+       of those on open. */
+    for (const kind of ["customer", "service_location", "business_info", "terms"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
     }
+    assert.ok(WIDGETS_BY_KIND.custom_field, "the Custom Field that replaced all three is missing");
   });
 
   test("each one gets its own Typography group, not just Content", () => {
@@ -165,7 +173,7 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
        widgets sit in a real Elementor. */
     const ia = panelGroups("proposal")
       .find((g) => g.group === "Intelligent Analytics").widgets.map((w) => w.kind);
-    for (const k of ["product_cards", "product_line_items", "totals", "card", "customer", "service_location"]) {
+    for (const k of ["product_cards", "product_line_items", "totals", "card", "custom_field"]) {
       assert.ok(ia.includes(k), `${k} is not under Intelligent Analytics`);
     }
   });
@@ -525,9 +533,13 @@ describe("D-157 · subtotal, tax rate, discount, coupon", () => {
 
 describe("D-156 · the service address, and one short answer", () => {
   test("bound to a location, it prints the customer's own record", () => {
-    // D-165 — the kind is `service_location` and the props did not move.
-    const w = makeWidget("service_location", { locationId: "loc-1" });
-    const d = doc([w]);
+    /* D-167 — an address is a **Custom Field** pointed at the site's address,
+       and `locationId` is still what says WHICH site. Two fields, because the
+       old block printed the name and the address and both must still reach a
+       page somebody signs. */
+    const name = makeWidget("custom_field", { field: "service_location.name", locationId: "loc-1" });
+    const w = makeWidget("custom_field", { field: "service_location.address", locationId: "loc-1" });
+    const d = doc([name, w]);
     const html = renderDocument(d, makeContext(d, {
       mode: "view",
       locations: { "loc-1": { name: "Riverside Plaza", address_line1: "44 Mill Road", city: "Columbus", state: "OH", postal_code: "43215" } },
@@ -537,8 +549,15 @@ describe("D-156 · the service address, and one short answer", () => {
   });
 
   test("typed, when the location does not exist yet", () => {
-    const w = makeWidget("service_location", { address: "44 Mill Road, Columbus", contact: "Ask for Dave" });
-    const html = view(doc([w]));
+    /* The author's own words live in `overrides`, on the field they belong to
+       — the ONE store F.2 owns, and the one the upgrade writes into. */
+    const w = makeWidget("custom_field", {
+      field: "service_location.address", overrides: { address: "44 Mill Road, Columbus" },
+    });
+    const w2 = makeWidget("custom_field", {
+      field: "service_location.site_contact", overrides: { site_contact: "Ask for Dave" },
+    });
+    const html = view(doc([w, w2]));
     assert.ok(html.includes("44 Mill Road, Columbus"));
     assert.ok(html.includes("Ask for Dave"));
   });
@@ -556,7 +575,7 @@ describe("D-156 · the service address, and one short answer", () => {
 
   test("an empty widget leaves nothing behind on the customer's page", () => {
     assert.ok(!view(doc([makeWidget("paragraph", { text: "" })])).includes("bx-p"));
-    assert.ok(!view(doc([makeWidget("service_location", {})])).includes("bx-address"));
+    assert.ok(!view(doc([makeWidget("custom_field", { field: "service_location.address" })])).includes("bx-record-v"));
   });
 });
 
@@ -589,10 +608,12 @@ describe("D-156 · “Choose your plan” is a ready-made SECTION", () => {
 
   test("the property pattern is four widgets, not one block", () => {
     const [s] = propertySections();
-    /* D-165 — the address is **Service Location** and the rate card is priced
-       lines, so what is on the page and what is in the total are one list. */
+    /* D-167 — the address is one **Custom Field** per field of the site, flat,
+       so the author can delete the access notes without touching the address;
+       the rate card is priced lines, so what is on the page and what is in the
+       total are one list. */
     assert.deepEqual(s.columns[0].widgets.map((w) => w.kind),
-      ["heading", "service_location", "price_line", "totals"]);
+      ["heading", "heading", "custom_field", "custom_field", "custom_field", "custom_field", "price_line", "totals"]);
   });
 
   test("at a glance is four short answers, one widget each", () => {

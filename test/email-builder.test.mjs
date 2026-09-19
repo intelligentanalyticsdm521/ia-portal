@@ -735,7 +735,10 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        its numbering — but its TILE is hidden, because §11.13.3 names ONE Terms
        door and that is the `terms` picker. Two tiles reading "Terms" in one
        panel is what the section exists to stop. */
-    for (const k of ["terms", "totals", "signature", "service_location", "customer", "product_line_items"]) {
+    /* D-168 — the Terms tile and the three record blocks are deleted; the
+       proposal shows a database fact with **Custom Field** and drops saved
+       clauses from the Terms and conditions section template. */
+    for (const k of ["totals", "signature", "custom_field", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
     assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
