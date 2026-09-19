@@ -191,7 +191,10 @@ describe("§3.2's union is registered", () => {
     // General
     "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
     "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
-    "social_icons", "alert", "shortcode", "html", "menu_anchor",
+    /* ONE Social Icons, and its id is `social_links` (D-168 item 4). Two kinds
+       carried that label; the one that survives keeps the id the shipped
+       templates place and both goldens hold. See `SOCIAL_ICONS_DEF`. */
+    "social_links", "alert", "shortcode", "html", "menu_anchor",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "customer", "service_location", "business_info", "clauses", "signature", "page_break",
@@ -211,7 +214,7 @@ describe("§3.2's union is registered", () => {
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
-    "form", "gallery", "social_links", "countdown", "logo_strip",
+    "form", "gallery", "countdown", "logo_strip",
     /* 11.13.3's Terms: saved clauses in, plain Heading + Text Editor out. A
        PANEL TILE, declared in src/builder/proposal/catalogueTiles.ts.
        `clauses` is the widget it replaces on the panel — its kind stays (the

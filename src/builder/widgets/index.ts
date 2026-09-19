@@ -111,7 +111,7 @@ const RENDERERS: Record<string, Renderer> = {
   icon_box: renderIconBox,
   image_box: renderImageBox,  star_rating: renderStarRating,
   alert: renderAlert,
-  social_icons: renderSocialIcons,
+  social_links: renderSocialIcons,
 
   video: renderVideo,
   google_maps: renderGoogleMaps,
@@ -196,7 +196,8 @@ export { htmlBody, htmlOf } from "./html";
 export { NO_BUSINESS_RATE_SENTENCE } from "./totals";
 export { ALERT_TYPES } from "./boxes";
 export { DEFAULT_ICON, ICON_CHOICES, ICON_OPTIONS, glyphFor, iconValue, type IconValue } from "./glyph";
-export { SOCIAL_NETWORKS } from "./icons";
+/* D-168 item 4 — ONE reader for the one Social Icons list, both spellings. */
+export { SOCIAL_NETWORKS, socialRows } from "./icons";
 export { videoEmbed } from "./pageOnly";
 /* THE SHARED BINDING SECTION (catalogue F.2), for every surface that reads a
    bound widget. One module, re-exported here like every other widget's own. */

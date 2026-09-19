@@ -673,7 +673,7 @@ describe("D-33 · one control per thing", () => {
   test("no proposal widget declares a select with no options to fill it", () => {
     for (const kind of ["price_line", "card", "catalog_card", "totals",
       "service_location", "customer", "business_info", "clauses", "signature",
-      "icon", "icon_box", "image_box", "alert", "testimonial", "star_rating", "social_icons"]) {
+      "icon", "icon_box", "image_box", "alert", "testimonial", "star_rating", "social_links"]) {
       for (const c of WIDGETS_BY_KIND[kind].controls || []) {
         if (c.type !== "select") continue;
         assert.ok(c.options?.length, `${kind}.${c.key} is a select with nothing in it`);

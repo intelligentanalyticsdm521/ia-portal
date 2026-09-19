@@ -51,13 +51,17 @@ import {
 } from "../../render";
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
-import { renderAtom } from "../../widgets";
-/* B-168 §C.1 — the ten families, asked beside the atoms. One import. */
-import { renderFamily } from "../../widgets/families";
+/* B-168 / D-168 item 5b — the families' LANDING half, and their page half as
+   the fallback. One import, two lines in the `default` branch below, and no
+   family ever opens this file. */
+import {
+  FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
+} from "../../widgets/families";
+import { renderAtom } from "../../widgets";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
-  snapshotToCardProps, tagOf,
+  snapshotToCardProps, socialRows, tagOf,
 } from "../../widgets";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
@@ -214,15 +218,23 @@ export const LANDING_RENDERED_KINDS = [
      LANDING_KIND_ALIASES above, and a slug that is both an alias and a kind is
      two answers for one widget. A test says so. */
   "shortcode",
-  "service_location", "customer",
-  /* B-168 F5 — sliders and reviews, drawn by the family through the default
-     branch above. No script on the page: every strip is a scroll-snap box. */
-  "testimonial_carousel", "slides", "media_carousel", "ia_reviews",
+  "service_location", "customer",
   "product_cards", "ia_posts", "reviews", "book_now",
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
   /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
   "grid",
 ] as const;
+
+/**
+ * …AND EVERY KIND A FAMILY DRAWS HERE. D-168 item 5b.
+ *
+ * Derived, never typed. A family widget reaches this surface through its own
+ * landing renderer, or, when it has none, through the ENGINE's — which is why
+ * the page renderers are on this list too.
+ */
+export const LANDING_DRAWN_KINDS: readonly string[] = [
+  ...LANDING_RENDERED_KINDS, ...FAMILY_LANDING_RENDERED_KINDS, ...FAMILY_RENDERED_KINDS,
+];
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
 
@@ -294,14 +306,24 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
       case "menu_anchor": return `<span class="lp-anchor" id="${esc(String(p.anchor || p.id || w.id))}"></span>`;
       case "google_maps": return lpMap(p, c);
       default: {
+        /* B-168 / D-168 item 5b — THE FAMILIES FIRST, then the engine.
+           This surface asked `renderAtom` only, so every widget a family
+           declares and the panel offers was a blank band on a hosted landing
+           page. f2 (§3.2), f3 (§4), f5 (S4) and f7 (§3a) each wrote this same
+           line in a file no family owns and each said the other nine would. A
+           family declares its landing renderer beside its page one; when it has
+           none, the ENGINE's renderer is asked next, which is the right answer
+           for a widget whose CSS is honest on a real HTML page. */
+        const fam = renderLandingFamily(w, c as never);
+        if (fam != null) return fam;
+        const famPage = renderFamily(w, c as unknown as RenderContext);
+        if (famPage != null) return famPage;
         /* ASK THE ENGINE BEFORE GIVING UP (D-165). §11.13.3 gives a landing
            page the website's whole list, and this file has a hand-written
            renderer for what a hosted page draws best; the engine draws the
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
-        const fam = renderFamily(w, c as unknown as RenderContext);
-        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"
@@ -558,11 +580,12 @@ function lpButton(p: any, c: LandingContext): string {
 }
 
 function lpSocial(p: any, c: LandingContext): string {
-  const links: any[] = Array.isArray(p.links) ? p.links.filter((l: any) => l?.url) : [];
+  /* BOTH SPELLINGS (D-168 item 4) — see `socialRows`. */
+  const links: any[] = socialRows(p).filter((l: any) => l?.url || l?.link);
   if (!links.length) return c.mode === "edit"
     ? `<p class="lp-small">Add the address of each account you want people to follow, in the panel on the right.</p>` : "";
   return `<p class="lp-social">${links.map((l) =>
-    `<a href="${esc(l.url)}" rel="noopener noreferrer">${esc(l.label || "Follow")}</a>`).join("")}</p>`;
+    `<a href="${esc(l.url || l.link)}" rel="noopener noreferrer">${esc(l.label || l.social || "Follow")}</a>`).join("")}</p>`;
 }
 
 function lpQuote(p: any, c: LandingContext): string {
