@@ -198,9 +198,15 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
    * reason; the ask is R-3.5 in D165_HANDOFF_2026-09-19.md. arion's emitter
    * for it is already written, so this is the picker and not the plumbing.
    */
+  /* INNER SECTION IS FIRST IN BASIC, because that is where Elementor
+     registers it: the machine catalogue's `basic` category reads
+     `inner-section, heading, image, text-editor, …`. It is a layout PRESET —
+     a row Container holding two Containers — and it is on the website and the
+     landing page because the offer file offers it on those two (B-168, F0). */
   test("website pages", () => {
     assert.deepEqual(labels("website"), [
       "Container", "Grid",
+      "Inner Section",
       "Heading", "Image", "Text Editor", "Video", "Button", "Divider", "Spacer", "Google Maps", "Icon",
       "Image Box", "Icon Box", "Rating", "Image Carousel", "Basic Gallery", "Icon List",
       "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion",
@@ -297,7 +303,15 @@ describe("Grid is a Container", () => {
     for (const t of SHIPPED_TEMPLATES) for (const s of t.build().sections) for (const c of s.columns) walk(c.widgets);
     for (const p of PREMADE_SECTIONS) for (const c of p.build().columns) walk(c.widgets);
     assert.equal(kinds.has(GRID_PRESET_KIND), false);
-    assert.equal(Object.keys(LAYOUT_PRESETS).length, 2);
+    /* THREE presets now: Container, Grid and Inner Section (B-168, family F0).
+       Every one of them inserts a `container` and none of them is ever STORED,
+       which is the thing this test is really about — so it is asserted for all
+       three rather than counted and left. */
+    assert.deepEqual(Object.keys(LAYOUT_PRESETS).sort(), ["container", "grid", "inner-section"]);
+    for (const [key, preset] of Object.entries(LAYOUT_PRESETS)) {
+      assert.equal(preset.kind, "container", `the ${key} tile inserts something that is not a box`);
+      assert.equal(kinds.has(key) && key !== "container", false, `a shipped template stored a \`${key}\``);
+    }
   });
 });
 

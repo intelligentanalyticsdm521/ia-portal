@@ -464,7 +464,13 @@ describe("the Layout group offers two tiles, and the Grid tile inserts a box", (
     // …and the insert seam really asks. MUTATION: take the `presetFor` call out
     // of `insertWidget` and this goes red.
     assert.match(shell, /const preset = presetFor\(def\.kind\);/);
-    assert.match(shell, /makeContainer\(preset\.style as ElementStyle, \[\]\)/);
+    /* The same insert, now able to bring CHILDREN with it (B-168, family F0):
+       Inner Section is a row holding two boxes. Container and Grid bring none,
+       so for them this is the one-node insert it always was — which is what
+       the empty-children case below asserts. */
+    assert.match(shell, /makeContainer\(\s*preset\.style as ElementStyle,/);
+    assert.match(shell, /\(preset\.children \?\? \[\]\)\.map\(\(s\) => makeContainer\(s as ElementStyle, \[\]\)\)/);
+    assert.equal(preset.children, undefined, "the Grid tile started inserting children");
   });
 
   test("the picker keeps the presets, because typing '/row' has to reach one", () => {

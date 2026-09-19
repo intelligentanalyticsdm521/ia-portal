@@ -316,19 +316,45 @@ import { CONTAINER_KIND } from "./treeOps";
 export const GRID_PRESET_KIND = "grid";
 
 /**
+ * INNER SECTION — the reference's own legacy two-column section, as a preset.
+ *
+ * Elementor still lists Inner Section under Basic and the offer file offers it
+ * on the website and the landing page, so the tile exists. What it inserts is
+ * NOT a legacy `section`/`column` node: it is a Container running as a row
+ * with two Containers in it, which is what an inner section IS once the legacy
+ * dialect is gone (plan §A row 2: *"legacy dialect; Container replaces it"*).
+ * A second node type would be a second thing the three server mirrors, the
+ * Elementor writer and every stored document had to learn, for a shape the
+ * author can already pull apart.
+ */
+export const INNER_SECTION_PRESET_KIND = "inner-section";
+
+export interface LayoutPreset {
+  kind: string;
+  style: Record<string, unknown>;
+  /** One child container per entry, with its own style. Usually none. */
+  children?: Array<Record<string, unknown>>;
+}
+
+/**
  * WHAT A LAYOUT TILE ACTUALLY INSERTS.
  *
- * `kind` is always the container; `style` is the difference. One place, so the
- * pane, the picker and the ready-made sections cannot each decide what a Grid
- * is.
+ * `kind` is always the container; `style` and `children` are the difference.
+ * One place, so the pane, the picker and the ready-made sections cannot each
+ * decide what a Grid or an Inner Section is.
  */
-export const LAYOUT_PRESETS: Readonly<Record<string, { kind: string; style: Record<string, unknown> }>> = {
+export const LAYOUT_PRESETS: Readonly<Record<string, LayoutPreset>> = {
   [CONTAINER_KIND]: { kind: CONTAINER_KIND, style: {} },
   [GRID_PRESET_KIND]: { kind: CONTAINER_KIND, style: { direction: "grid", columns: 3, gap: 16 } },
+  [INNER_SECTION_PRESET_KIND]: {
+    kind: CONTAINER_KIND,
+    style: { direction: "row", gap: 20 },
+    children: [{}, {}],
+  },
 };
 
 /** The node a clicked tile inserts, when the tile is a layout preset. */
-export function presetFor(kind: string): { kind: string; style: Record<string, unknown> } | null {
+export function presetFor(kind: string): LayoutPreset | null {
   return LAYOUT_PRESETS[kind] ?? null;
 }
 /* 11.13.2 (stream 3). See the spread in WIDGETS below for why this is here. */
@@ -466,6 +492,23 @@ export const WIDGETS: WidgetDef[] = [
     controls: [
       { key: "columns", label: "Columns", type: "number", tab: "content", section: "Layout" },
     ],
+  },
+  /* INNER SECTION — Elementor's own tile, under Basic, where Elementor puts
+     it. It is on the website and the landing page because the offer file
+     offers it there and on neither of the other three: an inner section is a
+     page shape, and a proposal's boxes and My Brand's canvas have their own.
+     `INNER_SECTION_PRESET_KIND` above says what it inserts — a row Container
+     holding two Containers, which the author can pull apart. */
+  {
+    kind: INNER_SECTION_PRESET_KIND,
+    label: "Inner Section",
+    description: "Two boxes side by side inside this one — a picture beside some words, or two columns of text.",
+    icon: "Columns2",
+    picture: pictureFrom(box(6, 8, 24, 24) + box(34, 8, 24, 24)),
+    category: "Basic",
+    adapters: PAGES,
+    defaults: {},
+    controls: [],
   },
 
   /* D-165 — THE WIDGETS THAT DECLARE THEMSELVES. Each one is a file under
@@ -1220,7 +1263,11 @@ export function widgetLabel(def: WidgetDef, adapter?: BuilderAdapter): string {
 export const PANEL_ORDER: string[] = [
   // Layout
   CONTAINER_KIND, GRID_PRESET_KIND,
-  // Basic
+  /* Basic — and Inner Section is FIRST, because that is where Elementor
+     registers it: the machine catalogue's `basic` category reads
+     `inner-section, heading, image, text-editor, video, button, divider,
+     spacer, google_maps, icon`, in that order. */
+  INNER_SECTION_PRESET_KIND,
   "heading", "image", "paragraph", "video", "button", "divider", "spacer", "google_maps", "icon",
   // ...and the studio's placed objects, which no other builder offers.
   "brand_logo", "shape",

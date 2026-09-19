@@ -36,7 +36,7 @@
 import type { BuilderDocument, Section, Widget } from "./model";
 import {
   attributeAttrs, hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
-  JUSTIFY_CSS, ITEMS_CSS, type Device,
+  JUSTIFY_CSS, ITEMS_CSS, baseDirection, shapeDividerHtml, type Device,
 } from "./style";
 import { isContainer, CONTAINER_KIND, MAX_DEPTH } from "./treeOps";
 import type { Container, Node } from "./model";
@@ -273,6 +273,12 @@ export const UNRENDERED_KINDS = [
      a grid layout before anything is stored, so no document ever holds one and
      there is nothing here to draw. A test asserts that. */
   "grid",
+  /* `inner-section` is a LAYOUT PRESET too (B-168, family F0), and the same
+     sentence applies word for word: pressing the tile inserts a row Container
+     holding two Containers, so no document ever holds a node of this kind and
+     there is nothing here to draw. The reference editor still lists Inner
+     Section under Basic, which is why the tile exists at all. */
+  "inner-section",
   /* 11.13.2 (D-165) — the three TILES. Pressing one opens a picker and drops
      an atomic widget; neither `product_cards`, `product_line_items` nor
      `terms` is ever on a page or in a stored document, so nothing draws one. */
@@ -311,8 +317,18 @@ export type FlexDirection = "row" | "column";
 
 export interface ContainerLayout {
   type: ContainerType;
-  /** Meaningful for `type: "flex"`. Column is what a fresh container is. */
+  /**
+   * Meaningful for `type: "flex"`. Column is what a fresh container is.
+   *
+   * THE BASE DIRECTION, not the stored one: the reference's Direction control
+   * has four arrows and `row-reverse` runs across exactly as `row` does. The
+   * surfaces that can honour the reversal read `reverse` below; the ones that
+   * cannot (a mailbox's tables, a sheet of paper) read this and draw the box
+   * the right way round rather than not at all.
+   */
   direction: FlexDirection;
+  /** True for `row-reverse` and `column-reverse`. */
+  reverse: boolean;
   /** Already a CSS value. */
   justify?: string;
   /** Already a CSS value. */
@@ -323,6 +339,10 @@ export interface ContainerLayout {
   wrap: "wrap" | "nowrap";
   /** Grid only: how many even tracks. */
   columns: number;
+  /** Grid only: how many rows, when the author fixed them. */
+  rows?: number;
+  /** Grid only: which way an unplaced cell is added. */
+  autoFlow?: "row" | "column";
   /** The element a box is drawn as. `div` unless the author said otherwise. */
   tag: string;
 }
@@ -394,15 +414,23 @@ function oneOf(v: unknown, allowed: readonly string[]): string | undefined {
 export function containerLayout(w: Widget, device: Device = "desktop"): ContainerLayout {
   const layer = resolveStyle(w.style, device);
   const dir = layer.direction;
-  const gap = layer.gap === undefined ? DEFAULT_GAP : Math.max(0, Math.round(layer.gap));
+  const base = baseDirection(dir);
+  const column = layer.gap === undefined ? DEFAULT_GAP : Math.max(0, Math.round(layer.gap));
+  // THE GAPS CONTROL IS TWO NUMBERS. `rowGap` absent is the linked chain, and
+  // the column gap answers for both — which is what one key meant before the
+  // row half existed, so every stored document reads exactly as it did.
+  const row = layer.rowGap === undefined ? column : Math.max(0, Math.round(layer.rowGap));
   return {
     type: dir === "grid" ? "grid" : "flex",
-    direction: dir === "row" ? "row" : "column",
+    direction: base === "row" ? "row" : "column",
+    reverse: dir === "row-reverse" || dir === "column-reverse",
     justify: layer.justify ? JUSTIFY_CSS[layer.justify] : undefined,
     align: layer.alignItems ? ITEMS_CSS[layer.alignItems] : undefined,
-    gap: { row: gap, column: gap },
+    gap: { row, column },
     wrap: layer.wrap ? "wrap" : "nowrap",
     columns: Math.max(1, Math.min(6, Math.round(layer.columns ?? 3))),
+    ...(layer.rows !== undefined ? { rows: Math.max(1, Math.min(12, Math.round(layer.rows))) } : {}),
+    ...(layer.autoFlow ? { autoFlow: layer.autoFlow } : {}),
     tag: oneOf((w.props as any)?.html_tag, HTML_TAGS) ?? "div",
   };
 }
@@ -423,10 +451,12 @@ export function containerLayoutCss(l: ContainerLayout): string {
   const out: string[] = [];
   if (l.type === "grid") {
     out.push("display:grid", `grid-template-columns:repeat(${l.columns},minmax(0,1fr))`);
+    if (l.rows !== undefined) out.push(`grid-template-rows:repeat(${l.rows},minmax(0,auto))`);
+    if (l.autoFlow) out.push(`grid-auto-flow:${l.autoFlow}`);
     if (l.justify) out.push(`justify-items:${l.justify === "flex-start" ? "start" : l.justify === "flex-end" ? "end" : l.justify}`);
     if (l.align) out.push(`align-items:${l.align}`);
   } else {
-    out.push("display:flex", `flex-direction:${l.direction}`, `flex-wrap:${l.wrap}`);
+    out.push("display:flex", `flex-direction:${l.reverse ? `${l.direction}-reverse` : l.direction}`, `flex-wrap:${l.wrap}`);
     if (l.justify) out.push(`justify-content:${l.justify}`);
     if (l.align) out.push(`align-items:${l.align}`);
   }
@@ -570,7 +600,18 @@ function renderContainer(c: Container, ctx: RenderContext, depth = 0): string {
     ? ` data-bx-host="${esc(c.id)}" data-widget="${esc(c.id)}" data-kind="${esc(CONTAINER_KIND)}"`
     : "";
   const tag = containerLayout(c).tag;
-  return `<${tag} class="bx-w bx-box${flow}${empty}${sy}" data-box="${esc(c.id)}"${editor}>${kids}</${tag}>${offerNote(c)}`;
+  /* SHAPE DIVIDERS (B-168, F0) — the Style tab's fourth section. Markup and
+     not CSS, because a shape is an SVG; drawn by `style.shapeDividerHtml`, the
+     ONE place the eighteen paths live, so the canvas and the customer's copy
+     cannot draw two different waves. The desktop layer is what they read: the
+     reference's height and width are per device but the SHAPE is not, and a
+     divider that changed shape on a phone is not something anybody asked for.
+     A surface that cannot draw SVG (a mailbox, the PDF painter) never calls
+     this and loses nothing else. */
+  const top = shapeDividerHtml(resolveStyle(c.style, "desktop").shapeTop, "top");
+  const bottom = shapeDividerHtml(resolveStyle(c.style, "desktop").shapeBottom, "bottom");
+  return `<${tag} class="bx-w bx-box${flow}${empty}${sy}" data-box="${esc(c.id)}"${editor}>`
+    + `${top}${kids}${bottom}</${tag}>${offerNote(c)}`;
 }
 
 /**

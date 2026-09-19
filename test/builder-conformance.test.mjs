@@ -583,14 +583,19 @@ describe("point 5 · a document taxed at the business default SAYS so when there
 
 describe("point 1 · every key a box can hold is a key the Portal writes", () => {
   test("`html_tag` is settable, honoured, and only Elementor's own list", () => {
-    // MUTATION: delete the html_tag select from the Inspector's Layout group
+    // MUTATION: delete the HTML tag picker from the container's Layout group
     // → red here. It was honoured by the renderer and settable by nobody.
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
-    assert.ok(INSPECTOR.includes("data-box-html-tag"), "nothing in any UI sets what a box is drawn as");
-    assert.ok(INSPECTOR.includes("html_tag: e.target.value"), "the control writes into the wrong key");
+    //
+    // THE PANEL MOVED (B-168, family F0). The box's three tabs were written
+    // out inside Inspector.tsx with five of the reference editor's fifteen
+    // Layout controls; they are `ContainerLayoutGroup` in StyleGroups.tsx now
+    // and the other ten came with them. This reads where the control lives.
+    const GROUPS = readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8");
+    assert.ok(GROUPS.includes('attr="html-tag"'), "nothing in any UI sets what a box is drawn as");
+    assert.ok(GROUPS.includes("onPatchProps({ html_tag: v })"), "the control writes into the wrong key");
     // Every value the control offers is a value Elementor offers.
-    const offered = [...INSPECTOR.matchAll(/data-box-html-tag[\s\S]*?<\/select>/g)][0][0]
-      .match(/<option value="([^"]*)"/g).map((m) => m.slice(15, -1));
+    const offered = [...GROUPS.matchAll(/attr="html-tag"[\s\S]*?onChange=/g)][0][0]
+      .match(/\["([a-z]*)",/g).map((m) => m.slice(2, -2));
     for (const v of offered) {
       assert.ok(CONTAINER.controls.html_tag.options.includes(v),
         `the Layout group offers html_tag="${v}", which Elementor does not`);
@@ -663,21 +668,31 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
     // whose values are stored and were silently dropped on the way to a
     // website. This is the Portal's half of that contract — it writes all
     // seven — and the handoff names them for the arion side.
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
+    // The box's panel is `ContainerLayoutGroup` in StyleGroups.tsx now
+    // (B-168, family F0), so this reads there. Same guard, same seven keys,
+    // plus the ten the reference has that we did not.
+    const GROUPS = readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8");
     for (const [attr, key] of [
-      ["data-box-direction", "direction"], ["data-box-justify", "justify"],
-      ["data-box-align", "alignItems"], ["data-box-wrap", "wrap"],
-      ["data-box-gap", "gap"], ["data-box-columns", "columns"],
-      ["data-box-html-tag", "html_tag"],
+      ["direction", "direction"], ["justify", "justify"],
+      ["align-items", "alignItems"], ["wrap", "wrap"],
+      ["gap-column", "gap"], ["gap-row", "rowGap"], ["grid-columns", "columns"],
+      ["grid-rows", "rows"], ["grid-auto-flow", "autoFlow"],
+      ["container-type", "direction (flex or grid)"], ["content-width", "contentWidth"],
+      ["width", "width"], ["min-height", "minHeight"], ["overflow", "overflow"],
+      ["html-tag", "html_tag"],
     ]) {
-      assert.ok(INSPECTOR.includes(attr), `no control writes \`${key}\``);
+      assert.ok(GROUPS.includes(`"${attr}"`), `no control writes \`${key}\``);
     }
-    // …and `width` means exactly ONE thing in this repo: how wide a SECTION's
-    // content runs. No widget and no box carries a `width`, so nothing can
-    // persist the two meanings the audit found on one key.
+    // …and `width` still means exactly ONE thing per key. It now HAS a meaning
+    // on a style layer — how wide the box itself runs, the reference's Layout ▸
+    // Width — and how a box sits inside its parent is a DIFFERENT key,
+    // `selfWidth`, which is the whole of what audit point 1 was about: one key
+    // may not answer two questions.
     const STYLE = readFileSync(new URL("../src/builder/style.ts", import.meta.url), "utf8");
     const layer = STYLE.slice(STYLE.indexOf("export interface StyleLayer"), STYLE.indexOf("export interface ElementStyle"));
-    assert.ok(!/^\s*width\?:/m.test(layer), "a style layer gained a `width`, which already means something else");
+    assert.ok(/^\s{2}width\?: number;$/m.test(layer), "the box's own width is gone from the style layer");
+    assert.ok(/^\s{2}selfWidth\?: number;$/m.test(layer),
+      "how a box sits in its parent has to be its OWN key — one key, one meaning");
   });
 });
 

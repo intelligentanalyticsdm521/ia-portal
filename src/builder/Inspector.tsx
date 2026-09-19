@@ -63,7 +63,8 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  AttributesGroup, DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
+  AttributesGroup, ContainerAdvancedGroups, ContainerLayoutGroup, ContainerStyleGroups,
+  DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
   Swatches, miniBtn,
   FIELD, INPUT, L, type InspectorTab,
 } from "./StyleGroups";
@@ -128,15 +129,22 @@ export interface InspectorProps extends InspectorSlots {
 }
 
 /**
- * What a box is CALLED at the top of the inspector.
+ * What a box is CALLED at the top of the inspector: **Container**.
  *
- * "Row", "Grid", "Box" — the same three words the outline uses, from the same
- * `directionOf`, because a thing called one name in the outline and another in
- * the inspector is two things as far as the author is concerned.
+ * It said "Row", "Grid" or "Box" by its direction, which was the outline's
+ * three words said twice. The reference editor's panel header is *Edit
+ * Container* whichever way the box runs, the TILE that inserts it is called
+ * Container, and D-168 is that a widget carries Elementor's own name — so the
+ * tile and the panel now agree, and neither invents a fourth word for the one
+ * node the whole page is made of. Found by driving the builder, 2026-09-19:
+ * the panel read "Edit Box" beside a tile that said Container.
+ *
+ * `directionOf` is still the outline's, where "Row" and "Grid" tell an author
+ * which of five boxes they are looking at — a list needs to tell them apart
+ * and a header does not.
  */
-function boxName(n: Node | null): string {
-  const d = directionOf(n);
-  return d === "row" ? "Row" : d === "grid" ? "Grid" : "Box";
+function boxName(_n: Node | null): string {
+  return "Container";
 }
 
 export function Inspector(p: InspectorProps) {
@@ -246,155 +254,41 @@ export function Inspector(p: InspectorProps) {
                 Everything in the Advanced tab is the same for a box and for a
                 widget and is written ONCE. Two padding controls for one padding
                 is exactly the drift this file exists to stop. */}
+            {/* A BOX'S LAYOUT TAB — the reference's Container · Items ·
+                Additional Options, drawn from the container family's own
+                control table (`widgets/families/container/controls.ts`).
+                This block USED TO BE WRITTEN OUT HERE with five of the
+                reference's fifteen controls; it is `ContainerLayoutGroup` in
+                StyleGroups.tsx now and the other ten came with it. Moved, not
+                copied — replace means delete. */}
             {box && shownTab === "content" && (
-              <Group title="Layout" hint="Which way what is inside this box runs, and how far apart" defaultOpen
-                onReset={() => p.onSetWidgetStyle(
-                  resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
-                <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                <div style={FIELD}>
-                  <span style={L}>Which way things run</span>
-                  <select
-                    style={INPUT}
-                    data-box-direction
-                    title="Top to bottom, side by side, or in even columns. You can say something different for phones."
-                    value={widgetLayer.direction || "column"}
-                    onChange={(e) => {
-                      const v = e.target.value as "row" | "column" | "grid";
-                      patchWidgetStyle({
-                        direction: v === "column" ? undefined : v,
-                        columns: v === "grid" ? (widgetLayer.columns ?? 3) : undefined,
-                      }, "direction");
-                    }}
-                  >
-                    <option value="column">Stacked, top to bottom</option>
-                    <option value="row">Side by side</option>
-                    <option value="grid">Even columns</option>
-                  </select>
-                </div>
-
-                {widgetLayer.direction === "grid" && (
-                  <div style={FIELD}>
-                    <span style={L}>How many columns</span>
-                    <input
-                      style={INPUT} type="number" min={1} max={12} data-box-columns
-                      title="How many even columns the things inside sit in"
-                      value={widgetLayer.columns ?? 3}
-                      onChange={(e) => patchWidgetStyle(
-                        { columns: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }, "columns")}
-                    />
-                  </div>
-                )}
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Along that way</span>
-                    <select style={INPUT} data-box-justify value={widgetLayer.justify || "start"}
-                      title="Where the things sit along the direction they run in"
-                      onChange={(e) => patchWidgetStyle(
-                        { justify: e.target.value === "start" ? undefined : e.target.value as JustifySpec }, "justify")}>
-                      <option value="start">At the start</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the end</option>
-                      <option value="between">Spread out</option>
-                    </select>
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Across it</span>
-                    <select style={INPUT} data-box-align value={widgetLayer.alignItems || "stretch"}
-                      title="Whether the things fill the box across, or line up at one edge"
-                      onChange={(e) => patchWidgetStyle(
-                        { alignItems: e.target.value === "stretch" ? undefined : e.target.value as ItemsSpec }, "alignItems")}>
-                      <option value="stretch">Fill the box</option>
-                      <option value="start">At the top or left</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the bottom or right</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Space between them</span>
-                    <input style={INPUT} type="number" min={0} data-box-gap
-                      title="The gap between the things inside this box, in pixels"
-                      value={widgetLayer.gap ?? ""} placeholder="0"
-                      onChange={(e) => patchWidgetStyle(
-                        { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Least height</span>
-                    <input style={INPUT} type="number" min={0} data-box-minheight
-                      title="The box is at least this tall, whatever is in it"
-                      value={widgetLayer.minHeight ?? ""} placeholder="auto"
-                      onChange={(e) => patchWidgetStyle(
-                        { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
-                  </div>
-                </div>
-
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                  title="When there is not enough room, let them carry on to a second line rather than squeezing">
-                  <input type="checkbox" data-box-wrap checked={!!widgetLayer.wrap}
-                    onChange={(e) => patchWidgetStyle({ wrap: e.target.checked ? true : undefined }, "wrap")} />
-                  Let them wrap onto a second line
-                </label>
-
-                {/* WHAT THE BOX IS DRAWN AS — `props.html_tag` (conformance,
-                    2026-09-17).
-
-                    The renderer has honoured this since stream C and NOTHING
-                    could set it, so the only way to have a page's main region
-                    be a `<main>` was to hand-edit the document. It is on the
-                    box's props rather than its style because it is the same on
-                    every device: a `<header>` does not become a `<div>` on a
-                    phone. That is also the ONE Elementor-spelled key the
-                    engine reads, and it keeps that name so the publish is a
-                    pass-through. */}
-                <div style={FIELD}>
-                  <span style={L}>What this box is, to a screen reader</span>
-                  <select style={INPUT} data-box-html-tag
-                    title="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
-                    value={String((widget.props as any)?.html_tag ?? "")}
-                    onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
-                    <option value="">Just a box</option>
-                    <option value="header">The top of the page</option>
-                    <option value="main">The main part of the page</option>
-                    <option value="section">A section of the page</option>
-                    <option value="article">A whole article</option>
-                    <option value="aside">Something to one side</option>
-                    <option value="footer">The bottom of the page</option>
-                  </select>
-                </div>
-              </Group>
+              <ContainerLayoutGroup
+                device={p.device}
+                onDevice={p.onDevice}
+                layer={widgetLayer}
+                htmlTag={String((widget.props as any)?.html_tag ?? "")}
+                onPatch={patchWidgetStyle}
+                onPatchProps={p.onPatchWidget}
+                onReset={() => p.onSetWidgetStyle(resetKeys(widget.style,
+                  ["contentWidth", "width", "minHeight", "overflow"]))}
+              />
             )}
 
-            {/* THE BOX'S OWN EDGE — the same three controls a section wears,
-                reading and writing the same keys through the same style.ts.
-                The reference calls this section Border and puts it on Style. */}
+            {/* THE BOX'S STYLE TAB — Background · Background Overlay · Border ·
+                Shape Divider, the reference's own four sections. The Border
+                group was here with two of its five controls; it moved into
+                `ContainerStyleGroups` with the other three and the three
+                sections that were missing entirely. */}
             {box && shownTab === "style" && (
-              <Group title="Border" hint="The edge round this box, and its corners" defaultOpen
-                onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["border", "radius", "shadow"]))}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Edge</span>
-                    <input style={INPUT} type="number" min={0} data-box-border
-                      title="How thick the line round this box is, in pixels"
-                      value={widgetLayer.border?.width ?? ""} placeholder="none"
-                      onChange={(e) => patchWidgetStyle({
-                        border: e.target.value === ""
-                          ? undefined
-                          : { ...(widgetLayer.border || {}), width: Math.max(0, Number(e.target.value) || 0) },
-                      }, "border")} />
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Rounded corners</span>
-                    <input style={INPUT} type="number" min={0} data-box-radius
-                      title="How round the corners of this box are, in pixels"
-                      value={widgetLayer.radius ?? ""} placeholder="0"
-                      onChange={(e) => patchWidgetStyle(
-                        { radius: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "radius")} />
-                  </div>
-                </div>
-              </Group>
+              <ContainerStyleGroups
+                device={p.device}
+                onDevice={p.onDevice}
+                layer={widgetLayer}
+                swatches={p.swatches}
+                isEmail={isEmail}
+                onPatch={patchWidgetStyle}
+                onReset={(keys) => p.onSetWidgetStyle(resetKeys(widget.style, keys))}
+              />
             )}
 
             {/* ── CONTENT — everything that was here before ─────────────── */}
@@ -496,11 +390,28 @@ export function Inspector(p: InspectorProps) {
                   layer={widgetLayer}
                   what="widget"
                   align={!box}
+                  /* A BOX gets the other five the reference puts in this same
+                     Advanced ▸ Layout section — Size, Align Self, Order,
+                     Position, Z-Index — inside this group and not beside it. */
+                  box={box}
                   onPatch={patchWidgetStyle}
-                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["padding", "margin", "align"]))}
+                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style,
+                    ["padding", "margin", "align", "selfWidth", "alignSelf", "order", "position", "zIndex"]))}
                 />
+                {/* MOTION EFFECTS SITS HERE, between Layout and Responsive,
+                    because that is the reference editor's own order on this
+                    tab: Layout · Motion Effects · Transform · Responsive ·
+                    Attributes · Custom CSS. */}
+                {box && (
+                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="motion" />
+                )}
                 <ResponsiveGroup
                   hiddenOn={{
+                    /* HIDE ON A COMPUTER is the reference's third switch and
+                       it lives on the DESKTOP layer, which is where `hidden`
+                       already meant "not here". `styleBlockFor` is what makes
+                       it hide only the computer. */
+                    desktop: !!layerFor(widget.style, "desktop").hidden,
                     tablet: !!widget.style?.tablet?.hidden,
                     phone: !!widget.style?.phone?.hidden,
                   }}
@@ -523,6 +434,13 @@ export function Inspector(p: InspectorProps) {
                     p.onSetWidgetStyle(Object.keys(rest).length ? rest : undefined);
                   }}
                 />
+                {/* …and CUSTOM CSS last, which is where the reference puts it
+                    and where an author expects the escape hatch to be. Neither
+                    it nor Sticky is per device, so neither goes through
+                    `withLayer`. */}
+                {box && (
+                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="css" />
+                )}
               </>
             )}
           </>

@@ -483,10 +483,27 @@ function emWidth(c: EmailRenderContext): number {
 function emBox(w: Widget, c: EmailRenderContext, depth: number): string {
   if (depth >= MAX_CONTAINER_DEPTH) return "";
   const layout = containerLayout(w);
-  const kids = childrenOf(w);
+  /* WHAT A MAILBOX CAN DO WITH THE REST OF THE CONTAINER PANEL (B-168, F0).
+     It draws the colour, the two gaps and the order; it leaves out the
+     gradient, the film, the slideshow, the overlay, the shape dividers,
+     overflow, position, sticky and the author's own CSS — none of which
+     survives Outlook, which renders through Word. Left out, never half-drawn:
+     a preview that promises a wave and delivers a straight edge is worse than
+     one that never offered it. */
+  const own = resolveStyle(w.style, "desktop");
+  // HIDE ON A COMPUTER, in the one place an email has. A mailbox is a single
+  // width and `resolveStyle` gives it the desktop answer, so a box the author
+  // hid there is not in the email at all — or the switch would lie here.
+  if (own.hidden) return "";
+  const kidsInOrder = childrenOf(w);
+  const kids = layout.reverse ? [...kidsInOrder].reverse() : kidsInOrder;
   if (!kids.length) return "";
   const p: any = w.props || {};
-  const bg = p.background_color ? colour(p.background_color, "") : "";
+  // The author's own background colour first — `props.background_color` is the
+  // older spelling and still arrives on stored documents.
+  // A gradient becomes its FIRST colour, which is the nearest true thing a
+  // mailbox can draw; a film and a slideshow become the colour behind them.
+  const bg = colour(own.background?.color || p.background_color, "");
   // A mailbox has one gap between two things, not a row gap and a column gap:
   // a stack is spaced by the ROW gap and a row by the COLUMN gap, which is
   // what each of those numbers means.

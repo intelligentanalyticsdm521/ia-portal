@@ -442,6 +442,66 @@ const TREE_CASES = [
         }),
       ]),
     ])),
+
+  /* 7 — THE WHOLE CONTAINER PANEL (B-168, family F0), on one box.
+     Every control the reference editor gives a Container, set at once, so the
+     three renderers are held to what each of them does with it:
+       · a hosted LANDING page draws all of it — the background, the overlay,
+         the two shape dividers, the reversed order, the two gaps;
+       · a MAILBOX draws the colour, the two gaps and the order, and leaves out
+         the gradient, the film, the overlay, the shapes, overflow, position,
+         sticky and the author's own CSS, because none of them survives Outlook;
+       · and neither may THROW on a key it does not draw, which is the half a
+         "draws what it can" promise usually forgets.
+     Byte-identical in both repos, so LUMEN's copies are held to the same. */
+  treeCase("tree · a box wearing the whole container panel", box("b1", {
+    direction: "row-reverse",
+    justify: "evenly",
+    alignItems: "center",
+    gap: 24,
+    rowGap: 8,
+    wrap: true,
+    contentWidth: "full",
+    width: 90,
+    minHeight: 220,
+    overflow: "hidden",
+    background: {
+      type: "classic", color: "#F4F7F8", image: "https://cdn.example.test/bg.png",
+      position: "top center", repeat: "no-repeat", size: "cover",
+    },
+    overlay: { type: "gradient", color: "#0B1C24", colorB: "#0C4A60", angle: 135, opacity: 0.4, blend: "multiply" },
+    shapeTop: { shape: "waves", color: "#FFFFFF", height: 70, width: 110, flip: true },
+    shapeBottom: { shape: "tilt", color: "#F4F7F8", height: 50 },
+    alignSelf: "center",
+    order: 2,
+    selfWidth: 60,
+    zIndex: 3,
+    padding: { top: 24, right: 20, bottom: 24, left: 20 },
+    cssId: "the-box",
+    cssClasses: "tight two-up",
+    customCss: "selector { letter-spacing: .2px }",
+    sticky: "top",
+    stickyOffset: 12,
+    tablet: { gap: 16, rowGap: 6, minHeight: 180 },
+    phone: { direction: "column", gap: 12, hidden: true },
+  }, [
+    widget("w1", "heading", { text: "First in the document", level: "Section" }),
+    widget("w2", "paragraph", { text: "A reversed row puts this one first on the page." }),
+  ])),
+
+  /* 8 — A GRID that says how many rows and which way it fills, and a box
+     hidden on a COMPUTER only, which is the switch that did not exist. */
+  treeCase("tree · a grid with rows and auto flow, beside a box hidden on a computer",
+    box("b1", column(16), [
+      box("b2", { direction: "grid", columns: 3, rows: 2, autoFlow: "column", gap: 18 }, [
+        widget("w1", "paragraph", { text: "One" }),
+        widget("w2", "paragraph", { text: "Two" }),
+        widget("w3", "paragraph", { text: "Three" }),
+      ]),
+      box("b3", { direction: "column", gap: 8, hidden: true }, [
+        widget("w4", "paragraph", { text: "Phones and tablets only." }),
+      ]),
+    ])),
 ];
 
 for (const c of TREE_CASES) emailCases.push(c);

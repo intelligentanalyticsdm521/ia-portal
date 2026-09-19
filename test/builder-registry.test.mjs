@@ -48,6 +48,12 @@ const SRC = path.join(process.cwd(), "src");
  */
 const NO_CONTROLS = new Set([
   "page_break",
+  /* INNER SECTION is a LAYOUT PRESET (B-168, family F0). Pressing it inserts a
+     row Container holding two Containers — `registry.LAYOUT_PRESETS` — and
+     from that moment the thing on the page is a container, whose panel is the
+     container's own three tabs. A control on the tile would be a setting for a
+     node that never exists. */
+  "inner-section",
   /* D-165's three PANEL TILES. They are a catalogue picker with a name and an
      icon, not a widget with properties: what an author sets is which products
      or clauses they picked, and the atoms the picker drops carry those. A
@@ -188,6 +194,11 @@ describe("§3.2's union is registered", () => {
     "container", "grid",
     // Basic
     "heading", "image", "paragraph", "video", "button", "divider", "spacer", "google_maps", "icon",
+    /* Inner Section — the reference editor lists it under Basic and the offer
+       file offers it on the website and the landing page. It is a layout
+       PRESET: a row Container holding two Containers, which is what an inner
+       section is once the legacy section/column dialect is gone (B-168, F0). */
+    "inner-section",
     // General
     "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
     "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",

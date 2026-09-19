@@ -542,7 +542,14 @@ export function BuilderShell(p: BuilderShellProps) {
        put an invisible thing on the page. Found by driving it, 2026-09-19. */
     const preset = presetFor(def.kind);
     if (preset) {
-      const box = makeContainer(preset.style as ElementStyle, []);
+      /* A preset may bring CHILDREN with it (B-168, F0): Inner Section is a
+         row holding two boxes, which is what an inner section is once the
+         legacy section/column dialect is gone. Container and Grid bring none,
+         so this is the same one-node insert it always was for them. */
+      const box = makeContainer(
+        preset.style as ElementStyle,
+        (preset.children ?? []).map((s) => makeContainer(s as ElementStyle, [])),
+      );
       apply(insertNode(next, spot.hostId, spot.index, box), null, `Added ${def.label}`);
       landed(spot.sectionId, spot.columnIndex, spot.index, box.id);
       return;
