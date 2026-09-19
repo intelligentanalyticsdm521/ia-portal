@@ -86,7 +86,6 @@ export interface WidgetPaneProps {
    * prop, the same `boxMatches`, so the panel and the "+" cannot offer
    * different boxes.
    */
-  onPickBox?: (preset: ContainerPreset) => void;
   /**
    * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
    *
@@ -99,10 +98,9 @@ export interface WidgetPaneProps {
   lockedKinds?: Record<string, WidgetLock>;
 }
 
-export function WidgetPane({ adapter, onInsert, onDragWidget, onPickBox, lockedKinds }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   const found = useMemo(() => panelGroups(adapter, query), [adapter, query]);
-  const boxes = useMemo(() => (onPickBox ? boxMatches(query) : []), [onPickBox, query]);
   /**
    * LAYOUT IS SHOWN WHEN EITHER HALF MATCHES.
    *
@@ -112,13 +110,15 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, onPickBox, lockedK
    * holding exactly the thing asked for. The picker had this defect and it was
    * found by driving it (2026-09-17); the same fix, in the same shape.
    */
-  const groups = useMemo(() => {
-    if (!boxes.length || found.some((g) => g.group === "Layout")) return found;
-    return [{ group: "Layout" as PanelGroup, widgets: [] }, ...found];
-  }, [boxes, found]);
+  /* NO BOX PRESETS AND NO SPECIAL CASE (integration, 2026-09-19). The Layout
+     group holds two real WIDGETS — Container and Grid — so a search for "row"
+     matches one of them and the group is there on its own. The pane used to
+     add the group back when only a PRESET matched; the presets are gone from
+     this panel, and with them the rule that existed for them. */
+  const groups = found;
   const total = useMemo(
-    () => groups.reduce((n, g) => n + g.widgets.length, 0) + boxes.length,
-    [boxes, groups]);
+    () => groups.reduce((n, g) => n + g.widgets.length, 0),
+    [groups]);
 
   /**
    * WHICH ACCORDIONS ARE OPEN.
@@ -183,30 +183,18 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, onPickBox, lockedK
                    the picture and the sentence went: this panel is scanned, not
                    read. */
                 <div className="grid grid-cols-2 gap-px bg-slate-200 p-px">
-                  {/* THE BOXES, FIRST IN LAYOUT. "Drag that into this box"
-                      needs a box to exist before anything can go in one, and
-                      Layout is where a person looks for it. */}
-                  {g.group === "Layout" && onPickBox && boxes.map((preset) => (
-                    <button
-                      key={preset.key}
-                      type="button"
-                      data-pane-box={preset.key}
-                      title={preset.description}
-                      aria-label={`${preset.label} — ${preset.description}`}
-                      onClick={() => onPickBox(preset)}
-                      className="flex h-[86px] cursor-pointer flex-col items-center justify-center gap-1.5 bg-white px-1 text-center transition-colors hover:bg-slate-50"
-                    >
-                      <span aria-hidden="true" className="flex h-5 w-7 gap-[2px]"
-                        style={{ flexDirection: preset.key === "box" ? "column" : "row" }}>
-                        {(preset.key === "grid" ? [1, 2, 3] : [1, 2]).map((n) => (
-                          <span key={n} className="flex-1 rounded-[1px] bg-slate-400" />
-                        ))}
-                      </span>
-                      <span className="w-full truncate text-[10.5px] font-medium leading-tight text-slate-700">
-                        {preset.label}
-                      </span>
-                    </button>
-                  ))}
+                  {/* THE BOX PRESETS LIVED HERE and are GONE (integration,
+                      2026-09-19). The Layout group held Box / Row / Grid as
+                      presets AND Container / Grid as widgets, so "Grid" was
+                      two tiles side by side and the two inserted different
+                      things — the preset a real box, the widget a node nothing
+                      draws. §11.13.1: "Layout holds exactly Container and
+                      Grid, as Elementor's does", and `registry.presetFor` is
+                      what makes the Grid TILE insert a grid container. A row
+                      is a Container with its direction set, which is the
+                      reference editor's own answer.
+                      `onPickBox` stays for the PICKER and the slash command,
+                      where typing "/row" has to reach something. */}
                   {g.widgets.map((w) => {
                     const lock = lockedKinds?.[w.kind] ?? null;
                     const label = widgetLabel(w, adapter);

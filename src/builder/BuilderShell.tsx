@@ -60,7 +60,7 @@ import {
 import { layerFor, withLayer, type ElementStyle } from "./style";
 import { canRedo, canUndo, initHistory, push, redo, steps, travelTo, undo, type History } from "./history";
 import { nextPreview, previewNote, previewPaperWidth, type PreviewKey } from "./responsive";
-import { WIDGETS_BY_KIND, type BuilderAdapter, type WidgetDef } from "./registry";
+import { WIDGETS_BY_KIND, presetFor, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { WidgetLock } from "./tier";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
@@ -531,6 +531,20 @@ export function BuilderShell(p: BuilderShellProps) {
     if (def.kind === "columns") {
       apply(setLayout(next, spot.sectionId, count === 3 ? 3 : 2), null, `Split a section into ${count === 3 ? 3 : 2} columns`);
       select({ kind: "section", sectionId: spot.sectionId });
+      return;
+    }
+    /* A LAYOUT TILE INSERTS A BOX, NOT A WIDGET (§11.13.1).
+       Elementor's Layout group offers Container and Grid and both insert a
+       container — one laid out as flex, one as grid. `registry.presetFor` is
+       the ONE reader of that, and until integration nothing called it: the
+       Grid tile inserted a widget of kind `grid`, which is on
+       `UNRENDERED_KINDS` because no document ever holds one, so pressing it
+       put an invisible thing on the page. Found by driving it, 2026-09-19. */
+    const preset = presetFor(def.kind);
+    if (preset) {
+      const box = makeContainer(preset.style as ElementStyle, []);
+      apply(insertNode(next, spot.hostId, spot.index, box), null, `Added ${def.label}`);
+      landed(spot.sectionId, spot.columnIndex, spot.index, box.id);
       return;
     }
     const widget = buildWidget(def);
@@ -1250,11 +1264,10 @@ export function BuilderShell(p: BuilderShellProps) {
           adapter={p.adapter}
           onInsert={(def) => insertWidget(def)}
           onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
-          /* A BOX FROM THE PANEL lands where a widget from the panel lands:
-             at the selection, through the SAME `insertBox` the "+" picker
-             uses, refusals and all. `pickBoxFromPicker` is the picker's own
-             wrapper and needs a picker to be open. */
-          onPickBox={(preset) => insertBox(preset)}
+          /* NO `onPickBox` HERE any more: the panel's Layout group is
+             Elementor's two widgets, and the Grid tile inserts a grid
+             container through `registry.presetFor`. The box PRESETS are the
+             picker's and the slash command's door — see below. */
           {...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {})}
         />
       ) : null}

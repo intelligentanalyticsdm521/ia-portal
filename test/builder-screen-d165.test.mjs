@@ -43,7 +43,7 @@ import { STRUCTURE_PRESETS, structureSumsTo100 } from "../src/builder/AddSection
 import { STRUCTURE_SIZE, clampToViewport, defaultStructureAt } from "../src/builder/Navigator.tsx";
 import { INSPECTOR_TABS, tabLabel } from "../src/builder/StyleGroups.tsx";
 import { PREVIEW_DEVICES, nextPreview } from "../src/builder/responsive.ts";
-import { BUILDER_ADAPTERS, WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
+import { BUILDER_ADAPTERS, WIDGETS_BY_KIND, presetFor, widgetsFor } from "../src/builder/registry.ts";
 import { makeContext, renderDocument } from "../src/builder/render.ts";
 
 const SRC = path.join(process.cwd(), "src");
@@ -432,5 +432,44 @@ describe("Advanced ▸ Attributes: a name the author gives a part, and it reache
     assert.match(inspector, /<AttributesGroup/);
     // …and it is NOT per device: an id is an id on every screen.
     assert.ok(!/withLayer\([^)]*cssId/.test(inspector), "the id is written per device");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §11.13.1 — "Layout holds exactly Container and Grid, as Elementor's does"
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("the Layout group offers two tiles, and the Grid tile inserts a box", () => {
+  const shell = readSrc("builder/BuilderShell.tsx");
+  test("no tile is offered twice", () => {
+    /* FOUND BY DRIVING IT, 2026-09-19. The panel held the box PRESETS
+       (Box / Row / Grid) above the Layout group's WIDGETS (Container / Grid),
+       so "Grid" was two tiles side by side — and the two did different things:
+       the preset inserted a real container, the widget inserted a node of kind
+       `grid`, which is on UNRENDERED_KINDS because no document ever holds one.
+       Pressing it put an invisible thing on the page. */
+    for (const adapter of BUILDER_ADAPTERS) {
+      const names = panelGroups(adapter).flatMap((g) => g.widgets.map((w) => w.kind));
+      assert.equal(new Set(names).size, names.length, `${adapter} offers a tile twice`);
+    }
+    const pane = readSrc("builder/WidgetPane.tsx");
+    assert.ok(!/onPickBox \? boxMatches/.test(pane), "the panel draws the box presets again");
+  });
+
+  test("the Grid tile inserts a CONTAINER laid out as a grid, not a kind nothing draws", () => {
+    const preset = presetFor("grid");
+    assert.ok(preset, "the Grid tile has no preset, so it inserts a widget");
+    assert.equal(preset.kind, "container");
+    assert.equal(preset.style.direction, "grid");
+    // …and the insert seam really asks. MUTATION: take the `presetFor` call out
+    // of `insertWidget` and this goes red.
+    assert.match(shell, /const preset = presetFor\(def\.kind\);/);
+    assert.match(shell, /makeContainer\(preset\.style as ElementStyle, \[\]\)/);
+  });
+
+  test("the picker keeps the presets, because typing '/row' has to reach one", () => {
+    const picker = readSrc("builder/WidgetPicker.tsx");
+    assert.match(picker, /g\.group === "Layout" && p\.onPickBox/);
+    assert.match(shell, /onPickBox=\{slashCommitBox\}/);
   });
 });
