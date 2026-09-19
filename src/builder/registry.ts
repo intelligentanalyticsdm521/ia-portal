@@ -151,6 +151,19 @@ export interface WidgetControl {
    * already declared moves.
    */
   tab?: ControlTab;
+  /**
+   * SET SEPARATELY ON PHONE AND TABLET (B-168 §C.1).
+   *
+   * `true` only where the machine file
+   * (`BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json`) marks the control
+   * `responsive: true` — copied, never guessed. Elementor stores the twins as
+   * `<key>_tablet` and `<key>_mobile` beside the desktop key, and so do we:
+   * `deviceKey()` in `definitionControls.tsx` is the only place that spelling
+   * is written, so the panel, the renderer and the emitter cannot each invent
+   * one. Absent means one value for every screen, which is what every control
+   * declared before this field existed.
+   */
+  responsive?: boolean;
   /** One line under the field, when the label alone is not enough. */
   help?: string;
   options?: string[] | WidgetOption[];
@@ -284,6 +297,10 @@ export type { WidgetTier } from "./tier";
 /* D-156 — the atomic widgets, each declared in its own file beside the
    function that draws it. Spread into WIDGETS below: one vocabulary, still. */
 import { ATOM_WIDGET_DEFS } from "./widgets";
+/* B-168 §C.1 — THE TEN FAMILIES. One import, one spread (see WIDGETS below).
+   Ten agents add widgets in ten folders under `widgets/families/` and none of
+   them ever opens this file again. */
+import { FAMILY_WIDGET_DEFS } from "./widgets/families";
 /* The one name for the one node that holds children. `treeOps` owns it; the
    panel's Container tile is that node and must not spell it a second time. */
 import { CONTAINER_KIND } from "./treeOps";
@@ -400,6 +417,11 @@ const SENDS: BuilderAdapter[] = ["email"];
    a website, and that is the website builder's job. ─────────────────────── */
 
 export const WIDGETS: WidgetDef[] = [
+  /* B-168 §C.1 — THE FAMILIES, FIRST. The ten folders under
+     `widgets/families/` each declare their own widgets and `families/index.ts`
+     collects them; this spread is the whole of their footprint in this file.
+     It is first so that a merge with any other stream's line is trivial. */
+  ...FAMILY_WIDGET_DEFS,
   /* ══════════════════════════════════════════════════════════════════════
      LAYOUT — Elementor's first group, and it holds exactly two things.
      ══════════════════════════════════════════════════════════════════════
@@ -517,7 +539,10 @@ export const WIDGETS: WidgetDef[] = [
       `<circle cx="11" cy="22" r="2" fill="#94A3B8" stroke="none"/>` + bar(18, 20, 30) +
       `<circle cx="11" cy="32" r="2" fill="#94A3B8" stroke="none"/>` + bar(18, 30, 34)),
     category: "General",
-    adapters: ALL,
+    /* NOT My Brand (D-168). The offer file's `mybrand` list is ten Elementor
+       widgets and Icon List is not one of them: a social graphic is a headline,
+       a picture and a line of type, not a bulleted list. FLOWS, not ALL. */
+    adapters: FLOWS,
     defaults: { items: ["", "", ""] },
     controls: [{ key: "items", label: "Points", type: "list" }],
   },
@@ -803,6 +828,11 @@ export const WIDGETS: WidgetDef[] = [
   },
   {
     kind: "colour_block",
+    /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+       `hidden` is the registry's own way to keep a kind in the vocabulary so a
+       document already carrying it still draws; deleting the renderer would
+       blank a page a customer has. See test/builder-offers.test.mjs. */
+    hidden: true,
     label: "Brand colour block",
     description: "A band of one of your brand colours — the fastest way to look designed.",
     icon: "PaintBucket",
@@ -817,6 +847,11 @@ export const WIDGETS: WidgetDef[] = [
   },
   {
     kind: "background",
+    /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+       `hidden` is the registry's own way to keep a kind in the vocabulary so a
+       document already carrying it still draws; deleting the renderer would
+       blank a page a customer has. See test/builder-offers.test.mjs. */
+    hidden: true,
     label: "Background",
     description: "Fills the whole square behind everything — a colour, a fade or a photo.",
     icon: "Frame",
@@ -843,6 +878,11 @@ export const WIDGETS: WidgetDef[] = [
   },
   {
     kind: "social_handle",
+    /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+       `hidden` is the registry's own way to keep a kind in the vocabulary so a
+       document already carrying it still draws; deleting the renderer would
+       blank a page a customer has. See test/builder-offers.test.mjs. */
+    hidden: true,
     label: "Social handle",
     description: "Your @name with its platform symbol, so people know where to find you.",
     icon: "AtSign",

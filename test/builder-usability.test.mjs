@@ -383,8 +383,16 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     // Intelligent Analytics group, which is where a client would look for the
     // things that come out of their own records.
     const ia = panelGroups("proposal").find((g) => g.group === "Intelligent Analytics");
-    assert.ok(ia.widgets.some((w) => w.kind === "service_location"),
-      "the service address is not in the Intelligent Analytics group");
+    /* CHANGED 2026-09-19 (D-167, D-168). The service address is no longer its
+       own widget: ONE **Custom Field** widget shows any database field, the
+       address among them, and "Service address" is a SECTION TEMPLATE made of
+       a Container, a Heading and Custom Fields. Brandon, in his own words:
+       *"I do not want these types of widgets ... then inside these we can add a
+       widget for like custom fields that we can then select from the
+       database."* So what this pins now is that the group EXISTS and holds the
+       catalogue picker; the Custom Field half is the families' to add, and
+       test/builder-offers.test.mjs is what says the tile may be there. */
+    assert.ok(ia && ia.widgets.length, "there is no Intelligent Analytics group");
     assert.ok(ia.widgets.some((w) => w.kind === "product_line_items"),
       "the catalogue picker is not in the Intelligent Analytics group");
   });
@@ -427,9 +435,17 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
   test("a NAME beats a mention — 'customer' finds the Customer widget first", () => {
     // The slash command's Enter takes the first of these, so the order is not
     // cosmetic: getting it wrong inserts the wrong thing without asking.
+    /* CHANGED 2026-09-19 (D-167, D-168). There is no Customer WIDGET any more
+       - one **Custom Field** widget shows any database field, and the families
+       build it - so the name that has to win this search is Custom Field's.
+       Until it lands, what this pins is the half that still has to be true: a
+       search for "customer" finds something, and every hit really mentions the
+       customer in its own words rather than being a random tile. */
     const hits = flatPanelMatches("proposal", "customer");
-    assert.equal(hits[0].kind, "customer");
-    assert.ok(hits.length > 1, "nothing else mentions the customer at all");
+    assert.ok(hits.length > 0, "nothing mentions the customer at all");
+    for (const h of hits) {
+      assert.match(`${h.label} ${JSON.stringify(h.description)}`, /customer/i, h.kind);
+    }
   });
 
   test("the empty page's three choices point at three real groups", () => {

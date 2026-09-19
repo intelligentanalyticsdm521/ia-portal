@@ -203,6 +203,11 @@ export function renderNewsletterSignup(w: Widget, ctx: RenderContext): string {
 
 export const NEWSLETTER_SIGNUP_DEF: WidgetDef = {
   kind: "newsletter_signup",
+  /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+     `hidden` is the registry's own way to keep a kind in the vocabulary so a
+     document already carrying it still draws; deleting the renderer would
+     blank a page a customer has. See test/builder-offers.test.mjs. */
+  hidden: true,
   label: "Newsletter Signup",
   description: "One box and a button — an address straight onto your mailing list.",
   icon: "Mail",
@@ -236,6 +241,11 @@ export function renderHoursLocation(w: Widget, ctx: RenderContext): string {
 
 export const HOURS_LOCATION_DEF: WidgetDef = {
   kind: "hours_location",
+  /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+     `hidden` is the registry's own way to keep a kind in the vocabulary so a
+     document already carrying it still draws; deleting the renderer would
+     blank a page a customer has. See test/builder-offers.test.mjs. */
+  hidden: true,
   label: "Hours and Location",
   description: "When you are open and where to find you.",
   icon: "Clock",
@@ -302,7 +312,10 @@ export const IA_MOBILE_MENU_DEF = pluginDef(
 export const IA_OLIVER_INVOICE_DEF = pluginDef(
   "ia_oliver_invoice", "IA OLIVER Invoice", "A customer's own invoice, shown once they are signed in.", "Receipt",
   pictureFrom(box(14, 4, 36, 32) + bar(19, 11, 20, 3) + bar(19, 19, 26, 3) + bar(19, 27, 14, 3)),
-  PAGES);
+  /* WEBSITE ONLY (D-168). The offer file lists it under `website.ia` and not
+     under `landing.ia` — a hosted landing page has no signed-in customer to
+     show an invoice to. It was on both. */
+  SITE_ONLY);
 
 export const IA_SOCIAL_LINKS_DEF = pluginDef(
   "ia_social_links", "IA Social Links", "Your accounts, taken from your business profile.", "Link2",

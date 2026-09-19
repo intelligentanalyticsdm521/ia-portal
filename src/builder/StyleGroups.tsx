@@ -565,5 +565,43 @@ export function RatioPicker({
   );
 }
 
+/**
+ * THE SMALL BUTTON, and THE COLOUR CONTROL — moved here, not copied (B-168).
+ *
+ * Both lived privately in `Inspector.tsx`. `definitionControls.tsx` draws a
+ * `colour` control from a family's definition and needs the same one the rest
+ * of the panel uses, and a second swatch row would be a second answer to "what
+ * colours may I pick". So they live where `L`, `INPUT` and `FIELD` already
+ * live — the module both panels import — and the Inspector imports them back.
+ */
+export const miniBtn: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #CBD5E1", background: "#fff",
+  borderRadius: 4, padding: "5px 9px", fontSize: 11, fontWeight: 600, color: "#334155", cursor: "pointer",
+};
+
+/** Brand swatches first, any colour after — Q4, in one control. */
+export function Swatches({ value, swatches, onPick }: { value: string; swatches?: string[]; onPick: (v: string) => void }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      {(swatches || []).map((c) => (
+        <button key={c} type="button" title={`Use ${c}`} onClick={() => onPick(c)}
+          style={{
+            width: 20, height: 20, borderRadius: 4, background: c, cursor: "pointer",
+            border: value.toLowerCase() === c.toLowerCase() ? "2px solid #0B1C24" : "1px solid #CBD5E1",
+          }} />
+      ))}
+      <label title="Any colour you like" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#0C4A60", cursor: "pointer" }}>
+        <input type="color" value={value || "#ffffff"} onChange={(e) => onPick(e.target.value)}
+          style={{ width: 20, height: 20, padding: 0, border: "1px dashed #CBD5E1", borderRadius: 4, background: "transparent" }} />
+        Any colour
+      </label>
+      {value && (
+        <button type="button" title="Back to the page's own background" onClick={() => onPick("")}
+          style={{ ...miniBtn, padding: "2px 6px", fontSize: 10 }}>Clear</button>
+      )}
+    </div>
+  );
+}
+
 export { L, INPUT, FIELD };
 export default Group;

@@ -143,11 +143,21 @@ describe("the Details group is gone (11.13)", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("dynamic fields — the record fills the page", () => {
-  test("all three are in the ONE vocabulary and offered to a proposal", () => {
+  test("all three are in the ONE vocabulary, and none of them is a tile", () => {
+    /* CHANGED 2026-09-19 (D-167, D-168). Brandon, looking at the served
+       builder: *"What are these widgets. I don't need this. I need dynamic
+       fields for customer information and just normal widgets."* So Customer,
+       Service Location and Business Info are NOT tiles; ONE **Custom Field**
+       widget replaces them, and the record book underneath — RECORD_FIELDS,
+       resolveRecord, the overrides — is reused as-is, which is what the rest of
+       this file pins. They stay in the vocabulary and stay drawn, because a
+       signed agreement already carrying one has to reach the customer whole. */
     const offered = widgetsFor("proposal").map((w) => w.kind);
     for (const kind of RECORD_KINDS) {
       assert.ok(WIDGETS_BY_KIND[kind], `${kind} is not in the registry`);
-      assert.ok(offered.includes(kind), `${kind} is not offered in the proposal pane`);
+      assert.equal(offered.includes(kind), false,
+        `${kind} is still a tile — D-168 says the panel offers Custom Field instead`);
+      assert.equal(WIDGETS_BY_KIND[kind].hidden, true, `${kind} must stay drawable`);
     }
     assert.deepEqual(RECORD_WIDGET_DEFS.map((d) => d.label), ["Customer", "Service Location", "Business Info"]);
   });
@@ -359,7 +369,16 @@ const CATALOGUE = [
 describe("Product Cards and Product Line Items — the tiles", () => {
   test("both tiles are offered, and neither is a widget anything stores", () => {
     const offered = widgetsFor("proposal").map((w) => w.kind);
-    for (const d of CATALOGUE_TILE_DEFS) assert.ok(offered.includes(d.kind), `${d.kind} not offered`);
+    /* Terms LEFT this list on 2026-09-19 (D-168): the offer file Brandon
+       approved does not carry it, and where D-167's IA group and the offer file
+       disagree the offer file wins. Terms are a SECTION TEMPLATE — "Terms and
+       conditions", a Heading and a Text Editor in a Container — which is what a
+       section template is for. The picker itself still works for a proposal
+       already built with it. */
+    for (const d of CATALOGUE_TILE_DEFS) {
+      if (d.kind === TERMS_TILE_KIND) { assert.equal(offered.includes(d.kind), false, "Terms is not a tile"); continue; }
+      assert.ok(offered.includes(d.kind), `${d.kind} not offered`);
+    }
     assert.equal(isCatalogueTile("product_cards"), true);
     assert.equal(isCatalogueTile("catalog_card"), false, "what LANDS is an atomic widget");
     assert.equal(isPickerTile(TERMS_TILE_KIND), true);

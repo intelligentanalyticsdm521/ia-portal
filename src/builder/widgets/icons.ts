@@ -244,7 +244,11 @@ export function renderStarRating(w: Widget, ctx: RenderContext): string {
 
 export const STAR_RATING_DEF: WidgetDef = {
   kind: "star_rating",
-  label: "Star Rating",
+  /* ELEMENTOR'S OWN TITLE, which is "Rating" (D-168, and the 2026-09-17
+     machine file says so). "Star Rating" is what the widget was called in
+     Elementor 2.x and it is not what the tile says today. The stored `kind`
+     stays `star_rating` because documents carry it. */
+  label: "Rating",
   description: "A row of stars with an optional label — four and a half out of five.",
   icon: "Stars",
   picture: pictureFrom(`<path d="M12 14l2 5 5 .5-4 3.5 1.5 5-4.5-3-4.5 3 1.5-5-4-3.5 5-.5z" fill="#94A3B8" stroke="none"/>`

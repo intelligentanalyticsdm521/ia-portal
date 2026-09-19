@@ -261,6 +261,11 @@ export const ACCORDION_DEF: WidgetDef = {
 
 export const TOGGLE_DEF: WidgetDef = {
   kind: "toggle",
+  /* D-168 — NOT IN THE OFFER Brandon approved, so it is not a tile.
+     `hidden` is the registry's own way to keep a kind in the vocabulary so a
+     document already carrying it still draws; deleting the renderer would
+     blank a page a customer has. See test/builder-offers.test.mjs. */
+  hidden: true,
   label: "Toggle",
   description: "Questions that open independently — as many at once as the visitor wants.",
   icon: "ListCollapse",

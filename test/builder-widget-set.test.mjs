@@ -129,14 +129,34 @@ describe("the left panel is Elementor's", () => {
    2. The per-adapter lists — by name, IN ORDER
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("each builder offers exactly §11.13.3's list", () => {
+/*
+ * WHO DECIDES WHAT IS ON A PANEL — CHANGED 2026-09-19 (B-168, D-168).
+ *
+ * `test/builder-offers.test.mjs` does, against the offer file Brandon approved
+ * at 12:58 CDT. Where §11.13.3 and the offer file disagree, the offer file
+ * wins, and that is why these lists no longer read as they did this morning:
+ *
+ *   · Star Rating is "Rating", which is Elementor's own title for it;
+ *   · Card, Customer, Service Location, Business Info, Terms, Toggle,
+ *     Newsletter Signup, Hours and Location, Brand colour block, Background
+ *     and Social handle are NOT in the offer and are no longer tiles. Each is
+ *     `hidden: true` — still in the vocabulary, so a document already carrying
+ *     one still draws, but nothing a client can add. The three record widgets
+ *     are replaced by the ONE Custom Field widget (D-167), which the families
+ *     build;
+ *   · IA OLIVER Invoice is website only, and Icon List is not a My Brand tile.
+ *
+ * What these tests still earn their keep for is ORDER: the offer test asks what
+ * may be on the panel, this one asks what order it is in, and Elementor's
+ * registration order inside a group is a real part of the parity score.
+ */
+describe("each builder's panel, in order (membership: builder-offers.test.mjs)", () => {
   test("proposals and quotes", () => {
     assert.deepEqual(labels("proposal"), [
       "Container", "Grid",
       "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
-      "Image Box", "Icon Box", "Star Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
-      "Product Cards", "Product Line Items", "Totals", "Card",
-      "Customer", "Service Location", "Business Info", "Terms", "Signature", "Page Break",
+      "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
+      "Product Cards", "Product Line Items", "Totals", "Signature", "Page Break",
     ]);
   });
 
@@ -161,7 +181,7 @@ describe("each builder offers exactly §11.13.3's list", () => {
     assert.deepEqual(labels("email"), [
       "Container", "Grid",
       "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
-      "Image Box", "Icon Box", "Star Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
+      "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
       "Product Cards", "IA Posts", "Unsubscribe Footer",
     ]);
   });
@@ -182,11 +202,11 @@ describe("each builder offers exactly §11.13.3's list", () => {
     assert.deepEqual(labels("website"), [
       "Container", "Grid",
       "Heading", "Image", "Text Editor", "Video", "Button", "Divider", "Spacer", "Google Maps", "Icon",
-      "Image Box", "Icon Box", "Star Rating", "Image Carousel", "Basic Gallery", "Icon List",
-      "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion", "Toggle",
+      "Image Box", "Icon Box", "Rating", "Image Carousel", "Basic Gallery", "Icon List",
+      "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion",
       "Social Icons", "Alert", "Shortcode", "HTML", "Menu Anchor",
       "IA Posts", "Reviews", "Book Now",
-      "IA Form", "Newsletter Signup", "Hours and Location",
+      "IA Form",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
     ]);
   });
@@ -202,11 +222,14 @@ describe("each builder offers exactly §11.13.3's list", () => {
     assert.ok(labels("email").includes("Product Cards"));
   });
 
-  test("landing pages are the website's list without the menus", () => {
+  test("landing pages are the website's list without the site pieces", () => {
     const site = labels("website");
     const landing = labels("landing");
-    const menus = ["IA Mega Menu", "IA Mobile Menu"];
-    assert.deepEqual(landing, site.filter((l) => !menus.includes(l)));
+    /* D-168 widened this by one: the offer file lists IA OLIVER Invoice under
+       `website.ia` only. A hosted landing page has no signed-in customer to
+       show an invoice to, which is the same reason the menus are not there. */
+    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice"];
+    assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });
 
   test("a proposal is offered nothing that cannot print", () => {

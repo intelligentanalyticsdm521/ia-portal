@@ -50,6 +50,7 @@ import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
    render) crosses only hoisted function declarations, never a const read
    while a module is still evaluating. */
 import { renderAtom } from "./widgets";
+import { renderFamily } from "./widgets/families";
 import { ATOM_KINDS } from "./widgets/kinds";
 import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
@@ -470,6 +471,9 @@ export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
     // The adapter's own widgets first — see RenderContext.extra.
     const own = ctx.extra?.(w, ctx);
     if (own != null) return own;
+    /* B-168 §C.1 — THE TEN FAMILIES. One line, first of the registered
+       renderers, so a merge with another stream's line is trivial. */
+    const fam = renderFamily(w, ctx); if (fam != null) return fam;
     // Then D-156's atomic widgets, each of which lives in one file under
     // widgets/ with its own definition, controls and renderer.
     const atom = renderAtom(w, ctx);

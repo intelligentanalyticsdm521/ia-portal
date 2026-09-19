@@ -192,6 +192,13 @@ export function nodesForClauses(list: ReadonlyArray<ClauseLike>): Node[] {
 
 export const TERMS_DEF: WidgetDef = {
   kind: TERMS_TILE_KIND,
+  /* D-168 — NOT IN THE OFFER. D-167 listed Terms in the short IA group; the
+     offer file Brandon approved at 12:58 the same day does not, and where the
+     two disagree the offer file wins. Terms belong in the "Terms and
+     conditions" SECTION TEMPLATE, made of a Heading and a Text Editor, which
+     is the whole point of a section template. The kind stays in the vocabulary
+     so a proposal already carrying it still draws. */
+  hidden: true,
   label: "Terms",
   description: "Drop in the terms you have already written. They land as ordinary text you can edit.",  icon: "ScrollText",
   picture: pictureFrom(bar(3, 6, 22) + bar(3, 13, 26) + bar(3, 20, 26) + bar(3, 27, 14)),

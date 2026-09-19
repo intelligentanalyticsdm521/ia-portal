@@ -713,9 +713,12 @@ describe("point 9 · a person can add their own HTML", () => {
     assert.equal(c[0].key, "html");
     assert.equal(c[0].type, "code");
     assert.match(c[0].help, /This is code/);
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
-    assert.ok(INSPECTOR.includes("data-code-box"), "there is no code box");
-    assert.ok(INSPECTOR.includes("data-code-preview"), "there is no live preview");
+    /* The panel is drawn from the definition alone now (B-168 §C.1), so the
+       code box lives in `definitionControls.tsx` and the Inspector calls it on
+       all three tabs. Same markup, one file over. */
+    const PANEL = readFileSync(new URL("../src/builder/definitionControls.tsx", import.meta.url), "utf8");
+    assert.ok(PANEL.includes("data-code-box"), "there is no code box");
+    assert.ok(PANEL.includes("data-code-preview"), "there is no live preview");
   });
 
   test("the markup goes on the page unchanged, and an empty box draws nothing", () => {

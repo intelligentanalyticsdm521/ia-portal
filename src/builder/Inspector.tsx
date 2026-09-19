@@ -52,16 +52,19 @@ import type { BuilderDocument, Node, Section, Selection, Widget } from "./model"
 import { widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
 import {
-  WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  WIDGETS_BY_KIND, controlTab,
   widgetDescription, widgetLabel,
-  type BuilderAdapter, type WidgetControl,
+  type BuilderAdapter, type ControlTab,
 } from "./registry";
+/* THE PANEL, DRAWN FROM THE DEFINITION ALONE — B-168 §C.1. */
+import { DefinitionControls } from "./definitionControls";
 import {
   isTypographic, layerFor, resetKeys, seedFromPadding, withLayer,
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
   AttributesGroup, DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
+  Swatches, miniBtn,
   FIELD, INPUT, L, type InspectorTab,
 } from "./StyleGroups";
 
@@ -205,7 +208,12 @@ export function Inspector(p: InspectorProps) {
    * rather than removed: a row that changes width as the selection moves is a
    * row nobody can aim at.
    */
-  const hasStyle = box || !widget || isTypographic(widget.kind);
+  /* …and a widget whose DEFINITION puts controls on the Style tab has one too
+     (B-168 §C.1). Before this, `isTypographic` was the only way a Style tab
+     could exist, so a family widget with a Style section and no words would
+     have declared controls nobody could reach. */
+  const hasDefTab = (t: ControlTab) => (def?.controls || []).some((c) => controlTab(c) === t);
+  const hasStyle = box || !widget || isTypographic(widget.kind) || hasDefTab("style");
   const disabled: InspectorTab[] = hasStyle ? [] : ["style"];
   const shownTab: InspectorTab = disabled.includes(tab) ? "content" : tab;
 
@@ -424,72 +432,12 @@ export function Inspector(p: InspectorProps) {
                   editing mechanism and a panel field beside it would be a
                   second one. `hidden` controls draw nothing at all — they are
                   declared so the Binding section can be read as a whole. */}
-              {controlSections(def?.controls || []).map((grp) => {
-                const shown = grp.controls.filter((c) => PANEL_CONTROL_TYPES.has(c.type));
-                if (!shown.length) return null;
-                return (
-                  <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
-                    {grp.section && (
-                      <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                        {grp.section}
-                      </div>
-                    )}
-                    {shown.map((c) => (
-                <div key={c.key} style={FIELD}>
-                  <span style={L}>{c.label}</span>
-                  {c.type === "toggle" && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={isOn((widget.props as any)[c.key])}
-                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.checked })} />
-                      {c.help || "On"}
-                    </label>
-                  )}
-                  {c.type === "select" && (controlOptions(c).length ? (
-                    <select style={INPUT} value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c, e.target.value) })}>
-                      {controlOptions(c).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  ) : null)}
-                  {c.type === "number" && (
-                    <input type="number" style={INPUT} value={Number((widget.props as any)[c.key] ?? 0)}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: Number(e.target.value) })} />
-                  )}
-                  {c.type === "colour" && (
-                    <Swatches value={String((widget.props as any)[c.key] ?? "")} swatches={p.swatches}
-                      onPick={(v) => p.onPatchWidget({ [c.key]: v })} />
-                  )}
-                  {(c.type === "image" || c.type === "link") && (
-                    <input style={INPUT} placeholder={c.type === "image" ? "Paste an image address" : "https://"}
-                      value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
-                  )}
-                  {/* A CODE BOX WITH A LIVE PREVIEW. The box is monospace and
-                      does not wrap words in the middle of a tag; the preview
-                      under it is the same markup the page will carry, drawn
-                      here so the author sees what they pasted before anybody
-                      else does. */}
-                  {c.type === "code" && (
-                    <>
-                      <textarea
-                        style={{ ...INPUT, minHeight: 120, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, whiteSpace: "pre", overflowWrap: "normal" }}
-                        data-code-box={c.key}
-                        spellCheck={false}
-                        placeholder="<div>Paste your own HTML here</div>"
-                        value={String((widget.props as any)[c.key] ?? "")}
-                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
-                      <span style={{ fontSize: 10, color: "#5A7A8A" }}>What it looks like</span>
-                      <div
-                        data-code-preview={c.key}
-                        style={{ border: "1px solid #E2E8F0", borderRadius: 4, padding: 8, background: "#fff", overflow: "auto", maxHeight: 220 }}
-                        dangerouslySetInnerHTML={{ __html: String((widget.props as any)[c.key] ?? "") }} />
-                    </>
-                  )}
-                  {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
-                </div>
-                    ))}
-                  </div>
-                );
-              })}
+              {/* THE DEFINITION DRAWS THE PANEL (B-168 §C.1). This block used
+                  to be written out here; it is `definitionControls.tsx` now,
+                  called on all three tabs, so a family that adds a widget adds
+                  no line to this file. */}
+              <DefinitionControls def={def} tab="content" props={widget.props as any}
+                device={p.device} swatches={p.swatches} onPatch={p.onPatchWidget} />
 
               <div style={{ display: "flex", gap: 6 }}>
                 {/* The keyboard path, kept (§11.8): HTML5 drag does not fire
@@ -516,6 +464,15 @@ export function Inspector(p: InspectorProps) {
                 </div>
               )}
             </Group>
+            )}
+
+            {/* ── STYLE and ADVANCED, FROM THE DEFINITION (B-168 §C.1) ────
+                The machine file says which tab every Elementor control is on,
+                a family copies that onto its def, and this draws it there. No
+                per-widget code, and nothing a family adds needs a line here. */}
+            {!box && shownTab !== "content" && (
+              <DefinitionControls def={def} tab={shownTab} props={widget.props as any}
+                device={p.device} swatches={p.swatches} onPatch={p.onPatchWidget} />
             )}
 
             {/* ── STYLE ▸ TYPOGRAPHY — only where there are words to set ── */}
@@ -803,59 +760,19 @@ function sectionResolvedWidths(section: Section): number[] | undefined {
   return layerFor(section.style, "desktop").columnWidths;
 }
 
-const miniBtn: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #CBD5E1", background: "#fff",
-  borderRadius: 4, padding: "5px 9px", fontSize: 11, fontWeight: 600, color: "#334155", cursor: "pointer",
-};
-
-/** Brand swatches first, any colour after — Q4, in one control. */
-function Swatches({ value, swatches, onPick }: { value: string; swatches: string[]; onPick: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      {swatches.map((c) => (
-        <button key={c} type="button" title={`Use ${c}`} onClick={() => onPick(c)}
-          style={{
-            width: 20, height: 20, borderRadius: 4, background: c, cursor: "pointer",
-            border: value.toLowerCase() === c.toLowerCase() ? "2px solid #0B1C24" : "1px solid #CBD5E1",
-          }} />
-      ))}
-      <label title="Any colour you like" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#0C4A60", cursor: "pointer" }}>
-        <input type="color" value={value || "#ffffff"} onChange={(e) => onPick(e.target.value)}
-          style={{ width: 20, height: 20, padding: 0, border: "1px dashed #CBD5E1", borderRadius: 4, background: "transparent" }} />
-        Any colour
-      </label>
-      {value && (
-        <button type="button" title="Back to the page's own background" onClick={() => onPick("")}
-          style={{ ...miniBtn, padding: "2px 6px", fontSize: 10 }}>Clear</button>
-      )}
-    </div>
-  );
-}
+/* `miniBtn` and `Swatches` LIVED HERE and are now `StyleGroups.tsx`'s (B-168).
+   `definitionControls.tsx` draws a family's `colour` control and needs the same
+   swatch row this panel uses; two copies would be two answers to "what colours
+   may I pick". Moved, not copied — replace means delete. */
 
 /* `optionKey` and `optionValue` LIVED HERE and are now `registry.ts`'s, beside
    the controls that declare the options. Two copies of "what got saved" is two
    answers, and the registry is the one a test can pin against the machine
    files without rendering a panel. */
 
-/**
- * The control types the PANEL draws.
- *
- * Everything else is either typed on the page (`text`, `textarea`, `richtext`,
- * `list`, `money`, `merge` - the engine's one editing mechanism) or carried by
- * the widget and never typed at all (`hidden`).
- */
-const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
-  "toggle", "select", "colour", "number", "image", "link", "code",
-]);
-
-/**
- * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
- * writes a boolean. ONE reader, because "yes" is truthy and `false` is not,
- * and a control that reads only one of the two silently loses the other.
- */
-function isOn(v: unknown): boolean {
-  return v === true || v === "yes";
-}
+/* `PANEL_CONTROL_TYPES` and `isOn` LIVED HERE and are now
+   `definitionControls.tsx`'s, beside the only code that draws a control from a
+   definition. Moved, not copied (B-168). */
 
 export { Sparkles, DeviceSegment };
 export default Inspector;

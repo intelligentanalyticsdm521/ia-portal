@@ -398,7 +398,15 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
       /* `callout` is DELETED and its job is Elementor's **Alert**; the studio's
          `insertWidget` has no case for one yet, so the tile is not offered here
          rather than being a button that does nothing (item S2 in the handoff). */
-      "colour_block", "background", "qr_code", "social_handle",
+      /* `colour_block`, `background` and `social_handle` LEFT THIS LIST on
+         2026-09-19 (B-168, D-168). The offer file's My Brand panel is ten
+         Elementor widgets plus five canvas pieces — shape, line, frame,
+         photo_grid, qr_code — and these three are none of them: a brand colour
+         is the background control on any element, and a social handle is a
+         line of text. They stay in the vocabulary (`hidden: true`) so a design
+         already carrying one still draws. `test/builder-offers.test.mjs` is
+         what says which of them may be a tile. */
+      "qr_code",
     ]) {
       assert.ok(kinds.includes(kind), `the studio's pane is missing ${kind}`);
     }

@@ -707,9 +707,12 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        `test/builder-widget-set.test.mjs`; what this asserts is the thing this
        file is for — that the page renderer draws every one of them. */
     const site = widgetsFor("website").map((w) => w.kind);
-    const menus = ["ia_mega_menu", "ia_mobile_menu"];
+    /* D-168 added a third: the offer file lists IA OLIVER Invoice under
+       `website.ia` only, because a hosted landing page has no signed-in
+       customer to show an invoice to. */
+    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
-      site.filter((k) => !menus.includes(k)));
+      site.filter((k) => !siteOnly.includes(k)));
     /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
        `social_links` and `gallery`: `LANDING_KIND_ALIASES` resolves them
        before the switch, and the alias table is tested for exactly that in
@@ -735,8 +738,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        its numbering — but its TILE is hidden, because §11.13.3 names ONE Terms
        door and that is the `terms` picker. Two tiles reading "Terms" in one
        panel is what the section exists to stop. */
-    for (const k of ["terms", "totals", "signature", "service_location", "customer", "product_line_items"]) {
+    /* D-168 (2026-09-19) took three more TILES off this panel and left all
+       three KINDS drawable: `terms` (a section template now, not a widget) and
+       `customer` / `service_location` (replaced by the ONE Custom Field widget
+       D-167 asked for). Same rule as `clauses` above, same reason. */
+    for (const k of ["totals", "signature", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
+    }
+    for (const k of ["terms", "customer", "service_location"]) {
+      assert.equal(kinds.includes(k), false, `${k} is not in the offer, so it is not a tile`);
+      assert.ok(WIDGETS_BY_KIND[k], `the ${k} KIND was deleted, so stored documents stop drawing`);
     }
     assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
     assert.ok(WIDGETS_BY_KIND.clauses, "the clauses KIND was deleted, so stored agreements stop drawing");

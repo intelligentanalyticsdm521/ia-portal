@@ -77,8 +77,16 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
      a proposal is the CUSTOMER's or the SERVICE LOCATION's, and a key fact is a
      line of text (§11.13.3). They still have to be one widget each, still
      selectable and still drawn — that is what this block asks. */
+  /* …and D-168 changed it again on 2026-09-19: `card`, `customer` and
+     `service_location` are NOT in the offer file, so they are not tiles either.
+     Elementor has no widget called Cards — its card widgets are Call to Action,
+     Price Table, Flip Box, Image Box and Icon Box — and the three record
+     widgets are replaced by the one Custom Field widget (D-167). All three keep
+     everything else this block asks of them, because a proposal already
+     carrying one still has to draw. `test/builder-offers.test.mjs` is what says
+     which of them may be a tile. */
   for (const kind of ["card", "catalog_card", "price_line", "totals", "customer", "service_location"]) {
-    const OFFERED = ["card", "totals", "customer", "service_location"];
+    const OFFERED = ["totals"];
     test(`${kind} is one widget the proposal builder offers`, () => {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
@@ -165,7 +173,12 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
        widgets sit in a real Elementor. */
     const ia = panelGroups("proposal")
       .find((g) => g.group === "Intelligent Analytics").widgets.map((w) => w.kind);
-    for (const k of ["product_cards", "product_line_items", "totals", "card", "customer", "service_location"]) {
+    /* `card`, `customer` and `service_location` LEFT THIS LIST on 2026-09-19
+       (B-168, D-168): they are not in the offer file, so they are not tiles.
+       They are still in the vocabulary and still drawn — see the `hidden: true`
+       on each — and the three record widgets are replaced by the one Custom
+       Field widget D-167 asked for, which the families build. */
+    for (const k of ["product_cards", "product_line_items", "totals"]) {
       assert.ok(ia.includes(k), `${k} is not under Intelligent Analytics`);
     }
   });

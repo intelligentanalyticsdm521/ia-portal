@@ -78,10 +78,12 @@ describe("the studio's tools are registry entries, like every other builder's", 
       "brand_logo",     // logo
       "shape",
       "icon",
-      "colour_block",   // brand colour block
-      "background",
+      /* `colour_block`, `background` and `social_handle` came OFF this list on
+         2026-09-19 (D-168): the offer file's My Brand panel is ten Elementor
+         widgets plus shape, line, frame, photo_grid and qr_code, and none of
+         the three is one of them. All three keep their KIND so a design
+         already carrying one still draws. */
       "qr_code",
-      "social_handle",
       /* `callout` is DELETED (D-165) and its job is Elementor's **Alert**. The
          studio's `insertWidget` has no case for an Alert yet, so the tile is
          not offered here rather than being a button that does nothing — item S2
