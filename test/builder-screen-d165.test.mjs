@@ -212,7 +212,8 @@ describe("§11.13.1 item 3 — Structure is a window, not a tab", () => {
     assert.match(frame, /data-builder-structurebtn=/);
     assert.match(shell, /onStructure=\{\(\) => setStructure\(\(v\) => !v\)\}/);
     assert.match(shell, /case "structure": setStructure\(\(v\) => !v\); return true;/);
-    assert.match(shell, /case "showInOutline":[\s\S]{0,200}setStructure\(true\)/);
+    // The menu's own row is called Structure now, as the reference's is.
+    assert.match(shell, /case "structure":[\s\S]{0,260}setStructure\(true\)/);
     assert.equal((shell.match(/useState\(false\);\s*\n\s*\/\*\*\s*\n\s*\* IS THE WIDGETS PANEL/g) || []).length, 1,
       "the structure window grew a second piece of state");
   });
@@ -399,7 +400,10 @@ describe("§11.13.1 item 6 — keyboard parity with the reference editor", () =>
        again and the count below goes to two. */
     const menu = readSrc("builder/builderMenu.ts");
     assert.match(menu, /action: "pasteStyle"/, "the right-click menu has no Paste-style row");
-    assert.match(menu, /label: "Paste only the look"/);
+    // The reference's own wording, to the character: "Paste style" (D-172).
+    // "Paste only the look" was ours.
+    assert.ok(!menu.includes("Paste only the look"), "the row is in our words again");
+    assert.match(menu, /label: "Paste style"/);
     assert.equal((shell.match(/Pasted the look/g) || []).length, 1,
       "there are two handlers for pasting a look");
   });

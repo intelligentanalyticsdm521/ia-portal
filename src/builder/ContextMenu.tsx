@@ -20,7 +20,7 @@ export interface ContextMenuProps {
   onClose: () => void;
 }
 
-const WIDTH = 232;
+const WIDTH = 248;
 
 export function ContextMenu(p: ContextMenuProps) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -78,15 +78,24 @@ export function ContextMenu(p: ContextMenuProps) {
               title={item.disabled ? (item.reason || item.label) : item.label}
               onClick={() => { if (!item.disabled) { p.onPick(item.action); p.onClose(); } }}
               style={{
-                display: "block", width: "100%", textAlign: "left", border: "none",
-                background: "transparent", padding: "6px 12px", fontSize: 12.5,
+                display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
+                border: "none", background: "transparent", padding: "6px 12px", fontSize: 12.5,
                 color: item.disabled ? "#94A3B8" : item.danger ? "#B91C1C" : "#0B1C24",
                 cursor: item.disabled ? "not-allowed" : "pointer",
               }}
               onMouseEnter={(e) => { if (!item.disabled) e.currentTarget.style.background = "#F1F5F9"; }}
               onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
             >
-              {item.label}
+              <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+              {/* THE CHORD, right-aligned (D-172). The reference prints one on
+                  six of its twelve rows; a menu that knows the shortcut and does
+                  not say it teaches nobody anything. */}
+              {item.shortcut && (
+                <span data-menu-shortcut={item.action}
+                  style={{ flex: "0 0 auto", fontSize: 11, color: "#94A3B8", letterSpacing: "0.02em" }}>
+                  {item.shortcut}
+                </span>
+              )}
             </button>
           </div>
         ))}

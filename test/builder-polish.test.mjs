@@ -140,19 +140,40 @@ describe("M-7 · what you've changed, as named steps you can travel to", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("M-8 · one menu, wherever it is opened from", () => {
-  test("a section's menu carries every verb the spec lists", () => {
-    const items = menuFor({ kind: "section", index: 1, total: 3, canPaste: true, canSaveBlock: true });
-    const actions = items.map((i) => i.action);
-    for (const want of ["edit", "duplicate", "copy", "paste", "moveUp", "moveDown",
-      "addAbove", "addBelow", "saveBlock", "showInOutline", "hide", "lock", "delete"]) {
-      assert.ok(actions.includes(want), `the menu has no "${want}"`);
+  test("the menu is the reference editor's twelve rows, in its order (D-172)", () => {
+    // Driven in a live Elementor on 2026-09-19: right-click a widget and read
+    // `.elementor-context-menu-list__item`. The capture is in
+    // overnight-report/elementor-reference/widgets/_zz_screen_round1.json.
+    const items = menuFor({ kind: "section", canPaste: true, canSaveBlock: true, name: "Container" });
+    assert.deepEqual(items.map((i) => i.action), ["edit", "duplicate", "copy", "paste", "pasteStyle", "pasteInteractions",
+      "pasteFromOtherSite", "resetStyle", "saveGlobal", "saveDefault", "structure", "delete"]);
+  });
+
+  test("the rows we invented are GONE from every kind of target", () => {
+    for (const facts of [{ kind: "section" }, { kind: "widget" }, { kind: "widget", container: true }]) {
+      const actions = menuFor(facts).map((i) => i.action);
+      for (const gone of ["moveUp", "moveDown", "addAbove", "addBelow", "saveBlock",
+                          "showInOutline", "group", "ungroup", "toRow", "toColumn",
+                          "toGrid", "lock", "unlock", "hide", "show"]) {
+        assert.ok(!actions.includes(gone), `${gone} is back in the menu`);
+      }
     }
   });
 
-  test("a widget is not offered the two things only a section has", () => {
-    const actions = menuFor({ kind: "widget" }).map((i) => i.action);
-    assert.ok(!actions.includes("addAbove"));
-    assert.ok(!actions.includes("addBelow"));
+  test("the first row is Edit <Element>, which the reference really does have", () => {
+    // One audit row claimed the reference has no Edit row. It does — checked,
+    // not remembered: its first row reads "Edit Text Editor".
+    assert.equal(menuFor({ kind: "widget", name: "Heading" })[0].label, "Edit Heading");
+    assert.equal(menuFor({ kind: "section" })[0].label, "Edit Container");
+  });
+
+  test("six rows print their chord, as the reference's do", () => {
+    const items = menuFor({ kind: "widget", canPaste: true });
+    const chords = Object.fromEntries(items.filter((i) => i.shortcut).map((i) => [i.action, i.shortcut]));
+    assert.deepEqual(chords, {
+      duplicate: "Ctrl+D", copy: "Ctrl+C", paste: "Ctrl+V",
+      pasteStyle: "Ctrl+Shift+V", structure: "Ctrl+I", delete: "Del",
+    });
   });
 
   test("Delete is last, separated and destructive", () => {
@@ -175,28 +196,38 @@ describe("M-8 · one menu, wherever it is opened from", () => {
       assert.equal(row.disabled, true, `${a} is not greyed on a locked part`);
       assert.match(row.reason, /every email you send/);
     }
-    const first = menuFor({ kind: "section", index: 0, total: 3 }).find((i) => i.action === "moveUp");
-    assert.equal(first.disabled, true);
-    assert.match(first.reason, /already the first/);
     const nothingCopied = menuFor({ kind: "widget", canPaste: false }).find((i) => i.action === "paste");
     assert.match(nothingCopied.reason, /Nothing has been copied/);
+    // The two rows the reference greys for a reason of its own.
+    const interactions = menuFor({ kind: "widget" }).find((i) => i.action === "pasteInteractions");
+    assert.equal(interactions.disabled, true);
+    assert.match(interactions.reason, /hover or click behaviour/);
+    const global = menuFor({ kind: "widget" }).find((i) => i.action === "saveGlobal");
+    assert.equal(global.disabled, true);
+    assert.match(global.reason, /not on this plan/);
   });
 
-  test("the eye and the padlock SAY which state they are in (M-21)", () => {
-    const shown = menuFor({ kind: "widget", deviceWord: "on phones" });
-    assert.ok(shown.some((i) => i.action === "hide" && /Hide this on phones/.test(i.label)));
-    assert.ok(shown.some((i) => i.action === "lock" && /Lock so it can't be deleted/.test(i.label)));
-    const hidden = menuFor({ kind: "widget", hidden: true, locked: true, deviceWord: "on phones" });
-    assert.ok(hidden.some((i) => i.action === "show" && /Show this on phones again/.test(i.label)));
-    assert.ok(hidden.some((i) => i.action === "unlock"));
-    assert.ok(!hidden.some((i) => i.action === "hide"), "both halves of the eye are offered at once");
-    assert.ok(!hidden.some((i) => i.action === "lock"), "both halves of the padlock are offered at once");
+  test("hiding and locking are NOT menu rows — the eye lives in the tree (D-172)", () => {
+    // ABSENT: the reference's menu has neither, so M-21's promise moved to the
+    // one surface the reference does put an eye on, the Structure window.
+    const any = menuFor({ kind: "widget", hidden: true, locked: true }).map((i) => i.action);
+    for (const gone of ["hide", "show", "lock", "unlock"]) {
+      assert.ok(!any.includes(gone), `${gone} is back in the menu`);
+    }
+    // PRESENT: a part the LAW locks is still refused, and still says why.
+    const locked = menuFor({ kind: "widget", locked: true, lockedReason: "It has to be on every email." });
+    assert.equal(locked.find((i) => i.action === "delete").disabled, true);
+    assert.match(locked.find((i) => i.action === "delete").reason, /every email/);
   });
 
-  test("“Save this as my own block” is only offered where it can be saved", () => {
-    assert.ok(!menuFor({ kind: "section" }).some((i) => i.action === "saveBlock"),
-      "a row that quietly does nothing is worse than a row that is not there");
-    assert.ok(menuFor({ kind: "section", canSaveBlock: true }).some((i) => i.action === "saveBlock"));
+  test('"Save as default" replaces our own wording, and is greyed where it cannot save', () => {
+    // The reference's row is "Save as default". "Save this as my own block" was
+    // ours, and it was on sections only.
+    const off = menuFor({ kind: "section" }).find((i) => i.action === "saveDefault");
+    assert.equal(off.disabled, true, "a row that quietly does nothing is worse than a greyed one");
+    assert.equal(off.label, "Save as default");
+    assert.ok(!menuFor({ kind: "section", canSaveBlock: true }).some((i) => i.action === "saveBlock"));
+    assert.ok(!menuFor({ kind: "section", canSaveBlock: true }).find((i) => i.action === "saveDefault").disabled);
   });
 
   test("RIGHT-CLICK and the outline open the SAME menu — and the handle's ⋯ is gone", () => {
@@ -271,8 +302,11 @@ describe("M-21 · lock and hide say which they are", () => {
     // PRESENT 1 — the right-click menu offers one half of each at a time, and
     // says which half in words.
     const menu = SRC("builder/builderMenu.ts");
-    assert.match(menu, /action: "hide", label: `Hide this\$\{device\}`/);
-    assert.match(menu, /action: "lock", label: "Lock so it can't be deleted"/);
+    // PRESENT 1 — the menu is the reference's, and neither Lock nor Hide is in
+    // it (D-172). What the menu keeps is the refusal a LAW-locked part earns.
+    assert.ok(!menu.includes('action: "hide"'), "Hide is back in the menu");
+    assert.ok(!menu.includes('action: "lock"'), "Lock is back in the menu");
+    assert.match(menu, /action: "delete", label: "Delete"/);
     // PRESENT 2 — the outline row still SHOWS the state, which is where a
     // hidden section is found again.
     const nav = SRC("builder/Navigator.tsx");

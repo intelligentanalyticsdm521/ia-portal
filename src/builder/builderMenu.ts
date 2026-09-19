@@ -1,27 +1,53 @@
 /**
- * builder/builderMenu.ts — THE list of things you can do to a part of the page.
+ * builder/builderMenu.ts — THE right-click menu, copied from the reference editor.
  *
- * BUILDER_UX_SPEC §M-8: *"Right-click on a section, a column or a widget — and
- * the `⋯` on its hover toolbar, and the `⋯` on its Page-map row — all open the
- * SAME menu, ordered by frequency."* A user coming from Elementor or Gutenberg
- * reaches for right-click within the first minute, and on 2026-09-17 nothing
- * happened when they did.
+ * ── WHAT THE REAL EDITOR'S MENU IS ────────────────────────────────────────
+ * Driven in a live Elementor on 2026-09-19 — right-click a widget, read
+ * `.elementor-context-menu-list__item` — and written down in
+ * `overnight-report/elementor-reference/widgets/_zz_screen_round1.json`:
+ *
+ *   Edit Text Editor
+ *   Duplicate               Ctrl+D
+ *   Copy                    Ctrl+C
+ *   Paste                   Ctrl+V          (greyed with nothing copied)
+ *   Paste style             Ctrl+Shift+V    (greyed with nothing copied)
+ *   Paste interactions                      (greyed)
+ *   Paste from other site
+ *   Reset style
+ *   Save as a global                        (greyed, Pro)
+ *   Save as default
+ *   Structure               Ctrl+I
+ *   Delete                  Del
+ *
+ * That is the whole menu. Every row prints its chord on the right.
+ *
+ * ── WHAT WAS OURS, AND IS DELETED (D-172) ─────────────────────────────────
+ * Move up · Move down — moving is dragging, or the Structure window.
+ * Put this in a box · Take the box away — not in the reference at all, and the
+ *   first was greyed with a sentence telling you to hold Shift, which is the
+ *   multi-select the canvas no longer has.
+ * Lay it out side by side · Stack it top to bottom · Lay it out in even
+ *   columns — direction is a SETTING in the panel, not a menu row.
+ * Show it in the outline — replaced by the reference's own "Structure" row.
+ * Hide this · Lock so it can't be deleted — not in the reference's menu. A part
+ *   the LAW locks (an email footer) is still locked; what went is the author's
+ *   own switch, which the reference does not offer here.
+ * Add a section above · Add a section below — the handle's "+" does that.
+ * Save this as my own block — the reference's row is "Save as default".
+ *
+ * The first row is NOT deleted: the reference really does open with
+ * "Edit <Widget>", which one of the audit rows had wrong. It is checked, not
+ * remembered.
  *
  * ── WHY A MODULE AND NOT A COMPONENT ──────────────────────────────────────
- * The menu's CONTENTS are a fact about the document: what is on the page,
- * whether this part is locked, whether it is the first section, whether
- * anything has been copied. That is arithmetic, so it is a pure function and a
- * `node --test`, and the component below it only draws what this returns.
+ * The menu's CONTENTS are a fact about the document: whether anything has been
+ * copied, whether this part is locked. That is arithmetic, so it is a pure
+ * function and a `node --test`, and the component only draws what this returns.
  *
  * ── ONE SET OF ACTIONS ────────────────────────────────────────────────────
- * Every id here is an action the hover toolbar already performs. The menu does
- * not get its own handlers: `BuilderShell` maps one id to one function, and
- * both surfaces press the same one. Two menus over one set of verbs is how a
- * Duplicate that works on the toolbar and not in the menu happens.
- *
- * A DISABLED row keeps its reason, because "the button is grey" is not an
- * explanation — the spec asks for *"The footer can't be deleted — it has to be
- * on every email you send."*
+ * Every id here is an action `BuilderShell` already performs, and the keyboard
+ * runs the same ones. Two menus over one set of verbs is how a Duplicate that
+ * works on the toolbar and not in the menu happens.
  */
 
 /** Everything a part of the page can be asked to do. */
@@ -31,30 +57,30 @@ export type MenuAction =
   | "copy"
   | "paste"
   | "pasteStyle"
-  | "moveUp"
-  | "moveDown"
-  | "addAbove"
-  | "addBelow"
-  | "saveBlock"
-  | "showInOutline"
-  /* ── BOXES (§11.12, D-156) ───────────────────────────────────────
-     Gutenberg's "Group" and Elementor's "Create container", said in the words
-     a person uses. Three verbs, and every one of them is an operation in
-     treeOps.ts — the menu presses a function, it does not carry rules. */
-  | "group"
-  | "ungroup"
-  | "toRow"
-  | "toColumn"
-  | "toGrid"
-  | "lock"
-  | "unlock"
-  | "hide"
-  | "show"
+  /** The reference's row. Greyed: we carry no interactions to paste. */
+  | "pasteInteractions"
+  /** The reference's row: paste what was copied in another business's builder. */
+  | "pasteFromOtherSite"
+  /** Put this element's look back to the default. */
+  | "resetStyle"
+  /** The reference's Pro row. Ours is tier-gated the same way. */
+  | "saveGlobal"
+  /** The reference's "Save as default" — our named block, under its name. */
+  | "saveDefault"
+  /** Open the Structure window on this element. */
+  | "structure"
   | "delete";
 
 export interface MenuItem {
   action: MenuAction;
   label: string;
+  /**
+   * The chord, printed right-aligned on the row (D-172).
+   *
+   * The reference prints one on six of its twelve rows, and a menu that knows
+   * the shortcut and does not say it is a menu that teaches nobody anything.
+   */
+  shortcut?: string;
   /** Greyed, with the reason on hover. Never hidden: a control that vanishes
    *  teaches nothing, and the author goes looking for it again tomorrow. */
   disabled?: boolean;
@@ -73,156 +99,103 @@ export interface MenuFacts {
   kind: MenuTargetKind;
   /** This part cannot be removed — the law put it there, not the author. */
   locked?: boolean;
-  /** This part is hidden on the width being previewed. */
-  hidden?: boolean;
-  /** Sections only: where it sits, so Move up/down can say why not. */
-  index?: number;
-  total?: number;
   /** Something is on the builder's clipboard. */
   canPaste?: boolean;
-  /** The word this builder uses for a page (copy.ts `noun`). */
-  noun?: string;
   /** Why this part is locked, in the client's words. */
   lockedReason?: string;
-  /** Saving your own block is offered where the adapter can store one. */
+  /** "Save as default" is offered where the adapter can store one. */
   canSaveBlock?: boolean;
-  /** The width the eye refers to: "on phones", "on tablets", or everywhere. */
-  deviceWord?: string;
-
-  /* ── BOXES (§11.12) ───────────────────────────────────────────── */
-  /** This IS a box, so it can be taken away and it can be turned sideways. */
-  container?: boolean;
-  /** Which way it runs now, so the row for that way is not offered twice. */
-  direction?: "row" | "column" | "grid";
-  /** How many things are selected — two or more can be grouped into a box. */
-  selectedCount?: number;
-  /** Putting a box here would go deeper than the builder allows. */
-  tooDeep?: boolean;
+  /**
+   * WHAT THIS ELEMENT IS CALLED, for the first row.
+   *
+   * The reference writes "Edit Text Editor", "Edit Container" — the element's
+   * own name, which is the same name the settings panel puts at its top. The
+   * caller reads it off the registry; this module does not import one, so it
+   * stays pure.
+   */
+  name?: string;
+  /** Saving a global is a paid row in the reference and a tier row in ours. */
+  canSaveGlobal?: boolean;
 }
 
 const DEFAULT_LOCKED_REASON =
   "This part has to stay — it carries something the law asks for on every send. You can change the wording inside it.";
 
 /**
- * The menu for one part of the page, ordered by how often it is wanted.
+ * The menu for one part of the page, in the reference editor's own order.
  *
- * Delete is last, separated, and destructive-coloured — both Elementor and
- * Gutenberg put it there, and a Delete next to Duplicate is a Delete somebody
- * presses by accident.
+ * Delete is last, separated, and destructive-coloured — the reference puts it
+ * there, and a Delete next to Duplicate is a Delete somebody presses by
+ * accident.
  */
 export function menuFor(f: MenuFacts): MenuItem[] {
-  const isSection = f.kind === "section";
-  const thing = isSection ? "section" : f.container ? "box" : "block";
   const lockedReason = f.lockedReason || DEFAULT_LOCKED_REASON;
-  const device = f.deviceWord ? ` ${f.deviceWord}` : "";
+  const nothingCopied = "Nothing has been copied yet.";
   const items: MenuItem[] = [];
 
-  items.push({ action: "edit", label: "Edit this" });
+  items.push({ action: "edit", label: `Edit ${f.name || (f.kind === "section" ? "Container" : "Widget")}` });
+
   items.push({
     action: "duplicate",
-    label: "Make a copy",
+    label: "Duplicate",
+    shortcut: "Ctrl+D",
     disabled: !!f.locked,
     ...(f.locked ? { reason: lockedReason } : {}),
   });
-  items.push({ action: "copy", label: "Copy" });
+  items.push({ action: "copy", label: "Copy", shortcut: "Ctrl+C" });
   items.push({
     action: "paste",
     label: "Paste",
+    shortcut: "Ctrl+V",
     disabled: !f.canPaste,
-    ...(f.canPaste ? {} : { reason: "Nothing has been copied yet." }),
-  });
-  /* THE LOOK, NOT THE THING (§11.13.1, R-1.7). Ctrl+Shift+V has always done
-     this; the menu did not offer it, so the only way to find it was to know it.
-     A widget only: a section's own look is its five groups, and "paste style"
-     onto a section would mean something different from what it means in the
-     reference editor. */
-  if (!isSection) {
-    items.push({
-      action: "pasteStyle",
-      label: "Paste only the look",
-      disabled: !f.canPaste,
-      ...(f.canPaste ? {} : { reason: "Nothing has been copied yet." }),
-    });
-  }
-
-  const first = (f.index ?? 0) <= 0;
-  const last = f.total != null && (f.index ?? 0) >= f.total - 1;
-  items.push({
-    action: "moveUp", label: "Move up", separator: true,
-    disabled: isSection && first,
-    ...(isSection && first ? { reason: "This is already the first section." } : {}),
+    ...(f.canPaste ? {} : { reason: nothingCopied }),
   });
   items.push({
-    action: "moveDown", label: "Move down",
-    disabled: isSection && last,
-    ...(isSection && last ? { reason: "This is already the last section." } : {}),
+    action: "pasteStyle",
+    label: "Paste style",
+    shortcut: "Ctrl+Shift+V",
+    disabled: !f.canPaste,
+    ...(f.canPaste ? {} : { reason: nothingCopied }),
+  });
+  /* THE REFERENCE'S ROW, GREYED, AND HONESTLY SO. It has "interactions" —
+     hover and click behaviours — and we do not carry any, so the row says what
+     it would do and why it cannot. A row that is missing teaches nothing; a row
+     that lies is worse. */
+  items.push({
+    action: "pasteInteractions",
+    label: "Paste interactions",
+    disabled: true,
+    reason: "Nothing on this page has a hover or click behaviour to copy yet.",
+  });
+  items.push({
+    action: "pasteFromOtherSite",
+    label: "Paste from other site",
+    disabled: !f.canPaste,
+    ...(f.canPaste ? {} : { reason: nothingCopied }),
   });
 
-  if (isSection) {
-    items.push({ action: "addAbove", label: "Add a section above" });
-    items.push({ action: "addBelow", label: "Add a section below" });
-  }
-
-  /* ── THE BOX ROWS (§11.12, D-156) ──────────────────────────────────
-
-     They sit here, after Move and before Save-as-my-own-block, because that is
-     where "change the shape of this" belongs — above the housekeeping and well
-     clear of Delete.
-
-     A DISABLED ROW KEEPS ITS REASON, like every other row in this menu: "Put
-     these in a box" greyed with no explanation teaches nothing, and the author
-     goes looking for it again tomorrow. */
-  if (!isSection) {
-    const many = (f.selectedCount ?? 1) > 1;
-    items.push({
-      action: "group",
-      label: many ? "Put these in a box" : "Put this in a box",
-      separator: true,
-      disabled: !many || !!f.tooDeep,
-      ...(f.tooDeep
-        ? { reason: "This is already as deep as boxes go. Move it out one level first." }
-        : many ? {} : { reason: "Hold Shift and click a second thing beside it, then this puts both in one box." }),
-    });
-    if (f.container) {
-      items.push({
-        action: "ungroup",
-        label: "Take the box away, keep what is in it",
-      });
-      if (f.direction !== "row") items.push({ action: "toRow", label: "Lay it out side by side" });
-      if (f.direction !== "column") items.push({ action: "toColumn", label: "Stack it top to bottom" });
-      if (f.direction !== "grid") items.push({ action: "toGrid", label: "Lay it out in even columns" });
-    }
-  }
-
-  if (isSection && f.canSaveBlock) {
-    items.push({ action: "saveBlock", label: "Save this as my own block", separator: true });
-  }
+  items.push({ action: "resetStyle", label: "Reset style", separator: true });
   items.push({
-    action: "showInOutline", label: `Show it in the outline`,
-    ...(isSection && f.canSaveBlock ? {} : { separator: true }),
+    action: "saveGlobal",
+    label: "Save as a global",
+    disabled: !f.canSaveGlobal,
+    ...(f.canSaveGlobal ? {} : { reason: "Saving something as a global is not on this plan." }),
+  });
+  items.push({
+    action: "saveDefault",
+    label: "Save as default",
+    disabled: !f.canSaveBlock,
+    ...(f.canSaveBlock ? {} : { reason: "This builder has nowhere to keep one." }),
   });
 
-  items.push(
-    f.hidden
-      ? { action: "show", label: `Show this${device} again`, separator: true }
-      : { action: "hide", label: `Hide this${device}`, separator: true },
-  );
-  items.push(
-    f.locked
-      ? { action: "unlock", label: "Let it be deleted again" }
-      : { action: "lock", label: "Lock so it can't be deleted" },
-  );
+  items.push({ action: "structure", label: "Structure", shortcut: "Ctrl+I", separator: true });
 
   items.push({
-    action: "delete", label: `Delete this ${thing}`, separator: true, danger: true,
+    action: "delete", label: "Delete", shortcut: "Del", separator: true, danger: true,
     disabled: !!f.locked,
     ...(f.locked ? { reason: lockedReason } : {}),
   });
 
-  // The `noun` is the builder's own word for the page, kept so a future row
-  // that has to mention it ("Add a section above" on a web page) can. Reading
-  // it here rather than importing copy.ts keeps this module pure.
-  void f.noun;
   return items;
 }
 

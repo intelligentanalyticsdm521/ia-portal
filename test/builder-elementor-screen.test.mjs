@@ -36,6 +36,7 @@ import path from "node:path";
 import { addSection, emptyDocument, makeContainer, makeSection, resetIds } from "../src/builder/model.ts";
 import { insertSpotFor } from "../src/builder/insertPosition.ts";
 import { openGroups } from "../src/builder/widgetGroups.ts";
+import { menuFor } from "../src/builder/builderMenu.ts";
 
 const SRC = path.join(process.cwd(), "src");
 const BUILDER = path.join(SRC, "builder");
@@ -153,9 +154,17 @@ describe("SCREEN LAW 3 — a handle is add, drag, delete; the rest is right-clic
     for (const gone of ["data-widget-hidden", "data-widget-locked", "data-widget-more", "bxc-addin"]) {
       assert.ok(!c.includes(gone), `${gone} is back on the page. Lock, hide, duplicate and the menu are on right-click.`);
     }
+    // …and the verbs live on RIGHT-CLICK, which is the reference's own twelve
+    // rows (D-172). Lock and Hide are NOT among them: the reference's menu has
+    // neither, so they are gone from both places rather than moved.
     const menu = readSrc("builder/builderMenu.ts");
-    for (const action of ['"duplicate"', '"lock"', '"hide"', '"copy"', '"paste"']) {
+    for (const action of ['"duplicate"', '"copy"', '"paste"', '"resetStyle"', '"structure"']) {
       assert.ok(menu.includes(action), `right-click lost ${action}, and the handle no longer has it either`);
+    }
+    for (const gone of ['"lock"', '"unlock"', '"hide"', '"show"', '"moveUp"', '"moveDown"',
+                        '"group"', '"ungroup"', '"toRow"', '"toColumn"', '"toGrid"',
+                        '"addAbove"', '"addBelow"', '"saveBlock"', '"showInOutline"']) {
+      assert.ok(!menu.includes(gone), `${gone} is back in the right-click menu; the reference has no such row`);
     }
   });
 });
@@ -475,5 +484,66 @@ describe("SCREEN LAW 7b — found by driving the merged screen (D-172)", () => {
     // nothing is worse than no eye.
     assert.match(code(readSrc("builder/adapters/website/WebsiteBuilder.tsx")),
       /onPreviewDoc=\{\(\) => \{ if \(!busy\) void runPreview\(\); \}\}/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 8 — THE RIGHT-CLICK MENU (D-172, round 1)
+
+   Driven in the live editor on 2026-09-19, right-clicking a Text Editor:
+
+     Edit Text Editor · Duplicate ^D · Copy ^C · Paste ^V · Paste style ^⇧V ·
+     Paste interactions · Paste from other site · Reset style ·
+     Save as a global · Save as default · Structure ^I · Delete ⌦
+
+   That is the whole menu, and every one of ours that is not on that list is
+   deleted rather than tidied.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 8 — the right-click menu is the reference's", () => {
+  test("twelve rows, in the reference's order", () => {
+    assert.deepEqual(
+      menuFor({ kind: "widget", name: "Text Editor", canPaste: true, canSaveBlock: true }).map((i) => i.action),
+      ["edit", "duplicate", "copy", "paste", "pasteStyle", "pasteInteractions",
+       "pasteFromOtherSite", "resetStyle", "saveGlobal", "saveDefault", "structure", "delete"]);
+  });
+
+  test("the fifteen rows that were ours are DELETED, handler and all", () => {
+    const menu = code(readSrc("builder/builderMenu.ts"));
+    const shell = code(readSrc("builder/BuilderShell.tsx"));
+    for (const gone of ["moveUp", "moveDown", "addAbove", "addBelow", "saveBlock",
+                        "showInOutline", "group", "ungroup", "toRow", "toColumn",
+                        "toGrid", "lock", "unlock", "hide", "show"]) {
+      assert.ok(!menu.includes(`"${gone}"`), `${gone} is back in the menu`);
+      assert.ok(!shell.includes(`case "${gone}":`), `${gone} still has a handler in the shell`);
+    }
+  });
+
+  test("the wording is the reference's, to the character", () => {
+    const menu = code(readSrc("builder/builderMenu.ts"));
+    for (const ours of ["Make a copy", "Paste only the look", "Delete this block",
+                        "Delete this box", "Delete this section",
+                        "Save this as my own block", "Show it in the outline",
+                        "Put this in a box", "Lay it out side by side"]) {
+      assert.ok(!menu.includes(ours), `our own wording is back: ${ours}`);
+    }
+    const items = menuFor({ kind: "widget", name: "Heading", canPaste: true, canSaveBlock: true });
+    const byId = Object.fromEntries(items.map((i) => [i.action, i.label]));
+    assert.equal(byId.edit, "Edit Heading");
+    assert.equal(byId.duplicate, "Duplicate");
+    assert.equal(byId.pasteStyle, "Paste style");
+    assert.equal(byId.saveDefault, "Save as default");
+    assert.equal(byId.structure, "Structure");
+    assert.equal(byId.delete, "Delete");
+  });
+
+  test("every row that has a chord prints it, right-aligned", () => {
+    const chords = Object.fromEntries(
+      menuFor({ kind: "widget", canPaste: true }).filter((i) => i.shortcut).map((i) => [i.action, i.shortcut]));
+    assert.deepEqual(chords, {
+      duplicate: "Ctrl+D", copy: "Ctrl+C", paste: "Ctrl+V",
+      pasteStyle: "Ctrl+Shift+V", structure: "Ctrl+I", delete: "Del",
+    });
+    assert.match(code(readSrc("builder/ContextMenu.tsx")), /data-menu-shortcut=\{item\.action\}/);
   });
 });

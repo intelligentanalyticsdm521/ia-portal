@@ -501,46 +501,32 @@ describe("the outline shows the nesting", () => {
    8. THE MENU
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("the menu offers the box verbs, and says why when it cannot", () => {
-  const ids = (items) => items.map((i) => i.action);
+describe("the box verbs are NOT menu rows — they are settings (D-172)", () => {
+  const ids = (facts) => menuFor(facts).map((i) => i.action);
 
-  test("two things selected can be put in a box; one cannot, and it says so", () => {
-    const one = menuFor({ kind: "widget", selectedCount: 1 }).find((i) => i.action === "group");
-    assert.equal(one.disabled, true);
-    assert.match(one.reason, /Shift/);
-
-    const two = menuFor({ kind: "widget", selectedCount: 2 }).find((i) => i.action === "group");
-    assert.ok(!two.disabled);
-    assert.match(two.label, /Put these in a box/);
-  });
-
-  test("only a BOX is offered ungroup and the three directions", () => {
-    assert.ok(!ids(menuFor({ kind: "widget" })).includes("ungroup"));
-    const box = ids(menuFor({ kind: "widget", container: true, direction: "column" }));
-    assert.ok(box.includes("ungroup"));
-    assert.ok(box.includes("toRow"));
-    assert.ok(box.includes("toGrid"));
-    // The way it ALREADY runs is not offered again — a menu row that does
-    // nothing is a menu row somebody presses twice.
-    assert.ok(!box.includes("toColumn"));
-  });
-
-  test("a section is never offered any of them", () => {
-    const section = ids(menuFor({ kind: "section", index: 0, total: 3 }));
-    for (const verb of ["group", "ungroup", "toRow", "toColumn", "toGrid"]) {
-      assert.ok(!section.includes(verb), `a section was offered ${verb}`);
+  test("group, ungroup and the three directions are gone from every menu", () => {
+    // The reference's right-click menu has none of them: direction is a
+    // control in the panel (Direction, four icon buttons) and there is no
+    // multi-select on its canvas to group with. Driven 2026-09-19.
+    for (const facts of [{ kind: "widget" }, { kind: "widget", container: true },
+                         { kind: "section" }]) {
+      for (const verb of ["group", "ungroup", "toRow", "toColumn", "toGrid"]) {
+        assert.ok(!ids(facts).includes(verb), `a ${facts.kind} was offered ${verb}`);
+      }
     }
   });
 
-  test("too deep is greyed with a reason rather than refusing after the press", () => {
-    const row = menuFor({ kind: "widget", selectedCount: 2, tooDeep: true }).find((i) => i.action === "group");
-    assert.equal(row.disabled, true);
-    assert.match(row.reason, /as deep as boxes go/);
+  test("PRESENT INSTEAD: direction is a control on the container's own panel", () => {
+    const inspector = readSrc("builder/Inspector.tsx");
+    assert.match(inspector, /data-box-direction/, "a container cannot be laid out at all now");
   });
 
-  test("Delete on a box says box, not block", () => {
-    assert.match(menuFor({ kind: "widget", container: true }).find((i) => i.action === "delete").label,
-      /Delete this box/);
+  test("Delete is one word, as the reference writes it", () => {
+    // "Delete this box" / "Delete this block" / "Delete this section" were
+    // ours, and "box" is not one of the reference's words.
+    for (const facts of [{ kind: "widget" }, { kind: "widget", container: true }, { kind: "section" }]) {
+      assert.equal(menuFor(facts).find((i) => i.action === "delete").label, "Delete");
+    }
   });
 });
 

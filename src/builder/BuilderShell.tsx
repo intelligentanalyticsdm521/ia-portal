@@ -881,6 +881,8 @@ export function BuilderShell(p: BuilderShellProps) {
   const named = useCallback((label?: string) => (label?.trim() ? `“${label.trim()}”` : "a section"), []);
 
   /** Every verb the menu can name, in one place. */
+  /** So one row can run another's body rather than keeping a second copy. */
+  const runMenuActionRef = useRef<((a: MenuAction, t: MenuTarget) => void) | null>(null);
   const runMenuAction = useCallback((action: MenuAction, target: MenuTarget) => {
     const sectionId = target.kind === "section" ? target.sectionId : target.path.sectionId;
     const index = doc.sections.findIndex((x) => x.id === sectionId);
@@ -934,84 +936,52 @@ export function BuilderShell(p: BuilderShellProps) {
           look ? JSON.parse(JSON.stringify(look)) : undefined), null, "Pasted the look");
         return;
       }
-      case "moveUp":
-        if (target.kind === "section") { apply(moveSection(doc, sectionId, index - 1), null, `Moved ${name} up`); return; }
-        apply(moveWidget(doc, target.path, -1), null, "Moved a block up");
+      /* ── THE ROWS THE REFERENCE DOES NOT HAVE ARE GONE (D-172) ──────
+         Move up / Move down (moving is a drag, or the Structure window), the
+         five box verbs (direction is a SETTING, not a menu row; there is no
+         multi-select to group), Show it in the outline (the reference's own
+         row is "Structure"), Hide / Lock (the author's own switches are not in
+         the reference's menu; a part the LAW locks is still locked), and Add a
+         section above / below (the handle's "+" does that). Deleted here as
+         well as in builderMenu.ts — a handler with no row is how a row comes
+         back. */
+      case "resetStyle": {
+        /* THE REFERENCE'S ROW. It puts the element back to its default LOOK and
+           leaves its words alone, which is why it clears `style` and touches no
+           prop. */
+        if (target.kind === "widget") {
+          apply(setWidgetStyle(doc, { kind: "widget", ...target.path } as any, undefined), null, "Put the look back");
+          return;
+        }
+        apply(patchSection(doc, sectionId, { style: undefined } as Partial<Section>), null, "Put the look back");
         return;
-      case "moveDown":
-        if (target.kind === "section") { apply(moveSection(doc, sectionId, index + 1), null, `Moved ${name} down`); return; }
-        apply(moveWidget(doc, target.path, 1), null, "Moved a block down");
-        return;
-      case "addAbove": setGallery({ at: Math.max(0, index) }); return;
-      case "addBelow": setGallery({ at: index + 1 }); return;
-      case "saveBlock": if (sec) setNaming(sec); return;
-      case "showInOutline":
+      }
+      case "saveDefault": if (sec) setNaming(sec); return;
+      case "structure":
         select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
         setStructure(true);
         return;
-      /* ── BOXES (§11.12, D-156) ──────────────────────────────────
-
-         Five verbs, five one-line calls. Every rule — the ids must be siblings,
-         a box may not go inside itself, nesting stops at six — is in treeOps.ts
-         where it is a test, and a refusal comes back as the same document,
-         which is why each of these says something rather than going quiet. */
-      case "group": {
-        if (target.kind !== "widget") return;
-        const ids = selectedIds(selection);
-        const after = groupNodes(doc, ids);
-        if (after === doc) {
-          refuse(ids.length < 2
-            ? "Hold Shift and click a second thing beside it, then this puts both in one box."
-            : "Those are not beside each other. Pick things that sit in the same place on the page.");
-          return;
-        }
-        apply(after, null, "Put them in a box");
-        // THE BOX is what is selected afterwards, because it is the thing that
-        // was just made and the thing the author will now lay out. It is found
-        // rather than remembered: the new box is whatever now holds the first
-        // of the things that went into it.
-        const inside = findNode(after, ids[0]);
-        const made = inside ? findNode(after, inside.parentId) : null;
-        if (made) {
-          select({
-            kind: "widget", sectionId: made.sectionId, columnIndex: made.columnIndex,
-            widgetIndex: made.index, id: made.node.id,
-          });
-        }
+      case "pasteFromOtherSite":
+        /* The reference reads another site's clipboard payload. Ours reads the
+           SAME clipboard the Copy row writes, which is what "from other site"
+           means here: a block copied in another business's builder in this
+           browser. One clipboard, so there is no second paste to keep in step. */
+        runMenuActionRef.current?.("paste", target);
         return;
-      }
-      case "ungroup": {
-        if (target.kind !== "widget") return;
-        const id = nodeIdAt(doc, target.path);
-        if (!id) return;
-        apply(ungroupNode(doc, id), null, "Took the box away");
-        select(null);
+      case "pasteInteractions":
+      case "saveGlobal":
+        /* Both are greyed in the menu and both say why on hover. They are
+           listed so the screen matches, and they do nothing until there is
+           something for them to do. */
         return;
-      }
-      case "toRow":
-      case "toColumn":
-      case "toGrid": {
-        if (target.kind !== "widget") return;
-        const id = nodeIdAt(doc, target.path);
-        if (!id) return;
-        const dir = action === "toRow" ? "row" : action === "toGrid" ? "grid" : "column";
-        apply(setDirection(doc, id, dir), null,
-          dir === "row" ? "Laid it out side by side"
-            : dir === "grid" ? "Laid it out in even columns"
-              : "Stacked it top to bottom");
-        return;
-      }
-      case "lock": setLocked(target, true); return;
-      case "unlock": setLocked(target, false); return;
-      case "hide": setHidden(target, true); return;
-      case "show": setHidden(target, false); return;
       case "delete":
         if (target.kind === "widget") { deleteWidget(target.path); return; }
         deleteSection(sectionId);
         return;
       default: return;
     }
-  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select, selection, setHidden, setLocked]);
+  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select]);
+  runMenuActionRef.current = runMenuAction;
 
   /** What the open menu should contain, from the document as it is right now. */
   const menuItems = useMemo(() => {
@@ -1033,17 +1003,14 @@ export function BuilderShell(p: BuilderShellProps) {
     return menuFor({
       kind: t.kind,
       locked,
-      hidden,
-      container: box,
-      ...(box ? { direction: directionOf(node) } : {}),
-      selectedCount: selectedIds(selection).length,
-      tooDeep: !!hit && depth + 1 + subtreeHeight(hit.node) >= MAX_DEPTH,
-      index,
-      total: doc.sections.length,
+      /* THE ELEMENT'S OWN NAME, for the first row — "Edit Heading", "Edit
+         Container", the same words the settings panel puts at its top. */
+      name: t.kind === "widget"
+        ? (box ? (directionOf(node) === "grid" ? "Grid" : "Container")
+          : (node ? (WIDGETS_BY_KIND[node.kind]?.label || node.kind) : "Widget"))
+        : "Container",
       canPaste: !!clip,
-      noun: copy.noun,
       canSaveBlock: !!p.onSaveBlock,
-      deviceWord: hideDeviceWord,
       lockedReason: copy.lockedReason,
     });
   }, [clip, copy.noun, doc, hideDeviceWord, isHidden, menu, p.onSaveBlock, selection, widgetHidden]);
