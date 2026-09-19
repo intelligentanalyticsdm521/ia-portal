@@ -26,7 +26,7 @@
 
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 import {
-  applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved, isNarrowFamily,
+  advanceEm, applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved,
   needsSvgText, straightTextSvg, wrapLines,
   type StrokeStyle, type TextCase, type TextEffect,
 } from "./textEffects";
@@ -121,7 +121,28 @@ export interface ImageFilters {
   tint?: string;
 }
 
-export type ImageMask = "circle" | "rounded" | "blob1" | "blob2" | "arch";
+/**
+ * THE SHAPE A PHOTO IS CUT TO — Canva calls the result a Frame (G-06).
+ *
+ * Round 1 offered five: circle, rounded, two blobs and an arch. Design 03's
+ * diagonal photo edge had to be faked with a turned rectangle, "and a turned
+ * rectangle cannot be a *crop*", which is exactly right — the photo kept its
+ * corners and the shape sat on top of it.
+ *
+ * So the list is now CIRCLE, ROUNDED, OR ANY KEY IN `ICON_PATHS`: every
+ * polygon, blob, wave, arch, shield, hexagon and seal the studio already
+ * draws, all forty-seven, with no new path data and no new server list — the
+ * exporter validates the same keys it has always validated. A string type
+ * rather than a union because the set is `ICON_PATHS`' keys and a second copy
+ * of that set would be a second thing to keep in step.
+ */
+export type ImageMask = string;
+
+/** Circle and rounded are not icons; every other mask is an ICON_PATHS key. */
+export function isValidMask(mask: string | undefined | null): boolean {
+  if (!mask || mask === "none") return false;
+  return mask === "circle" || mask === "rounded" || Object.prototype.hasOwnProperty.call(ICON_PATHS, mask);
+}
 
 export interface ImageLayer extends BaseLayer {
   kind: "image";
@@ -133,6 +154,26 @@ export interface ImageLayer extends BaseLayer {
   filters?: ImageFilters;
   /** Clip the photo to a shape — raw rectangles are the amateur tell. */
   mask?: ImageMask;
+  /**
+   * A FRAME'S BORDER, drawn along the mask's own outline rather than around
+   * the box. A circle frame with a gold ring is one layer, not a photo with an
+   * ellipse balanced on top that comes adrift the moment either is nudged.
+   */
+  frameStroke?: string;
+  frameStrokeWidth?: number;
+  frameDash?: StrokeStyle;
+  /**
+   * What an EMPTY frame is filled with while it waits for a photo. Canva shows
+   * a grey well; a designer laying out a page before the photography arrives
+   * wants it in their own colour.
+   */
+  frameFill?: string;
+  /**
+   * Corner rounding in canvas pixels, for a photo with no mask — the plain
+   * "round the corners of this picture" that needed a mask before. Ignored
+   * when `mask` is set, because a mask already says what the shape is.
+   */
+  radius?: number;
 }
 // ── Color math for Brand Sync + Fix contrast (deterministic, no model) ─────
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -173,6 +214,36 @@ export interface GradientSpec {
   dir: "h" | "v" | "d1" | "d2";
 }
 
+/**
+ * A REPEATING FILL — stripes, dots, a grid, a check.
+ *
+ * Three of the ten reference designs call for one ("no diagonal stripe texture
+ * for the photo", 01; "no stripe texture", 03), and every one of them is a flat
+ * panel today. It is a fill, so it lives beside `fill` and `gradient` and the
+ * same precedence question is answered once, in `shapeFill`: pattern beats
+ * gradient beats colour, because it is the most specific thing the author
+ * asked for.
+ *
+ * `size` is the tile's side in CANVAS pixels, not a fraction, so a 12 px stripe
+ * is 12 px whether it is on a business card or a poster — the one thing a
+ * texture must not do is change scale when a design is resized. `angle` turns
+ * the tile, which is how one stripe tile serves horizontal, vertical and both
+ * diagonals.
+ */
+export interface PatternSpec {
+  kind: "stripe" | "dot" | "grid" | "check";
+  /** The ink. */
+  colour: string;
+  /** The paper. "none" leaves whatever is behind showing through. */
+  background?: string;
+  /** Tile side in canvas pixels. */
+  size?: number;
+  /** Degrees, clockwise. */
+  angle?: number;
+  /** How much of the tile is ink, 0..1. Stripe width, dot radius, line weight. */
+  weight?: number;
+}
+
 export interface ShapeLayer extends BaseLayer {
   kind: "shape";
   shape: "rect" | "ellipse" | "line" | "icon";
@@ -191,6 +262,8 @@ export interface ShapeLayer extends BaseLayer {
   icon?: string;
   /** Overrides fill when present. */
   gradient?: GradientSpec;
+  /** Overrides BOTH fill and gradient when present — see PatternSpec. */
+  pattern?: PatternSpec;
 }
 
 const GRADIENT_COORDS: Record<GradientSpec["dir"], { x1: number; y1: number; x2: number; y2: number }> = {
@@ -257,25 +330,147 @@ export const ICON_PATHS: Record<string, string> = {
 
 export const DECOR_KEYS = new Set(["blob1","blob2","blob3","wave","wave2","arch","halfcircle","quartercircle","scallop","dots"]);
 
+/**
+ * HOW MUCH AN ICON'S OWN 100×100 SPACE IS STRETCHED BY (parity D-3).
+ *
+ * Every icon is authored in a 100×100 box and drawn into the layer's box, so a
+ * 6 px outline asked for in the inspector came out at 6 × (700 / 100) = 42 px
+ * on design 02's arch. The report put it plainly: "its 6 px rule came out
+ * ~45 px because a stroke on an icon scales with the icon".
+ *
+ * A non-uniform box (700 × 400) has no single scale, and SVG has no way to
+ * stroke one path at two widths, so the honest answer is the GEOMETRIC MEAN of
+ * the two — the same number SVG itself uses for a percentage length in a
+ * non-square viewport, and the number that makes a stroke on a wide box look
+ * right rather than right in one axis and wrong in the other.
+ *
+ * Exported because LUMEN's `emitShapeLayer` does the identical division on the
+ * identical formula, and the two suites assert the same worked example.
+ */
+export function iconStrokeScale(w: number, h: number): number {
+  const sx = Math.max(1, Number(w) || 1) / 100;
+  const sy = Math.max(1, Number(h) || 1) / 100;
+  return Math.sqrt(sx * sy);
+}
+
+/**
+ * The fill for a shape, as an SVG paint string, plus any defs it needs.
+ *
+ * ONE function, because three separate answers to "what colour is this shape"
+ * is how round 1 ended up with a gradient that worked on a rectangle and not
+ * on an icon. Precedence: pattern, then gradient, then colour.
+ *
+ * "none" MEANS NONE (parity D-3). An icon with an empty fill used to paint the
+ * brand primary, so an outline-only arch became a solid arch that hid the label
+ * behind it. An author who cleared the fill wants no fill; the only place a
+ * fallback colour belongs is a shape that was never given one at all, and
+ * `insert.ts` gives every shape one.
+ */
+export function shapeFill(layer: Pick<ShapeLayer, "fill" | "gradient" | "pattern">, idPrefix: string, defs: string[]): string {
+  if (layer.pattern) {
+    const id = `${idPrefix}p`;
+    defs.push(patternDef(layer.pattern, id));
+    return `url(#${id})`;
+  }
+  if (layer.gradient) {
+    const id = `${idPrefix}g`;
+    const c = GRADIENT_COORDS[layer.gradient.dir] || GRADIENT_COORDS.d1;
+    defs.push(`<linearGradient id="${id}" x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}">` +
+      `<stop offset="0" stop-color="${layer.gradient.from}"/><stop offset="1" stop-color="${layer.gradient.to}"/></linearGradient>`);
+    return `url(#${id})`;
+  }
+  if (!layer.fill || layer.fill === "none") return "none";
+  return layer.fill;
+}
+
+/**
+ * A repeating fill as an SVG `<pattern>`, in USER SPACE.
+ *
+ * userSpaceOnUse and not the default objectBoundingBox: a bounding-box pattern
+ * is a FRACTION of the shape, so the same stripe setting would be four pixels
+ * wide on a badge and forty on a banner, and resizing a panel would change its
+ * texture. In user space the tile is the size the author typed, everywhere.
+ *
+ * The identical geometry is in LUMEN's `patternDef`; both suites assert the
+ * same worked tile.
+ */
+export function patternDef(spec: PatternSpec, id: string): string {
+  const size = Math.max(2, Number(spec.size) || 16);
+  const weight = Math.min(0.95, Math.max(0.05, Number(spec.weight) || 0.5));
+  const angle = Number(spec.angle) || 0;
+  const ink = spec.colour || FALLBACK.primary;
+  const paper = spec.background && spec.background !== "none" ? spec.background : null;
+  const turn = angle ? ` patternTransform="rotate(${angle})"` : "";
+  const bg = paper ? `<rect width="${size}" height="${size}" fill="${paper}"/>` : "";
+  let ink_ = "";
+  if (spec.kind === "stripe") {
+    ink_ = `<rect x="0" y="0" width="${(size * weight).toFixed(3)}" height="${size}" fill="${ink}"/>`;
+  } else if (spec.kind === "dot") {
+    const r = (size * weight) / 2;
+    ink_ = `<circle cx="${size / 2}" cy="${size / 2}" r="${r.toFixed(3)}" fill="${ink}"/>`;
+  } else if (spec.kind === "grid") {
+    const t = Math.max(0.5, size * weight * 0.25);
+    ink_ = `<path d="M0 0 H${size} M0 0 V${size}" stroke="${ink}" stroke-width="${t.toFixed(3)}" fill="none"/>`;
+  } else {
+    const half = size / 2;
+    ink_ = `<rect x="0" y="0" width="${half}" height="${half}" fill="${ink}"/>` +
+      `<rect x="${half}" y="${half}" width="${half}" height="${half}" fill="${ink}"/>`;
+  }
+  return `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${size}" height="${size}"${turn}>${bg}${ink_}</pattern>`;
+}
+
 function iconToSvg(layer: ShapeLayer): string {
   const d = ICON_PATHS[layer.icon || ""] || ICON_PATHS.star;
   const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
-  let defs = "";
-  let fill = layer.fill && layer.fill !== "none" ? layer.fill : FALLBACK.primary;
-  if (layer.gradient) {
-    const c = GRADIENT_COORDS[layer.gradient.dir] || GRADIENT_COORDS.d1;
-    defs = `<defs><linearGradient id="g" x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}">` +
-      `<stop offset="0" stop-color="${layer.gradient.from}"/><stop offset="1" stop-color="${layer.gradient.to}"/></linearGradient></defs>`;
-    fill = "url(#g)";
-  }
-  // The dash array is in the icon's own 100×100 space, so it stays the same
-  // pattern whatever size the symbol is dragged to.
-  const dash = dashArray(layer.dash, ((layer.strokeWidth || 1) / Math.max(1, layer.w)) * 100);
-  const dashAttrs = dash.length
-    ? ` stroke-dasharray="${dash.join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
+  const defsParts: string[] = [];
+  // The id carries the layer so two icons in one document cannot collide, and
+  // so a pattern tile is never shared between two shapes that set it apart.
+  const fill = shapeFill(layer, `i${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts);
+  // D-3: divide the asked-for width by the icon's own stretch, so the number in
+  // the inspector is the number of canvas pixels that get painted.
+  const sw = Number(layer.strokeWidth) || 0;
+  const swInBox = sw > 0 ? sw / iconStrokeScale(layer.w, layer.h) : 0;
+  const dash = dashArray(layer.dash, swInBox || 1);
+  const dashAttrs = dash.length && swInBox > 0
+    ? ` stroke-dasharray="${dash.map((n) => Number(n.toFixed(4))).join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
     : "";
+  const defs = defsParts.length ? `<defs>${defsParts.join("")}</defs>` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">${defs}` +
-    `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${layer.strokeWidth || 0}"${dashAttrs} /></svg>`;
+    `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${Number(swInBox.toFixed(4))}"${dashAttrs} /></svg>`;
+}
+
+/**
+ * A rect or an ellipse as an SVG picture — ONLY for the fills Fabric has no
+ * object for.
+ *
+ * Fabric paints a flat colour and a linear gradient natively, and a native
+ * object stays a real editable rectangle, so it keeps them. It has no
+ * equivalent of an SVG `<pattern>`, and hand-rolling one as a Fabric pattern
+ * would be a SECOND drawing of the same texture that agrees with the exporter
+ * today and drifts tomorrow. So a patterned shape becomes the exporter's own
+ * picture, exactly as an icon already does.
+ */
+export function shapeToSvg(layer: ShapeLayer): string {
+  const w = Math.max(1, layer.w);
+  const h = Math.max(1, layer.h);
+  const defsParts: string[] = [];
+  const fill = shapeFill(layer, `s${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts);
+  const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
+  const sw = Number(layer.strokeWidth) || 0;
+  const dash = dashArray(layer.dash, sw || 1);
+  const dashAttrs = dash.length && sw > 0
+    ? ` stroke-dasharray="${dash.map((n) => Number(n.toFixed(4))).join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
+    : "";
+  // Half the stroke sits outside the shape, so the picture is inset by that
+  // much or the outline is clipped by its own box.
+  const inset = sw / 2;
+  const common = `fill="${fill}" stroke="${stroke}" stroke-width="${sw}"${dashAttrs}`;
+  const body = layer.shape === "ellipse"
+    ? `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${Math.max(0.5, w / 2 - inset)}" ry="${Math.max(0.5, h / 2 - inset)}" ${common}/>`
+    : `<rect x="${inset}" y="${inset}" width="${Math.max(1, w - sw)}" height="${Math.max(1, h - sw)}"` +
+      (layer.radius ? ` rx="${Math.min(Number(layer.radius), Math.min(w, h) / 2)}"` : "") + ` ${common}/>`;
+  const defs = defsParts.length ? `<defs>${defsParts.join("")}</defs>` : "";
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defs}${body}</svg>`;
 }
 
 /**
@@ -293,12 +488,13 @@ function iconToSvg(layer: ShapeLayer): string {
  * auto-grows) and an SVG rendered at a shorter box would clip the last line
  * off silently, which is the worst possible failure for a design tool.
  */
-export function textLayerSvg(layer: TextLayer): { svg: string; w: number; h: number } | null {
+export function textLayerSvg(layer: TextLayer, fontFaceCss?: string | null): { svg: string; w: number; h: number } | null {
   if (!needsSvgText(layer)) return null;
   const size = Math.max(1, layer.size || 24);
   const w = Math.max(1, layer.w);
   const font = familyOf(layer.font || DEFAULT_FONTS[0]);
   const weight = layer.weight || "400";
+  const bold = Number(weight) >= 600 || weight === "bold";
   const content = applyCase(layer.content || "", layer.textCase);
   const effectInput = {
     effect: layer.effect ?? null,
@@ -322,13 +518,19 @@ export function textLayerSvg(layer: TextLayer): { svg: string; w: number; h: num
       bulge,
       size,
       letterSpacing: layer.letterSpacing || 0,
-      narrow: isNarrowFamily(layer.font),
+      // D-1: the arc is packed with the REAL advances of the face that will be
+      // drawn, not a flat average — see textEffects.ADVANCE_TABLES.
+      family: font,
+      bold,
       font,
       weight,
       italic: layer.italic === true,
       boxW: w,
       boxH,
       effectInput,
+      // D-2: without the face's own bytes an SVG loaded through <img> cannot
+      // reach the page's webfonts and falls back to a system serif.
+      fontFaceCss,
     });
     return svg ? { svg, w, h: Math.round(boxH) } : null;
   }
@@ -353,8 +555,83 @@ export function textLayerSvg(layer: TextLayer): { svg: string; w: number; h: num
     boxW: w,
     boxH,
     effectInput,
+    fontFaceCss,
   });
   return { svg, w, h: boxH };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Does the text fit? (parity D-8)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHAT A TEXT BOX IS ABOUT TO DO TO THE WORDS IN IT.
+ *
+ * Round 1: *"Three designs lost a line to a box a few pixels too narrow with
+ * no warning on the canvas; two of them only showed it in the exported PNG."*
+ * The headline on design 08 had to be re-set from 82 px to 76 px to stop it
+ * wrapping, and the only way to find that out was to download the file.
+ *
+ * This answers the question BEFORE the download, from the same `wrapLines`
+ * the export wraps with, so the warning and the wrap can never disagree. It
+ * returns facts, not a sentence — the canvas badge and the inspector word it
+ * differently and neither should own the arithmetic.
+ *
+ * `null` means the box is fine, so a caller can write `if (fit)`.
+ */
+export interface TextFit {
+  /** How many lines the words actually take at this width. */
+  lines: number;
+  /** How tall the words need the box to be. */
+  neededH: number;
+  /** The box's own height. */
+  boxH: number;
+  /** The words wrapped onto more than one line. */
+  wrapped: boolean;
+  /** The words need more height than the box has. */
+  overflows: boolean;
+  /** One word on its own is wider than the box — no wrap can save it. */
+  wordTooWide: boolean;
+}
+
+export function textFit(layer: TextLayer): TextFit | null {
+  if (layer.kind !== "text") return null;
+  const size = Math.max(1, layer.size || 24);
+  const w = Math.max(1, layer.w);
+  const content = applyCase(layer.content || "", layer.textCase);
+  if (!content.trim()) return null;
+  const lines = wrapLines(content, w, size, layer.weight);
+  const lineHeight = layer.lineHeight || 1.2;
+  const neededH = Math.round(size * 1.05 + (lines.length - 1) * size * lineHeight + size * 0.4);
+  const boxH = Math.max(0, Number(layer.h) || 0);
+  // A single word wider than the box cannot be wrapped out of trouble, and it
+  // is the one case where making the box taller does not help — so it is
+  // reported apart from plain overflow rather than folded into it.
+  const family = familyOf(layer.font || DEFAULT_FONTS[0]);
+  const bold = Number(layer.weight) >= 600 || layer.weight === "bold";
+  const widest = content.split(/\s+/).reduce((max, word) => {
+    let run = 0;
+    for (const ch of word) run += advanceEm(family, ch, bold) * size + (layer.letterSpacing || 0);
+    return Math.max(max, run);
+  }, 0);
+  const fit: TextFit = {
+    lines: lines.length,
+    neededH,
+    boxH,
+    wrapped: lines.length > 1,
+    overflows: boxH > 0 && neededH > boxH + 1,
+    wordTooWide: widest > w + 1,
+  };
+  return fit;
+}
+
+/** The one sentence the canvas badge and the inspector both show. */
+export function textFitWarning(layer: TextLayer): string | null {
+  const fit = textFit(layer);
+  if (!fit) return null;
+  if (fit.wordTooWide) return "A word is wider than this box — widen it or use a smaller size.";
+  if (fit.overflows) return `These words need ${fit.neededH} px of height and the box is ${Math.round(fit.boxH)} px.`;
+  return null;
 }
 
 // Canva-style text presets — sized for a 1080 canvas; addTextLayer scales
@@ -375,12 +652,74 @@ export type TextPresetKey = keyof typeof TEXT_PRESETS;
 export interface ChartLayer extends BaseLayer {
   kind: "chart";
   chart: "bar" | "donut" | "line";
-  values: Array<{ label?: string; value: number }>;
+  /**
+   * One row per mark. `colour` is THAT MARK'S own colour (G-10): design 08
+   * wanted the last bar picked out in the brand teal and the rest in a
+   * neutral, and a cycle cannot say that. A row with no colour falls back to
+   * the cycle, so nothing that was stored before this field changes at all.
+   */
+  values: Array<{ label?: string; value: number; colour?: string }>;
   colors?: string[];
+  /**
+   * Print the number on the mark (G-10). Canva calls it a value label, and
+   * without it a bar chart on a slide is a shape with no reading.
+   */
+  showValues?: boolean;
+  /** Written before and after the number: "$" and "k", "" and "%". */
+  valuePrefix?: string;
+  valueSuffix?: string;
+}
+
+/**
+ * The value written on a mark. One function, so the editor and the exporter
+ * cannot round the same number two ways.
+ *
+ * Whole numbers stay whole; anything else keeps one decimal. A chart is read at
+ * a glance and "12.4" reads; "12.4375" is noise on a bar.
+ */
+export function formatChartValue(value: number, prefix?: string, suffix?: string): string {
+  const n = Number(value) || 0;
+  const body = Number.isInteger(n) ? String(n) : n.toFixed(1);
+  return `${prefix || ""}${body}${suffix || ""}`;
 }
 
 export type Layer = TextLayer | ImageLayer | ShapeLayer | ChartLayer;
 
+/**
+ * ONE SIDE OF A DESIGN — a card front, a card back, slide two.
+ *
+ * Every page is the same size as the design; a leaflet whose second side is a
+ * different shape is two designs, not one, and pretending otherwise would put
+ * a width on a page and then have to answer what the DESIGN's width means.
+ */
+export interface CanvasPage {
+  background_color?: string | null;
+  background_gradient?: GradientSpec | null;
+  layers: Layer[];
+}
+
+/**
+ * ── MULTIPLE PAGES, WITHOUT BREAKING ONE STORED DESIGN (G-09) ─────────────
+ *
+ * Round 1 had to deliver design 05 as TWO FILES, "because a design has exactly
+ * one artboard" — and a business card without its back is half a business
+ * card.
+ *
+ * The obvious model is `pages: [page1, page2]` and it is the wrong one HERE,
+ * for the same reason grouping is a tag and not a container: four painters
+ * read this shape (Fabric, LUMEN's SVG exporter, the PDF writer, the gallery
+ * thumbnail) and a design stored in a shape a painter does not understand is a
+ * design that OPENS BLANK. Every design in the database today, and every
+ * template, is the old shape.
+ *
+ * So PAGE ONE STAYS EXACTLY WHERE IT IS — in `layers`, `background_color` and
+ * `background_gradient` on the document itself — and `pages` carries pages two
+ * onward. An old painter reading a two-page design draws page one, which is
+ * the right thing to draw and is what it did yesterday. A new painter asks
+ * `pageAt(doc, i)` and never touches either field directly. Nothing migrates,
+ * nothing opens blank, and the ugliness is confined to six functions below
+ * that are the only code allowed to know about it.
+ */
 export interface CanvasDoc {
   version: 1;
   width: number;
@@ -388,7 +727,198 @@ export interface CanvasDoc {
   background_color?: string | null;
   /** Overrides background_color when present (ignored on transparent). */
   background_gradient?: GradientSpec | null;
+  /** PAGE ONE's layers. See the note above before touching this. */
   layers: Layer[];
+  /** Pages TWO onward. Absent or empty means a one-page design. */
+  pages?: CanvasPage[];
+}
+
+/**
+ * A card has two sides and a short deck has a dozen slides. Twenty is well
+ * past either, and it is a ceiling rather than an ambition. LUMEN's
+ * `templateStudio.MAX_PAGES` is the same number and both suites assert it.
+ */
+export const MAX_PAGES = 20;
+
+/** How many sides this design has. Always at least one. */
+export function pageCount(doc: CanvasDoc): number {
+  return 1 + (Array.isArray(doc.pages) ? doc.pages.length : 0);
+}
+
+/** Page `index` (0-based) as a plain page, or page one for anything out of range. */
+export function pageAt(doc: CanvasDoc, index: number): CanvasPage {
+  if (index <= 0 || !Array.isArray(doc.pages) || index > doc.pages.length) {
+    return {
+      background_color: doc.background_color,
+      background_gradient: doc.background_gradient,
+      layers: doc.layers,
+    };
+  }
+  return doc.pages[index - 1];
+}
+
+/** Page `index` as a one-page document — what every existing painter wants. */
+export function docForPage(doc: CanvasDoc, index: number): CanvasDoc {
+  const page = pageAt(doc, index);
+  return {
+    version: 1,
+    width: doc.width,
+    height: doc.height,
+    background_color: page.background_color,
+    background_gradient: page.background_gradient,
+    layers: page.layers,
+  };
+}
+
+/** Put a page back. Page one writes the document's own fields. */
+export function setPage(doc: CanvasDoc, index: number, page: CanvasPage): CanvasDoc {
+  if (index <= 0) {
+    return {
+      ...doc,
+      background_color: page.background_color,
+      background_gradient: page.background_gradient,
+      layers: page.layers,
+    };
+  }
+  const rest = Array.isArray(doc.pages) ? [...doc.pages] : [];
+  if (index > rest.length) return doc;
+  rest[index - 1] = page;
+  return { ...doc, pages: rest };
+}
+
+/** A new blank side, added at the end. Returns the new page's index. */
+export function addPage(doc: CanvasDoc): { doc: CanvasDoc; index: number } {
+  const rest = Array.isArray(doc.pages) ? [...doc.pages] : [];
+  rest.push({ background_color: doc.background_color, background_gradient: doc.background_gradient, layers: [] });
+  return { doc: { ...doc, pages: rest }, index: rest.length };
+}
+
+/** A copy of one side, placed straight after it. Every layer gets a fresh id. */
+export function duplicatePage(doc: CanvasDoc, index: number): { doc: CanvasDoc; index: number } {
+  const source = pageAt(doc, index);
+  const copy: CanvasPage = {
+    background_color: source.background_color,
+    background_gradient: source.background_gradient,
+    // Fresh ids: two pages sharing a layer id would make "select this layer"
+    // ambiguous the first time somebody edited either side.
+    layers: source.layers.map((l) => ({ ...l, id: uid(l.kind) })),
+  };
+  const rest = Array.isArray(doc.pages) ? [...doc.pages] : [];
+  rest.splice(Math.max(0, index), 0, copy);
+  return { doc: { ...doc, pages: rest }, index: Math.max(0, index) + 1 };
+}
+
+/**
+ * Drop a side.
+ *
+ * Removing PAGE ONE promotes page two into the document's own fields rather
+ * than refusing, because "I do not want this side any more" is the same wish
+ * whichever side is showing. A one-page design is returned unchanged: a design
+ * with no pages at all is not a thing the editor can open.
+ */
+export function removePage(doc: CanvasDoc, index: number): CanvasDoc {
+  if (pageCount(doc) <= 1) return doc;
+  const rest = Array.isArray(doc.pages) ? [...doc.pages] : [];
+  if (index <= 0) {
+    const promoted = rest.shift();
+    if (!promoted) return doc;
+    return {
+      ...doc,
+      background_color: promoted.background_color,
+      background_gradient: promoted.background_gradient,
+      layers: promoted.layers,
+      pages: rest,
+    };
+  }
+  if (index > rest.length) return doc;
+  rest.splice(index - 1, 1);
+  return { ...doc, pages: rest };
+}
+
+/** Move a side up or down the strip. */
+export function movePage(doc: CanvasDoc, from: number, to: number): CanvasDoc {
+  const n = pageCount(doc);
+  if (from === to || from < 0 || to < 0 || from >= n || to >= n) return doc;
+  const all: CanvasPage[] = [];
+  for (let i = 0; i < n; i++) all.push(pageAt(doc, i));
+  const [moved] = all.splice(from, 1);
+  all.splice(to, 0, moved);
+  const [first, ...rest] = all;
+  return {
+    ...doc,
+    background_color: first.background_color,
+    background_gradient: first.background_gradient,
+    layers: first.layers,
+    pages: rest,
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Empty picture slots (parity D-6)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** One empty slot, named the way a person would point at it. */
+export interface EmptySlot {
+  /** Which side it is on, 0-based. */
+  page: number;
+  id: string;
+  /** "the logo slot", "the picture at 120 × 340". */
+  where: string;
+}
+
+/**
+ * EVERY VISIBLE PICTURE SLOT WITH NOTHING IN IT.
+ *
+ * Round 1: *"'Leave an empty slot for now' draws a grey slot with instructions
+ * on the canvas and writes no ink into the PNG. That is defensible, but nothing
+ * says so before the download."*
+ *
+ * It is not defensible, actually — it is a silent drop, and a silent drop is
+ * the failure a design tool can least afford, because the author does not find
+ * out until the flyer is at the printer. Exporting the grey instruction box
+ * would be worse: then the slot ships. So the download REFUSES and says which
+ * slot, and this function is the one that knows which.
+ *
+ * A hidden slot is not counted: hiding a layer is how an author says "not this
+ * one", and refusing over something they have already put away would be the
+ * tool arguing.
+ */
+export function emptyPictureSlots(doc: CanvasDoc): EmptySlot[] {
+  const out: EmptySlot[] = [];
+  for (let p = 0; p < pageCount(doc); p++) {
+    for (const layer of pageAt(doc, p).layers) {
+      if (layer.kind !== "image") continue;
+      if (layer.visible === false) continue;
+      const il = layer as ImageLayer;
+      if (il.src || il.blob_ref) continue;
+      const isLogo = /logo/i.test(String(il.id || ""));
+      out.push({
+        page: p,
+        id: il.id,
+        where: isLogo ? "the logo slot" : `the picture slot at ${Math.round(il.x)} × ${Math.round(il.y)}`,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * The plain sentence a refused download shows, or null when it may go ahead.
+ *
+ * The SAME WORDS are built server-side by `templateStudio.emptySlotMessage`,
+ * so a person who hits this from the browser and a person who hits it from a
+ * scheduled render read one message rather than two.
+ */
+export function emptySlotMessage(doc: CanvasDoc): string | null {
+  const slots = emptyPictureSlots(doc);
+  if (!slots.length) return null;
+  const multi = pageCount(doc) > 1;
+  const named = slots.map((s) => (multi ? `${s.where} on page ${s.page + 1}` : s.where));
+  const list = named.length === 1
+    ? named[0]
+    : `${named.slice(0, -1).join(", ")} and ${named[named.length - 1]}`;
+  return `This design still has ${named.length === 1 ? "an empty picture slot" : "empty picture slots"}: ${list}. ` +
+    `An empty slot downloads as nothing at all, so add a picture or delete the slot, then try again.`;
 }
 
 export interface TemplateDto {
@@ -584,22 +1114,32 @@ export function chartToSvg(layer: ChartLayer): string {
     value: Math.max(0, Number(v.value) || 0),
   }));
   const cycle = layer.colors?.length ? layer.colors : CHART_DEFAULT_CYCLE;
-  const color = (i: number) => cycle[i % cycle.length];
+  // G-10: a row's OWN colour wins over the cycle, so one bar can be picked out.
+  const color = (i: number) => (layer.values || [])[i]?.colour || cycle[i % cycle.length];
   const labelSize = Math.max(10, Math.round(Math.min(w, h) * 0.055));
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const parts: string[] = [];
   if (!values.length || w <= 0 || h <= 0) return `<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"></svg>`;
+  const showValues = layer.showValues === true;
+  const valueSize = Math.max(9, Math.round(labelSize * 0.92));
 
   if (layer.chart === "bar") {
     const labelBand = labelSize * 1.6;
+    // G-10: the number sits ABOVE the bar, so the plot has to give up a band
+    // at the top or the tallest bar's own label is drawn off the picture.
+    const valueBand = showValues ? valueSize * 1.35 : 0;
     const plotH = Math.max(1, h - labelBand);
+    const barTop = valueBand;
     const max = Math.max(...values.map((v) => v.value), 1);
     const slot = w / values.length;
     const barW = slot * 0.68;
     values.forEach((v, i) => {
-      const barH = (v.value / max) * plotH;
+      const barH = (v.value / max) * (plotH - barTop);
       const bx = i * slot + (slot - barW) / 2;
       parts.push(`<rect x="${bx}" y="${plotH - barH}" width="${barW}" height="${barH}" rx="${Math.min(6, barW / 6)}" fill="${color(i)}" />`);
+      if (showValues) {
+        parts.push(`<text x="${bx + barW / 2}" y="${plotH - barH - valueSize * 0.4}" font-family="sans-serif" font-size="${valueSize}" font-weight="600" fill="#111827" text-anchor="middle">${esc(formatChartValue(v.value, layer.valuePrefix, layer.valueSuffix))}</text>`);
+      }
       if (v.label) parts.push(`<text x="${bx + barW / 2}" y="${plotH + labelSize * 1.15}" font-family="sans-serif" font-size="${labelSize}" fill="#111827" text-anchor="middle">${esc(v.label)}</text>`);
     });
   } else if (layer.chart === "donut") {
@@ -628,7 +1168,10 @@ export function chartToSvg(layer: ChartLayer): string {
     }));
     parts.push(`<polyline points="${pts.map((p) => `${p.px},${p.py}`).join(" ")}" fill="none" stroke="${color(0)}" stroke-width="${Math.max(2, Math.round(Math.min(w, h) * 0.012))}" stroke-linejoin="round" stroke-linecap="round" />`);
     pts.forEach((p, i) => {
-      parts.push(`<circle cx="${p.px}" cy="${p.py}" r="${Math.max(3, Math.round(Math.min(w, h) * 0.016))}" fill="${color(0)}" />`);
+      parts.push(`<circle cx="${p.px}" cy="${p.py}" r="${Math.max(3, Math.round(Math.min(w, h) * 0.016))}" fill="${color(i)}" />`);
+      if (showValues) {
+        parts.push(`<text x="${p.px}" y="${p.py - valueSize * 0.8}" font-family="sans-serif" font-size="${valueSize}" font-weight="600" fill="#111827" text-anchor="middle">${esc(formatChartValue(values[i].value, layer.valuePrefix, layer.valueSuffix))}</text>`);
+      }
       if (values[i].label) parts.push(`<text x="${p.px}" y="${plotH + labelSize * 1.15}" font-family="sans-serif" font-size="${labelSize}" fill="#111827" text-anchor="middle">${esc(values[i].label)}</text>`);
     });
   }

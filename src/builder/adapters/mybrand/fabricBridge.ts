@@ -17,11 +17,13 @@
  */
 import * as fabric from "fabric";
 import {
-  DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, iconToSvg, chartToSvg, textLayerSvg,
+  DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, familyOf, iconToSvg, chartToSvg,
+  shapeToSvg, textLayerSvg,
   type ChartLayer, type GradientSpec, type ImageLayer, type Layer,
   type ShapeLayer, type TextLayer,
 } from "./scene";
 import { applyCase, dashArray, dashLineCap } from "./textEffects";
+import { cachedFontFace, loadFontFace } from "./fontEmbed";
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 
 /** Only ever reached by a scene that carries no colour of its own. */
@@ -98,6 +100,74 @@ function emptySlot(
   return new fabric.Group([frame, label], { ...baseProps, width: w, height: h });
 }
 
+/**
+ * A FRAME'S BORDER — the outline of the mask, not of the box (G-06).
+ *
+ * Canva's frames can be given a border, and two of the ten reference designs
+ * want one: the arch in design 02 and the circle in design 09. Round 1 had to
+ * draw a second shape on top and keep the two in the same place by hand, which
+ * comes apart the first time either is nudged.
+ *
+ * Returns null when no border was asked for, so the common case stays a single
+ * FabricImage with no group wrapped round it.
+ */
+function frameOutline(il: ImageLayer): fabric.FabricObject | null {
+  const stroke = il.frameStroke && il.frameStroke !== "none" ? il.frameStroke : null;
+  const width = Math.max(0, Number(il.frameStrokeWidth) || 0);
+  if (!stroke || width <= 0) return null;
+  const common = {
+    left: il.x, top: il.y,
+    fill: "transparent",
+    stroke,
+    strokeWidth: width,
+    strokeDashArray: dashArray(il.frameDash, width),
+    strokeLineCap: dashLineCap(il.frameDash),
+    selectable: false, evented: false,
+    originX: "left" as const, originY: "top" as const,
+  };
+  if (il.mask === "circle") {
+    return new fabric.Ellipse({ ...common, rx: il.w / 2, ry: il.h / 2 });
+  }
+  if (il.mask === "rounded" || !il.mask) {
+    const r = il.mask === "rounded" ? Math.min(il.w, il.h) * 0.12 : Math.max(0, Number(il.radius) || 0);
+    return new fabric.Rect({ ...common, width: il.w, height: il.h, rx: r, ry: r });
+  }
+  const d = ICON_PATHS[il.mask];
+  if (!d) return new fabric.Rect({ ...common, width: il.w, height: il.h });
+  const path = new fabric.Path(d, common);
+  path.scaleX = il.w / 100;
+  path.scaleY = il.h / 100;
+  // A path's stroke scales with the path, exactly as an icon's does (D-3), so
+  // the width is divided back out by the same geometric mean.
+  path.strokeWidth = width / Math.sqrt((il.w / 100) * (il.h / 100));
+  return path;
+}
+
+/**
+ * A photo and its frame as ONE selectable thing.
+ *
+ * No `left`/`top` is passed: Fabric v6 computes the group's box from where the
+ * children already are, which is what keeps the ring exactly on the photo's
+ * edge instead of a few pixels off it.
+ */
+function groupWith(
+  img: fabric.FabricObject,
+  ring: fabric.FabricObject,
+  baseProps: Record<string, unknown>,
+): fabric.FabricObject {
+  const group = new fabric.Group([img, ring]);
+  group.set({
+    angle: (baseProps.angle as number) || 0,
+    opacity: (baseProps.opacity as number) ?? 1,
+    visible: baseProps.visible !== false,
+    flipX: baseProps.flipX === true,
+    flipY: baseProps.flipY === true,
+    selectable: baseProps.selectable !== false,
+    evented: baseProps.evented !== false,
+  });
+  return group;
+}
+
 /** The sentence in the slot. A logo says so; anything else is "a picture". */
 function slotCaption(il: ImageLayer): string {
   const isLogo = String((il as unknown as { role?: string }).role || "") === "logo"
@@ -132,19 +202,45 @@ export function layerToFabricObject(
     // come back as the SAME SVG the exporter writes (scene.textLayerSvg), so
     // the canvas and the download are one drawing. Everything else stays a
     // real Textbox, and stays editable in place.
-    const svgText = textLayerSvg(t);
+    /**
+     * D-2: AN SVG LOADED AS AN IMAGE CANNOT REACH THE PAGE'S WEBFONTS.
+     *
+     * So the face's own bytes travel inside the picture. `cachedFontFace` is
+     * whatever is already in hand (nothing, the first time a curve is drawn);
+     * `loadFontFace` fetches it and the picture is rebuilt once, with the real
+     * face. Two paints instead of one, and the second is the one that counts —
+     * the alternative is a synchronous fetch, which there is no such thing as,
+     * or drawing nothing until the font lands, which loses the words.
+     */
+    const family = familyOf(t.font || DEFAULT_FONTS[0]);
+    const weightNum = Number(t.weight) || (t.weight === "bold" ? 700 : 400);
+    const svgText = textLayerSvg(t, cachedFontFace(family, weightNum));
     if (svgText) {
       const placeholder = new fabric.Rect({
         ...baseProps, width: t.w, height: svgText.h,
         fill: "transparent", stroke: "#CBD5E1", strokeWidth: 1, strokeDashArray: [4, 3],
       });
-      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText.svg)}`;
-      fabric.FabricImage.fromURL(dataUrl).then((img) => {
-        if (!img) return;
-        img.set({ ...baseProps });
-        img.scaleX = svgText.w / (img.width || 1);
-        img.scaleY = svgText.h / (img.height || 1);
-        swapPlaceholder(placeholder, img, onSwap);
+      const paint = (built: { svg: string; w: number; h: number }, target: fabric.FabricObject) => {
+        const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(built.svg)}`;
+        return fabric.FabricImage.fromURL(dataUrl).then((img) => {
+          if (!img) return null;
+          img.set({ ...baseProps });
+          img.scaleX = built.w / (img.width || 1);
+          img.scaleY = built.h / (img.height || 1);
+          swapPlaceholder(target, img, onSwap);
+          return img;
+        });
+      };
+      paint(svgText, placeholder).then((drawn) => {
+        if (!drawn) return;
+        return loadFontFace(family, weightNum).then((css) => {
+          // Nothing to redo when the face was already embedded in the first
+          // paint, or when we carry no file for it.
+          if (!css || css === cachedFontFace(family, weightNum) && svgText.svg.includes("@font-face")) return;
+          const withFace = textLayerSvg(t, css);
+          if (!withFace || withFace.svg === svgText.svg) return;
+          void paint(withFace, drawn);
+        });
       }).catch(() => { /* the dashed placeholder stays, so the layer is still there to click */ });
       return placeholder;
     }
@@ -239,6 +335,10 @@ export function layerToFabricObject(
       }
       // Photo mask — clip in the image's intrinsic space so it tracks the
       // object's own scaling; identical geometry to the server clipPath.
+      //
+      // G-06: ANY of the forty-seven ICON_PATHS is a frame now, not just the
+      // original five, so design 03's diagonal photo edge is a real crop
+      // instead of a turned rectangle sitting on top of an uncropped photo.
       if (il.mask) {
         const iw = img.width || 1;
         const ih = img.height || 1;
@@ -249,7 +349,7 @@ export function layerToFabricObject(
           const r = Math.min(iw, ih) * 0.12;
           clip = new fabric.Rect({ width: iw, height: ih, rx: r, ry: r, originX: "center", originY: "center" });
         } else {
-          const d = ICON_PATHS[il.mask === "arch" ? "arch" : il.mask];
+          const d = ICON_PATHS[il.mask];
           if (d) {
             clip = new fabric.Path(d, { originX: "center", originY: "center" });
             clip.scaleX = iw / 100;
@@ -257,6 +357,16 @@ export function layerToFabricObject(
           }
         }
         if (clip) img.clipPath = clip;
+      } else if (il.radius && il.radius > 0) {
+        // A plain rounded photo, with no mask — G-07's grid cells and Canva's
+        // "round the corners" both land here. The radius is in CANVAS pixels
+        // and the clip lives in the image's own pixels, so it is converted by
+        // the same scale the image is about to be drawn at, or a 12 px corner
+        // on a big photo would come out invisible.
+        const iw = img.width || 1;
+        const ih = img.height || 1;
+        const r = Math.min(Math.min(iw, ih) / 2, il.radius * (iw / Math.max(1, il.w)));
+        img.clipPath = new fabric.Rect({ width: iw, height: ih, rx: r, ry: r, originX: "center", originY: "center" });
       }
       // Scale to fit the layer dimensions.
       const sx = il.w / (img.width || 1);
@@ -265,7 +375,8 @@ export function layerToFabricObject(
       img.scaleY = sy;
       // Replace the placeholder in the canvas. We have to do this through
       // the live canvas instance from the closure that holds fabricRef.
-      swapPlaceholder(placeholder, img, onSwap);
+      const ring = frameOutline(il);
+      swapPlaceholder(placeholder, ring ? groupWith(img, ring, baseProps) : img, onSwap);
     }).catch(() => {
       /* D-24 (BUILDER_USER_TEST_2026-09-16): *"It opens broken. The logo layer
        * requests http://localhost:5194/logo.svg — a dead host — so every
@@ -323,9 +434,12 @@ export function layerToFabricObject(
       strokeDashArray: dashArray(s.dash, strokeWidth || 1),
       strokeLineCap: dashLineCap(s.dash),
     };
-    if (s.shape === "icon") {
-      // Same SVG the server emits, swapped in as an image — guarantees the
-      // editor and export show the identical glyph.
+    // An icon has always been drawn from the exporter's own SVG. A PATTERNED
+    // rect or ellipse joins it, because Fabric has no `<pattern>` and a
+    // hand-rolled second drawing of the same texture would agree with the
+    // exporter today and drift tomorrow. Everything else stays a native
+    // object, which is what keeps a plain rectangle a real rectangle.
+    if (s.shape === "icon" || (s.pattern && (s.shape === "rect" || s.shape === "ellipse"))) {
       const placeholder = new fabric.Rect({
         ...baseProps,
         width: s.w,
@@ -335,7 +449,8 @@ export function layerToFabricObject(
         strokeWidth: 1,
         strokeDashArray: [4, 3],
       });
-      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(iconToSvg(s))}`;
+      const svg = s.shape === "icon" ? iconToSvg(s) : shapeToSvg(s);
+      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
       fabric.FabricImage.fromURL(dataUrl).then((img) => {
         if (!img) return;
         img.set({ ...baseProps });
@@ -375,15 +490,36 @@ export function layerToFabricObject(
       });
     }
     if (s.shape === "line") {
+      /**
+       * WHY A DOTTED RULE CAME OUT SOLID (parity D-4).
+       *
+       * A line with no outline width set is drawn 2 px thick — `strokeWidth ||
+       * 2` — but its dash pattern was measured from a DIFFERENT number,
+       * `strokeWidth || 1`. So a dotted rule asked for dots 1 px across every
+       * 2 px and got dots 2 px across every 2 px: the ink touched, and three
+       * fill-in rules on design 10's gift certificate came out as three solid
+       * lines. Dashed had the same disease, milder.
+       *
+       * ONE width, named once, used for both. It is the whole fix, and it is
+       * the reason `dashProps` above is not used here.
+       *
+       * The line also gets `baseProps` now. It was the only branch without
+       * them, so a rotated or hidden rule was drawn upright and visible — a
+       * second, quieter defect the dash hunt turned up.
+       */
+      const lineW = strokeWidth || 2;
+      // `left`/`top` are deliberately NOT passed: a Line derives them from its
+      // two points and the stroke's own overhang, and handing it the layer's x
+      // and y would shift every rule by half its width.
+      const { left: _l, top: _t, ...lineProps } = baseProps;
       return new fabric.Line(
         [s.x, s.y, s.x + s.w, s.y + s.h],
         {
+          ...lineProps,
           stroke: stroke || FALLBACK.primary,
-          strokeWidth: strokeWidth || 2,
-          ...dashProps,
-          selectable: true,
-          opacity: layer.opacity ?? 1,
-          visible: layer.visible !== false,
+          strokeWidth: lineW,
+          strokeDashArray: dashArray(s.dash, lineW),
+          strokeLineCap: dashLineCap(s.dash),
         }
       );
     }

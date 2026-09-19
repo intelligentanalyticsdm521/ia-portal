@@ -71,6 +71,45 @@ export interface InsertOptions {
   /** Media Library provenance, so Remove background stays available. */
   assetId?: string;
   blobRef?: string;
+  /** Photo grid: the gap between cells, in 1080-canvas pixels (G-07). */
+  gutter?: number;
+  /** Photo grid: how rounded each cell's corners are, in 1080-canvas pixels. */
+  radius?: number;
+}
+
+/** One cell of a photo grid. */
+export interface GridCell { x: number; y: number; w: number; h: number }
+
+/**
+ * WHERE THE CELLS OF A PHOTO GRID GO (G-07).
+ *
+ * Its own function, and exported, because three callers want the same answer:
+ * the tile that drops a grid, the inspector when somebody drags the gutter
+ * slider and every cell has to move, and the suite. Round 1's grid arithmetic
+ * was inline in one `case`, which is why the gutter could not be changed
+ * afterwards — there was nothing to call.
+ *
+ * Square cells, because a photo grid whose cells are not all the same shape is
+ * a collage and wants a different control. `y` is the grid's CENTRE line;
+ * `height` comes back so a caller can put it wherever it wants.
+ */
+export function photoGridLayout(input: {
+  count: number; x: number; y: number; width: number; gutter: number;
+}): { cells: GridCell[]; width: number; height: number; cols: number; rows: number } {
+  const n = clamp(Math.round(input.count) || 2, 2, 12);
+  const cols = n <= 2 ? 2 : n <= 6 ? 3 : 4;
+  const rows = Math.ceil(n / cols);
+  const gutter = Math.max(0, Math.round(input.gutter) || 0);
+  const gw = Math.max(cols, Math.round(input.width));
+  const cell = Math.max(1, Math.round((gw - gutter * (cols - 1)) / cols));
+  const height = rows * cell + gutter * (rows - 1);
+  const cells: GridCell[] = Array.from({ length: n }, (_, i) => ({
+    x: input.x + (i % cols) * (cell + gutter),
+    y: input.y + Math.floor(i / cols) * (cell + gutter),
+    w: cell,
+    h: cell,
+  }));
+  return { cells, width: gw, height, cols, rows };
 }
 
 const EMPTY: InsertResult = { layers: [], behind: false, selectId: null };
@@ -96,8 +135,32 @@ export function insertWidget(
   /** Presets are drawn for a 1080 square; scale so a heading is a heading on a card too. */
   const s = Math.max(0.3, Math.min(W, H) / 1080);
   const one = (layer: Layer, behind = false): InsertResult => ({ layers: [layer], behind, selectId: layer.id });
-  const many = (layers: Layer[], behind = false): InsertResult =>
-    ({ layers, behind, selectId: layers.length ? layers[layers.length - 1].id : null });
+  /**
+   * A TILE THAT DROPS MORE THAN ONE LAYER DROPS THEM AS A UNIT (parity D-5).
+   *
+   * Round 1: *"Button and Social handle each insert a shape and a text, leave
+   * only the last one selected, and arrive UNGROUPED — so the pill and its
+   * words have to be placed separately from the Structure window."*
+   *
+   * A button is one thing to the person who dragged it in. Dropping its pill
+   * and its words as two free layers means the very first drag pulls the two
+   * apart, and nothing warned them. So every multi-layer tile arrives with one
+   * shared `groupId` — the tag BaseLayer already carries for Ctrl+G, so this
+   * is not a new mechanism, just the existing one applied at birth — and the
+   * FIRST layer is selected, not the last: selecting any member selects the
+   * group, and the first is the one at the bottom of the little stack, which
+   * is the pill rather than the words.
+   *
+   * A tile that happens to produce a single layer is not tagged. A group of
+   * one is a lie the Structure window would have to draw.
+   */
+  const many = (layers: Layer[], behind = false): InsertResult => {
+    if (!layers.length) return EMPTY;
+    if (layers.length === 1) return { layers, behind, selectId: layers[0].id };
+    const groupId = uid("grp");
+    const tagged = layers.map((l) => ({ ...l, groupId }));
+    return { layers: tagged, behind, selectId: tagged[0].id };
+  };
 
   switch (kind) {
     /* ── Text ────────────────────────────────────────────────────────── */
@@ -148,20 +211,25 @@ export function insertWidget(
     }
     case "gallery": {
       const n = clamp(opts.count ?? 4, 2, 12);
-      const cols = n <= 2 ? 2 : n <= 6 ? 3 : 4;
-      const rows = Math.ceil(n / cols);
-      const pad = Math.round(16 * s);
-      const gw = Math.round(Math.min(W, H) * 0.82);
-      const cellW = Math.round((gw - pad * (cols - 1)) / cols);
-      const cellH = cellW;
-      const gh = rows * cellH + pad * (rows - 1);
-      const x0 = Math.round(cx - gw / 2);
-      const y0 = Math.round(cy - gh / 2);
-      return many(Array.from({ length: n }, (_, i) => ({
+      // G-07: the gutter and the corner rounding are the author's, not the
+      // grid's. Round 1 had to place design 04's three-up by hand "because the
+      // `gallery` widget has no gutter and no corner radius". The default
+      // gutter is the old fixed 16 px at 1080, so a grid dropped without
+      // touching either control lands exactly where it used to.
+      const gutter = Math.round((opts.gutter ?? 16) * s);
+      const radius = Math.round((opts.radius ?? 0) * s);
+      const box = photoGridLayout({
+        count: n,
+        x: Math.round(cx - Math.round(Math.min(W, H) * 0.82) / 2),
+        y: cy,
+        width: Math.round(Math.min(W, H) * 0.82),
+        gutter,
+      });
+      return many(box.cells.map((cell) => ({
         id: uid("image"), kind: "image",
-        x: x0 + (i % cols) * (cellW + pad),
-        y: y0 + Math.floor(i / cols) * (cellH + pad),
-        w: cellW, h: cellH, src: null, visible: true,
+        x: cell.x, y: cell.y - Math.round(box.height / 2), w: cell.w, h: cell.h,
+        src: null, visible: true,
+        ...(radius > 0 ? { radius } : {}),
       } as ImageLayer)));
     }
     case "icon": {

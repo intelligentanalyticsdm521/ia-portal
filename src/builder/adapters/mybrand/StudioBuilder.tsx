@@ -33,8 +33,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Download, FileImage, FileText, Layers, Loader2, Palette, Save, Scaling,
-  Send, Sparkles, Upload, BarChart3, Image as ImageIcon, LayoutTemplate,
+  AlertTriangle, Copy, Download, FileImage, FileText, Layers, Loader2, Palette, Plus,
+  Save, Scaling, Send, Sparkles, Trash2, Upload, BarChart3, Image as ImageIcon,
+  LayoutTemplate,
 } from "lucide-react";
 import { ARGUS_BUBBLE_CLEARANCE, BuilderFrame } from "../../BuilderFrame";
 import { WidgetPane } from "../../WidgetPane";
@@ -59,12 +60,14 @@ import {
   pasteStyle, patchLayer, removeLayer, reorderLayer, setBackgroundColor, smartResize,
   tidyUp, toggleLayerVisibility, uid, ungroupLayers, MAX_CANVAS_SIDE, MIN_CANVAS_SIDE,
   SIZE_PRESETS, resolveBrandTokens,
+  addPage, docForPage, duplicatePage, emptySlotMessage, movePage, pageCount,
+  removePage, setPage, MAX_PAGES,
   ICON_PATHS as ICON_PATHS_LIST,
   type CanvasDoc, type CopiedStyle, type DesignDto, type ExportResult, type ImageLayer,
   type Layer, type TemplateDto,
 } from "./scene";
 import { StructureWindow } from "./StructureWindow";
-import { imagePdfFromPngDataUrl, pdfPageSize, PDF_MIME } from "./pdf";
+import { imagePdfFromPngDataUrls, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
 // model stays importable by `node --test` (scripts/test-ts-loader: only pure
@@ -122,8 +125,25 @@ export function StudioBuilder(p: StudioBuilderProps) {
   }), [kit, active]);
 
   /* ── The scene, and ONE history over it ──────────────────────────────── */
-  const [doc, setDoc] = useState<CanvasDoc>(() => emptyCanvas());
+  /**
+   * `design` IS THE WHOLE THING; `doc` IS THE SIDE BEING EDITED (G-09).
+   *
+   * Round 1 had to hand in design 05 as two files "because a design has
+   * exactly one artboard". A business card has two sides.
+   *
+   * The whole editor below — sixty-odd call sites, the canvas, the inspector,
+   * the Structure window, every operation in `scene.ts` — works on ONE
+   * artboard, and it should: a page is an artboard. So the multi-page-ness is
+   * confined to exactly two lines. `doc` is the active side as a plain
+   * one-page document, and `apply` writes it back into the side it came from.
+   * Nothing downstream of these two lines knows pages exist, which is why
+   * adding them did not touch the canvas or the inspector at all.
+   */
+  const [design, setDesign] = useState<CanvasDoc>(() => emptyCanvas());
+  const [pageIndex, setPageIndex] = useState(0);
   const [history, setHistory] = useState<History<CanvasDoc>>(() => initHistory(emptyCanvas()));
+  const doc = useMemo(() => docForPage(design, pageIndex), [design, pageIndex]);
+  const pages = pageCount(design);
   /**
    * THE SELECTION IS A LIST (G-01), and it lives here rather than in the
    * canvas: the Structure window, the inspector and Fabric all have to agree
@@ -154,29 +174,65 @@ export function StudioBuilder(p: StudioBuilderProps) {
    */
   const historyRef = useRef<History<CanvasDoc>>(initHistory(emptyCanvas()));
   const setHist = useCallback((h: History<CanvasDoc>) => { historyRef.current = h; setHistory(h); }, []);
-
-  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+  /**
+   * The history is over the WHOLE DESIGN, not over the visible side.
+   *
+   * One stack per page would mean Ctrl+Z on the back of a card undoing
+   * something on the front the moment you flipped it — undo has to be the
+   * order things happened, and things happen on every side.
+   */
+  const applyDesign = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
     setHist(push(historyRef.current, next, mergeKey));
-    setDoc(next);
+    setDesign(next);
   }, [setHist]);
+
+  /**
+   * Every existing caller hands in a one-page document; this puts it back on
+   * the side it came from.
+   *
+   * A CHANGE OF SIZE IS THE ONE THING THAT IS NOT PER-PAGE. Smart Resize hands
+   * back a document with new width and height, and a design whose front is
+   * 1050 × 600 and whose back is 1275 × 1650 is not a design. So a width or
+   * height that moved is written to the design AND the other sides are
+   * re-anchored through the same `smartResize` this one went through — rather
+   * than left at the old coordinates, which is the silent version of the same
+   * bug.
+   */
+  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+    const resized = next.width !== design.width || next.height !== design.height;
+    let base = design;
+    if (resized) {
+      base = { ...smartResize(design, next.width, next.height), width: next.width, height: next.height };
+    }
+    applyDesign(setPage(base, pageIndex, {
+      background_color: next.background_color,
+      background_gradient: next.background_gradient,
+      layers: next.layers,
+    }), mergeKey);
+  }, [applyDesign, design, pageIndex]);
 
   /** A whole new scene — a template opened, a design loaded. The stack restarts
    *  so undo can never walk backwards into a different design. */
   const replaceScene = useCallback((next: CanvasDoc, select: string | null = null) => {
     setHist(initHistory(next));
-    setDoc(next);
+    setDesign(next);
+    setPageIndex(0);
     selectOne(select);
-  }, [setHist]);
+  }, [setHist, selectOne]);
 
   const doUndo = useCallback(() => {
     const n = undo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    // A step that removed the side you were looking at must not leave the
+    // editor pointing past the end of the design.
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
   const doRedo = useCallback(() => {
     const n = redo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
 
   /* ── Record state ────────────────────────────────────────────────────── */
@@ -319,6 +375,20 @@ export function StudioBuilder(p: StudioBuilderProps) {
           ],
         });
         return;
+      case "gallery":
+        // G-07: the grid's GAP and its CORNER ROUNDING are the author's, not
+        // the tile's. Round 1 had to place design 04's three-up by hand
+        // because the widget had neither. The defaults are round 1's own
+        // numbers, so a grid dropped without a thought lands where it used to.
+        setChooser({
+          kind: "gallery", title: "How should the pictures sit?", options: [
+            { value: "16|0", label: "Close together, square corners", hint: "A 16px gap" },
+            { value: "40|0", label: "Airy, square corners", hint: "A 40px gap" },
+            { value: "16|24", label: "Close together, rounded", hint: "A 16px gap, 24px corners" },
+            { value: "40|24", label: "Airy, rounded", hint: "A 40px gap, 24px corners" },
+          ],
+        });
+        return;
       default:
         place(def.kind, { count });
     }
@@ -346,6 +416,12 @@ export function StudioBuilder(p: StudioBuilderProps) {
       if (value === "library") { setLibraryOpen(true); return; }
       if (value === "upload") { fileInputRef.current?.click(); return; }
       place(kind);
+      return;
+    }
+    if (kind === "gallery") {
+      // "gap|radius", both in 1080-canvas pixels — see the chooser above.
+      const [gutter, radius] = value.split("|").map((n) => Number(n) || 0);
+      place(kind, { gutter, radius });
       return;
     }
     place(kind, { option: value });
@@ -556,7 +632,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
     if (!ready) return null;
     setSaving(true); setSaveError(null);
     try {
-      const body = { canvas: doc, name: designName };
+      // The WHOLE design is saved, every side of it — `doc` is only the side
+      // on screen, and saving that would quietly throw the back of the card away.
+      const body = { canvas: design, name: designName };
       const saved = currentDesignId
         ? await put<DesignDto>(`/api/v1/my-brand/designs/${currentDesignId}`, body)
         : await post<DesignDto>("/api/v1/my-brand/designs", body);
@@ -573,7 +651,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     } finally {
       setSaving(false);
     }
-  }, [currentDesignId, designName, doc, p, post, put, ready]);
+  }, [currentDesignId, design, designName, p, post, put, ready]);
 
   /** §7: open one, adjust it, SAVE AS A NEW TEMPLATE. */
   const [templateName, setTemplateName] = useState("");
@@ -584,7 +662,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     setTemplateBusy(true); setTemplateError(null);
     try {
       const created = await post<TemplateDto>("/api/v1/my-brand/templates", {
-        name, kind: kindForSize(doc), canvas: doc,
+        name, kind: kindForSize(doc), canvas: design,
       });
       if (!created?.template_id) throw new Error("the template was not saved");
       setSaveTemplateOpen(false);
@@ -614,17 +692,45 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const exportLocal = useCallback(async (format: "png" | "jpg" | "svg" | "pdf") => {
     setExporting(format); setExportError(null);
     try {
+      /**
+       * A DOWNLOAD REFUSES RATHER THAN DROPPING A SLOT (parity D-6).
+       *
+       * Round 1: *"'Leave an empty slot for now' draws a grey slot with
+       * instructions on the canvas and writes no ink into the PNG."* The
+       * author does not find out until the file is at the printer.
+       *
+       * The two honest answers were export the slot or refuse; exporting it
+       * ships a grey instruction box in a customer's flyer, so it refuses, by
+       * name, in the same sentence LUMEN's own export refuses with
+       * (`scene.emptySlotMessage` and `templateStudio.emptySlotMessage`
+       * produce the same words).
+       *
+       * Checked against the WHOLE design, not the visible side: page two's
+       * empty slot is just as missing.
+       */
+      const blocked = emptySlotMessage(design);
+      if (blocked) throw new Error(blocked);
       if (format === "svg") {
         const svg = canvasRef.current?.toSVG();
         if (!svg) throw new Error("the design could not be drawn");
         const href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         download(href, exportFilename(designName, "svg"));
       } else if (format === "pdf") {
-        // One page, the artboard's real size, the SAME picture the PNG download
-        // gets — see pdf.ts. No library, no server round trip.
-        const url = canvasRef.current?.toDataURL("png");
-        if (!url) throw new Error("the design could not be drawn");
-        const bytes = await imagePdfFromPngDataUrl(url, pageSize, designName);
+        // EVERY side, each at the artboard's real size, the SAME picture the
+        // PNG download gets — see pdf.ts. No library, no server round trip.
+        //
+        // The side on screen is captured from the live canvas, exactly as it
+        // always was; the others are drawn off screen. A one-page design
+        // therefore takes the identical path it took before pages existed.
+        const urls: string[] = [];
+        for (let i = 0; i < pages; i++) {
+          const url = i === pageIndex
+            ? canvasRef.current?.toDataURL("png")
+            : await canvasRef.current?.renderPage(docForPage(design, i));
+          if (!url) throw new Error(`page ${i + 1} could not be drawn`);
+          urls.push(url);
+        }
+        const bytes = await imagePdfFromPngDataUrls(urls, pageSize, designName);
         const href = URL.createObjectURL(new Blob([bytes], { type: PDF_MIME }));
         download(href, exportFilename(designName, "pdf"));
         // Freed on a timer, not immediately: revoking before the anchor's click
@@ -641,7 +747,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       setExporting(null);
       setExportOpen(false);
     }
-  }, [designName, download, pageSize]);
+  }, [design, designName, download, pageIndex, pages, pageSize]);
 
   /** Render server-side into the Media Library, and go and look at it. */
   const exportToLibrary = useCallback(async () => {
@@ -696,10 +802,26 @@ export function StudioBuilder(p: StudioBuilderProps) {
         duplicate(selectedId);
         return;
       }
-      // Ctrl+I opens Structure — §11.13.1 names that key for every builder.
+      /**
+       * Ctrl+I opens Structure — §11.13.1 names that key for every builder.
+       *
+       * IT WORKS WITH THE CARET IN A FIELD (parity D-7). Round 1: *"After
+       * typing an X into Advanced, the shortcut is swallowed by the typing
+       * guard. The toolbar button works; the shortcut card promises the key."*
+       *
+       * The typing guard is right for Ctrl+Z, Ctrl+D and Delete, because each
+       * of those means something ELSE inside a text field — undo the typing,
+       * delete the character. Opening a window means the same thing wherever
+       * the caret is, and Ctrl+I is not a field shortcut in any browser (the
+       * one page context that claims it, rich-text italic, is not a thing this
+       * inspector has). So the guard does not apply to it.
+       *
+       * The field is blurred first: leaving the caret in a number box while a
+       * floating window takes focus is how a half-typed X gets abandoned.
+       */
       if (mod && e.key.toLowerCase() === "i") {
-        if (typing) return;
         e.preventDefault();
+        if (typing && t) t.blur();
         setStructureOpen((v) => !v);
         return;
       }
@@ -912,6 +1034,84 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={onUploadImage} className="hidden" />
+          {/*
+            THE PAGE STRIP (G-09).
+            It is drawn only once there is more than one side, or once somebody
+            has hovered the Add-a-side button into existence — a single-page
+            poster should not carry a page rail it will never use. Canva puts
+            the same strip under the canvas and so does this.
+          */}
+          <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5 text-[10px]">
+            {Array.from({ length: pages }, (_, i) => (
+              <div key={i} className="group flex items-center">
+                <button
+                  type="button"
+                  data-page-tab={i}
+                  onClick={() => { setPageIndex(i); selectOne(null); }}
+                  title={pages === 2 ? (i === 0 ? "The front" : "The back") : `Side ${i + 1} of ${pages}`}
+                  className={"rounded-l border px-2 py-1 font-semibold " + (i === pageIndex
+                    ? "border-slate-800 bg-slate-800 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}
+                >
+                  {pages === 2 ? (i === 0 ? "Front" : "Back") : `Side ${i + 1}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const out = duplicatePage(design, i);
+                    applyDesign(out.doc);
+                    setPageIndex(out.index);
+                    selectOne(null);
+                  }}
+                  disabled={pages >= MAX_PAGES}
+                  title="Make a copy of this side"
+                  className="border-y border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700 disabled:text-slate-200"
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyDesign(removePage(design, i));
+                    setPageIndex((cur) => Math.min(cur, pages - 2));
+                    selectOne(null);
+                  }}
+                  disabled={pages <= 1}
+                  title={pages <= 1 ? "A design has to have one side" : "Delete this side"}
+                  className="rounded-r border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-red-600 disabled:text-slate-200"
+                >
+                  <Trash2 className="h-2.5 w-2.5" />
+                </button>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { applyDesign(movePage(design, i, i - 1)); setPageIndex(i - 1); }}
+                    title="Move this side earlier"
+                    className="ml-0.5 rounded border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700"
+                  >
+                    ←
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              data-add-page
+              onClick={() => {
+                const out = addPage(design);
+                applyDesign(out.doc);
+                setPageIndex(out.index);
+                selectOne(null);
+              }}
+              disabled={pages >= MAX_PAGES}
+              title={pages >= MAX_PAGES
+                ? `A design can have up to ${MAX_PAGES} sides`
+                : "Add another side — the back of a card, the second page of a flyer. Every side is the same size, and the PDF download carries them all."}
+              className="ml-1 inline-flex items-center gap-1 rounded border border-dashed border-slate-300 px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 disabled:text-slate-300"
+            >
+              <Plus className="h-2.5 w-2.5" /> Add a side
+            </button>
+          </div>
           <div className="min-h-0 flex-1">
             <PixelCanvas
               ref={canvasRef}

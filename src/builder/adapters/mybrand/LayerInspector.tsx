@@ -43,13 +43,37 @@ import {
   Trash2, Underline, Ungroup, Unlock, Wand2, WandSparkles, X,
 } from "lucide-react";
 import {
-  familyOf, fontOptions, ICON_PATHS,
+  familyOf, fontOptions, textFitWarning, ICON_PATHS,
   type CanvasDoc, type ChartLayer, type ImageFilters, type ImageLayer, type ImageMask,
-  type Layer, type ShapeLayer, type TextLayer,
+  type Layer, type PatternSpec, type ShapeLayer, type TextLayer,
 } from "./scene";
+
 import { TEXT_EFFECTS, type StrokeStyle, type TextCase } from "./textEffects";
 import type { StudioBrand } from "./insert";
 import { brandSwatches } from "./insert";
+
+/**
+ * EVERY SHAPE THE STUDIO DRAWS IS A FRAME (G-06).
+ *
+ * The list is `ICON_PATHS`' own keys rather than a second list beside it: the
+ * exporter validates by key, and a hand-kept menu would be the place the two
+ * drifted. The labels are only for the handful whose key is not already a
+ * word somebody would recognise.
+ */
+const FRAME_SHAPES = Object.keys(ICON_PATHS);
+const FRAME_LABELS: Record<string, string> = {
+  blob1: "Organic 1", blob2: "Organic 2", blob3: "Organic 3",
+  wave: "Wave", wave2: "Wave, soft", halfcircle: "Half circle",
+  quartercircle: "Quarter circle", xmark: "Cross", bubble: "Speech bubble",
+};
+
+/** The repeating fills, and what each one is for. */
+const PATTERN_KINDS: Array<{ value: PatternSpec["kind"]; label: string; hint: string }> = [
+  { value: "stripe", label: "Stripes", hint: "Diagonal bands — the classic panel texture" },
+  { value: "dot", label: "Dots", hint: "A regular dot field, like halftone" },
+  { value: "grid", label: "Grid", hint: "Fine graph-paper lines" },
+  { value: "check", label: "Check", hint: "A checkerboard" },
+];
 
 const MAX_CHART_VALUES = 12;
 
@@ -298,6 +322,22 @@ function OneLayer(p: LayerInspectorProps & { tab: InspectorTab; layer: Layer }) 
             >
               <Contrast className="h-3 w-3" /> Make it readable
             </button>
+            {/*
+              D-8: THE BOX SAYS WHEN THE WORDS DO NOT FIT.
+              Round 1 lost three lines to boxes a few pixels too narrow, and
+              two of them only showed up in the downloaded PNG. The wrap is
+              measured with the very function the export wraps with, so the
+              warning and the file cannot disagree.
+            */}
+            {(() => {
+              const warning = textFitWarning(layer as TextLayer);
+              return warning ? (
+                <div data-text-overflow className="flex items-start gap-1.5 rounded border border-amber-200 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-800">
+                  <Star className="mt-0.5 h-3 w-3 flex-shrink-0" />
+                  <span>{warning}</span>
+                </div>
+              ) : null;
+            })()}
           </Section>
         )}
         {layer.kind === "image" && (
@@ -323,6 +363,7 @@ function OneLayer(p: LayerInspectorProps & { tab: InspectorTab; layer: Layer }) 
         {layer.kind === "chart" && (
           <ChartDataPanel
             layer={layer as ChartLayer}
+            brand={p.brand}
             onUpdate={(patch) => p.onUpdate(layer.id, patch as Partial<Layer>)}
           />
         )}
@@ -803,11 +844,71 @@ function ImageStyle({ layer, brand, update }: {
             <option value="none">Rectangle</option>
             <option value="circle">Circle</option>
             <option value="rounded">Rounded</option>
-            <option value="blob1">Organic 1</option>
-            <option value="blob2">Organic 2</option>
-            <option value="arch">Arch</option>
+            {/*
+              G-06: every shape the studio draws is a frame now, not the
+              original five. Design 03's diagonal photo edge had to be faked
+              with a turned rectangle in round 1, and a turned rectangle sits
+              ON a photo rather than cropping it.
+            */}
+            <optgroup label="Shapes">
+              {FRAME_SHAPES.map((k) => (
+                <option key={k} value={k}>{FRAME_LABELS[k] || k}</option>
+              ))}
+            </optgroup>
           </select>
         </label>
+        {!layer.mask && (
+          <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Rounded corners
+            <input
+              type="number" min={0} max={400}
+              title="Round the picture's own corners. A crop shape sets its own, so this only applies to a plain rectangle."
+              aria-label="Rounded corners"
+              value={layer.radius ?? 0}
+              onChange={(e) => update({ radius: Math.max(0, Number(e.target.value) || 0) } as Partial<Layer>)}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+            />
+          </label>
+        )}
+      </Section>
+      {/*
+        G-06: a frame's border follows the crop shape, so an arch frame gets an
+        arch-shaped rule rather than a rectangle balanced on top of it.
+      */}
+      <Section title="Frame border" startOpen={false}>
+        <ColourField label="Border colour" value={layer.frameStroke} brand={brand}
+          onChange={(c) => update({ frameStroke: c } as Partial<Layer>)} />
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Border width
+            <input
+              type="number" min={0} max={60}
+              title="How thick the frame's border is. 0 means none."
+              aria-label="Border width"
+              value={layer.frameStrokeWidth ?? 0}
+              onChange={(e) => update({ frameStrokeWidth: Math.max(0, Number(e.target.value) || 0) } as Partial<Layer>)}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+            />
+          </label>
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Border style
+            <select
+              value={layer.frameDash || "solid"}
+              title="A solid border, a dashed one or a dotted one"
+              aria-label="Border style"
+              onChange={(e) => update({ frameDash: e.target.value as StrokeStyle } as Partial<Layer>)}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case"
+            >
+              <option value="solid">Solid</option>
+              <option value="dashed">Dashed</option>
+              <option value="dotted">Dotted</option>
+            </select>
+          </label>
+        </div>
+        {!layer.src && (
+          <ColourField label="Empty frame colour" value={layer.frameFill} brand={brand}
+            onChange={(c) => update({ frameFill: c } as Partial<Layer>)} />
+        )}
       </Section>
       <Section title="Adjust">
         <Slider label="Brightness" title="Lighter or darker" min={50} max={150} value={Math.round((f.brightness ?? 1) * 100)} onChange={(v) => setF({ brightness: v / 100 })} />
@@ -846,26 +947,68 @@ function ShapeStyle({ layer, brand, update }: {
       {layer.shape !== "line" && (
         <Section title="Fill">
           <div className="flex gap-1 rounded bg-slate-100 p-0.5 text-[10px] font-semibold">
-            {(["solid", "gradient"] as const).map((m) => {
-              const active = (layer.gradient ? "gradient" : "solid") === m;
+            {(["solid", "gradient", "pattern"] as const).map((m) => {
+              const active = (layer.pattern ? "pattern" : layer.gradient ? "gradient" : "solid") === m;
               return (
                 <button
                   key={m}
                   type="button"
-                  title={m === "solid" ? "One flat colour" : "Fade between two colours"}
+                  title={m === "solid" ? "One flat colour"
+                    : m === "gradient" ? "Fade between two colours"
+                      : "A repeating texture — stripes, dots, a grid or a check"}
                   onClick={() => update(
                     m === "gradient"
-                      ? { gradient: layer.gradient || { from: brand.colours.primary, to: brand.colours.secondary, dir: "d1" } } as Partial<Layer>
-                      : { gradient: undefined } as Partial<Layer>,
+                      ? { pattern: undefined, gradient: layer.gradient || { from: brand.colours.primary, to: brand.colours.secondary, dir: "d1" } } as Partial<Layer>
+                      : m === "pattern"
+                        ? {
+                            gradient: undefined,
+                            pattern: layer.pattern || {
+                              kind: "stripe", colour: brand.colours.primary,
+                              background: "none", size: 16, angle: 45, weight: 0.5,
+                            },
+                          } as Partial<Layer>
+                        : { gradient: undefined, pattern: undefined } as Partial<Layer>,
                   )}
                   className={`flex-1 rounded px-1.5 py-0.5 capitalize ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`}
                 >
-                  {m === "solid" ? "Solid" : "Fade"}
+                  {m === "solid" ? "Solid" : m === "gradient" ? "Fade" : "Texture"}
                 </button>
               );
             })}
           </div>
-          {layer.gradient ? (
+          {layer.pattern ? (
+            <>
+              {/*
+                A REPEATING FILL (the reference designs' stripe texture).
+                The tile is measured in canvas pixels rather than as a fraction
+                of the shape, so a texture keeps its scale when the panel is
+                resized — which is the whole difference between a texture and a
+                pattern that stretches.
+              */}
+              <select
+                value={layer.pattern.kind}
+                aria-label="Texture"
+                title={PATTERN_KINDS.find((k) => k.value === layer.pattern!.kind)?.hint || "The texture"}
+                onChange={(e) => update({ pattern: { ...layer.pattern!, kind: e.target.value as PatternSpec["kind"] } } as Partial<Layer>)}
+                className="w-full rounded border border-slate-200 px-1.5 py-1 text-[11px]"
+              >
+                {PATTERN_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
+              </select>
+              <ColourField label="Texture colour" value={layer.pattern.colour} brand={brand}
+                onChange={(c) => update({ pattern: { ...layer.pattern!, colour: c } } as Partial<Layer>)} />
+              <ColourField label="Behind it" value={layer.pattern.background} brand={brand}
+                onChange={(c) => update({ pattern: { ...layer.pattern!, background: c } } as Partial<Layer>)} />
+              <Slider label="Tile size" title="How big one repeat is, in pixels" min={2} max={120}
+                value={layer.pattern.size ?? 16}
+                onChange={(v) => update({ pattern: { ...layer.pattern!, size: v } } as Partial<Layer>)} />
+              <Slider label="Thickness" title="How much of each tile is ink" min={5} max={95}
+                value={Math.round((layer.pattern.weight ?? 0.5) * 100)}
+                onChange={(v) => update({ pattern: { ...layer.pattern!, weight: v / 100 } } as Partial<Layer>)} />
+              <Slider label="Angle" title="Turn the texture" min={0} max={180}
+                value={layer.pattern.angle ?? 0}
+                onChange={(v) => update({ pattern: { ...layer.pattern!, angle: v } } as Partial<Layer>)} />
+            </>
+          ) : layer.gradient ? (
             <>
               <ColourField label="Fade from" value={layer.gradient.from} brand={brand}
                 onChange={(c) => update({ gradient: { ...layer.gradient!, from: c } } as Partial<Layer>)} />
@@ -945,9 +1088,11 @@ function ShapeStyle({ layer, brand, update }: {
    The chart's numbers
    ══════════════════════════════════════════════════════════════════════════ */
 
-function ChartDataPanel({ layer, onUpdate }: { layer: ChartLayer; onUpdate: (patch: Partial<ChartLayer>) => void }) {
+function ChartDataPanel({ layer, brand, onUpdate }: {
+  layer: ChartLayer; brand: StudioBrand; onUpdate: (patch: Partial<ChartLayer>) => void;
+}) {
   const values = layer.values || [];
-  const setRow = (i: number, patch: Partial<{ label: string; value: number }>) =>
+  const setRow = (i: number, patch: Partial<{ label: string; value: number; colour: string }>) =>
     onUpdate({ values: values.map((v, idx) => (idx === i ? { ...v, ...patch } : v)) });
   return (
     <Section title="The numbers">
@@ -972,6 +1117,28 @@ function ChartDataPanel({ layer, onUpdate }: { layer: ChartLayer; onUpdate: (pat
             <input type="number" value={v.value} title="The number" aria-label="The number"
               onChange={(e) => setRow(i, { value: Math.max(0, Number(e.target.value) || 0) })}
               className="w-16 rounded border border-slate-200 px-1.5 py-0.5 text-[11px] tabular-nums" />
+            {/*
+              G-10: THIS BAR'S OWN COLOUR. Design 08 wanted the last bar picked
+              out in the brand teal and the rest neutral, and a colour cycle
+              cannot say that. Empty means "use the cycle", so a chart that was
+              never touched is unchanged.
+            */}
+            <input
+              type="color"
+              value={/^#[0-9a-fA-F]{6}$/.test(v.colour || "") ? v.colour : brand.colours.primary}
+              title="This bar's own colour. Clear it to go back to the brand cycle."
+              aria-label="This bar's colour"
+              data-chart-row-colour={i}
+              onChange={(e) => setRow(i, { colour: e.target.value })}
+              className="h-5 w-5 cursor-pointer rounded border border-slate-300 p-0"
+            />
+            {v.colour && (
+              <button type="button" title="Back to the brand cycle" aria-label="Back to the brand cycle"
+                onClick={() => onUpdate({ values: values.map((row, idx) => (idx === i ? { label: row.label, value: row.value } : row)) })}
+                className="rounded px-0.5 text-[9px] font-semibold text-slate-400 hover:text-slate-700">
+                auto
+              </button>
+            )}
             <button type="button" title="Remove this row" aria-label="Remove this row" disabled={values.length <= 1}
               onClick={() => onUpdate({ values: values.filter((_, idx) => idx !== i) })}
               className="rounded p-0.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30">
@@ -985,6 +1152,36 @@ function ChartDataPanel({ layer, onUpdate }: { layer: ChartLayer; onUpdate: (pat
         className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">
         <Plus className="h-3 w-3" /> Add a number
       </button>
+      {/*
+        G-10: the number on the mark. Without it a bar chart on a slide is a
+        row of shapes with no reading, which is what design 08 came out as.
+      */}
+      <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+        title="Print each number on its own bar, dot or slice">
+        <input type="checkbox" data-chart-show-values checked={layer.showValues === true}
+          onChange={(e) => onUpdate({ showValues: e.target.checked })} />
+        Show the numbers
+      </label>
+      {layer.showValues && (
+        <div className="grid grid-cols-2 gap-1.5">
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Before
+            <input type="text" value={layer.valuePrefix ?? ""} placeholder="$" maxLength={4}
+              title="Written in front of every number — a currency sign, usually"
+              aria-label="Written before the number"
+              onChange={(e) => onUpdate({ valuePrefix: e.target.value })}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case" />
+          </label>
+          <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            After
+            <input type="text" value={layer.valueSuffix ?? ""} placeholder="%" maxLength={4}
+              title="Written after every number — a per cent sign or a k, usually"
+              aria-label="Written after the number"
+              onChange={(e) => onUpdate({ valueSuffix: e.target.value })}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case" />
+          </label>
+        </div>
+      )}
       <div className="flex items-center gap-1 text-[10px] text-slate-400">
         <Sparkles className="h-3 w-3" /> Downloads come out in your brand colours automatically.
       </div>

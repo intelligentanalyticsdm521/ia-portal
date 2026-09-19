@@ -40,7 +40,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   applyCase, curvedGlyphs, curvedTextSvg, dashArray, dashLineCap, effectPasses,
-  isCurved, isNarrowFamily, mainPaint, needsSvgText, straightTextSvg, wrapLines,
+  advanceEm, isCurved, isNarrowFamily, mainPaint, needsSvgText, straightTextSvg, wrapLines,
   TEXT_EFFECTS,
 } from "../src/builder/adapters/mybrand/textEffects.ts";
 import {
@@ -74,10 +74,29 @@ function boxes(specs) {
    1. Curve
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * A line of capitals that really does fill `span`, MEASURED in the face the
+ * arc will be packed with. Used by the bulge claims, which are only true of a
+ * line that fills the chord.
+ */
+function fillingLine(input) {
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  let out = "";
+  let run = 0;
+  for (let i = 0; run < input.span; i++) {
+    const ch = letters[i % letters.length];
+    const w = advanceEm(input.family, ch) * input.size;
+    if (run + w > input.span) break;
+    out += ch;
+    run += w;
+  }
+  return out;
+}
+
 describe("Curve — glyph by glyph, because librsvg drops a <textPath>", () => {
   const input = {
     text: "BLUE HERON", cx: 300, y: 200, span: 520, bulge: 72, size: 72,
-    font: "Bebas Neue", weight: "400", narrow: true, boxW: 600, boxH: 300,
+    font: "Bebas Neue", weight: "400", family: "Bebas Neue", boxW: 600, boxH: 300,
     effectInput: { size: 72, colour: "#B87333" },
   };
 
@@ -106,7 +125,7 @@ describe("Curve — glyph by glyph, because librsvg drops a <textPath>", () => {
     // and therefore bows less, which is right: dragging the slider must not
     // change shape when a word is added. So the claim is made with a line that
     // does fill the span.
-    const filling = "ABCDEFGHIJKLMNOPQRS";
+    const filling = fillingLine(input);
     const glyphs = curvedGlyphs({ ...input, text: filling });
     const mid = glyphs[Math.floor(glyphs.length / 2)];
     const ends = (glyphs[0].y + glyphs[glyphs.length - 1].y) / 2;
@@ -147,8 +166,12 @@ describe("Curve — glyph by glyph, because librsvg drops a <textPath>", () => {
     assert.equal(isNarrowFamily("Bebas Neue, Impact, sans-serif"), true);
     assert.equal(isNarrowFamily("Oswald, Arial Narrow, sans-serif"), true);
     assert.equal(isNarrowFamily("Lora, Georgia, serif"), false);
-    const wide = curvedGlyphs({ ...input, narrow: false });
-    const narrow = curvedGlyphs({ ...input, narrow: true });
+    // ROUND 2: the face is MEASURED, not guessed at from its name. Bebas Neue
+    // really does advance 0.375 em on average against Lora's 0.544, so the
+    // same word takes less arc — and now it takes less by the amount the font
+    // file says rather than by a 0.85 somebody chose.
+    const wide = curvedGlyphs({ ...input, family: "Lora" });
+    const narrow = curvedGlyphs({ ...input, family: "Bebas Neue" });
     const spread = (g) => Math.abs(g[g.length - 1].deg - g[0].deg);
     assert.ok(spread(narrow) < spread(wide), "a condensed face took as much arc as a wide one");
   });
@@ -349,9 +372,20 @@ describe("A group is a tag — it changes editing, never drawing", () => {
   });
 
   test("NO PAINTER READS IT — a group is invisible to every renderer", () => {
-    for (const name of ["fabricBridge.ts", "pdf.ts", "templates.ts", "insert.ts"]) {
+    for (const name of ["fabricBridge.ts", "pdf.ts", "templates.ts"]) {
       assert.ok(!STUDIO(name).includes("groupId"),
         `${name} branches on groupId — a group must not change how a design is drawn`);
+    }
+    // insert.ts is the ONE file that may say the word, and only to WRITE it:
+    // a tile that drops a pill and its words hands them over already grouped
+    // (parity D-5). Reading one back to decide anything would be the defect
+    // this rule exists to stop, so the check is that it never appears in a
+    // condition.
+    const inserts = STUDIO("insert.ts");
+    for (const line of inserts.split(/\r?\n/)) {
+      if (!line.includes("groupId")) continue;
+      assert.ok(!/\b(if|\?|&&|\|\||===|!==)\b|[?]/.test(line.replace(/^\s*\*.*$/, "")),
+        `insert.ts branches on groupId: ${line.trim()}`);
     }
     // And the one drawing helper in the model does not either.
     const svg = textLayerSvg({
@@ -537,8 +571,13 @@ describe("Dashed and dotted rules", () => {
     assert.deepEqual(dashArray("dashed", 10), [30, 20]);
   });
 
-  test("a DOT is a zero-length dash, and it needs the round cap to exist at all", () => {
-    assert.deepEqual(dashArray("dotted", 3), [0, 6]);
+  test("a DOT is a near-zero dash, and it needs the round cap to exist at all", () => {
+    // ROUND 2 (parity D-4): 0.01w, not a literal 0, and a 2.5w gap rather than
+    // 2w. A literal zero is the degenerate case — SVG draws the dot, a 2D
+    // canvas may drop the segment entirely — and at a 2w gap the round caps'
+    // own ink very nearly touches, which is how three dotted fill-in rules
+    // came out solid on design 10.
+    assert.deepEqual(dashArray("dotted", 3), [0.03, 7.5]);
     assert.equal(dashLineCap("dotted"), "round");
     assert.equal(dashLineCap("dashed"), "butt");
     assert.equal(dashLineCap("solid"), "butt");

@@ -24,13 +24,22 @@ import {
 import * as fabric from "fabric";
 import { Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { layerToFabricObject, fabricGradient } from "./fabricBridge";
-import { isTransparent, type BaseLayer, type CanvasDoc, type Layer, type TextLayer } from "./scene";
+import {
+  isTransparent, textLayerSvg,
+  type BaseLayer, type CanvasDoc, type Layer, type ShapeLayer, type TextLayer,
+} from "./scene";
 
 export interface PixelCanvasHandle {
   /** A PNG/JPEG data URI of the scene at 1:1, whatever the zoom is. */
   toDataURL: (format: "png" | "jpg") => string | null;
   /** The scene as SVG text — vector, for print shops and sign makers. */
   toSVG: () => string | null;
+  /**
+   * ANY page of the design as a PNG data URI, drawn off screen at 1:1 (G-09).
+   * The multi-page PDF needs a picture of every side, and only one side is on
+   * the canvas at a time.
+   */
+  renderPage: (pageDoc: CanvasDoc) => Promise<string>;
   /** Re-fit the design to the visible area. */
   fit: () => void;
 }
@@ -382,6 +391,56 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
       return url;
     }),
     toSVG: () => withFullSize((c) => c.toSVG()),
+    /**
+     * ANY page of the design, drawn OFF SCREEN, at 1:1 (G-09).
+     *
+     * The multi-page PDF needs a picture of every side, and only one side is
+     * on the canvas at a time. The two alternatives were both worse: flipping
+     * the visible page four times during a download makes the editor blink and
+     * loses the selection, and keeping four live canvases in the DOM costs
+     * four canvases for a feature used once per download.
+     *
+     * A `StaticCanvas` is Fabric's own non-interactive surface — the same
+     * painter, no event plumbing — and it is fed by the SAME
+     * `layerToFabricObject` the editor is, so an exported page cannot be drawn
+     * differently from the page you were just looking at.
+     *
+     * The wait is not a guess dressed up as one: images, icons and effect text
+     * swap themselves in asynchronously, so the render is taken once no
+     * placeholder is left, checked every 40 ms, and at 4 s it gives up and
+     * draws what it has rather than hanging a download for ever.
+     */
+    renderPage: async (pageDoc: CanvasDoc): Promise<string> => {
+      const surface = new fabric.StaticCanvas(undefined, {
+        width: pageDoc.width,
+        height: pageDoc.height,
+        backgroundColor: isTransparent(pageDoc) ? undefined : (pageDoc.background_color || "#FFFFFF"),
+      });
+      try {
+        let outstanding = 0;
+        for (const layer of pageDoc.layers) {
+          if (layer.visible === false) continue;
+          const obj = layerToFabricObject(layer, () => { outstanding = Math.max(0, outstanding - 1); });
+          if (!obj) continue;
+          // Every async kind comes back as a dashed placeholder first, and the
+          // callback above fires when the real object replaces it.
+          if (layer.kind === "image" || layer.kind === "chart"
+            || (layer.kind === "shape" && (layer as ShapeLayer).shape === "icon")
+            || (layer.kind === "text" && !!textLayerSvg(layer as TextLayer))) {
+            outstanding += 1;
+          }
+          surface.add(obj);
+        }
+        const deadline = Date.now() + 4000;
+        while (outstanding > 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        surface.renderAll();
+        return surface.toDataURL({ format: "png", quality: 1, multiplier: 1 });
+      } finally {
+        surface.dispose();
+      }
+    },
     fit,
   }), [withFullSize, fit, doc]);
 

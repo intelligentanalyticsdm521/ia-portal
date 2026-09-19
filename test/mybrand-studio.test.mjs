@@ -606,7 +606,7 @@ describe("the PDF export", () => {
     );
     await assert.rejects(
       () => buildImagePdf({ rgb: swatch(2, 2), pixelWidth: 2, pixelHeight: 2, pageWidthPt: 0, pageHeightPt: 72 }),
-      /no size/,
+      /no size|no page size/,
     );
   });
 

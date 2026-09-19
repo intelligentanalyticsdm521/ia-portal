@@ -171,11 +171,130 @@ export function mainPaint(input: EffectInput): MainPaint {
    Curve
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Real glyph advances, per face ────────────────────────────────────────
+ *
+ * ROUND 1 SHIPPED A GUESS AND THE GUESS COLLIDED (parity D-1).
+ *
+ * The first version of this file packed the arc with fifteen hand-typed
+ * fractions and one flat average for everything else — `base = narrow ? 0.44 :
+ * 0.58`, times a further 0.85 for a condensed face. On `06-logo-transparent`
+ * that turned "BLUE HERON" at Bebas Neue 72 into one run of overlapping
+ * letters with no word space, and it scored the design 60.
+ *
+ * It could not have been right: those numbers were not measured from anything.
+ * Bebas Neue's real capital M advances 0.538 em; the guess said 0.9 × 0.85 =
+ * 0.765, forty per cent too wide, while its plain letters advance about 0.40
+ * against a guessed 0.374. Wide glyphs were pushed apart and narrow ones
+ * jammed together in the same word.
+ *
+ * TABLE BELOW IS MEASURED, not chosen. It is ASCII 32…126 for each of the six
+ * bundled faces, in THOUSANDTHS OF AN EM, read straight out of the `hmtx` and
+ * `cmap` tables of the very TTFs LUMEN rasterises with
+ * (`LUMEN-API/assets/fonts`, 2026-09-19). Ninety-five numbers per face, in
+ * code-point order, so a human can count to the character they doubt.
+ *
+ * The identical block is in LUMEN's `textEffects.js`, and BOTH suites assert
+ * the same literal digits — change one side and the other goes red.
+ */
+export const ADVANCE_TABLES: Record<string, string> = {
+  "Poppins":
+    "267 298 292 840 622 759 739 159 454 454 486 683 198 551 210 476 628 320 575 589 629 628 635 546 " +
+    "631 630 213 264 555 723 539 524 1013 674 613 772 707 513 504 778 692 246 530 599 432 861 703 786 " +
+    "579 788 608 587 541 675 676 976 621 584 541 423 658 423 629 733 257 676 676 607 676 620 329 676 " +
+    "640 246 248 515 246 1030 640 640 676 676 373 522 364 640 561 820 479 563 455 462 291 462 519",
+  "Montserrat":
+    "250 242 334 682 601 800 634 184 311 311 358 560 182 380 182 300 652 342 555 548 644 548 592 570 " +
+    "624 592 182 182 560 560 560 554 1032 688 748 701 826 668 629 774 816 286 477 693 580 956 816 836 " +
+    "710 836 716 601 548 794 670 1080 621 610 639 288 300 288 562 500 600 574 671 545 671 587 311 677 " +
+    "668 250 255 562 250 1068 668 610 671 671 383 463 388 664 508 838 498 508 491 300 286 300 560",
+  "Playfair Display":
+    "249 262 298 637 523 742 837 189 294 294 492 587 261 499 252 372 600 370 479 451 494 415 517 406 " +
+    "520 509 266 285 608 647 608 459 878 630 623 688 723 609 569 703 757 339 326 655 588 871 706 741 " +
+    "585 741 648 540 621 682 630 905 634 591 594 296 372 296 536 591 283 498 563 486 581 506 332 528 " +
+    "588 293 267 550 286 888 597 548 581 563 445 447 354 581 489 770 519 504 476 304 222 304 649",
+  "Bebas Neue":
+    "160 210 336 412 400 589 417 188 276 276 422 400 188 270 188 389 400 400 400 400 400 400 400 400 " +
+    "400 400 188 188 400 400 400 363 696 401 404 383 406 363 344 391 420 192 265 414 344 538 427 400 " +
+    "386 400 403 372 364 402 382 557 406 394 362 276 389 276 400 300 500 401 404 383 406 363 344 391 " +
+    "420 192 265 414 344 538 427 400 386 400 403 372 364 402 382 557 406 394 362 276 500 276 400",
+  "Lora":
+    "263 266 346 830 529 870 695 208 305 305 520 530 253 489 246 690 621 364 537 557 542 545 578 461 " +
+    "562 578 250 263 530 530 530 474 796 626 622 699 745 622 548 761 780 335 373 683 578 918 762 794 " +
+    "606 796 628 567 640 752 653 995 649 634 610 359 690 359 823 729 252 516 582 532 598 542 338 553 " +
+    "599 281 261 537 272 894 607 585 597 576 433 463 387 597 505 801 530 528 511 334 231 334 530",
+  "Oswald":
+    "229 208 266 486 491 891 606 127 298 260 398 415 187 303 188 369 517 378 478 477 483 476 503 386 " +
+    "499 502 197 215 373 415 373 483 904 492 524 515 527 407 391 535 561 248 301 495 397 660 528 539 " +
+    "480 541 519 473 413 543 505 729 482 481 417 340 369 310 443 344 278 409 447 411 442 421 287 441 " +
+    "445 229 230 429 229 680 439 425 446 443 321 374 308 440 385 588 389 392 347 300 239 321 447",
+};
+
 /**
- * Per-character advance as a fraction of the em, for the handful of glyphs a
- * flat average gets badly wrong. Without it "MINIMUM" bunches at one end of
- * the arc and "llll" leaves a hole. The same table is in LUMEN's emitter and in
- * reference-designs/_render.mjs; it is a measurement, not a preference.
+ * How much wider a bold face runs than its regular.
+ *
+ * 1.0897 is the mean of Poppins-Bold ÷ Poppins-Regular over all 95 glyphs —
+ * the one family LUMEN carries in both weights — so it is measured too. A
+ * per-weight table for every face would be six more blocks to keep in step for
+ * a correction of under nine per cent; one measured factor is the honest trade,
+ * and it is named so nobody mistakes it for a constant somebody liked.
+ */
+export const BOLD_ADVANCE_FACTOR = 1.0897;
+
+/**
+ * The mean advance of a face, used for a glyph outside ASCII and for a family
+ * we carry no metrics for. Computed from the table so it can never drift from
+ * it. 0.5 is the industry rule of thumb for an unknown face.
+ */
+const MEAN_CACHE: Record<string, number> = {};
+const PARSED: Record<string, number[]> = {};
+
+function advances(family: string): number[] | null {
+  const key = String(family || "").trim();
+  if (!key) return null;
+  if (PARSED[key]) return PARSED[key];
+  const raw = ADVANCE_TABLES[key];
+  if (!raw) return null;
+  PARSED[key] = raw.split(" ").map((n) => Number(n) / 1000);
+  return PARSED[key];
+}
+
+/** The mean advance of a face we carry, or 0.5 for one we do not. */
+export function meanAdvanceEm(family: string): number {
+  const key = String(family || "").trim();
+  if (MEAN_CACHE[key] !== undefined) return MEAN_CACHE[key];
+  const table = advances(key);
+  const mean = table ? table.reduce((a, b) => a + b, 0) / table.length : 0.5;
+  MEAN_CACHE[key] = mean;
+  return mean;
+}
+
+/** True when we carry measured metrics for this family. */
+export function hasMetrics(family: string): boolean {
+  return advances(family) !== null;
+}
+
+/**
+ * One character's advance, as a fraction of the em, IN THE FACE IT WILL BE
+ * DRAWN IN. This is the whole of D-1's fix: the packer and the painter now
+ * agree about how wide a letter is.
+ */
+export function advanceEm(family: string, ch: string, bold?: boolean): number {
+  const table = advances(family);
+  const cp = ch ? ch.codePointAt(0) ?? 0 : 0;
+  const base = table && cp >= 32 && cp <= 126
+    ? table[cp - 32]
+    : ch === " "
+      ? meanAdvanceEm(family) * 0.5
+      : meanAdvanceEm(family);
+  return bold ? base * BOLD_ADVANCE_FACTOR : base;
+}
+
+/**
+ * KEPT so nothing that imported it breaks, and so the old guess stays visible
+ * beside the measurement that replaced it. Nothing in the studio reads it any
+ * more; `advanceEm` is the answer.
+ *
+ * @deprecated superseded by the measured tables — see D-1 above.
  */
 export const GLYPH_EM: Record<string, number> = {
   I: 0.3, i: 0.28, l: 0.28, j: 0.3, ".": 0.28, ",": 0.28, "'": 0.24, " ": 0.32,
@@ -194,7 +313,17 @@ export interface CurveInput {
   bulge: number;
   size: number;
   letterSpacing?: number;
-  /** Condensed faces (Bebas Neue, Oswald) advance far less per glyph. */
+  /**
+   * The FAMILY the glyphs will actually be drawn in — "Bebas Neue", not the
+   * CSS stack. D-1: the packer measures the same face the painter paints, or
+   * the letters collide. An unknown family falls back to the mean of 0.5 em.
+   */
+  family?: string;
+  /** 600 and up runs about nine per cent wider — see BOLD_ADVANCE_FACTOR. */
+  bold?: boolean;
+  /**
+   * @deprecated the old condensed-face nudge. Ignored; `family` replaced it.
+   */
   narrow?: boolean;
 }
 
@@ -228,10 +357,10 @@ export function curvedGlyphs(input: CurveInput): PlacedGlyph[] {
   const r = (half * half + b * b) / (2 * b);
   const chars = [...String(input.text ?? "")];
   if (!chars.length) return [];
-  const narrow = input.narrow === true;
-  const base = narrow ? 0.44 : 0.58;
+  const family = String(input.family || "");
+  const bold = input.bold === true;
   const ls = num(input.letterSpacing, 0);
-  const widths = chars.map((c) => (GLYPH_EM[c] ?? base) * size * (narrow ? 0.85 : 1) + ls);
+  const widths = chars.map((c) => advanceEm(family, c, bold) * size + ls);
   const total = widths.reduce((a, w) => a + w, 0);
   const cyc = up ? input.y + r : input.y - r;
   let run = -total / 2;
@@ -274,6 +403,38 @@ export interface CurvedSvgInput extends CurveInput {
   boxW: number;
   boxH: number;
   effectInput: EffectInput;
+  /** See `fontFaceStyle`. */
+  fontFaceCss?: string | null;
+}
+
+/**
+ * THE @font-face BLOCK THAT MAKES THE PICTURE SHOW THE CHOSEN FACE (D-2).
+ *
+ * Echo, Splice, Neon and Curve cannot be a Fabric text object, so the editor
+ * paints them as an SVG loaded through `<img>`. An SVG loaded as an image is
+ * its own sealed document: it CANNOT see the page's stylesheets, cannot see a
+ * webfont the page already downloaded, and cannot fetch one of its own. So
+ * `font-family="Bebas Neue, Impact, sans-serif"` found no Bebas, no Impact on
+ * the machine either, and fell all the way through to a system serif — which
+ * is why HARBOURLIGHT (a plain Textbox) and AUTUMN MARKET (the same face with
+ * Echo) came out in two different typefaces in round 1.
+ *
+ * The one thing such a document CAN carry is a font it embeds itself. So the
+ * caller hands the bytes in as a data URI and this wraps them, and the words
+ * are drawn in the face the author picked.
+ *
+ * Returns "" for no bytes, so the caller never has to branch: a missing font
+ * file leaves the old fallback behaviour exactly as it was, rather than
+ * throwing away the words.
+ */
+export function fontFaceStyle(family: string, dataUri: string | null | undefined, weight?: string, italic?: boolean): string {
+  const fam = String(family || "").trim();
+  const uri = String(dataUri || "").trim();
+  if (!fam || !uri) return "";
+  const w = weight ? String(weight) : "400";
+  return `@font-face{font-family:"${fam.replace(/["\\]/g, "")}";` +
+    `font-style:${italic ? "italic" : "normal"};font-weight:${w.replace(/[^0-9a-z]/gi, "")};` +
+    `src:url(${uri});}`;
 }
 
 /**
@@ -318,7 +479,8 @@ export function curvedTextSvg(input: CurvedSvgInput): string {
     .join("");
 
   const main = ring(0, 0, paint.fill, paint.stroke, paint.strokeWidth, 1, "");
-  const defsXml = defs.length ? `<defs>${defs.join("")}</defs>` : "";
+  const style = input.fontFaceCss ? `<style>${input.fontFaceCss}</style>` : "";
+  const defsXml = defs.length || style ? `<defs>${style}${defs.join("")}</defs>` : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.max(1, Math.round(input.boxW))}" height="${Math.max(1, Math.round(input.boxH))}" ` +
     `viewBox="0 0 ${Math.max(1, Math.round(input.boxW))} ${Math.max(1, Math.round(input.boxH))}">${defsXml}${behind}${main}</svg>`;
 }
@@ -375,6 +537,8 @@ export interface StraightSvgInput {
   boxW: number;
   boxH: number;
   effectInput: EffectInput;
+  /** See `fontFaceStyle` — without it the picture falls back to a system face. */
+  fontFaceCss?: string | null;
 }
 
 /**
@@ -417,7 +581,8 @@ export function straightTextSvg(input: StraightSvgInput): string {
     })
     .join("");
   const main = run(0, 0, paint.fill, paint.stroke, paint.strokeWidth, 1, "");
-  const defsXml = defs.length ? `<defs>${defs.join("")}</defs>` : "";
+  const style = input.fontFaceCss ? `<style>${input.fontFaceCss}</style>` : "";
+  const defsXml = defs.length || style ? `<defs>${style}${defs.join("")}</defs>` : "";
   const w = Math.max(1, Math.round(input.boxW));
   const h = Math.max(1, Math.round(input.boxH));
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${defsXml}${behind}${main}</svg>`;
@@ -451,11 +616,21 @@ export type StrokeStyle = "solid" | "dashed" | "dotted";
 export function dashArray(style: StrokeStyle | undefined | null, strokeWidth: number): number[] {
   const w = Math.max(1, num(strokeWidth, 1));
   if (style === "dashed") return [w * 3, w * 2];
-  // A ZERO-length dash under a round cap is what draws a round dot. It only
-  // works with the cap — square-capped, a zero dash paints nothing at all,
-  // which is a dotted rule that silently disappears. The two are one answer,
-  // so they are returned by two functions nobody can call one of.
-  if (style === "dotted") return [0, w * 2];
+  // A NEARLY-zero dash under a round cap is what draws a round dot: the cap
+  // adds half the stroke width at each end, so a 0.01w segment paints a circle
+  // of about one stroke width across.
+  //
+  // It is 0.01w and not 0 (round 1's number) because a LITERAL zero is the
+  // degenerate case — SVG's rasteriser draws the dot, and a 2D canvas is free
+  // to drop a zero-length segment entirely, so the same control drew dots in
+  // the export and nothing on the screen. A hair of length is the one value
+  // both painters agree about.
+  //
+  // The gap is 2.5w, not 2w, because with a round cap the ink is already a
+  // full w across: at 2w the dots very nearly touch, and at a rule's usual
+  // couple of pixels they read as a solid line. 2.5w leaves a clear w-and-a-
+  // half of paper between them.
+  if (style === "dotted") return [w * 0.01, w * 2.5];
   return [];
 }
 
