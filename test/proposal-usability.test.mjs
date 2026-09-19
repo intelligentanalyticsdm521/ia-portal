@@ -267,30 +267,30 @@ describe("D-03 - a blank is never a raw token, and what is typed survives", () =
   });
 });
 
-describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
-  test("the adapter registers into the ENGINE's problems list \u2014 and keeps no chips of its own", () => {
-    // A-1: the engine owns the counter-as-a-button and the jump. Stream B's
-    // chip row is DELETED; two counters over one fact is how they disagree.
-    assert.ok(BUILDER.includes("problems={problems}"), "the adapter passes no problems");
-    assert.ok(!BUILDER.includes("data-blank-chip"), "the second counter is still here");
-    assert.ok(!BUILDER.includes("scrollToToken("), "the second jump is still here");
+describe("11.13.2 - Send names the blanks and opens the box on the first one", () => {
+  test("THE LEFT-PANE COUNTER IS GONE, and so is the second jump", () => {
+    /* Scope 11.13.2: "Deleted with the Details group: DetailsGroup UI, the
+       'still to fill in' counter in the left pane, PACK_LABELS as a UI list."
+       Brandon, three times on 2026-09-19. A counter beside a Send button that
+       already says the same thing is a second place for the two to drift,
+       which is how a document went out with two blank dates. */
+    assert.ok(!BUILDER.includes("problems={problems}"), "the adapter still feeds the counter");
+    assert.ok(!BUILDER.includes("onFocusProblem"), "the second jump is still here");
+    assert.ok(!BUILDER.includes("data-blank-chip"), "a chip row came back");
+    assert.ok(!/<DetailsGroup/.test(BUILDER), "the group came back");
+    assert.ok(!/data-details-group/.test(BUILDER), "a list of boxes came back");
   });
 
-  test("each problem is one plain sentence and knows where it lives", () => {
-    assert.ok(BUILDER.includes("id: `blank:${token}`"));
-    assert.ok(BUILDER.includes("message: `${plainLabel(token, detailLabels)} is still blank.`"));
-    assert.ok(BUILDER.includes("const at = widgetForToken(doc, token);"));
+  test("Send jumps to the first blank, ON THE PAGE", () => {
+    // ONE jump, called by BOTH Send buttons - a new document and a revision.
+    assert.ok(BUILDER.includes("const takeMeToTheBlank = useCallback"));
+    assert.equal((BUILDER.match(/takeMeToTheBlank\(\);/g) || []).length, 2,
+      "one of the two Send buttons refuses without jumping");
+    assert.ok(BUILDER.includes("setEditingToken(first)"));
   });
 
-  test("the jump lands ON THE PAGE, at the token, not in a side box (11.13.2)", () => {
-    assert.ok(BUILDER.includes("onFocusProblem={(problem) => {"));
-    assert.ok(BUILDER.includes("if (token) setEditingToken(token);"));
-    assert.ok(!BUILDER.includes("setFocusToken("), "the Details box focus is still here");
-    assert.ok(!BUILDER.includes("<DetailsGroup"), "the Details group is still rendered");
-  });
-
-  test("the refusal message names them in plain words too", () => {
-    // EXECUTED, not grepped. The sentence has ONE writer now — the two Send
+  test("the refusal message names them in plain words", () => {
+    // EXECUTED, not grepped. The sentence has ONE writer - the two Send
     // buttons each carried their own copy of it, and a copy is where the two
     // come to say different things about the same blank (2026-09-18).
     const words = blanksRefusal(

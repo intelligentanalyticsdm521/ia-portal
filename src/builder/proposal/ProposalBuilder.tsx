@@ -800,22 +800,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, [doc]);
 
   /**
-   * WHAT IS STILL MISSING, in the engine's shape (A-1 / N-1).
+   * THE LEFT-PANE COUNTER IS DELETED WITH THE GROUP IT SERVED (11.13.2).
    *
-   * One problem per blank the page still carries, in plain words, each pointing
-   * at the first widget that uses it — so the engine's counter button, its jump
-   * and the refusal beside Send all work here exactly as they do everywhere
-   * else. Stream B's own chip row is DELETED: the problems list is what says
-   * what is missing, and the Details boxes are where it is typed.
+   * Scope, in as many words: *"Deleted with the Details group: its component,
+   * **the 'still to fill in' counter in the left pane**, PACK_LABELS as a UI
+   * list."* The adapter no longer feeds the engine's `problems` list, so
+   * there is no counter and no second jump.
+   *
+   * ONE mechanism instead, and it is the one 11.13.2 names: **Send** refuses,
+   * says what is blank in plain words, and OPENS THE BOX on the first one
+   * where it appears on the page. A counter that lives beside a Send button
+   * that already says the same thing is a second place for the two to drift,
+   * which is how a document went out with two blank dates.
+   *
+   * `takeMeToTheBlank` is that jump. It is called by both Send buttons.
    */
-  const problems = useMemo<BuilderProblem[]>(() => blanks.map((token) => {
-    const at = widgetForToken(doc, token);
-    return {
-      id: `blank:${token}`,
-      message: `${plainLabel(token, detailLabels)} is still blank.`,
-      ...(at ? { focus: at } : {}),
-    };
-  }), [blanks, detailLabels, doc]);
+  const takeMeToTheBlank = useCallback(() => {
+    const first = blanks[0];
+    if (first) setEditingToken(first);
+  }, [blanks]);
 
   /**
    * Save the document.
@@ -840,8 +843,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       // the names are PLAIN WORDS now — "snow_trigger" was two of the four
       // names a first-time user was shown and told to go and find (D-03).
       // ONE sentence, written down in documentDetails.ts, so the revision's
-      // Send below cannot refuse in different words.
+      // Send below cannot refuse in different words — and the box opens on the
+      // first blank, on the page, which is the whole of 11.13.2's jump.
       refuse(anchor, blanksRefusal(blanks, detailLabels));
+      takeMeToTheBlank();
       return;
     }
     setSaved(null); setRefusal(null); setBusy(true);
@@ -922,6 +927,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
     if (send && blanks.length) {
       refuse(anchor, blanksRefusal(blanks, detailLabels));
+      takeMeToTheBlank();
       return;
     }
     setSaved(null); setRefusal(null); setBusy(true);
@@ -1044,18 +1050,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         /* N-1 — the engine's problems mechanism, on the surface that needed it
            most. The counter in the pane, the jump, and the refusal beside the
            button that was pressed all come from these three props. */
-        problems={problems}
         refusal={refusal}
         onDismissRefusal={() => setRefusal(null)}
-        /* 11.13.2 — "the refusal jumps to the first blank ON THE PAGE". The
-           engine scrolls to the widget (`problem.focus`); this opens the ONE
-           box on the token that is blank, where it appears in the sentence.
-           It used to put the caret in a Details box in the side panel, and
-           that panel is deleted. */
-        onFocusProblem={(problem) => {
-          const token = problem.id.startsWith("blank:") ? problem.id.slice(6) : "";
-          if (token) setEditingToken(token);
-        }}
         /* Clicking the chip the renderer draws round an unfilled merge tag is
            how a value with no record behind it is typed (11.13.2 item 3). */
         onTokenClick={(token) => setEditingToken(token)}
@@ -1969,10 +1965,10 @@ function WidgetExtras({
    panel nothing can ever open. */
 
 
-/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
-   scroll-to-the-blank until the engine landed a shared problems mechanism; the
-   engine now selects the widget, scrolls the canvas to it and puts the caret in
-   this adapter's Details box through `onFocusProblem`. One jump, not two. */
+/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1), and so is the engine
+   problems feed that replaced it (11.13.2). There is ONE jump on this screen:
+   Send refuses, names the blanks in plain words and opens the box on the first
+   one where it appears on the page. See `takeMeToTheBlank`. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    D-156 — the panels the atomic widgets need, and only the adapter can draw
@@ -2432,7 +2428,7 @@ function declaredDetails(doc: BuilderDocument): Record<string, { label: string; 
 
 /* THE DETAILS GROUP LIVED HERE AND IS DELETED (scope 11.13, 2026-09-19).
 
-   DetailsGroup drew a box per blank in the left pane. Brandon, on the fifth
+   A group component drew a box per blank in the left pane. Brandon, on the fifth
    telling: "You have all this random details on the side. I never asked for
    any of that. The fields should be dynamic." Replace means delete, so the
    component, its "N filled" collapse, its focus-a-box effect and the

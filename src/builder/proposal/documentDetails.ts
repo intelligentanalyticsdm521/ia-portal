@@ -14,7 +14,7 @@
  * was never in scope, and 11.13 deletes it rather than hiding it. Gone with
  * it: `DetailRow`, `readDetails`, `writeDetails`, `reconcileDetails`,
  * `detailsStartOpen`, `detailsMerge`, `readLegacyDetails`, `LEGACY_DETAILS_KEY`
- * and `PACK_LABELS` as a UI list — and the `DetailsGroup` component in
+ * and `PACK_LABELS` as a UI list — and the group component in
  * `ProposalBuilder.tsx`, and the counter beside it.
  *
  * ── WHAT REPLACES IT ──────────────────────────────────────────────────────
