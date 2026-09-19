@@ -52,6 +52,10 @@ import {
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
 import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — the ten families. One import; the default branch asks them and
+   the list below claims what they draw, so a family widget on a landing page
+   is neither silently blank nor reported as undrawn. */
+import { FAMILY_RENDERED_KINDS, renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -217,7 +221,11 @@ export const LANDING_RENDERED_KINDS = [
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
   /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
   "grid",
-] as const;
+  /* B-168 §C.1 — …and every kind the ten families draw, which the default
+     branch above now asks for BEFORE the atoms. A family widget offered on a
+     landing page is drawn, and this list says so. */
+  ...FAMILY_RENDERED_KINDS,
+] as readonly string[];
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
 
@@ -295,6 +303,12 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
+        /* B-168 §C.1 — THE TEN FAMILIES, asked first, exactly as the engine
+           asks them. The seam wired `renderFamily` into `render.ts` and not
+           into this adapter, so a family widget the landing panel offers drew
+           the "needs a newer version" line instead of itself. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

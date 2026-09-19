@@ -50,16 +50,18 @@ import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
    render) crosses only hoisted function declarations, never a const read
    while a module is still evaluating. */
 import { renderAtom } from "./widgets";
-import { renderFamily } from "./widgets/families";
+import { FAMILY_RENDERED_KINDS, renderFamily } from "./widgets/families";
 import { ATOM_KINDS } from "./widgets/kinds";
+import { esc } from "./esc";
 import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
-/* ── One escaper. The inventory found three. ─────────────────────────────── */
-export function esc(s: unknown): string {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+/* ── One escaper. The inventory found three. ───────────────────────────────
+   It now LIVES in `./esc`, a module that imports nothing, so a family widget
+   can escape what it draws without pulling this file — and therefore
+   `widgets/families/index.ts` — into its own graph. See esc.ts for the
+   ReferenceError that proves it. Re-exported here, so every caller is
+   unchanged and there is still one escaper. */
+export { esc } from "./esc";
 
 export interface LocationLite {
   location_id: string;
@@ -248,6 +250,12 @@ export const RENDERED_KINDS = [
   "priced_line",
   // D-165's widgets, each declared and drawn in one file under widgets/.
   ...ATOM_KINDS,
+  /* B-168 §C.1 — THE TEN FAMILIES, which this file already DRAWS (see the
+     `renderFamily` line below). The seam wired the drawing and not the list,
+     so every family widget was "offered and nothing draws it" to the four
+     tests that read this list. One line, beside the atoms' one line, and it is
+     the same claim: a kind a family declares a renderer for is drawn here. */
+  ...FAMILY_RENDERED_KINDS,
   // …and the box that holds them, which the engine draws itself.
   "container",
   /* 11.13.2 (D-165) — the three widgets that fill from the database. They are

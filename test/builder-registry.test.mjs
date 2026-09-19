@@ -214,6 +214,10 @@ describe("§3.2's union is registered", () => {
        snow agreement places it and D-164 pins its numbering) and its TILE is
        hidden, so there is one Terms door. */
     "terms",
+    /* B-168 f4-moving — Elementor's **Progress Tracker**, Pro, offered on the
+       website and landing panels by BUILDER_OFFERS_2026-09-19.json. Declared
+       in src/builder/widgets/families/f4-moving/progressTracker.ts. */
+    "progress_tracker",
   ];
 
   for (const kind of REQUIRED) {
