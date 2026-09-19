@@ -25,7 +25,7 @@ export const TEMPLATE_DEF: FamilyWidgetDef = {
   description: "Drop in a piece you saved earlier, so one change updates it everywhere it is used.",
   icon: "Files",
   picture: pictureFrom(box(8, 6, 40, 28) + bar(13, 12, 26, 4) + bar(13, 21, 20, 4) + box(16, 12, 40, 22)),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: { template_id: 0 },

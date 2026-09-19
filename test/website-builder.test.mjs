@@ -154,10 +154,17 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  /* SIX GROUPS, NOT FOUR, SINCE B-168 (D-168 item 6 + f7-data-lists).
+     Elementor Pro's own panel has PRO and SITE between Basic and General, and
+     `WIDGET_CATEGORIES` gained both. They were not DRAWN until a widget sat in
+     them — a group with nothing offered is still not drawn — and f7's nineteen
+     list and site-furniture widgets are the first that do. The four names here
+     were right on the day they were typed and are a stale list now, so the
+     expectation is corrected; the assertion itself is not weakened. */
+  test("the pane opens with Elementor's six groups, in Elementor's order", () => {
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Site", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });
 

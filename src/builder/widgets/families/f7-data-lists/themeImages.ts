@@ -48,7 +48,7 @@ export const THEME_SITE_LOGO_DEF: FamilyWidgetDef = {
   description: "Your logo, taken from the site itself, so changing it once changes every page.",
   icon: "Image",
   picture: pictureFrom(solid(14, 10, 36, 20)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {
@@ -98,7 +98,7 @@ export const THEME_POST_FEATURED_IMAGE_DEF: FamilyWidgetDef = {
   description: "The main picture of whichever story is being read.",
   icon: "ImagePlus",
   picture: pictureFrom(solid(8, 8, 48, 24)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

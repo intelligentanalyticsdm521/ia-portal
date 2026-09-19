@@ -34,7 +34,7 @@ export const SITEMAP_DEF: FamilyWidgetDef = {
   icon: "ListTree",
   picture: pictureFrom(bar(8, 8, 18, 5) + bar(8, 18, 14) + bar(8, 26, 16) + bar(8, 33, 12)
     + bar(38, 8, 18, 5) + bar(38, 18, 14) + bar(38, 26, 16)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

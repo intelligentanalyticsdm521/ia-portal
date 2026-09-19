@@ -58,12 +58,6 @@ import {
   FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
 } from "../../widgets/families";
 import { renderAtom } from "../../widgets";
-/* B-168 §C.1 — THE TEN FAMILIES, asked in the same `default` branch and before
-   the atoms, exactly as `render.ts` asks them. One line, and no family agent
-   ever opens this file again. Without it a family's widget is offered on a
-   landing page and draws "needs a newer version of the builder", which is the
-   silent blank the seams were built to make impossible. */
-import { FAMILY_RENDERED_KINDS, renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -334,10 +328,6 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
-        /* B-168 §C.1 — THE TEN FAMILIES, first, so a merge with another
-           stream's line is trivial. `null` means no family owns this kind. */
-        const fam = renderFamily(w, c as unknown as RenderContext);
-        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

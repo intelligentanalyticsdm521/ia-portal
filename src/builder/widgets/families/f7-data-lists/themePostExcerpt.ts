@@ -20,7 +20,7 @@ export const THEME_POST_EXCERPT_DEF: FamilyWidgetDef = {
   description: "The short summary of whichever story is being read.",
   icon: "TextQuote",
   picture: pictureFrom(bar(8, 12, 48) + bar(8, 21, 48) + bar(8, 30, 30)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: { excerpt: "", align: "", title_color: "", link_color: "" },

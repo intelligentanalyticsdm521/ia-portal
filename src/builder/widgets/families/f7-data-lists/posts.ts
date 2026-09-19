@@ -34,7 +34,7 @@ export const POSTS_DEF: FamilyWidgetDef = {
   icon: "Newspaper",
   picture: pictureFrom(solid(6, 6, 24, 12) + bar(6, 21, 24) + bar(6, 28, 16)
     + solid(34, 6, 24, 12) + bar(34, 21, 24) + bar(34, 28, 16)),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

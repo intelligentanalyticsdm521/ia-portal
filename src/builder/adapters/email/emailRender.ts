@@ -47,6 +47,19 @@
  * PURE: strings in, string out. No React, no DOM, no fetch.
  */
 import type { BuilderDocument, Section, Widget } from "../../model";
+/* THE MAILBOX PRIMITIVES, in a module that imports nothing (B-168 wave 2).
+   They left this file so a FAMILY FOLDER can reach them: this file imports
+   `widgets/families`, so a family importing this file closes a cycle and
+   dies with "Cannot access 'F7_DATA_LISTS' before initialization". Same seam,
+   same shape, as the one `builder/esc.ts` closed for the escaper. Re-exported
+   below, so every existing caller is unchanged and there is still ONE of each. */
+import {
+  altTextFor, CONTENT_WIDTH, EMAIL_WIDTH, fluidRow, fontStack as stack, inlineSafe,
+  type FluidCell,
+} from "../../emailBox";
+export { altTextFor, CONTENT_WIDTH, EMAIL_WIDTH, fluidRow, inlineSafe };
+export type { FluidCell };
+
 import { fill, type FillMode, type MergeContext } from "../../merge";
 // THE TREE, read in ONE place (D-156): render.ts owns what a container is,
 // what its layout keys mean and how deep it may go. A mailbox draws it with
@@ -74,89 +87,16 @@ import {
    The four rules, as constants
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The width every mail client has agreed on. Never exceeded. */
-export const EMAIL_WIDTH = 600;
 
-/** The font stack, in the order a mail client will find one. */
-const FALLBACK_STACK = "Helvetica, Arial, sans-serif";
 
 /** Layout properties no mail client can be trusted with. */
 export const FORBIDDEN_CSS = ["display:flex", "display:grid", "flex-direction", "grid-template", "position:absolute", "position:fixed"];
 
-/**
- * The gap between two things that sit beside each other. One number.
- *
- * Delivered as PADDING inside each column rather than as a spacer cell,
- * because a spacer cell has to become nothing when the columns stack and a
- * padding already is nothing extra.
- */
-const GUTTER = 16;
 
-/**
- * THE fluid-hybrid row — the ONLY way this renderer puts two things beside
- * each other.
- *
- * BUILDER_PLATFORM_SCOPE_2026-09-15 §13.1 rule 3 said 600px and never wider;
- * it did not say what happens at 390, and until 2026-09-16 the answer was
- * "nothing". A two-column section, an article beside its picture and a row of
- * product cards were `<td style="width:48%">`, and a percentage of a phone is
- * still a phone: two 150px columns of 14px text, which is the shape of an
- * email most people delete.
- *
- * Container queries do not exist in a mailbox and half of them strip <style>,
- * so a media query cannot be relied on either. The pattern that has worked
- * everywhere since 2015 is this one:
- *
- *   · each column is an inline-block DIV with `width:100%` and its own
- *     `max-width` in px. Side by side while they fit; wrapped — which is to
- *     say STACKED — as soon as they do not. No query of any kind;
- *   · the wrapping cell is `font-size:0` so the whitespace between two
- *     inline-blocks is not a visible gap, and each div sets its own size back;
- *   · Outlook on Windows ignores inline-block, so a `[if mso]` GHOST TABLE
- *     holds the same columns in a real table for it alone. Every other client
- *     sees the ghost table as a comment.
- *
- * The result is fluid all the way down with no breakpoint to get wrong, which
- * is why this is the one mechanism and there is no second one.
- */
-export interface FluidCell {
-  /** How wide this column may get, in px. The sum should be the content width. */
-  max: number;
-  html: string;
-  /** Editor markers (`data-col`), and only in the editor. */
-  attrs?: string;
-  /** Chrome for the column itself — a card's border, padding and background. */
-  cellStyle?: string;
-}
 
-export function fluidRow(cells: FluidCell[], opts: { margin?: string; gutter?: number } = {}): string {
-  const gutter = opts.gutter ?? GUTTER;
-  const pad = Math.round(gutter / 2);
-  const margin = opts.margin ?? "";
-  const ghostOpen = (c: FluidCell) => `<!--[if mso]><td width="${c.max}" valign="top"><![endif]-->`;
-  const body = cells.map((c, i) => {
-    const open = i === 0
-      ? `<!--[if mso]><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td width="${c.max}" valign="top"><![endif]-->`
-      : ghostOpen(c);
-    const close = i === cells.length - 1 ? "" : `<!--[if mso]></td><![endif]-->`;
-    return open
-      + `<div${c.attrs || ""} style="display:inline-block;width:100%;max-width:${c.max}px;vertical-align:top;box-sizing:border-box;padding:0 ${pad}px;font-size:15px;line-height:1.6;text-align:left;">`
-      + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td valign="top"${c.cellStyle ? ` style="${c.cellStyle}"` : ""}>${c.html}</td></tr></table>`
-      + `</div>`
-      + close;
-  }).join("");
-  // align="left" and not "center": side by side the columns fill the row
-  // exactly, so the two are identical there — but a column narrower than the
-  // row (an article's 180px picture) is STACKED on a phone, and a picture
-  // floating in the middle of a left-aligned email reads as a mistake.
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${margin}"><tr><td align="left" style="font-size:0;line-height:0;">`
-    + body
-    + `<!--[if mso]></td></tr></table><![endif]-->`
-    + `</td></tr></table>`;
-}
 
-/** How wide the words are inside a normal section. The widgets' own assumption. */
-export const CONTENT_WIDTH = EMAIL_WIDTH - 48;
+
+
 
 /* ── One escaper. Same rules as the document renderer's. ─────────────────── */
 export function esc(s: unknown): string {
@@ -264,42 +204,11 @@ export function makeEmailContext(
   };
 }
 
-/** The chosen face, then the ones every client has. Never the same name twice. */
-function stack(face: string): string {
-  const first = String(face || "").trim();
-  const rest = FALLBACK_STACK.split(",").map((s) => s.trim())
-    .filter((s) => s.toLowerCase() !== first.toLowerCase());
-  return [first, ...rest].filter(Boolean).join(", ");
-}
+
 const headStack = (c: EmailRenderContext) => stack(c.headingFont);
 const bodyStack = (c: EmailRenderContext) => stack(c.bodyFont);
 
-/**
- * Escape everything, then hand back a very short list of inline tags.
- *
- * ── WHY THERE IS AN ALLOWLIST AT ALL ──────────────────────────────────────
- * A newsletter written in the old editor is a TipTap document: paragraphs with
- * bold runs and LINKS inside them. Escaping the lot would open every past
- * issue with its links turned into visible angle brackets, and retyping them
- * by hand is not a migration. So six tags survive, each with its attributes
- * checked rather than trusted:
- *
- *   <a href="…">  http, https and mailto only — never javascript:
- *   <strong> <b> <em> <i> <br>
- *
- * Everything else — every script, every style, every event handler, every
- * attribute not named above — is already escaped by the time this function
- * runs and stays that way. This is STRICTER than what the platform does
- * today, where a campaign's content_html is stored and mailed verbatim.
- */
-export function inlineSafe(escaped: string): string {
-  return String(escaped)
-    .replace(/&lt;(\/?)(strong|b|em|i)&gt;/gi, (_m, slash, tag) => `<${slash}${tag.toLowerCase()}>`)
-    .replace(/&lt;br\s*\/?&gt;/gi, "<br />")
-    .replace(/&lt;a href=&quot;((?:https?:\/\/|mailto:)[^"&<>\s]*)&quot;&gt;/gi,
-      (_m, href) => `<a href="${href}" style="color:inherit;text-decoration:underline;">`)
-    .replace(/&lt;\/a&gt;/gi, "</a>");
-}
+
 
 /** Merge-fill, escape, then re-permit the six inline tags. */
 function t(text: unknown, c: EmailRenderContext): string {
@@ -778,22 +687,7 @@ function emImage(p: any, c: EmailRenderContext): string {
   return `<div style="text-align:${align};margin:0 0 16px 0;">${wrapped}${cap}</div>`;
 }
 
-/**
- * What a reader with pictures switched off will be told this picture is.
- *
- * Exported because the "every image has alt text" rule has to be checkable on
- * the MODEL as well as on the string — the builder warns before the send, and
- * the renderer never emits an empty alt.
- */
-export function altTextFor(p: any): string {
-  const explicit = String(p?.alt ?? "").trim();
-  if (explicit) return explicit;
-  const caption = String(p?.caption ?? "").trim();
-  if (caption) return caption;
-  const name = String(p?.src ?? "").split("?")[0].split("/").pop() || "";
-  const pretty = name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim();
-  return pretty || "Picture";
-}
+
 
 /**
  * The button.

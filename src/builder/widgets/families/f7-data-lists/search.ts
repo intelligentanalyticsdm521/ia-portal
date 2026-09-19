@@ -35,7 +35,7 @@ export const SEARCH_DEF: FamilyWidgetDef = {
   icon: "Search",
   picture: pictureFrom(box(6, 12, 40, 16) + bar(11, 18, 22, 4)
     + `<circle cx="53" cy="18" r="6" fill="none"/><path d="M57 22l4 4"/>`),
-  category: "General",
+  category: "Pro",
   builders: ["website"],
   tier: "pro",
   defaults: {

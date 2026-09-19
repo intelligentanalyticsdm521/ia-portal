@@ -85,27 +85,25 @@ import {
 import { THEME_POST_EXCERPT_DEF, renderThemePostExcerpt } from "./themePostExcerpt";
 
 /**
- * THE ORDER IS THE PANEL'S ORDER.
+ * THE ORDER IS THE PANEL'S ORDER, AND THE PANEL'S ORDER IS ELEMENTOR'S.
  *
- * Elementor's own registration order for these, read off the two 2026-09-17
- * catalogues: the Pro list widgets first (Posts, Portfolio, Loop Grid), then
- * the archive one, then the two that narrow a list, then the site furniture,
- * then the single-story pieces, then the theme-* headings and pictures.
+ * Read off `test/fixtures/elementor-panel.json`, machine-cut from the two
+ * 2026-09-17 scrapes: inside PRO, Loop Grid (0), Posts (3), Portfolio (4),
+ * Template (25), Taxonomy Filter (33), Search (34); inside SITE, Site Logo (0)
+ * down to Sitemap (12). The first cut of this list was the order the plan
+ * names them in, and every one of the nineteen also said `category: "General"`
+ * - true until D-168 item 6 gave the panel Elementor's own six groups, at
+ * which point `groupFaults()` named all nineteen and `panelAt()` gave Posts no
+ * place at all. Corrected here rather than in the test.
  */
 export const FAMILY: Family = {
   defs: [
+    LOOP_GRID_DEF,
     POSTS_DEF,
     PORTFOLIO_DEF,
-    LOOP_GRID_DEF,
-    ARCHIVE_POSTS_DEF,
+    TEMPLATE_DEF,
     TAXONOMY_FILTER_DEF,
     SEARCH_DEF,
-    SITEMAP_DEF,
-    TEMPLATE_DEF,
-    POST_INFO_DEF,
-    POST_NAVIGATION_DEF,
-    POST_COMMENTS_DEF,
-    AUTHOR_BOX_DEF,
     THEME_SITE_LOGO_DEF,
     THEME_SITE_TITLE_DEF,
     THEME_PAGE_TITLE_DEF,
@@ -113,6 +111,12 @@ export const FAMILY: Family = {
     THEME_POST_EXCERPT_DEF,
     THEME_POST_FEATURED_IMAGE_DEF,
     THEME_ARCHIVE_TITLE_DEF,
+    ARCHIVE_POSTS_DEF,
+    AUTHOR_BOX_DEF,
+    POST_COMMENTS_DEF,
+    POST_NAVIGATION_DEF,
+    POST_INFO_DEF,
+    SITEMAP_DEF,
   ],
   renderers: {
     posts: renderPosts,

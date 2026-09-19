@@ -36,7 +36,7 @@ export const POST_INFO_DEF: FamilyWidgetDef = {
   description: "The small line of facts under a title — who wrote it, when, how many comments.",
   icon: "Info",
   picture: pictureFrom(bar(6, 17, 14, 5) + bar(25, 17, 14, 5) + bar(44, 17, 14, 5)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

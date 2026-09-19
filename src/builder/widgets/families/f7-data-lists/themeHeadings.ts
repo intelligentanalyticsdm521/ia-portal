@@ -75,7 +75,12 @@ function headingDef(
     description,
     icon,
     picture: pictureFrom(bar(10, 14, 44, 7) + bar(10, 26, 28, 4)),
-    category: "General",
+    /* Elementor draws all four of these in its SITE group, not General - read
+       off test/fixtures/elementor-panel.json, machine-cut from the two
+       2026-09-17 scrapes. They said "General" until the six-group panel landed
+       (D-168 item 6) and General stopped being where Elementor puts them;
+       groupFaults() named every one of the nineteen, by hand, on the merge. */
+    category: "Site",
     builders: ["website"],
     tier: "pro",
     defaults: { title: "", link: "", size: "default", header_size: dfltTag, align: "", title_color: "" },
