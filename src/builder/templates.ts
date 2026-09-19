@@ -298,8 +298,8 @@ const PREMADE_RAW: PremadeSection[] = [
    D-156's ready-made sections — container trees, not composite widgets
    ══════════════════════════════════════════════════════════════════════════
 
-   §11.12: *"The picker's Ready-made section tab and the + strip offer
-   CONTAINER TREES, not widgets"*. Each of these is the pattern a composite
+   §11.12: *"the Ready-made section tab offers CONTAINER TREES, not
+   widgets"*. Each of these is the pattern a composite
    widget used to be, built out of atomic widgets that can each be selected,
    dragged, tagged and deleted:
 

@@ -276,15 +276,23 @@ test('no inline padding on a sticky bar — it would silently beat the class', (
 });
 
 test('the phone can still add and reorder, where dragging does not fire', () => {
-  // HTML5 drag-and-drop does not fire on touch at all. On the builder's canvas
-  // the drag handle lives in the section toolbar, and the two things a phone
-  // needs instead are on the page itself: the "Add a section" strip between
-  // every pair of sections, and the inspector's Up/Down for a widget.
+  // HTML5 drag-and-drop does not fire on touch at all, so every add and every
+  // move has to be PRESSABLE. The three doors a phone needs: the container
+  // handle's own "+", the add area at the bottom of the page, and the
+  // inspector's Up/Down for a widget.
   const canvas = readSrc('src/builder/Canvas.tsx');
-  assert.match(canvas, /title="Drag to move this section"/);
-  // ONE "Add section" button now (§11.13.1 item 5, D-165): blank or
-  // template is the pop-up's first question, and it is buttons too.
-  assert.match(canvas, /data-builder-addsection-btn/);
+  // The section handle's grip drags AND selects, so a phone can still open a
+  // container it cannot drag; the words are the reference editor's.
+  assert.match(canvas, /title="Edit Container — drag to move it"/);
+  assert.match(canvas, /title="Add Container" aria-label="Add Container"/);
+  /* ABSENT: the "+ Add" pill that opened a pop-up list of widgets. Deleted
+     2026-09-19 — adding is the add area's job, which is buttons all the way
+     down and therefore works on a phone. */
+  assert.doesNotMatch(canvas, /data-builder-addsection-btn/, 'the + Add pill is back on the page');
+  const add = readSrc('src/builder/AddSection.tsx');
+  assert.match(add, /title="Add New Container"/);
+  assert.match(add, /title="Add Template"/);
+  assert.match(add, /data-structure-preset=\{preset\.key\}/);
   const inspector = readSrc('src/builder/Inspector.tsx');
   assert.match(inspector, /title="Move this up inside its column"/);
   assert.match(inspector, /title="Move this down inside its column"/);
@@ -302,11 +310,17 @@ test('the widget pane becomes a drawer on a phone, and the canvas still offers e
   const frame = readSrc('src/builder/BuilderFrame.tsx');
   assert.match(frame, /data-builder-drawer="open"/);
   assert.match(frame, /data-builder-slot="bottombar"/);
-  // Still honest the other way too: the SAME vocabulary is reachable from the
-  // canvas — "Pre-made…" opens the gallery, and the gallery has both.
+  // Still honest the other way too. WAS: "the gallery has both" — a Widgets
+  // tab beside the sections. That tab is deleted (2026-09-19): widgets are in
+  // the left panel and nowhere else, so on a phone the WIDGETS drawer is the
+  // one place to find one, and the gallery is templates only.
   const gallery = readSrc('src/builder/SectionGallery.tsx');
   assert.match(gallery, /Pre-made sections/);
-  assert.match(gallery, /Widgets/);
+  assert.doesNotMatch(gallery, /\["widgets",/, 'the gallery grew a second list of widgets again');
+  assert.doesNotMatch(gallery, /onPlaceWidget/, 'the gallery can place a widget again');
+  // …and the drawer that holds the one list is reachable by name.
+  assert.match(frame, /data-builder-drawer="open"/);
+  assert.match(frame, /PANE_TITLE|Widgets/);
 });
 
 test('every text input is 16px, so a phone does not zoom when it is focused', () => {

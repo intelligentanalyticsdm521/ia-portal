@@ -66,7 +66,7 @@ export type OutlineRow =
 export function rowLabel(w: Node): string {
   if (isContainer(w)) {
     const dir = directionOf(w);
-    const name = dir === "row" ? "Row" : dir === "grid" ? "Grid" : "Box";
+    const name = dir === "grid" ? "Grid" : "Container";
     const n = w.children.length;
     return `${name} · ${n === 0 ? "empty" : n === 1 ? "1 thing" : `${n} things`}`;
   }

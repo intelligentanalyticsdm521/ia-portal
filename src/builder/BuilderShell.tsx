@@ -34,11 +34,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { BuilderFrame } from "./BuilderFrame";
 import { WidgetPane } from "./WidgetPane";
 import { StructureWindow } from "./Navigator";
-import { AddSection, type SectionLayout, type StructurePreset } from "./AddSection";
-import { Canvas, type CanvasDrag, type PickerTarget, type SlashState } from "./Canvas";
+import type { SectionLayout, StructurePreset } from "./AddSection";
+import { Canvas, type CanvasDrag } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
-import { WidgetPicker, topMatch, boxMatches } from "./WidgetPicker";
 import { FirstRun } from "./FirstRun";
 import { AnchoredToast } from "./AnchoredToast";
 import { ContextMenu } from "./ContextMenu";
@@ -155,9 +154,9 @@ export interface BuilderShellProps extends InspectorSlots {
    * WIDGETS THIS CLIENT'S PLAN CANNOT HAVE — kind → the sentence they read.
    *
    * Handoff request R-D1. The website adapter already refuses at its own
-   * insert seam, which is the door a shortcut, a slash command and a drag all
-   * reach; this is what makes the PANE and the PICKER say so before the press,
-   * so "not on your plan" never arrives looking like a bug. The shell only
+   * insert seam, which is the door a shortcut, a pressed tile and a drag all
+   * reach; this is what makes the PANEL say so before the press, so "not on
+   * your plan" never arrives looking like a bug. The shell only
    * carries it — WHAT is locked is the adapter's answer, read from the server
    * (adapters/website/sitePlan.ts), and no tier table lives in the engine.
    */
@@ -198,12 +197,6 @@ export interface BuilderShellProps extends InspectorSlots {
    * that value is kept. Absent, a click is an ordinary edit.
    */
   onTokenClick?: (token: string) => void;
-  /**
-   * The three choices an empty page offers (D-148). The ENGINE draws them;
-   * the adapter says what they do. Absent, each opens the picker already
-   * filtered to that job, which is the right default for every builder.
-   */
-  emptyChoices?: Array<{ key: string; title: string; hint: string; onPick: () => void }>;
   /**
    * How this builder draws a section, and what the canvas looks like around
    * it. The shell knows nothing about proposals, emails or pages; an adapter
@@ -316,14 +309,10 @@ export function BuilderShell(p: BuilderShellProps) {
    * leave a drop line stranded on the page.
    */
   const [drag, setDrag] = useState<CanvasDrag>(null);
-  /** The picker, open at a "+" or on a slash. See WidgetPicker.tsx. */
-  const [picker, setPicker] = useState<
-    { target: PickerTarget; anchor: { top: number; left: number } | null; slash: boolean } | null>(null);
   /** What just landed: scrolled to, and glowing (D-11). */
   const [flashId, setFlashId] = useState<string | null>(null);
   /** The section on screen, so a pane click lands where the author is looking. */
   const [visibleSectionId, setVisibleSectionId] = useState<string | null>(null);
-  const [slash, setSlash] = useState<SlashState | null>(null);
   /** A refusal, shown AT the control that caused it (D-20). */
   const [toast, setToast] = useState<{ anchor: string; message: string; action?: () => void; actionLabel?: string } | null>(null);
   const [firstRun, setFirstRun] = useState(false);
@@ -357,8 +346,6 @@ export function BuilderShell(p: BuilderShellProps) {
    * laptop the page is the thing you are trying to look at.
    */
   const [panel, setPanel] = useState(true);
-  /** The Add-section pop-up: Blank or Template, and where it landed. */
-  const [addAt, setAddAt] = useState<{ index: number; anchor: { top: number; left: number } | null } | null>(null);
   const doc = p.doc;
   const copy = useMemo(() => resolveCopy(p.copy), [p.copy]);
 
@@ -482,10 +469,10 @@ export function BuilderShell(p: BuilderShellProps) {
   /**
    * A widget, built from its definition.
    *
-   * Pulled out because THREE things now create one — the pane, the picker and
-   * the slash command — and a second copy of "what a new comparison-cards
-   * widget starts with" is how one of them ends up without the Recommended
-   * badge.
+   * Pulled out because THREE things create one — a tile pressed in the pane, a
+   * tile dragged onto the page, and a drop on the add area — and a second copy
+   * of "what a new comparison-cards widget starts with" is how one of them ends
+   * up without the Recommended badge.
    */
   const buildWidget = useCallback((def: WidgetDef) => {
     const props: Record<string, unknown> = JSON.parse(JSON.stringify(def.defaults || {}));
@@ -517,9 +504,9 @@ export function BuilderShell(p: BuilderShellProps) {
    * ONE insert either way: a drag or a "+" that went through its own code path
    * would be a second set of rules about what a new widget's props are.
    */
-  const insertWidget = useCallback((def: WidgetDef, count?: number, at?: InsertSpot) => {
+  const insertWidget = useCallback((def: WidgetDef, count?: number, at?: InsertSpot, from?: BuilderDocument) => {
     if (p.onInsertWidget && p.onInsertWidget(def, count) === false) return;
-    let next = doc;
+    let next = from ?? doc;
     let spot = at ?? insertSpotFor(doc, selection, visibleSectionId);
     if (!spot) {
       const made = makeSection({ label: "Section" });
@@ -587,17 +574,6 @@ export function BuilderShell(p: BuilderShellProps) {
     landed(spot.sectionId, spot.columnIndex, spot.index, box.id);
   }, [apply, doc, landed, refuse, select, selection, visibleSectionId]);
 
-  /** A "+" on the page: a NEW section holding whatever is chosen. */
-  const insertInNewSection = useCallback((def: WidgetDef, count: number | undefined, index: number) => {
-    if (p.onInsertWidget && p.onInsertWidget(def, count) === false) return;
-    if (def.kind === "columns") { p.onAddBlank?.(index); return; }
-    const s = makeSection({ label: def.label });
-    const widget = buildWidget(def);
-    const next = addWidget(addSection(doc, s, index), s.id, 0, widget, 0);
-    apply(next, null, `Added a section with ${def.label} in it`);
-    landed(s.id, 0, 0, widget.id);
-  }, [apply, buildWidget, doc, landed, p]);
-
   /**
    * A DROP. Either a new widget from the pane or one already on the page.
    *
@@ -634,130 +610,35 @@ export function BuilderShell(p: BuilderShellProps) {
     if (def) insertWidget(def, undefined, spot);
   }, [apply, doc, drag, insertBox, insertWidget, refuse, select]);
 
-  /** The "+" and the empty column both open the ONE picker, anchored there. */
-  const openPicker = useCallback((target: PickerTarget, rect: DOMRect) => {
-    setSlash(null);
-    setPicker({ target, anchor: { top: rect.bottom + 6, left: rect.left }, slash: false });
-  }, []);
-
-  const pickFromPicker = useCallback((def: WidgetDef) => {
-    const state = picker;
-    setPicker(null);
-    if (!state) return;
-    if (state.target.kind === "newSection") insertInNewSection(def, undefined, state.target.index);
-    else insertWidget(def, undefined, state.target.spot);
-  }, [insertInNewSection, insertWidget, picker]);
-
   /**
-   * A BOX WAS CHOSEN in the picker (§11.12, D-156).
+   * "DRAG WIDGET HERE" — a drop on the add area (the reference editor's words).
    *
-   * Its own handler beside `pickFromPicker` and not a branch inside it, because
-   * a container is not a `WidgetDef` and pretending it was one would mean every
-   * `WIDGETS_BY_KIND` lookup in the Portal had to be taught about a kind no
-   * adapter offers. Same two targets, same two calls.
+   * A new section goes in at that index and the thing lands in it, as ONE undo
+   * step: the section and the insert are computed from the same document, the
+   * way every other two-part operation here is.
    */
-  const pickBoxFromPicker = useCallback((preset: ContainerPreset) => {
-    const state = picker;
-    setPicker(null);
-    if (!state) return;
-    if (state.target.kind === "newSection") {
-      const made = makeSection({ label: preset.label });
-      const next = addSection(doc, made, state.target.index);
-      const spot = firstSpotIn(next, made.id);
-      if (!spot) return;
-      const box = makePreset(preset.key);
-      apply(insertNode(next, spot.hostId, 0, box), null, `Added a section with a ${preset.label.toLowerCase()} in it`);
-      landed(made.id, 0, 0, box.id);
-      return;
-    }
-    insertBox(preset, state.target.spot);
-  }, [apply, doc, insertBox, landed, picker]);
-
-  /**
-   * THE SLASH COMMAND. "/" on an empty line, then Enter.
-   *
-   * The clear and the insert are ONE document operation on purpose: applying
-   * them separately would compute the second from the `doc` prop, which React
-   * has not re-rendered yet, and the cleared "/pricing" would come straight
-   * back.
-   */
-  const slashCommit = useCallback(() => {
-    const s = slash;
-    setSlash(null);
-    if (!s) return;
-    /**
-     * LET GO OF THE CARET FIRST.
-     *
-     * FOUND BY DRIVING IT (2026-09-17): the canvas deliberately skips its
-     * repaint while the focus is inside a section (otherwise React rewrites
-     * the HTML under the cursor), so the "/pri" the author typed stayed on
-     * screen and the widget that had just been added was invisible until they
-     * clicked elsewhere. The model was right and the page was a lie.
-     */
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    const def = topMatch(p.adapter, s.query);
-    // BY NODE ID, LIKE EVERY OTHER EDIT (V-1). This used to scan the top of
-    // each column for the widget being typed into, so "/" inside a card in a
-    // box found nothing and the slash command was dead from the second level
-    // down — the "/pricing" stayed on the page and nothing was added.
-    const widget = widgetById(doc, s.widgetId);
-    if (!widget) return;
-    const here = pathOfNode(doc, s.widgetId);
-    if (!here) return;
-    const cleared = editWidgetText(doc, s.widgetId, s.path, "");
-    /**
-     * "/row" IS AN ANSWER (§11.12, the picker's Layout group).
-     *
-     * The slash command opens the SAME picker the "+" does, and that picker's
-     * first group is Box / Row / Grid — but only the "+" door passed
-     * `onPickBox`, so in slash mode the three boxes were not in the list and
-     * Enter could not reach them. Brandon's sentence starts *"drag that into
-     * this box"*: a box you cannot ask for is a box that does not exist.
-     * ONE handler, `insertBox`, reached from both doors.
-     */
-    const box = def ? null : (s.query.trim() ? boxMatches(s.query)[0] : null);
-    if (box) {
-      const spot = insertSpotFor(cleared, { kind: "widget", ...here });
-      if (spot) insertBox(box, spot, cleared);
-      else apply(cleared, `${s.widgetId}:${s.path}`);
-      return;
-    }
-    if (!def) { apply(cleared, `${s.widgetId}:${s.path}`); return; }
-    if (p.onInsertWidget && p.onInsertWidget(def) === false) {
-      apply(cleared, `${s.widgetId}:${s.path}`);
-      return;
-    }
-    const made = buildWidget(def);
-    // BESIDE WHAT IS BEING TYPED INTO, IN ITS OWN BOX (§11.12). The old line
-    // counted an index inside `columns[n]`, so "/" inside a card in a row put
-    // the new thing at the top of the column instead of next to the card.
-    const spot = insertSpotFor(cleared, { kind: "widget", ...here });
+  const dropOnAddArea = useCallback((at: number) => {
+    const payload = drag;
+    setDrag(null);
+    if (!payload) return;
+    if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    const sec = makeSection({ label: "Section" });
+    const next = addSection(doc, sec, at);
+    const spot = firstSpotIn(next, sec.id);
     if (!spot) return;
-    apply(insertNode(cleared, spot.hostId, spot.index, made));
-    landed(spot.sectionId, spot.columnIndex, spot.index, made.id);
-  }, [apply, buildWidget, doc, insertBox, landed, p, slash]);
-
-  /**
-   * A BOX CLICKED IN THE SLASH PICKER — the other half of the same door.
-   *
-   * The picker in slash mode now renders the Layout group (`onPickBox`), and a
-   * row you can see has to be a row you can press. It clears the "/row" the
-   * author typed and puts the box exactly where the widget they were typing in
-   * sits, through the SAME `insertBox` the "+" uses — so the refusal at the
-   * depth limit, the undo step and the selection are all one behaviour.
-   */
-  const slashCommitBox = useCallback((preset: ContainerPreset) => {
-    const s = slash;
-    setSlash(null);
-    if (!s) return;
-    (document.activeElement as HTMLElement | null)?.blur?.();
-    const here = pathOfNode(doc, s.widgetId);
-    if (!here) return;
-    const cleared = editWidgetText(doc, s.widgetId, s.path, "");
-    const spot = insertSpotFor(cleared, { kind: "widget", ...here });
-    if (!spot) { apply(cleared, `${s.widgetId}:${s.path}`); return; }
-    insertBox(preset, spot, cleared);
-  }, [apply, doc, insertBox, slash]);
+    if (payload.kind === "move") {
+      const id = nodeIdAt(doc, payload.path);
+      if (!id) return;
+      const after = moveNode(next, id, spot.hostId, 0);
+      if (after === next) return;
+      apply(after, null, "Moved it into a new section");
+      select({ kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id });
+      return;
+    }
+    if (payload.box) { insertBox(payload.box, spot, next); return; }
+    const def = WIDGETS_BY_KIND[payload.label];
+    if (def) insertWidget(def, undefined, spot, next);
+  }, [apply, doc, drag, insertBox, insertWidget, p, select]);
 
   /** D-35: take me to the first thing that is still blank. */
   function jumpToProblem() {
@@ -1205,31 +1086,13 @@ export function BuilderShell(p: BuilderShellProps) {
         return false;
       case "escape":
         if (menu) { setMenu(null); return true; }
-        if (addAt) { setAddAt(null); return true; }
-        if (picker) { setPicker(null); return true; }
-        if (slash) { setSlash(null); return true; }
         if (structure) { setStructure(false); return true; }
         if (selection) { select(null); return true; }
         return false;
       default: return false;
     }
-  }, [addAt, apply, clip, deleteSection, deleteWidget, doc, doRedo, doUndo, menu, p, picker, preview,
-      refuse, runMenuAction, select, selection, slash, structure]);
-
-  /**
-   * THE EMPTY PAGE (D-148, rewritten for §11.13.1 item 5).
-   *
-   * WAS three cards — "Add your customer and property", "Add products and
-   * services", "Add words" — each opening the picker filtered to one of
-   * D-147's job groups. Those groups are gone, and the reference editor's
-   * empty page offers the same two things every other gap offers: a blank
-   * section, or a template. So the empty page is now the "Add section"
-   * strip, and the engine hands in no cards of its own — one door instead
-   * of a second, differently-worded one.
-   *
-   * An ADAPTER may still hand in its own cards; nothing here overrides that.
-   */
-  const emptyChoices = p.emptyChoices;
+  }, [apply, clip, deleteSection, deleteWidget, doc, doRedo, doUndo, menu, p, preview,
+      refuse, runMenuAction, select, selection, structure]);
 
   return (
     <BuilderFrame
@@ -1264,10 +1127,8 @@ export function BuilderShell(p: BuilderShellProps) {
           adapter={p.adapter}
           onInsert={(def) => insertWidget(def)}
           onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
-          /* NO `onPickBox` HERE any more: the panel's Layout group is
-             Elementor's two widgets, and the Grid tile inserts a grid
-             container through `registry.presetFor`. The box PRESETS are the
-             picker's and the slash command's door — see below. */
+          /* The panel's Layout group is Elementor's two widgets, and the Grid
+             tile inserts a grid container through `registry.presetFor`. */
           {...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {})}
         />
       ) : null}
@@ -1316,7 +1177,6 @@ export function BuilderShell(p: BuilderShellProps) {
             onOpenTemplate={p.onOpenTemplate}
             onClose={() => setGallery(null)}
             onPlaceSection={(s) => placeSection(s, gallery?.at ?? doc.sections.length)}
-            onPlaceWidget={(w, c) => insertWidget(w, c)}
             /* M-23 — one of the author's own blocks, dropped at the "+" that
                was pressed. Cloned, so two copies of one block are two sections
                with their own ids and not two views of the same one. */
@@ -1327,34 +1187,6 @@ export function BuilderShell(p: BuilderShellProps) {
               select({ kind: "section", sectionId: fresh.id });
             }}
           />
-          {/* THE ONE PICKER: every "+", every empty column, every slash. */}
-          {picker && (
-            <WidgetPicker
-              adapter={p.adapter}
-              anchor={picker.anchor}
-              heading={copy.paneHeading}
-              lockedKinds={p.lockedKinds}
-              onPick={pickFromPicker}
-              /* A BOX FROM THE PANEL lands where a widget from the panel lands:
-             at the selection, through the SAME `insertBox` the "+" picker
-             uses, refusals and all. `pickBoxFromPicker` is the picker's own
-             wrapper and needs a picker to be open. */
-          onPickBox={(preset) => insertBox(preset)}
-              onClose={() => setPicker(null)}
-            />
-          )}
-          {slash && (
-            <WidgetPicker
-              adapter={p.adapter}
-              anchor={slash.rect}
-              query={slash.query}
-              lockedKinds={p.lockedKinds}
-              heading="Type to find it, then press Enter"
-              onPick={() => slashCommit()}
-              onPickBox={slashCommitBox}
-              onClose={() => setSlash(null)}
-            />
-          )}
           {toast && (
             <AnchoredToast
               anchor={toast.anchor}
@@ -1404,18 +1236,6 @@ export function BuilderShell(p: BuilderShellProps) {
                 }
                 apply(after, null, "Moved it");
               }}
-            />
-          )}
-
-          {/* ADD A SECTION (§11.13.1 item 5, D-165): Blank or Template;
-              Blank → Flexbox or Grid → pick a structure. */}
-          {addAt && (
-            <AddSection
-              anchor={addAt.anchor}
-              noun={copy.noun}
-              onClose={() => setAddAt(null)}
-              onTemplate={() => { const at = addAt.index; setAddAt(null); setGallery({ at }); }}
-              onBlank={(layout, preset) => { const at = addAt.index; setAddAt(null); addStructure(at, layout, preset); }}
             />
           )}
 
@@ -1471,7 +1291,7 @@ export function BuilderShell(p: BuilderShellProps) {
           {naming && p.onSaveBlock && (
             <NameBlockDialog
               title="Save this as your own block"
-              intro={`It goes in your template library under “Your own blocks” and in the “+” picker, so you can drop it into any ${copy.noun} without building it again.`}
+              intro={`It goes in your template library under “Your own blocks”, so you can drop it into any ${copy.noun} without building it again.`}
               defaultName={naming.label || ""}
               onClose={() => setNaming(null)}
               onSave={(name, note) => { const sec = naming; setNaming(null); void p.onSaveBlock?.(sec, name, note); }}
@@ -1503,13 +1323,8 @@ export function BuilderShell(p: BuilderShellProps) {
         onDropWidget={dropWidget}
         onSelect={select}
         onEditText={onEditText}
-        onOpenPicker={openPicker}
         flashWidgetId={flashId}
         onVisibleSection={setVisibleSectionId}
-        slash={slash}
-        onSlash={setSlash}
-        onSlashCommit={slashCommit}
-        emptyChoices={emptyChoices}
         onRefuse={refuse}
         onTokenClick={p.onTokenClick}
         onDuplicateWidget={(path) => apply(duplicateWidget(doc, path), null, "Copied a block")}
@@ -1526,10 +1341,12 @@ export function BuilderShell(p: BuilderShellProps) {
         onDeleteSection={deleteSection}
         onMoveSection={(id, to) => apply(moveSection(doc, id, to), null,
           `Moved ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
-        /* ONE door (§11.13.1 item 5): the pop-up asks Blank or Template and
-           the shell does whichever was chosen. `onAddBlank` is still the
+        /* THE ADD AREA (Elementor's): "+" -> Flexbox or Grid -> a structure,
+           or the folder -> the template library. `onAddBlank` is still the
            adapter's veto — it runs inside `addStructure`. */
-        onAddSection={(at, rect) => setAddAt({ index: at, anchor: { top: rect.bottom + 6, left: rect.left } })}
+        onAddBlank={(at: number, layout: SectionLayout, preset: StructurePreset) => addStructure(at, layout, preset)}
+        onAddTemplate={(at: number) => setGallery({ at })}
+        onDropOnAddArea={dropOnAddArea}
       />
     </BuilderFrame>
   );

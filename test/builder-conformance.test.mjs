@@ -766,8 +766,15 @@ describe("point 7 · three widget states, each with its own sentence", () => {
     }
   });
 
-  test("the three surfaces a client reads all carry WHICH state it is", () => {
-    for (const file of ["WidgetPane.tsx", "WidgetPicker.tsx", "SectionGallery.tsx"]) {
+  test("the TWO surfaces a client reads carry WHICH state it is — and the third is deleted", () => {
+    /* WAS "the three surfaces": the panel, the widget pop-up and the gallery.
+       `WidgetPicker.tsx` is deleted (2026-09-19) — widgets live in the left
+       panel and nowhere else — so a state it could disagree about is one fewer
+       place to keep in step. */
+    assert.throws(
+      () => readFileSync(new URL("../src/builder/WidgetPicker.tsx", import.meta.url), "utf8"),
+      /ENOENT/, "the widget pop-up is back, and with it a third copy of the three states");
+    for (const file of ["WidgetPane.tsx", "SectionGallery.tsx"]) {
       const src = readFileSync(new URL(`../src/builder/${file}`, import.meta.url), "utf8");
       assert.ok(src.includes('"data-widget-state"'), `${file} still has one bucket for two refusals`);
       assert.ok(src.includes('"data-widget-state": "offered"'), `${file} never says a row IS offered`);

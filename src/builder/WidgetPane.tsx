@@ -42,8 +42,6 @@ import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import * as Icons from "lucide-react";
 import { widgetTooltip, type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
-import type { ContainerPreset } from "./treeOps";
-import { boxMatches } from "./WidgetPicker";
 import { openGroups, panelGroups, type PanelGroup } from "./widgetGroups";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
@@ -75,18 +73,6 @@ export interface WidgetPaneProps {
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
   /**
-   * A BOX WAS CHOSEN (§11.12) — "box", "row" or "grid".
-   *
-   * The reference editor's Layout group holds Container and Grid, and a panel
-   * whose Layout group has no container in it is a Layout group in name only.
-   * A separate handler and not a fake `WidgetDef`, because a container is not
-   * a widget: it has no registry entry, no adapter decides whether to offer
-   * it, and the shell puts it on the page with `makePreset` rather than
-   * `buildWidget`. Exactly the door WidgetPicker already has — the same
-   * prop, the same `boxMatches`, so the panel and the "+" cannot offer
-   * different boxes.
-   */
-  /**
    * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
    *
    * The three states of §11.12: offered, not on this plan, or needs a product
@@ -100,22 +86,12 @@ export interface WidgetPaneProps {
 
 export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
-  const found = useMemo(() => panelGroups(adapter, query), [adapter, query]);
-  /**
-   * LAYOUT IS SHOWN WHEN EITHER HALF MATCHES.
-   *
-   * `panelGroups` returns the groups holding a matching WIDGET, and a box is
-   * not a widget — so typing "row", which matches the Row box and no
-   * widget at all, would drop Layout out of the list while the panel was
-   * holding exactly the thing asked for. The picker had this defect and it was
-   * found by driving it (2026-09-17); the same fix, in the same shape.
-   */
   /* NO BOX PRESETS AND NO SPECIAL CASE (integration, 2026-09-19). The Layout
      group holds two real WIDGETS — Container and Grid — so a search for "row"
      matches one of them and the group is there on its own. The pane used to
      add the group back when only a PRESET matched; the presets are gone from
      this panel, and with them the rule that existed for them. */
-  const groups = found;
+  const groups = useMemo(() => panelGroups(adapter, query), [adapter, query]);
   const total = useMemo(
     () => groups.reduce((n, g) => n + g.widgets.length, 0),
     [groups]);
@@ -124,10 +100,10 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
    * WHICH ACCORDIONS ARE OPEN.
    *
    * `null` means "nobody has clicked a heading yet", so the default from
-   * widgetGroups applies and follows the search: first group open when the box
-   * is empty, every matching group open when it is not. The moment the author
-   * opens or shuts one themselves, their set wins — and clearing the search
-   * puts the default back, because `shut` is reset with the query.
+   * widgetGroups applies — EVERY group open, as the reference editor's panel
+   * is. The moment the author opens or shuts one themselves, their set wins,
+   * and clearing the search puts the default back because `open` is reset with
+   * the query.
    */
   const [open, setOpen] = useState<PanelGroup[] | null>(null);
   const shown = open ?? openGroups(groups, query);
@@ -189,12 +165,10 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
                       two tiles side by side and the two inserted different
                       things — the preset a real box, the widget a node nothing
                       draws. §11.13.1: "Layout holds exactly Container and
-                      Grid, as Elementor's does", and `registry.presetFor` is
-                      what makes the Grid TILE insert a grid container. A row
-                      is a Container with its direction set, which is the
-                      reference editor's own answer.
-                      `onPickBox` stays for the PICKER and the slash command,
-                      where typing "/row" has to reach something. */}
+                      Grid, as the reference editor's does", and
+                      `registry.presetFor` is what makes the Grid TILE insert a
+                      grid container. A row is a Container with its direction
+                      set, which is the reference editor's own answer. */}
                   {g.widgets.map((w) => {
                     const lock = lockedKinds?.[w.kind] ?? null;
                     const label = widgetLabel(w, adapter);

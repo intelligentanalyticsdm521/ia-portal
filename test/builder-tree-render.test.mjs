@@ -304,10 +304,21 @@ describe("a box draws its children, at any depth", () => {
     assert.doesNotThrow(() => renderDocument(d, makeContext(d, {})));
   });
 
-  test("an empty box says what to do with it, and only to the author", () => {
+  test("an empty box is a dashed TARGET for the author and nothing at all for the customer", () => {
+    /* WAS "an empty box says what to do with it" — the renderer printed the
+       sentence "Drag anything in here." Deleted 2026-09-19: the canvas draws a
+       "+" in the middle of an empty container, as the reference editor does,
+       and the renderer's job is the document the customer reads. */
     const d = doc([box("b1", row(), [])]);
-    assert.match(html(d, "edit"), /Drag anything in here/);
-    assert.ok(!html(d).includes("Drag anything"), "a customer was told to drag something");
+    const edit = html(d, "edit");
+    assert.ok(!/Drag anything in here/.test(edit), "the renderer prints the sentence again");
+    assert.ok(!/bx-boxdrop/.test(edit), "the sentence's own element is back");
+    // PRESENT: the dashed target is still there in the editor, by its class,
+    // and it is still a drop host the canvas can find.
+    assert.match(edit, /bx-box-empty/);
+    assert.match(edit, /data-bx-host="b1"/);
+    // …and the customer gets no empty box at all.
+    assert.ok(!html(d).includes("bx-box-empty"), "the customer's copy carries an empty box");
   });
 });
 

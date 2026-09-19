@@ -687,8 +687,9 @@ export function setLayout(doc: BuilderDocument, sectionId: string, layout: 1 | 2
  * Put a node at the top level of a column. The LEGACY insert.
  *
  * One line of its own logic — "which column is that" — and then `insertNode`,
- * which is the one insert every "+", drag, slash command and upgrade goes
- * through. Two inserts would be two sets of rules about where a thing may go.
+ * which is the one insert the add area, a drag, a pressed tile and the upgrade
+ * all go through. Two inserts would be two sets of rules about where a thing
+ * may go.
  */
 export function addWidget(
   doc: BuilderDocument,

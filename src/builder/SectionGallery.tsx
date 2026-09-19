@@ -50,7 +50,6 @@ export interface SectionGalleryProps {
   premade?: PremadeSection[];
   onClose: () => void;
   onPlaceSection: (premade: PremadeSection) => void;
-  onPlaceWidget: (widget: WidgetDef, count?: number) => void;
   onOpenTemplate?: (t: SavedTemplate) => void;
   savedTemplates?: SavedTemplate[];
   /**
@@ -68,7 +67,7 @@ export interface SectionGalleryProps {
   thumb?: (key: string) => React.ReactNode;
 }
 
-type Tab = "sections" | "widgets" | "blocks" | "templates";
+type Tab = "sections" | "blocks" | "templates";
 
 export function SectionGallery(p: SectionGalleryProps) {
   const [tab, setTab] = useState<Tab>("sections");
@@ -79,9 +78,6 @@ export function SectionGallery(p: SectionGalleryProps) {
   const pool = p.premade ?? PREMADE_SECTIONS;
   const tagList = p.tags ?? PREMADE_TAGS;
   const sections = useMemo(() => searchSections(pool, query, tag), [pool, query, tag]);
-  /* ONE grouping (D-165). This read `groupForPane`, which was registry.ts's
-     own copy of the grouping `widgetTasks` already did; the two are one now. */
-  const widgets = useMemo(() => panelGroups(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
   const saved = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),
     [p.savedTemplates, query]);
@@ -97,8 +93,8 @@ export function SectionGallery(p: SectionGalleryProps) {
       open
       onClose={p.onClose}
       product="oliver"
-      eyebrow="Add to the page"
-      title="Widgets and pre-made sections"
+      eyebrow="Template library"
+      title="Pre-made sections and your templates"
       subtitle="Pre-made sections are starting points. Place one, then change anything on it."
       size="info"
       z={60}
@@ -122,7 +118,6 @@ export function SectionGallery(p: SectionGalleryProps) {
           <div style={{ display: "flex", gap: 4, background: "#F2F6F9", borderRadius: 6, padding: 3, fontSize: 12, fontWeight: 600 }}>
             {([
               ["sections", `Pre-made sections · ${sections.length}`],
-              ["widgets", `Widgets · ${widgets.length}`],
               ["blocks", `Your own blocks · ${blocks.length}`],
               ["templates", `My templates · ${templates.length}`],
             ] as Array<[Tab, string]>).map(([k, label]) => (
@@ -135,7 +130,7 @@ export function SectionGallery(p: SectionGalleryProps) {
           </div>
           <label style={{ display: "flex", alignItems: "center", gap: 6, border: "1px solid #CBD5E1", borderRadius: 4, padding: "7px 10px", width: 320, background: "#fff" }}>
             <Search size={14} color="#94A3B8" />
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search sections, widgets and templates…"
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search sections and templates…"
               aria-label="Search the gallery"
               style={{ border: "none", outline: "none", fontSize: 12, flex: 1 }} />
           </label>
@@ -166,7 +161,7 @@ export function SectionGallery(p: SectionGalleryProps) {
                   disabled={!!s.locked}
                   /* THE THREE STATES, on the gallery too (catalogue G.4):
                      `data-widget-state` is `offered`, `plan` or `ownership`,
-                     the same three words the pane and the picker carry. */
+                     the same three words the widget panel carries. */
                   {...(s.locked ? {
                     "data-premade-locked": s.locked.sentence,
                     "data-widget-state": s.locked.reason,
@@ -191,21 +186,6 @@ export function SectionGallery(p: SectionGalleryProps) {
               {!sections.length && <Empty query={query} />}
             </div>
           </>
-        )}
-
-        {tab === "widgets" && (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: 12, overflowY: "auto" }}>
-            {widgets.map((w) => (
-              <button key={w.kind} type="button" title={widgetTooltip(w, p.adapter)} data-widget-kind={w.kind}
-                onClick={() => { p.onPlaceWidget(w, w.count?.default); p.onClose(); }}
-                style={{ textAlign: "left", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 10, padding: 12, cursor: "pointer" }}>
-                <img src={w.picture} alt="" aria-hidden="true" style={{ height: 40, width: 64, background: "#F2F6F9", borderRadius: 4 }} />
-                <div style={{ fontSize: 12, fontWeight: 600, marginTop: 8 }}>{widgetLabel(w, p.adapter)}</div>
-                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.3, marginTop: 3 }}>{widgetDescription(w, p.adapter)}</div>
-              </button>
-            ))}
-            {!widgets.length && <Empty query={query} />}
-          </div>
         )}
 
         {tab === "blocks" && (

@@ -32,7 +32,7 @@ export interface FindResult {
   hint: string;
   /** Set on a section row: which section to select and scroll to. */
   sectionId?: string;
-  /** Set on a widget row: what to insert, where the picker would have put it. */
+  /** Set on a widget row: what to insert, where a pressed tile would put it. */
   widget?: WidgetDef;
   /** Set on an action row: the caller's own id for it. */
   actionId?: string;

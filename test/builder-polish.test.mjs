@@ -193,12 +193,20 @@ describe("M-8 · one menu, wherever it is opened from", () => {
     assert.ok(menuFor({ kind: "section", canSaveBlock: true }).some((i) => i.action === "saveBlock"));
   });
 
-  test("the page, the widget handle and the outline all open the SAME menu", () => {
+  test("RIGHT-CLICK and the outline open the SAME menu — and the handle's ⋯ is gone", () => {
+    /* WAS "the page, the widget handle and the outline all open the SAME
+       menu". The ⋯ was the sixth button on the widget handle, and the six
+       came off on 2026-09-19 (Brandon: "confusing"). Right-click is the one
+       door on the page, which is where the reference editor keeps it — so the
+       promise this test makes is unchanged and one surface shorter. */
     const canvas = SRC("builder/Canvas.tsx");
     const nav = SRC("builder/Navigator.tsx");
     const shell = SRC("builder/BuilderShell.tsx");
+    assert.ok(!canvas.includes("data-widget-more"), "the ⋯ is back on the widget handle");
+    // PRESENT: right-click anywhere on the page, and the outline's own ⋯.
     assert.match(canvas, /onContextMenu=\{\(e\) => \{/, "right-click does nothing on the page");
-    assert.match(canvas, /setAttribute\("data-widget-more", "1"\)/, "the widget handle has no ⋯");
+    assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/, "right-click on a widget opens nothing");
+    assert.match(canvas, /onContextMenu\(\{ kind: "section", sectionId: section\.id \}/);
     assert.match(nav, /data-nav-more="1"/, "the outline row has no more menu");
     // One builder of the items, one runner of them.
     assert.equal((shell.match(/menuFor\(\{/g) || []).length, 1, "the menu is built in two places");
@@ -244,10 +252,27 @@ describe("M-21 · lock and hide say which they are", () => {
     assert.match(nav, /<LockOpen size=\{11\} \/>/);
   });
 
-  test("the widget handle carries both, with the state in the attribute", () => {
+  test("the padlock and the eye left the handle for the menu, and the state is still readable", () => {
+    /* WAS "the widget handle carries both, with the state in the attribute" —
+       an eye and a padlock among six buttons on every widget. Deleted
+       2026-09-19; the handle is the grip alone (a container also gets an "x").
+       M-21's promise — lock and hide SAY which they are — is kept by the two
+       surfaces that remain, so this is the absence and the presence together. */
     const canvas = SRC("builder/Canvas.tsx");
-    assert.match(canvas, /data-widget-hidden/);
-    assert.match(canvas, /data-widget-locked/);
+    for (const gone of ["data-widget-hidden", "data-widget-locked", "bxc-wtool-lock", "bxc-wtool-eye"]) {
+      assert.ok(!canvas.includes(gone), `"${gone}" is back on the widget handle`);
+    }
+    // PRESENT 1 — the right-click menu offers one half of each at a time, and
+    // says which half in words.
+    const menu = SRC("builder/builderMenu.ts");
+    assert.match(menu, /action: "hide", label: `Hide this\$\{device\}`/);
+    assert.match(menu, /action: "lock", label: "Lock so it can't be deleted"/);
+    // PRESENT 2 — the outline row still SHOWS the state, which is where a
+    // hidden section is found again.
+    const nav = SRC("builder/Navigator.tsx");
+    assert.match(nav, /data-nav-locked=\{rowLocked \? "1" : "0"\}/);
+    assert.match(nav, /\{hidden \? <EyeOff size=\{12\} \/> : <Eye size=\{12\} \/>\}/);
+    assert.match(nav, /textDecoration: hidden \? "line-through" : "none"/);
   });
 
   test("the outline knows which parts the author may not unlock", () => {

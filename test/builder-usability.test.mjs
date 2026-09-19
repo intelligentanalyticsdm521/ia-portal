@@ -46,10 +46,12 @@ import { FOCUSABLE_SELECTOR, firstTabTarget, nextTrapIndex } from "../src/builde
 import {
   firstWords, hiddenOf, outline, rowLabel, sectionDropIndex, sectionRows,
 } from "../src/builder/navigatorModel.ts";
+import * as widgetGroups from "../src/builder/widgetGroups.ts";
 import {
-  EMPTY_PAGE_CHOICES, LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor,
-  matchesWidgetQuery, panelGroups, unmappedKinds,
+  LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor,
+  matchesWidgetQuery, openGroups, panelGroups, unmappedKinds,
 } from "../src/builder/widgetGroups.ts";
+import { STRUCTURE_PRESETS, structureSumsTo100 } from "../src/builder/AddSection.tsx";
 import {
   FIRST_RUN_STEPS, nextStep, shouldShowFirstRun,
 } from "../src/builder/firstRunModel.ts";
@@ -440,9 +442,28 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     assert.ok(hits.length >= 1);
   });
 
-  test("the empty page's three choices point at three real groups", () => {
-    assert.equal(EMPTY_PAGE_CHOICES.length, 3);
-    for (const c of EMPTY_PAGE_CHOICES) assert.ok(PANEL_GROUPS.includes(c.group), c.key);
+  test("the empty page's three choices are DELETED; the add area is what an empty page shows", () => {
+    /* WAS "the empty page's three choices point at three real groups" —
+       EMPTY_PAGE_CHOICES, three cards that each opened the widget pop-up
+       filtered to a group. Deleted 2026-09-19: an empty page shows the same
+       add area every other gap shows. */
+    assert.equal(widgetGroups.EMPTY_PAGE_CHOICES, undefined, "EMPTY_PAGE_CHOICES is back");
+    assert.ok(!/EMPTY_PAGE_CHOICES/.test(readSrc("builder/widgetGroups.ts")));
+    // PRESENT: the add area's own three views, and the "+" that starts them.
+    const add = readSrc("builder/AddSection.tsx");
+    assert.match(add, /data-builder-add="container"/);
+    assert.match(add, /data-builder-add="template"/);
+    assert.match(add, /Which layout would you like to use\?/);
+    assert.match(add, /Select your structure/);
+  });
+
+  test("every group starts open, so the widgets are not behind three shut headings", () => {
+    // Was "the first group only". Brandon opened the panel on 2026-09-19 and
+    // saw two tiles; the reference editor's panel shows them all.
+    const groups = panelGroups("proposal");
+    assert.ok(groups.length > 1, "there is only one group, so this proves nothing");
+    assert.deepEqual(openGroups(groups, ""), groups.map((g) => g.group));
+    assert.deepEqual(openGroups(groups, "price"), groups.map((g) => g.group));
   });
 });
 
@@ -604,12 +625,18 @@ describe("the canvas carries the chrome the walk asked for", () => {
   const canvas = readSrc("builder/Canvas.tsx");
   const addbar = readSrc("builder/AddBar.tsx");
 
-  test('a "+" strip sits between every two sections and after the last (D-11)', () => {
+  test('the strip between two sections is a DROP LINE with no "+" on it any more', () => {
+    /* WAS 'a "+" strip sits between every two sections and after the last'.
+       The pill that opened the widget pop-up is deleted (2026-09-19); the gap
+       between two containers shows nothing until something is dragged over it.
+       Adding is the add area's job — `AddSection`, in the page. */
+    assert.doesNotMatch(addbar, /data-builder-add="\+"/, "the + pill is back on the strip between sections");
+    assert.doesNotMatch(addbar, /<button/, "the drop line has a button on it again");
+    // PRESENT: the line itself, and the area that does the adding.
     assert.match(canvas, /<AddBar/);
-    assert.match(addbar, /data-builder-addbar/);
-    assert.match(addbar, /data-builder-add="\+"/);
-    // Above the first one as well, or there is nowhere to add a title band.
-    assert.match(canvas, /kind: "newSection", index: 0/);
+    assert.match(addbar, /data-builder-addbar="between"/);
+    assert.match(addbar, /bxc-addline/);
+    assert.match(canvas, /<AddSection/);
   });
 
   test("EVERY empty box offers its own spot, a column included (D-11, D-156)", () => {
@@ -619,8 +646,10 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /data-builder-addhere/);
     assert.match(canvas, /if \(box\.querySelector\("\[data-widget\]"\)\) continue;/);
     assert.match(canvas, /querySelectorAll<HTMLElement>\("\[data-bx-host\]"\)/);
-    // And a box that is NOT empty is not a dead end either.
-    assert.match(canvas, /data-builder-addin/);
+    // And a box that is NOT empty has NO "+" of its own: the corner button that
+    // fought its parent's for the same pixel is deleted, and a full box is
+    // added to by dragging into it or by selecting it and pressing a tile.
+    assert.doesNotMatch(canvas, /data-builder-addin/, "the corner + inside a full box is back");
   });
 
   test("THE SECTION TOOLBAR IS ON HOVER, not only on selection (D-12)", () => {
@@ -631,31 +660,56 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /\.bxc-sec:hover > \.bxc-toolbar/);
   });
 
-  test("the toolbar is the slim one: drag, up, down, duplicate, delete, settings", () => {
-    for (const title of [
-      "Drag to move this section", "Move this section up", "Move this section down",
-      "Duplicate this section", "Delete this section", "Settings for this section",
-    ]) assert.ok(canvas.includes(title), `the toolbar has no "${title}"`);
-    // And it carries none of the nine settings buttons any more — they live in
-    // the inspector, which is the one home for a setting.
-    for (const gone of ["Light or dark text", "Mark as Recommended", "Number this section (01"]) {
-      assert.ok(!canvas.includes(gone), `"${gone}" is back on the toolbar as well as in the inspector`);
+  test("the section handle is THREE buttons, top centre: add, edit, delete", () => {
+    /* WAS "the toolbar is the slim one: drag, up, down, duplicate, delete,
+       settings" — six. The reference editor's container handle has three, and
+       Move up / Move down / Duplicate are on right-click (`builderMenu.ts`),
+       which is where the reference keeps them. */
+    for (const gone of [
+      "Move this section up", "Move this section down", "Duplicate this section",
+      "Settings for this section", "Light or dark text", "Mark as Recommended",
+    ]) assert.ok(!canvas.includes(gone), `"${gone}" is back on the section handle`);
+    // PRESENT: the three, in Elementor's own words, in order.
+    for (const title of ["Add Container", "Edit Container — drag to move it", "Delete Container"]) {
+      assert.ok(canvas.includes(title), `the handle has no "${title}"`);
     }
+    const bar = canvas.slice(canvas.indexOf('<div className="bxc-toolbar"'), canvas.indexOf('ref={hostRef}'));
+    assert.equal((bar.match(/<button|<span/g) || []).length, 3, "the section handle is not three controls");
+    // And the one at the top centre, as in the reference, rather than floating
+    // over the first widget.
+    assert.match(canvas, /\.bxc-toolbar \{ position: absolute; top: -22px; left: 50%;/);
   });
 
-  test("every widget has a handle with drag, duplicate and delete (D-12)", () => {
+  test("a widget's handle is the GRIP alone, and a container's is grip + x (D-12)", () => {
+    /* WAS "every widget has a handle with drag, duplicate and delete". The six
+       coloured squares on every box — grip, duplicate, delete, eye, padlock,
+       more — are deleted (2026-09-19, Brandon: "confusing"). */
+    for (const gone of [
+      "Make a copy of this ${noun}, right underneath", "Remove this from the page",
+      "bxc-wtool-eye", "bxc-wtool-lock", "bxc-wtool-more",
+    ]) assert.ok(!canvas.includes(gone), `"${gone}" is back on the widget handle`);
+    // PRESENT: the handle, the grip in it, and the "x" only on a container.
     assert.match(canvas, /bxc-wtools/);
     assert.match(canvas, /\[data-widget\]:hover > \.bxc-wtools/);
-    assert.match(canvas, /Make a copy of this \$\{noun\}, right underneath/);
-    assert.match(canvas, /Remove this from the page/);
+    assert.match(canvas, /grip\.className = "bxc-grip"/);
+    assert.match(canvas, /if \(isBox && !locked\) \{/);
+    assert.match(canvas, /b\.title = "Delete Container"/);
     // §11.12 — ONE loop, so a box wears the same handle as everything else and
     // only the words differ.
     assert.match(canvas, /const isBox = el\.dataset\.kind === "container"/);
+    // Everything the six buttons did is on right-click, and that menu is one
+    // module both doors ask.
+    assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/);
   });
 
-  test("a locked widget's handle SAYS WHY rather than doing nothing", () => {
-    assert.match(canvas, /onRefuse\?\.\(/);
-    assert.match(canvas, /you can change the wording, not remove it/);
+  test("a part the law puts there cannot be deleted, and the handle says why", () => {
+    /* WAS "a locked widget's handle SAYS WHY rather than doing nothing", which
+       read the refusal the deleted ✕ on a locked widget raised. A locked
+       container now grows no ✕ at all (`isBox && !locked`), and the sentence
+       moved to the one delete that is still drawn: the section handle's. */
+    assert.match(canvas, /disabled=\{required\}/);
+    assert.match(canvas, /the law asks for both, so it stays/);
+    assert.match(canvas, /const required = section\.columns\.some\(\(c\) => c\.widgets\.some\(\(w\) => w\.locked\)\)/);
   });
 
   test("the new thing is scrolled to and glows (D-11)", () => {
@@ -663,9 +717,18 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /bxc-flash/);
   });
 
-  test("the empty page offers three choices, not a blank sheet (D-148)", () => {
-    assert.match(canvas, /data-builder-empty/);
-    assert.match(canvas, /emptyChoices/);
+  test("an empty page IS the add area, not three cards (D-148)", () => {
+    /* WAS "the empty page offers three choices, not a blank sheet" — the
+       `emptyChoices` cards, each opening the widget pop-up. Deleted: the add
+       area sits at the bottom of the page whether or not there is a page, so
+       an empty one and a full one offer the same door. */
+    assert.doesNotMatch(canvas, /emptyChoices/, "the three cards are back");
+    assert.doesNotMatch(canvas, /data-builder-empty/);
+    // PRESENT: the area is drawn OUTSIDE the section loop, so it is there with
+    // no sections at all.
+    const after = canvas.slice(canvas.indexOf("THE ADD AREA AT THE BOTTOM OF THE PAGE"));
+    assert.match(after, /<AddSection\s+onBlank=\{\(layout, preset\) => props\.onAddBlank\(doc\.sections\.length, layout, preset\)\}/);
+    assert.match(after, /onTemplate=\{\(\) => props\.onAddTemplate\(doc\.sections\.length\)\}/);
   });
 
   test("the section drag lands on the same strip the drop line uses", () => {
@@ -674,15 +737,16 @@ describe("the canvas carries the chrome the walk asked for", () => {
   });
 
   test("the phone still has everything, where dragging never fires", () => {
-    // HTML5 drag does not fire on touch, so every add has to be pressable.
-    // The two buttons this used to name — "Add a blank section here" and
-    // "Add a ready-made section here" — became ONE (§11.13.1 item 5,
-    // D-165): the choice between blank and template is the pop-up's first
-    // question now, and it is made of buttons too.
-    assert.match(canvas, /data-builder-addsection-btn/);
-    assert.match(canvas, /title="Add a section here — blank, or from a template"/);
-    assert.doesNotMatch(canvas, /title="Add a blank section here"/,
-      "the two buttons the pop-up replaced are back");
+    // HTML5 drag does not fire on touch, so every add has to be PRESSABLE.
+    // The add area is buttons all the way down: the round "+", the round
+    // folder, then Flexbox | Grid, then the eight structures.
+    const add = readSrc("builder/AddSection.tsx");
+    assert.match(add, /title="Add New Container"/);
+    assert.match(add, /title="Add Template"/);
+    assert.match(add, /data-addsection-choice="flex"/);
+    assert.match(add, /data-structure-preset=\{preset\.key\}/);
+    // And the empty container's "+" is a button too, not a drop target only.
+    assert.match(canvas, /b\.type = "button";[\s\S]{0,80}b\.className = "bxc-addhere"/);
   });
 });
 
@@ -730,7 +794,6 @@ describe("the frame never closes silently, and Tab stays inside (D-02 / D-19)", 
 describe("the shell wires the rebuild without a second mechanism", () => {
   const shell = readSrc("builder/BuilderShell.tsx");
   const pane = readSrc("builder/WidgetPane.tsx");
-  const picker = readSrc("builder/WidgetPicker.tsx");
 
   test("undo does NOT call the adapter from inside a state updater (D-40)", () => {
     // "Cannot update a component while rendering a different component."
@@ -749,35 +812,42 @@ describe("the shell wires the rebuild without a second mechanism", () => {
       "a spot was built by hand instead of asked for");
   });
 
-  test("THE PANE AND THE PICKER SHARE ONE VOCABULARY", () => {
-    // §11.13.1 (D-165): the grouping is the reference editor's —
-    // Layout / Basic / General / Intelligent Analytics — and BOTH
-    // surfaces make the same call. Two groupings is how the panel and the "+"
-    // start disagreeing about where a widget lives.
+  test("THERE IS ONE LIST OF WIDGETS, and it is the left panel", () => {
+    /* WAS "THE PANE AND THE PICKER SHARE ONE VOCABULARY" — two surfaces, one
+       grouping, because two groupings is how a panel and a pop-up start
+       disagreeing about where a widget lives. The pop-up is DELETED, which is
+       the stronger version of the same promise: there is nothing to disagree
+       with. */
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "WidgetPicker.tsx is back");
+    assert.doesNotMatch(shell, /WidgetPicker/, "the shell mounts a second list of widgets again");
+    for (const rel of ["builder/Canvas.tsx", "builder/AddSection.tsx", "builder/AddBar.tsx"]) {
+      assert.doesNotMatch(readSrc(rel), /data-widget-kind/, `${rel} draws a list of widgets on the page`);
+    }
+    // PRESENT: the one panel, asking the one grouping.
     assert.match(pane, /panelGroups\(adapter, query\)/);
-    assert.match(picker, /panelGroups\(p\.adapter, query\)/);
-    assert.doesNotMatch(picker, /WIDGETS\.filter/);
+    assert.match(pane, /data-widget-kind=\{w\.kind\}/);
   });
 
-  test("the pane, the picker and the slash command build a widget the SAME way", () => {
+  test("the pane and a drag build a widget the SAME way", () => {
     assert.match(shell, /const buildWidget = useCallback\(/);
     assert.equal((shell.match(/makeWidget\(def\.kind, props\)/g) || []).length, 1,
       "a second place that decides what a new widget starts with");
   });
 
-  test("the slash command's clear and insert are ONE document operation", () => {
-    // Two applies in one tick would compute the second from the stale `doc`
-    // prop and the typed "/pricing" would come straight back.
-    // V-1: the clear is now `editWidgetText`, which addresses the widget by
-    // NODE ID — the column scan the old line depended on could not reach a
-    // widget inside a box, so "/" was dead from the second level down.
-    //
-    // Read out of slashCommit ITSELF and not out of the whole file: the box
-    // door beside it clears the same way, so a file-wide match stayed green
-    // with the defect put back (found by mutating it, 2026-09-17).
-    const commit = shell.slice(shell.indexOf("const slashCommit ="), shell.indexOf("const slashCommitBox"));
-    assert.match(commit, /const cleared = editWidgetText\(doc, s\.widgetId, s\.path, ""\)/);
-    assert.match(commit, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
+  test("the slash command is DELETED — no '/' handler anywhere in the builder", () => {
+    /* WAS "the slash command's clear and insert are ONE document operation".
+       "/" on an empty line opened the widget pop-up; both are gone
+       (2026-09-19). Nothing replaces it: the widgets are in the left panel,
+       which has its own search box. */
+    for (const rel of ["builder/BuilderShell.tsx", "builder/Canvas.tsx"]) {
+      const code = readSrc(rel);
+      assert.ok(!/slash/i.test(code), `${rel} still mentions a slash command`);
+      assert.ok(!/=== "\/"/.test(code), `${rel} still watches for a "/" keystroke`);
+    }
+    // PRESENT: the search box in the panel, which is how a widget is found by
+    // typing now.
+    assert.match(pane, /data-pane-search/);
+    assert.match(pane, /placeholder="Search widgets"/);
   });
 
   /* WAS "the counter is a BUTTON that goes somewhere (D-35)" — the
@@ -835,7 +905,7 @@ describe("the shell wires the rebuild without a second mechanism", () => {
 
 describe("no screen in the rebuild names another product", () => {
   const files = [
-    "builder/Canvas.tsx", "builder/AddBar.tsx", "builder/WidgetPicker.tsx", "builder/Navigator.tsx",
+    "builder/Canvas.tsx", "builder/AddBar.tsx", "builder/Navigator.tsx",
     "builder/AddSection.tsx", "builder/FirstRun.tsx", "builder/AnchoredToast.tsx",
     "builder/BuilderFrame.tsx", "builder/BuilderShell.tsx", "builder/WidgetPane.tsx",
     "builder/widgetGroups.ts", "builder/copy.ts", "builder/problems.ts", "builder/firstRunModel.ts",

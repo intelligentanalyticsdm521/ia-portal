@@ -355,9 +355,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     const kind = arionKindOf(def.kind);
     /* THE PLAN, BEFORE ANYTHING IS BUILT (D-157).
      *
-     * The picker greys the row and says why, and this is the second end of the
-     * same guard: a keyboard shortcut, a slash command and a drag all arrive
-     * here, and only one of them goes through the picker. The server refuses
+     * The panel greys the tile and says why, and this is the second end of the
+     * same guard: a keyboard shortcut, a pressed tile and a drag all arrive
+     * here, and only one of them goes through the panel. The server refuses
      * the build as well — three ends, on purpose, because the one a client
      * finds is never the one you thought of. */
     const locked = lockFor(plan, kind);
@@ -866,9 +866,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         premadeTags={SITE_PREMADE_TAGS}
         onSelectionChange={setSelection}
         onInsertWidget={insertWidget}
-        /* R-D1 — the PANE and the PICKER say so before the press. `insertWidget`
-           above is the seam a shortcut, a slash command and a drag all reach,
-           and it refuses; this is the same answer, shown as a greyed row with
+        /* R-D1 — the PANEL says so before the press. `insertWidget`
+           above is the seam a shortcut, a pressed tile and a drag all reach,
+           and it refuses; this is the same answer, shown as a greyed tile with
            the reason as its line, so "not on your plan" never arrives looking
            like a bug. ONE source: the plan the server sent. */
         lockedKinds={lockedKinds}
@@ -1268,7 +1268,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                   onDuplicateSection={() => undefined}
                   onDeleteSection={() => undefined}
                   onMoveSection={() => undefined}
-                  onAddSection={() => undefined}
+                  onAddBlank={() => undefined}
+                  onAddTemplate={() => undefined}
                 />
               </div>
             </div>

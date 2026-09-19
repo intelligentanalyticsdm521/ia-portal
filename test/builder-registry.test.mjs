@@ -474,14 +474,14 @@ describe("the pane groups them", () => {
 
 describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
-  const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
     // §11.13.1: the grouping moved to widgetGroups.ts, which groups the
     // registry's own widgets the way the reference editor groups them —
-    // Layout / Basic / General / Intelligent Analytics — and the PICKER
-    // calls the same function, so the panel and the "+" can never offer two
-    // vocabularies. The rule is unchanged: no list of widgets in this file.
+    // Layout / Basic / General / Intelligent Analytics. There is one caller
+    // now: the pop-up that used to make the same call is deleted, so the
+    // panel has nothing to disagree with. The rule is unchanged: no list of
+    // widgets in this file.
     assert.match(pane, /from "\.\/registry"/);
     assert.match(pane, /panelGroups\(adapter, query\)/);
     assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
@@ -530,10 +530,16 @@ describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
      now — a card is a widget with the same duplicate and delete as
      everything else. The assertion is inverted rather than removed, because
      "the question is gone" is the thing that has to stay true. */
-  test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
-    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
-      assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);
-      assert.doesNotMatch(src, /setAsking/, `${name}: still holds the question's state`);
-    }
+  test("the 'how many?' question is gone, and so is the second surface that asked it (D-156)", () => {
+    /* WAS "gone from BOTH surfaces" — the panel and the widget pop-up. The
+       pop-up itself is deleted (2026-09-19), so the pair below is the absence
+       of the file and the absence of the question in the one panel left. */
+    assert.throws(
+      () => readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8"),
+      /ENOENT/, "WidgetPicker.tsx is back, and it is the surface that used to ask");
+    assert.doesNotMatch(pane, /w\.count\.label/, "the pane still asks how many");
+    assert.doesNotMatch(pane, /setAsking/, "the pane still holds the question's state");
+    // PRESENT: pressing a tile inserts, with no question in between.
+    assert.match(pane, /onClick=\{\(\) => \{ if \(!lock\) onInsert\(w\); \}\}/);
   });
 });

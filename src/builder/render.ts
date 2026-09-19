@@ -286,7 +286,7 @@ export const UNRENDERED_KINDS = [
      a grid layout before anything is stored, so no document ever holds one and
      there is nothing here to draw. A test asserts that. */
   "grid",
-  /* 11.13.2 (D-165) — the two TILES. Pressing one opens a picker and drops
+  /* 11.13.2 (D-165) — the two TILES. Pressing one opens its own chooser and drops
      an atomic widget; neither `product_cards`, `product_line_items` nor
      `terms` is ever on a page or in a stored document, so nothing draws one. */
   "product_cards", "product_line_items",
@@ -570,9 +570,8 @@ function renderContainer(c: Container, ctx: RenderContext, depth = 0): string {
   }
   let kids = childrenOf(c).map((k) => renderWidget(k, ctx, depth + 1)).join("");
   if (!kids && ctx.mode !== "edit") return "";
-  // An EMPTY box is a target, and it says so in words rather than only with a
-  // dashed edge — the same sentence the landing page's box uses.
-  if (!kids) kids = `<div class="bx-boxdrop">Drag anything in here.</div>`;
+  // An EMPTY container, in the editor: nothing but the "+" the canvas puts in
+  // the middle of it, which is what the reference editor shows.
   const sy = hasStyle(c.style) ? ` ${widgetStyleClass(c.id)}` : "";
   const empty = childrenOf(c).length ? "" : " bx-box-empty";
   // The flow class is what the phone rule and the child-width rule key on. It
@@ -879,7 +878,10 @@ export const DOCUMENT_CSS = `
 /* A row's children share the width rather than each demanding their own. */
 .bx-box > .bx-w { min-width: 0; }
 .bx-box-row > .bx-w, .bx-box-grid > .bx-w { flex: 1 1 0; min-width: 0; }
-.bx-boxdrop { flex: 1 1 100%; padding: 14px; text-align: center; color: #94A3B8; font-size: 11px; }
+/* .bx-boxdrop dressed the sentence an empty box used to print. Deleted
+   2026-09-19 with the sentence itself: the canvas draws a "+" in the middle of
+   an empty container, as the reference editor does, and a rule for an element
+   nothing emits is a rule nobody can find the owner of. */
 .bx-rec { position: absolute; top: 8px; right: 12px; color: #fff; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; }
 .bx-changed { box-shadow: inset 3px 0 0 #B45309; }
 .bx-chg { position: absolute; top: 8px; left: 12px; font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; border-radius: 999px; padding: 2px 9px; background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; }

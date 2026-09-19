@@ -142,8 +142,8 @@ export function EmailBuilder(p: EmailBuilderProps) {
    * The unsubscribe footer is the last thing in an email and holds nothing
    * else. The walk added two product cards with nothing selected and they
    * landed BELOW it. One rule on the way in beats a guard on each of the seven
-   * ways a widget can arrive — the pane, a "+", a drag, the slash command, a
-   * pre-made section, a duplicate and an undo.
+   * ways a widget can arrive — a tile pressed in the pane, a tile dragged, the
+   * add area, a pre-made section, a duplicate and an undo.
    */
   const applyDoc = useCallback((next: BuilderDocument) => setDoc(settleFooter(next)), []);
   const [resetKey, setResetKey] = useState(0);

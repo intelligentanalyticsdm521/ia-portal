@@ -127,13 +127,13 @@ export interface InspectorProps extends InspectorSlots {
 /**
  * What a box is CALLED at the top of the inspector.
  *
- * "Row", "Grid", "Box" — the same three words the outline uses, from the same
+ * "Container" or "Grid" — Elementor's two words, the same ones the outline uses, from the same
  * `directionOf`, because a thing called one name in the outline and another in
  * the inspector is two things as far as the author is concerned.
  */
 function boxName(n: Node | null): string {
   const d = directionOf(n);
-  return d === "row" ? "Row" : d === "grid" ? "Grid" : "Box";
+  return d === "grid" ? "Grid" : "Container";
 }
 
 export function Inspector(p: InspectorProps) {
@@ -400,7 +400,7 @@ export function Inspector(p: InspectorProps) {
 
               {/* THE COUNT CONTROL WAS HERE AND IS DELETED (D-156, item 4).
 
-                  It had THREE homes — the pane, the picker and this — and this
+                  It had THREE homes — the pane, the old pop-up and this — and this
                   one was found by DRIVING the builder rather than by reading
                   it: a Key facts widget dropped into a row still showed "HOW
                   MANY FACTS? 2 3 4 5 6 7 8 9 10" on the right.
