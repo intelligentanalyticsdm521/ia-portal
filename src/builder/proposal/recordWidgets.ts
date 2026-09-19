@@ -44,6 +44,7 @@
  */
 import type { Widget } from "../model";
 import { esc, type RenderContext } from "../render";
+import { lookup } from "../merge";
 import type { WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import {
@@ -201,10 +202,22 @@ export function resolveRecord(
 ): ResolvedField[] {
   const over = overridesOf(props);
   const rec = record || {};
+  /* A FLAT PROP IS A TYPED VALUE TOO (integration, 2026-09-19).
+     `address_block` stored the author's words as `props.name` / `props.address`
+     / `props.contact` / `props.notes`, and a document written before the
+     upgrade landed still holds them. The upgrade turns them into `overrides`,
+     but a document can reach a renderer without passing through it, and a
+     typed address on a signed agreement must not come back blank. So a flat
+     prop counts as an override: the author typed it, and it says *Typed, not
+     live* and offers *Put it back* exactly as a retyped value does. */
+  const LEGACY: Record<string, string> = { site_contact: "contact", access_notes: "notes" };
+  const p: any = props || {};
   return shownFields(kind, props).map((f) => {
     const live = str(rec[f.key]);
-    const has = Object.prototype.hasOwnProperty.call(over, f.key);
-    return { ...f, live, overridden: has, value: has ? over[f.key] : live };
+    const flat = str(p[f.key]) || str(p[LEGACY[f.key] ?? ""]);
+    const has = Object.prototype.hasOwnProperty.call(over, f.key) || !!flat;
+    const typed = Object.prototype.hasOwnProperty.call(over, f.key) ? over[f.key] : flat;
+    return { ...f, live, overridden: has, value: has ? typed : live };
   });
 }
 
@@ -296,6 +309,56 @@ const LAYOUT_STYLE: Record<RecordLayout, string> = {
  * full: a run that is only drawn once it has words is a field nobody can fill
  * in (D-01, the worst moment of the 2026-09-16 walk).
  */
+/**
+ * THE BOOK A SURFACE WITH NO ADAPTER CAN BUILD, out of the RenderContext.
+ *
+ * The proposal BUILDER hands `renderRecordBlock` a book it assembled from the
+ * contact, the picked sites and the business identity it fetched. The
+ * customer's own copy (`PublicProposalPage`), the sent wire
+ * (`proposalDoc.toWire`) and the template preview do not have an adapter —
+ * they render the stored document with a plain context — and before this they
+ * drew NOTHING for these three widgets, which is a signed agreement arriving
+ * without the customer block on it.
+ *
+ * Every value here comes from facts the context already carries: the merge map
+ * (`customer.*`, `business.*` — the same map the tokens on the page read) and
+ * `ctx.business`. It is the FALLBACK: `render.ts` asks `ctx.extra` first, so
+ * the builder's richer book still wins on its own canvas. One renderer, one
+ * shape, two ways of filling it in.
+ */
+export function recordBookFromContext(ctx: RenderContext): RecordBook {
+  const m = ctx.merge || {};
+  const at = (token: string) => str(lookup(m, token));
+  const clean = (o: RecordValues): RecordValues => {
+    const out: RecordValues = {};
+    for (const [k, v] of Object.entries(o)) if (str(v).trim()) out[k] = str(v);
+    return out;
+  };
+  const b: any = ctx.business || {};
+  return {
+    customer: clean({
+      name: at("customer.name"),
+      company: at("customer.company_name") || at("customer.legal_name"),
+      contact: at("customer.contact_name"),
+      email: at("customer.email"),
+      phone: at("customer.phone"),
+      billing_address: at("customer.billing_address") || at("customer.address"),
+    }),
+    /* No location fallback: a site block names the site it is bound to, and
+       `recordFor` resolves that against `ctx.locations`. Guessing a site from
+       the merge map is how one customer's address printed on another's paper
+       (the defect the drive found on 2026-09-19). */
+    service_location: {},
+    business_info: clean({
+      logo: str(b.logoUrl),
+      name: str(b.name) || at("business.name"),
+      phone: at("business.phone") || str(b.phone),
+      email: at("business.email") || str(b.email),
+      licence: at("business.licence"),
+    }),
+  };
+}
+
 export function renderRecordBlock(w: Widget, ctx: RenderContext, book: RecordBook): string {
   const kind = w.kind as RecordKind;
   const fields = resolveRecord(kind, w.props, recordFor(kind, w.props, ctx, book));
@@ -399,10 +462,9 @@ export const CUSTOMER_DEF: WidgetDef = {
   kind: "customer",
   label: "Customer",
   description: "Who this document is for — filled from their record the moment you pick them.",
-  task: "Customer & property",
   icon: "UserRound",
   picture: RECORD_PICTURE,
-  category: "Document",
+  category: "Intelligent Analytics",
   /* PROPOSAL ONLY, for now, and the reason is written down rather than left
      as an omission. The renderer for these lives in the proposal adapter
      (`ctx.extra`), because only that adapter has the customer, the site and
@@ -412,7 +474,12 @@ export const CUSTOMER_DEF: WidgetDef = {
      for them on those panes; they need the adapter's own record book first,
      and the ask is in D165_HANDOFF_2026-09-19.md. */
   adapters: ["proposal"],
-  defaults: { ...fieldDefaults("customer"), ...bindingDefaults("lumen:locations") },
+  /* `lumen:customer`, not `lumen:locations`. `BOUND_KINDS` (widgets/binding.ts)
+     is the one list saying which source each bound kind reads, and the Customer
+     widget reads the customer picked in the top bar. Caught at integration
+     2026-09-19: the def carried the SITE's source, so the panel would have
+     offered a customer block bound to a list of yards. */
+  defaults: { ...fieldDefaults("customer"), ...bindingDefaults("lumen:customer") },
   controls: [...fieldControls("customer"), ...BINDING_CONTROLS],
 };
 
@@ -420,15 +487,20 @@ export const SERVICE_LOCATION_DEF: WidgetDef = {
   kind: "service_location",
   label: "Service Location",
   description: "Where the work happens — the site you chose, straight off the customer's record.",
-  task: "Customer & property",
   icon: "MapPin",
   picture: pictureFrom(
     `<path d="M12 8a5 5 0 0 1 5 5c0 4-5 9-5 9s-5-5-5-9a5 5 0 0 1 5-5z" fill="#94A3B8" stroke="none"/>`
     + bar(22, 10, 34) + bar(22, 20, 26),
   ),
-  category: "Document",
+  category: "Intelligent Analytics",
   adapters: ["proposal"],
-  defaults: { ...fieldDefaults("service_location"), ...bindingDefaults("lumen:locations") },
+  /* `locationId` IS ONE OF THE DEFAULTS, explicitly. It is not our key alone:
+     oliver-api's `locationIdsInDocument` reads it off the stored document to
+     open a job per site, and `bindPlansToLocation` fills it when the author
+     picks the document's location — both of which look for the key being
+     PRESENT and empty, not absent (§11.13's shared vocabulary says so in as
+     many words). */
+  defaults: { ...fieldDefaults("service_location"), locationId: "", ...bindingDefaults("lumen:locations") },
   controls: [...fieldControls("service_location"), ...BINDING_CONTROLS],
 };
 
@@ -436,13 +508,26 @@ export const BUSINESS_INFO_DEF: WidgetDef = {
   kind: "business_info",
   label: "Business Info",
   description: "Your own name, mark and details — always the current ones.",
-  task: "Customer & property",
   icon: "Building2",
   picture: pictureFrom(`<rect x="6" y="8" width="12" height="16" rx="1" fill="#94A3B8"/>` + bar(22, 12, 26) + bar(22, 21, 20)),
-  category: "Document",
+  category: "Intelligent Analytics",
   adapters: ["proposal"],
-  defaults: { ...fieldDefaults("business_info"), ...bindingDefaults("document") },
-  controls: [...fieldControls("business_info"), ...BINDING_CONTROLS],
+  /* `logo` IS A PROP AS WELL AS A FIELD — D-39's other half.
+     The band's logo has always had three answers: the brand logo, none, or a
+     picture the author chose. "None" is the Show-logo toggle; "a picture the
+     author chose" is this, and it is stored under the FIELD's own key so
+     `resolveRecord` treats it exactly as a retyped value — *Typed, not live*,
+     with *Put it back* returning to Brand Identity's mark. One override
+     mechanism, not a second prop with its own rule. */
+  defaults: { ...fieldDefaults("business_info"), logo: "", ...bindingDefaults("document") },
+  controls: [
+    ...fieldControls("business_info"),
+    {
+      key: "logo", label: "A different logo", type: "image", tab: "content", section: "Fields",
+      help: "Leave this empty to use the logo from Brand Identity.",
+    },
+    ...BINDING_CONTROLS,
+  ],
 };
 
 /** The three, as the pane shows them: who it is for, where, who from. */
@@ -452,4 +537,5 @@ export default {
   RECORD_KINDS, RECORD_FIELDS, RECORD_WIDGET_DEFS,
   isRecordKind, fieldsOf, shownFields, showKey, layoutOf, resolveRecord,
   overrideProps, putFieldBackProps, overriddenOn, renderRecordBlock,
+  recordBookFromContext,
 };

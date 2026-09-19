@@ -27,7 +27,7 @@ import assert from "node:assert/strict";
 
 import { deserialise, emptyDocument, makeSection, makeWidget, serialise } from "../src/builder/model.ts";
 import { WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
-import { groupByTask } from "../src/builder/widgetTasks.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
 import { atomKindsAgree, ATOM_KINDS, resolveCatalogCard, tagOf } from "../src/builder/widgets/index.ts";
 import { makeContext, renderDocument, renderWidget, RENDERED_KINDS } from "../src/builder/render.ts";
 import { isTypographic } from "../src/builder/style.ts";
@@ -141,15 +141,20 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
     for (const k of ["card", "catalog_card", "price_line", "totals"]) {
       assert.ok(isTypographic(k), k);
     }
-    /* `service_location`, `customer`, `business_info` and D-165's eighteen new
-       standard widgets are NOT in `TYPOGRAPHIC_KINDS` yet. That Set lives in
-       `src/builder/style.ts`, which belongs to the stream that owns the
-       Inspector; the exact list to add is item S2→S1-1 in
-       `overnight-report/D165_HANDOFF_2026-09-19.md`. Asserted as a GAP rather
-       than left silent, so the day it lands this line is what tells whoever
-       fixed it to come back here. */
-    for (const k of ["service_location", "customer", "alert", "icon_box"]) {
-      assert.equal(isTypographic(k), false, `${k} has its Typography group — update the handoff and this test`);
+    /* THE GAP IS CLOSED (S2→S1-1, integration 2026-09-19). The three record
+       widgets and D-165's standard set that carries words now have their
+       Typography group; this was a `false` assertion saying they did not, and
+       it is the line that told whoever fixed it to come back here. */
+    for (const k of ["service_location", "customer", "business_info",
+      "alert", "icon_box", "image_box", "star_rating", "counter", "progress_bar",
+      "tabs", "accordion", "toggle"]) {
+      assert.ok(isTypographic(k), `${k} has no Typography group`);
+    }
+    /* …and the ones that carry NO text do not get one. A Typography group over
+       a picture or a spacer is a control that does nothing, which is the same
+       defect as a missing one wearing the opposite face. */
+    for (const k of ["icon", "image", "divider", "spacer", "menu_anchor", "shortcode"]) {
+      assert.equal(isTypographic(k), false, `${k} has a Typography group over nothing to type`);
     }
   });
 
@@ -158,8 +163,8 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
        out of a client's own records — their catalogue, their customer, their
        sites — is in **Intelligent Analytics**, which is where a plugin's own
        widgets sit in a real Elementor. */
-    const ia = groupByTask("proposal")
-      .find((g) => g.task === "Intelligent Analytics").widgets.map((w) => w.kind);
+    const ia = panelGroups("proposal")
+      .find((g) => g.group === "Intelligent Analytics").widgets.map((w) => w.kind);
     for (const k of ["product_cards", "product_line_items", "totals", "card", "customer", "service_location"]) {
       assert.ok(ia.includes(k), `${k} is not under Intelligent Analytics`);
     }

@@ -16,7 +16,7 @@
  * Pure: no React, no DOM. `node --test` drives the ranking, the order and the
  * "never creates" rule.
  */
-import { flatMatches, type WidgetTask } from "./widgetTasks";
+import { flatPanelMatches, type PanelGroup } from "./widgetGroups";
 import { widgetDescription, widgetLabel, type BuilderAdapter, type WidgetDef } from "./registry";
 import type { BuilderDocument } from "./model";
 
@@ -134,7 +134,7 @@ export function findResults(query: string, input: FindInput): FindResult[] {
       sectionId: s.id,
     }));
 
-  const widgets: FindResult[] = flatMatches(input.adapter, q)
+  const widgets: FindResult[] = flatPanelMatches(input.adapter, q)
     .slice(0, limit)
     .map((w) => ({
       id: `widget:${w.kind}`,
@@ -189,5 +189,5 @@ export function createsRecords(actions: FindAction[] = []): boolean {
   return recordMakers([...ALWAYS_ACTIONS, ...actions]).length > 0;
 }
 
-export type { WidgetTask };
+export type { PanelGroup };
 export default { findResults, ALWAYS_ACTIONS, FIND_GROUP_LABEL, FIND_PLACEHOLDER, createsRecords };

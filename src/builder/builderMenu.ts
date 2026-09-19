@@ -30,6 +30,7 @@ export type MenuAction =
   | "duplicate"
   | "copy"
   | "paste"
+  | "pasteStyle"
   | "moveUp"
   | "moveDown"
   | "addAbove"
@@ -130,6 +131,19 @@ export function menuFor(f: MenuFacts): MenuItem[] {
     disabled: !f.canPaste,
     ...(f.canPaste ? {} : { reason: "Nothing has been copied yet." }),
   });
+  /* THE LOOK, NOT THE THING (§11.13.1, R-1.7). Ctrl+Shift+V has always done
+     this; the menu did not offer it, so the only way to find it was to know it.
+     A widget only: a section's own look is its five groups, and "paste style"
+     onto a section would mean something different from what it means in the
+     reference editor. */
+  if (!isSection) {
+    items.push({
+      action: "pasteStyle",
+      label: "Paste only the look",
+      disabled: !f.canPaste,
+      ...(f.canPaste ? {} : { reason: "Nothing has been copied yet." }),
+    });
+  }
 
   const first = (f.index ?? 0) <= 0;
   const last = f.total != null && (f.index ?? 0) >= f.total - 1;

@@ -478,14 +478,33 @@ describe("the atomic widgets that replace the composites", () => {
        which is the "nobody types into a list of boxes" complaint from the other
        side. Every row is editable in place now, and the typed value is kept on
        the widget so the record is untouched. */
-    assert.ok(/data-edit="address"/.test(out), "a bound address cannot be corrected on the page");
-    assert.ok(/data-edit="name"/.test(out), "a bound property name cannot be corrected on the page");
+    // The path is `overrides.<field>`, which is where a retyped value is KEPT
+    // (§11.12 F.2) and what `setPropPath` writes — one edit path, and the
+    // record is untouched.
+    assert.ok(/data-edit="overrides\.address"/.test(out), "a bound address cannot be corrected on the page");
+    assert.ok(/data-edit="overrides\.name"/.test(out), "a bound property name cannot be corrected on the page");
   });
 
   test("an address block with no location takes what is typed", () => {
     const out = html(doc([w("w1", "service_location", { name: "The other yard", address: "88 Second St", contact: "Sam Okafor" })]), "edit");
     assert.ok(out.includes("The other yard") && out.includes("88 Second St") && out.includes("Sam Okafor"));
-    assert.match(out, /data-edit="address"/);
+    assert.match(out, /data-edit="overrides\.address"/);
+  });
+
+  test("a converted address keeps the words the author typed", () => {
+    /* THE CONVERSION WRITES `overrides`. `address_block` stored the author's
+       words as flat props; the record widget keeps a retyped field under
+       `overrides.<key>` (§11.12 F.2), and `upgrade.ts` moves them there. If a
+       renderer read only the flat props, a typed address on a signed agreement
+       would come back blank the first time somebody opened it. Asserted here
+       because a golden case would only prove the shape one document happens to
+       have. */
+    const out = html(doc([w("w1", "service_location", {
+      overrides: { name: "The other yard", address: "88 Second St", site_contact: "Sam Okafor" },
+    })]), "view");
+    assert.ok(out.includes("The other yard"), "an override for the name never reached the page");
+    assert.ok(out.includes("88 Second St"), "an override for the address never reached the page");
+    assert.ok(out.includes("Sam Okafor"), "an override for the site contact never reached the page");
   });
 
   test("a short answer is ONE widget, so four of them are four widgets", () => {

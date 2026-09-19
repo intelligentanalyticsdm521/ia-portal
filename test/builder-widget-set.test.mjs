@@ -31,8 +31,11 @@ import {
   WIDGETS, WIDGETS_BY_KIND, WIDGET_CATEGORIES, PANEL_ORDER, LAYOUT_PRESETS,
   GRID_PRESET_KIND, controlTab, presetFor, unorderedKinds, widgetsFor, widgetLabel,
 } from "../src/builder/registry.ts";
-import { groupByTask, TASK_GROUPS, unmappedCategories } from "../src/builder/widgetTasks.ts";
-import { ATOM_KINDS, atomKindsAgree, expandPanelTile, isPanelTile } from "../src/builder/widgets/index.ts";
+import { panelGroups, PANEL_GROUPS, unmappedKinds } from "../src/builder/widgetGroups.ts";
+import { ATOM_KINDS, atomKindsAgree } from "../src/builder/widgets/index.ts";
+import {
+  isCatalogueTile, isPickerTile, nodesForPicks,
+} from "../src/builder/proposal/catalogueTiles.ts";
 import { RENDERED_KINDS, makeContext, renderDocument } from "../src/builder/render.ts";
 import { DELETED_KINDS, upgradeDocument, needsUpgrade } from "../src/builder/upgrade.ts";
 import { COMPOSITE_KINDS } from "../src/builder/upgrade.ts";
@@ -41,6 +44,7 @@ import { makeContainer } from "../src/builder/treeOps.ts";
 import { documentTotals } from "../src/builder/totals.ts";
 import { PREMADE_SECTIONS, SHIPPED_TEMPLATES, documentHeaderSections } from "../src/builder/templates.ts";
 import { snowAgreementDocument } from "../src/builder/snowAgreement.ts";
+import { isRecordKind, renderRecordBlock } from "../src/builder/proposal/recordWidgets.ts";
 
 const NAMES = JSON.parse(readFileSync(
   path.join(process.cwd(), "test/fixtures/elementor-widget-names.json"), "utf8"));
@@ -82,10 +86,11 @@ describe("the left panel is Elementor's", () => {
   test("the groups are Layout / Basic / General / Intelligent Analytics, in that order", () => {
     assert.deepEqual([...WIDGET_CATEGORIES],
       ["Layout", "Basic", "General", "Intelligent Analytics"]);
-    // ONE grouping. `widgetTasks` reads the registry's categories and does not
-    // keep a second list of its own.
-    assert.deepEqual([...TASK_GROUPS], [...WIDGET_CATEGORIES]);
-    assert.deepEqual(unmappedCategories(), []);
+    // ONE grouping, in ONE module. `widgetGroups` reads the registry's own
+    // `category` and keeps no second list; `widgetTasks.ts`, which held the
+    // other half of it, is deleted (integration, 2026-09-19).
+    assert.deepEqual([...PANEL_GROUPS], [...WIDGET_CATEGORIES]);
+    assert.deepEqual(unmappedKinds(), []);
   });
 
   test("Layout holds exactly Container and Grid, as Elementor's does", () => {
@@ -108,7 +113,7 @@ describe("the left panel is Elementor's", () => {
     for (const gone of ["details", "personal_detail", "merge_field", "key_fact", "key_value_table"]) {
       assert.equal(WIDGETS_BY_KIND[gone], undefined, gone);
     }
-    const files = ["src/builder/registry.ts", "src/builder/widgetTasks.ts", "src/builder/render.ts"];
+    const files = ["src/builder/registry.ts", "src/builder/widgetGroups.ts", "src/builder/render.ts"];
     for (const f of files) {
       const src = readFileSync(path.join(process.cwd(), f), "utf8");
       assert.equal(/DetailsGroup|PACK_LABELS/.test(src), false, `${f} still names the Details group`);
@@ -136,15 +141,16 @@ describe("each builder offers exactly §11.13.3's list", () => {
   });
 
   /**
-   * THE EMAIL ROW IS SHORT, AND EVERY SUBTRACTION IS NAMED.
+   * THE EMAIL ROW, AND WHY IT IS STILL SHORT OF TWO THINGS.
    *
    * §11.13.3 gives email *"the set above minus what email programs cannot
    * show"*. `adapters/email/emailRender.ts` builds a mailbox out of TABLES and
-   * its own guards refuse flex, grid and CSS classes — the fallback to the
-   * engine's renderer was tried and those guards caught it by name. So the
-   * panel offers what the mailbox draws, and the seven held back — Icon, Icon
-   * Box, Image Box, Star Rating, Alert, Reviews, Book Now — each need a table
-   * renderer, which is item S2 in the handoff.
+   * its own guards refuse flex, grid and CSS classes — a fallback to the
+   * engine's renderer was tried and those guards caught it by name. So a
+   * widget reaches this panel when this file has a TABLE renderer for it, and
+   * Icon, Icon Box, Image Box, Star Rating and Alert now do (integration,
+   * 2026-09-19). **Reviews** and **Book Now** still do not, and are the two
+   * subtractions left — item S2 in the handoff.
    *
    * The IA column uses the ids the mailbox already draws: **Product Cards** is
    * `product_card`, **IA Posts** is `article_card`, **Unsubscribe Footer** is
@@ -154,12 +160,24 @@ describe("each builder offers exactly §11.13.3's list", () => {
   test("email and newsletters", () => {
     assert.deepEqual(labels("email"), [
       "Container", "Grid",
-      "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer",
-      "Icon List", "Testimonial", "Social Icons",
+      "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
+      "Image Box", "Icon Box", "Star Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
       "Product Cards", "IA Posts", "Unsubscribe Footer",
     ]);
   });
 
+  /**
+   * PRODUCT CARDS IS NOT ON THIS LIST, and that is the one place the panel is
+   * short of §11.13.3 (integration, 2026-09-19).
+   *
+   * The tile IS the catalogue picker — it has no stored form of its own, and
+   * pressing it opens the multi-select and drops atoms. That picker is wired
+   * into the proposal builder and nowhere else, so on a website page the tile
+   * would be a button that opens nothing and leaves a node the emitter has to
+   * publish empty. Two streams reached this independently and for the same
+   * reason; the ask is R-3.5 in D165_HANDOFF_2026-09-19.md. arion's emitter
+   * for it is already written, so this is the picker and not the plumbing.
+   */
   test("website pages", () => {
     assert.deepEqual(labels("website"), [
       "Container", "Grid",
@@ -167,10 +185,21 @@ describe("each builder offers exactly §11.13.3's list", () => {
       "Image Box", "Icon Box", "Star Rating", "Image Carousel", "Basic Gallery", "Icon List",
       "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion", "Toggle",
       "Social Icons", "Alert", "Shortcode", "HTML", "Menu Anchor",
-      "Product Cards", "IA Posts", "Reviews", "Book Now",
+      "IA Posts", "Reviews", "Book Now",
       "IA Form", "Newsletter Signup", "Hours and Location",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
     ]);
+  });
+
+  test("Product Cards is offered where its picker is, and nowhere else", () => {
+    assert.ok(labels("proposal").includes("Product Cards"));
+    for (const a of ["website", "landing"]) {
+      assert.equal(labels(a).includes("Product Cards"), false,
+        `${a} offers a tile whose picker is not wired into it`);
+    }
+    // The email's "Product Cards" is a DIFFERENT kind — `product_card`, the
+    // composite the mailbox already draws — so it is on that panel by name.
+    assert.ok(labels("email").includes("Product Cards"));
   });
 
   test("landing pages are the website's list without the menus", () => {
@@ -188,9 +217,9 @@ describe("each builder offers exactly §11.13.3's list", () => {
 
   test("the groups a builder draws are in Elementor's order and never empty", () => {
     for (const adapter of CONTRACT_ADAPTERS) {
-      const groups = groupByTask(adapter).map((g) => g.task);
+      const groups = panelGroups(adapter).map((g) => g.group);
       assert.deepEqual(groups, WIDGET_CATEGORIES.filter((c) => groups.includes(c)), adapter);
-      for (const g of groupByTask(adapter)) assert.ok(g.widgets.length > 0, `${adapter} ${g.task}`);
+      for (const g of panelGroups(adapter)) assert.ok(g.widgets.length > 0, `${adapter} ${g.group}`);
     }
   });
 });
@@ -254,13 +283,19 @@ describe("Grid is a Container", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("Product Cards and Product Line Items are pickers", () => {
+  /* ONE EXPANSION, and it is `proposal/catalogueTiles.nodesForPicks`
+     (integration, 2026-09-19). This file used to drive `expandPanelTile` in
+     `widgets/iaBlocks.ts`, a second copy of the same job that the screen never
+     called: the proposal builder opens the catalogue picker and calls the
+     function below. The unwired one is deleted, and these are the same claims
+     made against the one that runs. */
   const picks = [
-    { offeringId: "off-1", priceId: "p-1", snapshot: { title: "Snow removal", amount: 625 } },
-    { offeringId: "off-2" },
+    { offering: { offering_id: "off-1", name: "Snow removal" }, price: { price_id: "p-1", unit_amount: 625 } },
+    { offering: { offering_id: "off-2", name: "Grounds care" }, price: null },
   ];
 
   test("Product Cards drops one catalogue card per pick, in a row", () => {
-    const [box] = expandPanelTile("product_cards", picks);
+    const [box] = nodesForPicks("product_cards", picks);
     assert.equal(box.kind, "container");
     assert.equal(box.style.direction, "row");
     assert.deepEqual(box.children.map((c) => c.kind), ["catalog_card", "catalog_card"]);
@@ -268,25 +303,35 @@ describe("Product Cards and Product Line Items are pickers", () => {
     // catalogue's two keys as the catalogue does (widgets/binding.ts).
     assert.equal(box.children[0].props._ia_selection.offering_id, "off-1");
     assert.equal(box.children[0].props._ia_selection.price_id, "p-1");
-    assert.deepEqual(box.children[0].props._ia_snapshot, picks[0].snapshot);
   });
 
   test("Product Line Items drops a stack of priced lines", () => {
-    const out = expandPanelTile("product_line_items", picks);
+    const out = nodesForPicks("product_line_items", picks);
     assert.deepEqual(out.map((n) => n.kind), ["price_line", "price_line"]);
     assert.equal(out[0].props.quantity, 1);
   });
 
   test("cancelling the picker adds nothing", () => {
-    assert.deepEqual(expandPanelTile("product_cards", []), []);
-    assert.deepEqual(expandPanelTile("product_line_items", [{ offeringId: "" }]), []);
+    assert.deepEqual(nodesForPicks("product_cards", []), []);
+    assert.deepEqual(nodesForPicks("product_line_items", []), []);
   });
 
   test("the atoms are not tiles — the picker is the only door", () => {
-    assert.ok(isPanelTile("product_cards") && isPanelTile("product_line_items"));
-    assert.equal(isPanelTile("catalog_card"), false);
+    assert.ok(isCatalogueTile("product_cards") && isCatalogueTile("product_line_items"));
+    assert.equal(isCatalogueTile("catalog_card"), false);
+    // Terms is the third tile: a picker, not a widget with a stored form.
+    assert.ok(isPickerTile("terms"));
     assert.equal(WIDGETS_BY_KIND.catalog_card.hidden, true);
     assert.equal(WIDGETS_BY_KIND.price_line.hidden, true);
+  });
+
+  test("there is only ONE expansion on the platform", () => {
+    // The mutation that matters: put the second copy back and this goes red.
+    const src = readFileSync(path.join(process.cwd(), "src/builder/widgets/iaBlocks.ts"), "utf8");
+    assert.equal(/export function expandPanelTile/.test(src), false,
+      "iaBlocks.ts declares a second expansion again");
+    assert.equal(/PRODUCT_CARDS_DEF|PRODUCT_LINE_ITEMS_DEF/.test(src), false,
+      "iaBlocks.ts declares the tiles again");
   });
 });
 
@@ -502,9 +547,6 @@ describe("every widget the panel offers draws something", () => {
     shortcode: { shortcode: "[contact-form]" },
     menu_anchor: { anchor: "prices" },
     html: { html: "<p>Hello.</p>" },
-    customer: {},
-    service_location: { name: "North lot", address: "1 Fixture Way" },
-    business_info: { name: "Fixture Landscaping", phone: "555-0100" },
     ia_posts: { items: [{ title: "First snow", excerpt: "It came early." }] },
     reviews: { items: [{ quote: "Great.", author: "A customer", rating: 5 }] },
     book_now: { label: "Book now", url: "https://example.test/book" },
@@ -525,9 +567,49 @@ describe("every widget the panel offers draws something", () => {
   }
 
   test("a widget in edit mode is reachable even when it is empty", () => {
-    for (const kind of ["icon_box", "image_box", "alert", "customer", "service_location", "business_info"]) {
+    for (const kind of ["icon_box", "image_box", "alert"]) {
       const doc = docOf([makeWidget(kind, {})]);
       const html = renderDocument(doc, makeContext(doc, { mode: "edit", business: { name: "Fixture" } }));
+      assert.ok(/data-edit=|data-placeholder=/.test(html), `${kind} has nothing to click`);
+    }
+  });
+
+  /**
+   * THE THREE RECORD WIDGETS DRAW THROUGH THE ADAPTER, so they are pinned
+   * where their renderer really is (integration, 2026-09-19).
+   *
+   * `render.ts` asks `ctx.extra` before its own switch, and the proposal
+   * adapter is the one that has the customer, the site and the business in its
+   * hand — so Customer, Service Location and Business Info are drawn by
+   * `proposal/recordWidgets.renderRecordBlock` with a RECORD BOOK, not by the
+   * engine's map. Rendering them with no book and asserting a wrapper would be
+   * asserting the wrong thing about the wrong renderer.
+   */
+  for (const [kind, book] of [
+    ["customer", { customer: { name: "Fixture Grounds Co", email: "hello@example.test" } }],
+    ["service_location", { service_location: { name: "North lot", address: "1 Fixture Way" } }],
+    ["business_info", { business_info: { name: "Fixture Landscaping", phone: "555-0100" } }],
+  ]) {
+    test(`${kind} puts something on the page, through the adapter's record book`, () => {
+      const doc = docOf([makeWidget(kind, {})]);
+      const base = ctx(doc);
+      const html = renderDocument(doc, {
+        ...base,
+        extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, book) : null),
+      });
+      assert.ok(html.includes(`bx-w-${kind}`), `${kind} drew no wrapper`);
+      assert.ok(html.replace(/<[^>]*>/g, "").trim().length > 0, `${kind} drew nothing`);
+    });
+  }
+
+  test("the three are reachable in edit mode even with an empty record", () => {
+    for (const kind of ["customer", "service_location", "business_info"]) {
+      const doc = docOf([makeWidget(kind, {})]);
+      const base = makeContext(doc, { mode: "edit", business: { name: "Fixture" } });
+      const html = renderDocument(doc, {
+        ...base,
+        extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, {}) : null),
+      });
       assert.ok(/data-edit=|data-placeholder=/.test(html), `${kind} has nothing to click`);
     }
   });

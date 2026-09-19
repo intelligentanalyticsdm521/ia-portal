@@ -47,14 +47,14 @@ import {
   firstWords, hiddenOf, outline, rowLabel, sectionDropIndex, sectionRows,
 } from "../src/builder/navigatorModel.ts";
 import {
-  DEFAULT_TASK, EMPTY_PAGE_CHOICES, TASK_GROUPS, flatMatches, groupByTask,
-  matchesWidgetQuery, taskFor, unmappedCategories,
-} from "../src/builder/widgetTasks.ts";
+  EMPTY_PAGE_CHOICES, LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor,
+  matchesWidgetQuery, panelGroups, unmappedKinds,
+} from "../src/builder/widgetGroups.ts";
 import {
   FIRST_RUN_STEPS, nextStep, shouldShowFirstRun,
 } from "../src/builder/firstRunModel.ts";
 import {
-  PROBLEMS_CTA, anchorSelector, firstWithFocus, focusSelector, problemsLabel,
+  PROBLEMS_CTA, anchorSelector, firstWithFocus, focusSelector,
 } from "../src/builder/problems.ts";
 import { DEFAULT_COPY, resolveCopy } from "../src/builder/copy.ts";
 import { WIDGETS, widgetsFor, WIDGET_CATEGORIES } from "../src/builder/registry.ts";
@@ -373,8 +373,8 @@ describe("the outline (D-12)", () => {
  */
 describe("the widget picker groups the way the panel does (D-165)", () => {
   test("the groups are Elementor's four, and every category is one of them", () => {
-    assert.deepEqual([...TASK_GROUPS], [...WIDGET_CATEGORIES]);
-    assert.deepEqual(unmappedCategories(), []);
+    assert.deepEqual([...PANEL_GROUPS], [...WIDGET_CATEGORIES]);
+    assert.deepEqual(unmappedKinds(), []);
   });
 
   test("Brandon's two sentences are answerable in one group each", () => {
@@ -382,7 +382,7 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     // add sections for service address or property address." Both are in the
     // Intelligent Analytics group, which is where a client would look for the
     // things that come out of their own records.
-    const ia = groupByTask("proposal").find((g) => g.task === "Intelligent Analytics");
+    const ia = panelGroups("proposal").find((g) => g.group === "Intelligent Analytics");
     assert.ok(ia.widgets.some((w) => w.kind === "service_location"),
       "the service address is not in the Intelligent Analytics group");
     assert.ok(ia.widgets.some((w) => w.kind === "product_line_items"),
@@ -391,16 +391,16 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
 
   test("every widget the pane offers lands in a group — nothing is dropped", () => {
     for (const adapter of ["proposal", "website", "email", "landing", "brand"]) {
-      const grouped = groupByTask(adapter).flatMap((g) => g.widgets.map((w) => w.kind)).sort();
+      const grouped = panelGroups(adapter).flatMap((g) => g.widgets.map((w) => w.kind)).sort();
       const offered = widgetsFor(adapter).map((w) => w.kind).sort();
       assert.deepEqual(grouped, offered, `${adapter}: the picker and the pane disagree about what exists`);
     }
   });
 
   test("a widget's group is its category, and nothing else decides it", () => {
-    for (const w of WIDGETS) assert.equal(taskFor(w), w.category, w.kind);
+    for (const w of WIDGETS) assert.equal(groupFor(w), w.category, w.kind);
     // A category the panel does not draw falls back rather than vanishing.
-    assert.equal(taskFor({ kind: "nope", label: "", description: "", category: "Nonsense" }), DEFAULT_TASK);
+    assert.equal(groupFor({ kind: "nope", label: "", description: "", category: "Nonsense" }), LAST_GROUP);
   });
 
   test("the search reads the sentence and the group name, not only the label", () => {
@@ -420,21 +420,21 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     // FOUND BY DRIVING IT: the grid drew registry order while Enter took the
     // ranked top, so the first card and the thing Enter added were two
     // different widgets.
-    const first = groupByTask("proposal", "pro")[0].widgets[0];
-    assert.equal(first.kind, flatMatches("proposal", "pro")[0].kind);
+    const first = panelGroups("proposal", "pro")[0].widgets[0];
+    assert.equal(first.kind, flatPanelMatches("proposal", "pro")[0].kind);
   });
 
   test("a NAME beats a mention — 'customer' finds the Customer widget first", () => {
     // The slash command's Enter takes the first of these, so the order is not
     // cosmetic: getting it wrong inserts the wrong thing without asking.
-    const hits = flatMatches("proposal", "customer");
+    const hits = flatPanelMatches("proposal", "customer");
     assert.equal(hits[0].kind, "customer");
     assert.ok(hits.length > 1, "nothing else mentions the customer at all");
   });
 
   test("the empty page's three choices point at three real groups", () => {
     assert.equal(EMPTY_PAGE_CHOICES.length, 3);
-    for (const c of EMPTY_PAGE_CHOICES) assert.ok(TASK_GROUPS.includes(c.task), c.key);
+    for (const c of EMPTY_PAGE_CHOICES) assert.ok(PANEL_GROUPS.includes(c.group), c.key);
   });
 });
 
@@ -503,10 +503,21 @@ describe("problems point at the page (D-03 / D-20 / D-35)", () => {
     assert.equal(firstWithFocus(undefined), null);
   });
 
-  test("the counter is written out, in plain words, singular and plural", () => {
-    assert.equal(problemsLabel(1), "1 detail still to fill in");
-    assert.equal(problemsLabel(5), "5 details still to fill in");
-    assert.equal(problemsLabel(0), "");
+  /* WAS "the counter is written out, in plain words, singular and plural".
+     `problemsLabel` IS DELETED (§11.13.2, integration 2026-09-19): the
+     Details group went and the "N details still to fill in" counter went with
+     it, because a counter is the group coming back in a new place. What is
+     left is the JUMP, and the button's own words. */
+  test("the counter's sentence is GONE from the engine, not moved", () => {
+    const src = readSrc("builder/problems.ts");
+    assert.ok(!/export function problemsLabel/.test(src), "problemsLabel is back");
+    // The explanation may SAY the words; nothing may return them. Checked as
+    // a returned/assigned string rather than as any mention, because deleting
+    // the note that records the deletion to satisfy a grep is how the reason
+    // gets lost (the main session's own correction to the Details gate).
+    assert.ok(!/(return|=)\s*`?["'`][^"'`]*still to fill in/.test(src),
+      "something still builds the counter's sentence");
+    // The jump stays, and so do the button's words: Send refuses and goes there.
     assert.match(PROBLEMS_CTA, /first/i);
   });
 });

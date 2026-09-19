@@ -207,7 +207,13 @@ describe("§3.2's union is registered", () => {
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
-
+    "form", "gallery", "social_links", "countdown", "logo_strip",
+    /* 11.13.3's Terms: saved clauses in, plain Heading + Text Editor out. A
+       PANEL TILE, declared in src/builder/proposal/catalogueTiles.ts.
+       `clauses` is the widget it replaces on the panel — its kind stays (the
+       snow agreement places it and D-164 pins its numbering) and its TILE is
+       hidden, so there is one Terms door. */
+    "terms",
   ];
 
   for (const kind of REQUIRED) {

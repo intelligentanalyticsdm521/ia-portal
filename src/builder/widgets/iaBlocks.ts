@@ -2,128 +2,39 @@
  * builder/widgets/iaBlocks.ts — the **Intelligent Analytics** group: the tiles
  * that are ours rather than Elementor's.
  *
- * §11.13.3's fourth column, in its own order, per builder. Two of them are not
- * widgets at all:
+ * §11.13.3's fourth column, in its own order, per builder.
  *
- * ── PANEL TILES ───────────────────────────────────────────────────────────
- * **Product Cards** and **Product Line Items** open the ONE catalogue picker
- * (whole catalogue / one category / picked items) and drop one ATOMIC
- * `catalog_card` or `price_line` per pick — into a row Container for the cards,
- * as a stack for the lines. So they are a tile with no stored form of their
- * own: `expandPanelTile` below is the one function that turns a set of picks
- * into nodes, and the insert seam calls it. A tile that reached the canvas
- * un-expanded (an author who cancelled the picker, a document hand-edited)
- * draws a prompt while editing and NOTHING on a customer's copy, because a
- * half-placed widget must never be a gap on a page somebody signs.
- *
- * ── WHY `catalog_card` AND `price_line` ARE NOT TILES ─────────────────────
- * They are what the tiles PRODUCE. Offering the atom beside the tile would be
- * two doors to one job and the second one skips the picker, which is how a card
- * ends up on a proposal bound to nothing.
+ * The two PANEL TILES — Product Cards and Product Line Items — used to be
+ * declared here as well as in `proposal/catalogueTiles.ts`. One of the two was
+ * wired to the screen and the other was not; see the block below for which
+ * went and why.
  */
-import type { Node, Widget } from "../model";
+import type { Widget } from "../model";
 import { esc, type RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, box, pictureFrom, solid } from "../pictures";
 import { editRun } from "./text";
-import { makeContainer, makeWidget } from "../treeOps";
-import { bindingDefaults, selectionProps } from "./binding";
+import { bindingDefaults } from "./binding";
 import { DOCUMENTS, PAGES, SENDS, SITE_ONLY } from "./audience";
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The two panel tiles
-   ══════════════════════════════════════════════════════════════════════════ */
+   THE TWO PANEL TILES LIVED HERE AND ARE DELETED (integration, 2026-09-19)
+   ══════════════════════════════════════════════════════════════════════════
 
-/** One thing the author picked out of the catalogue. */
-export interface CataloguePick {
-  offeringId: string;
-  priceId?: string;
-  /** What the picker knew at the moment of the pick, so a server with no
-   *  catalogue in the request still has words to print. */
-  snapshot?: Record<string, unknown>;
-}
+   **Product Cards** and **Product Line Items** are declared, drawn and expanded
+   in `src/builder/proposal/catalogueTiles.ts`, which is the copy the screen
+   really calls: `ProposalBuilder.tsx` opens the ONE catalogue picker from it,
+   multi-select, and drops one atomic `catalog_card` / `price_line` per pick.
+   This file held a second definition and a second `expandPanelTile`, wired to
+   nothing. Two mechanisms for one concern, so the unwired one goes — replace
+   means delete.
 
-/** The two kinds the pane offers that are a PICKER and not a widget. */
-export const PANEL_TILES = ["product_cards", "product_line_items"] as const;
-export type PanelTile = (typeof PANEL_TILES)[number];
-
-export function isPanelTile(kind: string): kind is PanelTile {
-  return (PANEL_TILES as readonly string[]).includes(kind);
-}
-
-/**
- * THE ONE EXPANSION. Picks in, nodes out.
- *
- * Product Cards → a row Container holding one `catalog_card` per pick, because
- * cards are compared side by side and the row is the thing that says "choose
- * one" (render.ts `offerNote`).
- * Product Line Items → a flat stack of `price_line`s, because money reads down
- * the page and each line is its own total.
- *
- * Returns [] for no picks: an author who opened the picker and cancelled has
- * added nothing, and a widget they did not choose is not a widget.
- */
-export function expandPanelTile(tile: PanelTile, picks: CataloguePick[]): Node[] {
-  const chosen = (picks || []).filter((p) => str(p?.offeringId));
-  if (!chosen.length) return [];
-  const bind = (p: CataloguePick, extra: Record<string, unknown>) => ({
-    ...bindingDefaults("oliver:catalogue"),
-    ...selectionProps("oliver:catalogue", { offeringId: str(p.offeringId), priceId: str(p.priceId || "") }),
-    ...(p.snapshot ? { _ia_snapshot: p.snapshot } : {}),
-    ...extra,
-  });
-  if (tile === "product_cards") {
-    const cards = chosen.map((p) => makeWidget("catalog_card", bind(p, {})));
-    return [makeContainer({ direction: "row", gap: 16 }, cards)];
-  }
-  return chosen.map((p) => makeWidget("price_line", bind(p, { quantity: 1 })));
-}
-
-function tilePrompt(what: string, ctx: RenderContext): string {
-  return ctx.mode === "edit"
-    ? `<div class="bx-imgdrop" data-ia-tile="1">${esc(what)}</div>`
-    : "";
-}
-
-export function renderProductCards(_w: Widget, ctx: RenderContext): string {
-  return tilePrompt("Pick the products to show as cards.", ctx);
-}
-export function renderProductLineItems(_w: Widget, ctx: RenderContext): string {
-  return tilePrompt("Pick the products to add as priced lines.", ctx);
-}
-
-export const PRODUCT_CARDS_DEF: WidgetDef = {
-  kind: "product_cards",
-  label: "Product Cards",
-  description: "Pick products from your catalogue and drop them in as cards, with today's price.",
-  icon: "LayoutGrid",
-  picture: pictureFrom(box(5, 8, 17, 26) + box(24, 5, 17, 29) + box(43, 8, 16, 26)
-    + bar(9, 13, 9, 3) + bar(28, 10, 9, 3) + bar(47, 13, 8, 3)),
-  category: "Intelligent Analytics",
-  /* Proposals and both page builders. §11.13.3 puts Product Cards in all four
-     IA columns; the mailbox's own is `product_card`, the composite that draws as
-     tables and is on disk in stored newsletters, and it carries the name there
-     (see the note at the top of this file). */
-  adapters: ["proposal", "website", "landing"],
-  tier: "ia:oliver",
-  defaults: {},
-  controls: [],
-};
-
-export const PRODUCT_LINE_ITEMS_DEF: WidgetDef = {
-  kind: "product_line_items",
-  label: "Product Line Items",
-  description: "Pick products from your catalogue and add them as priced lines that feed the total.",
-  icon: "ListOrdered",
-  picture: pictureFrom(bar(6, 9, 30) + bar(46, 9, 12) + bar(6, 19, 34) + bar(46, 19, 12) + bar(6, 29, 26) + bar(46, 29, 12)),
-  category: "Intelligent Analytics",
-  adapters: DOCUMENTS,
-  tier: "ia:oliver",
-  defaults: {},
-  controls: [],
-};
+   They are `adapters: ["proposal"]` there. §11.13.3 asks for Product Cards on
+   the website, the landing page and the email too; the picker is wired into the
+   proposal adapter only, and a tile that opens nothing is worse than a tile
+   that is not there. The ask is R-3.5 in D165_HANDOFF_2026-09-19.md. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Email — §11.13.3 row two

@@ -131,7 +131,8 @@ const MUTATIONS = [
   {
     name: "V3f the Layout group disappears again when only a box matches",
     file: PICKER,
-    from: '    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;',
+    /* REPOINTED AT INTEGRATION 2026-09-19: the line moved, the promise did not. */
+    from: '    if (!boxes.length || groups.some((g) => g.group === "Layout")) return groups;',
     to: "    if (true) return groups;",
     test: BLOCKERS,
     expects: "a search that matches only a BOX still shows the Layout group",

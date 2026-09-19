@@ -71,8 +71,9 @@ export const COMPOSITE_KINDS = ["comparison_cards", "property_block", "key_facts
  * the same number, and there is a test that runs it both ways.
  */
 export const DELETED_KINDS = [
-  "doc_header", "footer_note", "merge_field", "property_plan", "pricing_table",
-  "callout", "key_value_table", "key_fact", "address_block", "map", "columns",
+  "doc_header", "footer_note", "merge_field", "personal_detail", "property_plan",
+  "pricing_table", "callout", "key_value_table", "key_fact", "address_block",
+  "map", "columns",
 ] as const;
 
 export function isDeletedKind(n: Node): boolean {
@@ -377,8 +378,9 @@ function fromPropertyBlock(w: Widget): Node {
   kids.push(makeWidget("service_location", {
     ...bindingDefaults("lumen:locations"),
     ...selectionProps("lumen:locations", { locationId: str(p.locationId) }),
-    name: str(p.locationName),
-    heading: "",
+    heading: "", layout: "stacked", locationId: str(p.locationId),
+    // The property's own name is what the author typed, so it is an override.
+    overrides: str(p.locationName) ? { name: str(p.locationName) } : {},
   }));
   // THE ITEMS BECOME PRICED LINES, NOT A RATE CARD (integration, 2026-09-17).
   //
@@ -505,7 +507,7 @@ function fromPropertyPlan(w: Widget): Node {
   kids.push(makeWidget("service_location", {
     ...bindingDefaults("lumen:locations"),
     ...selectionProps("lumen:locations", { locationId: str(p.locationId) }),
-    heading: "",
+    heading: "", layout: "stacked", locationId: str(p.locationId), overrides: {},
   }));
   for (const r of arr(p.rows)) kids.push(labelledLine(str(r?.label), str(r?.value)));
   return asBox(w, undefined, kids);
@@ -572,22 +574,52 @@ function fromKeyValueTable(w: Widget): Node {
  * proposal has before anybody makes a site record. The id is kept either way,
  * so the revision diff does not badge it.
  */
+/**
+ * WHICH OF THE TWO an unbound block becomes, read off its own heading.
+ *
+ * A bound one is a site, because only a site is bound to a location. An unbound
+ * one is whatever its heading says it is — "Billing address" and "Prepared for"
+ * are the customer; anything else is where the work happens, which is what the
+ * widget was used for on every template we ship.
+ */
+export function addressBlockBecomes(props: Record<string, unknown> | undefined | null): "customer" | "service_location" {
+  if (selectionOf(props).locationId) return "service_location";
+  const h = str((props as any)?.heading).toLowerCase();
+  return /\b(bill|billing|invoice|prepared for|customer|client)\b/.test(h) ? "customer" : "service_location";
+}
+
+/**
+ * `address_block` → **Customer** or **Service Location**, by its binding.
+ *
+ * THE TYPED WORDS BECOME `overrides`, and that is the whole of this function's
+ * care (integration, 2026-09-19). The two record widgets store only what the
+ * author RETYPED — everything else is read live from the record through
+ * `ctx.extra` — so writing the old widget's `name` / `address` / `contact` as
+ * flat props would have put them somewhere the renderer never looks, and a
+ * stored agreement would have opened with the address silently replaced by
+ * whatever the customer record says today. A BOUND block converts with no
+ * overrides at all: the record was already its source.
+ */
 function fromAddressBlock(w: Widget): Node {
   const p: any = w.props || {};
   const sel = selectionOf(p);
-  if (sel.locationId) {
-    return asWidget(w, "service_location", {
-      ...bindingDefaults("lumen:locations"),
-      ...selectionProps("lumen:locations", { locationId: sel.locationId }),
-      heading: str(p.heading), name: str(p.name), address: str(p.address),
-      contact: str(p.contact), notes: str(p.notes),
-    });
+  const kind = addressBlockBecomes(p);
+  const overrides: Record<string, string> = {};
+  if (!sel.locationId) {
+    if (str(p.name)) overrides.name = str(p.name);
+    if (str(p.address)) overrides[kind === "customer" ? "billing_address" : "address"] = str(p.address);
+    if (str(p.notes)) overrides.access_notes = str(p.notes);
+    if (str(p.contact)) overrides[kind === "customer" ? "contact" : "site_contact"] = str(p.contact);
   }
-  return asWidget(w, "customer", {
-    ...bindingDefaults("lumen:customer"),
-    heading: str(p.heading) || "Prepared for",
-    name: str(p.name), billing_address: str(p.address), contact_name: str(p.contact),
-    legal_name: "", email: "", phone: "",
+  return asWidget(w, kind, {
+    ...bindingDefaults(kind === "customer" ? "lumen:customer" : "lumen:locations"),
+    ...(kind === "customer" ? {} : selectionProps("lumen:locations", { locationId: sel.locationId })),
+    heading: str(p.heading),
+    layout: "stacked",
+    ...(kind === "customer" ? {} : { locationId: sel.locationId }),
+    refresh: p.refresh ?? "live",
+    on_empty: p.on_empty ?? p.onEmpty ?? "hide",
+    overrides,
   });
 }
 
@@ -611,7 +643,13 @@ function upgradeNode(n: Node): Node {
     case "address_block": return fromAddressBlock(n);
     // One for one: the words survive, the widget does not.
     case "footer_note": return asWidget(n, "paragraph", { text: str((n.props as any)?.text) });
-    case "key_fact": return labelledText(n, str((n.props as any)?.label), str((n.props as any)?.value));
+    case "key_fact":
+    /* `personal_detail` is the LABEL `merge_field` wore in the pane, and a
+       stored document written by hand or by an older branch can carry it as a
+       kind. Converted for the same reason both spellings of `price_line` are
+       read: a document must not depend on which word was in fashion. */
+    case "personal_detail":
+      return labelledText(n, str((n.props as any)?.label), str((n.props as any)?.value));
     case "merge_field": return asWidget(n, "paragraph", { text: `{{${str((n.props as any)?.token)}}}` });
     case "map": return asWidget(n, "google_maps", { address: str((n.props as any)?.address), zoom: 10, height: 300 });
     /* `columns` was never a thing on the page — it SET a section's column count

@@ -32,7 +32,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  GROUP_BY_KIND, LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor, openGroups,
+  LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor, openGroups,
   panelGroups, unmappedKinds,
 } from "../src/builder/widgetGroups.ts";
 import {
@@ -43,7 +43,8 @@ import { STRUCTURE_PRESETS, structureSumsTo100 } from "../src/builder/AddSection
 import { STRUCTURE_SIZE, clampToViewport, defaultStructureAt } from "../src/builder/Navigator.tsx";
 import { INSPECTOR_TABS, tabLabel } from "../src/builder/StyleGroups.tsx";
 import { PREVIEW_DEVICES, nextPreview } from "../src/builder/responsive.ts";
-import { BUILDER_ADAPTERS, widgetsFor } from "../src/builder/registry.ts";
+import { BUILDER_ADAPTERS, WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
+import { makeContext, renderDocument } from "../src/builder/render.ts";
 
 const SRC = path.join(process.cwd(), "src");
 const readSrc = (rel) => readFileSync(path.join(SRC, rel), "utf8");
@@ -63,10 +64,15 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
   test("the groups are the reference editor's four, in its order", () => {
     // Elementor's own panel, read out of the live editor on 2026-09-19:
     // Layout (Container, Grid) · Basic (9) · General (21) · then the plugin
-    // groups. Pro is ours only on the website builder, where §11.12's
-    // three-state sentence shows it and refuses it on Lite.
+    // groups.
+    //
+    // There is no "Pro" group (integration, 2026-09-19). No widget carries
+    // that category, and a group with nothing behind it is a door onto a wall;
+    // the website's Pro rows live in arion's emitter, which shows them and
+    // refuses them by name on Lite (§11.12). PANEL_GROUPS is the REGISTRY's
+    // own list, so a fifth group cannot be invented in the panel's file.
     assert.deepEqual([...PANEL_GROUPS],
-      ["Layout", "Basic", "General", "Intelligent Analytics", "Pro"]);
+      ["Layout", "Basic", "General", "Intelligent Analytics"]);
   });
 
   test("every kind every adapter offers is placed — nothing falls in silently", () => {
@@ -77,15 +83,18 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
   });
 
   test("the reference's own placements are ours — executed, per adapter", () => {
-    assert.equal(groupFor({ kind: "heading" }), "Basic");
-    assert.equal(groupFor({ kind: "paragraph" }), "Basic");   // "Text Editor"
-    assert.equal(groupFor({ kind: "list" }), "General");      // "Icon List"
-    assert.equal(groupFor({ kind: "testimonial" }), "General");
-    assert.equal(groupFor({ kind: "columns" }), "Layout");
-    assert.equal(groupFor({ kind: "catalog_card" }), "Intelligent Analytics");
-    assert.equal(groupFor({ kind: "totals" }), "Intelligent Analytics");
-    // Unmapped never throws and never disappears.
-    assert.equal(groupFor({ kind: "not_a_real_kind" }), LAST_GROUP);
+    // The group is the REGISTRY's own `category`, so this reads the real
+    // definitions rather than a second table keyed by kind.
+    const at = (kind) => groupFor(WIDGETS_BY_KIND[kind]);
+    assert.equal(at("heading"), "Basic");
+    assert.equal(at("paragraph"), "Basic");   // "Text Editor"
+    assert.equal(at("list"), "General");      // "Icon List"
+    assert.equal(at("testimonial"), "General");
+    assert.equal(at("container"), "Layout");
+    assert.equal(at("catalog_card"), "Intelligent Analytics");
+    assert.equal(at("totals"), "Intelligent Analytics");
+    // A category the panel cannot draw never throws and never disappears.
+    assert.equal(groupFor({ category: "Not A Real Group" }), LAST_GROUP);
   });
 
   test("a builder's groups come back in PANEL_GROUPS order, never the registry's", () => {
@@ -351,9 +360,77 @@ describe("§11.13.1 item 6 — keyboard parity with the reference editor", () =>
   test("copy, paste and duplicate go through the RIGHT-CLICK MENU'S own handler", () => {
     // One mechanism: a keyboard paste and a menu paste must land in the same
     // place, or the two drift and only a customer finds out.
-    assert.match(shell, /case "copy": case "paste": case "duplicate":/);
+    assert.match(shell, /case "copy": case "paste": case "duplicate": case "pasteStyle":/);
     assert.match(shell, /runMenuAction\(action, target\)/);
-    assert.match(shell, /case "pasteStyle":/);
-    assert.match(shell, /setWidgetStyle\(doc, selection, style \? JSON\.parse\(JSON\.stringify\(style\)\) : undefined\)/);
+    /* AND `pasteStyle` JOINED THEM (integration, 2026-09-19). It had its own
+       body in the shortcut switch because the right-click menu did not offer
+       the row; the menu offers it now (R-1.7), so there is one handler and the
+       chord runs it. MUTATION: give the chord its own `setWidgetStyle` call
+       again and the count below goes to two. */
+    const menu = readSrc("builder/builderMenu.ts");
+    assert.match(menu, /action: "pasteStyle"/, "the right-click menu has no Paste-style row");
+    assert.match(menu, /label: "Paste only the look"/);
+    assert.equal((shell.match(/Pasted the look/g) || []).length, 1,
+      "there are two handlers for pasting a look");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   §11.13.1 item 2 — Advanced ▸ Attributes, the CSS id and classes
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("Advanced ▸ Attributes: a name the author gives a part, and it reaches the page", () => {
+  const doc = (style) => ({
+    v: 2,
+    settings: {},
+    sections: [{
+      id: "s1", layout: 1, visibility: "customer",
+      columns: [{ id: "c1", widgets: [{ id: "w1", kind: "heading", props: { text: "Prices" }, style }] }],
+    }],
+  });
+  const draw = (style) => {
+    const d = doc(style);
+    return renderDocument(d, makeContext(d, { mode: "view" }));
+  };
+
+  test("the id and the classes are on the element, not just in the document", () => {
+    /* A CONTROL THAT WRITES A FIELD NOTHING READS is worse than a missing one,
+       which is why this section waited for the renderers. So the claim is the
+       whole round trip: type a name, and it is on the page. */
+    const out = draw({ cssId: "prices", cssClasses: "tight two-up" });
+    assert.match(out, /id="prices"/, "the author's own name never reached the page");
+    assert.match(out, /class="[^"]*\btight\b[^"]*"/, "a styling name never reached the page");
+    assert.match(out, /class="[^"]*\btwo-up\b[^"]*"/);
+  });
+
+  test("a widget with neither is drawn exactly as it was", () => {
+    // Every golden on the line depends on this: nothing is added to a part the
+    // author never named.
+    const plain = draw(undefined);
+    assert.ok(!/ id="/.test(plain), "an unnamed widget grew an id attribute");
+    assert.equal(plain, draw({}));
+  });
+
+  test("what cannot be an id is not written as one", () => {
+    // An id is ONE token: two elements sharing one is a Menu Anchor that jumps
+    // to the wrong place, and a quote in an attribute is a broken page.
+    const out = draw({ cssId: 'a b" onload=x', cssClasses: "ok <bad>" });
+    assert.match(out, /id="a"/, "the id was not reduced to one safe token");
+    assert.ok(!out.includes("onload"), "an attribute was injected through the id");
+    assert.ok(!out.includes('id="a b'), "the id kept a space, so it is two ids");
+    assert.match(out, /class="[^"]*\bok\b/);
+    // `<bad>` is not dropped, it is STRIPPED to `bad`: the author typed a word
+    // and gets the word, and nothing that could close an attribute survives.
+    assert.ok(!out.includes("<bad>"), "a class smuggled markup onto the page");
+    assert.match(out, /class="[^"]*\bbad\b/);
+  });
+
+  test("the panel offers it, on the Advanced tab", () => {
+    const groups = readSrc("builder/StyleGroups.tsx");
+    assert.match(groups, /export function AttributesGroup/);
+    const inspector = readSrc("builder/Inspector.tsx");
+    assert.match(inspector, /<AttributesGroup/);
+    // …and it is NOT per device: an id is an id on every screen.
+    assert.ok(!/withLayer\([^)]*cssId/.test(inspector), "the id is written per device");
   });
 });

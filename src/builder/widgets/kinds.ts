@@ -53,11 +53,15 @@ export const ATOM_KINDS = [
   "menu_anchor",
 
   /* ── The Intelligent Analytics group. ───────────────────────────────── */
+  /* The three RECORD widgets. Their definitions and their renderer live under
+     `src/builder/proposal/`, beside the record book they read, and both are
+     spread into this folder's one map and the registry's one list — so they
+     are named here like everything else that draws.
+     `product_cards`, `product_line_items` and `terms` are NOT here: they are
+     panel TILES, never on a page and never drawn. */
   "customer",
   "service_location",
   "business_info",
-  "product_cards",
-  "product_line_items",
   "ia_posts",
   "reviews",
   "book_now",

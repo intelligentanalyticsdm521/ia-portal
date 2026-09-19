@@ -128,11 +128,9 @@ export function nodesForPicks(
 export const PRODUCT_CARDS_DEF: WidgetDef = {
   kind: "product_cards",
   label: "Product Cards",
-  description: "Pick what you sell and drop it on the page as cards, at your catalogue prices.",
-  task: "Products & services",
-  icon: "LayoutGrid",
+  description: "Pick what you sell and drop it on the page as cards, at your catalogue prices.",  icon: "LayoutGrid",
   picture: pictureFrom(box(3, 6, 12, 22) + box(18, 6, 12, 22) + bar(5, 26, 8) + bar(20, 26, 8)),
-  category: "Money",
+  category: "Intelligent Analytics",
   /* PROPOSAL ONLY. The tile drops `catalog_card` / `price_line`, and the
      email and website panes render neither today. 11.13.3 asks for Product
      Cards on both; the ask is in D165_HANDOFF_2026-09-19.md, behind the
@@ -145,11 +143,9 @@ export const PRODUCT_CARDS_DEF: WidgetDef = {
 export const PRODUCT_LINE_ITEMS_DEF: WidgetDef = {
   kind: "product_line_items",
   label: "Product Line Items",
-  description: "Pick what you sell and drop it on the page as priced lines that add up.",
-  task: "Products & services",
-  icon: "ListOrdered",
+  description: "Pick what you sell and drop it on the page as priced lines that add up.",  icon: "ListOrdered",
   picture: pictureFrom(bar(3, 8, 20) + bar(24, 8, 6) + bar(3, 16, 24) + bar(24, 16, 6) + bar(3, 24, 16) + bar(24, 24, 6)),
-  category: "Money",
+  category: "Intelligent Analytics",
   adapters: ["proposal"],
   defaults: {},
   controls: [],
@@ -197,11 +193,9 @@ export function nodesForClauses(list: ReadonlyArray<ClauseLike>): Node[] {
 export const TERMS_DEF: WidgetDef = {
   kind: TERMS_TILE_KIND,
   label: "Terms",
-  description: "Drop in the terms you have already written. They land as ordinary text you can edit.",
-  task: "Signature & terms",
-  icon: "ScrollText",
+  description: "Drop in the terms you have already written. They land as ordinary text you can edit.",  icon: "ScrollText",
   picture: pictureFrom(bar(3, 6, 22) + bar(3, 13, 26) + bar(3, 20, 26) + bar(3, 27, 14)),
-  category: "Document",
+  category: "Intelligent Analytics",
   adapters: ["proposal"],
   defaults: {},
   controls: [],

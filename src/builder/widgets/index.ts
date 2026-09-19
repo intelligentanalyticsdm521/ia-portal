@@ -34,6 +34,9 @@ import type { Widget } from "../model";
 import type { RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { ATOM_KINDS as NAMES } from "./kinds";
+/* The three record widgets live under `proposal/` with the record book they
+   read; this module holds the one map every surface renders through. */
+import { RECORD_WIDGET_DEFS, recordBookFromContext, renderRecordBlock } from "../proposal/recordWidgets";
 
 import { CARD_DEF, renderCard } from "./card";
 import { CATALOG_CARD_DEF, renderCatalogCard } from "./productCard";
@@ -55,16 +58,11 @@ import {
   renderMenuAnchor, renderProgressBar, renderShortcode, renderTabs, renderToggle, renderVideo,
 } from "./pageOnly";
 import {
-  BUSINESS_INFO_DEF, CUSTOMER_DEF, SERVICE_LOCATION_DEF,
-  renderBusinessInfo, renderCustomer, renderServiceLocation,
-} from "./iaData";
-import {
   BOOK_NOW_DEF, HOURS_LOCATION_DEF, IA_FORM_DEF, IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF,
-  IA_OLIVER_INVOICE_DEF, IA_POSTS_DEF, IA_SOCIAL_LINKS_DEF, NEWSLETTER_SIGNUP_DEF,
-  PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF, REVIEWS_DEF,
+  IA_OLIVER_INVOICE_DEF, IA_POSTS_DEF, IA_SOCIAL_LINKS_DEF, NEWSLETTER_SIGNUP_DEF, REVIEWS_DEF,
   renderBookNow, renderHoursLocation, renderIaForm, renderIaMegaMenu, renderIaMobileMenu,
   renderIaOliverInvoice, renderIaPosts, renderIaSocialLinks, renderNewsletterSignup,
-  renderProductCards, renderProductLineItems, renderReviews,
+  renderReviews,
 } from "./iaBlocks";
 
 /** Every widget declared under this folder, in PANEL ORDER within its group. */
@@ -83,9 +81,14 @@ export const ATOM_WIDGET_DEFS: WidgetDef[] = [
   SOCIAL_ICONS_DEF, ALERT_DEF, SHORTCODE_DEF, HTML_DEF, MENU_ANCHOR_DEF,
 
   /* Intelligent Analytics — §11.13.3's own order, per builder. The proposal's
-     nine first, then the email's, then the pages'. */
-  PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF, TOTALS_DEF, CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF,
-  CUSTOMER_DEF, SERVICE_LOCATION_DEF, BUSINESS_INFO_DEF,
+     nine first, then the email's, then the pages'.
+
+     Product Cards, Product Line Items, Terms, Customer, Service Location and
+     Business Info are NOT here: they are declared in
+     `src/builder/proposal/` (catalogueTiles.ts and recordWidgets.ts), which is
+     where the picker and the record book they need actually live, and
+     `registry.ts` spreads them into the one vocabulary beside these. */
+  TOTALS_DEF, CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF,
   IA_POSTS_DEF, REVIEWS_DEF, BOOK_NOW_DEF,
   IA_FORM_DEF, NEWSLETTER_SIGNUP_DEF, HOURS_LOCATION_DEF,
   IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF, IA_OLIVER_INVOICE_DEF, IA_SOCIAL_LINKS_DEF,
@@ -126,11 +129,17 @@ const RENDERERS: Record<string, Renderer> = {
   shortcode: renderShortcode,
   menu_anchor: renderMenuAnchor,
 
-  customer: renderCustomer,
-  service_location: renderServiceLocation,
-  business_info: renderBusinessInfo,
-  product_cards: renderProductCards,
-  product_line_items: renderProductLineItems,
+  /* THE THREE RECORD WIDGETS, drawn by the ONE renderer that draws them on the
+     builder's own canvas. `render.ts` asks `ctx.extra` first, so the proposal
+     adapter's richer book wins there; everywhere else — the customer's copy,
+     the sent wire, a template preview — the book is derived from the
+     RenderContext. Before this they were not in this map at all and a signed
+     agreement reached the customer with no customer block on it.
+     `product_cards`, `product_line_items` and `terms` are panel TILES and are
+     never on a page, so they are not here. */
+  customer: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
+  service_location: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
+  business_info: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
   ia_posts: renderIaPosts,
   reviews: renderReviews,
   book_now: renderBookNow,
@@ -164,7 +173,9 @@ export function atomKindsAgree(): { onlyNamed: string[]; onlyRendered: string[];
   const named = new Set<string>(NAMES);
   // `priced_line` is understood but never offered — see the map.
   const rendered = new Set(Object.keys(RENDERERS).filter((k) => k !== "priced_line"));
-  const defined = new Set(ATOM_WIDGET_DEFS.map((d) => d.kind));
+  /* The three record widgets are DEFINED under `proposal/` beside the book
+     they read, and drawn through this map; both lists have to know it. */
+  const defined = new Set([...ATOM_WIDGET_DEFS, ...RECORD_WIDGET_DEFS].map((d) => d.kind));
   return {
     onlyNamed: [...named].filter((k) => !rendered.has(k) || !defined.has(k)),
     onlyRendered: [...rendered].filter((k) => !named.has(k)),
@@ -189,10 +200,6 @@ export { priceLineFields, priceLineUnitNote, priceLinePropsFromCatalogue } from 
 export { addressFields, customerFields, locationAddress, type LocationFields } from "./iaData";
 export { htmlBody, htmlOf } from "./html";
 export { NO_BUSINESS_RATE_SENTENCE } from "./totals";
-/* D-165 — the two PANEL TILES and the one function that expands them. */
-export {
-  PANEL_TILES, expandPanelTile, isPanelTile, type CataloguePick, type PanelTile,
-} from "./iaBlocks";
 export { ALERT_TYPES } from "./boxes";
 export { DEFAULT_ICON, ICON_CHOICES, ICON_OPTIONS, glyphFor, iconValue, type IconValue } from "./glyph";
 export { SOCIAL_NETWORKS } from "./icons";

@@ -35,7 +35,7 @@ import {
 } from "../src/builder/registry.ts";
 /* ONE grouping (D-165): `groupForPane` is deleted and `groupByTask` reads the
    registry's own categories. */
-import { groupByTask } from "../src/builder/widgetTasks.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
 import {
   toDocument, toPayload, freshenDuplicates, fieldsOf, arionKindOfSection,
   sectionWidget, sectionsWithoutNodes, NODE_PROP, LOCK_PROP,
@@ -154,8 +154,8 @@ describe("the seam — what the pane offers is what the website can build", () =
    * trips — and belong in the template library. The ask is in the handoff.
    */
   test("the pane opens with Elementor's four groups, in Elementor's order", () => {
-    const groups = groupByTask("website", "");
-    assert.deepEqual(groups.map((g) => g.task),
+    const groups = panelGroups("website", "");
+    assert.deepEqual(groups.map((g) => g.group),
       ["Layout", "Basic", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });

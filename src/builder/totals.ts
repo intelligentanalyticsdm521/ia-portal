@@ -178,7 +178,8 @@ function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: S
        becoming zero on the day the rename lands.
 
        `customer` is NOT a property box: it is who the document is FOR, and
-       claiming the lines under it would put a site's money on the payer. */
+       claiming the lines under it would put a site's money on the payer.
+
        Mirrored in oliver-api's lib/documentModel.js `sitesInTree`. */
     const address = box.children.find(
       (k) => k.kind === "service_location" || k.kind === "address_block");

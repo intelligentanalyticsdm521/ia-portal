@@ -61,7 +61,7 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
+  AttributesGroup, DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
   FIELD, INPUT, L, type InspectorTab,
 } from "./StyleGroups";
 
@@ -212,7 +212,12 @@ export function Inspector(p: InspectorProps) {
   return (
     <div data-inspector={widget ? (box ? "box" : "widget") : "section"}
       style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      {p.documentExtras}
+      {/* `documentExtras` IS NOT DRAWN HERE (integration, 2026-09-19).
+          It is PAGE settings, and page settings belong in the no-selection
+          branch above — §11.13.1 item 2. Drawing it in both branches is why
+          three adapters each wrote `documentExtras={selection ? null : …}` and
+          kept a copy of the selection to do it with: one rule, written four
+          times. The rule lives here now, once. */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
         <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Edit {name}</div>
         {p.askArgus}
@@ -545,6 +550,21 @@ export function Inspector(p: InspectorProps) {
                   onHide={(device, hidden) =>
                     p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
                   onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["hidden"]))}
+                />
+                {/* §11.13.1's third Advanced section. NOT per device — an id is
+                    an id on every screen — so it is written on the element's own
+                    style and never through `withLayer`. */}
+                <AttributesGroup
+                  cssId={String(widget.style?.cssId ?? "")}
+                  cssClasses={String(widget.style?.cssClasses ?? "")}
+                  onPatch={(patch) => p.onSetWidgetStyle({ ...(widget.style || {}), ...patch })}
+                  onReset={() => {
+                    /* NOT `resetKeys`: that one clears a key on every DEVICE
+                       layer, and these two are not per device. Cleared where
+                       they actually live, on the element's own style. */
+                    const { cssId: _a, cssClasses: _b, ...rest } = widget.style || {};
+                    p.onSetWidgetStyle(Object.keys(rest).length ? rest : undefined);
+                  }}
                 />
               </>
             )}

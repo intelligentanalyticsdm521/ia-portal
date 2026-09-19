@@ -67,13 +67,12 @@ export const ICON_DEF: WidgetDef = {
   icon: "Star",
   picture: pictureFrom(`<path d="M32 10l5 11 12 1-9 8 3 12-11-7-11 7 3-12-9-8 12-1z" fill="#94A3B8" stroke="none"/>`),
   category: "Basic",
-  /* NOT `email` (D-165). §11.13.3 gives this row "the set above MINUS what
-     email programs cannot show", and this widget's only renderer is the
-     engine's, which draws with CSS. `adapters/email/emailRender.ts` builds a
-     mailbox out of tables and its own guards refuse flex, grid and classes —
-     so until it has a table renderer for this widget, offering it would be a
-     tile that puts nothing in an inbox. The ask is item S2 in the handoff. */
-  adapters: ["proposal", "website", "landing", "brand"],
+  /* EMAIL TOO, since integration 2026-09-19. `adapters/email/emailRender.ts`
+     builds a mailbox out of tables and its own guards refuse flex, grid and
+     classes, so this widget waited for a TABLE renderer of its own rather than
+     borrowing the engine's CSS one. It has one now (and LUMEN's copy draws the
+     same bytes), so §11.13.3's standard set really is offered here. */
+  adapters: ["proposal", "website", "email", "landing", "brand"],
   defaults: { selected_icon: { ...DEFAULT_ICON }, view: "default", shape: "circle", link: "", primary_color: "", size: 28, align: "left" },
   controls: [
     { key: "selected_icon", label: "Icon", type: "select", tab: "content", section: "Icon", options: ICON_OPTIONS },
@@ -121,12 +120,11 @@ export const ICON_BOX_DEF: WidgetDef = {
   icon: "SquareDashedBottomCode",
   picture: pictureFrom(`<circle cx="32" cy="12" r="6" fill="#94A3B8" stroke="none"/>` + bar(18, 23, 28, 5) + bar(14, 32, 36)),
   category: "General",
-  /* NOT `email` (D-165). §11.13.3 gives this row "the set above MINUS what
-     email programs cannot show", and this widget's only renderer is the
-     engine's, which draws with CSS. `adapters/email/emailRender.ts` builds a
-     mailbox out of tables and its own guards refuse flex, grid and classes —
-     so until it has a table renderer for this widget, offering it would be a
-     tile that puts nothing in an inbox. The ask is item S2 in the handoff. */
+  /* EMAIL TOO, since integration 2026-09-19. `adapters/email/emailRender.ts`
+     builds a mailbox out of tables and its own guards refuse flex, grid and
+     classes, so this widget waited for a TABLE renderer of its own rather than
+     borrowing the engine's CSS one. It has one now (and LUMEN's copy draws the
+     same bytes), so §11.13.3's standard set really is offered here. */
   /* NOT `brand` (D-165). The Template Studio is an ABSOLUTE-PIXEL canvas: every
      object carries its own x, y, w and h, and `adapters/mybrand`'s
      `insertWidget` places one layer per kind. A widget whose shape is a flow —
@@ -135,7 +133,7 @@ export const ICON_BOX_DEF: WidgetDef = {
      own test exists to catch. The studio keeps **Icon**, which IS a placed
      object and which it has always placed. The ask for the rest is item S2 in
      the handoff. */
-  adapters: ["proposal", "website", "landing"],
+  adapters: ["proposal", "website", "email", "landing"],
   defaults: {
     selected_icon: { ...DEFAULT_ICON }, title_text: "", description_text: "", link: "",
     position: "top", text_align: "center", primary_color: "", icon_size: 32,
@@ -253,12 +251,11 @@ export const STAR_RATING_DEF: WidgetDef = {
     + `<path d="M32 14l2 5 5 .5-4 3.5 1.5 5-4.5-3-4.5 3 1.5-5-4-3.5 5-.5z" fill="#94A3B8" stroke="none"/>`
     + `<path d="M52 14l2 5 5 .5-4 3.5 1.5 5-4.5-3-4.5 3 1.5-5-4-3.5 5-.5z" fill="#CBD5E1" stroke="none"/>`),
   category: "General",
-  /* NOT `email` (D-165). §11.13.3 gives this row "the set above MINUS what
-     email programs cannot show", and this widget's only renderer is the
-     engine's, which draws with CSS. `adapters/email/emailRender.ts` builds a
-     mailbox out of tables and its own guards refuse flex, grid and classes —
-     so until it has a table renderer for this widget, offering it would be a
-     tile that puts nothing in an inbox. The ask is item S2 in the handoff. */
+  /* EMAIL TOO, since integration 2026-09-19. `adapters/email/emailRender.ts`
+     builds a mailbox out of tables and its own guards refuse flex, grid and
+     classes, so this widget waited for a TABLE renderer of its own rather than
+     borrowing the engine's CSS one. It has one now (and LUMEN's copy draws the
+     same bytes), so §11.13.3's standard set really is offered here. */
   /* NOT `brand` (D-165). The Template Studio is an ABSOLUTE-PIXEL canvas: every
      object carries its own x, y, w and h, and `adapters/mybrand`'s
      `insertWidget` places one layer per kind. A widget whose shape is a flow —
@@ -267,7 +264,7 @@ export const STAR_RATING_DEF: WidgetDef = {
      own test exists to catch. The studio keeps **Icon**, which IS a placed
      object and which it has always placed. The ask for the rest is item S2 in
      the handoff. */
-  adapters: ["proposal", "website", "landing"],
+  adapters: ["proposal", "website", "email", "landing"],
   defaults: { rating_scale: 5, rating: 5, title: "", star_style: "star_fontawesome", align: "left", stars_color: "" },
   controls: [
     { key: "rating_scale", label: "Rating Scale", type: "select", tab: "content", section: "Rating", options: [

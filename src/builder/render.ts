@@ -35,7 +35,7 @@
  */
 import type { BuilderDocument, Section, Widget } from "./model";
 import {
-  hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
+  attributeAttrs, hasStyle, sidesToCss, styleBlockFor, isTypographic, widgetStyleClass, resolveStyle,
   JUSTIFY_CSS, ITEMS_CSS, type Device,
 } from "./style";
 import { isContainer, CONTAINER_KIND, MAX_DEPTH } from "./treeOps";
@@ -504,9 +504,18 @@ export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
   // defect one renderer exists to prevent. Nothing is added to an unstyled
   // widget, so a document nobody has touched is byte-identical.
   const sy = hasStyle(w.style) ? ` ${widgetStyleClass(w.id)}` : "";
+  /* ADVANCED ▸ ATTRIBUTES (§11.13.1). The author's own id and classes, read
+     through the ONE reader in style.ts so the page, the mailbox and the
+     hosted page cannot disagree about what they typed. Empty on an untouched
+     widget, so every golden is byte for byte what it was. */
+  const a = attributeAttrs(w.style);
+  const attr = {
+    id: a.id ? ` id="${esc(a.id)}"` : "",
+    cls: a.classes.length ? ` ${a.classes.map(esc).join(" ")}` : "",
+  };
   return ctx.mode === "edit"
-    ? `<div class="bx-w bx-w-${esc(w.kind)}${sy}" data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
-    : `<div class="bx-w bx-w-${esc(w.kind)}${sy}">${body}</div>`;
+    ? `<div class="bx-w bx-w-${esc(w.kind)}${sy}${attr.cls}"${attr.id} data-widget="${esc(w.id)}" data-kind="${esc(w.kind)}">${body}</div>`
+    : `<div class="bx-w bx-w-${esc(w.kind)}${sy}${attr.cls}"${attr.id}>${body}</div>`;
 }
 
 /**

@@ -1024,6 +1024,18 @@ export function BuilderShell(p: BuilderShellProps) {
         landed(at.sectionId, at.columnIndex, at.index, made.id);
         return;
       }
+      case "pasteStyle": {
+        /* THE LOOK, NOT THE THING. `clip` is whatever Copy put there; this
+           takes its `style` and nothing else, so the words, the prices and the
+           bindings on what was right-clicked are untouched. ONE handler: the
+           Ctrl+Shift+V chord runs this same case. */
+        if (!clip) { refuse("Copy something first, then this puts its look on what you right-clicked."); return; }
+        if (target.kind !== "widget") { refuse("Right-click the thing you want to look the same."); return; }
+        const look = clip.kind === "widget" ? clip.widget.style : clip.section.style;
+        apply(setWidgetStyle(doc, { kind: "widget", ...target.path } as any,
+          look ? JSON.parse(JSON.stringify(look)) : undefined), null, "Pasted the look");
+        return;
+      }
       case "moveUp":
         if (target.kind === "section") { apply(moveSection(doc, sectionId, index - 1), null, `Moved ${name} up`); return; }
         apply(moveWidget(doc, target.path, -1), null, "Moved a block up");
@@ -1165,21 +1177,14 @@ export function BuilderShell(p: BuilderShellProps) {
       case "structure": setStructure((v) => !v); return true;
       case "togglePanel": setPanel((v) => !v); return true;
       case "cycleDevice": setPreview(nextPreview(preview)); return true;
-      case "copy": case "paste": case "duplicate":
+      /* FOUR CHORDS, ONE HANDLER. Every one of these runs the right-click
+         menu's own case rather than a second copy of it — the rule D-165 set
+         for Copy, Paste and Duplicate, and `pasteStyle` joined them at
+         integration when the menu grew the row (R-1.7). */
+      case "copy": case "paste": case "duplicate": case "pasteStyle":
         if (!target) return false;
         runMenuAction(action, target);
         return true;
-      case "pasteStyle": {
-        /* THE LOOK, NOT THE THING. `clip` is whatever Ctrl+C put there; this
-           takes its `style` and nothing else, so the words, the prices and the
-           bindings on what is selected are untouched. Nothing copied, or
-           nothing selected, and it says so rather than going quiet. */
-        if (!clip) { refuse("Copy something first — Ctrl+C — then this puts its look on what you have selected."); return true; }
-        if (selection?.kind !== "widget") { refuse("Click the thing you want to look the same, then press this again."); return true; }
-        const style = clip.kind === "widget" ? clip.widget.style : clip.section.style;
-        apply(setWidgetStyle(doc, selection, style ? JSON.parse(JSON.stringify(style)) : undefined), null, "Pasted the look");
-        return true;
-      }
       case "delete":
         if (selection?.kind === "widget") { deleteWidget(selection); return true; }
         if (selection?.kind === "section") { deleteSection(selection.sectionId); return true; }

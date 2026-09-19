@@ -209,8 +209,9 @@ const MUTATIONS = [
   {
     name: "C15 nobody can add their own HTML again",
     file: INDEX,
-    from: "  CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF, TOTALS_DEF, ADDRESS_BLOCK_DEF, KEY_FACT_DEF,\n  HTML_DEF,",
-    to: "  CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF, TOTALS_DEF, ADDRESS_BLOCK_DEF, KEY_FACT_DEF,",
+    /* REPOINTED AT INTEGRATION 2026-09-19: the line moved, the promise did not. */
+    from: "  SOCIAL_ICONS_DEF, ALERT_DEF, SHORTCODE_DEF, HTML_DEF, MENU_ANCHOR_DEF,",
+    to: "  SOCIAL_ICONS_DEF, ALERT_DEF, SHORTCODE_DEF, MENU_ANCHOR_DEF,",
     test: CONF,
     expects: "it is a widget, free, on the two surfaces that are HTML pages",
   },

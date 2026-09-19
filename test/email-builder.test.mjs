@@ -59,7 +59,7 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS,
+  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
@@ -642,13 +642,15 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        takes the new label.
        GONE: `personal_note` and `countdown` (no Elementor name, not on the IA
        list), `card`, `totals`, `address_block` and `key_fact` (the proposal's,
-       §11.13.3), `columns` (a Container set to row). HELD BACK until this
-       surface has a table renderer, item S2 in the handoff: Icon, Icon Box,
-       Image Box, Star Rating, Alert, Reviews, Book Now. */
+       §11.13.3), `columns` (a Container set to row).
+       ADDED AT INTEGRATION 2026-09-19: Icon, Icon Box, Image Box, Star Rating
+       and Alert, because `emailRender.ts` now has a TABLE renderer for each —
+       the thing they were waiting on. HELD BACK still, for the same reason and
+       no other: Reviews and Book Now. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "article_card", "button", "container", "divider", "email_footer", "grid",
-      "heading", "image", "list", "paragraph", "product_card", "social_links",
-      "spacer", "testimonial",
+      "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
+      "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
+      "product_card", "social_links", "spacer", "star_rating", "testimonial",
     ].sort());
   });
 
@@ -665,8 +667,13 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        `map`, `pricing_table` and the rest — so "not offered" is now "not there
        at all". The rule is the same either way, and it is checked the same way:
        nothing a mailbox cannot draw reaches the email panel. */
+    /* Icon, Icon Box, Image Box, Star Rating and Alert LEFT this list at
+       integration on 2026-09-19: each has a table renderer in this file now,
+       with its own golden case, so the rule "nothing a mailbox cannot draw" is
+       satisfied by drawing them rather than by hiding them. Reviews and Book
+       Now stay on it until they have one too. */
     for (const kind of ["form", "signature", "price_line", "data_table", "gallery", "video",
-      "catalog_card", "icon", "icon_box", "image_box", "star_rating", "alert", "reviews", "book_now"]) {
+      "catalog_card", "reviews", "book_now"]) {
       const def = WIDGETS_BY_KIND[kind];
       if (!def) continue;
       assert.ok(!def.adapters.includes("email"), `${kind} is offered to the email builder`);
@@ -703,8 +710,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     const menus = ["ia_mega_menu", "ia_mobile_menu"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !menus.includes(k)));
+    /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
+       `social_links` and `gallery`: `LANDING_KIND_ALIASES` resolves them
+       before the switch, and the alias table is tested for exactly that in
+       builder-surfaces-d165. A slug cannot be both an alias and a rendered
+       kind, so the alias table is the third place a kind can be accounted
+       for. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
+        && !LANDING_UNRENDERED_KINDS.includes(k)
+        && !LANDING_KIND_ALIASES[k]);
     assert.deepEqual(missing, []);
   });
 
@@ -715,9 +730,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     /* D-165 — `doc_header` is a Container with an Image and a Heading, the
        address block is **Service Location**, and the catalogue picker is
        **Product Line Items**. The proposal still has all of it. */
-    for (const k of ["clauses", "totals", "signature", "service_location", "customer", "product_line_items"]) {
+    /* `clauses` is NOT on this list any more (integration, 2026-09-19): its
+       KIND stays and still draws — the snow agreement places it and D-164 pins
+       its numbering — but its TILE is hidden, because §11.13.3 names ONE Terms
+       door and that is the `terms` picker. Two tiles reading "Terms" in one
+       panel is what the section exists to stop. */
+    for (const k of ["terms", "totals", "signature", "service_location", "customer", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
+    assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
+    assert.ok(WIDGETS_BY_KIND.clauses, "the clauses KIND was deleted, so stored agreements stop drawing");
     for (const k of ["article_card", "product_card", "email_footer", "hero", "social_links"]) {
       assert.ok(!kinds.includes(k), `${k} leaked into the proposal builder`);
     }

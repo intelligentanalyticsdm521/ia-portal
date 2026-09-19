@@ -82,51 +82,6 @@ export function customerFields(ctx: RenderContext): Record<string, string> {
   };
 }
 
-export function renderCustomer(w: Widget, ctx: RenderContext): string {
-  const p: any = w.props || {};
-  const rec = customerFields(ctx);
-  const rows: Array<[string, string, string, string]> = [
-    ["Customer", "name", rec.name, "Who this is for"],
-    ["Legal name", "legal_name", rec.legal_name, "The name on the contract"],
-    ["Contact", "contact_name", rec.contact_name, "Who to speak to"],
-    ["Email", "email", rec.email, "Where it is sent"],
-    ["Phone", "phone", rec.phone, "Best number"],
-    ["Billing address", "billing_address", rec.billing_address, "Where the invoice goes"],
-  ];
-  const shown = rows.filter(([, key, record]) => str(p[key]) || record || ctx.mode === "edit");
-  if (!shown.length) {
-    const early = emptyBody(p, "bx-customer", ctx);
-    if (early !== null) return early;
-  }
-  return `<div class="bx-customer">
-    ${editRun("heading", p.heading, "bx-h bx-h3", "Prepared for", ctx)}
-    ${shown.map(([label, key, record, ph]) => dataRow(label, key, str(p[key]), record, ph, ctx)).join("")}
-    ${ctx.mode === "edit"
-      ? `<div class="bx-card-note">These fill in from the customer you picked. Type over any line and this document keeps what you typed.</div>`
-      : ""}
-  </div>`;
-}
-
-export const CUSTOMER_DEF: WidgetDef = {
-  kind: "customer",
-  label: "Customer",
-  description: "Who this is for — name, contact, email, phone and billing address, straight from their record.",
-  icon: "User",
-  picture: pictureFrom(`<circle cx="16" cy="14" r="6" fill="#94A3B8" stroke="none"/>`
-    + `<path d="M8 32c0-5 4-8 8-8s8 3 8 8" fill="#94A3B8" stroke="none"/>`
-    + bar(32, 10, 24) + bar(32, 19, 20) + bar(32, 28, 26)),
-  category: "Intelligent Analytics",
-  adapters: DOCUMENTS,
-  defaults: {
-    heading: "Prepared for", name: "", legal_name: "", contact_name: "", email: "", phone: "", billing_address: "",
-    ...bindingDefaults("lumen:customer"),
-  },
-  controls: [
-    { key: "heading", label: "Heading", type: "text", tab: "content", section: "Customer" },
-    ...BINDING_CONTROLS,
-  ],
-};
-
 /* ══════════════════════════════════════════════════════════════════════════
    Service Location — where the work happens. What `address_block` becomes.
    ══════════════════════════════════════════════════════════════════════════ */
@@ -146,115 +101,73 @@ export interface LocationFields {
 }
 
 /**
- * What this block shows: the record when it is bound, what was typed otherwise.
+ * What a SITE BLOCK shows on a surface with no record book.
  *
- * KEPT UNDER ITS OLD NAME. `proposalDoc.ts` belongs to another stream and reads
- * it to freeze a bound address at send; renaming the function in the same pass
- * that renames the KIND would be two changes crossing one boundary, and the
- * second one is not mine to make. The name is in the handoff.
+ * The proposal canvas and the PDF draw `service_location` through the adapter's
+ * `ctx.extra`, which has the customer's real locations in its hand
+ * (`proposal/recordWidgets.ts`). The email, the landing page and
+ * `proposalDoc.freezeOnSend` do not, so they read the document itself, and this
+ * is the one function that says what that document holds.
+ *
+ * ── TWO PLACES A TYPED VALUE CAN BE, AND BOTH ARE READ ────────────────────
+ * The record widget stores a retyped field under `overrides.<key>` — that is
+ * §11.12 F.2's Binding rule, and it is what makes *Typed, not live* and *Put it
+ * back* possible. An `address_block` written before D-165 stored the same words
+ * as FLAT props. A stored document can hold either, so both are read, newest
+ * first: `overrides` beats a flat prop beats the record. Reading only one of
+ * them is how an address typed on a signed agreement came back blank.
+ *
+ * KEPT UNDER ITS OLD NAME: `proposalDoc.ts` freezes a bound address with it.
  */
 export function addressFields(
   props: Record<string, unknown> | undefined | null,
   locations?: Record<string, LocationLite> | null,
 ): LocationFields {
   const p: any = props || {};
-  const locationId = selectionOf(p).locationId;
+  const over: any = (p.overrides && typeof p.overrides === "object") ? p.overrides : {};
+  const locationId = selectionOf(p).locationId || str(p.locationId).trim().toLowerCase();
   const loc = locationId ? (locations || {})[locationId] : undefined;
+  const typed = (...keys: string[]) => {
+    for (const k of keys) if (str(over[k])) return str(over[k]);
+    for (const k of keys) if (str(p[k])) return str(p[k]);
+    return "";
+  };
   return {
     heading: str(p.heading),
-    name: str(p.name) || str(loc?.name),
-    address: str(p.address) || locationAddress(loc),
-    contact: str(p.contact) || str((loc as any)?.site_contact),
-    notes: str(p.notes) || str((loc as any)?.access_notes),
+    /* THE CUSTOMER'S SPELLINGS ARE READ TOO. A typed `address_block` upgrades
+       to a **Customer**, whose address is `billing_address` and whose person is
+       `contact`; a bound one becomes a **Service Location**, whose person is
+       `site_contact`. One reader for both, because they are one widget's two
+       halves and an email that drew only one of them would blank the other. */
+    name: typed("name") || str(loc?.name),
+    address: typed("address", "billing_address") || locationAddress(loc),
+    contact: typed("site_contact", "contact", "contact_name") || str((loc as any)?.site_contact),
+    notes: typed("access_notes", "notes") || str((loc as any)?.access_notes),
     locationId,
     bound: !!loc,
   };
 }
 
-export function renderServiceLocation(w: Widget, ctx: RenderContext): string {
-  const p: any = w.props || {};
-  const f = addressFields(p, ctx.locations);
-  if (!f.name && !f.address && !f.contact && !f.notes) {
-    const early = emptyBody(p, "bx-address", ctx);
-    if (early !== null) return early;
-  }
-  return `<div class="bx-address">
-    ${editRun("heading", p.heading, "bx-h bx-h3", "Service address", ctx)}
-    ${dataRow("Property", "name", str(p.name), f.name, "What this site is called", ctx)}
-    ${dataRow("Address", "address", str(p.address), f.address, "Street, town, postcode", ctx)}
-    ${dataRow("Site contact", "contact", str(p.contact), f.contact, "Who to ask for on the day", ctx)}
-    ${dataRow("Getting in", "notes", str(p.notes), f.notes, "Gate code, where to park, who to call", ctx)}
-    ${f.bound && ctx.mode === "edit"
-      ? `<div class="bx-card-note">These come from the customer's own record, so the crew's sheet and this page cannot disagree.</div>`
-      : ""}
-  </div>`;
-}
-
-export const SERVICE_LOCATION_DEF: WidgetDef = {
-  kind: "service_location",
-  label: "Service Location",
-  description: "Where the work happens — pick one of the customer's locations and the address fills itself in.",
-  icon: "MapPin",
-  picture: pictureFrom(`<path d="M12 8a5 5 0 0 1 5 5c0 4-5 9-5 9s-5-5-5-9a5 5 0 0 1 5-5z" fill="#94A3B8" stroke="none"/>`
-    + bar(22, 10, 34) + bar(22, 20, 26) + bar(22, 29, 30)),
-  category: "Intelligent Analytics",
-  adapters: DOCUMENTS,
-  defaults: {
-    heading: "Service address", name: "", address: "", contact: "", notes: "",
-    /* `locationId` IS ONE OF THE DEFAULTS, explicitly. It is not our key alone:
-       oliver-api's `locationIdsInDocument` reads it off the stored document to
-       open a job per site, and `bindPlansToLocation` fills it when the author
-       picks the document's location — both of which look for the key being
-       PRESENT and empty, not absent. */
-    locationId: "",
-    ...bindingDefaults("lumen:locations"),
-  },
-  // "Which location" is the adapter's control (D-33): only the adapter knows
-  // which locations THIS customer has. The Binding section is the shared one.
-  controls: [
-    { key: "heading", label: "Heading", type: "text", tab: "content", section: "Service Location" },
-    ...BINDING_CONTROLS,
-  ],
-};
-
 /* ══════════════════════════════════════════════════════════════════════════
    Business Info — your own name, logo, phone and licence
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function renderBusinessInfo(w: Widget, ctx: RenderContext): string {
-  const p: any = w.props || {};
-  const b = ctx.business || { name: "" };
-  const m = ctx.merge || {};
-  const name = str(p.name) || str(b.name);
-  const logo = p.show_logo === false ? "" : str(p.logo_url || b.logoUrl || "");
-  const rows: Array<[string, string, string, string]> = [
-    ["Phone", "phone", str(lookup(m, "business.phone")), "Your number"],
-    ["Email", "email", str(lookup(m, "business.email")), "Your email"],
-    ["Licence", "licence", "", "Licence or registration number"],
-  ];
-  return `<div class="bx-business" style="display:flex;gap:12px;align-items:flex-start">
-    ${logo ? `<img class="bx-logo" src="${esc(logo)}" alt="" style="width:48px;height:48px;border-radius:8px;object-fit:contain"/>` : ""}
-    <div style="flex:1 1 auto;min-width:0">
-      ${editRun("name", name, "bx-h bx-h3", "Your business name", ctx)}
-      ${editRun("tagline", str(p.tagline) || str(b.tagline || ""), "bx-p", "What you do, in a few words", ctx, "p")}
-      ${rows.map(([label, key, record, ph]) => dataRow(label, key, str(p[key]), record, ph, ctx)).join("")}
-    </div>
-  </div>`;
-}
+/* ══════════════════════════════════════════════════════════════════════════
+   THE THREE DEFINITIONS AND THEIR RENDERERS LIVED HERE AND ARE DELETED
+   (integration, 2026-09-19)
+   ══════════════════════════════════════════════════════════════════════════
 
-export const BUSINESS_INFO_DEF: WidgetDef = {
-  kind: "business_info",
-  label: "Business Info",
-  description: "Your own name, logo, phone and licence — from your business profile.",
-  icon: "Building2",
-  picture: pictureFrom(`<rect x="8" y="10" width="18" height="20" rx="3" fill="#94A3B8" stroke="none"/>`
-    + bar(32, 12, 24, 5) + bar(32, 22, 18) + bar(32, 30, 22)),
-  category: "Intelligent Analytics",
-  adapters: DOCUMENTS,
-  defaults: { name: "", tagline: "", phone: "", email: "", licence: "", show_logo: true, logo_url: "" },
-  controls: [
-    { key: "show_logo", label: "Show your logo", type: "toggle", tab: "content", section: "Business Info" },
-    { key: "logo_url", label: "A different logo", type: "image", tab: "content", section: "Business Info",
-      help: "Leave this empty to use the logo from Brand Identity." },
-  ],
-};
+   `Customer`, `Service Location` and `Business Info` are declared and drawn in
+   `src/builder/proposal/recordWidgets.ts`. That is the copy the screen really
+   uses: the proposal adapter hands the renderer a RECORD BOOK through
+   `ctx.extra`, which `render.ts` asks before it asks `renderAtom`, so this
+   file's versions only ever drew on the surfaces that do not offer the kinds.
+   Two renderers for one kind is how one document came back in two different
+   markups depending on which surface drew it — the golden fixtures showed it.
+
+   What stayed is what other files read: `customerFields`, `locationAddress`
+   and `addressFields` (`proposalDoc.ts` freezes a bound address with the last
+   of those at send). The email and landing renderers draw these kinds from
+   their own `case`, out of the props the document carries. */
+
+export {};

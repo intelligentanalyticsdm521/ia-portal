@@ -734,6 +734,17 @@ export const WIDGETS: WidgetDef[] = [
     icon: "ListOrdered",
     picture: pictureFrom(`<path d="M8 12h2M8 22h2M8 32h2" stroke="#64748B" stroke-width="3"/>` + bar(16, 10, 40) + bar(16, 20, 34) + bar(16, 30, 38)),
     category: "Intelligent Analytics",
+    /* NO TILE, since integration 2026-09-19 — and the kind stays.
+       §11.13.3 names ONE Terms door: the panel TILE in
+       `proposal/catalogueTiles.ts`, which opens the saved clauses and drops
+       them as "plain text once placed" (a Heading and a Text Editor). This
+       widget was the second door with the same label, and two tiles reading
+       Terms in one panel is the thing the section exists to stop.
+       The KIND is not deleted: the Commercial snow & ice agreement places it,
+       D-164 says its clauses and its numbering do not change, and a stored
+       agreement must keep drawing exactly as it was signed. Renderer,
+       Inspector list and clause-pack filling are all untouched. */
+    hidden: true,
     adapters: DOCUMENTS,
     defaults: { heading: "", items: [] },
     controls: [
@@ -1180,7 +1191,7 @@ export const PANEL_ORDER: string[] = [
   "colour_block", "background", "qr_code", "social_handle",
   // Intelligent Analytics — §11.13.3's own order, proposals first
   "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
-  "customer", "service_location", "business_info", "clauses", "signature", "page_break",
+  "customer", "service_location", "business_info", "terms", "clauses", "signature", "page_break",
   /* The email's three, by the ids the mailbox already draws. They sit where
      §11.13.3 puts them in the email's own IA column. */
   "product_card", "article_card", "email_footer",
@@ -1233,8 +1244,9 @@ export function siteWidgetKindFor(arionKind: string): string {
    It grouped by category; `widgetTasks.groupByTask` grouped the same widgets by
    "job"; the two were maintained beside each other and the pane and the picker
    drew different lists. There is ONE grouping now — Elementor's four groups,
-   declared once on each entry as `category` — and `groupByTask` is the one
-   reader of it. Replace means delete. */
+   declared once on each entry as `category`, read by `widgetGroups.panelGroups`
+   (which is itself the merge of the two modules the streams each wrote; see
+   its header). Replace means delete. */
 
 /** The tooltip text for a widget's button. Label plus the sentence, always,
  *  and both in THIS builder's words (N-4). */

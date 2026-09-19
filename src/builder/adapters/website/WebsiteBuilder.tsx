@@ -947,16 +947,15 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             </button>
           </>
         }
-        /* WAS `paneHeader` (§11.13.1, D-165, stream 1).
-
-           The left panel is the widgets panel and nothing else, so the slot
-           this came through is deleted. The words are unchanged and now ride
-           on `documentExtras`, which the inspector shows as Page settings.
-           This is a MECHANICAL move to keep the tree compiling; deciding where
-           this actually belongs is this adapter's own stream — see
-           D165_HANDOFF_2026-09-19.md. */
-        documentExtras={
-          <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>
+        /* D-165 §11.13.1 — the LEFT panel is widgets and nothing else. What
+           the page itself is doing (held draft, whether it can be published,
+           the sections built on the site) is a fact about the PAGE, so it is
+           page settings: the right panel, when nothing is selected. It reads
+           the selection this builder ALREADY tracks — a second piece of state
+           saying the same thing is a second thing to get wrong. */
+        documentExtras={(
+          <div data-page-settings="website" style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+            <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>
             {cannotPublish && (
               <div style={{ color: "#B91C1C", fontWeight: 600, marginBottom: 6 }}>
                 Your website cannot show pages built here yet. {pageEngine?.reason}
@@ -1027,7 +1026,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             )}
             {err && <div style={{ color: "#B91C1C", marginTop: 6 }}>{err}</div>}
           </div>
-        }
+          </div>
+        )}
       />
 
       {askOpen && (

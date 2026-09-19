@@ -146,24 +146,6 @@ export function insertWidget(
         rotation: 0, visible: true,
       } as ImageLayer);
     }
-    case "gallery": {
-      const n = clamp(opts.count ?? 4, 2, 12);
-      const cols = n <= 2 ? 2 : n <= 6 ? 3 : 4;
-      const rows = Math.ceil(n / cols);
-      const pad = Math.round(16 * s);
-      const gw = Math.round(Math.min(W, H) * 0.82);
-      const cellW = Math.round((gw - pad * (cols - 1)) / cols);
-      const cellH = cellW;
-      const gh = rows * cellH + pad * (rows - 1);
-      const x0 = Math.round(cx - gw / 2);
-      const y0 = Math.round(cy - gh / 2);
-      return many(Array.from({ length: n }, (_, i) => ({
-        id: uid("image"), kind: "image",
-        x: x0 + (i % cols) * (cellW + pad),
-        y: y0 + Math.floor(i / cols) * (cellH + pad),
-        w: cellW, h: cellH, src: null, visible: true,
-      } as ImageLayer)));
-    }
     case "icon": {
       const key = opts.option && ICON_PATHS[opts.option] ? opts.option : "star";
       const side = Math.round(Math.min(W, H) * 0.18);
@@ -245,45 +227,15 @@ export function insertWidget(
         } as TextLayer,
       ]);
     }
-    case "callout": {
-      const n = clamp(opts.count ?? 2, 1, 3);
-      const pad = Math.round(24 * s);
-      const w = Math.round(Math.min(W * 0.86, 900 * s));
-      const panelW = Math.round((w - pad * (n - 1)) / n);
-      const h = Math.round(260 * s);
-      const x0 = Math.round(cx - w / 2);
-      const y = Math.round(cy - h / 2);
-      const titleSize = Math.round(34 * s);
-      const bodySize = Math.round(26 * s);
-      const out: Layer[] = [];
-      for (let i = 0; i < n; i++) {
-        const x = x0 + i * (panelW + pad);
-        out.push({
-          id: uid("rect"), kind: "shape", shape: "rect",
-          x, y, w: panelW, h, radius: Math.round(20 * s),
-          fill: i === 0 ? brand.colours.primary : brand.colours.secondary,
-          stroke: "none", strokeWidth: 0, visible: true,
-        } as ShapeLayer);
-        out.push({
-          id: uid("text"), kind: "text",
-          x: x + pad, y: y + pad, w: panelW - pad * 2, h: Math.round(titleSize * 1.4),
-          content: i === 0 ? "What's included" : "What's not",
-          size: titleSize, weight: "700", color: brand.colours.background,
-          align: "left", font: brand.fonts.heading, visible: true,
-        } as TextLayer);
-        out.push({
-          id: uid("text"), kind: "text",
-          x: x + pad, y: y + pad + Math.round(titleSize * 1.8),
-          w: panelW - pad * 2, h: Math.round(bodySize * 4),
-          content: "Say it here in a line or two.",
-          size: bodySize, weight: "400", color: brand.colours.background,
-          align: "left", lineHeight: 1.35, font: brand.fonts.body, visible: true,
-        } as TextLayer);
-      }
-      return many(out);
-    }
-
-    /* ── Information ─────────────────────────────────────────────────── */
+    /* `gallery` AND `callout` LIVED HERE and are DELETED (integration,
+       2026-09-19). The studio offers thirteen kinds and neither was one of
+       them, so both cases were unreachable: `gallery` left the studio's list
+       long ago, and `callout` is a kind that no longer exists anywhere
+       (§11.13.3 turned it into `alert`, and the studio is not one of the four
+       builders that section gives the standard set to). An insert case for a
+       tile nobody can press is code that looks like a feature. Replace means
+       delete; `test/mybrand-studio.test.mjs` walks the offered list and would
+       have gone red the moment either came back as a tile. */
     case "qr_code": {
       // The caller renders the code (LUMEN owns the encoder) and hands the
       // data: URI in, so what the canvas shows and what an export bakes are

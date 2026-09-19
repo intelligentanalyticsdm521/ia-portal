@@ -125,6 +125,16 @@ export interface StyleLayer {
 
 /** What a Section or a Widget carries. Absent on everything untouched. */
 export interface ElementStyle extends StyleLayer {
+  /**
+   * ADVANCED ▸ ATTRIBUTES — §11.13.1's third Advanced section.
+   *
+   * Elementor's own Advanced tab ends with a CSS ID and CSS Classes, and they
+   * are what a menu anchor links to and what a client's own stylesheet hooks
+   * onto. They are NOT per-device: an id is an id on every screen, which is
+   * why they sit on `ElementStyle` and not on `StyleLayer`.
+   */
+  cssId?: string;
+  cssClasses?: string;
   tablet?: StyleLayer;
   phone?: StyleLayer;
 }
@@ -420,7 +430,44 @@ export const TYPOGRAPHIC_KINDS: ReadonlySet<string> = new Set([
   // one of them gets the Typography group, which is the whole promise of
   // §11.12's "its own Content / Typography / Spacing / Advanced".
   "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
+  /* D-165 §11.13.3's set (S2→S1-1, done at integration 2026-09-19). Each of
+     these puts WORDS on a page — an alert's title and body, an icon box's
+     heading, a record block's labels and values — so each gets the Typography
+     group, which is the whole promise of §11.12's "its own Content /
+     Typography / Spacing / Advanced". `icon`, `image`, `divider`, `spacer`,
+     `menu_anchor`, `shortcode` and the galleries are NOT here: they carry no
+     text of their own, and a Typography group over a picture is a control
+     that does nothing. */
+  "icon_box", "image_box", "star_rating", "alert", "counter", "progress_bar",
+  "tabs", "accordion", "toggle", "google_maps",
+  "customer", "service_location", "business_info",
+  "ia_posts", "reviews", "book_now", "ia_form", "newsletter_signup", "hours_location",
 ]);
+
+/**
+ * THE AUTHOR'S OWN ID AND CLASSES, as attributes, safe to put in markup.
+ *
+ * ONE reader for the three renderers, so a page, a mailbox and a PDF preview
+ * cannot disagree about what the author typed. An id is one token — the first
+ * one, with anything an HTML id may not carry stripped — because two elements
+ * sharing an id is a menu anchor that jumps to the wrong place. Classes are
+ * whitespace-separated tokens, same filter, deduplicated.
+ *
+ * Returns "" when there is nothing, so an untouched widget's markup is byte for
+ * byte what it was and every golden stays valid.
+ */
+const TOKEN = /[^A-Za-z0-9_-]/g;
+
+export function attributeAttrs(style: ElementStyle | undefined | null): { id: string; classes: string[] } {
+  const raw = String(style?.cssId ?? "").trim().split(/\s+/).filter(Boolean)[0] ?? "";
+  const id = raw.replace(TOKEN, "");
+  const seen = new Set<string>();
+  for (const c of String(style?.cssClasses ?? "").trim().split(/\s+/)) {
+    const t = c.replace(TOKEN, "");
+    if (t) seen.add(t);
+  }
+  return { id, classes: [...seen] };
+}
 
 export function isTypographic(kind: string): boolean {
   return TYPOGRAPHIC_KINDS.has(kind) || kind.startsWith("site_");

@@ -458,6 +458,67 @@ export function ResponsiveGroup({
   );
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Advanced ▸ Attributes — the CSS id and classes (§11.13.1)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The reference editor's Advanced tab ends with CSS ID and CSS Classes, and
+ * they are the third of §11.13.1's three Advanced sections. The other two
+ * shipped with the screen; this one waited for somewhere to PUT the values and
+ * somebody to READ them — a control that writes a field nothing reads is worse
+ * than a missing one. `ElementStyle` carries them now and all three renderers
+ * emit them, so here it is.
+ *
+ * PLAIN WORDS on screen, not "CSS ID": the label says what it is FOR, and the
+ * hint says what it does, because a business owner reading "CSS ID" learns
+ * nothing. The catalogue's own name is in the tooltip for anybody who wants it.
+ */
+export function AttributesGroup({
+  cssId, cssClasses, onPatch, onReset,
+}: {
+  cssId: string;
+  cssClasses: string;
+  onPatch: (patch: { cssId?: string; cssClasses?: string }) => void;
+  onReset: () => void;
+}) {
+  const field: React.CSSProperties = {
+    width: "100%", fontSize: 12, padding: "6px 8px",
+    border: "1px solid #CBD5E1", borderRadius: 6,
+  };
+  return (
+    <Group title="Attributes" hint="A name for this part, so a link or your own styling can find it" onReset={onReset}>
+      <label style={{ fontSize: 11, color: "#5A7A8A" }} title="Elementor calls this the CSS ID.">
+        Its own name
+        <input
+          style={field}
+          data-style-css-id
+          value={cssId}
+          placeholder="e.g. prices"
+          onChange={(e) => onPatch({ cssId: e.target.value })}
+        />
+      </label>
+      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: -4 }}>
+        A Menu Anchor and a link like <code>#prices</code> jump to this name. Use it once on a page.
+      </div>
+      <label style={{ fontSize: 11, color: "#5A7A8A" }} title="Elementor calls these the CSS Classes.">
+        Styling names
+        <input
+          style={field}
+          data-style-css-classes
+          value={cssClasses}
+          placeholder="e.g. tight two-up"
+          onChange={(e) => onPatch({ cssClasses: e.target.value })}
+        />
+      </label>
+      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: -4 }}>
+        Separate them with a space. Your own stylesheet can then style every part with the same name.
+      </div>
+    </Group>
+  );
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
    A section's Layout — columns, the split, the gap
    ══════════════════════════════════════════════════════════════════════════ */

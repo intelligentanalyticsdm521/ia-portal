@@ -74,6 +74,10 @@ export function LandingBuilder(p: LandingBuilderProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  /* IS ANYTHING SELECTED? (D-165 §11.13.1) Page settings are what the right
+     panel shows when nothing is. */
+  /* No `selected` flag: the Inspector draws page settings only when nothing
+     is selected, so this adapter keeps no second copy of the selection. */
   const [copied, setCopied] = useState(false);
   const [business, setBusiness] = useState<LandingBusiness>({ name: "" });
   /**
@@ -313,16 +317,17 @@ export function LandingBuilder(p: LandingBuilderProps) {
           </button>
         </>
       }
-      /* WAS `paneHeader` (§11.13.1, D-165, stream 1).
-
-         The left panel is the widgets panel and nothing else, so the slot
-         this came through is deleted. The words are unchanged and now ride
-         on `documentExtras`, which the inspector shows as Page settings.
-         This is a MECHANICAL move to keep the tree compiling; deciding where
-         this actually belongs is this adapter's own stream — see
-         D165_HANDOFF_2026-09-19.md. */
-      documentExtras={
-        <div style={{ fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
+      /* D-165 §11.13.1 — the LEFT panel is widgets and nothing else. What is
+         true of the PAGE (that there is no form on it yet, that this business
+         has a website these could be pages of, what the last press did) is
+         page settings: the right panel, when nothing is selected. */
+      documentExtras={(
+        <div data-page-settings="landing"
+          style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC",
+            fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em", fontWeight: 700, color: "#5A7A8A" }}>
+            This page
+          </div>
           {p.arionSitePath && (
             <div style={{ color: "#1D4ED8" }}>
               <Globe size={11} style={{ verticalAlign: -1 }} /> You have a website with us —{" "}
@@ -337,7 +342,7 @@ export function LandingBuilder(p: LandingBuilderProps) {
           {err && <div style={{ color: "#B91C1C" }}>{err}</div>}
           {said && <div style={{ color: "#047857" }}>{said}</div>}
         </div>
-      }
+      )}
       widgetExtras={(w) => (
         <LandingExtras widget={w} doc={doc} onChange={setDoc} />
       )}

@@ -695,8 +695,13 @@ describe("D-39 · the title band has a logo control", () => {
        own `src` and saves with the document exactly as before. `business_info`
        carries the other half of D-39: use the brand logo, or a different one. */
     assert.ok("src" in WIDGETS_BY_KIND.image.defaults);
-    assert.ok("logo_url" in WIDGETS_BY_KIND.business_info.defaults);
+    // "A different logo" is stored under the FIELD's own key, so it is an
+    // override like any other retyped value and *Put it back* returns to the
+    // mark in Brand Identity. "None" is the Show-logo toggle.
+    assert.ok("logo" in WIDGETS_BY_KIND.business_info.defaults);
     assert.ok("show_logo" in WIDGETS_BY_KIND.business_info.defaults);
+    assert.ok(WIDGETS_BY_KIND.business_info.controls.some((c) => c.key === "logo" && c.type === "image"),
+      "there is no way to choose a different logo");
   });
 
   test("documentLogo answers the three cases", () => {

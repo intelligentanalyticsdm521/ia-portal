@@ -52,9 +52,14 @@ import {
   CATALOGUE_TILE_DEFS, TERMS_TILE_KIND, cardFromPick, isCatalogueTile, isPickerTile,
   lineFromPick, nodesForClauses, nodesForPicks,
 } from "../src/builder/proposal/catalogueTiles.ts";
+/* THE ONE UPGRADE (integration, 2026-09-19). `proposal/upgradeProposal.ts` is
+   deleted: `src/builder/upgrade.ts` converts eleven kinds INSIDE `deserialise`,
+   which is the one door a stored document comes through, and the second table
+   disagreed with it about what an address block leaves behind. These claims are
+   unchanged and are now made against the table that runs. */
 import {
-  DELETED_PROPOSAL_KINDS, addressBlockBecomes, upgradeProposalDocument, upgradeWidget,
-} from "../src/builder/proposal/upgradeProposal.ts";
+  DELETED_KINDS, addressBlockBecomes, upgradeDocument,
+} from "../src/builder/upgrade.ts";
 import { choicesForScope, choicesOf, categoriesOf } from "../src/components/oliver/ProposalCatalogPicker.tsx";
 import { makeContext } from "../src/builder/render.ts";
 import { TYPED_NOT_LIVE, PUT_IT_BACK } from "../src/builder/widgets/binding.ts";
@@ -414,20 +419,22 @@ describe("Product Cards and Product Line Items — the tiles", () => {
    7. Upgrade on open
    ══════════════════════════════════════════════════════════════════════════ */
 
+/** One widget through the ONE upgrade, and what it came back as. */
+const upgradeOne = (w) => {
+  const doc = docWith(w);
+  return upgradeDocument(doc).sections[0].columns[0].widgets;
+};
+
 describe("the deleted kinds upgrade on open", () => {
   test("EVERY deleted kind converts — the half stream 3 owns", () => {
     /* WHAT THIS ASSERTS AND WHAT IT DOES NOT.
        "Replace means delete" has two halves: a stored one CONVERTS, and the
-       pane stops OFFERING it. The conversion is this stream's and is asserted
-       below, kind by kind. The registry rows for these six live in
-       `registry.ts`, which the widget-set stream owns this pass, so the ask to
-       take them out of the pane is written into D165_HANDOFF_2026-09-19.md
-       rather than done here — editing another stream's rows mid-pass is how
-       three streams' notes were lost on 2026-09-17. The test that the pane no
-       longer offers them belongs in the integration, and the handoff says so
-       in as many words. */
-    for (const k of DELETED_PROPOSAL_KINDS) {
-      const out = upgradeWidget(makeWidget(k, { label: "L", value: "V", text: "T", title: "T" }));
+       pane stops OFFERING it. The conversion is asserted below, kind by kind.
+       The other half is asserted at integration in
+       `test/builder-widget-set.test.mjs` — "none of them is in the registry or
+       the renderer" — and it holds: none of these has a registry row. */
+    for (const k of DELETED_KINDS) {
+      const out = upgradeOne(makeWidget(k, { label: "L", value: "V", text: "T", title: "T" }));
       assert.ok(out.length >= 1, `${k} converts to nothing at all`);
       assert.equal(out[0].kind === k, false, `${k} came back as itself — it did not convert`);
     }
@@ -440,7 +447,7 @@ describe("the deleted kinds upgrade on open", () => {
   });
 
   test("a typed address block keeps its words, as overrides on the new block", () => {
-    const [w] = upgradeWidget(makeWidget("address_block", {
+    const [w] = upgradeOne(makeWidget("address_block", {
       heading: "Bill to", name: "Harborview PG", address: "18 Quay Street", contact: "Dana",
     }));
     assert.equal(w.kind, "customer");
@@ -449,27 +456,35 @@ describe("the deleted kinds upgrade on open", () => {
   });
 
   test("a key fact, a footer note, a header and a plan all become standard parts", () => {
-    assert.equal(upgradeWidget(makeWidget("key_fact", { label: "Trigger", value: "2 in" }))[0].props.text,
-      "Trigger: 2 in");
-    assert.equal(upgradeWidget(makeWidget("footer_note", { text: "Small print" }))[0].kind, "paragraph");
-    const [header] = upgradeWidget(makeWidget("doc_header", { logoUrl: "data:x", title: "Agreement" }));
+    // "**Label** value" — `render.boldRuns` is the one piece of mark-up a Text
+    // Editor understands, which is what makes §11.13.3's "label bold + value"
+    // true on all four surfaces rather than printing its asterisks.
+    assert.equal(upgradeOne(makeWidget("key_fact", { label: "Trigger", value: "2 in" }))[0].props.text,
+      "**Trigger** 2 in");
+    assert.equal(upgradeOne(makeWidget("footer_note", { text: "Small print" }))[0].kind, "paragraph");
+    const [header] = upgradeOne(makeWidget("doc_header", { logoUrl: "data:x", title: "Agreement" }));
     assert.equal(header.kind, "container");
-    assert.deepEqual(header.children.map((c) => c.kind), ["image", "heading"]);
-    const plan = upgradeWidget(makeWidget("property_plan", {
+    // A row holding the logo and a column of words — the words are a box of
+    // their own so a subtitle sits UNDER the title rather than beside the
+    // logo. §11.13.3's "Container(row){Image, Heading}", with the heading in
+    // the words box.
+    assert.deepEqual(header.children.map((c) => c.kind), ["image", "container"]);
+    assert.deepEqual(header.children[1].children.map((c) => c.kind), ["heading"]);
+    const [planBox] = upgradeOne(makeWidget("property_plan", {
       heading: "North lot", locationId: "ABC", rows: [{ label: "Gate", value: "4412" }],
     }));
-    assert.deepEqual(plan.map((n) => n.kind), ["service_location", "paragraph"]);
-    assert.equal(plan[0].props.locationId, "abc", "a location id is compared lower-cased everywhere");
+    assert.equal(planBox.kind, "container", "a plan becomes a BOX holding its parts");
+    assert.deepEqual(planBox.children.map((n) => n.kind), ["heading", "service_location", "paragraph"]);
   });
 
   test("a document with nothing to convert comes back BY IDENTITY", () => {
     const doc = docWith(makeWidget("heading", { text: "Hello" }));
-    assert.equal(upgradeProposalDocument(doc), doc);
+    assert.equal(upgradeDocument(doc), doc);
   });
 
   test("a deleted kind inside a BOX is converted too", () => {
     const doc = docWith(makeContainer({ direction: "row" }, [makeWidget("key_fact", { label: "A", value: "B" })]));
-    const out = upgradeProposalDocument(doc);
+    const out = upgradeDocument(doc);
     assert.notEqual(out, doc);
     assert.equal(out.sections[0].columns[0].widgets[0].children[0].kind, "paragraph");
   });

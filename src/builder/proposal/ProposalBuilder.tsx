@@ -44,7 +44,13 @@ import {
   RECORD_WIDGET_DEFS, fieldsOf, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
   type RecordBook,
 } from "./recordWidgets";
-import { upgradeProposalDocument } from "./upgradeProposal";
+/* THE SECOND UPGRADE TABLE IS DELETED (integration, 2026-09-19).
+   `upgradeProposal.ts` converted six kinds on open; `src/builder/upgrade.ts`
+   converts eleven INSIDE `deserialise`, which is the one door a stored
+   document comes through. Two tables for one job, and they disagreed about
+   what an address block leaves behind — one wrote flat props the record
+   widgets never read. There is one now, and `openProposalDocument` /
+   `deserialise` already run it. */
 import {
   TERMS_TILE_KIND, isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
   type CatalogueTileKind,
@@ -327,7 +333,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       // the standard parts that say the same thing, the first time anybody
       // opens the document. Same document by identity when there is nothing to
       // convert, so a draft merely opened saves byte-identical.
-      const opened = upgradeProposalDocument(openProposalDocument(row) || emptyDocument());
+      const opened = (openProposalDocument(row) || emptyDocument());
       setDoc(applyBrandDefaults(opened, brandDefaults(kit)));
       setResetKey((k) => k + 1);
       setPicking(false);
@@ -358,7 +364,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       if (p.valid_until) setValidUntil(String(p.valid_until).slice(0, 10));
       if (p.tax_rate != null) setTaxRate(String(Math.round(Number(p.tax_rate) * 10000) / 100));
       if (p.discount_amount != null) setDiscount(String(Number(p.discount_amount) || 0));
-      const opened = upgradeProposalDocument(row.document ? deserialise(row.document) : emptyDocument());
+      const opened = (row.document ? deserialise(row.document) : emptyDocument());
       setDoc(opened);
       setBaseDoc(row.base_document ? deserialise(row.base_document) : null);
       setRequestItems(Array.isArray(row.request_items) ? row.request_items : []);
@@ -1016,6 +1022,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         open
         onClose={onClose}
         adapter="proposal"
+        /* D-30's rule, in the one adapter that never took it up (R-1.4).
+           Without this the engine's own noun is "page", so the Add-section
+           pop-up offered "A ready-made page part" on a document somebody
+           signs, and the Page group offered to "Start a new page here" in the
+           engine's words rather than this builder's. */
+        copy={{
+          noun: "document",
+          nounPlural: "documents",
+          audience: "the customer who reads it",
+          paneHeading: "Add to this document",
+          paneHint: "Click one to add it where you are, or drag it onto the document.",
+          outlineHeading: "This document, top to bottom",
+          defaultFontLabel: "This document's own font",
+          pageBreakLabel: "Start a new page here",
+          canvasHint: "Click anything to edit it. This is exactly what the customer sees.",
+          emptyHeading: "What goes in this document?",
+          emptyHint: "Pick one to start. You can add the rest after.",
+          lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
+        }}
         resetKey={resetKey}
         eyebrow={revision
           ? `OLIVER · Revision v${revMeta?.document_version ?? 2}${revMeta?.requested_by === "customer" ? " · asked for by the customer" : ""}`
@@ -1219,14 +1244,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             </>
           )
         }
-        /* WAS `paneHeader` (§11.13.1, D-165, stream 1).
-
-           The left panel is the widgets panel and nothing else, so the slot
-           this came through is deleted. The words are unchanged and now ride
-           on `documentExtras`, which the inspector shows as Page settings.
-           This is a MECHANICAL move to keep the tree compiling; deciding where
-           this actually belongs is this adapter's own stream — see
-           D165_HANDOFF_2026-09-19.md. */
+        /* PAGE SETTINGS (§11.13.1 item 2). The left panel is the widgets panel
+           and nothing else, so what is true of the DOCUMENT — what it totals,
+           that it saved, what the customer asked to change — is the right-hand
+           panel with nothing selected. The Inspector decides that, once, for
+           every adapter; this slot just hands it the words. */
         documentExtras={
           <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.4 }}>
             {/* THE SAME RULE THAT KEEPS THE TOTAL OFF THE PAPER (D-164).
@@ -1246,9 +1268,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             {/* THE DETAILS GROUP LIVED HERE AND IS DELETED (11.13, 2026-09-19).
                 Brandon: "You have all this random details on the side. I never
                 asked for any of that." Every blank is typed where it appears
-                on the page now — the chip is the control — and the engine's
-                own "N details still to fill in / Take me to the first one"
-                button is the one counter. Nothing renders a list of boxes. */}
+                on the page now — the chip is the control — and the COUNTER
+                went with the boxes: there is no "N details still to fill in"
+                button anywhere. Send is the one refusal, it names the blanks
+                in plain words and it jumps to the first one ON THE PAGE.
+                Nothing renders a list of boxes. */}
             {saved && (
               <div data-saved-tick="1" style={{ color: "#047857", marginTop: 6, fontWeight: 600 }}>
                 ✓ {saved}
