@@ -30,9 +30,12 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
 import {
-  WIDGETS_BY_KIND, widgetsFor, allWidgetsFor, groupForPane, widgetTooltip,
-  SITE_SECTION_KINDS, arionKindOf, siteWidgetKindFor, WEBSITE_USES_A_SECTION_INSTEAD,
+  WIDGETS_BY_KIND, widgetsFor, allWidgetsFor, widgetTooltip,
+  SITE_SECTION_KINDS, arionKindOf, siteWidgetKindFor,
 } from "../src/builder/registry.ts";
+/* ONE grouping (D-165): `groupForPane` is deleted and `groupByTask` reads the
+   registry's own categories. */
+import { groupByTask } from "../src/builder/widgetTasks.ts";
 import {
   toDocument, toPayload, freshenDuplicates, fieldsOf, arionKindOfSection,
   sectionWidget, sectionsWithoutNodes, NODE_PROP, LOCK_PROP,
@@ -140,16 +143,29 @@ describe("the seam — what the pane offers is what the website can build", () =
     }
   });
 
-  test("the pane opens with the sections first, then the parts of a page", () => {
-    const groups = groupForPane("website", "");
-    assert.equal(groups[0].category, "Sections");
-    assert.deepEqual(groups[0].widgets.map((w) => w.kind), [...SITE_SECTION_KINDS]);
-    // "Money" joined the website pane on 2026-09-17: catalogue F.1 puts a
-    // card and a product card on a site, and both are `category: "Money"`.
-    // The SECTIONS group still comes first — a whole ready-made band is what
-    // most authors want — and the parts follow.
-    assert.deepEqual(groups.map((g) => g.category),
-      ["Sections", "Text", "Money", "Layout", "Media", "Information"]);
+  /**
+   * THE PANE IS ELEMENTOR'S NOW (D-165, §11.13.1).
+   *
+   * It used to open with a "Sections" group holding the twelve whole-page ARION
+   * sections. Brandon, 2026-09-19: the left panel is *"widgets only… groups
+   * Layout / Basic / General / Intelligent Analytics"*, and a whole ready-made
+   * band is what **Add section → Template** is for. So the twelve sections are
+   * `hidden` in the registry — still a kind, so a stored page draws and round
+   * trips — and belong in the template library. The ask is in the handoff.
+   */
+  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+    const groups = groupByTask("website", "");
+    assert.deepEqual(groups.map((g) => g.task),
+      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+    assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
+  });
+
+  test("the twelve whole-page sections are understood and never offered", () => {
+    for (const kind of SITE_SECTION_KINDS) {
+      assert.ok(WIDGETS_BY_KIND[kind], `${kind} left the vocabulary`);
+      assert.equal(WIDGETS_BY_KIND[kind].hidden, true, `${kind} is still a tile`);
+      assert.equal(allWidgetsFor("website").some((w) => w.kind === kind), true, kind);
+    }
   });
 
   test("every button in the pane has a tooltip", () => {
@@ -159,16 +175,13 @@ describe("the seam — what the pane offers is what the website can build", () =
     }
   });
 
-  test("a job a SECTION does is not also offered as a loose widget", () => {
-    // One mechanism per concern. A price on a website is `site_pricing`, with
-    // its own emitter and its own round trip — offering the document's pricing
-    // table beside it would be two things that publish differently.
-    for (const [kind, instead] of Object.entries(WEBSITE_USES_A_SECTION_INSTEAD)) {
-      assert.ok(WIDGETS_BY_KIND[kind], `${kind} is named in the list and does not exist`);
-      assert.equal(WIDGETS_BY_KIND[kind].adapters.includes("website"), false,
-        `${kind} is still offered to the website builder; ${instead} is the one mechanism`);
-    }
-  });
+  /* THE "a job a SECTION does" TEST LIVED HERE and is DELETED (D-165).
+     It read `WEBSITE_USES_A_SECTION_INSTEAD`, which is gone with it: the twelve
+     whole-page sections are off the widget panel (they are templates now), six
+     of the nine widgets that map named are deleted outright, and Testimonial is
+     a standard Elementor widget every builder offers. The rule that replaced it
+     is stronger — `test/builder-widget-set.test.mjs` pins the website pane's
+     whole list, by name and in order. */
 
   test('"Custom section (kept as is)" is in the vocabulary and never offered', () => {
     assert.ok(WIDGETS_BY_KIND.site_custom);

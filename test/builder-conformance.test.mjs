@@ -302,7 +302,9 @@ describe("point 4 · the Binding section is on EVERY catalogue-bound widget", ()
     // MUTATION: remove `...BINDING_CONTROLS` from PRICE_LINE_DEF → red here.
     const shared = BINDING_CONTROLS.map((c) => c.key);
     assert.deepEqual(shared, ["_ia_source", "_ia_selection", "refresh", "on_empty", "overrides"]);
-    for (const kind of ["catalog_card", "price_line", "address_block", "totals"]) {
+    /* D-165 — `address_block` is `service_location` (or `customer`, by its
+       binding), and `customer` is a fifth bound kind. */
+    for (const kind of ["catalog_card", "price_line", "service_location", "customer", "totals"]) {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
       const keys = def.controls.map((c) => c.key);
@@ -829,7 +831,7 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
         },
       },
       { id: "w5", kind: "price_line", props: { name: "Salting", quantity: 2, unit_price: 85 } },
-      { id: "w6", kind: "address_block", props: { locationId: "loc-3", heading: "Site" } },
+      { id: "w6", kind: "service_location", props: { locationId: "loc-3", heading: "Site" } },
       { id: "w7", kind: "totals", props: { heading: "Your total" } },
       { id: "w8", kind: "html", props: { html: "<p>Book now</p>" } },
     ];
@@ -916,7 +918,7 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
 
   test("an address block keeps `locationId` — it is another repo's key too", () => {
     const d = deserialise(stored([
-      { id: "w1", kind: "address_block", props: { locationId: "LOC-4" } },
+      { id: "w1", kind: "service_location", props: { locationId: "LOC-4" } },
     ]));
     const p = d.sections[0].columns[0].widgets[0].props;
     assert.equal(p.locationId, "LOC-4", "the location id moved and a job would open with no address");

@@ -342,9 +342,15 @@ describe("D-156 · how deep a box may go is ONE number", () => {
     // and the picker said "Nothing here matches 'row'" while holding exactly
     // the thing asked for.
     assert.equal(boxMatches("row").length, 1, "the Row box does not match the word row");
+    /* D-165 CHANGED THE PREMISE, and the fix is now structural rather than a
+       special case. The Layout group holds two real widgets — **Container** and
+       **Grid** — whose sentences say "Set it to a row for columns", so typing
+       "row" matches a WIDGET and the group is there on its own. The picker's
+       `boxes` computation stays: it is what puts the Row/Grid presets in front
+       of the author, and the two lines below still pin it. */
     assert.equal(
-      groupByTask("proposal", "row").some((g) => g.task === "Layout"), false,
-      "this test's premise is gone — a widget now matches 'row' too",
+      groupByTask("proposal", "row").some((g) => g.task === "Layout"), true,
+      "typing 'row' no longer reaches the Layout group at all",
     );
     const src = readSrc("builder/WidgetPicker.tsx");
     assert.ok(src.includes("const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : [])"),

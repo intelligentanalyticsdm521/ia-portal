@@ -47,7 +47,7 @@ import {
   firstWords, hiddenOf, outline, rowLabel, sectionDropIndex, sectionRows,
 } from "../src/builder/navigatorModel.ts";
 import {
-  DEFAULT_TASK, EMPTY_PAGE_CHOICES, TASK_BY_CATEGORY, TASK_GROUPS, flatMatches, groupByTask,
+  DEFAULT_TASK, EMPTY_PAGE_CHOICES, TASK_GROUPS, flatMatches, groupByTask,
   matchesWidgetQuery, taskFor, unmappedCategories,
 } from "../src/builder/widgetTasks.ts";
 import {
@@ -310,7 +310,7 @@ describe("the outline (D-12)", () => {
   test("a row says what the widget ACTUALLY SAYS, not just its kind", () => {
     // Eleven rows called "Paragraph" is not an outline.
     assert.equal(rowLabel(makeWidget("heading", { text: "Scope of work" })), "Heading · Scope of work");
-    assert.equal(rowLabel(makeWidget("paragraph", {})), "Paragraph");
+    assert.equal(rowLabel(makeWidget("paragraph", {})), "Text Editor");
   });
 
   test("it reaches into a repeat for the first thing in it", () => {
@@ -356,25 +356,37 @@ describe("the outline (D-12)", () => {
    5. D-147 — the picker's groups and its search
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("the widget picker groups by the job (D-147)", () => {
-  test("the seven groups are the ones a home-services owner would name", () => {
-    assert.deepEqual([...TASK_GROUPS], [
-      "Customer & property", "Products & services", "Words", "Pictures & media",
-      "Signature & terms", "Layout", "More",
-    ]);
+/**
+ * THE PICKER'S GROUPS — Elementor's, since D-165 (§11.13.1).
+ *
+ * This block used to pin D-147's seven JOB groups (Customer & property,
+ * Products & services, Words, …). Brandon, 2026-09-19: the left panel is
+ * *"groups as accordions (Layout, Basic, Pro, General…)"* with *"Elementor's own
+ * widget names"*, and *"I don't need this over engineered."* So there is ONE
+ * grouping and it is the registry's own `category`; `TASK_BY_CATEGORY`,
+ * `TASK_BY_KIND` and the `task` field are deleted.
+ *
+ * The LIST itself — which builder offers what, by name and in order — is pinned
+ * in `test/builder-widget-set.test.mjs`. What is left here is the behaviour this
+ * file has always been about: the pane and the picker agree, and the search
+ * ranks a name above a mention.
+ */
+describe("the widget picker groups the way the panel does (D-165)", () => {
+  test("the groups are Elementor's four, and every category is one of them", () => {
+    assert.deepEqual([...TASK_GROUPS], [...WIDGET_CATEGORIES]);
+    assert.deepEqual(unmappedCategories(), []);
   });
 
   test("Brandon's two sentences are answerable in one group each", () => {
     // "I need to be able to call products and services, I need to be able to
-    // add sections for service address or property address."
-    const property = groupByTask("proposal").find((g) => g.task === "Customer & property");
-    const money = groupByTask("proposal").find((g) => g.task === "Products & services");
-    // D-156: the property block came apart into an address, priced lines and a
-    // total. The ADDRESS is what answers "add a section for service address".
-    assert.ok(property.widgets.some((w) => w.kind === "address_block"),
-      "the service address is not under Customer & property");
-    assert.ok(money.widgets.some((w) => w.kind === "pricing_table"),
-      "the pricing table is not under Products & services");
+    // add sections for service address or property address." Both are in the
+    // Intelligent Analytics group, which is where a client would look for the
+    // things that come out of their own records.
+    const ia = groupByTask("proposal").find((g) => g.task === "Intelligent Analytics");
+    assert.ok(ia.widgets.some((w) => w.kind === "service_location"),
+      "the service address is not in the Intelligent Analytics group");
+    assert.ok(ia.widgets.some((w) => w.kind === "product_line_items"),
+      "the catalogue picker is not in the Intelligent Analytics group");
   });
 
   test("every widget the pane offers lands in a group — nothing is dropped", () => {
@@ -385,47 +397,39 @@ describe("the widget picker groups by the job (D-147)", () => {
     }
   });
 
-  test("every category has a job, so nothing falls into More by accident", () => {
-    assert.deepEqual(unmappedCategories(), []);
-    for (const c of WIDGET_CATEGORIES) assert.ok(TASK_GROUPS.includes(TASK_BY_CATEGORY[c]), c);
-  });
-
-  test("a widget's own `task` on its registry entry wins over both maps", () => {
-    const fake = { kind: "made_up_thing", label: "x", description: "y", category: "Text", task: "Layout" };
-    assert.equal(taskFor(fake), "Layout");
-    assert.equal(taskFor({ ...fake, task: "Nonsense" }), "Words", "an unknown task falls back rather than inventing a group");
-    assert.equal(taskFor({ kind: "nope", label: "", description: "", category: "Information" }), DEFAULT_TASK);
+  test("a widget's group is its category, and nothing else decides it", () => {
+    for (const w of WIDGETS) assert.equal(taskFor(w), w.category, w.kind);
+    // A category the panel does not draw falls back rather than vanishing.
+    assert.equal(taskFor({ kind: "nope", label: "", description: "", category: "Nonsense" }), DEFAULT_TASK);
   });
 
   test("the search reads the sentence and the group name, not only the label", () => {
     const heading = WIDGETS.find((w) => w.kind === "heading");
     assert.equal(matchesWidgetQuery(heading, "heading"), true);
-    assert.equal(matchesWidgetQuery(heading, "words"), true, "the group name has to be searchable");
+    assert.equal(matchesWidgetQuery(heading, "basic"), true, "the group name has to be searchable");
     assert.equal(matchesWidgetQuery(heading, "zzz"), false);
   });
 
   test("EVERY word has to match, so two words narrow rather than widen", () => {
-    const pricing = WIDGETS.find((w) => w.kind === "pricing_table");
-    assert.equal(matchesWidgetQuery(pricing, "price table"), true);
-    assert.equal(matchesWidgetQuery(pricing, "price banana"), false);
+    const line = WIDGETS.find((w) => w.kind === "product_line_items");
+    assert.equal(matchesWidgetQuery(line, "product line"), true);
+    assert.equal(matchesWidgetQuery(line, "product banana"), false);
   });
 
   test("the picker's first card IS what Enter inserts", () => {
     // FOUND BY DRIVING IT: the grid drew registry order while Enter took the
     // ranked top, so the first card and the thing Enter added were two
     // different widgets.
-    const first = groupByTask("proposal", "pri")[0].widgets[0];
-    assert.equal(first.kind, flatMatches("proposal", "pri")[0].kind);
+    const first = groupByTask("proposal", "pro")[0].widgets[0];
+    assert.equal(first.kind, flatMatches("proposal", "pro")[0].kind);
   });
 
-  test("a NAME beats a mention — 'property' finds the property widgets, not the merge field", () => {
+  test("a NAME beats a mention — 'customer' finds the Customer widget first", () => {
     // The slash command's Enter takes the first of these, so the order is not
     // cosmetic: getting it wrong inserts the wrong thing without asking.
-    const hits = flatMatches("proposal", "property").map((w) => w.kind);
-    const merge = hits.indexOf("merge_field");
-    assert.match(flatMatches("proposal", "property")[0].label, /^Property/);
-    assert.ok(hits.indexOf("property_block") < merge, "the merge field outranked the property block");
-    assert.ok(hits.indexOf("property_plan") < merge, "the merge field outranked the property plan");
+    const hits = flatMatches("proposal", "customer");
+    assert.equal(hits[0].kind, "customer");
+    assert.ok(hits.length > 1, "nothing else mentions the customer at all");
   });
 
   test("the empty page's three choices point at three real groups", () => {

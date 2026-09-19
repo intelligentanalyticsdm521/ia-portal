@@ -619,13 +619,19 @@ describe("composites become trees, and everything else is left exactly alone", (
     // The items are PRICED LINES, never a rate card: a rate card is prose and
     // does not reach a total, so a property's money would have quietly gone.
     assert.deepEqual(p.children.map((n) => n.kind),
-      ["heading", "address_block", "price_line", "totals"]);
+      ["heading", "service_location", "price_line", "totals"]);
     assert.equal(p.children[1].props.locationId, "loc-3");
     assert.equal(p.children[2].props.name, "Plowing");
     assert.equal(p.children[2].props.unit_price, 200);
 
     assert.equal(directionOf(f), "row");
-    assert.deepEqual(f.children.map((n) => n.props.label), ["Term", "Start"]);
+    /* D-165 — a key fact is a LINE OF TEXT with its label in bold (§11.13.3),
+       so `key_facts` converts straight to Text Editors. Straight, in one hop:
+       `upgradeNode` visits a node once, and a two-hop conversion would leave a
+       `key_fact` on the page that nothing draws. */
+    assert.deepEqual(f.children.map((n) => n.kind), ["paragraph", "paragraph"]);
+    assert.deepEqual(f.children.map((n) => n.props.text),
+      ["**Term** 12 months", "**Start** Nov 1"]);
 
     assert.equal(line.kind, "price_line");
     assert.equal(line.id, priced.id, "the priced line lost its id, so its total would move");

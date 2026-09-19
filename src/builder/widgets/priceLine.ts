@@ -141,12 +141,16 @@ export function renderPriceLine(w: Widget, ctx: RenderContext): string {
 
 export const PRICE_LINE_DEF: WidgetDef = {
   kind: "price_line",
-  label: "Priced line",
+  label: "Product Line Item",
   description: "One thing you are charging for, with how many and the price each. This one adds to the total.",
-  task: "Products & services",
   icon: "Tag",
   picture: pictureFrom(bar(8, 12, 30) + bar(44, 12, 12) + bar(8, 24, 24) + bar(44, 24, 12)),
-  category: "Money",
+  category: "Intelligent Analytics",
+  /* NOT A TILE. **Product Line Items** is the tile; this is the atom it drops,
+     one per pick. Offering the atom beside the tile would be a second door to
+     one job, and the second one skips the catalogue picker — which is how a
+     line lands on a proposal bound to nothing. */
+  hidden: true,
   adapters: ["proposal"],
   // It can be filled from the OLIVER catalogue. A typed line needs nothing,
   // and WHETHER this business has OLIVER is still the server's answer.
@@ -164,13 +168,14 @@ export const PRICE_LINE_DEF: WidgetDef = {
     ...bindingDefaults("oliver:catalogue"),
   },
   controls: [
-    { key: "name", label: "What it is", type: "text" },
-    { key: "description", label: "Why it is worth having", type: "textarea" },
-    { key: "bullets", label: "What is included", type: "list" },
-    { key: "quantity", label: "How many", type: "number" },
-    { key: "unit_price", label: "Price each", type: "money" },
+    { key: "name", label: "What it is", type: "text", tab: "content", section: "Line item" },
+    { key: "description", label: "Why it is worth having", type: "textarea", tab: "content", section: "Line item" },
+    { key: "bullets", label: "What is included", type: "list", tab: "content", section: "Line item" },
+    { key: "quantity", label: "How many", type: "number", tab: "content", section: "Line item" },
+    { key: "unit_price", label: "Price each", type: "money", tab: "content", section: "Line item" },
     {
       key: "unit_label", label: "What one of them is", type: "text",
+      tab: "content", section: "Line item",
       help: "The unit the price is charged on — e.g. Per 1,000 sq ft, or Per push",
     },
     // THE SAME Binding section a product card has (F.2). A client who learnt

@@ -69,6 +69,11 @@ import { isContainer } from "../treeOps";
 export type IaSource =
   | "oliver:catalogue"
   | "lumen:locations"
+  /* D-165 — the customer picked in the top bar. §11.13.2: "Load a customer and
+     it auto loads customer information." The Customer widget reads it; nothing
+     else does, and it is a SOURCE rather than a table name for the same two
+     reasons the other three are. */
+  | "lumen:customer"
   | "document"
   | "";
 
@@ -293,7 +298,12 @@ export const BOUND_KINDS: Readonly<Record<string, IaSource>> = {
   catalog_card: "oliver:catalogue",
   price_line: "oliver:catalogue",
   priced_line: "oliver:catalogue",
-  address_block: "lumen:locations",
+  /* D-165 — `address_block` was BOTH the customer's address and the site's, and
+     one widget that was quietly both is how a bill goes to a site office. It is
+     deleted; these two are what it became, and `upgrade.ts` picks between them
+     by the stored binding. */
+  service_location: "lumen:locations",
+  customer: "lumen:customer",
   totals: "document",
 };
 

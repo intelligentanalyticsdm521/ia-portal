@@ -51,6 +51,34 @@ import {
  */
 export const COMPOSITE_KINDS = ["comparison_cards", "property_block", "key_facts", "priced_line"] as const;
 
+/**
+ * D-165 — THE KINDS THAT HAVE NO ELEMENTOR NAME AND ARE NOT ON THE IA LIST.
+ *
+ * §11.13.3, in as many words: *"Deleted from the proposal builder (replace
+ * means delete; stored documents upgrade on open to standard parts): personal
+ * detail, key fact, the details section, document header, footer note, property
+ * plan, the old pricing table, call-out."* Plus `address_block`, which was
+ * quietly BOTH the customer's address and the site's.
+ *
+ * Every one of them is gone from the registry and gone from the renderer, and
+ * every one has a conversion below. The promise is the same as the composites':
+ * a document that never held one comes back as THE SAME OBJECT, by identity, so
+ * every golden on the line is byte for byte what it was.
+ *
+ * MONEY IS PRESERVED. Only `price_line` was ever money — `pricing_table` never
+ * was (totals.ts rule 1: a rate card does not add up until it snows) and
+ * neither was anything else here. `documentTotals` before and after this pass is
+ * the same number, and there is a test that runs it both ways.
+ */
+export const DELETED_KINDS = [
+  "doc_header", "footer_note", "merge_field", "property_plan", "pricing_table",
+  "callout", "key_value_table", "key_fact", "address_block", "map", "columns",
+] as const;
+
+export function isDeletedKind(n: Node): boolean {
+  return !isContainer(n) && (DELETED_KINDS as readonly string[]).includes(n.kind);
+}
+
 export function isComposite(n: Node): boolean {
   return !isContainer(n) && (COMPOSITE_KINDS as readonly string[]).includes(n.kind);
 }
@@ -346,9 +374,11 @@ function fromPropertyBlock(w: Widget): Node {
   const p: any = w.props || {};
   const kids: Node[] = [];
   if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 3 }));
-  kids.push(makeWidget("address_block", {
-    locationId: str(p.locationId),
+  kids.push(makeWidget("service_location", {
+    ...bindingDefaults("lumen:locations"),
+    ...selectionProps("lumen:locations", { locationId: str(p.locationId) }),
     name: str(p.locationName),
+    heading: "",
   }));
   // THE ITEMS BECOME PRICED LINES, NOT A RATE CARD (integration, 2026-09-17).
   //
@@ -387,12 +417,14 @@ function fromPropertyBlock(w: Widget): Node {
  */
 function fromKeyFacts(w: Widget): Node {
   const p: any = w.props || {};
-  const facts = arr(p.rows).map((r: any) =>
-    makeWidget("key_fact", { label: str(r?.label ?? r?.name), value: str(r?.value) }));
-  const box = makeContainer(ROW, facts);
-  box.id = w.id;
-  if (w.style) box.style = JSON.parse(JSON.stringify(w.style));
-  return box;
+  /* D-165 — a key fact IS A LINE OF TEXT. `key_fact` was the atomic half of
+     this composite for one day, and it has no Elementor name and is not on the
+     IA list, so it went the same way: "key_fact -> Text Editor (label bold +
+     value) inside the same Container". Converting straight to the end state
+     matters, because `upgradeNode` visits a node once — a two-hop conversion
+     would leave a `key_fact` on the page that nothing draws. */
+  const lines = arr(p.rows).map((r: any) => labelledLine(str(r?.label ?? r?.name), str(r?.value)));
+  return asBox(w, ROW, lines);
 }
 
 /**
@@ -407,6 +439,158 @@ function fromPricedLine(w: Widget): Node {
   return { ...w, kind: "price_line" };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   D-165's conversions — one per deleted kind, each to STANDARD parts
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The box a converted widget becomes, keeping the old widget's id and style. */
+function asBox(w: Widget, style: ElementStyle | undefined, kids: Node[]): Node {
+  const b = makeContainer(style, kids);
+  // The id is KEPT. A revision diff matches by id, and a document whose ids all
+  // changed on open would badge every section as new the first time it opened.
+  b.id = w.id;
+  if (w.style) b.style = JSON.parse(JSON.stringify(w.style));
+  return b;
+}
+
+/** One widget, keeping the old one's id — for a one-for-one conversion. */
+function asWidget(w: Widget, kind: string, props: Record<string, unknown>): Widget {
+  return { ...w, kind, props };
+}
+
+/** A label and its value as one run of text. */
+function labelledText(w: Widget, label: string, value: string): Widget {
+  const l = str(label).trim();
+  const v = str(value);
+  return asWidget(w, "paragraph", { text: l ? `**${l}** ${v}`.trim() : v });
+}
+
+/** The same, for a row of a table that has no widget of its own to inherit. */
+function labelledLine(label: string, value: string): Widget {
+  const l = str(label).trim();
+  const v = str(value);
+  return makeWidget("paragraph", { text: l ? `**${l}** ${v}`.trim() : v });
+}
+
+/**
+ * `doc_header` → `container(row){ image(logo), container{ heading, text } }`.
+ *
+ * §11.13.3: *"document header (-> a Container with Image + Heading, shipped as
+ * a saved header template)"*. The band's own logo travels to the Image; the
+ * title and the line under it are a Heading and a Text Editor, because that is
+ * what they already were on the page.
+ */
+function fromDocHeader(w: Widget): Node {
+  const p: any = w.props || {};
+  const row: Node[] = [];
+  const logo = str(p.logoUrl);
+  if (logo && logo !== "none") row.push(makeWidget("image", { src: logo, alt: "", caption: "" }));
+  const words: Node[] = [makeWidget("heading", { text: str(p.title), level: 1 })];
+  if (str(p.subtitle)) words.push(makeWidget("paragraph", { text: str(p.subtitle) }));
+  if (str(p.bandRight)) words.push(makeWidget("paragraph", { text: str(p.bandRight) }));
+  row.push(makeContainer(undefined, words));
+  return asBox(w, ROW, row);
+}
+
+/**
+ * `property_plan` → `container{ heading, service_location, text rows }`.
+ *
+ * The location binding travels to the Service Location widget; every row of the
+ * plan becomes a line of text, because that is all a row ever was.
+ */
+function fromPropertyPlan(w: Widget): Node {
+  const p: any = w.props || {};
+  const kids: Node[] = [];
+  if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 3 }));
+  kids.push(makeWidget("service_location", {
+    ...bindingDefaults("lumen:locations"),
+    ...selectionProps("lumen:locations", { locationId: str(p.locationId) }),
+    heading: "",
+  }));
+  for (const r of arr(p.rows)) kids.push(labelledLine(str(r?.label), str(r?.value)));
+  return asBox(w, undefined, kids);
+}
+
+/**
+ * `pricing_table` → a heading, a line of prose and one `price_line` per row.
+ *
+ * §11.13.3: *"the old pricing table (-> Product Line Items)"*. A rate card's
+ * rows carried a RATE as words ("$185 per push"), never a number, so each line
+ * is created with `unit_price: 0` and the rate kept in its unit label: the table
+ * fed no total and the lines must not start feeding one. That is the money rule,
+ * and it is what the before/after `documentTotals` test pins.
+ */
+function fromPricingTable(w: Widget): Node {
+  const p: any = w.props || {};
+  const kids: Node[] = [];
+  if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 2 }));
+  if (str(p.intro)) kids.push(makeWidget("paragraph", { text: str(p.intro) }));
+  for (const r of arr(p.rows)) {
+    const name = str(r?.name ?? r?.service).trim();
+    if (!name) continue;
+    kids.push(makeWidget("price_line", {
+      name,
+      quantity: 1,
+      unit_price: 0,
+      unit_label: [str(r?.rate), str(r?.basis)].filter(Boolean).join(" · "),
+      cadence: null,
+      description: "",
+      bullets: [],
+    }));
+  }
+  return asBox(w, undefined, kids);
+}
+
+/** `callout` → one `alert` per panel. Elementor has a name for a tinted box. */
+function fromCallout(w: Widget): Node {
+  const p: any = w.props || {};
+  const kids: Node[] = [];
+  if (str(p.heading)) kids.push(makeWidget("heading", { text: str(p.heading), level: 2 }));
+  const panels = arr(p.panels);
+  for (const pn of panels) {
+    kids.push(makeWidget("alert", {
+      // `warn` was the one non-default tone the old widget had.
+      alert_type: str(pn?.tone) === "warn" ? "warning" : "info",
+      alert_title: str(pn?.title),
+      alert_description: str(pn?.body),
+    }));
+  }
+  return asBox(w, panels.length > 1 ? ROW : undefined, kids);
+}
+
+/** `key_value_table` → one line of text per row, in the same box. */
+function fromKeyValueTable(w: Widget): Node {
+  const p: any = w.props || {};
+  return asBox(w, undefined, arr(p.rows).map((r: any) => labelledLine(str(r?.label ?? r?.name), str(r?.value))));
+}
+
+/**
+ * `address_block` → `customer` or `service_location`, BY ITS BINDING.
+ *
+ * A block bound to one of the customer's locations IS that location. One that
+ * was typed is the customer's own address, because that is the only address a
+ * proposal has before anybody makes a site record. The id is kept either way,
+ * so the revision diff does not badge it.
+ */
+function fromAddressBlock(w: Widget): Node {
+  const p: any = w.props || {};
+  const sel = selectionOf(p);
+  if (sel.locationId) {
+    return asWidget(w, "service_location", {
+      ...bindingDefaults("lumen:locations"),
+      ...selectionProps("lumen:locations", { locationId: sel.locationId }),
+      heading: str(p.heading), name: str(p.name), address: str(p.address),
+      contact: str(p.contact), notes: str(p.notes),
+    });
+  }
+  return asWidget(w, "customer", {
+    ...bindingDefaults("lumen:customer"),
+    heading: str(p.heading) || "Prepared for",
+    name: str(p.name), billing_address: str(p.address), contact_name: str(p.contact),
+    legal_name: "", email: "", phone: "",
+  });
+}
+
 function upgradeNode(n: Node): Node {
   if (isContainer(n)) {
     const kids = n.children.map(upgradeNode);
@@ -417,6 +601,23 @@ function upgradeNode(n: Node): Node {
     case "property_block": return fromPropertyBlock(n);
     case "key_facts": return fromKeyFacts(n);
     case "priced_line": return renameProps(fromPricedLine(n) as Widget);
+    /* D-165 — the kinds with no Elementor name that are not on the IA list.
+       Every one becomes standard parts; nothing is dropped. */
+    case "doc_header": return fromDocHeader(n);
+    case "property_plan": return fromPropertyPlan(n);
+    case "pricing_table": return fromPricingTable(n);
+    case "callout": return fromCallout(n);
+    case "key_value_table": return fromKeyValueTable(n);
+    case "address_block": return fromAddressBlock(n);
+    // One for one: the words survive, the widget does not.
+    case "footer_note": return asWidget(n, "paragraph", { text: str((n.props as any)?.text) });
+    case "key_fact": return labelledText(n, str((n.props as any)?.label), str((n.props as any)?.value));
+    case "merge_field": return asWidget(n, "paragraph", { text: `{{${str((n.props as any)?.token)}}}` });
+    case "map": return asWidget(n, "google_maps", { address: str((n.props as any)?.address), zoom: 10, height: 300 });
+    /* `columns` was never a thing on the page — it SET a section's column count
+       and the toolbar owned it from then on, and §11.13.1 takes it off the
+       panel. One that reached a document is a box. */
+    case "columns": return asBox(n, ROW, []);
     // THE RENAMES run on every widget that is not a composite, because a card
     // written yesterday is not a composite and still spells its fields the old
     // way. `renameProps` returns the same object when there is nothing to move.
@@ -461,7 +662,7 @@ export function needsUpgrade(doc: BuilderDocument): boolean {
       // A COMPOSITE, or a widget still spelling its fields the old way. Both
       // are "this document would change if it were opened", which is the one
       // question this function is asked.
-      else if (isComposite(n) || renameProps(n) !== n) found = true;
+      else if (isComposite(n) || isDeletedKind(n) || renameProps(n) !== n) found = true;
     }
   };
   for (const s of doc.sections) for (const c of s.columns) look(c.widgets);

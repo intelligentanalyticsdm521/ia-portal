@@ -71,14 +71,13 @@ export function renderHtml(w: Widget, ctx: RenderContext): string {
 
 export const HTML_DEF: WidgetDef = {
   kind: "html",
-  label: "Your own HTML",
+  label: "HTML",
   description: "Paste your own HTML. It goes on the page exactly as you type it.",
-  task: "Words",
   icon: "Code",
   picture: pictureFrom(box(5, 6, 54, 29)
     + `<path d="M18 15l-5 5 5 5M46 15l5 5-5 5" stroke="#94A3B8"/>`
     + bar(25, 19, 14, 3)),
-  category: "Layout",
+  category: "General",
   adapters: ["website", "landing"],
   // Free on every plan: it is part of the free page engine, so a Lite site
   // publishes and draws it exactly as a Business one does.
@@ -86,7 +85,7 @@ export const HTML_DEF: WidgetDef = {
   defaults: { html: "" },
   controls: [
     {
-      key: "html", label: "Your HTML", type: "code",
+      key: "html", label: "HTML Code", type: "code", tab: "content", section: "HTML",
       help: "This is code. It is put on your page exactly as you type it, so check it before you publish.",
     },
   ],

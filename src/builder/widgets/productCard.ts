@@ -284,13 +284,15 @@ export function snapshotToCardProps(s: Partial<CatalogSnapshot>): Record<string,
 
 export const CATALOG_CARD_DEF: WidgetDef = {
   kind: "catalog_card",
-  label: "Product card",
+  label: "Product Card",
   description: "A card that loads one of your products or services — its price, what it includes and how it is billed.",
-  task: "Products & services",
   icon: "PackageCheck",
   picture: pictureFrom(box(18, 4, 28, 32) + bar(23, 10, 18, 5) + bar(23, 19, 12)
     + `<path d="M23 28l3 3 6-6" stroke="#64748B"/>`),
-  category: "Money",
+  category: "Intelligent Analytics",
+  /* NOT A TILE — see `priceLine.ts`. **Product Cards** is the tile; this is the
+     atom it drops into a row Container, one per pick. */
+  hidden: true,
   // WHERE IT MAY BE USED: the PROPOSAL, and only the proposal — for now.
   //
   // Every surface can DRAW this card (`renderAtom` is the engine's) and the

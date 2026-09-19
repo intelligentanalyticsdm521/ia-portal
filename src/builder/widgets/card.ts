@@ -286,16 +286,26 @@ export const CARD_DEF: WidgetDef = {
   kind: "card",
   label: "Card",
   description: "One option, with its price and what is included. Put two or three side by side.",
-  task: "Products & services",
   icon: "CreditCard",
   picture: pictureFrom(box(18, 4, 28, 32) + bar(23, 10, 18, 5) + bar(23, 19, 12) + bar(23, 26, 18)),
-  category: "Money",
+  category: "Intelligent Analytics",
   // WHERE IT MAY BE USED (catalogue F.1). D-156 slice one shipped these as
   // PROPOSAL-only; the panes that can actually DRAW them now offer them too.
   // The engine's own `renderAtom` draws this in every builder, and the website
   // publish path knows the kind by name, so nothing here is offered to a
   // surface that would drop it.
-  adapters: ["proposal", "website", "email", "landing"],
+  /* §11.13.3 does not name "Card" in a builder's list, and it stays a tile
+     anyway: it is D-156's own answer to Brandon's sentence — *"custom cards
+     where they just type the card headers, add a price, and description"* —
+     and Product Cards is the CATALOGUE-bound one beside it. The shared
+     vocabulary gives it its label in as many words: "`card` -> 'Price Table' is
+     NOT used (ours is 'Card')". */
+  /* PROPOSALS ONLY (§11.13.3). The IA column for email, website and landing
+     names **Product Cards** — the catalogue picker — and not a typed card, and
+     a tile on a list the scope does not have it on is exactly the invention
+     D-165 exists to stop. The kind is still drawn everywhere, so an email or a
+     page that already holds one is unchanged. */
+  adapters: ["proposal"],
   // A card on a website publishes as the price table, which is a paid widget
   // wherever it lands. The pane says so in the plan's own words; the SERVER
   // still decides whether this business's site carries it.

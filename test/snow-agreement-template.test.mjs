@@ -366,9 +366,12 @@ describe("Send will not go with a blank on the page", () => {
     // Pinned as a SHAPE, because this is what made the defect invisible: take
     // the container away and the old flat walk would have caught the dates.
     const cover = doc().sections[0].columns[0].widgets;
-    const box = cover.find((n) => n.kind === "container");
-    assert.ok(box, "the cover's key facts are no longer a box — re-read this test");
-    const inside = JSON.stringify(box.children);
+    /* D-165 — the cover is TWO boxes now: the header row (logo + title), then
+       the four short answers. The dates are in the last one, and they are
+       still inside a box, which is the shape this test exists to pin. */
+    const boxes = cover.filter((n) => n.kind === "container");
+    assert.ok(boxes.length, "the cover's key facts are no longer a box — re-read this test");
+    const inside = JSON.stringify(boxes[boxes.length - 1].children);
     assert.ok(inside.includes("{{contract.start_date}}"), "the term is not in the box any more");
     assert.ok(inside.includes("{{contract.end_date}}"));
   });
@@ -519,10 +522,12 @@ describe("the pricing schedule", () => {
 
   test("snow hauling is a QUOTED row — no amount, and the words say so", () => {
     const pricing = doc().sections.find((s) => s.label === "Pricing schedule");
-    const facts = pricing.columns[0].widgets.filter((w) => w.kind === "key_fact");
-    const haul = facts.find((w) => /hauling/i.test(String(w.props.label)));
+    /* D-165 — a key fact is a LINE OF TEXT with its label in bold. The row is
+       still a row and still carries no amount, which is the whole point of it. */
+    const lines2 = pricing.columns[0].widgets.filter((w) => w.kind === "paragraph");
+    const haul = lines2.find((w) => /hauling/i.test(String(w.props.text)));
     assert.ok(haul, "the draft's snow-hauling row is not on the schedule");
-    assert.equal(haul.props.value, "Quoted separately");
+    assert.match(String(haul.props.text), /\*\*Snow hauling — if required\*\* Quoted separately$/);
     // …and it is NOT a priced line, so it adds no basis and no $0.00.
     assert.ok(!lines().some((w) => /hauling/i.test(String(w.props.name))),
       "hauling is a priced line showing $0.00, which reads as free");
@@ -537,19 +542,22 @@ describe("the pricing schedule", () => {
   });
 
   test("the at-a-glance table answers its third column on EVERY row", () => {
+    /* D-165 — the glance table never was a rate card: three columns of WORDS
+       and no figure that feeds a total, so it is the plain **Table**. Its
+       columns are a list of headings and its rows are arrays of cells. */
     const glance = doc().sections.find((s) => s.label === "Agreement at a glance")
-      .columns[0].widgets.find((w) => w.kind === "pricing_table");
-    assert.equal(glance.props.labelRate, "How it is priced");
+      .columns[0].widgets.find((w) => w.kind === "data_table");
+    assert.deepEqual(glance.props.columns, ["Service", "What brings us out", "How it is priced"]);
     for (const row of glance.props.rows) {
-      assert.ok(String(row.rate || "").trim(),
-        `"${row.name}" has an empty "How it is priced" cell, which reads as free`);
+      assert.ok(String(row[2] || "").trim(),
+        `"${row[0]}" has an empty "How it is priced" cell, which reads as free`);
     }
     // The two rows with no one rate to state point at the page that has it.
-    const pointers = glance.props.rows.filter((r) => r.rate === "See the pricing schedule");
+    const pointers = glance.props.rows.filter((r) => r[2] === "See the pricing schedule");
     assert.equal(pointers.length, 2);
     // …and the glance lists the SAME services the schedule prices.
     for (const words of ["Additional snow push", "Severe or extraordinary event"]) {
-      assert.ok(glance.props.rows.some((r) => r.name === words),
+      assert.ok(glance.props.rows.some((r) => r[0] === words),
         `the glance table does not mention "${words}"`);
     }
   });
@@ -733,11 +741,12 @@ describe("what the author sees the moment the template loads", () => {
 
   test("section 10 takes the location the DOCUMENT is about", () => {
     const before = doc();
-    const plan = () => walkWidgets(before).map((x) => x.widget).find((w) => w.kind === "property_plan");
+    // D-165 — the plan's location is the Service Location widget's now.
+    const plan = () => walkWidgets(before).map((x) => x.widget).find((w) => w.kind === "service_location");
     assert.equal(plan().props.locationId, "", "the template ships pointed at somebody's location");
 
     const after = bindPlansToLocation(before, "A1B2C3D4-0000-0000-0000-00000000BEEF");
-    const bound = walkWidgets(after).map((x) => x.widget).find((w) => w.kind === "property_plan");
+    const bound = walkWidgets(after).map((x) => x.widget).find((w) => w.kind === "service_location");
     assert.equal(bound.props.locationId, "a1b2c3d4-0000-0000-0000-00000000beef",
       "the plan did not take the document's location, or did not lower-case it");
 

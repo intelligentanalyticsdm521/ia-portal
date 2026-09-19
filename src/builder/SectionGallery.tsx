@@ -15,10 +15,11 @@ import { useMemo, useState } from "react";
 import { Search } from "lucide-react";
 import { IadmModal } from "../components/IadmModal";
 import {
-  groupForPane, widgetDescription, widgetLabel, widgetTooltip,
+  widgetDescription, widgetLabel, widgetTooltip,
   type BuilderAdapter, type WidgetDef,
 } from "./registry";
 import { PREMADE_SECTIONS, PREMADE_TAGS, searchSections, type PremadeSection } from "./templates";
+import { groupByTask } from "./widgetTasks";
 import type { Section } from "./model";
 
 export interface SavedTemplate {
@@ -78,7 +79,9 @@ export function SectionGallery(p: SectionGalleryProps) {
   const pool = p.premade ?? PREMADE_SECTIONS;
   const tagList = p.tags ?? PREMADE_TAGS;
   const sections = useMemo(() => searchSections(pool, query, tag), [pool, query, tag]);
-  const widgets = useMemo(() => groupForPane(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
+  /* ONE grouping (D-165). This read `groupForPane`, which was registry.ts's
+     own copy of the grouping `widgetTasks` already did; the two are one now. */
+  const widgets = useMemo(() => groupByTask(p.adapter, query).flatMap((g) => g.widgets), [p.adapter, query]);
   const saved = useMemo(
     () => (p.savedTemplates || []).filter((t) => !query.trim() || t.name.toLowerCase().includes(query.trim().toLowerCase())),
     [p.savedTemplates, query]);

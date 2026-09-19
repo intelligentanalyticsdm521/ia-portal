@@ -22,8 +22,10 @@
  */
 import {
   makeContainer, makeSection, makeWidget, emptyDocument, walkWidgets,
-  type BuilderDocument, type Section, type Widget,
+  type BuilderDocument, type Container, type Node, type Section, type Widget,
 } from "./model";
+/* One test for "does this node hold children", and it lives in treeOps. */
+import { isContainer } from "./treeOps";
 import { PRICED_KINDS } from "./totals";
 import { upgradeDocument } from "./upgrade";
 import { snowAgreementDocument } from "./snowAgreement";
@@ -117,21 +119,29 @@ const PREMADE_RAW: PremadeSection[] = [
     name: "Title page — dark band",
     description: "Your logo on a dark strip, with the customer and the property already filled in.",
     tags: ["Title pages"],
+    /* REBUILT on the standard set (D-165). Was one `doc_header` and one
+       `key_facts`, neither of which has an Elementor name; it is a row
+       Container holding the logo and the title, then the four short answers as
+       lines of text. Every part is selectable and deletable. */
     build: () => sec([
-      makeWidget("doc_header", {
-        style: "dark_band",
-        title: "Commercial Service Agreement",
-        subtitle: "A clear, dependable plan for winter weather. Prepared for signature and electronic acceptance.",
-        bandRight: "Service term {{contract.start_date}} – {{contract.end_date}}",
-      }),
-      makeWidget("key_facts", {
-        rows: [
-          { label: "Customer", value: "{{customer.name}}" },
-          { label: "Property", value: "{{property.name}}" },
-          { label: "Service address", value: "{{property.address}}" },
-          { label: "Prepared by", value: "{{business.name}} · {{business.email}}" },
-        ],
-      }),
+      makeContainer({ direction: "row", gap: 16, alignItems: "center" }, [
+        makeWidget("image", { src: "", alt: "", caption: "" }),
+        makeContainer(undefined, [
+          makeWidget("heading", { text: "Commercial Service Agreement", level: 1 }),
+          makeWidget("paragraph", {
+            text: "A clear, dependable plan for winter weather. Prepared for signature and electronic acceptance.",
+          }),
+          makeWidget("paragraph", { text: "Service term {{contract.start_date}} – {{contract.end_date}}" }),
+        ]),
+      ]),
+      makeWidget("customer", { heading: "Prepared for" }),
+      makeContainer({ direction: "row", gap: 16 }, [
+        
+        makeWidget("paragraph", { text: "**Property** {{property.name}}" }),
+        makeWidget("paragraph", { text: "**Service address** {{property.address}}" }),
+        makeWidget("paragraph", { text: "**Prepared by** {{business.name}} · {{business.email}}" }),
+      
+      ]),
     ], { padding: 24 }),
   },
   {
@@ -140,12 +150,15 @@ const PREMADE_RAW: PremadeSection[] = [
     description: "A slim header, a big title and one accent line under it.",
     tags: ["Title pages"],
     build: () => sec([
-      makeWidget("doc_header", {
-        style: "light_rule",
-        title: "Your Platform Proposal",
-        subtitle: "Prepared for {{customer.name}}",
-        bandRight: "{{contract.valid_until}}",
-      }),
+      makeContainer({ direction: "row", gap: 16, alignItems: "center" }, [
+        makeWidget("image", { src: "", alt: "", caption: "" }),
+        makeContainer(undefined, [
+          makeWidget("heading", { text: "Your Platform Proposal", level: 1 }),
+          makeWidget("paragraph", { text: "Prepared for {{customer.name}}" }),
+        ]),
+      ]),
+      makeWidget("divider", { style: "line" }),
+      makeWidget("paragraph", { text: "{{contract.valid_until}}" }),
     ], { padding: 24 }),
   },
   {
@@ -162,15 +175,15 @@ const PREMADE_RAW: PremadeSection[] = [
       makeWidget("paragraph", {
         text: "This page is the short version. It says who the work is for, where it happens, when the term runs and what triggers a visit. Everything below it is the detail.",
       }),
-      makeWidget("key_facts", {
-        rows: [
-          { label: "Prepared for", value: "{{customer.name}}" },
-          { label: "Service address", value: "{{property.address}}" },
-          { label: "Service term", value: "{{contract.start_date}} to {{contract.end_date}}" },
-          { label: "We start plowing at", value: "{{snow_trigger}}" },
-          { label: "Billing", value: "Per visit, invoiced monthly in arrears" },
-        ],
-      }),
+      makeContainer({ direction: "row", gap: 16 }, [
+        
+        makeWidget("paragraph", { text: "**Prepared for** {{customer.name}}" }),
+        makeWidget("paragraph", { text: "**Service address** {{property.address}}" }),
+        makeWidget("paragraph", { text: "**Service term** {{contract.start_date}} to {{contract.end_date}}" }),
+        makeWidget("paragraph", { text: "**We start plowing at** {{snow_trigger}}" }),
+        makeWidget("paragraph", { text: "**Billing** Per visit, invoiced monthly in arrears" }),
+      
+      ]),
     ], { numbered: true, label: "Agreement at a glance" }),
   },
   {
@@ -188,26 +201,27 @@ const PREMADE_RAW: PremadeSection[] = [
     description: "A pricing table from your services with a storm example beside it.",
     tags: ["Pricing"],
     build: () => sec([
-      makeWidget("pricing_table", {
-        heading: "Pricing schedule",
-        intro: "This page is the single source of truth for the commercial terms of this agreement.",
-        rows: [],
+      makeWidget("heading", { text: "Pricing schedule", level: 2 }),
+      makeWidget("paragraph", {
+        text: "This page is the single source of truth for the commercial terms of this agreement.",
       }),
-      makeWidget("callout", {
-        heading: "",
-        // A titled panel with an empty body is a heading pretending to be an
-        // explanation. Both of these say the thing the rate card above cannot.
-        panels: [
-          {
-            title: "Storm example", tone: "accent",
-            body: "A six-inch storm that falls over two days is two visits, not one: we clear at the trigger depth and again as it keeps falling. Each visit is charged at the rate for the depth cleared on that visit.",
-          },
-          {
-            title: "Severe events", tone: "warn",
-            body: "Snowfall above {{severe_event_threshold}}, declared emergencies and anything needing extra equipment are quoted before the work starts. Nothing above that line is charged without your say-so.",
-          },
-        ],
-      }),
+      /* WAS a `pricing_table` and a two-panel `callout`. The rate card is priced
+         lines now (Product Line Items drops them from the catalogue), and a
+         tinted panel is Elementor's Alert. An Alert with a title and no body is
+         a heading pretending to be an explanation, so both say something. */
+      makeWidget("price_line", { name: "", quantity: 1, unit_price: 0, description: "", bullets: [], cadence: null }),
+      makeContainer({ direction: "row", gap: 16 }, [
+        makeWidget("alert", {
+          alert_type: "info",
+          alert_title: "Storm example",
+          alert_description: "A six-inch storm that falls over two days is two visits, not one: we clear at the trigger depth and again as it keeps falling. Each visit is charged at the rate for the depth cleared on that visit.",
+        }),
+        makeWidget("alert", {
+          alert_type: "warning",
+          alert_title: "Severe events",
+          alert_description: "Snowfall above {{severe_event_threshold}}, declared emergencies and anything needing extra equipment are quoted before the work starts. Nothing above that line is charged without your say-so.",
+        }),
+      ]),
     ], { numbered: true, label: "Pricing schedule" }),
   },
   {
@@ -237,17 +251,17 @@ const PREMADE_RAW: PremadeSection[] = [
       // location in the panel fills whatever the property already has on
       // record, and whatever it does not is a box to type in rather than a
       // question nobody knew to ask.
-      makeWidget("property_plan", {
-        locationId: "", heading: "Property service plan",
-        rows: [
-          { label: "Areas we plow", value: "" },
-          { label: "Where the snow goes", value: "" },
-          { label: "Sidewalks and entries", value: "" },
-          { label: "Where we salt", value: "" },
-          { label: "Things to avoid", value: "" },
-          { label: "Anything else the crew should know", value: "" },
-        ],
-      }),
+      /* WAS one `property_plan`. §11.13.3: "property plan (-> Service Location
+         + Text Editor rows)". The location fills itself in from the customer's
+         record; the six rows are the crew's own sheet, each a line to type. */
+      makeWidget("heading", { text: "Property service plan", level: 2 }),
+      makeWidget("service_location", { heading: "", locationId: "" }),
+      makeWidget("paragraph", { text: "**Areas we plow** " }),
+      makeWidget("paragraph", { text: "**Where the snow goes** " }),
+      makeWidget("paragraph", { text: "**Sidewalks and entries** " }),
+      makeWidget("paragraph", { text: "**Where we salt** " }),
+      makeWidget("paragraph", { text: "**Things to avoid** " }),
+      makeWidget("paragraph", { text: "**Anything else the crew should know** " }),
     ], { numbered: true, label: "Property service plan" }),
   },
   {
@@ -268,10 +282,11 @@ const PREMADE_RAW: PremadeSection[] = [
   },
   {
     key: "footer_notes",
-    name: "Footer note",
+    name: "Small print",
     description: "Small print at the bottom — a legal note, a validity date, your contact line.",
     tags: ["Terms"],
-    build: () => sec([makeWidget("footer_note", { text: "" })], { padding: 12 }),
+    /* WAS `footer_note`. §11.13.3: "footer note (-> Text Editor)". */
+    build: () => sec([makeWidget("paragraph", { text: "" })], { padding: 12 }),
   },
 ];
 
@@ -309,7 +324,7 @@ function propertyBox(
 ) {
   return makeContainer(undefined, [
     makeWidget("heading", { text: heading, level: 3 }),
-    makeWidget("address_block", { locationId: "", heading: "Service address" }),
+    makeWidget("service_location", { heading: "Service address", locationId: "" }),
     ...items.map((it) => makeWidget("price_line", {
       name: it.description, quantity: it.quantity, unit_price: it.unit_price,
       description: "", bullets: [], cadence: null,
@@ -346,8 +361,12 @@ export function propertySections(): Section[] {
   return [
     sec([
       makeWidget("heading", { text: "This property", level: "Section title" }),
-      makeWidget("address_block", { heading: "Service address" }),
-      makeWidget("pricing_table", { heading: "What we charge here", rows: [] }),
+      makeWidget("service_location", { heading: "Service address", locationId: "" }),
+      /* WAS a `pricing_table` — a rate card, which never fed a total. D-165
+         replaces it with the priced lines the Product Line Items tile drops, so
+         what is on the page and what is in the total are the same list. The
+         section arrives with one empty line to type into. */
+      makeWidget("price_line", { name: "", quantity: 1, unit_price: 0, description: "", bullets: [], cadence: null }),
       makeWidget("totals", { heading: "This property" }),
     ], { label: "This property", padding: 24 }),
   ];
@@ -355,7 +374,12 @@ export function propertySections(): Section[] {
 
 /** *Agreement at a glance* — four key facts across, each its own widget. */
 export function atAGlanceSections(): Section[] {
-  const fact = (label: string, value: string) => makeWidget("key_fact", { label, value });
+  /* WAS four `key_fact` widgets. That kind has no Elementor name and is not on
+     the IA list, so D-165 deletes it: a key fact is a line of text with its
+     label in bold, which is a Text Editor. Four of them in a row Container is
+     the same four boxes across the top of the agreement. */
+  const fact = (label: string, value: string) =>
+    makeWidget("paragraph", { text: `**${label}** ${value}` });
   return [
     sec([
       rowOf([
@@ -368,7 +392,41 @@ export function atAGlanceSections(): Section[] {
   ];
 }
 
+/**
+ * *Document header* — what `doc_header` became (§11.13.3).
+ *
+ * "document header (-> a Container with Image + Heading, shipped as a saved
+ * header template)". A row: the logo on the left, the title and the line under
+ * it on the right. Every part of it can be selected, restyled, moved or
+ * deleted, which is the whole of why the composite went.
+ *
+ * The Image arrives EMPTY rather than pointing at the brand logo, because the
+ * brand logo is `ctx.business.logoUrl` and a copy of it stored on a widget is a
+ * copy that stops following Brand Identity the day somebody changes it there.
+ * The author picks a picture, or leaves it and the band is words.
+ */
+export function documentHeaderSections(): Section[] {
+  return [
+    sec([
+      makeContainer({ direction: "row", gap: 16, alignItems: "center" }, [
+        makeWidget("image", { src: "", alt: "", caption: "" }),
+        makeContainer(undefined, [
+          makeWidget("heading", { text: "Commercial Service Agreement", level: 1 }),
+          makeWidget("paragraph", { text: "Prepared for {{customer.name}}" }),
+        ]),
+      ]),
+    ], { label: "Document header", padding: 24 }),
+  ];
+}
+
 PREMADE_RAW.push(
+  {
+    key: "document_header",
+    name: "Document header",
+    description: "Your logo beside the document's title and who it is for. Every part of it is editable.",
+    tags: ["Title pages"],
+    build: () => documentHeaderSections()[0],
+  },
   {
     key: "choose_your_plan",
     name: "Choose your plan",
@@ -461,6 +519,45 @@ function plansSection(
 ): Section {
   const built = sec([makeWidget("comparison_cards", { heading, intro, cards })], extra);
   return upgradeDocument({ ...emptyDocument(), sections: [built] }).sections[0];
+}
+
+/**
+ * WRITE A TEMPLATE'S OWN TITLE INTO ITS HEADER SECTION (D-165).
+ *
+ * The five shipped templates that open with a title page used to do this:
+ *
+ *     (doc.sections[0].columns[0].widgets[0].props as any) = { title, subtitle … }
+ *
+ * — which worked while widgets[0] was a `doc_header`, a composite holding the
+ * logo, the title and the line under it. §11.13.3 deletes that widget: a
+ * document header is a row Container with an Image and a Heading in it, so the
+ * words go into the WIDGETS, not onto the box. One helper, because five copies
+ * of "the heading is the first child of the second child" is five places to be
+ * wrong the next time the section changes shape.
+ *
+ * Tolerant on purpose: it writes into whatever Heading and Text Editors it
+ * finds, in order, and adds nothing. A template whose header somebody has
+ * rearranged still gets its title.
+ */
+function writeHeader(
+  doc: BuilderDocument,
+  { title, subtitle, note }: { title: string; subtitle?: string; note?: string },
+): BuilderDocument {
+  const texts: Widget[] = [];
+  let heading: Widget | undefined;
+  const visit = (nodes: Node[]) => {
+    for (const n of nodes) {
+      if (isContainer(n)) { visit((n as Container).children); continue; }
+      const w = n as Widget;
+      if (!heading && w.kind === "heading") heading = w;
+      else if (w.kind === "paragraph") texts.push(w);
+    }
+  };
+  visit(doc.sections[0].columns[0].widgets as Node[]);
+  if (heading) (heading.props as any).text = title;
+  const lines = [subtitle, note].filter((x) => x != null) as string[];
+  lines.forEach((line, i) => { if (texts[i]) (texts[i].props as any).text = line; });
+  return doc;
 }
 
 function fromKeys(keys: string[], settings: Partial<BuilderDocument["settings"]> = {}): BuilderDocument {
@@ -582,12 +679,7 @@ const SHIPPED_RAW: ShippedTemplate[] = [
     bestFor: "A landscaping install, a remodel, a replacement or any quoted project measured in days rather than months.",
     build: () => {
       const doc = fromKeys(["title_light"]);
-      (doc.sections[0].columns[0].widgets[0].props as any) = {
-        style: "light_rule",
-        title: "Project Proposal",
-        subtitle: "Prepared for {{customer.name}} · {{property.address}}",
-        bandRight: "Valid until {{contract.valid_until}}",
-      };
+      writeHeader(doc, { title: "Project Proposal", subtitle: "Prepared for {{customer.name}} · {{property.address}}", note: "Valid until {{contract.valid_until}}" });
       doc.sections.push(sec([
         makeWidget("key_facts", {
           rows: [
@@ -640,13 +732,13 @@ const SHIPPED_RAW: ShippedTemplate[] = [
       ], { numbered: true, label: "What it costs" }));
       doc.sections.push(rawPremade("totals")!.build());
       doc.sections.push(sec([
-        makeWidget("callout", {
-          heading: "",
-          panels: [
-            { title: "Payment", tone: "accent", body: "A third on the day we start, a third at the end of the groundwork, and the balance within seven days of your walk round." },
-            { title: "Weather", tone: "warn", body: "Heavy rain or frozen ground can move a stage by a day or two. We will tell you the same day it happens, not afterwards." },
-          ],
-        }),
+        /* D-165 — WAS a two-panel `callout`. Elementor's name for a tinted box
+           is Alert, and two of them in a row Container is the same two panels —
+           each one now selectable, movable and deletable on its own. */
+        makeContainer({ direction: "row", gap: 16 }, [
+          makeWidget("alert", { alert_type: "info", alert_title: "Payment", alert_description: "A third on the day we start, a third at the end of the groundwork, and the balance within seven days of your walk round." }),
+          makeWidget("alert", { alert_type: "warning", alert_title: "Weather", alert_description: "Heavy rain or frozen ground can move a stage by a day or two. We will tell you the same day it happens, not afterwards." }),
+        ]),
       ], { label: "Payment and weather" }));
       doc.sections.push(rawPremade("acceptance")!.build());
       doc.sections.push(rawPremade("footer_notes")!.build());
@@ -663,12 +755,7 @@ const SHIPPED_RAW: ShippedTemplate[] = [
     bestFor: "Consultants, accountants, agencies and anyone billing for an engagement with stages rather than a product.",
     build: () => {
       const doc = fromKeys(["title_light"]);
-      (doc.sections[0].columns[0].widgets[0].props as any) = {
-        style: "light_rule",
-        title: "Consulting Engagement",
-        subtitle: "Prepared for {{customer.name}}",
-        bandRight: "Valid until {{contract.valid_until}}",
-      };
+      writeHeader(doc, { title: "Consulting Engagement", subtitle: "Prepared for {{customer.name}}", note: "Valid until {{contract.valid_until}}" });
       doc.sections.push(sec([
         makeWidget("heading", { text: "What you are trying to achieve", level: 2 }),
         makeWidget("paragraph", {
@@ -730,12 +817,7 @@ const SHIPPED_RAW: ShippedTemplate[] = [
     bestFor: "Heating and plumbing cover, cleaning contracts, grounds maintenance, gutter and roof rounds — any agreement billed monthly.",
     build: () => {
       const doc = fromKeys(["title_light"]);
-      (doc.sections[0].columns[0].widgets[0].props as any) = {
-        style: "light_rule",
-        title: "Maintenance Plan",
-        subtitle: "Prepared for {{customer.name}} · {{property.name}}",
-        bandRight: "Starts {{contract.start_date}}",
-      };
+      writeHeader(doc, { title: "Maintenance Plan", subtitle: "Prepared for {{customer.name}} · {{property.name}}", note: "Starts {{contract.start_date}}" });
       doc.sections.push(sec([
         makeWidget("key_facts", {
           rows: [
@@ -780,13 +862,10 @@ const SHIPPED_RAW: ShippedTemplate[] = [
       ], { numbered: true, label: "What it costs" }));
       doc.sections.push(rawPremade("totals")!.build());
       doc.sections.push(sec([
-        makeWidget("callout", {
-          heading: "",
-          panels: [
-            { title: "Not included", tone: "warn", body: "Parts, and any repair we quote separately. Work outside working hours is charged at the out-of-hours rate, less your plan discount." },
-            { title: "If you move", tone: "accent", body: "Tell us and the plan moves with you, or stops at the end of the month you move — whichever you prefer." },
-          ],
-        }),
+        makeContainer({ direction: "row", gap: 16 }, [
+          makeWidget("alert", { alert_type: "warning", alert_title: "Not included", alert_description: "Parts, and any repair we quote separately. Work outside working hours is charged at the out-of-hours rate, less your plan discount." }),
+          makeWidget("alert", { alert_type: "info", alert_title: "If you move", alert_description: "Tell us and the plan moves with you, or stops at the end of the month you move — whichever you prefer." }),
+        ]),
       ], { label: "The small print" }));
       doc.sections.push(rawPremade("acceptance")!.build());
       return doc;
@@ -803,12 +882,7 @@ const SHIPPED_RAW: ShippedTemplate[] = [
     bestFor: "Property managers, retail groups, housing associations and anyone asking you to price a portfolio rather than a building.",
     build: () => {
       const doc = fromKeys(["title_dark"]);
-      (doc.sections[0].columns[0].widgets[0].props as any) = {
-        style: "dark_band",
-        title: "Commercial Services Bid",
-        subtitle: "Prepared for {{customer.name}}. Pricing below is per site and holds for the full term.",
-        bandRight: "Term {{contract.start_date}} – {{contract.end_date}}",
-      };
+      writeHeader(doc, { title: "Commercial Services Bid", subtitle: "Prepared for {{customer.name}}. Pricing below is per site and holds for the full term.", note: "Term {{contract.start_date}} – {{contract.end_date}}" });
       doc.sections.push(sec([
         makeWidget("heading", { text: "Scope of work", level: 2 }),
         makeWidget("paragraph", {
@@ -863,12 +937,7 @@ const SHIPPED_RAW: ShippedTemplate[] = [
     bestFor: "Charities, churches, clubs and community groups approaching a local business or a returning supporter.",
     build: () => {
       const doc = fromKeys(["title_light"]);
-      (doc.sections[0].columns[0].widgets[0].props as any) = {
-        style: "light_rule",
-        title: "Community Partnership",
-        subtitle: "An invitation to {{customer.name}} from {{business.name}}",
-        bandRight: "For the coming year",
-      };
+      writeHeader(doc, { title: "Community Partnership", subtitle: "An invitation to {{customer.name}} from {{business.name}}", note: "For the coming year" });
       doc.sections.push(sec([
         makeWidget("heading", { text: "Why we are writing", level: 2 }),
         makeWidget("paragraph", {

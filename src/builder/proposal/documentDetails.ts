@@ -413,7 +413,12 @@ export function bindPlansToLocation(doc: BuilderDocument, locationId: string): B
   // `walkWidgets` walks the TREE (D-156), so a plan the author dragged into a
   // box is found too; `patchNode` is the one writer of a node's props.
   const unbound = walkWidgets(doc)
-    .filter(({ widget }) => widget.kind === "property_plan"
+    /* D-165 ADDS the two kinds `property_plan` and `address_block` became.
+       Additive on purpose: a document can reach here without passing through
+       `deserialise`, and a plan that stops taking the document's location is a
+       section 10 that prints somebody else's address — or none at all. */
+    .filter(({ widget }) => (widget.kind === "property_plan" || widget.kind === "service_location"
+      || widget.kind === "address_block")
       && !String((widget.props as any)?.locationId ?? "").trim())
     .map(({ widget }) => widget.id);
   if (!unbound.length) return doc;

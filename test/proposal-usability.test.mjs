@@ -616,21 +616,29 @@ describe("D-37 · a template's sections arrive with real content", () => {
   test("the cover is not four blank rows — every fact on it says something", () => {
     // D-164: the four cover facts moved off "Agreement at a glance" and onto
     // the cover, which is where the client's draft puts them.
-    const box = doc().sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
-    const rows = box.children.map((w) => w.props);
-    assert.ok(rows.length >= 4, `the cover carries only ${rows.length} facts`);
-    assert.ok(rows.every((r) => String(r.label).trim() && String(r.value).trim()),
-      "a key-fact row is still blank");
+    /* D-165 — a key fact is a LINE OF TEXT with its label in bold, so the four
+       cover facts are four Text Editors in a row Container (§11.13.3). The
+       cover's FIRST box is the header row (logo + title); the facts are the
+       second. What this test protects is unchanged: four of them, each one
+       saying something. */
+    const boxes = doc().sections[0].columns[0].widgets.filter((w) => Array.isArray(w.children));
+    const facts = boxes[boxes.length - 1].children.map((w) => String(w.props.text || ""));
+    assert.ok(facts.length >= 4, `the cover carries only ${facts.length} facts`);
+    assert.ok(facts.every((t) => /^\*\*.+\*\*\s+\S/.test(t)), "a cover fact is a label with nothing after it");
   });
 
   test("\"Agreement at a glance\" is not an empty paragraph and an empty table", () => {
     const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const [para, table] = section.columns[0].widgets;
+    /* D-165 — the glance table never was a rate card: three columns of WORDS,
+       no figure that feeds a total. It is the plain **Table** now, whose id the
+       shared vocabulary keeps, and the priced lines live on the pricing
+       schedule where the catalogue picker drops them. */
+    const [para, , table] = section.columns[0].widgets;
     assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
-    assert.equal(table.kind, "pricing_table");
+    assert.equal(table.kind, "data_table");
     assert.ok(table.props.rows.length >= 4, "the service table ships with no rows");
-    assert.ok(table.props.rows.every((r) => String(r.name).trim() && String(r.basis).trim() && String(r.rate).trim()),
-      "a row of the service table is blank");
+    assert.ok(table.props.rows.every((r) => r.every((cell) => String(cell).trim())),
+      "a cell of the service table is blank");
     // The four Service summary sentences, each its own paragraph.
     const paras = section.columns[0].widgets.filter((w) => w.kind === "paragraph");
     assert.ok(paras.length >= 5, `only ${paras.length} paragraphs on the glance page`);
@@ -640,8 +648,9 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("the merge fields are there, so they fill from the customer pick", () => {
     const d = doc();
-    const cover = d.sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
-    const values = cover.children.map((w) => w.props.value).join(" ");
+    const boxes = d.sections[0].columns[0].widgets.filter((w) => Array.isArray(w.children));
+    // D-165 — a cover fact is a Text Editor, so the tag is in `text`.
+    const values = boxes[boxes.length - 1].children.map((w) => w.props.text).join(" ");
     assert.match(values, /\{\{customer\.name\}\}/);
     assert.match(values, /\{\{property\.address\}\}/);
     const glance = JSON.stringify(d.sections.find((s) => s.label === "Agreement at a glance"));
@@ -652,12 +661,17 @@ describe("D-37 · a template's sections arrive with real content", () => {
     assert.equal(doc().settings.merge.snow_trigger, "2 inches");
   });
 
-  test("a callout with a title has a body — a heading is not an explanation", () => {
+  test("an Alert with a title has a body — a heading is not an explanation", () => {
+    /* D-165 — Elementor's name for a tinted panel that must not be skimmed past
+       is **Alert**, and the invented "Callout panel" is deleted. One panel is
+       one Alert now, so the rule is per widget rather than per row. */
     const severe = doc().sections.find((s) => s.label === "Severe weather and special conditions");
-    const callout = severe.columns[0].widgets.find((w) => w.kind === "callout");
-    for (const panel of callout.props.panels) {
-      assert.ok(String(panel.title).trim(), "a panel has no title");
-      assert.ok(String(panel.body).trim().length > 40, `"${panel.title}" still has no body`);
+    const alerts = severe.columns[0].widgets.filter((w) => w.kind === "alert");
+    assert.ok(alerts.length >= 1, "the severe-weather section lost its alert");
+    for (const a of alerts) {
+      assert.ok(String(a.props.alert_title).trim(), "an alert has no title");
+      assert.ok(String(a.props.alert_description).trim().length > 40,
+        `"${a.props.alert_title}" still has no body`);
     }
   });
 
@@ -666,7 +680,17 @@ describe("D-37 · a template's sections arrive with real content", () => {
     // template and picks a customer has a sendable agreement. No heading
     // without a paragraph, no paragraph that is a stub.
     const widgets = walkWidgets(doc()).map((x) => x.widget);
-    const paragraphs = widgets.filter((w) => w.kind === "paragraph");
+    /* D-165 put TWO new shapes into `paragraph`, and neither is a clause:
+       a SHORT ANSWER — "**Service term** 1 November – 30 April" — and a
+       LABELLED BLANK on the crew's sheet — "**Areas we plow** " — which §11.13.2
+       puts on the page deliberately: *"A value that lives in no record … is a
+       plain editable run on the page where it appears, with a placeholder in
+       edit mode and a blank rule on the customer's copy"*, and Send refuses a
+       document with blanks by walking the page. Both are bold-label lines, so
+       both are told apart from prose by their shape rather than by their
+       length, and the CLAUSES are held to the same bar they always were. */
+    const labelled = (w) => /^\*\*[^*]+\*\*/.test(String(w.props.text || ""));
+    const paragraphs = widgets.filter((w) => w.kind === "paragraph" && !labelled(w));
     assert.ok(paragraphs.length >= 35, `only ${paragraphs.length} clause paragraphs`);
     for (const w of paragraphs) {
       // 24, not 40: "Invoices are due {{payment_terms}}." is a whole clause
@@ -707,9 +731,14 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("\"Property service plan\" is not a bare heading that prints as an empty page", () => {
     const plan = doc().sections.find((s) => s.label === "Property service plan");
-    const rows = plan.columns[0].widgets.find((w) => w.kind === "property_plan").props.rows;
+    /* D-165 — `property_plan` is deleted (§11.13.3: "property plan -> Service
+       Location + Text Editor rows"). The location fills itself in from the
+       customer's own record; the crew's six questions are labelled lines on the
+       page, which is what stops section 10 printing as an empty sheet. */
+    const widgets = plan.columns[0].widgets;
+    assert.ok(widgets.some((w) => w.kind === "service_location"), "the plan lost its service address");
+    const rows = widgets.filter((w) => w.kind === "paragraph" && /^\*\*[^*]+\*\*/.test(String(w.props.text || "")));
     assert.ok(rows.length >= 5, "the service plan still ships with no rows");
-    assert.ok(rows.every((r) => String(r.label).trim()), "a plan row has no label");
   });
 });
 
@@ -752,7 +781,9 @@ describe("D-33 · one control per thing", () => {
   test("\"Which location\" is declared ONCE — by the adapter, which knows the locations", () => {
     // `property_block` is DELETED (D-156) — a property is a box, and the
     // address block inside it is what is bound to a location.
-    for (const kind of ["address_block", "property_plan"]) {
+    // D-165 — the address block is `service_location` and `property_plan` is
+    // deleted; the rule is the same and the adapter still owns the picker.
+    for (const kind of ["service_location"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].controls.some((c) => c.key === "locationId"),
         `${kind} still declares an empty locationId select, so the label prints twice`);
     }
@@ -760,8 +791,9 @@ describe("D-33 · one control per thing", () => {
   });
 
   test("no proposal widget declares a select with no options to fill it", () => {
-    for (const kind of ["price_line", "pricing_table", "card", "catalog_card", "totals",
-      "address_block", "property_plan", "key_fact", "clauses", "doc_header", "signature"]) {
+    for (const kind of ["price_line", "card", "catalog_card", "totals",
+      "service_location", "customer", "business_info", "clauses", "signature",
+      "icon", "icon_box", "image_box", "alert", "testimonial", "star_rating", "social_icons"]) {
       for (const c of WIDGETS_BY_KIND[kind].controls || []) {
         if (c.type !== "select") continue;
         assert.ok(c.options?.length, `${kind}.${c.key} is a select with nothing in it`);
@@ -778,7 +810,13 @@ describe("D-39 · the title band has a logo control", () => {
   });
 
   test("the widget carries the choice, so it saves with the document", () => {
-    assert.ok("logoUrl" in WIDGETS_BY_KIND.doc_header.defaults);
+    /* D-165 — `doc_header` is deleted and a document header is a row Container
+       with an **Image** in it, so the picture the author chose is the Image's
+       own `src` and saves with the document exactly as before. `business_info`
+       carries the other half of D-39: use the brand logo, or a different one. */
+    assert.ok("src" in WIDGETS_BY_KIND.image.defaults);
+    assert.ok("logo_url" in WIDGETS_BY_KIND.business_info.defaults);
+    assert.ok("show_logo" in WIDGETS_BY_KIND.business_info.defaults);
   });
 
   test("documentLogo answers the three cases", () => {

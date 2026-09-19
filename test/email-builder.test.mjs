@@ -126,8 +126,13 @@ function kindsIn(doc) {
 describe("the renderer draws exactly what the fixture says", () => {
   test("the fixture covers every widget the email builder offers", () => {
     const covered = new Set(EMAIL.cases.flatMap((c) => kindsIn(c.doc)));
+    /* `grid` is a LAYOUT PRESET, never a stored kind — the tile inserts a
+       `container`, which forty cases cover — so there is nothing for a golden
+       case to hold. Named here rather than left out of the comparison, so a
+       widget that really has no case still fails. */
+    const NO_STORED_FORM = ["grid"];
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k) && !NO_STORED_FORM.includes(k));
     assert.deepEqual(missing, [], `no golden case for: ${missing.join(", ")}`);
   });
 
@@ -629,12 +634,22 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     // five — `card`, `catalog_card`, `totals`, `address_block`, `key_fact`,
     // each with its own golden case — so the pane offers them. A newsletter
     // with two product cards was unreachable until it did.
+    /* D-165 REPLACED §7's list with §11.13.3's, and cut it to what a MAILBOX
+       draws. Elementor's names, the mailbox's own ids:
+         **Product Cards** = `product_card` · **IA Posts** = `article_card`
+         **Unsubscribe Footer** = `email_footer` · **Social Icons** = `social_links`
+       — the shared vocabulary's first rule, an id that exists keeps its id and
+       takes the new label.
+       GONE: `personal_note` and `countdown` (no Elementor name, not on the IA
+       list), `card`, `totals`, `address_block` and `key_fact` (the proposal's,
+       §11.13.3), `columns` (a Container set to row). HELD BACK until this
+       surface has a table renderer, item S2 in the handoff: Icon, Icon Box,
+       Image Box, Star Rating, Alert, Reviews, Book Now. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "address_block", "article_card", "button", "card",
-      "columns", "countdown", "divider", "email_footer",
-      "heading", "image", "key_fact", "list", "paragraph", "personal_note",
-      "product_card", "social_links", "spacer", "testimonial", "totals",
-    ]);
+      "article_card", "button", "container", "divider", "email_footer", "grid",
+      "heading", "image", "list", "paragraph", "product_card", "social_links",
+      "spacer", "testimonial",
+    ].sort());
   });
 
   test("what a mailbox cannot render is not offered", () => {
@@ -646,8 +661,19 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     // offered. A send's products are the newsletter's own `product_card`.
     // `price_line` stays — it is drawn when a converted document carries one
     // and never offered, because money in an email belongs in a Totals block.
-    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table", "catalog_card"]) {
-      assert.ok(!WIDGETS_BY_KIND[kind].adapters.includes("email"), `${kind} is offered to the email builder`);
+    /* Six of the eleven kinds this list named are DELETED by D-165 —
+       `map`, `pricing_table` and the rest — so "not offered" is now "not there
+       at all". The rule is the same either way, and it is checked the same way:
+       nothing a mailbox cannot draw reaches the email panel. */
+    for (const kind of ["form", "signature", "price_line", "data_table", "gallery", "video",
+      "catalog_card", "icon", "icon_box", "image_box", "star_rating", "alert", "reviews", "book_now"]) {
+      const def = WIDGETS_BY_KIND[kind];
+      if (!def) continue;
+      assert.ok(!def.adapters.includes("email"), `${kind} is offered to the email builder`);
+    }
+    for (const kind of ["map", "pricing_table", "countdown", "personal_note"]) {
+      const def = WIDGETS_BY_KIND[kind];
+      assert.ok(!def || def.hidden || !def.adapters.includes("email"), `${kind} is offered to the email builder`);
     }
     // …and the four composites are not "not offered" — they are DELETED
     // (D-156), so there is nothing left to offer.
@@ -668,18 +694,15 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("the landing builder offers §7's web set and draws all of it", () => {
-    assert.deepEqual(widgetsFor("landing").map((w) => w.kind).sort(), [
-      "button", "columns", "divider", "footer_note", "form", "gallery", "heading",
-      // `html` — catalogue point 9's free HTML box, added 2026-09-17. A landing
-      // page is an HTML page, so a pasted embed is exactly what the author
-      // means there; a proposal and an email do not offer it.
-      "hero", "html", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
-      // WIDENED 2026-09-17 (catalogue F.1). `landingRender` draws them all,
-      // and a landing page that cannot carry a card or its total is a landing
-      // page nobody can sell from. `catalog_card` is not here: nothing on a
-      // landing page can say which product it is (see the registry test).
-      "address_block", "card", "key_fact", "totals",
-    ].sort());
+    /* D-165 — §11.13.3: a landing page is *"the website's list without the
+       menus"*, which is Elementor's whole free panel plus the IA group. The
+       exact list, by NAME and in order, is pinned in
+       `test/builder-widget-set.test.mjs`; what this asserts is the thing this
+       file is for — that the page renderer draws every one of them. */
+    const site = widgetsFor("website").map((w) => w.kind);
+    const menus = ["ia_mega_menu", "ia_mobile_menu"];
+    assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
+      site.filter((k) => !menus.includes(k)));
     const missing = widgetsFor("landing").map((w) => w.kind)
       .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, []);
@@ -689,10 +712,13 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     const kinds = widgetsFor("proposal").map((w) => w.kind);
     // priced_line → price_line and property_block → address_block + price_line
     // + totals, both by D-156. The proposal builder still has all of it.
-    for (const k of ["doc_header", "clauses", "price_line", "totals", "signature", "address_block"]) {
+    /* D-165 — `doc_header` is a Container with an Image and a Heading, the
+       address block is **Service Location**, and the catalogue picker is
+       **Product Line Items**. The proposal still has all of it. */
+    for (const k of ["clauses", "totals", "signature", "service_location", "customer", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
-    for (const k of ["article_card", "product_card", "email_footer", "hero"]) {
+    for (const k of ["article_card", "product_card", "email_footer", "hero", "social_links"]) {
       assert.ok(!kinds.includes(k), `${k} leaked into the proposal builder`);
     }
   });

@@ -187,6 +187,32 @@ function tokenChips(escaped: string, ctx: RenderContext): string {
     `<span class="bx-tok" data-token="${esc(String(token))}" title="Filled in for you when the document is sent. Click to say what goes here.">${whole}</span>`);
 }
 
+/**
+ * `**LABEL**` → **LABEL** (D-165).
+ *
+ * The shared vocabulary says a key fact becomes *"Text Editor (label bold +
+ * value)"*, and this is the whole of what makes that true. Two asterisks is the
+ * one piece of mark-up the Text Editor understands, because a short answer —
+ * "**Service term** 1 November – 30 April" — is a label and a value on one
+ * line, and it reads as one line on every surface: a page, a mailbox and a
+ * printed PDF.
+ *
+ * ── AFTER ESCAPING, ALWAYS ────────────────────────────────────────────────
+ * `esc` has already turned `<` into `&lt;`, so the only thing left that can
+ * match is a pair of asterisks the author typed. The rule can therefore emit
+ * `<strong>` without any chance of an author's text becoming markup — the same
+ * discipline `tokenChips` runs on, for the same reason.
+ *
+ * An unpaired `**` is left exactly as typed. Somebody writing "2 ** 3" gets
+ * "2 ** 3", because guessing at half a pair is how a document grows a word
+ * nobody wrote.
+ */
+export function boldRuns(escaped: string): string {
+  return escaped.indexOf("**") < 0
+    ? escaped
+    : escaped.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
+}
+
 /** Plain text with blank lines between paragraphs → <p> runs. */
 export function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
   const filled = fill(String(text ?? ""), ctx.merge, ctx.mode);
@@ -196,7 +222,7 @@ export function paras(text: unknown, ctx: RenderContext, editPath?: string): str
       ? `<p class="bx-p bx-empty"${attr} data-placeholder="Type here…"></p>`
       : "";
   }
-  const blocks = filled.split(/\n{2,}/).map((p) => tokenChips(esc(p.trim()), ctx).replace(/\n/g, "<br/>"));
+  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(tokenChips(esc(p.trim()), ctx)).replace(/\n/g, "<br/>"));
   // In edit mode the whole run is ONE editable element — splitting it into
   // several <p data-edit> would make the author's second paragraph overwrite
   // the first when it is read back.
@@ -210,12 +236,16 @@ export function paras(text: unknown, ctx: RenderContext, editPath?: string): str
 
 /** Every widget kind this renderer draws. The parity test reads this list. */
 export const RENDERED_KINDS = [
-  "doc_header", "heading", "paragraph", "list", "clauses",
-  "pricing_table", "callout", "priced_line", "totals",
-  "property_plan", "signature", "page_break", "image",
-  "spacer", "divider", "key_value_table", "data_table", "testimonial",
-  "footer_note", "merge_field", "button",
-  // D-156's atomic widgets, declared and drawn under widgets/.
+  /* The engine's own switch. Nine, where there were twenty-one: `doc_header`,
+     `footer_note`, `merge_field`, `property_plan`, `pricing_table`, `callout`,
+     `key_value_table` and `key_fact` are DELETED with their widgets (D-165),
+     and `upgrade.ts` converts every stored one on the way in. `data_table`
+     keeps its renderer because the shared vocabulary keeps its id; it has no
+     tile. */
+  "heading", "paragraph", "list", "clauses", "signature", "page_break",
+  "image", "spacer", "divider", "data_table", "button",
+  "priced_line",
+  // D-165's widgets, each declared and drawn in one file under widgets/.
   ...ATOM_KINDS,
   // …and the box that holds them, which the engine draws itself.
   "container",
@@ -229,7 +259,14 @@ export const RENDERED_KINDS = [
  * listed here so the "offered but not rendered" test can tell a deliberate
  * omission from a forgotten one.
  */
-export const UNRENDERED_KINDS = ["columns"] as const;
+export const UNRENDERED_KINDS = [
+  /* `grid` is a LAYOUT PRESET, not a node type (§11.13.1: "columns are a
+     Container set to row, or Grid"). The tile exists so the Layout group reads
+     as Elementor's does; `registry.presetFor` turns it into a `container` with
+     a grid layout before anything is stored, so no document ever holds one and
+     there is nothing here to draw. A test asserts that. */
+  "grid",
+] as const;
 
 /* ══════════════════════════════════════════════════════════════════════════
    READING A BOX — the ONE reader, for every surface (§11.12, D-156)
@@ -428,25 +465,16 @@ export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
     const atom = renderAtom(w, ctx);
     if (atom != null) return atom;
     switch (w.kind) {
-      case "doc_header": return docHeader(p, ctx);
-      case "key_value_table": return keyFacts({ ...p, auto: false }, ctx);
       case "data_table": return dataTable(p, ctx);
-      case "testimonial": return testimonial(p, ctx);
       case "heading": return heading(p, ctx);
       case "paragraph": return paras(p.text, ctx, "text");
       case "list": return list(p, ctx);
       case "clauses": return clauses(p, ctx);
-      case "pricing_table": return pricingTable(p, ctx);
-      case "callout": return callout(p, ctx);
-      case "property_plan": return propertyPlan(p, ctx);
       case "signature": return signature(p, ctx);
       case "page_break": return `<div class="bx-pagebreak" aria-hidden="true"></div>`;
       case "image": return image(p, ctx);
       case "spacer": return `<div class="bx-spacer" style="height:${Number(p.height) || 24}px"></div>`;
       case "divider": return `<hr class="bx-divider"/>`;
-      case "footer_note": return p.text || ctx.mode === "edit"
-        ? `<p class="bx-smallprint" data-edit="text">${t(p.text, ctx)}</p>` : "";
-      case "merge_field": return `<span class="bx-merge">${t(`{{${p.token || ""}}}`, ctx)}</span>`;
       case "button": return `<a class="bx-button" style="background:${esc(ctx.accent)}" href="${esc(p.url || "#")}"><span data-edit="label">${t(p.label, ctx)}</span></a>`;
       default:
         // Forward compatible, exactly like migration 166's envelope: a widget
@@ -539,38 +567,7 @@ function offerNote(c: Container): string {
     : "";
 }
 
-function docHeader(p: any, ctx: RenderContext): string {
-  const dark = (p.style || "dark_band") === "dark_band";
-  const logo = ctx.business.logoUrl
-    ? `<img class="bx-logo" src="${esc(ctx.business.logoUrl)}" alt=""/>`
-    : `<div class="bx-logo bx-logo-text">${esc((ctx.business.name || "").slice(0, 3).toUpperCase())}</div>`;
-  const band = dark
-    ? `<div class="bx-band" style="background:${esc(ctx.ink)}">
-         <div class="bx-band-l">${logo}<div><div class="bx-band-name">${esc(ctx.business.name)}</div>
-           <div class="bx-band-sub">${esc(ctx.business.tagline || "")}</div></div></div>
-         <div class="bx-band-r" data-edit="bandRight">${t(p.bandRight || "", ctx)}</div>
-       </div>`
-    : `<div class="bx-rule" style="border-bottom-color:${esc(ctx.accent)}">
-         <div class="bx-band-l">${logo}<div class="bx-band-name">${esc(ctx.business.name)}</div></div>
-         <div class="bx-band-r" data-edit="bandRight">${t(p.bandRight || "", ctx)}</div>
-       </div>`;
-  return `${band}
-    <div class="bx-title-wrap">
-      <h1 class="bx-title" data-edit="title">${t(p.title, ctx)}</h1>
-      ${p.subtitle || ctx.mode === "edit" ? `<p class="bx-subtitle" data-edit="subtitle">${t(p.subtitle, ctx)}</p>` : ""}
-    </div>`;
-}
 
-function keyFacts(p: any, ctx: RenderContext): string {
-  const rows: any[] = Array.isArray(p.rows) ? p.rows : [];
-  if (!rows.length && ctx.mode !== "edit") return "";
-  const cells = rows.map((r, i) => `
-    <div class="bx-fact">
-      <span class="bx-fact-l" data-edit="rows.${i}.label">${t(r?.label, ctx)}</span>
-      <span class="bx-fact-v" data-edit="rows.${i}.value">${t(r?.value, ctx)}</span>
-    </div>`).join("");
-  return `<div class="bx-facts">${cells}</div>`;
-}
 
 /** A plain table with a header row. Nothing is added up — see totals.ts. */
 function dataTable(p: any, ctx: RenderContext): string {
@@ -590,15 +587,6 @@ function dataTable(p: any, ctx: RenderContext): string {
   return `<table class="bx-table">${head}<tbody>${body}</tbody></table>`;
 }
 
-function testimonial(p: any, ctx: RenderContext): string {
-  if (!String(p.quote || "").trim() && ctx.mode !== "edit") return "";
-  const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));
-  return `<blockquote class="bx-quote">
-    <p class="bx-p" data-edit="quote">${t(p.quote, ctx)}</p>
-    ${stars ? `<div class="bx-stars" style="color:${esc(ctx.accent)}">${"★".repeat(stars)}</div>` : ""}
-    <footer class="bx-attrib" data-edit="attribution">${t(p.attribution, ctx)}</footer>
-  </blockquote>`;
-}
 
 function heading(p: any, ctx: RenderContext): string {
   const level = p.level === "Page title" || p.level === 1 ? 1 : p.level === "Sub-section" || p.level === 3 ? 3 : 2;
@@ -634,48 +622,19 @@ function clauses(p: any, ctx: RenderContext): string {
   return head + `<div class="bx-clauses">${body}</div>`;
 }
 
-function pricingTable(p: any, ctx: RenderContext): string {
-  const rows: any[] = Array.isArray(p.rows) ? p.rows : [];
-  const cols = p.columns && typeof p.columns === "object" ? p.columns : { service: true, basis: true, rate: true };
-  const head = p.heading || ctx.mode === "edit"
-    ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
-  const intro = p.intro || ctx.mode === "edit" ? paras(p.intro, ctx, "intro") : "";
-  const lService = String(p.labelService || "Service");
-  const lBasis = String(p.labelBasis || "Basis");
-  const lRate = String(p.labelRate || "Customer rate");
-  const th = [
-    cols.service !== false ? `<th>${esc(lService)}</th>` : "",
-    cols.basis !== false ? `<th>${esc(lBasis)}</th>` : "",
-    cols.rate !== false ? `<th class="bx-right">${esc(lRate)}</th>` : "",
-  ].join("");
-  // Each cell carries its own column heading: at 390px the header row is
-  // dropped and the label is printed above the value instead of the customer
-  // scrolling the page sideways to find out what a number means.
-  const body = rows.map((r, i) => `
-    <tr>
-      ${cols.service !== false ? `<td class="bx-strong" data-label="${esc(lService)}" data-edit="rows.${i}.name">${t(r?.name, ctx)}</td>` : ""}
-      ${cols.basis !== false ? `<td data-label="${esc(lBasis)}" data-edit="rows.${i}.basis">${t(r?.basis, ctx)}</td>` : ""}
-      ${cols.rate !== false ? `<td class="bx-right" data-label="${esc(lRate)}" data-edit="rows.${i}.rate">${t(r?.rate, ctx)}</td>` : ""}
-    </tr>`).join("");
-  // A rate card, deliberately with no total: "$185 per push" does not add up
-  // to anything until it snows. See totals.ts rule 1.
-  return `${head}${intro}<table class="bx-table"><thead><tr style="background:${esc(ctx.accent)}">${th}</tr></thead><tbody>${body}</tbody></table>`;
-}
-
-function callout(p: any, ctx: RenderContext): string {
-  const panels: any[] = Array.isArray(p.panels) ? p.panels : [];
-  const head = p.heading || ctx.mode === "edit"
-    ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
-  const body = panels.map((pn, i) => `
-    <div class="bx-panel bx-panel-${esc(pn?.tone || "accent")}">
-      <div class="bx-panel-t" data-edit="panels.${i}.title">${t(pn?.title, ctx)}</div>
-      ${paras(pn?.body, ctx, `panels.${i}.body`)}
-    </div>`).join("");
-  return `${head}<div class="bx-panels bx-panels-${panels.length}">${body}</div>`;
-}
 
 
-/* `comparisonCards`, `propertyBlock` and the `key_facts` case LIVED HERE and
+
+/* D-165 — SEVEN MORE RENDERERS LIVED HERE AND ARE DELETED, with the widgets
+   they drew: `docHeader` (→ a Container holding an Image and a Heading, shipped
+   as the "Document header" saved section), `keyFacts` (→ Text Editor rows),
+   `testimonial` (→ widgets/boxes.ts, so its definition and its renderer are one
+   file), `pricingTable` (→ Product Line Items), `callout` (→ Alert),
+   `propertyPlan` (→ Service Location + Text Editor rows) and `locationLine`,
+   which only the last of those called. `upgrade.ts` converts every stored one
+   on the way in, so nothing signed loses a word.
+
+   `comparisonCards`, `propertyBlock` and the `key_facts` case LIVED HERE and
    are DELETED (D-156, integration). Every read path — `deserialise` in this
    repo and `deserialise` in oliver-api, which are the only two doors a stored
    document comes through — runs the composite → tree upgrade, so no document
@@ -697,35 +656,7 @@ function callout(p: any, ctx: RenderContext): string {
    atomic widget now and draws itself in widgets/totals.ts, where its own tax
    rate, per-cent discount and coupon live. Two renderers for one block is how
    the canvas and the PDF come to disagree about a number. */
-function locationLine(loc?: LocationLite): string {
-  if (!loc) return "";
-  const line1 = loc.address_line1 ?? loc.address_line_1;
-  const line2 = loc.address_line2 ?? loc.address_line_2;
-  return [line1, line2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
-    .filter((x) => String(x ?? "").trim()).join(" · ");
-}
 
-function propertyPlan(p: any, ctx: RenderContext): string {
-  /* LOWER-CASED, like every other location reader on the platform (D-164).
-     `selectionOf`, the panel's picker and oliver-api's `proposalContext` all
-     key a location by its lower-cased id, because SQL Server hands GUIDs back
-     in whatever case they were written. This one did not, so a plan bound to
-     an upper-cased id drew no property name and no address while the address
-     block two widgets above it drew both. */
-  const loc = ctx.locations?.[String(p.locationId || "").toLowerCase()];
-  const rows: any[] = Array.isArray(p.rows) ? p.rows : [];
-  const head = p.heading || ctx.mode === "edit"
-    ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
-  const auto = [
-    { label: "Property name", value: loc?.name || "" },
-    { label: "Service address", value: locationLine(loc) },
-  ].filter((r) => r.value);
-  const all = [...auto.map((r) => `
-    <div class="bx-plan-row"><span class="bx-plan-l">${esc(r.label)}</span><span class="bx-plan-v">${esc(r.value)}</span></div>`),
-  ...rows.map((r, i) => `
-    <div class="bx-plan-row"><span class="bx-plan-l" data-edit="rows.${i}.label">${t(r?.label, ctx)}</span><span class="bx-plan-v" data-edit="rows.${i}.value">${t(r?.value, ctx)}</span></div>`)].join("");
-  return `${head}<div class="bx-plan">${all}</div>`;
-}
 
 
 function signature(p: any, ctx: RenderContext): string {
@@ -1002,6 +933,29 @@ export const DOCUMENT_CSS = `
 .bx-stars { font-size: 12px; letter-spacing: 2px; }
 .bx-attrib { font-size: 11px; color: #5A7A8A; margin-top: 4px; }
 .bx-unknown { border: 1px dashed #CBD5E1; border-radius: 6px; padding: 10px; color: #94A3B8; font-size: 11px; }
+
+/* ── D-165's standard widgets ──────────────────────────────────────────────
+   Only what the renderer does NOT already write inline. A widget whose whole
+   look is one author-set colour writes it on the element, because the author
+   can change it; a widget whose look is the same on every page is a rule here,
+   because a rule is one place. */
+.bx-iconbox-body > .bx-h { margin-bottom: 4px; }
+.bx-imagebox-body > .bx-h { margin-bottom: 4px; }
+.bx-alert-t { font-weight: 700; margin-bottom: 3px; }
+.bx-alert-b .bx-p:last-child { margin-bottom: 0; }
+.bx-quote-b .bx-p:last-child { margin-bottom: 0; }
+.bx-attrib-n { font-weight: 600; }
+.bx-attrib-j { color: #5A7A8A; }
+.bx-rating-t { margin-right: 8px; }
+.bx-counter-t { color: #5A7A8A; font-size: 11px; }
+.bx-progress-t { font-weight: 600; margin-bottom: 4px; }
+.bx-tab-h { cursor: default; }
+.bx-acc-item:last-child { margin-bottom: 0; }
+.bx-acc-body .bx-p:last-child { margin-bottom: 0; }
+.bx-social-empty, .bx-shortcode { font-size: 11px; color: #94A3B8; }
+.bx-post-l { font-size: 11px; font-weight: 600; text-decoration: none; }
+.bx-emailfoot-a, .bx-emailfoot-n { margin: 2px 0; }
+.bx-form-f:last-of-type { margin-bottom: 12px; }
 @media print { .bx-break { break-before: page; } .bx-internal { display: none; } }
 
 /* ── THE PHONE ─────────────────────────────────────────────────────────────
@@ -1046,6 +1000,12 @@ ${STACK_QUERY} {
   .bx-table td { border-bottom: none; padding: 2px 0; text-align: left; }
   .bx-table td.bx-right { text-align: left; }
   .bx-table td[data-label]::before { content: attr(data-label); display: block; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #5A7A8A; font-weight: 700; }
+
+  /* 3b. D-165's own two-up widgets stack too. An icon beside its words is a
+        picture of a row; at 390px it is two slivers. */
+  .bx-iconbox, .bx-imagebox, .bx-business { flex-direction: column !important; }
+  .bx-carousel > img { min-width: 60% !important; }
+  .bx-gallery { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
 
   /* 4. Two-up rows that are flex, not grid. */
   .bx-priced-head, .bx-site-sub, .bx-total-row, .bx-fact { flex-wrap: wrap; }

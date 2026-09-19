@@ -139,7 +139,9 @@ describe("the upgrade on open is switched on (A-B-1)", () => {
 
 describe("the upgraded widgets are the widgets the registry has (A-B-2)", () => {
   test("every kind the upgrade can produce is a kind the engine draws", () => {
-    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals"]) {
+    /* D-165 — `address_block` and `key_fact` are deleted; the upgrade produces
+       `service_location` (or `customer`) and a Text Editor instead. */
+    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "service_location", "totals"]) {
       assert.ok(RENDERED_KINDS.includes(kind), `the upgrade produces ${kind} and nothing draws it`);
     }
   });
@@ -225,7 +227,7 @@ describe("a ready-made pattern is ONE section with a box in it (A-B-4)", () => {
 
   test("This property is the four widgets a property block held", () => {
     assert.deepEqual(propertySections()[0].columns[0].widgets.map((w) => w.kind),
-      ["heading", "address_block", "pricing_table", "totals"]);
+      ["heading", "service_location", "price_line", "totals"]);
   });
 
   test("no pattern needs a second way to be placed", () => {
@@ -300,7 +302,7 @@ describe("a priced line inside a box is counted (stream C request 1)", () => {
       id, kind: "container", props: {},
       children: [
         makeWidget("heading", { text: name, level: 3 }),
-        makeWidget("address_block", { locationId: `loc-${id}` }),
+        makeWidget("service_location", { locationId: `loc-${id}` }),
         makeWidget("price_line", { name: "Plowing", quantity: 1, unit_price: amount }),
         { ...makeWidget("totals", { heading: "Subtotal for this property" }), id: `t-${id}` },
       ],
@@ -333,7 +335,7 @@ describe("a priced line inside a box is counted (stream C request 1)", () => {
       },
     }]));
     assert.deepEqual(d.sections[0].columns[0].widgets[0].children.map((n) => n.kind),
-      ["heading", "address_block", "price_line", "price_line", "totals"]);
+      ["heading", "service_location", "price_line", "price_line", "totals"]);
     assert.equal(documentTotals(d).subtotal, 3360, "a property's items stopped being money");
     assert.deepEqual(siteTotals(d).map((s) => [s.name, s.subtotal]), [["Des Moines campus", 3360]]);
   });

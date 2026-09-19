@@ -46,9 +46,12 @@ import {
 // how deep it may go; a second answer here would be a page that disagrees with
 // the proposal beside it about what "a box" means.
 import {
-  MAX_CONTAINER_DEPTH, childrenOf, containerFlow, containerLayout, containerLayoutCss,
-  isContainer, walkTree,
+  MAX_CONTAINER_DEPTH, boldRuns, childrenOf, containerFlow, containerLayout, containerLayoutCss,
+  isContainer, walkTree, type RenderContext,
 } from "../../render";
+/* The ENGINE's own renderer, for a standard widget this file has no page
+   renderer for yet. One fallback, in one place — see the `default` branch. */
+import { renderAtom } from "../../widgets";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -124,7 +127,8 @@ function paras(text: unknown, c: LandingContext, path: string): string {
   if (!filled.trim()) {
     return c.mode === "edit" ? `<div class="lp-prose lp-empty"${edit(path, c, "Type here…")}></div>` : "";
   }
-  const blocks = filled.split(/\n{2,}/).map((p) => esc(p.trim()).replace(/\n/g, "<br>"));
+  // `boldRuns` is the ENGINE's (render.ts), not a second copy — see D-165.
+  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(esc(p.trim())).replace(/\n/g, "<br>"));
   if (c.mode === "edit") return `<div class="lp-prose"${edit(path, c)}>${blocks.map((b) => `<p>${b}</p>`).join("")}</div>`;
   return blocks.map((b) => `<p>${b}</p>`).join("");
 }
@@ -189,6 +193,18 @@ export const LANDING_RENDERED_KINDS = [
   "key_fact", "totals",
   // Catalogue point 9 — the free HTML box. A landing page is an HTML page.
   "html",
+  /* D-165 — §11.13.3 gives a landing page "the website's list without the
+     menus". Every one of these draws: the ones with a `case` above as this
+     file's own markup, the rest through the ENGINE in the `default` branch.
+     Proper page renderers are item S2 in the handoff. */
+  "icon", "icon_box", "image_box", "star_rating", "alert", "social_icons",
+  "google_maps", "counter", "progress_bar", "tabs", "accordion", "toggle",
+  "image_carousel", "basic_gallery", "shortcode", "menu_anchor",
+  "service_location", "customer",
+  "product_cards", "ia_posts", "reviews", "book_now",
+  "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
+  /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
+  "grid",
 ] as const;
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
@@ -201,6 +217,14 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
       case "card": return lpCard(lpCardFields(p, c), c);
       case "catalog_card": return lpCard(lpCatalogCard(p, c), c);
       case "price_line": case "priced_line": return lpPriceLine(p, c);
+      /* D-165 — the DOCUMENT renamed these two and this surface has not: a
+         proposal's address block is `service_location` now and a key fact is a
+         line of text, and `upgrade.ts` converts every stored one on the way in,
+         including the ones in a stored newsletter. One line each rather than a
+         second renderer, exactly as `price_line` / `priced_line` already do —
+         a kind with two spellings is still one kind. The full rename is item
+         S2 in `overnight-report/D165_HANDOFF_2026-09-19.md`. */
+      case "service_location":
       case "address_block": return lpAddress(p, c);
       case "key_fact": return lpKeyFact(p, c);
       case "totals": return lpTotals(p, c);
@@ -224,10 +248,18 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
          renderer, not a second copy here, so the canvas, the website and this
          page all put the same bytes out. */
       case "html": return htmlBody(p, c.mode === "edit");
-      default:
+      default: {
+        /* ASK THE ENGINE BEFORE GIVING UP (D-165) — see the same branch in
+           `emailRender.ts`. §11.13.3 gives a landing page the website's whole
+           list, and this file has a hand-written renderer per kind; the engine
+           draws the rest so nothing the panel offers is silently blank. The
+           ask for proper page renderers is item S2 in the handoff. */
+        const engine = renderAtom(w, c as unknown as RenderContext);
+        if (engine != null) return engine;
         return c.mode === "edit"
           ? `<div class="lp-unknown">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
           : "";
+      }
     }
   })();
   if (!body && c.mode === "view") return "";

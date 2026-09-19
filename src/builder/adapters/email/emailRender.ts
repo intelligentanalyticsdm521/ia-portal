@@ -52,7 +52,7 @@ import { fill, type FillMode, type MergeContext } from "../../merge";
 // what its layout keys mean and how deep it may go. A mailbox draws it with
 // tables instead of flexbox, which is a difference in PAINT, never in model.
 import {
-  MAX_CONTAINER_DEPTH, childrenOf, containerFlow, containerLayout, isContainer,
+  MAX_CONTAINER_DEPTH, boldRuns, childrenOf, containerFlow, containerLayout, isContainer,
   type LocationLite,
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B), never a second
@@ -317,7 +317,10 @@ function paras(text: unknown, c: EmailRenderContext, path: string, style: string
       ? `<div style="${style}"${edit(path, c, "Type here…")}></div>`
       : "";
   }
-  const blocks = filled.split(/\n{2,}/).map((p) => inlineSafe(esc(p.trim())).replace(/\n/g, "<br />"));
+  /* `boldRuns` is the ENGINE's (render.ts), not a second copy: a short answer
+     reads "**Service term** 1 November" in a mailbox exactly as it does on the
+     page, and `<strong>` is the one tag every mail client on earth draws. */
+  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(inlineSafe(esc(p.trim()))).replace(/\n/g, "<br />"));
   if (c.mode === "edit") {
     return `<div style="${style}${c.typeCss ?? ""}"${edit(path, c)}>${blocks.map((b) => `<p style="margin:0 0 12px 0;">${b}</p>`).join("")}</div>`;
   }
@@ -338,6 +341,13 @@ export const EMAIL_RENDERED_KINDS = [
   // switch): it was DRAWN and missing from this list, which is the list the
   // suite checks the pane against — so widening the pane found it.
   "container", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals",
+  /* D-165 — the two kinds the DOCUMENT renamed, drawn by the same two
+     functions as before, because a kind with two spellings is still one kind. */
+  "service_location", "customer",
+  /* `grid` is a LAYOUT PRESET and never a stored kind: the tile inserts a
+     `container` laid out as a grid, which `emBox` already draws as a fluid row.
+     Listed so the pane-versus-renderer test can see it is accounted for. */
+  "grid",
 ] as const;
 
 /** Deliberately not drawn: `columns` is the SECTION's column count. */
@@ -361,7 +371,21 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "container": return emBox(w, c, depth);
       case "card": return emCard(emCardFields(p, c), c, emWidth(c));
       case "price_line": case "priced_line": return emPriceLine(p, c);
+      /* D-165 — the DOCUMENT renamed these two and this surface has not: a
+         proposal's address block is `service_location` now and a key fact is a
+         line of text, and `upgrade.ts` converts every stored one on the way in,
+         including the ones in a stored newsletter. One line each rather than a
+         second renderer, exactly as `price_line` / `priced_line` already do —
+         a kind with two spellings is still one kind. The full rename is item
+         S2 in `overnight-report/D165_HANDOFF_2026-09-19.md`. */
+      case "service_location":
       case "address_block": return emAddress(p, c);
+      /* A TYPED address block upgrades to `customer` (§11.13.3: "address_block
+         -> customer or service_location by its binding"), and a mailbox has to
+         keep drawing it. Same fields, same function — `emAddress` reads
+         `name` / `address` / `contact` / `notes`, and the Customer widget's
+         `billing_address` is read as the address. */
+      case "customer": return emAddress({ ...p, address: p.address || p.billing_address, contact: p.contact || p.contact_name }, c);
       case "key_fact": return emKeyFact(p, c);
       case "totals": return emTotals(p, c);
       case "heading": return emHeading(p, c);
@@ -387,12 +411,45 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "email_footer": return emFooter(p, c);
       case "countdown": return emCountdown(p, c);
       case "testimonial": return emTestimonial(p, c);
-      default:
+      default: {
+        /* THE ENGINE IS NOT ASKED HERE, and that is the decision.
+         *
+         * D-165 first had this branch fall back to `renderAtom`, so nothing the
+         * panel offered could be silently blank. This suite's own guards
+         * refused it by name — "no mail client is asked to lay out a flex box
+         * or a grid" and "every style is inline; there is no stylesheet and no
+         * class" — because the engine draws with CSS and a mailbox cannot.
+         * They are right, and the answer is the other one: the EMAIL PANEL
+         * offers what this file draws as tables, which is §11.13.3's own
+         * "minus what email programs cannot show". The widgets that are held
+         * back, and the table renderer each one needs, are item S2 in
+         * `overnight-report/D165_HANDOFF_2026-09-19.md`.
+         *
+         * WAS (kept as the record of what was tried, and why it is not here):
+         *   const engine = renderAtom(w, c as unknown as RenderContext);
+         *   if (engine != null) return engine;
+         *
+         * ORIGINAL NOTE.
+         *
+         * §11.13.3 gives every builder the same standard set — Icon, Icon Box,
+         * Image Box, Star Rating, Alert, Social Icons — and adds an IA group to
+         * this one. This surface has a hand-written table renderer per kind and
+         * does not have those yet. Drawing NOTHING for a widget the panel
+         * offers is the "offered and not rendered" defect the parity test
+         * exists to catch, so the engine's own renderer answers instead: the
+         * words and the links are right, and the layout is CSS rather than
+         * tables until this file grows a proper one per widget. That ask is
+         * item S2 in `overnight-report/D165_HANDOFF_2026-09-19.md`, with the
+         * field names of every new kind.
+         *
+         * A kind NOBODY draws still falls through to the sentence below, so a
+         * widget from a newer editor is inert here exactly as it was. */
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
         return c.mode === "edit"
           ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:10px;color:#94A3B8;font-size:11px;font-family:${bodyStack(c)};">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
           : "";
+      }
     }
   })();
   if (!body && c.mode !== "edit") return "";

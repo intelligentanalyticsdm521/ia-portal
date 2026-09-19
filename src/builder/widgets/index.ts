@@ -1,11 +1,11 @@
 /**
- * builder/widgets/index.ts — THE ATOMIC WIDGETS, collected.
+ * builder/widgets/index.ts — THE WIDGETS THAT DECLARE THEMSELVES, collected.
  *
- * D-156. Each widget under this folder is one file holding everything about
- * it: what it is called, what it can be set to, how it draws and what the
- * inspector adds. This module is the only thing that knows they exist as a
- * SET — `registry.ts` spreads `ATOM_WIDGET_DEFS` into the one vocabulary and
- * `render.ts` asks `renderAtom` before its own switch.
+ * D-156 set the rule and D-165 widened it: each widget under this folder is one
+ * file holding everything about it — what it is called, which group it sits in,
+ * what it can be set to, and how it draws. This module is the only thing that
+ * knows they exist as a SET: `registry.ts` spreads `ATOM_WIDGET_DEFS` into the
+ * one vocabulary and `render.ts` asks `renderAtom` before its own switch.
  *
  * ── WHY THE DEFINITION LIVES WITH THE RENDERER ────────────────────────────
  * Before this, a widget was a registry entry in one file and a `case` in a
@@ -13,6 +13,14 @@
  * because the two drifted. Keeping them in one file is the fix the test was
  * written to ask for; the registry still holds the ONE list, it just does not
  * hold every field of it any more.
+ *
+ * ── THE ORDER OF THIS LIST IS THE ORDER OF THE PANEL ──────────────────────
+ * §11.13.1: the left panel is Elementor's, groups Layout / Basic / General /
+ * Intelligent Analytics, and inside a group the tiles are in Elementor's own
+ * registration order. `registry.ts` sorts by group; WITHIN a group the order is
+ * the order these definitions are spread, so this list is read top to bottom as
+ * Basic, then General, then Intelligent Analytics, matching
+ * `test/fixtures/elementor-widget-names.json`.
  *
  * ── THE IMPORT CYCLE, DELIBERATELY ────────────────────────────────────────
  * render.ts imports this module and these modules import `esc` / `t` / `paras`
@@ -30,15 +38,57 @@ import { ATOM_KINDS as NAMES } from "./kinds";
 import { CARD_DEF, renderCard } from "./card";
 import { CATALOG_CARD_DEF, renderCatalogCard } from "./productCard";
 import { PRICE_LINE_DEF, renderPriceLine } from "./priceLine";
-import { ADDRESS_BLOCK_DEF, renderAddressBlock } from "./addressBlock";
-import { KEY_FACT_DEF, renderKeyFact } from "./keyFact";
 import { NO_BUSINESS_RATE_SENTENCE, TOTALS_DEF, renderTotals } from "./totals";
 import { HTML_DEF, renderHtml } from "./html";
+import {
+  ICON_BOX_DEF, ICON_DEF, SOCIAL_ICONS_DEF, STAR_RATING_DEF,
+  renderIcon, renderIconBox, renderSocialIcons, renderStarRating,
+} from "./icons";
+import {
+  ALERT_DEF, IMAGE_BOX_DEF, TESTIMONIAL_DEF,
+  renderAlert, renderImageBox, renderTestimonial,
+} from "./boxes";
+import {
+  ACCORDION_DEF, BASIC_GALLERY_DEF, COUNTER_DEF, GOOGLE_MAPS_DEF, IMAGE_CAROUSEL_DEF,
+  MENU_ANCHOR_DEF, PROGRESS_BAR_DEF, SHORTCODE_DEF, TABS_DEF, TOGGLE_DEF, VIDEO_DEF,
+  renderAccordion, renderBasicGallery, renderCounter, renderGoogleMaps, renderImageCarousel,
+  renderMenuAnchor, renderProgressBar, renderShortcode, renderTabs, renderToggle, renderVideo,
+} from "./pageOnly";
+import {
+  BUSINESS_INFO_DEF, CUSTOMER_DEF, SERVICE_LOCATION_DEF,
+  renderBusinessInfo, renderCustomer, renderServiceLocation,
+} from "./iaData";
+import {
+  BOOK_NOW_DEF, HOURS_LOCATION_DEF, IA_FORM_DEF, IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF,
+  IA_OLIVER_INVOICE_DEF, IA_POSTS_DEF, IA_SOCIAL_LINKS_DEF, NEWSLETTER_SIGNUP_DEF,
+  PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF, REVIEWS_DEF,
+  renderBookNow, renderHoursLocation, renderIaForm, renderIaMegaMenu, renderIaMobileMenu,
+  renderIaOliverInvoice, renderIaPosts, renderIaSocialLinks, renderNewsletterSignup,
+  renderProductCards, renderProductLineItems, renderReviews,
+} from "./iaBlocks";
 
-/** Every atomic widget, in the order the Products-and-services group shows. */
+/** Every widget declared under this folder, in PANEL ORDER within its group. */
 export const ATOM_WIDGET_DEFS: WidgetDef[] = [
-  CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF, TOTALS_DEF, ADDRESS_BLOCK_DEF, KEY_FACT_DEF,
-  HTML_DEF,
+  /* Basic — Elementor's registration order for the group, minus the four the
+     engine still declares in registry.ts (Heading, Image, Text Editor, Button,
+     Divider, Spacer). Video, Google Maps and Icon are the rest of it. */
+  VIDEO_DEF, GOOGLE_MAPS_DEF, ICON_DEF,
+
+  /* General — Elementor's registration order, exactly: Image Box, Icon Box,
+     Star Rating, Image Carousel, Basic Gallery, [Icon List — the engine's
+     `list`], Counter, Progress Bar, Testimonial, Tabs, Accordion, Toggle,
+     Social Icons, Alert, Shortcode, HTML, Menu Anchor. */
+  IMAGE_BOX_DEF, ICON_BOX_DEF, STAR_RATING_DEF, IMAGE_CAROUSEL_DEF, BASIC_GALLERY_DEF,
+  COUNTER_DEF, PROGRESS_BAR_DEF, TESTIMONIAL_DEF, TABS_DEF, ACCORDION_DEF, TOGGLE_DEF,
+  SOCIAL_ICONS_DEF, ALERT_DEF, SHORTCODE_DEF, HTML_DEF, MENU_ANCHOR_DEF,
+
+  /* Intelligent Analytics — §11.13.3's own order, per builder. The proposal's
+     nine first, then the email's, then the pages'. */
+  PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF, TOTALS_DEF, CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF,
+  CUSTOMER_DEF, SERVICE_LOCATION_DEF, BUSINESS_INFO_DEF,
+  IA_POSTS_DEF, REVIEWS_DEF, BOOK_NOW_DEF,
+  IA_FORM_DEF, NEWSLETTER_SIGNUP_DEF, HOURS_LOCATION_DEF,
+  IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF, IA_OLIVER_INVOICE_DEF, IA_SOCIAL_LINKS_DEF,
 ];
 
 type Renderer = (w: Widget, ctx: RenderContext) => string;
@@ -54,9 +104,43 @@ const RENDERERS: Record<string, Renderer> = {
      anything OFFERS any more — only one the renderer still understands. */
   priced_line: renderPriceLine,
   totals: renderTotals,
-  address_block: renderAddressBlock,
-  key_fact: renderKeyFact,
   html: renderHtml,
+
+  icon: renderIcon,
+  icon_box: renderIconBox,
+  image_box: renderImageBox,
+  testimonial: renderTestimonial,
+  star_rating: renderStarRating,
+  alert: renderAlert,
+  social_icons: renderSocialIcons,
+
+  video: renderVideo,
+  google_maps: renderGoogleMaps,
+  counter: renderCounter,
+  progress_bar: renderProgressBar,
+  tabs: renderTabs,
+  accordion: renderAccordion,
+  toggle: renderToggle,
+  image_carousel: renderImageCarousel,
+  basic_gallery: renderBasicGallery,
+  shortcode: renderShortcode,
+  menu_anchor: renderMenuAnchor,
+
+  customer: renderCustomer,
+  service_location: renderServiceLocation,
+  business_info: renderBusinessInfo,
+  product_cards: renderProductCards,
+  product_line_items: renderProductLineItems,
+  ia_posts: renderIaPosts,
+  reviews: renderReviews,
+  book_now: renderBookNow,
+  ia_form: renderIaForm,
+  newsletter_signup: renderNewsletterSignup,
+  hours_location: renderHoursLocation,
+  ia_mega_menu: renderIaMegaMenu,
+  ia_mobile_menu: renderIaMobileMenu,
+  ia_oliver_invoice: renderIaOliverInvoice,
+  ia_social_links: renderIaSocialLinks,
 };
 
 /** The kinds that actually have a renderer here. */
@@ -99,9 +183,20 @@ export {
   type CatalogBinding, type CatalogSnapshot, type ResolvedCatalogCard,
 } from "./productCard";
 export { priceLineFields, priceLineUnitNote, priceLinePropsFromCatalogue } from "./priceLine";
-export { addressFields, locationAddress } from "./addressBlock";
+/* `addressFields` and `locationAddress` moved from the deleted
+   `addressBlock.ts` to `iaData.ts` with the widget itself; the NAMES are kept
+   because `proposalDoc.ts` belongs to another stream and reads them. */
+export { addressFields, customerFields, locationAddress, type LocationFields } from "./iaData";
 export { htmlBody, htmlOf } from "./html";
 export { NO_BUSINESS_RATE_SENTENCE } from "./totals";
+/* D-165 — the two PANEL TILES and the one function that expands them. */
+export {
+  PANEL_TILES, expandPanelTile, isPanelTile, type CataloguePick, type PanelTile,
+} from "./iaBlocks";
+export { ALERT_TYPES } from "./boxes";
+export { DEFAULT_ICON, ICON_CHOICES, ICON_OPTIONS, glyphFor, iconValue, type IconValue } from "./glyph";
+export { SOCIAL_NETWORKS } from "./icons";
+export { videoEmbed } from "./pageOnly";
 /* THE SHARED BINDING SECTION (catalogue F.2), for every surface that reads a
    bound widget. One module, re-exported here like every other widget's own. */
 export {

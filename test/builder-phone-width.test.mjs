@@ -237,28 +237,33 @@ describe("A1 · the document a customer signs on a phone", () => {
   });
 
   test("every table cell carries its own column heading", () => {
-    // The phone stylesheet drops the header row, so the heading has to ride
-    // IN the cell. Emitted on every surface — the canvas, the customer's page
-    // and a printed copy are one document, not three.
+    /* The phone stylesheet drops the header row, so the heading has to ride IN
+       the cell. Emitted on every surface — the canvas, the customer's page and
+       a printed copy are one document, not three.
+
+       This was a `pricing_table`, which D-165 deletes (§11.13.3: "the old
+       pricing table -> Product Line Items"). The one thing on a document that
+       still has columns is the plain **Table**, so it is the one that has to
+       carry them. */
     const d = doc([{
-      kind: "pricing_table",
-      props: { labelService: "Service", labelRate: "Customer rate", rows: [{ name: "Plowing", basis: "Per push", rate: "$185" }] },
+      kind: "data_table",
+      props: { columns: ["Service", "Basis", "Customer rate"], rows: [["Plowing", "Per push", "$185"]] },
     }]);
     const html = renderSection(d.sections[0], view(d));
-    assert.match(html, /<td class="bx-strong" data-label="Service"/);
+    assert.match(html, /<td data-label="Service"/);
     assert.match(html, /data-label="Basis"/);
     assert.match(html, /data-label="Customer rate"/);
   });
 
-  test("a rate card's money columns each carry a label", () => {
-    // This was `property_block`, whose own four-column table is DELETED with
-    // it (D-156): a property is a box now, and what it charges is either a
-    // rate card or a priced line per item. The rate card is the one with
-    // columns, so it is the one that has to name them above each value when
-    // the table stacks on a phone.
+  test("a plain table's columns each carry a label", () => {
+    /* This was `property_block`, then `pricing_table`, and both are DELETED
+       (D-156, then D-165). What is left with columns on a document is the plain
+       **Table**, and it is the one that has to name each column above its value
+       when the table stacks at 390px. The money that used to be in a rate card
+       is priced lines now, and a priced line is not a table at all. */
     const d = doc([{
-      kind: "pricing_table",
-      props: { heading: "What we charge here", rows: [{ name: "Plowing", basis: "per push", rate: "$185.00" }] },
+      kind: "data_table",
+      props: { columns: ["Service", "Basis", "Customer rate"], rows: [["Plowing", "per push", "$185.00"]] },
     }]);
     const html = renderSection(d.sections[0], view(d));
     for (const label of ["Service", "Basis", "Customer rate"]) {

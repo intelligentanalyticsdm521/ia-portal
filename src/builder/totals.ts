@@ -168,7 +168,19 @@ function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: S
   walkNodes(doc, (hit) => {
     if (!isContainer(hit.node)) return;
     const box = hit.node as Container;
-    const address = box.children.find((k) => k.kind === "address_block");
+    /* WHICH KIND MARKS A PROPERTY BOX — BOTH SPELLINGS (D-165).
+       `address_block` is deleted from the panel and `upgrade.ts` turns every
+       stored one into `service_location` (or `customer`, by its binding), but
+       the email and landing renderers still hold the old kind and a document
+       can reach the totals without passing through `deserialise`. Reading both
+       is the same "one renderer, two spellings" `price_line` / `priced_line`
+       already uses, and it is what stops a per-property subtotal silently
+       becoming zero on the day the rename lands.
+
+       `customer` is NOT a property box: it is who the document is FOR, and
+       claiming the lines under it would put a site's money on the payer. */
+    const address = box.children.find(
+      (k) => k.kind === "service_location" || k.kind === "address_block");
     if (!address) return;
     const ap: any = address.props || {};
     const headingChild: Node | undefined = box.children.find((k) => k.kind === "heading");

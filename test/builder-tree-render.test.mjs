@@ -466,30 +466,38 @@ describe("the atomic widgets that replace the composites", () => {
   });
 
   test("an address block bound to a location prints it, and does not invite retyping", () => {
-    const d = doc([w("w1", "address_block", { locationId: "loc-1" })]);
+    const d = doc([w("w1", "service_location", { locationId: "loc-1" })]);
     const out = renderSection(d.sections[0], makeContext(d, { locations: LOCATIONS, mode: "edit" }));
     for (const words of ["Marshalltown depot", "1200 Prairie Ave", "Dana Reyes", "Gate code at the north entrance."]) {
       assert.ok(out.includes(words), `"${words}" is not in the address block`);
     }
-    // A BOUND value is not editable in place: typing over the address here
-    // would put one answer on this document and another in the record.
-    assert.ok(!/data-edit="address"/.test(out), "a bound address was offered for retyping");
-    assert.ok(!/data-edit="name"/.test(out), "a bound property name was offered for retyping");
+    /* CHANGED BY D-165, §11.13.2, deliberately: *"The author edits any of them
+       directly on the page; an edited field stops tracking and can be put
+       back."* A bound value used to be read-only here, so the only way to
+       correct an address on one document was to change the customer's record —
+       which is the "nobody types into a list of boxes" complaint from the other
+       side. Every row is editable in place now, and the typed value is kept on
+       the widget so the record is untouched. */
+    assert.ok(/data-edit="address"/.test(out), "a bound address cannot be corrected on the page");
+    assert.ok(/data-edit="name"/.test(out), "a bound property name cannot be corrected on the page");
   });
 
   test("an address block with no location takes what is typed", () => {
-    const out = html(doc([w("w1", "address_block", { name: "The other yard", address: "88 Second St", contact: "Sam Okafor" })]), "edit");
+    const out = html(doc([w("w1", "service_location", { name: "The other yard", address: "88 Second St", contact: "Sam Okafor" })]), "edit");
     assert.ok(out.includes("The other yard") && out.includes("88 Second St") && out.includes("Sam Okafor"));
     assert.match(out, /data-edit="address"/);
   });
 
-  test("a key fact is ONE fact, so four of them are four widgets", () => {
+  test("a short answer is ONE widget, so four of them are four widgets", () => {
+    /* D-165 — `key_fact` is DELETED: a key fact is a line of text with its
+       label in bold (§11.13.3), which is a Text Editor. What this test was
+       protecting — one fact is one selectable, deletable widget — is unchanged. */
     const d = doc([box("b1", row(12), [
-      w("w1", "key_fact", { label: "Starts", value: "1 November" }),
-      w("w2", "key_fact", { label: "Runs for", value: "One winter" }),
+      w("w1", "paragraph", { text: "**Starts** 1 November" }),
+      w("w2", "paragraph", { text: "**Runs for** One winter" }),
     ])]);
     const out = html(d, "edit");
-    assert.equal((out.match(/data-kind="key_fact"/g) || []).length, 2, "four facts must be four widgets");
+    assert.equal((out.match(/data-kind="paragraph"/g) || []).length, 2, "four facts must be four widgets");
     assert.ok(out.includes("Starts") && out.includes("One winter"));
     // Each is individually addressable, which is what "every element is
     // deletable" rests on.
@@ -502,6 +510,12 @@ describe("the atomic widgets that replace the composites", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("the new kinds draw on every surface", () => {
+  /* THE TREE THE EMAIL AND THE LANDING PAGE ARE DRAWN FROM keeps D-156's own
+     spelling — `key_fact`, `address_block`. Those two kinds are DELETED from
+     the panel by D-165 (§11.13.3) and converted on open, but the renderers in
+     `adapters/email` and `adapters/landing` belong to another stream and still
+     hold them, which is exactly what a stored newsletter needs. The DOCUMENT's
+     own list below is D-165's. */
   const TREE = [box("b1", row(16), [
     w("w1", "card", { title: "Essentials", price: "$185.00", tag: { text: "Best price", colour: "#B45309" } }),
     w("w2", "key_fact", { label: "Starts", value: "1 November" }),
@@ -509,7 +523,7 @@ describe("the new kinds draw on every surface", () => {
   ])];
 
   test("the document renderer offers every one of them", () => {
-    for (const kind of ["container", "card", "catalog_card", "price_line", "totals", "address_block", "key_fact"]) {
+    for (const kind of ["container", "card", "catalog_card", "price_line", "totals", "service_location", "customer"]) {
       assert.ok(RENDERED_KINDS.includes(kind), `the engine does not draw ${kind}`);
     }
   });
@@ -522,6 +536,11 @@ describe("the new kinds draw on every surface", () => {
     assert.match(out, /class="lp-box lp-box-row bx-sy-b1"[^>]*data-box="b1"/);
     assert.match(out, /\.bx-sy-b1\{display:flex;flex-direction:row;gap:16px\}/);
     assert.ok(out.includes("Essentials") && out.includes("Best price") && out.includes("Marshalltown depot"));
+    /* The LANDING renderer belongs to another stream and still speaks the
+       D-156 vocabulary — `address_block`, `key_fact` — which is exactly right
+       for a stored landing page and is why those kinds keep their renderers
+       there. §11.13.3 does not put either on a landing page's panel, so nothing
+       new can be created with them. The rename ask is in the handoff. */
     for (const kind of ["container", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals"]) {
       assert.ok(LANDING_RENDERED_KINDS.includes(kind), `a page does not draw ${kind}`);
     }

@@ -89,8 +89,12 @@ const factRow = (facts: Array<[string, string]>) =>
      wrap). It costs nothing to write it that way and it makes the document
      byte-identical after a save and a reopen, which is the discipline §11.8
      holds everything else to. */
+  /* D-165 — a key fact IS A LINE OF TEXT with its label in bold. `key_fact`
+     has no Elementor name and is not on the IA list, so it is deleted and this
+     is what §11.13.3 says it becomes: a Text Editor inside the same Container.
+     Four of them still read as four short answers across the top. */
   makeContainer({ gap: 16, direction: "row", wrap: true },
-    facts.map(([label, value]) => makeWidget("key_fact", { label, value })));
+    facts.map(([label, value]) => makeWidget("paragraph", { text: `**${label}** ${value}` })));
 
 /**
  * One money line, ready to be filled from Products & Services.
@@ -180,14 +184,24 @@ export function snowAgreementDocument(): BuilderDocument {
 
 function cover(): Section {
   return band([
-    makeWidget("doc_header", {
-      style: "dark_band",
-      title: "Commercial Snow & Ice Management Agreement",
-      subtitle: "A clear, dependable plan for winter weather. Prepared for signature and electronic acceptance.",
-      /* NO `bandRight`. The service term is one of the four key facts under
-         the band, and it was printed in the band as well — the same dates
-         twice on one cover, three inches apart. One fact, one place. */
-    }),
+    /* D-165 — WAS `doc_header`. §11.13.3: "document header (-> a Container with
+       Image + Heading, shipped as a saved header template)". The row is the
+       logo beside the title; the Image starts empty, because the brand logo is
+       `ctx.business.logoUrl` and a copy stored on a widget stops following
+       Brand Identity the day somebody changes it there.
+
+       STILL NO date line in the band. The service term is one of the four short
+       answers under it, and it used to be printed in the band as well — the
+       same dates twice on one cover, three inches apart. One fact, one place. */
+    makeContainer({ gap: 16, direction: "row", alignItems: "center" }, [
+      makeWidget("image", { src: "", alt: "", caption: "" }),
+      makeContainer(undefined, [
+        makeWidget("heading", { text: "Commercial Snow & Ice Management Agreement", level: 1 }),
+        makeWidget("paragraph", {
+          text: "A clear, dependable plan for winter weather. Prepared for signature and electronic acceptance.",
+        }),
+      ]),
+    ]),
     factRow([
       ["Customer", "{{customer.name}}"],
       ["Property", "{{property.name}}"],
@@ -204,24 +218,25 @@ function atAGlance(): Section {
     makeWidget("paragraph", {
       text: "This agreement sets out the terms on which {{business.name}} will provide snow and ice management at the property named above. What you have chosen, the depth that brings us out, the prices and any special conditions are set out in the pricing schedule, and the pricing schedule is part of this agreement.",
     }),
-    makeWidget("pricing_table", {
-      heading: "What this agreement covers",
-      intro: "",
-      labelService: "Service",
-      labelBasis: "What brings us out",
-      labelRate: "How it is priced",
-      columns: { service: true, basis: true, rate: true },
-      /* THE SAME SERVICES THE PRICING SCHEDULE PRICES, in the same order, so
-         page one and page six cannot list different work. Where a row has no
-         one rate to state, the cell points at the schedule rather than being
-         left empty — an empty "How it is priced" cell reads as "free". */
+    makeWidget("heading", { text: "What this agreement covers", level: 3 }),
+    /* D-165 — WAS `pricing_table`, and it never was a rate card: three columns
+       of WORDS, no figure that feeds a total. So it is the plain Table, whose
+       id the shared vocabulary keeps. The priced lines live on the pricing
+       schedule, where Product Line Items drops them from the catalogue.
+
+       THE SAME SERVICES THE PRICING SCHEDULE PRICES, in the same order, so page
+       one and page six cannot list different work. Where a row has no one rate
+       to state, the cell points at the schedule rather than being left empty —
+       an empty "How it is priced" cell reads as "free". */
+    makeWidget("data_table", {
+      columns: ["Service", "What brings us out", "How it is priced"],
       rows: [
-        { name: "Snow plowing", basis: "{{snow_trigger}} of accumulation", rate: "Per 1,000 sq ft of paved area, per push" },
-        { name: "Additional snow push", basis: "Each time the trigger depth is reached again", rate: SEE_THE_SCHEDULE },
-        { name: "Lot salting", basis: "Freezing conditions, or when you ask", rate: "Per 1,000 sq ft, per application" },
-        { name: "Sidewalks and entries", basis: "If selected on the pricing schedule", rate: "Per 1,000 sq ft, per visit" },
-        { name: "Snow hauling and pile relocation", basis: "If the snow has nowhere left to go", rate: QUOTED_SEPARATELY },
-        { name: "Severe or extraordinary event", basis: "{{severe_event_threshold}} or more, or special conditions", rate: SEE_THE_SCHEDULE },
+        ["Snow plowing", "{{snow_trigger}} of accumulation", "Per 1,000 sq ft of paved area, per push"],
+        ["Additional snow push", "Each time the trigger depth is reached again", SEE_THE_SCHEDULE],
+        ["Lot salting", "Freezing conditions, or when you ask", "Per 1,000 sq ft, per application"],
+        ["Sidewalks and entries", "If selected on the pricing schedule", "Per 1,000 sq ft, per visit"],
+        ["Snow hauling and pile relocation", "If the snow has nowhere left to go", QUOTED_SEPARATELY],
+        ["Severe or extraordinary event", "{{severe_event_threshold}} or more, or special conditions", SEE_THE_SCHEDULE],
       ],
     }),
     makeWidget("heading", { text: "Service summary", level: 3 }),
@@ -293,13 +308,12 @@ function severeWeather(): Section {
       ["Access and traffic",
         "When we get to you can be affected by traffic, parked vehicles, emergency access, your own operations, events on site, and conditions on the route."],
     ]),
-    makeWidget("callout", {
-      heading: "",
-      panels: [{
-        title: "Important",
-        tone: "warn",
-        body: "During a major storm we work to a priority order: how severe the weather is, safety, what we can get into, how the route runs, what equipment is free, and how many properties are waiting. We will not promise you a time we cannot keep.",
-      }],
+    /* D-165 — WAS `callout`. Elementor has a name for a tinted box that must
+       not be skimmed past, and it is Alert. `warn` becomes `warning`. */
+    makeWidget("alert", {
+      alert_type: "warning",
+      alert_title: "Important",
+      alert_description: "During a major storm we work to a priority order: how severe the weather is, safety, what we can get into, how the route runs, what equipment is free, and how many properties are waiting. We will not promise you a time we cannot keep.",
     }),
   ]);
 }
@@ -395,10 +409,7 @@ function pricingSchedule(): Section {
        showing $0.00 would read as free, and it would put a seventh basis into
        `pricedOnOneBasis` for a charge that has none — so it is a plain fact,
        with the words the draft uses. */
-    makeWidget("key_fact", {
-      label: "Snow hauling — if required",
-      value: QUOTED_SEPARATELY,
-    }),
+    makeWidget("paragraph", { text: `**Snow hauling — if required** ${QUOTED_SEPARATELY}` }),
     makeWidget("paragraph", {
       text: "Loading, carrying and tipping snow away from the property is measured and quoted before the work starts, because what it costs depends on how much snow there is and how far it has to go.",
     }),
@@ -502,18 +513,22 @@ function propertyServicePlan(): Section {
     makeWidget("paragraph", {
       text: "This page is the operational sheet for the property. It is filled in once, it travels with the location, and the crew works from the same copy you are reading.",
     }),
-    makeWidget("property_plan", {
-      locationId: "",
-      heading: "Property service plan",
-      rows: [
-        { label: "Areas we plow", value: "" },
-        { label: "Where the snow goes", value: "" },
-        { label: "Sidewalks and entries", value: "" },
-        { label: "Where we salt", value: "" },
-        { label: "Things to avoid", value: "" },
-        { label: "Anything else the crew should know", value: "" },
-      ],
-    }),
+    /* D-165 — WAS `property_plan`. §11.13.3: "property plan (-> Service Location
+       + Text Editor rows)". The location and its address fill themselves in
+       from the customer's own record the moment the customer is picked; the six
+       rows below are the crew's sheet, each one a line to type on the page. */
+    makeWidget("heading", { text: "Property service plan", level: 3 }),
+    /* `locationId` IS PASSED, empty. `bindPlansToLocation` fills the plans that
+       have no location when the author picks the document's, and it looks for
+       the key being PRESENT and empty — a widget without it is a section 10
+       that never takes the document's address. */
+    makeWidget("service_location", { heading: "", locationId: "" }),
+    makeWidget("paragraph", { text: "**Areas we plow** " }),
+    makeWidget("paragraph", { text: "**Where the snow goes** " }),
+    makeWidget("paragraph", { text: "**Sidewalks and entries** " }),
+    makeWidget("paragraph", { text: "**Where we salt** " }),
+    makeWidget("paragraph", { text: "**Things to avoid** " }),
+    makeWidget("paragraph", { text: "**Anything else the crew should know** " }),
   ], { pageBreakBefore: true });
 }
 
@@ -521,7 +536,8 @@ function propertyServicePlan(): Section {
 
 function smallPrint(): Section {
   return band([
-    makeWidget("footer_note", {
+    /* D-165 — WAS `footer_note`. §11.13.3: "footer note (-> Text Editor)". */
+    makeWidget("paragraph", {
       text: "This agreement is between the customer named on the cover and {{business.name}}. The prices on the pricing schedule hold for the service term shown. Anything not written into this agreement is not included in it.",
     }),
   ], { padding: 12, label: "Small print" });

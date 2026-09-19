@@ -29,6 +29,7 @@ import zlib from "node:zlib";
 import path from "node:path";
 import {
   widgetsFor, widgetTooltip, widgetDescription, widgetLabel, WIDGETS_BY_KIND,
+  WIDGET_CATEGORIES,
 } from "../src/builder/registry.ts";
 import {
   PREMADE_DESIGNS, PREMADE_BY_KEY, PREMADE_GROUPS, buildPremade, coloursUsed, premadeFor,
@@ -81,7 +82,10 @@ describe("the studio's tools are registry entries, like every other builder's", 
       "background",
       "qr_code",
       "social_handle",
-      "callout",        // call-out
+      /* `callout` is DELETED (D-165) and its job is Elementor's **Alert**. The
+         studio's `insertWidget` has no case for an Alert yet, so the tile is
+         not offered here rather than being a button that does nothing — item S2
+         in `overnight-report/D165_HANDOFF_2026-09-19.md`. */
     ]) {
       assert.ok(kinds.includes(kind), `the pane cannot add a ${kind}`);
     }
@@ -100,8 +104,15 @@ describe("the studio's tools are registry entries, like every other builder's", 
   });
 
   test("they are grouped, not one long list", () => {
+    /* D-165 — the panel's groups are Elementor's four (Layout / Basic /
+       General / Intelligent Analytics), and the studio's eleven tools fall into
+       two of them: the text and the placed pictures are **Basic**, the QR code,
+       the colour block and the rest are **General**. Two is what "grouped, not
+       one long list" means with four groups to choose from; the number this
+       test was written against was nine invented ones. */
     const groups = new Set(tools.map((w) => w.category));
-    assert.ok(groups.size >= 3, `the pane would open as ${groups.size} group(s)`);
+    assert.ok(groups.size >= 2, `the pane would open as ${groups.size} group(s)`);
+    for (const g of groups) assert.ok(WIDGET_CATEGORIES.includes(g), `${g} is not a panel group`);
   });
 
   test("every tool the pane offers actually places something", () => {
