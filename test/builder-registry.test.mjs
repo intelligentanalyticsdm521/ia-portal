@@ -214,6 +214,15 @@ describe("§3.2's union is registered", () => {
        snow agreement places it and D-164 pins its numbering) and its TILE is
        hidden, so there is one Terms door. */
     "terms",
+    /* B-168 F3 — the five Elementor PRO widgets of the buttons-icons-panels
+       family. Scoped by `BUILDER_OFFERS_2026-09-19.json`, which is the offer
+       Brandon approved at 12:58 CDT on 2026-09-19 and the thing this list has
+       meant since D-168: `share-buttons`, `call-to-action` and `flip-box` are
+       in the website and landing offers (call-to-action in the proposal offer
+       too), and `facebook-embed` / `facebook-page` are in the website and
+       landing offers. Each one is declared in
+       src/builder/widgets/families/f3-buttons-icons-panels/. */
+    "share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page",
   ];
 
   for (const kind of REQUIRED) {

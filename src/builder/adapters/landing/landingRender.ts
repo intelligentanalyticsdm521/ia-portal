@@ -52,6 +52,15 @@ import {
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
 import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — THE TEN FAMILIES, ON THIS SURFACE TOO.
+   The seams commit put one line in `render.ts`, one in arion’s
+   `elementorWidgets.js` and one in LUMEN’s `builderEmailRender.js`, and this
+   file was the fourth door and was missed: a landing page is real HTML with a
+   stylesheet, so everything the engine draws it can draw, and the default
+   branch below asked `renderAtom` and nothing else. A widget a family declares
+   and the panel offers would have been silently blank on a hosted page. One
+   line, next to the atoms’, same shape, same reason. */
+import { renderFamily, FAMILY_RENDERED_KINDS } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -217,6 +226,11 @@ export const LANDING_RENDERED_KINDS = [
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
   /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
   "grid",
+  /* …and every kind the ten family folders draw, DERIVED from the folders
+     rather than copied here. A list a family agent has to remember to add to
+     is a list that goes stale on the first busy afternoon; this one cannot,
+     because it is the same map `renderFamily` above dispatches on. */
+  ...FAMILY_RENDERED_KINDS,
 ] as const;
 
 export const LANDING_UNRENDERED_KINDS = ["columns"] as const;
@@ -295,6 +309,8 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"
