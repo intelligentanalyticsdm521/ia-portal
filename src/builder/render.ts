@@ -219,6 +219,13 @@ export const RENDERED_KINDS = [
   ...ATOM_KINDS,
   // …and the box that holds them, which the engine draws itself.
   "container",
+  /* 11.13.2 (D-165) — the three widgets that fill from the database. They are
+     DRAWN, and drawn by `ctx.extra` (see the `own` branch below), because only
+     the proposal adapter has the customer, the site and the business in its
+     hand. They are on this list because the list answers "does something draw
+     this?", and something does: the hook this file declares. The renderer is
+     `proposal/recordWidgets.ts renderRecordBlock`. */
+  "customer", "service_location", "business_info",
 ] as const;
 
 /**
@@ -229,7 +236,15 @@ export const RENDERED_KINDS = [
  * listed here so the "offered but not rendered" test can tell a deliberate
  * omission from a forgotten one.
  */
-export const UNRENDERED_KINDS = ["columns"] as const;
+export const UNRENDERED_KINDS = [
+  "columns",
+  /* 11.13.2 (D-165) — the three TILES. Pressing one opens a picker and drops
+     an atomic widget; neither `product_cards`, `product_line_items` nor
+     `terms` is ever on a page or in a stored document, so nothing draws one.
+     Named here for the reason this list exists: so "offered but not rendered"
+     can tell a deliberate omission from a forgotten one. */
+  "product_cards", "product_line_items", "terms",
+] as const;
 
 /* ══════════════════════════════════════════════════════════════════════════
    READING A BOX — the ONE reader, for every surface (§11.12, D-156)

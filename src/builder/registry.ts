@@ -261,6 +261,9 @@ export type { WidgetTier } from "./tier";
 /* D-156 — the atomic widgets, each declared in its own file beside the
    function that draws it. Spread into WIDGETS below: one vocabulary, still. */
 import { ATOM_WIDGET_DEFS } from "./widgets";
+/* 11.13.2 (stream 3). See the spread in WIDGETS below for why this is here. */
+import { RECORD_WIDGET_DEFS } from "./proposal/recordWidgets";
+import { CATALOGUE_TILE_DEFS } from "./proposal/catalogueTiles";
 
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -366,6 +369,17 @@ export const WIDGETS: WidgetDef[] = [
      `widgets/`, beside the function that draws it, and the list is spread in
      here so there is still exactly ONE vocabulary. See widgets/index.ts. */
   ...ATOM_WIDGET_DEFS,
+  /* 11.13.2 (stream 3) — THE THREE RECORD-BOUND WIDGETS: Customer, Service
+     Location, Business Info. They declare themselves in
+     `proposal/recordWidgets.ts` and the proposal adapter draws them through
+     `ctx.extra`, so render.ts gains no case. These two lines are the whole of
+     stream 3's footprint in this shared file; the note is in
+     D165_HANDOFF_2026-09-19.md so an integration keeps them. */
+  ...RECORD_WIDGET_DEFS,
+  /* …and the two TILES that load products. Neither is ever on a page: the
+     adapter's `onInsertWidget` opens the one catalogue picker and drops
+     `catalog_card` / `price_line` per pick (proposal/catalogueTiles.ts). */
+  ...CATALOGUE_TILE_DEFS,
   /* ── Text ──────────────────────────────────────────────────────────── */
   {
     kind: "heading",

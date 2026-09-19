@@ -1,84 +1,49 @@
 /**
- * builder/proposal/documentDetails.ts — the blanks a document carries, as FIELDS.
+ * builder/proposal/documentDetails.ts — THE ONE BLANK RULE, AND THE ONE STORE.
  *
- * ── THE DEFECT THIS EXISTS FOR (D-03 / D-35, 2026-09-16 user test) ────────
- * A first-time user built the whole snow & ice agreement, pressed **Send to
- * customer**, and was refused: *"5 details are still blank (Service term
- * starts, Service term ends, snow_trigger, severe_event_threshold)"*. Two of
- * those four names are raw developer tokens, and — this is the part that makes
- * the document unsendable rather than merely clunky — **there was no control
- * anywhere in the Portal to fill any of them**. The only way through was to
- * click the sentence on the page, select the whole paragraph and retype it
- * with the numbers in place of the braces, destroying the merge field. The
- * tester did that four times.
+ * ── WHAT WAS HERE, AND WHY IT IS GONE (scope 11.13, 2026-09-19) ───────────
+ * This file used to own the **Details group**: a reconciled list of rows, a
+ * plain-word label per row, a "still to fill in" counter and a side panel of
+ * boxes. Brandon, on the fifth telling:
  *
- * ── THE RULE ──────────────────────────────────────────────────────────────
- * **Every blank the document can carry is a field somewhere.** A token that
- * appears on a customer-facing page and that nothing else fills gets a row in
- * the Details group, with a plain-word label, and it is filled by typing in a
- * box. Never by editing the page over the top of the token.
+ *   "You have all this random details on the side. I never asked for any of
+ *    that. The fields should be dynamic. Load a customer and it auto loads
+ *    customer information."
  *
- * ── WHERE THE VALUES LIVE: ONE HOME, `settings.merge` (N-7) ──────────────
- * `doc.settings.merge` — a flat `token -> value` map on the document's own
- * settings, carried tolerantly and absent when empty by `model.ts`
- * `deserialise` (handoff A-3) and by oliver-api `lib/documentModel.js`, and
- * read by `lib/proposalContext.js` so a value typed here reaches the canvas,
- * the customer's page AND the PDF.
+ * The Details group was invented on 2026-09-16 to give the blanks one home. It
+ * was never in scope, and 11.13 deletes it rather than hiding it. Gone with
+ * it: `DetailRow`, `readDetails`, `writeDetails`, `reconcileDetails`,
+ * `detailsStartOpen`, `detailsMerge`, `readLegacyDetails`, `LEGACY_DETAILS_KEY`
+ * and `PACK_LABELS` as a UI list — and the `DetailsGroup` component in
+ * `ProposalBuilder.tsx`, and the counter beside it.
  *
- * It used to live on `sections[0].meta.detailValues`, because `model.ts` was
- * another stream's file and carried only three settings keys. Both halves have
- * landed, so the second home is gone: `readDetails` still READS the old place
- * (documents saved between 2026-09-16 and now carry it) and `writeDetails`
- * only ever writes the new one AND clears the old, so a document is migrated
- * the first time anybody touches it. Two carriers for one fact is how the
- * canvas and the PDF started disagreeing (D-03); there is one now.
+ * ── WHAT REPLACES IT ──────────────────────────────────────────────────────
+ *   · a fact that lives in a RECORD  → `proposal/recordWidgets.ts`. The
+ *     Customer, Service Location and Business Info widgets fill themselves the
+ *     moment the customer is picked, and the author edits them on the page.
+ *   · a fact that lives in NO record → a merge token, edited where it appears
+ *     on the page. The chip the renderer already draws in edit mode is the
+ *     control; clicking it is how a value is typed. No side list.
  *
- * Two homes were tried before that and each is worse:
- *   · a hidden `visibility:"internal"` SECTION holding a key_value_table. It
- *     worked, and then broke the document: a widget added with nothing
- *     selected is appended to the LAST section (D-11), the store was the last
- *     section, and three priced property blocks landed inside it — internal,
- *     so excluded from the customer copy, the PDF and the total. Found by
- *     driving it, not by reading it. A store must not be somewhere a widget
- *     can land.
- *   · the same section placed FIRST dodges that and puts a dashed amber box
- *     above the title band on every document.
- *
- * `settings` is none of those things: it is not a section, not a widget, not a
- * render target, and it survives save → close → reopen in both repos.
- *
- * LABELS ARE NOT STORED. A row's plain words are derived every time from the
- * template's declaration, the shipped clause packs and the merge-tag catalogue
- * (`plainLabel`), so a label improved in one place improves on every document
- * that ever carried the token — and the store stays the flat map the server
- * already knows how to read.
+ * ── WHAT STAYS, AND WHY EACH ONE ──────────────────────────────────────────
+ *   · `settings.merge` — still the ONE store of typed merge values. 11.13.2
+ *     says so in as many words, so stored documents keep working. What changed
+ *     is only WHERE it is written from: the page, not a panel.
+ *   · `blankTokens` — still the ONE blank rule. Send walks the page and
+ *     refuses over any merge tag that is on a customer-facing widget and
+ *     resolves to nothing, at any depth (the D-164 rule, kept whole).
+ *   · `widgetForToken` — where the blank lives, so the refusal can JUMP to it
+ *     on the page instead of to a box that no longer exists.
+ *   · `plainLabel` — plain words for a token in the refusal sentence and on
+ *     the on-page editor. Never the raw token, on any screen.
+ *   · `bindPlansToLocation`, `documentLogo`, `parseMoney` — three small facts
+ *     the document itself carries, unrelated to the group.
  *
  * Pure. No React, no fetch — so all of it is `node --test`.
  */
 import { walkWidgets, type BuilderDocument, type Section } from "../model";
 import { patchNode } from "../treeOps";
 import { tokensIn, tagLabel, lookup, BUILTIN_TAGS, type MergeContext } from "../merge";
-
-/**
- * The key the values USED to live under, on `sections[0].meta`.
- *
- * Kept only so `readDetails` can still open a document written before N-7 and
- * so the test that proves the migration has a name for the old place. Nothing
- * writes it.
- */
-export const LEGACY_DETAILS_KEY = "detailValues";
-
-/** One blank the document carries. */
-export interface DetailRow {
-  /** The merge token exactly as it is written on the page, e.g. `snow_trigger`. */
-  token: string;
-  /** Plain words a home-services owner reads. NEVER the raw token. */
-  label: string;
-  /** What the author typed. Empty means still blank. */
-  value: string;
-  /** One line under the box saying what to put in it. Optional. */
-  help?: string;
-}
 
 /* ══════════════════════════════════════════════════════════════════════════
    Plain words for a token
@@ -88,12 +53,14 @@ export interface DetailRow {
  * Words for the tokens the SHIPPED clause packs and templates write.
  *
  * `{{snow_trigger}}` and `{{severe_event_threshold}}` are not the platform's
- * merge tags — they come out of `oliver-api lib/clausePacks.js`, the snow & ice
- * starter clauses — and they were two of the four names a first-time user was
- * shown and told to go and find. The prettifier below would turn them into
- * "Snow trigger" and "Severe event threshold", which is already better than a
- * token, but these are the words a snow contractor actually uses, and the help
- * line says what number goes in the box.
+ * merge tags — they come out of `oliver-api lib/clausePacks.js` — and a
+ * refusal that named them raw was two of the four names a first-time user was
+ * shown and told to go and find. These are the words a snow contractor uses.
+ *
+ * It is a LABEL TABLE, not a UI list: 11.13 deletes the side panel that drew a
+ * row per entry, and nothing iterates this any more. It is read one token at a
+ * time, by `plainLabel`, for the refusal sentence and the on-page editor's
+ * caption.
  */
 const PACK_LABELS: Record<string, { label: string; help: string }> = {
   snow_trigger: {
@@ -109,11 +76,6 @@ const PACK_LABELS: Record<string, { label: string; help: string }> = {
   response_time: { label: "Response time", help: "How long after the trigger you are on site — e.g. 4 hours" },
   season_start: { label: "Season starts", help: "The first date you are on call" },
   season_end: { label: "Season ends", help: "The last date you are on call" },
-  /* The two the commercial snow & ice agreement writes (D-164). The CLAUSE
-     around each of them ships as words in the template — "Invoices are due
-     …", "The smallest amount any single visit is billed at is …" — so what
-     the author types here is the short fact the sentence is missing, not a
-     paragraph squeezed into a one-line box. */
   payment_terms: {
     label: "Payment terms",
     help: "When an invoice is due — e.g. 30 days from the invoice date",
@@ -132,10 +94,10 @@ export function packDetail(token: string): { label: string; help: string } | und
 /**
  * Plain words for a token, and NEVER the token itself.
  *
- * In order: a label the template declared, then the shipped clause packs'
- * own vocabulary, then the platform's merge-tag catalogue, then a prettifier
- * that turns `gate_access_window` into "Gate access window". There is no
- * branch that returns the raw token to a screen.
+ * In order: a label the template declared, then the shipped clause packs' own
+ * vocabulary, then the platform's merge-tag catalogue, then a prettifier that
+ * turns `gate_access_window` into "Gate access window". There is no branch
+ * that returns the raw token to a screen.
  */
 export function plainLabel(token: string, declared: Record<string, string> = {}): string {
   const key = String(token ?? "").trim();
@@ -151,96 +113,60 @@ export function plainLabel(token: string, declared: Record<string, string> = {})
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : key;
 }
 
+/** The one line that says what goes in the box, where a token has one. */
+export function tokenHelp(token: string): string {
+  return PACK_LABELS[String(token ?? "").trim()]?.help || "";
+}
+
 /* ══════════════════════════════════════════════════════════════════════════
-   Reading the store
+   `settings.merge` — the ONE store, written FROM THE PAGE
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * The rows the document is carrying, in the order they were written.
+ * Every typed merge value the document is carrying.
  *
- * ONE home — `settings.merge` — read TOLERANTLY: a document written before
- * N-7 carries them on `sections[0].meta.detailValues`, and refusing to read
- * that would blank every trigger depth a person typed last week. The old place
- * is read and never written; the first `writeDetails` moves the document over.
+ * Tolerant, as it always was: a document written before 11.13 carries exactly
+ * the same map in exactly the same place, because the store never moved. Only
+ * the control that writes it did.
  */
-export function readDetails(doc: BuilderDocument): DetailRow[] {
-  const merge = (doc as any)?.settings?.merge;
-  if (merge && typeof merge === "object" && !Array.isArray(merge)) {
-    const out: DetailRow[] = [];
-    for (const [k, v] of Object.entries(merge as Record<string, unknown>)) {
-      const token = String(k ?? "").trim();
-      if (!token || v == null || typeof v === "object") continue;
-      out.push({ token, label: plainLabel(token), value: String(v) });
-    }
-    if (out.length) return out;
-  }
-  return readLegacyDetails(doc);
-}
-
-/** The pre-N-7 store, on the first section that carries one. Read only. */
-export function readLegacyDetails(doc: BuilderDocument): DetailRow[] {
-  for (const s of doc.sections) {
-    const rows = (s as any)?.meta?.[LEGACY_DETAILS_KEY];
-    if (!Array.isArray(rows)) continue;
-    return rows
-      .filter((r: any) => r && String(r.token ?? "").trim())
-      .map((r: any) => ({
-        token: String(r.token).trim(),
-        label: String(r.label ?? "").trim() || plainLabel(String(r.token).trim()),
-        value: String(r.value ?? ""),
-        ...(r.help ? { help: String(r.help) } : {}),
-      }));
-  }
-  return [];
-}
-
-/** Token → value, for the render context. Blank values are LEFT OUT, so the
- *  gap rule still counts them as unfilled rather than printing an empty run. */
-export function detailsMerge(rows: DetailRow[]): Record<string, string> {
+export function mergeValues(doc: BuilderDocument): Record<string, string> {
+  const raw = (doc as any)?.settings?.merge;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
   const out: Record<string, string> = {};
-  for (const r of rows) if (String(r.value ?? "").trim()) out[r.token] = String(r.value);
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const token = String(k ?? "").trim();
+    if (!token || v == null || typeof v === "object") continue;
+    out[token] = String(v);
+  }
   return out;
 }
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Writing the store
-   ══════════════════════════════════════════════════════════════════════════ */
-
 /**
- * The document with exactly these Details rows, in the ONE home.
+ * The document with ONE merge value set, from the page.
  *
- * Writes `settings.merge` and CLEARS the pre-N-7 `meta.detailValues` from every
- * section, so a document that has been touched carries the values in exactly
- * one place. A BLANK value is not stored — the gap rule counts an absent token
- * as unfilled, and storing `""` would be a second way of saying the same thing.
+ * A BLANK value REMOVES the key rather than storing `""`: the blank rule counts
+ * an absent token as unfilled, and a stored empty string would be a second way
+ * of saying the same thing — two answers to "is this filled in", which is the
+ * shape of every defect this file has ever carried.
  *
- * An empty list removes the key entirely, so "fill nothing in" leaves the
- * document byte-identical to what it was — the same discipline `style` follows
- * in §11.8.
+ * Returns THE SAME DOCUMENT by identity when nothing changes, so opening a
+ * draft and clicking about leaves it byte-identical on save.
  */
-export function writeDetails(doc: BuilderDocument, rows: DetailRow[]): BuilderDocument {
-  const merge: Record<string, string> = {};
-  for (const r of rows) {
-    const token = String(r?.token ?? "").trim();
-    const value = String(r?.value ?? "");
-    if (token && value.trim()) merge[token] = value;
-  }
+export function setMergeValue(doc: BuilderDocument, token: string, value: string): BuilderDocument {
+  const key = String(token ?? "").trim();
+  if (!key) return doc;
+  const current = mergeValues(doc);
+  const next = String(value ?? "");
+  const wanted = next.trim() ? next : undefined;
+  if ((current[key] ?? undefined) === wanted) return doc;
+
+  const merge: Record<string, string> = { ...current };
+  if (wanted == null) delete merge[key]; else merge[key] = wanted;
 
   const settings: BuilderDocument["settings"] = { ...doc.settings };
-  delete settings.merge;
-  if (Object.keys(merge).length) settings.merge = merge;
-
-  const sections = doc.sections.map((s) => {
-    if (!(s as any).meta || !(LEGACY_DETAILS_KEY in ((s as any).meta as object))) return s;
-    const meta: Record<string, unknown> = { ...((s as any).meta as object) };
-    delete meta[LEGACY_DETAILS_KEY];
-    const next: Section = { ...s };
-    if (Object.keys(meta).length) (next as any).meta = meta;
-    else delete (next as any).meta;
-    return next;
-  });
-
-  return { ...doc, settings, sections };
+  delete (settings as any).merge;
+  if (Object.keys(merge).length) (settings as any).merge = merge;
+  return { ...doc, settings };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -250,14 +176,10 @@ export function writeDetails(doc: BuilderDocument, rows: DetailRow[]): BuilderDo
 /**
  * Every token used on a customer-facing page, in reading order.
  *
- * ── IT WALKS THE TREE (D-164 follow-up) ───────────────────────────────────
- * This read `c.widgets` and stopped there, so a merge tag inside a BOX was
- * invisible to the Details group: the snow & ice agreement's cover puts its
- * four key facts in a row container, and the two service-term tokens only had
- * boxes at all because the title band happened to repeat them. Take the
- * repetition away — one fact, one place — and the service term had no field
- * anywhere, which is D-03 all over again. `walkWidgets` is the engine's own
- * walk (§11.12) and finds a widget at any depth.
+ * IT WALKS THE TREE (D-164 follow-up): a merge tag inside a BOX is a tag on
+ * the page. `walkWidgets` is the engine's own walk (§11.12) and finds a widget
+ * at any depth; a flat pass over the top of each column is what let a snow
+ * agreement go out with both service-term dates empty.
  */
 export function tokensUsedBy(doc: BuilderDocument): string[] {
   const out: string[] = [];
@@ -274,29 +196,15 @@ export function tokensUsedBy(doc: BuilderDocument): string[] {
 }
 
 /**
- * THE ONE BLANK RULE — what Send refuses over (2026-09-18).
+ * THE ONE BLANK RULE — what Send refuses over.
  *
  * **Any merge tag that is ON the document and resolves to nothing is a blank.**
  * One rule, one list, whether the tag is a clause pack's own (`snow_trigger`)
  * or one of the platform's built-ins (`contract.start_date`).
  *
- * ── THE DEFECT ────────────────────────────────────────────────────────────
- * A commercial snow & ice agreement was SENT with both service-term dates
- * empty, and the cover printed two blank rules where the dates belong. The
- * guard it walked past read the top of each column only — `for (section) for
- * (column) for (widget)` — and the cover's four key facts are a ROW, a
- * container. A container has children, not props, so the walk looked at its
- * (absent) props, found no text, and reported nothing missing. The two term
- * tags were the only tags that lived inside it.
- *
- * The Details group had already been moved onto `walkWidgets` for exactly this
- * reason, so the page offered boxes for two dates that Send never asked about:
- * two answers to "what is still blank". There is one now — `tokensUsedBy` is
- * the single walk, and the guard is a filter over it.
- *
  * A tag that is NOT on the document is never asked for: the list starts from
  * what the page uses, so taking a paragraph off the page takes its blank with
- * it, which is what the refusal's own words offer as the second way out.
+ * it — which is what the refusal's own words offer as the second way out.
  */
 export function blankTokens(doc: BuilderDocument, merge: MergeContext): string[] {
   return tokensUsedBy(doc).filter((token) => lookup(merge, token) == null);
@@ -305,10 +213,9 @@ export function blankTokens(doc: BuilderDocument, merge: MergeContext): string[]
 /**
  * The words Send refuses in — ONE sentence, and both buttons say it.
  *
- * A first draft and a revision each carried their own copy of this string, and
- * a copy is a place the two can drift: the sentence names the blanks, says
- * where the boxes are and offers the second way out, and a fix to one of those
- * three in the wrong copy is a refusal that lies on one of the two buttons.
+ * 11.13.2: the refusal "jumps to the first blank ON THE PAGE". So the sentence
+ * says where the value is typed — on the page, where it appears — and no
+ * longer points at Details boxes that do not exist.
  *
  * Four names at most, so a document with eleven blanks refuses in a sentence a
  * person reads rather than a list they scroll. PLAIN WORDS every time —
@@ -317,111 +224,11 @@ export function blankTokens(doc: BuilderDocument, merge: MergeContext): string[]
 export function blanksRefusal(blanks: string[], labels: Record<string, string> = {}): string {
   const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
   return `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}).`
-    + " Type them into the Details boxes on the left, or take them off the page, before sending.";
+    + " Click the highlighted words on the page and type what goes there, or take them off the page, before sending.";
 }
 
 /**
- * The Details group, reconciled against the document as it is NOW.
- *
- * · a token the page uses that nothing else fills gets a row (kept if it
- *   already had one, so a value is never lost by adding a section);
- * · a row whose token has left the page but still holds a value is KEPT and
- *   marked `stale` by the caller's own eye — we keep it rather than throw the
- *   author's typing away when they delete a paragraph and undo;
- * · a row whose token has left the page and is empty is dropped.
- *
- * @param autoFilled tokens the adapter fills from the customer/business pick —
- *                   those are NOT the author's to type and get no row.
- * @param declared   template-declared plain labels and help text.
- */
-export function reconcileDetails(
-  doc: BuilderDocument,
-  autoFilled: Record<string, string>,
-  declared: Record<string, { label: string; help?: string }> = {},
-): DetailRow[] {
-  const existing = new Map(readDetails(doc).map((r) => [r.token, r]));
-  const used = tokensUsedBy(doc);
-  const out: DetailRow[] = [];
-  const seen = new Set<string>();
-
-  for (const token of used) {
-    if (seen.has(token)) continue;
-    // Auto-filled means the customer pick answers it. A blank value in the
-    // context is NOT auto-filled — that is exactly the blank we want a box for.
-    if (String(autoFilled[token] ?? "").trim()) continue;
-    seen.add(token);
-    const prev = existing.get(token);
-    const d = declared[token] || packDetail(token);
-    out.push({
-      token,
-      label: d?.label || prev?.label || plainLabel(token),
-      value: prev?.value ?? "",
-      ...(d?.help ? { help: d.help } : prev?.help ? { help: prev.help } : {}),
-    });
-  }
-
-  // Values the author typed for tokens no longer on the page. Kept, last.
-  for (const [token, row] of existing) {
-    if (seen.has(token)) continue;
-    if (!String(row.value ?? "").trim()) continue;
-    out.push(row);
-  }
-  return out;
-}
-
-/**
- * DOES THE DETAILS GROUP OPEN SHOWING THE FILLED ROWS? (D-164 follow-up)
- *
- * The group hides filled rows behind "N filled" so nine merge fields and two
- * blanks show the two. That is right for what the AUTHOR typed — and wrong for
- * what the TEMPLATE shipped: the commercial snow & ice agreement arrives with
- * the trigger depth already at "2 inches", and the group opened reading
- * "1 filled" with the box out of sight. A default nobody can see is a default
- * nobody checks, and the trigger depth is the number the cover, the scope, the
- * pricing page and the storm example all quote.
- *
- * So: when the document ARRIVES with something already in it, the group opens
- * with the filled rows showing. The author can still collapse them, and a
- * document that arrives with everything blank opens as it always did.
- *
- * Pure, and read once — when the rows first appear — so typing into the last
- * blank box does not fold the group up underneath the caret.
- */
-export function detailsStartOpen(rows: DetailRow[]): boolean {
-  return rows.some((r) => String(r?.value ?? "").trim());
-}
-
-/**
- * THE LOCATION A PROPERTY PLAN IS ABOUT, defaulted to the DOCUMENT's (D-164).
- *
- * Section 10 of the snow & ice agreement is the crew's own sheet, and it is the
- * only part of the document that writes back to the property record. It shipped
- * with `locationId: ""`, so a document whose customer and location chip were
- * already set still opened section 10 saying "Choose a location…" — the author
- * had to answer, on one widget, a question the document had already answered.
- *
- * When the document has a chosen location and a plan has none, the plan is
- * BOUND to it. A plan the author has pointed somewhere else is left exactly
- * where they pointed it, and the picker in the panel is how they change it.
- *
- * Returns the SAME DOCUMENT by identity when there is nothing to do, so a draft
- * that is merely opened is byte-identical on save.
- */
-export function bindPlansToLocation(doc: BuilderDocument, locationId: string): BuilderDocument {
-  const id = String(locationId ?? "").trim().toLowerCase();
-  if (!id) return doc;
-  // `walkWidgets` walks the TREE (D-156), so a plan the author dragged into a
-  // box is found too; `patchNode` is the one writer of a node's props.
-  const unbound = walkWidgets(doc)
-    .filter(({ widget }) => widget.kind === "property_plan"
-      && !String((widget.props as any)?.locationId ?? "").trim())
-    .map(({ widget }) => widget.id);
-  if (!unbound.length) return doc;
-  return unbound.reduce((d, widgetId) => patchNode(d, widgetId, { locationId: id }), doc);
-}
-
-/**
- * WHERE a blank lives on the page, so a problem can jump to it (N-1).
+ * WHERE a blank lives on the page, so a problem can jump to it.
  *
  * The first customer-facing widget whose props mention the token, addressed by
  * the two markers the canvas already edits through — the section's id and the
@@ -433,8 +240,6 @@ export function widgetForToken(
 ): { sectionId: string; widgetId: string } | null {
   const needle = String(token ?? "").trim();
   if (!needle) return null;
-  // The TREE, for the reason `tokensUsedBy` gives: a problem that cannot point
-  // at a token inside a box is a "Take me to the first one" that goes nowhere.
   for (const { widget, section } of walkWidgets(doc)) {
     if (section.visibility !== "customer") continue;
     if (tokensIn(JSON.stringify(widget.props ?? {})).includes(needle)) {
@@ -445,20 +250,32 @@ export function widgetForToken(
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Two more small facts the DOCUMENT itself carries
+   Three small facts the DOCUMENT itself carries
    ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * THE LOCATION A PROPERTY PLAN IS ABOUT, defaulted to the DOCUMENT's (D-164).
+ *
+ * When the document has a chosen location and a plan has none, the plan is
+ * BOUND to it. A plan the author has pointed somewhere else is left exactly
+ * where they pointed it. Returns the SAME DOCUMENT by identity when there is
+ * nothing to do, so a draft that is merely opened is byte-identical on save.
+ */
+export function bindPlansToLocation(doc: BuilderDocument, locationId: string): BuilderDocument {
+  const id = String(locationId ?? "").trim().toLowerCase();
+  if (!id) return doc;
+  const unbound = walkWidgets(doc)
+    .filter(({ widget }) => (widget.kind === "property_plan" || widget.kind === "service_location")
+      && !String((widget.props as any)?.locationId ?? "").trim())
+    .map(({ widget }) => widget.id);
+  if (!unbound.length) return doc;
+  return unbound.reduce((d, widgetId) => patchNode(d, widgetId, { locationId: id }), doc);
+}
 
 /**
  * The logo the TITLE BAND wears (D-39).
  *
- * §8 requirement 1 says every part of the title page is editable, and the logo
- * was the one part that was not: the inspector offered "Dark band" or "Light
- * with accent rule" and nothing else, so a document could never carry a
- * different mark from the business's default — a co-branded proposal, a
- * division's own logo, a one-off.
- *
- * `""` / absent  → the business's brand logo (unchanged for every existing
- *                  document, which is why absence is the default)
+ * `""` / absent  → the business's brand logo
  * `"none"`       → no logo, the business NAME in its place
  * a data: URL    → the picture the author chose
  *
@@ -484,9 +301,11 @@ export function parseMoney(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** Re-exported so nothing else has to know `Section` is a model type. */
+export type { Section };
+
 export default {
-  LEGACY_DETAILS_KEY, plainLabel, packDetail, readDetails, readLegacyDetails,
-  detailsMerge, writeDetails, tokensUsedBy, blankTokens, blanksRefusal,
-  reconcileDetails, widgetForToken,
-  detailsStartOpen, bindPlansToLocation, documentLogo, parseMoney,
+  plainLabel, packDetail, tokenHelp, mergeValues, setMergeValue,
+  tokensUsedBy, blankTokens, blanksRefusal, widgetForToken,
+  bindPlansToLocation, documentLogo, parseMoney,
 };

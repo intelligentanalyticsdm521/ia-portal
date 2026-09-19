@@ -26,7 +26,7 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { BuilderShell } from "../BuilderShell";
 import type { BuilderProblem } from "../problems";
 import {
-  addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
+  addSection, addWidget, deserialise, emptyColumn, emptyDocument, makeSection, makeWidget, setPropPath,
   // `patchNode` is THE ONE WRITER of a node's props, at any depth, with the
   // model's own rules on it (it comes from `treeOps`, re-exported here so
   // there is one door). See `patch` below for the walk this replaced.
@@ -34,10 +34,21 @@ import {
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
-  bindPlansToLocation, blankTokens, blanksRefusal, detailsMerge, detailsStartOpen,
-  documentLogo, parseMoney, plainLabel, readDetails, reconcileDetails, widgetForToken,
-  writeDetails, type DetailRow,
+  bindPlansToLocation, blankTokens, blanksRefusal, documentLogo, mergeValues, parseMoney,
+  plainLabel, setMergeValue, tokenHelp, widgetForToken,
 } from "./documentDetails";
+/* 11.13.2 — the three widgets that fill themselves from the database. They
+   are what the DELETED Details group is replaced by, so the adapter draws
+   them (`ctx.extra`) and keeps their live values in one place. */
+import {
+  RECORD_WIDGET_DEFS, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
+  type RecordBook,
+} from "./recordWidgets";
+import { upgradeProposalDocument } from "./upgradeProposal";
+import {
+  TERMS_TILE_KIND, isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
+  type CatalogueTileKind,
+} from "./catalogueTiles";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
@@ -52,7 +63,7 @@ import { NameBlockDialog } from "../NameBlockDialog";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
-  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker,
+  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker, CatalogueMultiPicker,
   type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
 /* D-156 — the atomic widgets. The adapter owns the controls only it can draw:
@@ -176,8 +187,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   }, []);
   /** D-36 — "Saved" said in the builder, because the builder STAYS OPEN now. */
   const [saved, setSaved] = useState<string | null>(null);
-  /** Which Details box the blanks counter is sending the author to. */
-  const [focusToken, setFocusToken] = useState<string | null>(null);
+  /* `focusToken` LIVED HERE and is deleted with the Details group: there is no
+     side box to put a caret in any more. `editingToken`, declared beside the
+     record book below, is the one piece of state that says "this token is
+     being typed", and the engine's own jump scrolls the page to the widget. */
   /**
    * The id of the row being edited, once one exists.
    *
@@ -310,7 +323,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       }
       setPickedLocationIds((row.location_ids || []).map((x: string) => String(x).toLowerCase()));
       if (row.valid_until) setValidUntil(String(row.valid_until).slice(0, 10));
-      const opened = openProposalDocument(row) || emptyDocument();
+      // UPGRADE ON OPEN (11.13.3). Every kind the widget set deleted becomes
+      // the standard parts that say the same thing, the first time anybody
+      // opens the document. Same document by identity when there is nothing to
+      // convert, so a draft merely opened saves byte-identical.
+      const opened = upgradeProposalDocument(openProposalDocument(row) || emptyDocument());
       setDoc(applyBrandDefaults(opened, brandDefaults(kit)));
       setResetKey((k) => k + 1);
       setPicking(false);
@@ -341,7 +358,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       if (p.valid_until) setValidUntil(String(p.valid_until).slice(0, 10));
       if (p.tax_rate != null) setTaxRate(String(Math.round(Number(p.tax_rate) * 10000) / 100));
       if (p.discount_amount != null) setDiscount(String(Number(p.discount_amount) || 0));
-      const opened = row.document ? deserialise(row.document) : emptyDocument();
+      const opened = upgradeProposalDocument(row.document ? deserialise(row.document) : emptyDocument());
       setDoc(opened);
       setBaseDoc(row.base_document ? deserialise(row.base_document) : null);
       setRequestItems(Array.isArray(row.request_items) ? row.request_items : []);
@@ -409,21 +426,73 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     return merge;
   }, [contact, pickedLocations, validUntil, identity]);
 
-  /* ── The Details group: every blank is a field (D-03) ────────────────── */
+  /* ── THE RECORD BOOK — what the three dynamic widgets fill from ──────── */
   //
-  // The rows live ON the document (documentDetails.ts says where and why), so
-  // they save, close and reopen with it. `details` is the reconciled view the
-  // panel renders: one row per token the page uses that the customer pick does
-  // not already answer, plus any value the author typed for a token they have
-  // since deleted.
-  const details = useMemo(
-    () => reconcileDetails(doc, autoMerge, declaredDetails(doc)),
-    [doc, autoMerge],
-  );
-  const setDetail = useCallback((token: string, value: string) => {
-    setDoc((d) => writeDetails(d, reconcileDetails(d, autoMerge, declaredDetails(d))
-      .map((r) => (r.token === token ? { ...r, value } : r))));
-  }, [autoMerge]);
+  // 11.13.2: "Every widget bound to the customer, the service location or the
+  // business fills itself from the database the moment the customer is picked
+  // or changed." This is that database reading, in the ONE shape
+  // `recordWidgets.ts` draws from — so a re-pick is a new object here and
+  // every Customer / Service Location / Business Info block on the page
+  // refills on the next render. Nothing is copied ONTO the document, which is
+  // why changing the customer refills rather than leaving last week's name in
+  // the JSON; an edited field is an `overrides` entry and survives untouched.
+  const recordBook = useMemo<RecordBook>(() => {
+    const primary = pickedLocations[0];
+    const person = [contact?.first_name, contact?.last_name].filter(Boolean).join(" ");
+    const clean = (o: Record<string, string>) => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(o)) if (String(v ?? "").trim()) out[k] = String(v);
+      return out;
+    };
+    return {
+      customer: clean({
+        name: contact?.company_name || person,
+        company: contact?.company_name || "",
+        contact: person,
+        email: contact?.email || "",
+        phone: (contact as any)?.phone || (contact as any)?.mobile_phone || "",
+        billing_address: addressLine(primary),
+      }),
+      service_location: clean({
+        name: primary?.name || "",
+        address: addressLine(primary),
+        site_contact: (primary as any)?.site_contact || "",
+        access_notes: primary?.access_notes || "",
+      }),
+      business_info: clean({
+        logo: identity.logoUrl || kit.logo_url || "",
+        name: identity.name || "",
+        phone: identity.phone || "",
+        email: identity.email || "",
+        licence: (identity as any).licence || "",
+      }),
+    };
+  }, [contact, pickedLocations, identity, kit]);
+
+  /**
+   * THE MERGE VALUE BEING TYPED, ON THE PAGE (11.13.2, item 3).
+   *
+   * A fact that lives in no record — a term date, a trigger depth — is a merge
+   * token where it appears in the sentence. Clicking its chip opens ONE box,
+   * beside the widget it is in; typing writes `settings.merge`, the store that
+   * never moved. There is no side list, and Send's refusal opens this same box
+   * on the first blank.
+   */
+  const [editingToken, setEditingToken] = useState<string | null>(null);
+
+  /**
+   * THE TWO TILES THAT LOAD PRODUCTS (11.13.2 item 4).
+   *
+   * Pressing **Product Cards** or **Product Line Items** in the pane does not
+   * insert a widget — it opens the ONE catalogue picker, multi-select, and
+   * what lands is one atomic `catalog_card` / `price_line` per pick. This is
+   * the tile that was pressed, or null when the picker is closed.
+   */
+  const [pickingCatalogue, setPickingCatalogue] = useState<CatalogueTileKind | null>(null);
+  /** The Terms tile's picker: saved clauses in, plain text out (11.13.2 item 5). */
+  const [pickingTerms, setPickingTerms] = useState(false);
+  /** Where the picked widgets go: after the section the author is looking at. */
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
 
   /**
    * SECTION 10 IS ABOUT THE LOCATION THE DOCUMENT IS ABOUT (D-164).
@@ -563,9 +632,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
 
   /* ── The one render context ──────────────────────────────────────────── */
   const ctx: RenderContext = useMemo(() => {
-    // The typed Details first, the customer pick over the top: the customer's
-    // own name is authoritative and is never something to type twice.
-    const merge: Record<string, string> = { ...detailsMerge(readDetails(doc)), ...autoMerge };
+    // What was typed on the page first, the customer pick over the top: the
+    // customer's own name is authoritative and is never something to type
+    // twice. `settings.merge` is still the ONE store (11.13.2) — only the
+    // control that writes it moved onto the page.
+    const merge: Record<string, string> = { ...mergeValues(doc), ...autoMerge };
 
     const locationMap: Record<string, LocationLite> = {};
     for (const l of locations) locationMap[String(l.location_id).toLowerCase()] = l;
@@ -593,13 +664,18 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
+      /* 11.13.2 — the three record widgets, drawn by the adapter because only
+         the adapter has the customer, the site and the business in its hand.
+         `extra` is the engine's own hook for exactly this (render.ts), so
+         render.ts gains no `case` and there is no second renderer table. */
+      extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, recordBook) : null),
       totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
       // different sections.
       ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff]);
+  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff, recordBook]);
 
   const totals = ctx.totals;
 
@@ -706,11 +782,16 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    */
   const blanks = useMemo(() => blankTokens(doc, ctx.merge), [doc, ctx.merge]);
 
-  /** Plain words for a token, as the Details group is showing them. ONE map,
-   *  read by the problems list and by both Send refusals. */
-  const detailLabels = useMemo(
-    () => Object.fromEntries(details.map((d) => [d.token, d.label])),
-    [details]);
+  /** Plain words for every token the page uses. ONE map, read by the problems
+   *  list, by both Send refusals and by the on-page editor's caption. The
+   *  TEMPLATE's own labels win, then the shipped clause packs, then the
+   *  platform's catalogue — `plainLabel` is the single ladder. */
+  const detailLabels = useMemo(() => {
+    const declared = declaredDetails(doc);
+    const out: Record<string, string> = {};
+    for (const [token, d] of Object.entries(declared)) out[token] = d.label;
+    return out;
+  }, [doc]);
 
   /**
    * WHAT IS STILL MISSING, in the engine's shape (A-1 / N-1).
@@ -960,12 +1041,27 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         problems={problems}
         refusal={refusal}
         onDismissRefusal={() => setRefusal(null)}
-        /* The engine scrolls the page to the blank; only this adapter knows
-           that the box it is typed into is in its own Details group. */
+        /* 11.13.2 — "the refusal jumps to the first blank ON THE PAGE". The
+           engine scrolls to the widget (`problem.focus`); this opens the ONE
+           box on the token that is blank, where it appears in the sentence.
+           It used to put the caret in a Details box in the side panel, and
+           that panel is deleted. */
         onFocusProblem={(problem) => {
           const token = problem.id.startsWith("blank:") ? problem.id.slice(6) : "";
-          if (token) setFocusToken(token);
+          if (token) setEditingToken(token);
         }}
+        /* Clicking the chip the renderer draws round an unfilled merge tag is
+           how a value with no record behind it is typed (11.13.2 item 3). */
+        onTokenClick={(token) => setEditingToken(token)}
+        /* 11.13.2 item 4 — the two product tiles open the ONE picker instead
+           of inserting a widget. `false` is the engine's own "I handled it". */
+        onInsertWidget={(def) => {
+          if (!isPickerTile(def.kind)) return true;
+          if (def.kind === TERMS_TILE_KIND) { setPickingTerms(true); return false; }
+          setPickingCatalogue(def.kind as CatalogueTileKind);
+          return false;
+        }}
+        onSelectionChange={(s) => setSelectedSectionId(s?.sectionId ?? null)}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
            was the one that did not honour it. Save draft, which is what the
            other three do: it saves and stays open. */
@@ -1137,18 +1233,12 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 ? PER_EVENT_SENTENCE
                 : totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
             </div>
-            {/* D-35's chip row LIVED HERE and is deleted: the engine's own
-                "N details still to fill in / Take me to the first one" button
-                (LeftPane, from `problems`) is the one counter now, and two
-                counters over one fact is how they start disagreeing. The
-                Details BOXES stay — the list says what is missing, the boxes
-                are where it is typed. */}
-            <DetailsGroup
-              rows={details}
-              onSet={setDetail}
-              focusToken={focusToken}
-              onFocused={() => setFocusToken(null)}
-            />
+            {/* THE DETAILS GROUP LIVED HERE AND IS DELETED (11.13, 2026-09-19).
+                Brandon: "You have all this random details on the side. I never
+                asked for any of that." Every blank is typed where it appears
+                on the page now — the chip is the control — and the engine's
+                own "N details still to fill in / Take me to the first one"
+                button is the one counter. Nothing renders a list of boxes. */}
             {saved && (
               <div data-saved-tick="1" style={{ color: "#047857", marginTop: 6, fontWeight: 600 }}>
                 ✓ {saved}
@@ -1170,6 +1260,95 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           </div>
         }
       />
+
+      {/* 11.13.2 item 4 — the ONE catalogue picker, multi-select, opened by
+          the Product Cards / Product Line Items tiles. What it drops is atomic
+          `catalog_card` / `price_line` widgets, never a "products" widget. */}
+      {pickingCatalogue && (
+        <IadmModal
+          open
+          size="info"
+          product="oliver"
+          eyebrow="OLIVER · Products & services"
+          title={pickingCatalogue === "product_cards" ? "Add product cards" : "Add priced lines"}
+          onClose={() => setPickingCatalogue(null)}
+        >
+          <div style={{ padding: 16 }}>
+            <CatalogueMultiPicker
+              offerings={offerings}
+              loading={catalogueLoading}
+              what={pickingCatalogue === "product_cards" ? "cards" : "lines"}
+              onCancel={() => setPickingCatalogue(null)}
+              onAdd={(picks) => {
+                const nodes = nodesForPicks(pickingCatalogue, picks);
+                if (!nodes.length) { setPickingCatalogue(null); return; }
+                // ONE section, after the one the author is looking at — so the
+                // cards land where they were looking and one Undo takes the
+                // whole pick back, rather than one press per card.
+                const at = selectedSectionId
+                  ? doc.sections.findIndex((s) => s.id === selectedSectionId) + 1
+                  : undefined;
+                const section = makeSection({
+                  label: pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing",
+                  columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                });
+                setDoc((d) => addSection(d, section, at === 0 ? undefined : at));
+                setPickingCatalogue(null);
+                setSaved(`Added ${nodes.length === 1 && pickingCatalogue === "product_cards" ? picks.length : nodes.length} from your catalogue.`);
+              }}
+            />
+          </div>
+        </IadmModal>
+      )}
+
+      {/* 11.13.2 item 5 — Terms: pick saved clauses, and they land as plain
+          Text Editor widgets. No live link back to the library: a term
+          somebody signed must not change because the library did. */}
+      {pickingTerms && (
+        <IadmModal
+          open
+          size="info"
+          product="oliver"
+          eyebrow="OLIVER · Your saved terms"
+          title="Add terms"
+          onClose={() => setPickingTerms(false)}
+        >
+          <div style={{ padding: 16 }}>
+            <ClausePicker
+              clauses={clauses}
+              onCancel={() => setPickingTerms(false)}
+              onAdd={(picked) => {
+                const nodes = nodesForClauses(picked);
+                if (!nodes.length) { setPickingTerms(false); return; }
+                const at = selectedSectionId
+                  ? doc.sections.findIndex((s) => s.id === selectedSectionId) + 1
+                  : undefined;
+                const section = makeSection({
+                  label: "Terms",
+                  columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                });
+                setDoc((d) => addSection(d, section, at === 0 ? undefined : at));
+                setPickingTerms(false);
+                setSaved(`Added ${picked.length} term${picked.length === 1 ? "" : "s"}. They are ordinary text now — edit them however you like.`);
+              }}
+            />
+          </div>
+        </IadmModal>
+      )}
+
+      {/* 11.13.2 item 3 — a fact that lives in no record, typed where it is.
+          ONE box, opened by clicking the chip on the page or by the Send
+          refusal's jump, writing the ONE store (`settings.merge`). */}
+      {editingToken && (
+        <TokenBox
+          token={editingToken}
+          label={plainLabel(editingToken, detailLabels)}
+          help={declaredDetails(doc)[editingToken]?.help || tokenHelp(editingToken)}
+          value={mergeValues(doc)[editingToken] || ""}
+          onSet={(v) => setDoc((d) => setMergeValue(d, editingToken, v))}
+          onClose={() => setEditingToken(null)}
+        />
+      )}
 
       {/* M-23's dialog, reused: "Save as template" asks the same two questions
           in the same box, instead of the browser's `window.prompt`. */}
@@ -1453,8 +1632,12 @@ function WidgetExtras({
   // A property block needs BOTH: which location it is, and what is being done
   // there. The location picker used to sit in a later branch that an early
   // return never reached, so a block could be priced but never placed.
+  /* ONE "Which location" CONTROL, for every widget that is about a site
+     (D-33). 11.13.2's Service Location joins the two the upgrade converts,
+     rather than declaring a second select with the same label two panels
+     apart — which is the exact defect D-33 was opened for. */
   const locationPicker = (widget.kind === "property_plan" || widget.kind === "address_block"
-    || widget.kind === "address_block") ? (
+    || widget.kind === "service_location") ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={LBL}>Which location</span>
@@ -1502,6 +1685,45 @@ function WidgetExtras({
       )}
     </div>
   ) : null;
+
+  /* ── 11.13.2 — the three record-bound widgets ────────────────────────── */
+
+  if (isRecordKind(widget.kind)) {
+    const retyped = overriddenOn(widget.kind, p);
+    return (
+      <div data-record-panel={widget.kind} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* The ONE location control, shared with every other site widget. */}
+        {locationPicker}
+        {/* `locationPicker` above is null for Customer and Business Info: the
+            document has ONE customer and ONE business, chosen in the top bar,
+            and a picker for either would be asking a question that is already
+            answered. Only Service Location has a choice to make. */}
+        {/* PUT IT BACK, per field. F.2's own words and F.2's own writer, so a
+            field retyped on a Customer block is undone exactly the way a price
+            retyped on a product card is. */}
+        {retyped.length > 0 ? (
+          <div data-record-overrides="1" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={LBL}>{TYPED_NOT_LIVE}</span>
+            <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
+              These stopped following the record when you typed over them.
+            </div>
+            {retyped.map((key) => (
+              <button key={key} type="button" style={miniBtn} data-put-back={key}
+                title={`${PUT_IT_BACK} — this field follows the customer's record again`}
+                onClick={() => patch(putFieldBackProps(p, key))}>
+                {PUT_IT_BACK}: {plainFieldName(key)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
+            Every field here comes straight from your own records. Type over one on the
+            page and it stops following — you can put it back from here.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   /* ── D-156's atomic widgets ─────────────────────────────────── */
 
@@ -2190,91 +2412,147 @@ function declaredDetails(doc: BuilderDocument): Record<string, { label: string; 
   return out;
 }
 
+/* THE DETAILS GROUP LIVED HERE AND IS DELETED (scope 11.13, 2026-09-19).
+
+   DetailsGroup drew a box per blank in the left pane. Brandon, on the fifth
+   telling: "You have all this random details on the side. I never asked for
+   any of that. The fields should be dynamic." Replace means delete, so the
+   component, its "N filled" collapse, its focus-a-box effect and the
+   focusToken state that drove it are gone rather than hidden behind a flag.
+
+   What a person does instead: a fact that lives in a RECORD is a Customer /
+   Service Location / Business Info widget that fills itself and is edited on
+   the page (recordWidgets.ts); a fact that lives in NO record is the chip the
+   renderer already draws round an unfilled merge tag, and TokenBox below is
+   the one box that opens when it is clicked. */
+
 /* ══════════════════════════════════════════════════════════════════════════
-   The Details group — D-03's answer
+   THE CLAUSE PICKER — the Terms tile's half (11.13.2 item 5)
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * Every blank the document carries, as a box with a plain-word label.
+ * Tick the terms that go on this document.
  *
- * Nothing in here is a token. "Service term starts", "Trigger depth", "Severe
- * event threshold" — the words a home-services owner would use — and one line
- * of help under any the template explained. Filled boxes collapse behind
- * "N filled", so a document with nine merge fields and two blanks shows the
- * two.
+ * Multi-select for the same reason the catalogue picker is: nobody adds one
+ * clause. The Add button says how many, and what lands is a Heading and a Text
+ * Editor per clause — ordinary text from the moment it is placed, which is
+ * what "plain text once placed" means and what stops a signed term changing
+ * because somebody edited the library.
  */
-function DetailsGroup({ rows, onSet, focusToken, onFocused }: {
-  rows: DetailRow[];
-  onSet: (token: string, value: string) => void;
-  focusToken: string | null;
-  onFocused: () => void;
+function ClausePicker({ clauses, onAdd, onCancel }: {
+  clauses: ClauseRow[];
+  onAdd: (picked: ClauseRow[]) => void;
+  onCancel: () => void;
 }) {
-  const [showFilled, setShowFilled] = useState(false);
-  const boxes = useRef<Record<string, HTMLInputElement | null>>({});
-  /* D-164 — A SHIPPED DEFAULT IS NOT HIDDEN BEHIND "1 filled". The snow & ice
-     agreement arrives with the trigger depth already at "2 inches" and the
-     group opened collapsed, so the one number the cover, the scope and the
-     storm example all quote was out of sight. Decided ONCE, when the rows
-     first arrive, by `detailsStartOpen` — not on every render, or typing into
-     the last blank box would fold the group up under the caret. */
-  const decided = useRef(false);
-
-  useEffect(() => {
-    if (decided.current || !rows.length) return;
-    decided.current = true;
-    if (detailsStartOpen(rows)) setShowFilled(true);
-  }, [rows]);
-
-  useEffect(() => {
-    if (!focusToken) return;
-    const el = boxes.current[focusToken];
-    if (el) { el.focus(); el.select(); }
-    onFocused();
-  }, [focusToken, onFocused]);
-
-  if (!rows.length) return null;
-  const blank = rows.filter((r) => !String(r.value ?? "").trim());
-  const filled = rows.filter((r) => String(r.value ?? "").trim());
-  const shown = showFilled ? rows : blank;
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const list = useMemo(
+    () => clauses.filter((c) => !q.trim() || String(c.title || "").toLowerCase().includes(q.trim().toLowerCase())),
+    [clauses, q]);
+  const picked = clauses.filter((c) => ticked.includes(String(c.clause_key)));
 
   return (
-    <div data-details-group="1" style={{
-      marginTop: 8, border: "1px solid #DBE7ED", background: "#fff",
-      borderRadius: 6, padding: "8px 9px",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-        <span style={{ ...LBL, color: "#0B1C24" }}>Details</span>
-        {filled.length > 0 && (
-          <button type="button" onClick={() => setShowFilled((v) => !v)}
-            title={showFilled ? "Show only the ones still blank" : "Show the ones already filled in too"}
-            style={{ background: "none", border: "none", color: "#1A7DB5", fontSize: 10, cursor: "pointer", padding: 0 }}>
-            {showFilled ? "Hide the filled ones" : `${filled.length} filled`}
-          </button>
+    <div data-clause-picker="1" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={LBL}>Which terms go on this document</span>
+      <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder="Search your saved terms…" title="Search your clause library" data-clause-search="1" />
+      <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        {!clauses.length && (
+          <div style={{ fontSize: 11, color: "#5A7A8A" }}>
+            You have no saved terms yet. Write one on a document and press “Save this clause”, and it is here every time.
+          </div>
         )}
-      </div>
-      <div style={{ fontSize: 10, color: "#5A7A8A", margin: "2px 0 6px", lineHeight: 1.4 }}>
-        These are the blanks on the page. Type them here — never over the top of the words on the document.
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {shown.map((r) => (
-          <label key={r.token} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{r.label}</span>
-            <input
-              ref={(el) => { boxes.current[r.token] = el; }}
-              data-detail-token={r.token}
-              style={{ ...INPUT, borderColor: String(r.value ?? "").trim() ? "#CBD5E1" : "#F59E0B" }}
-              value={r.value}
-              placeholder={r.help || `Type the ${r.label.toLowerCase()}`}
-              title={r.help || `${r.label} — it fills in wherever the document asks for it`}
-              onChange={(e) => onSet(r.token, e.target.value)}
-            />
-            {r.help && <span style={{ fontSize: 10, color: "#94A3B8" }}>{r.help}</span>}
+        {list.map((c) => (
+          <label key={String(c.clause_key)} data-clause={String(c.clause_key)}
+            style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 11, cursor: "pointer" }}>
+            <input type="checkbox" checked={ticked.includes(String(c.clause_key))}
+              title={`Put “${c.title}” on the page`}
+              onChange={() => setTicked((prev) => (prev.includes(String(c.clause_key))
+                ? prev.filter((k) => k !== String(c.clause_key))
+                : [...prev, String(c.clause_key)]))} />
+            <span>
+              <span style={{ fontWeight: 600, color: "#0B1C24" }}>{c.title}</span>
+              <span style={{ display: "block", color: "#5A7A8A" }}>
+                {String(c.body || "").slice(0, 120)}{String(c.body || "").length > 120 ? "…" : ""}
+              </span>
+            </span>
           </label>
         ))}
-        {!shown.length && (
-          <div style={{ fontSize: 11, color: "#047857" }}>Nothing is blank. This document is ready to send.</div>
+        {!list.length && !!clauses.length && (
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>
         )}
       </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" data-add-terms="1" disabled={!picked.length} style={miniBtn}
+          title={picked.length ? `Put ${picked.length} term(s) on the page as ordinary text` : "Tick a term first"}
+          onClick={() => onAdd(picked)}>
+          {picked.length ? `Add ${picked.length} term${picked.length === 1 ? "" : "s"}` : "Add terms"}
+        </button>
+        <button type="button" style={miniBtn} onClick={onCancel} title="Close without adding anything">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ONE BOX A BLANK IS TYPED INTO (11.13.2 item 3)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A fact that lives in no record — a term date, a trigger depth, payment terms
+ * — has no widget to bind to, so it is a merge token in the sentence that
+ * needs it. The renderer already draws a CHIP round an unfilled token in edit
+ * mode (`tokenChips`, render.ts, D-03). This is what the chip opens.
+ *
+ * ── WHY IT IS A BOX AND NOT A CONTENTEDITABLE RUN ─────────────────────────
+ * The token is INSIDE a run of prose that is itself editable. Making the chip
+ * separately editable would put a second caret target inside the first, and
+ * the paragraph's own read-back (`innerText`) would then carry whatever was
+ * typed into it AS PROSE — destroying the merge field, which is the exact
+ * thing D-03 was opened for. One box, anchored to the page, writing
+ * `settings.merge`; the sentence keeps its token and fills wherever it appears.
+ *
+ * It scrolls the chip into view and highlights it, so "jump to the first
+ * blank" lands somewhere a person can see.
+ */
+function TokenBox({ token, label, help, value, onSet, onClose }: {
+  token: string;
+  label: string;
+  help: string;
+  value: string;
+  onSet: (value: string) => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    box.current?.focus();
+    box.current?.select();
+    const chip = document.querySelector<HTMLElement>(`.bx-tok[data-token="${CSS.escape(token)}"]`);
+    chip?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [token]);
+
+  return (
+    <div data-token-box={token} role="dialog" aria-label={label}
+      style={{
+        position: "fixed", right: 28, bottom: 92, zIndex: 3000, width: 320,
+        background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8,
+        boxShadow: "0 10px 30px rgba(11,28,36,0.18)", padding: "10px 12px",
+      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24" }}>{label}</span>
+        <button type="button" onClick={onClose} title="Close"
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#5A7A8A", padding: 0 }}>
+          <X size={14} />
+        </button>
+      </div>
+      <div style={{ fontSize: 10, color: "#5A7A8A", margin: "2px 0 6px", lineHeight: 1.4 }}>
+        {help || "It fills in everywhere the document asks for it."}
+      </div>
+      <input ref={box} data-token-input={token} style={INPUT} value={value}
+        placeholder={help || `Type the ${label.toLowerCase()}`}
+        title={`${label} — typed once, filled everywhere it appears`}
+        onChange={(e) => onSet(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") onClose(); }} />
     </div>
   );
 }

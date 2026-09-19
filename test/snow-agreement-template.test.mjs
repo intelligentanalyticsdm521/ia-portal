@@ -40,8 +40,8 @@ import {
 import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import { SAMPLE_MERGE } from "../src/builder/templateLibraryModel.ts";
 import {
-  bindPlansToLocation, blankTokens, blanksRefusal, detailsStartOpen, plainLabel,
-  reconcileDetails, readDetails, tokensUsedBy,
+  bindPlansToLocation, blankTokens, blanksRefusal, mergeValues, packDetail, plainLabel,
+  tokenHelp, tokensUsedBy,
 } from "../src/builder/proposal/documentDetails.ts";
 import { priceLinePropsFromCatalogue, priceLineUnitNote } from "../src/builder/widgets/priceLine.ts";
 
@@ -224,7 +224,7 @@ describe("the document survives the round trip and the engine's own checks", () 
   test("the trigger depth survives the round trip, because it lives in settings.merge", () => {
     const back = deserialise(serialise(doc()));
     assert.deepEqual(back.settings.merge, { snow_trigger: "2 inches" });
-    assert.deepEqual(readDetails(back).map((r) => [r.token, r.value]), [["snow_trigger", "2 inches"]]);
+    assert.deepEqual(mergeValues(back), { snow_trigger: "2 inches" });
   });
 
   test("every widget on it is a kind the renderer DRAWS", () => {
@@ -288,35 +288,40 @@ describe("the blanks", () => {
   };
 
   test("the document asks for exactly the details the brief named", () => {
-    const rows = reconcileDetails(doc(), AUTO);
-    assert.deepEqual(rows.map((r) => r.token).sort(),
-      ["minimum_charge", "payment_terms", "severe_event_threshold", "snow_trigger"]);
+    // 11.13: there is no reconciled ROW LIST any more - the Details group is
+    // deleted. The question the brief really asked is "what is still blank on
+    // this page once the customer is picked?", which is the ONE blank rule.
+    assert.deepEqual(blankTokens(doc(), { ...AUTO, snow_trigger: "2 inches" }).sort(),
+      ["minimum_charge", "payment_terms", "severe_event_threshold"]);
   });
 
   test("every one of them has PLAIN WORDS and a placeholder, never a raw token", () => {
-    for (const row of reconcileDetails(doc(), AUTO)) {
-      assert.notEqual(row.label, row.token, `${row.token} is shown to the author as itself`);
-      assert.ok(!/[{}_]/.test(row.label), `"${row.label}" is not plain words`);
-      // `help` is what the Details box uses as its placeholder.
-      assert.ok(row.help && row.help.length > 15,
-        `${row.token} has no placeholder telling the author what goes in it`);
+    for (const token of blankTokens(doc(), AUTO)) {
+      const label = plainLabel(token);
+      assert.notEqual(label, token, `${token} is shown to the author as itself`);
+      assert.ok(!/[{}_]/.test(label), `"${label}" is not plain words`);
+      // `tokenHelp` is what the on-page box uses as its placeholder.
+      const help = tokenHelp(token);
+      if (packDetail(token)) {
+        assert.ok(help.length > 15, `${token} has no placeholder telling the author what goes in it`);
+      }
     }
   });
 
   test("the service term is answered by the customer pick, not typed twice", () => {
-    const tokens = reconcileDetails(doc(), AUTO).map((r) => r.token);
+    const tokens = blankTokens(doc(), AUTO);
     assert.ok(!tokens.includes("contract.start_date"));
     assert.ok(!tokens.includes("contract.end_date"));
-    // …and with nothing picked, they are boxes like everything else.
-    const cold = reconcileDetails(doc(), {}).map((r) => r.token);
+    // ...and with nothing picked, Send asks for them like everything else.
+    const cold = blankTokens(doc(), {});
     assert.ok(cold.includes("contract.start_date"));
     assert.ok(cold.includes("contract.end_date"));
     assert.equal(plainLabel("contract.start_date"), "Service term starts");
   });
 
   test("the trigger depth is already filled, so it is not one of the blanks", () => {
-    const rows = reconcileDetails(doc(), AUTO);
-    assert.equal(rows.find((r) => r.token === "snow_trigger").value, "2 inches");
+    assert.equal(mergeValues(doc()).snow_trigger, "2 inches");
+    assert.ok(!blankTokens(doc(), { ...AUTO, ...mergeValues(doc()) }).includes("snow_trigger"));
   });
 
   test("every token the page uses can be named in plain words", () => {
@@ -712,23 +717,22 @@ describe("priced on one basis, or not at all", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("what the author sees the moment the template loads", () => {
-  test("a SHIPPED default is not hidden behind \"1 filled\"", () => {
-    const rows = reconcileDetails(doc(), {});
-    assert.ok(rows.some((r) => r.token === "snow_trigger" && r.value === "2 inches"));
-    assert.equal(detailsStartOpen(rows), true,
-      "the group opens collapsed, so the trigger depth the template shipped is out of sight");
-    // A document that arrives with nothing filled opens as it always did.
-    assert.equal(detailsStartOpen(rows.map((r) => ({ ...r, value: "" }))), false);
-    assert.equal(detailsStartOpen([]), false);
+  test("a SHIPPED default is ON THE PAGE, not hidden behind a collapse", () => {
+    /* D-164 asked that a default the template shipped not be folded away
+       behind "1 filled". 11.13 answers it outright: there is no group to fold.
+       The trigger depth is in `settings.merge`, the sentence on the page reads
+       "2 inches" wherever it appears, and Send never asks for it. */
+    assert.equal(mergeValues(doc()).snow_trigger, "2 inches");
+    assert.ok(!blankTokens(doc(), mergeValues(doc())).includes("snow_trigger"));
   });
 
   test("the service term has a box even though it lives inside a ROW on the cover", () => {
     // The tokens are on `key_fact` widgets inside a container. Before the walk
     // read the tree they were invisible here, and the only reason they had
     // boxes at all was the title band repeating the same two dates.
-    const cold = reconcileDetails(doc(), {}).map((r) => r.token);
-    assert.ok(cold.includes("contract.start_date"), "the service term has no field anywhere");
-    assert.ok(cold.includes("customer.name"), "a token inside a box is invisible to the Details group");
+    const cold = blankTokens(doc(), {});
+    assert.ok(cold.includes("contract.start_date"), "the service term is never asked for");
+    assert.ok(cold.includes("customer.name"), "a token inside a box is invisible to Send");
   });
 
   test("section 10 takes the location the DOCUMENT is about", () => {

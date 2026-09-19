@@ -47,7 +47,13 @@ const SRC = path.join(process.cwd(), "src");
  *                exists to delete. `SiteInspectorExtras` renders from the
  *                server's spec; the registry only says what the SECTION is.
  */
-const NO_CONTROLS = new Set(["page_break", "columns"]);
+/* 11.13.2 (D-165) — the three TILES have no controls and cannot have any:
+   pressing one opens a picker and what lands on the page is an atomic widget
+   with its own panel. A control on a tile would be a setting for a thing that
+   is never on the document. See src/builder/proposal/catalogueTiles.ts. */
+const NO_CONTROLS = new Set([
+  "page_break", "columns", "product_cards", "product_line_items", "terms",
+]);
 const isSiteSection = (kind) => kind.startsWith("site_");
 
 describe("every registered widget is complete", () => {
@@ -219,6 +225,16 @@ describe("§3.2's union is registered", () => {
     // ADD one, and 58 of the 64 page bodies on the estate are one of these and
     // nothing else (catalogue D.2).
     "html",
+    /* Added 2026-09-19 by scope 11.13, AGREED with Brandon — the dynamic
+       fields and the two product tiles. §11.13.2: "Every widget bound to the
+       customer, the service location or the business fills itself from the
+       database the moment the customer is picked or changed", and "Product
+       Cards / Product Line Items … open the ONE catalogue picker".
+       `terms` is 11.13.3's Terms: saved clauses in, plain text out.
+       Declared in src/builder/proposal/recordWidgets.ts and catalogueTiles.ts
+       and spread into the one vocabulary by registry.ts. */
+    "customer", "service_location", "business_info",
+    "product_cards", "product_line_items", "terms",
   ];
 
   for (const kind of REQUIRED) {

@@ -168,7 +168,13 @@ function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: S
   walkNodes(doc, (hit) => {
     if (!isContainer(hit.node)) return;
     const box = hit.node as Container;
-    const address = box.children.find((k) => k.kind === "address_block");
+    /* 11.13.2 — `service_location` is what an `address_block` becomes, so a
+       box that holds one is a property in exactly the same way. Both spellings
+       are read for the reason `priced_line` is: the upgrade converts on open,
+       and this is what identifies a property in a document that reached a
+       total without passing through it. Mirrored in oliver-api's
+       lib/documentModel.js `sitesInTree`. */
+    const address = box.children.find((k) => k.kind === "address_block" || k.kind === "service_location");
     if (!address) return;
     const ap: any = address.props || {};
     const headingChild: Node | undefined = box.children.find((k) => k.kind === "heading");

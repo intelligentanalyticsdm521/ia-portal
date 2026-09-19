@@ -26,9 +26,8 @@ import {
   basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
 } from "../src/components/oliver/ProposalCatalogPicker.tsx";
 import {
-  LEGACY_DETAILS_KEY, blankTokens, blanksRefusal, detailsMerge, documentLogo, packDetail,
-  parseMoney, plainLabel, readDetails, readLegacyDetails, reconcileDetails, tokensUsedBy,
-  widgetForToken, writeDetails,
+  blankTokens, blanksRefusal, documentLogo, mergeValues, packDetail,
+  parseMoney, plainLabel, setMergeValue, tokensUsedBy, widgetForToken,
 } from "../src/builder/proposal/documentDetails.ts";
 
 
@@ -236,156 +235,35 @@ function agreementDoc() {
   return { ...emptyDocument(), sections: [s] };
 }
 
-describe("D-03 · every blank the document carries is a field somewhere", () => {
-  const AUTO = { "customer.name": "Hope Ministries" };
-
-  test("a token the page uses and the customer pick cannot answer gets a row", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO);
-    const tokens = rows.map((r) => r.token);
-    assert.deepEqual(tokens, ["snow_trigger", "contract.start_date", "contract.end_date", "severe_event_threshold"]);
-  });
-
-  test("a token the customer pick ALREADY answers gets no row", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO);
-    assert.ok(!rows.some((r) => r.token === "customer.name"),
-      "the author is being asked to type the customer's own name");
-  });
-
-  test("NO ROW IS EVER LABELLED WITH A RAW TOKEN", () => {
-    // Two of the four names the failed Send printed were `snow_trigger` and
-    // `severe_event_threshold`. That is the sentence Brandon read out.
-    for (const r of reconcileDetails(agreementDoc(), AUTO)) {
-      assert.notEqual(r.label, r.token, `${r.token} is still shown as itself`);
-      assert.ok(!/[_.]/.test(r.label), `"${r.label}" still looks like a token`);
-      assert.ok(/^[A-Z]/.test(r.label), `"${r.label}" does not read like a label`);
+/* D-03's DETAILS GROUP TESTS LIVED HERE AND ARE DELETED (scope 11.13,
+   2026-09-19). The group they pinned - a reconciled row per blank, drawn as a
+   box in the left pane - was never in scope and is gone, so its tests go with
+   it rather than being left green against a deleted mechanism. What replaces
+   both is test/builder-dynamic-fields.test.mjs: a fact that lives in a record
+   is a Customer / Service Location / Business Info widget that fills itself,
+   and a fact that lives in no record is typed on the page. The two claims D-03
+   really made - "no raw token ever reaches a screen" and "what is typed
+   survives a save and a reopen" - are kept below, because they outlived the
+   group. */
+describe("D-03 - a blank is never a raw token, and what is typed survives", () => {
+  test("NO BLANK IS EVER NAMED WITH A RAW TOKEN", () => {
+    for (const token of tokensUsedBy(agreementDoc())) {
+      const label = plainLabel(token);
+      assert.ok(!/[{}_]/.test(label), `${token} reaches a screen as "${label}"`);
     }
-  });
-
-  test("the snow pack's two tokens get a contractor's words and a line of help", () => {
     assert.equal(plainLabel("snow_trigger"), "Trigger depth");
-    assert.equal(plainLabel("severe_event_threshold"), "Severe-event threshold");
     assert.match(packDetail("snow_trigger").help, /inches/);
   });
 
-  test("an unknown token still never reaches a screen raw", () => {
-    assert.equal(plainLabel("gate_access_window"), "Gate access window");
+  test("a value typed on the page survives save then reopen", () => {
+    const saved = setMergeValue(agreementDoc(), "snow_trigger", "2 inches");
+    const reopened = deserialise(serialise(saved));
+    assert.equal(mergeValues(reopened).snow_trigger, "2 inches");
   });
 
-  test("the platform's own tags keep the words the platform already uses", () => {
-    assert.equal(plainLabel("contract.start_date"), "Service term starts");
-  });
-
-  test("a typed value fills the token, and survives save → close → reopen", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO)
-      .map((r) => (r.token === "snow_trigger" ? { ...r, value: "2 inches" } : r));
-    const saved = writeDetails(agreementDoc(), rows);
-    const reopened = deserialise(JSON.parse(serialise(saved)));
-    assert.equal(detailsMerge(readDetails(reopened))["snow_trigger"], "2 inches");
-  });
-
-  test("the store is `settings.merge` \u2014 not a section, not a widget, so nothing can land in it", () => {
-    // It WAS a hidden `visibility:"internal"` section, and a widget added with
-    // nothing selected goes to the LAST section (D-11) \u2014 so three priced
-    // property blocks landed inside the store, were counted as internal, and
-    // vanished from the customer's copy, the PDF and the total. Then it was
-    // `sections[0].meta.detailValues`, which was safe but was a SECOND carrier
-    // beside `settings.merge` (N-7). One home now: the document's own settings,
-    // which is not a section, not a widget and not a render target.
-    // TWO sections, deliberately, so "first" and "last" are different places.
-    const base = agreementDoc();
-    const acceptance = makeSection({ label: "Acceptance" });
-    acceptance.columns[0].widgets = [makeWidget("signature", { heading: "Acceptance" })];
-    const two = { ...base, sections: [...base.sections, acceptance] };
-
-    const rows = reconcileDetails(two, AUTO).map((r) => ({ ...r, value: "2 inches" }));
-    const saved = writeDetails(two, rows);
-    assert.equal(saved.sections.length, two.sections.length,
-      "writing a detail added a section to the document");
-    assert.equal(typeof saved.settings.merge, "object", "the store is not on settings.merge");
-    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
-    assert.ok(!saved.sections.some((x) => x.meta?.[LEGACY_DETAILS_KEY]),
-      "a second carrier is still on a section's meta");
-    assert.ok(!saved.sections.some((x) => x.visibility === "internal"),
-      "the store is a section again");
-    // And it is never counted as a blank on the page. THE REAL GUARD, not a
-    // copy of its walk written out here: a test that re-implements the rule
-    // agrees with itself and not with the Send button (2026-09-18).
-    assert.equal(blankTokens(saved, AUTO).length, 4);
-  });
-
-  test("N-7 \u00b7 a document written the OLD way still opens with its values", () => {
-    // Tolerant read, one write. A trigger depth typed last week lives on
-    // `sections[0].meta.detailValues`; refusing to read it would blank it.
-    const doc = agreementDoc();
-    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
-    assert.equal(readLegacyDetails(doc)[0].value, "2 inches");
-    assert.equal(detailsMerge(readDetails(doc)).snow_trigger, "2 inches");
-    assert.equal(reconcileDetails(doc, AUTO).find((r) => r.token === "snow_trigger").value, "2 inches");
-  });
-
-  test("N-7 \u00b7 and the first save MOVES it, so there is never a second carrier", () => {
-    const doc = agreementDoc();
-    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
-    const saved = writeDetails(doc, readDetails(doc));
-    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
-    assert.ok(!saved.sections[0].meta?.[LEGACY_DETAILS_KEY], "the old carrier was left behind");
-    // And what the engine's serialiser does with it survives the round trip.
-    const reopened = deserialise(JSON.parse(serialise(saved)));
-    assert.equal(reopened.settings.merge.snow_trigger, "2 inches");
-  });
-
-  test("N-7 \u00b7 a blank is not stored, so the gap rule still calls it blank", () => {
-    const saved = writeDetails(agreementDoc(), [
-      { token: "snow_trigger", label: "Trigger depth", value: "" },
-    ]);
-    assert.equal(saved.settings.merge, undefined);
-  });
-
-  test("N-1 \u00b7 every blank knows WHERE it is on the page", () => {
-    const at = widgetForToken(agreementDoc(), "snow_trigger");
-    assert.ok(at, "a blank with nowhere to go cannot be jumped to");
-    assert.ok(at.sectionId && at.widgetId);
-    assert.equal(widgetForToken(agreementDoc(), "not_on_this_page"), null);
-  });
-
-  test("there is ONE store however many sections the document has", () => {
-    const doc = agreementDoc();
-    const second = makeSection({ label: "Second" });
-    second.meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "stale" }] };
-    const withStale = { ...doc, sections: [...doc.sections, second] };
-    const saved = writeDetails(withStale, [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
-    assert.equal(saved.sections.filter((x) => x.meta?.[LEGACY_DETAILS_KEY]).length, 0,
-      "an old carrier survived the write");
-    assert.equal(readDetails(saved)[0].value, "2 inches");
-  });
-
-  test("filling everything in empties the blanks counter — the wanted output APPEARS", () => {
-    const filled = { ...AUTO, snow_trigger: "2 inches", "contract.start_date": "1 November 2026", "contract.end_date": "31 March 2027", severe_event_threshold: "8 inches" };
-    assert.deepEqual(blankTokens(agreementDoc(), filled), []);
-  });
-
-  test("a document nobody has typed a detail into is the document it always was", () => {
-    const doc = agreementDoc();
-    assert.equal(serialise(writeDetails(doc, [])), serialise(doc));
-  });
-
-  test("a value typed for a token since deleted from the page is KEPT, not thrown away", () => {
-    // The author types a plowing rate, then deletes the paragraph that used it
-    // and undoes their mind. Throwing the number away because the token left
-    // the page for one keystroke is how work is lost.
-    const withValue = writeDetails(agreementDoc(), [{ token: "plow_rate", label: "Plowing rate", value: "$625" }]);
-    assert.equal(reconcileDetails(withValue, AUTO).find((r) => r.token === "plow_rate")?.value, "$625");
-  });
-
-  test("but an EMPTY row for a token that has left the page is dropped", () => {
-    const withEmpty = writeDetails(agreementDoc(), [{ token: "gate_code_note", label: "Gate code note", value: "" }]);
-    assert.ok(!reconcileDetails(withEmpty, AUTO).some((r) => r.token === "gate_code_note"));
-  });
-
-  test("tokensUsedBy reads the page and not the store", () => {
-    const saved = writeDetails(agreementDoc(), [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
-    assert.ok(tokensUsedBy(saved).includes("snow_trigger"));
-    assert.equal(tokensUsedBy(saved).filter((t) => t === "snow_trigger").length, 1);
+  test("typing nothing leaves the document byte-identical", () => {
+    const d = agreementDoc();
+    assert.equal(serialise(setMergeValue(d, "snow_trigger", "")), serialise(d));
   });
 });
 
@@ -404,9 +282,11 @@ describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
     assert.ok(BUILDER.includes("const at = widgetForToken(doc, token);"));
   });
 
-  test("the jump also puts the caret in the Details box, which is where it is typed", () => {
+  test("the jump lands ON THE PAGE, at the token, not in a side box (11.13.2)", () => {
     assert.ok(BUILDER.includes("onFocusProblem={(problem) => {"));
-    assert.ok(BUILDER.includes("if (token) setFocusToken(token);"));
+    assert.ok(BUILDER.includes("if (token) setEditingToken(token);"));
+    assert.ok(!BUILDER.includes("setFocusToken("), "the Details box focus is still here");
+    assert.ok(!BUILDER.includes("<DetailsGroup"), "the Details group is still rendered");
   });
 
   test("the refusal message names them in plain words too", () => {
@@ -418,7 +298,7 @@ describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
     assert.match(words, /Trigger depth/);
     assert.match(words, /Service term starts/);
     assert.ok(!/[{}_]/.test(words), `the refusal is not plain words: ${words}`);
-    assert.match(words, /Type them into the Details boxes on the left/,
+    assert.match(words, /Click the highlighted words on the page/,
       "the refusal still does not say where the fields are");
     assert.equal((BUILDER.match(/blanksRefusal\(/g) || []).length, 2,
       "a Send refusal is writing its own sentence again");
