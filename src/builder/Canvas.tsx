@@ -123,23 +123,7 @@ export interface CanvasProps {
    */
   onDropOnAddArea?: (atIndex: number) => void;
   /** A widget's own hover handle (D-12). */
-  onDuplicateWidget?: (path: WidgetPath) => void;
   onDeleteWidget?: (path: WidgetPath) => void;
-  /**
-   * LOCK AND HIDE, VISIBLY (M-21).
-   *
-   * Both were reachable — lock by construction only, hide from the Outline's
-   * eye — and neither said anything ON THE PAGE, so a section somebody had
-   * hidden on phones looked exactly like one they had not. The widget's own
-   * handle now carries a padlock and an eye that SHOW the state, and pressing
-   * either changes it. Absent, the handle draws what it always drew.
-   */
-  onLockWidget?: (path: WidgetPath, locked: boolean) => void;
-  onHideWidget?: (path: WidgetPath, hidden: boolean) => void;
-  /** Which width the eye is talking about — "on phones", "on tablets", "". */
-  hideDeviceWord?: string;
-  /** Is this widget hidden at the width being previewed? */
-  isWidgetHidden?: (path: WidgetPath) => boolean;
   /**
    * RIGHT-CLICK ANYTHING (M-8).
    *
@@ -167,8 +151,6 @@ export interface CanvasProps {
    * `insertPosition.ts` decides what to do with it.
    */
   onVisibleSection?: (sectionId: string | null) => void;
-  /** Something was refused — a locked widget, usually. Shown by the frame. */
-  onRefuse?: (message: string) => void;
   /**
    * A MERGE FIELD WAS CLICKED (D-03, handoff B-A-5).
    *
@@ -428,7 +410,7 @@ function SectionHost({
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onMoveSection, onDragStart, onDragEnd, renderSection: renderOne,
   drag, onDragWidget, onDropWidget, onDeleteWidget, onAddAbove,
-  onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy,
+  onContextMenu,
   flashWidgetId, onTokenClick,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;

@@ -635,7 +635,6 @@ export function BuilderShell(p: BuilderShellProps) {
       select({ kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id });
       return;
     }
-    if (payload.box) { insertBox(payload.box, spot, next); return; }
     const def = WIDGETS_BY_KIND[payload.label];
     if (def) insertWidget(def, undefined, spot, next);
   }, [apply, doc, drag, insertBox, insertWidget, p, select]);
@@ -1325,15 +1324,9 @@ export function BuilderShell(p: BuilderShellProps) {
         onEditText={onEditText}
         flashWidgetId={flashId}
         onVisibleSection={setVisibleSectionId}
-        onRefuse={refuse}
         onTokenClick={p.onTokenClick}
-        onDuplicateWidget={(path) => apply(duplicateWidget(doc, path), null, "Copied a block")}
         onDeleteWidget={deleteWidget}
         /* M-21 and M-8, on the page itself. */
-        onLockWidget={(path, locked) => setLocked({ kind: "widget", path }, locked)}
-        onHideWidget={(path, hidden) => setHidden({ kind: "widget", path }, hidden)}
-        hideDeviceWord={hideDeviceWord}
-        isWidgetHidden={widgetHidden}
         onContextMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
         onPatchSection={changeSection}
         onDuplicateSection={(id) => apply(duplicateSection(doc, id), null,
