@@ -16,22 +16,37 @@
  * customer's locations) are passed IN as slots, so the engine stays free of
  * OLIVER and the same inspector serves the website and email builders later.
  *
- * ── THE GROUPS (§11.8, D-140) ─────────────────────────────────────────────
- * Elementor's shape, because that is the one every author on this platform has
- * already used:
+ * ── THREE TABS (§11.13.1, D-165) ──────────────────────────────────────────
+ * Brandon, 2026-09-19: *"I am fine with the settings on the right."* So the
+ * panel stays where it is and takes the reference editor's own shape — the
+ * three tabs it puts over EVERY element, with collapsible sections inside them
+ * named as it names them:
  *
- *   a WIDGET   Content · Typography · Spacing · Advanced
- *   a SECTION  Layout · Spacing · Style · Typography · Page
+ *   a WIDGET     Content   · Style (Typography) · Advanced (Layout, Responsive)
+ *   a BOX        Layout    · Style (edge)       · Advanced (Layout, Responsive)
+ *   a SECTION    Layout    · Style, Typography  · Advanced (Layout, Page)
  *
- * Collapsible, each with a reset, every control with a tooltip in plain words.
+ * A container's first tab is LAYOUT and not Content, because that is what the
+ * reference calls it and the machine catalogue agrees to the letter: every
+ * container section is `tab: "layout"`, every `common` advanced section is
+ * `tab: "advanced"` with `_section_style` labelled "Layout".
+ *
+ * ── WHAT THE TABS REPLACED ────────────────────────────────────────────────
+ * One scrolling column of every group at once, with the SECTION's five groups
+ * repeated under the widget's four. Selecting a widget now shows that widget;
+ * the section is reached by selecting the section — from its handle on the
+ * page, or from the Structure window. That is the reference's rule and it is
+ * why the panel no longer has two "Layout" groups arguing in one scroll.
+ *
  * The controls themselves are in StyleGroups.tsx and the maths is in style.ts —
- * this file decides WHICH groups a selection gets, and nothing else.
+ * this file decides WHICH groups a selection gets, in WHICH tab, and nothing
+ * else.
  *
- * The Desktop / Tablet / Phone segment inside Spacing and Typography edits the
+ * The Desktop / Tablet / Phone segment inside Layout and Typography edits the
  * override for the device the CANVAS is previewing. ONE state, handed down from
  * BuilderShell: two would let an author edit the phone and watch the desktop.
  */
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Sparkles, Trash2 } from "lucide-react";
 import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
 import { widgetAt } from "./model";
@@ -46,8 +61,8 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  AdvancedGroup, DeviceSegment, Group, RatioPicker, SpacingGroup, TypographyGroup,
-  FIELD, INPUT, L,
+  DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
+  FIELD, INPUT, L, type InspectorTab,
 } from "./StyleGroups";
 
 export interface InspectorSlots {
@@ -123,14 +138,29 @@ function boxName(n: Node | null): string {
 
 export function Inspector(p: InspectorProps) {
   const { doc, selection } = p;
+  /**
+   * WHICH TAB.
+   *
+   * Kept across selections on purpose — the reference editor does the same,
+   * and an author who is setting spacing on six things in a row should not be
+   * put back on Content after every click. A tab with nothing behind it for
+   * the new selection falls back to Content, which `shownTab` decides.
+   */
+  const [tab, setTab] = useState<InspectorTab>("content");
+
   if (!selection) {
+    /* NOTHING SELECTED = PAGE SETTINGS (§11.13.1 item 2). The reference shows
+       the document's own settings here rather than an empty panel, and the
+       adapter's `documentExtras` is exactly that. */
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflowY: "auto" }}>
+      <div data-inspector="page" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflowY: "auto" }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>Page settings</div>
+        </div>
         {p.documentExtras}
         <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>
-          <div style={L}>Nothing selected</div>
-          <p style={{ marginTop: 8, lineHeight: 1.5 }}>
-            Click a section or anything on the page to change it here. Words are typed straight on the page.
+          <p style={{ lineHeight: 1.5 }}>
+            Click anything on the page to change it here. Words are typed straight on the page.
           </p>
         </div>
       </div>
@@ -161,35 +191,49 @@ export function Inspector(p: InspectorProps) {
     p.onSetSectionStyle(section.id, withLayer(section.style, p.device, patch), `${section.id}:${mergeKey}:${p.device}`);
   };
 
+  /** The name on the panel — "Edit <Widget name>", as the reference writes it. */
+  const name = widget
+    ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
+    : (section.label || "Section");
+
+  /**
+   * WHICH TABS HAVE ANYTHING BEHIND THEM.
+   *
+   * A box has no Typography of its own — it holds things, it does not say
+   * anything — so its Style tab carries only its edge, which it does have.
+   * A widget with no words has no Style tab at all, and the tab is GREYED
+   * rather than removed: a row that changes width as the selection moves is a
+   * row nobody can aim at.
+   */
+  const hasStyle = box || !widget || isTypographic(widget.kind);
+  const disabled: InspectorTab[] = hasStyle ? [] : ["style"];
+  const shownTab: InspectorTab = disabled.includes(tab) ? "content" : tab;
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+    <div data-inspector={widget ? (box ? "box" : "widget") : "section"}
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
       {p.documentExtras}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div>
-          <div style={L}>Selected</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{
-            widget
-              ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
-              : (section.label || "Section")
-          }</div>
-        </div>
+        <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Edit {name}</div>
         {p.askArgus}
       </div>
+
+      <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} disabled={disabled} />
 
       <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
         {widget && (
           <>
-            {/* A BOX (§11.12, D-156).
+            {/* A BOX (§11.12, D-156) — its LAYOUT tab.
 
                 A box has no Content and no Typography: it holds things, it does
-                not say anything. What it HAS is a layout, and that is its first
-                group, open, because it is the reason the author put it there.
+                not say anything. What it HAS is a layout, and that is the whole
+                of its first tab, because it is the reason the author put it
+                there.
 
-                Everything BELOW this — Spacing, Advanced, and the section's own
-                groups — is the same for a box and for a widget and is written
-                ONCE. Two padding controls for one padding is exactly the drift
-                this file exists to stop. */}
-            {box && (
+                Everything in the Advanced tab is the same for a box and for a
+                widget and is written ONCE. Two padding controls for one padding
+                is exactly the drift this file exists to stop. */}
+            {box && shownTab === "content" && (
               <Group title="Layout" hint="Which way what is inside this box runs, and how far apart" defaultOpen
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
@@ -311,9 +355,10 @@ export function Inspector(p: InspectorProps) {
             )}
 
             {/* THE BOX'S OWN EDGE — the same three controls a section wears,
-                reading and writing the same keys through the same style.ts. */}
-            {box && (
-              <Group title="Style" hint="The edge round this box, and its corners"
+                reading and writing the same keys through the same style.ts.
+                The reference calls this section Border and puts it on Style. */}
+            {box && shownTab === "style" && (
+              <Group title="Border" hint="The edge round this box, and its corners" defaultOpen
                 onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["border", "radius", "shadow"]))}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={FIELD}>
@@ -340,7 +385,7 @@ export function Inspector(p: InspectorProps) {
             )}
 
             {/* ── CONTENT — everything that was here before ─────────────── */}
-            {!box && (
+            {!box && shownTab === "content" && (
             <Group title="Content" hint="What this shows, and where it comes from" defaultOpen>
               {def && widgetDescription(def, p.adapter) && (
                 <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{widgetDescription(def, p.adapter)}</div>
@@ -468,8 +513,8 @@ export function Inspector(p: InspectorProps) {
             </Group>
             )}
 
-            {/* ── TYPOGRAPHY — only where there are words to set ────────── */}
-            {!box && isTypographic(widget.kind) && (
+            {/* ── STYLE ▸ TYPOGRAPHY — only where there are words to set ── */}
+            {!box && shownTab === "style" && isTypographic(widget.kind) && (
               <TypographyGroup
                 device={p.device}
                 onDevice={p.onDevice}
@@ -480,37 +525,44 @@ export function Inspector(p: InspectorProps) {
               />
             )}
 
-            {/* ── SPACING ───────────────────────────────────────────────── */}
-            <SpacingGroup
-              device={p.device}
-              onDevice={p.onDevice}
-              layer={widgetLayer}
-              what="widget"
-              onPatch={patchWidgetStyle}
-              onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["padding", "margin"]))}
-            />
-
-            {/* ── ADVANCED ──────────────────────────────────────────────── */}
-            <AdvancedGroup
-              layer={widgetLayer}
-              hiddenOn={{
-                tablet: !!widget.style?.tablet?.hidden,
-                phone: !!widget.style?.phone?.hidden,
-              }}
-              onPatch={patchWidgetStyle}
-              onHide={(device, hidden) =>
-                p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
-              onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["align", "hidden"]))}
-            />
+            {/* ── ADVANCED ▸ LAYOUT and RESPONSIVE ─────────────────────── */}
+            {shownTab === "advanced" && (
+              <>
+                <SpacingGroup
+                  device={p.device}
+                  onDevice={p.onDevice}
+                  layer={widgetLayer}
+                  what="widget"
+                  align={!box}
+                  onPatch={patchWidgetStyle}
+                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["padding", "margin", "align"]))}
+                />
+                <ResponsiveGroup
+                  hiddenOn={{
+                    tablet: !!widget.style?.tablet?.hidden,
+                    phone: !!widget.style?.phone?.hidden,
+                  }}
+                  onHide={(device, hidden) =>
+                    p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
+                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["hidden"]))}
+                />
+              </>
+            )}
           </>
         )}
 
-        {/* ══ THE SECTION, always available under the widget's ══════════ */}
-        <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={L}>This section</div>
+        {/* ══ THE SECTION — only when the SECTION is what is selected ═════
+            §11.13.1: the reference shows the element you clicked and nothing
+            else. Repeating the section's five groups under every widget's
+            four is what made this panel a scroll rather than a panel, and it
+            put two groups called "Layout" in one column. The section is
+            reached from its own handle on the page, or from Structure. */}
+        {!widget && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
           {/* ── LAYOUT ────────────────────────────────────────────────── */}
-          <Group title="Layout" hint="How many columns, how they split, how wide they run" defaultOpen={!widget}
+          {shownTab === "content" && (
+          <Group title="Layout" hint="How many columns, how they split, how wide they run" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["columnWidths", "gap"]))}>
             <div style={FIELD}>
               <span style={L}>Label</span>
@@ -565,8 +617,10 @@ export function Inspector(p: InspectorProps) {
               Mark as Recommended
             </label>
           </Group>
+          )}
 
-          {/* ── SPACING ───────────────────────────────────────────────── */}
+          {/* ── ADVANCED ▸ LAYOUT ─────────────────────────────────────── */}
+          {shownTab === "advanced" && (
           <SpacingGroup
             device={p.device}
             onDevice={p.onDevice}
@@ -576,9 +630,11 @@ export function Inspector(p: InspectorProps) {
             onPatch={patchSectionStyle}
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["padding", "margin"]))}
           />
+          )}
 
           {/* ── STYLE ─────────────────────────────────────────────────── */}
-          <Group title="Style" hint="Background, edge, corners and shadow"
+          {shownTab === "style" && (
+          <Group title="Background" hint="Background, edge, corners and shadow" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["border", "radius", "shadow", "minHeight"]))}>
             <div style={FIELD}>
               <span style={L}>Background</span>
@@ -655,9 +711,10 @@ export function Inspector(p: InspectorProps) {
                 onChange={(e) => patchSectionStyle({ minHeight: e.target.value === "" ? undefined : Number(e.target.value) }, "minHeight")} />
             </div>
           </Group>
+          )}
 
           {/* ── TYPOGRAPHY — the section's own heading font ────────────── */}
-          {p.fonts.length > 0 && (
+          {shownTab === "style" && p.fonts.length > 0 && (
             <Group title="Typography" hint="The font the headings in this section are set in"
               onReset={() => p.onPatchSection(section.id, { headingFont: "" })}
               resetTitle="Back to the font the rest of the document uses">
@@ -681,6 +738,7 @@ export function Inspector(p: InspectorProps) {
               throwing away the words the author typed, and a single click with
               no confirmation is not how that should happen. Every group that
               owns STYLING resets; the one that owns content does not. */}
+          {shownTab === "advanced" && (
           <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
             onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer" })}
             resetTitle="Back to: no page break, and the customer sees it">
@@ -702,7 +760,9 @@ export function Inspector(p: InspectorProps) {
               Internal note only
             </label>
           </Group>
+          )}
         </div>
+        )}
       </div>
 
       <div style={{ marginTop: "auto", padding: "10px 16px", borderTop: "1px solid #E2E8F0", fontSize: 11, color: "#5A7A8A" }}>

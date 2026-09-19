@@ -1,37 +1,48 @@
 /**
- * builder/WidgetPane.tsx — the side pane SD-010 describes, once, for every builder.
+ * builder/WidgetPane.tsx — THE LEFT PANEL. Widgets, and nothing else.
  *
- * "A side pane of widgets/blocks with a picture and one line of what each is
- *  for; tooltips on every button."
+ * Scope §11.13.1 (D-165), agreed with Brandon 2026-09-19:
  *
- * Drop it into IadmBuilderPanes' `pane` slot. It reads ./registry.ts and
- * nothing else, so a builder gets the right widget set by passing its adapter
- * name — no per-builder list to keep in step.
+ *   "Widgets on the side — all the widgets should be on the left side. This is
+ *    the 5th time that I have explained this. You have all this random details
+ *    on the side. I never asked for any of that."
  *
- * ── PATTERN IT COMES FROM ─────────────────────────────────────────────────
- * SparkFormBuilderPage's field palette (the only pane on the platform whose
- * buttons carried a description, via FIELD_TYPE_META) and the Template Studio's
- * InsertRail (the only one grouped under headings). This is both, plus the two
- * things SD-010 asks for that neither had: a picture of the SHAPE each widget
- * makes, and a search box — twenty-five widgets is more than a person scans.
+ * ── WHAT THE REAL EDITOR DOES ─────────────────────────────────────────────
+ * Looked at on 2026-09-19 in a live Elementor 4.2.4 (WordPress Playground,
+ * `post.php?post=2&action=elementor`), screenshots under
+ * `overnight-report/d165-screens/`:
  *
- * ── STEP 0 SCOPE ──────────────────────────────────────────────────────────
- * Definitions only. `onInsert` hands the caller the widget definition and the
- * count the pane asked for; what a builder DOES with that is the engine, which
- * is step 2. Nothing here renders a widget.
+ *   · a title — "Elements"
+ *   · a search box — placeholder "Search Widget..."
+ *   · groups as ACCORDIONS, each with a chevron, first one open
+ *   · tiles TWO ACROSS: a line-icon above, the name under it, nothing else
+ *   · drag a tile onto the page, or click it to insert at the selection
+ *
+ * Nothing else is in that panel. No outline, no totals, no customer box, no
+ * templates list, no "still to fill in" counter.
+ *
+ * ── WHAT WAS DELETED HERE, AND WHY IT IS NOT HIDDEN ───────────────────────
+ *   · `LeftPane.tsx`, the two-tab wrapper (Add | Outline) — the outline is now
+ *     the floating Structure window (Navigator.tsx), so the wrapper had one tab
+ *     left and no reason to exist.
+ *   · the `header` slot — the door adapters injected their own left-pane
+ *     groups through. The proposal builder pushed its Details group through it;
+ *     that group was invented on 2026-09-16 and was never scope. Removing the
+ *     slot is what stops it coming back. Told to the proposal stream in
+ *     D165_HANDOFF_2026-09-19.md.
+ *   · the picture strip — the 12×8 thumbnail of the SHAPE each widget makes — and the
+ *     one-line description on every row. Elementor shows an icon and a name;
+ *     the sentence is the tooltip. Twenty-six rows of picture-plus-paragraph is
+ *     four screens of scrolling for a panel you are meant to scan.
+ *   · the `hint` line under the search box — the adapter's words about dragging.
+ *     One sentence at the top of a panel nobody reads twice.
  */
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import * as Icons from "lucide-react";
-import {
-  widgetTooltip,
-  type BuilderAdapter,
-  type WidgetDef,
-  widgetDescription,
-  widgetLabel,
-} from "./registry";
+import { widgetTooltip, type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
-import { groupByTask } from "./widgetTasks";
+import { openGroups, panelGroups, type PanelGroup } from "./widgetGroups";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
 function WidgetIcon({ name, className }: { name: string; className?: string }) {
@@ -40,176 +51,155 @@ function WidgetIcon({ name, className }: { name: string; className?: string }) {
   return <Cmp className={className} />;
 }
 
+/** The panel's title. Elementor says "Elements"; a client says "Widgets". */
+export const PANE_TITLE = "Widgets";
+
 export interface WidgetPaneProps {
   /** Which builder this is. Decides which widgets are offered at all. */
   adapter: BuilderAdapter;
-  /**
-   * Called when the author picks a widget. `count` is present only for a
-   * widget that declares one, and is what the author answered to the guided
-   * question ("How many cards?") — asked ONCE, before insert, per SD-010.
-   */
-  onInsert: (widget: WidgetDef, count?: number) => void;
-  /** Rendered above the search box — an "Ask ARGUS" action, typically. */
-  header?: React.ReactNode;
+  /** Called when the author picks a widget — inserted at the selection. */
+  onInsert: (widget: WidgetDef) => void;
   /**
    * DRAG TO POSITION (§11.8).
    *
-   * A card can be dragged onto the canvas and dropped between two widgets
-   * rather than only clicked and landed at the end. The pane reports what is
-   * being dragged and the canvas draws the indicator, because the canvas is
-   * the only thing that knows where the columns are; the shell holds the one
-   * piece of state between them.
+   * A tile can be dragged onto the canvas and dropped between two things
+   * rather than only clicked and landed at the selection. The pane reports
+   * what is in the air and the canvas draws the indicator, because the canvas
+   * is the only thing that knows where the columns are.
    *
    * `null` means the drag is over. Told on `dragend` whatever the outcome, so
-   * a drag that ends on the widget list itself cannot leave the canvas
-   * believing something is still in the air.
+   * a drag that ends on the panel itself cannot leave the canvas believing
+   * something is still in the air.
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
   /**
    * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
    *
-   * The pane's half of request R-D1. Same rule as the picker's: the row stays,
-   * greyed, with the reason as its line, and neither the click nor the DRAG
-   * does anything. A drag that landed and was then refused would look like a
-   * broken canvas rather than a plan.
+   * The three states of §11.12: offered, not on this plan, or needs a product
+   * this business does not have. A locked tile stays IN the group, greyed,
+   * with the reason as its tooltip, and neither the click nor the DRAG does
+   * anything — a drag that landed and was then refused looks like a broken
+   * canvas rather than a plan.
    */
   lockedKinds?: Record<string, WidgetLock>;
-  /**
-   * The line under the search box, in the adapter's words (copy.ts, D-30).
-   *
-   * "drop it exactly where you want it" is true of a page and of an email, but
-   * the NOUN differs, and a proposal builder that says "page" is the leak this
-   * prop exists to stop. Absent, the generic sentence is used.
-   */
-  hint?: string;
 }
 
-export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lockedKinds }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
-  // Which widget is mid-question, and the number showing in its stepper.
-
-  /* GROUPED BY THE JOB, NOT BY THE TYPE (D-147). "Information" and "Trust"
-     are words a developer wrote down; "Customer & property" and "Products &
-     services" are the two sentences the business owner said. The picker uses
-     the same call, so the two surfaces cannot drift — widgetTasks.ts. */
-  const groups = useMemo(() => groupByTask(adapter, query), [adapter, query]);
+  const groups = useMemo(() => panelGroups(adapter, query), [adapter, query]);
   const total = useMemo(() => groups.reduce((n, g) => n + g.widgets.length, 0), [groups]);
 
-  /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
-     It only existed because the cards inside a composite could not be added or
-     removed once the widget was on the page. They can now: a card is a widget
-     with the same duplicate and delete as everything else, so the thing arrives
-     with its default rows and the author changes them where they can see them.
-     The picker lost the same control in the same pass — two surfaces, one
-     deletion, or one of them keeps asking. */
-  function pick(w: WidgetDef) {
-    onInsert(w);
-  }
+  /**
+   * WHICH ACCORDIONS ARE OPEN.
+   *
+   * `null` means "nobody has clicked a heading yet", so the default from
+   * widgetGroups applies and follows the search: first group open when the box
+   * is empty, every matching group open when it is not. The moment the author
+   * opens or shuts one themselves, their set wins — and clearing the search
+   * puts the default back, because `shut` is reset with the query.
+   */
+  const [open, setOpen] = useState<PanelGroup[] | null>(null);
+  const shown = open ?? openGroups(groups, query);
+  const toggle = (g: PanelGroup) =>
+    setOpen(shown.includes(g) ? shown.filter((x) => x !== g) : [...shown, g]);
 
   return (
     <div className="flex h-full flex-col" data-builder-pane={adapter}>
-      {header && <div className="border-b border-slate-100 p-3">{header}</div>}
+      <div className="flex-shrink-0 border-b border-slate-200 px-3 py-2.5 text-center text-[12px] font-bold tracking-wide text-slate-700">
+        {PANE_TITLE}
+      </div>
 
-      {/* Search — twenty-five widgets is past the point of scanning. Matches
-          the description too, because people type what they want, not what we
-          decided to call it. */}
-      <div className="border-b border-slate-100 p-3">
+      <div className="flex-shrink-0 border-b border-slate-100 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search — try “price” or “photo”"
+            onChange={(e) => { setQuery(e.target.value); setOpen(null); }}
+            placeholder="Search widgets"
             aria-label="Search widgets"
+            data-pane-search
             className="w-full rounded border border-slate-200 py-1.5 pl-7 pr-2 text-xs focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
           />
         </div>
       </div>
 
-      {/* DRAG TO POSITION (§11.8), said once rather than appended to every
-          tooltip — the tooltips are the widget's own words and stay that way. */}
-      <div className="border-b border-slate-100 px-3 pb-2 text-[10px] leading-snug text-slate-400">
-        {hint ?? <>Click one to add it where you are, or <strong className="font-semibold text-slate-500">drag it onto the page</strong> to
-        drop it exactly where you want it.</>}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {total === 0 && (
-          <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            Nothing matches “{query}”. Clear the search to see everything this builder can add.
+          <div className="m-3 rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
+            Nothing matches “{query}”. Clear the search to see every widget.
           </div>
         )}
 
-        {groups.map((group) => (
-          <div key={group.task} className="mb-4 last:mb-0">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              {group.task}
-            </div>
-            <div className="space-y-1.5">
-              {group.widgets.map((w) => {
-                /* THE THREE STATES (catalogue G.4): offered, not on this
-                   plan, or needs a product this business does not have. The
-                   `reason` is on the row as a data attribute so a test can
-                   tell the two refusals apart, and so can anybody reading the
-                   DOM — they are two different things and the memory rule
-                   says they must never read as one. */
-                const lock = lockedKinds?.[w.kind] ?? null;
-                return (
-                <div key={w.kind}>
-                  <button
-                    type="button"
-                    onClick={() => { if (!lock) pick(w); }}
-                    disabled={!!lock}
-                    {...(lock ? {
-                      "data-widget-locked": lock.sentence,
-                      "data-widget-state": lock.reason,
-                      "data-widget-tier": lock.tier,
-                    } : { "data-widget-state": "offered" })}
-                    /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. */
-                    title={lock?.sentence || widgetTooltip(w, adapter)}
-                    aria-label={lock?.sentence || widgetTooltip(w, adapter)}
-                    data-widget-kind={w.kind}
-                    /* HTML5 drag, the events Canvas already uses to reorder
-                       sections. No library: a second drag mechanism is a
-                       second set of rules about what a drop means. */
-                    draggable={!!onDragWidget && !lock}
-                    onDragStart={(e) => {
-                      if (lock) { e.preventDefault(); return; }
-                      e.dataTransfer.effectAllowed = "copy";
-                      // Some browsers refuse to start a drag with no payload.
-                      e.dataTransfer.setData("text/plain", w.label);
-                      onDragWidget?.(w);
-                    }}
-                    onDragEnd={() => onDragWidget?.(null)}
-                    className={`flex w-full items-start gap-2.5 rounded border border-slate-200 p-2 text-left transition-colors ${
-                      lock ? "cursor-not-allowed bg-slate-50 opacity-60" : "bg-white hover:border-slate-400 hover:bg-slate-50"}`}
-                  >
-                    {/* The PICTURE: the shape this widget makes on the page. */}
-                    <img
-                      src={w.picture}
-                      alt=""
-                      aria-hidden="true"
-                      className="mt-0.5 h-8 w-12 flex-shrink-0 rounded-sm bg-slate-50"
-                    />
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                        <WidgetIcon name={w.icon} className="h-3 w-3 text-slate-400" />
-                        {widgetLabel(w, adapter)}
-                      </span>
-                      {/* ONE line, in a business owner's words. */}
-                      <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                        {lock?.sentence || widgetDescription(w, adapter)}
-                      </span>
-                    </span>
-                  </button>
+        {groups.map((g) => {
+          const isOpen = shown.includes(g.group);
+          return (
+            <div key={g.group} data-pane-group={g.group} data-pane-group-open={isOpen ? "1" : "0"}>
+              <button
+                type="button"
+                data-pane-group-toggle={g.group}
+                aria-expanded={isOpen}
+                title={isOpen ? `Hide the ${g.group} widgets` : `Show the ${g.group} widgets`}
+                onClick={() => toggle(g.group)}
+                className="flex w-full items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wide text-slate-600 hover:bg-slate-100"
+              >
+                {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {g.group}
+              </button>
 
+              {isOpen && (
+                /* TWO ACROSS, icon over name. Elementor's tile, and the reason
+                   the picture and the sentence went: this panel is scanned, not
+                   read. */
+                <div className="grid grid-cols-2 gap-px bg-slate-200 p-px">
+                  {g.widgets.map((w) => {
+                    const lock = lockedKinds?.[w.kind] ?? null;
+                    const label = widgetLabel(w, adapter);
+                    return (
+                      <button
+                        key={w.kind}
+                        type="button"
+                        onClick={() => { if (!lock) onInsert(w); }}
+                        disabled={!!lock}
+                        {...(lock ? {
+                          "data-widget-locked": lock.sentence,
+                          "data-widget-state": lock.reason,
+                          "data-widget-tier": lock.tier,
+                        } : { "data-widget-state": "offered" })}
+                        /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. It is
+                           where the widget's one line went. */
+                        title={lock?.sentence || widgetTooltip(w, adapter)}
+                        aria-label={lock?.sentence || widgetTooltip(w, adapter)}
+                        data-widget-kind={w.kind}
+                        /* HTML5 drag, the events Canvas already uses to reorder.
+                           No library: a second drag mechanism is a second set of
+                           rules about what a drop means. */
+                        draggable={!!onDragWidget && !lock}
+                        onDragStart={(e) => {
+                          if (lock) { e.preventDefault(); return; }
+                          e.dataTransfer.effectAllowed = "copy";
+                          // Some browsers refuse to start a drag with no payload.
+                          e.dataTransfer.setData("text/plain", label);
+                          onDragWidget?.(w);
+                        }}
+                        onDragEnd={() => onDragWidget?.(null)}
+                        className={`flex aspect-[5/4] flex-col items-center justify-center gap-1.5 px-1 text-center transition-colors ${
+                          lock
+                            ? "cursor-not-allowed bg-slate-50 opacity-50"
+                            : "cursor-grab bg-white hover:bg-slate-50 active:cursor-grabbing"}`}
+                      >
+                        <WidgetIcon name={w.icon} className="h-5 w-5 text-slate-500" />
+                        <span className="w-full truncate text-[10.5px] font-medium leading-tight text-slate-700">
+                          {label}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-                );
-              })}
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

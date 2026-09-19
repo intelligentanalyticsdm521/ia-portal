@@ -35,6 +35,67 @@ const INPUT: React.CSSProperties = {
 const FIELD: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 4 };
 
 /* ══════════════════════════════════════════════════════════════════════════
+   The three tabs (§11.13.1, D-165)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Content / Style / Advanced — the three the reference editor puts over every
+ * element's settings, looked at on 2026-09-19 and confirmed against the
+ * machine catalogue (`BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json`, where
+ * every control carries `tab: "content" | "style" | "advanced"`).
+ *
+ * A CONTAINER's first tab is called LAYOUT and not Content, because that is
+ * what the reference calls it — a box holds things, it does not say anything,
+ * and the catalogue's container sections are `tab: "layout"` to the letter.
+ * One list, one `first` argument, rather than two tab bars.
+ */
+export type InspectorTab = "content" | "style" | "advanced";
+
+export const INSPECTOR_TABS: InspectorTab[] = ["content", "style", "advanced"];
+
+/** What each tab is called. The first one changes; the other two never do. */
+export function tabLabel(tab: InspectorTab, first: "Content" | "Layout"): string {
+  return tab === "content" ? first : tab === "style" ? "Style" : "Advanced";
+}
+
+export function InspectorTabs({ tab, onTab, first, disabled }: {
+  tab: InspectorTab;
+  onTab: (t: InspectorTab) => void;
+  first: "Content" | "Layout";
+  /** Tabs with nothing behind them. Shown, greyed — never hidden, so the row
+   *  does not change width as the selection moves from a widget to a box. */
+  disabled?: InspectorTab[];
+}) {
+  return (
+    <div role="tablist" aria-label="Settings" data-inspector-tab={tab}
+      style={{ display: "flex", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+      {INSPECTOR_TABS.map((t) => {
+        const off = !!disabled?.includes(t);
+        const on = tab === t;
+        return (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            data-inspector-tabbtn={t}
+            aria-selected={on}
+            disabled={off}
+            title={off ? `Nothing to set here for this` : `${tabLabel(t, first)} settings`}
+            onClick={() => onTab(t)}
+            style={{
+              flex: 1, border: "none", borderBottom: `2px solid ${on ? "#0B1C24" : "transparent"}`,
+              background: "transparent", padding: "9px 6px", fontSize: 11.5,
+              fontWeight: on ? 700 : 600, color: off ? "#CBD5E1" : on ? "#0B1C24" : "#64748B",
+              cursor: off ? "default" : "pointer",
+            }}
+          >{tabLabel(t, first)}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    A group
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -200,14 +261,20 @@ function SidesPad({
 }
 
 /**
- * The Spacing group — padding and margin, four boxes each, one link toggle.
+ * ADVANCED ▸ LAYOUT — margin, padding and alignment.
+ *
+ * Named "Layout" and not "Spacing" because that is what the reference editor
+ * calls this section of the Advanced tab: the machine catalogue's `common`
+ * element declares `_section_style` with `label: "Layout"`, `tab: "advanced"`,
+ * and it is where margin, padding, width and position live. Ours has no width
+ * or position to offer, so it has margin, padding and align.
  *
  * `seedPadding` is the section's OLD single padding number spread to four
  * sides, so the first click on a box does not shift the page sideways: 40 left
  * and right is what the renderer has always written into the HTML.
  */
 export function SpacingGroup({
-  device, onDevice, layer, seedPadding, onPatch, onReset, what,
+  device, onDevice, layer, seedPadding, onPatch, onReset, what, align,
 }: {
   device: Device;
   onDevice: (d: Device) => void;
@@ -216,9 +283,11 @@ export function SpacingGroup({
   onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
   onReset: () => void;
   what: "section" | "widget";
+  /** Offer the align row. A section has nothing to align itself against. */
+  align?: boolean;
 }) {
   return (
-    <Group title="Spacing" hint="Room inside and around this" onReset={onReset}>
+    <Group title="Layout" hint="Room inside and around this, and how it lines up" defaultOpen onReset={onReset}>
       <DeviceSegment device={device} onDevice={onDevice} />
       <SidesPad
         label="Padding"
@@ -235,7 +304,35 @@ export function SpacingGroup({
         value={layer.margin}
         onChange={(next, key) => onPatch({ margin: next }, key)}
       />
+      {align && <AlignRow layer={layer} onPatch={onPatch} />}
     </Group>
+  );
+}
+
+/** Left / middle / right. Shared by the Layout group and nothing else. */
+function AlignRow({ layer, onPatch }: {
+  layer: StyleLayer;
+  onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
+}) {
+  return (
+    <div style={FIELD}>
+      <span style={L}>Align</span>
+      <div style={{ display: "flex", gap: 4 }}>
+        {(["left", "center", "right"] as const).map((a) => (
+          <button key={a} type="button" data-style-align={a}
+            aria-pressed={layer.align === a}
+            title={`Line this up on the ${a === "center" ? "middle" : a}`}
+            onClick={() => onPatch({ align: layer.align === a ? undefined : a }, "align")}
+            style={{
+              flex: 1, borderRadius: 4, padding: "5px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer",
+              border: "1px solid " + (layer.align === a ? "#0C4A60" : "#CBD5E1"),
+              background: layer.align === a ? "#0C4A60" : "#fff",
+              color: layer.align === a ? "#fff" : "#334155",
+            }}
+          >{a === "left" ? "Left" : a === "center" ? "Middle" : "Right"}</button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -325,38 +422,26 @@ export function TypographyGroup({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   Advanced — alignment and "not on a phone"
+   Advanced ▸ Responsive — "not on a phone"
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function AdvancedGroup({
-  layer, hiddenOn, onPatch, onHide, onReset,
+/**
+ * Renamed from AdvancedGroup (§11.13.1, D-165).
+ *
+ * "Advanced" is the TAB now, so a group inside it called Advanced said
+ * nothing. The reference editor's name for the two checkboxes is Responsive
+ * (`_section_responsive`, `tab: "advanced"`), and Align went up into the
+ * Layout group above, where the reference keeps it.
+ */
+export function ResponsiveGroup({
+  hiddenOn, onHide, onReset,
 }: {
-  layer: StyleLayer;
   hiddenOn: { tablet: boolean; phone: boolean };
-  onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
   onHide: (device: Exclude<Device, "desktop">, hidden: boolean) => void;
   onReset: () => void;
 }) {
   return (
-    <Group title="Advanced" hint="Alignment, and hiding this on smaller screens" onReset={onReset}>
-      <div style={FIELD}>
-        <span style={L}>Align</span>
-        <div style={{ display: "flex", gap: 4 }}>
-          {(["left", "center", "right"] as const).map((a) => (
-            <button key={a} type="button" data-style-align={a}
-              aria-pressed={layer.align === a}
-              title={`Line this up on the ${a === "center" ? "middle" : a}`}
-              onClick={() => onPatch({ align: layer.align === a ? undefined : a }, "align")}
-              style={{
-                flex: 1, borderRadius: 4, padding: "5px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer",
-                border: "1px solid " + (layer.align === a ? "#0C4A60" : "#CBD5E1"),
-                background: layer.align === a ? "#0C4A60" : "#fff",
-                color: layer.align === a ? "#fff" : "#334155",
-              }}
-            >{a === "left" ? "Left" : a === "center" ? "Middle" : "Right"}</button>
-          ))}
-        </div>
-      </div>
+    <Group title="Responsive" hint="Leaving this out on smaller screens" onReset={onReset}>
       <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
         title="Leave this out when somebody is reading on a tablet. It still shows on a computer.">
         <input type="checkbox" data-style-hide="tablet" checked={hiddenOn.tablet}

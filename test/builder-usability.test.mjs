@@ -651,10 +651,15 @@ describe("the canvas carries the chrome the walk asked for", () => {
   });
 
   test("the phone still has everything, where dragging never fires", () => {
-    // HTML5 drag does not fire on touch. The buttons the phone pass pinned are
-    // still on the strip, and the toolbar's up/down are new ones beside them.
-    assert.match(canvas, /title="Add a blank section here"/);
-    assert.match(canvas, /title="Add a ready-made section here"/);
+    // HTML5 drag does not fire on touch, so every add has to be pressable.
+    // The two buttons this used to name — "Add a blank section here" and
+    // "Add a ready-made section here" — became ONE (§11.13.1 item 5,
+    // D-165): the choice between blank and template is the pop-up's first
+    // question now, and it is made of buttons too.
+    assert.match(canvas, /data-builder-addsection-btn/);
+    assert.match(canvas, /title="Add a section here — blank, or from a template"/);
+    assert.doesNotMatch(canvas, /title="Add a blank section here"/,
+      "the two buttons the pop-up replaced are back");
   });
 });
 
@@ -722,8 +727,12 @@ describe("the shell wires the rebuild without a second mechanism", () => {
   });
 
   test("THE PANE AND THE PICKER SHARE ONE VOCABULARY", () => {
-    assert.match(pane, /groupByTask\(adapter, query\)/);
-    assert.match(picker, /groupByTask\(p\.adapter, query\)/);
+    // §11.13.1 (D-165): the grouping is the reference editor's —
+    // Layout / Basic / General / Intelligent Analytics — and BOTH
+    // surfaces make the same call. Two groupings is how the panel and the "+"
+    // start disagreeing about where a widget lives.
+    assert.match(pane, /panelGroups\(adapter, query\)/);
+    assert.match(picker, /panelGroups\(p\.adapter, query\)/);
     assert.doesNotMatch(picker, /WIDGETS\.filter/);
   });
 
@@ -748,10 +757,20 @@ describe("the shell wires the rebuild without a second mechanism", () => {
     assert.match(commit, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
   });
 
-  test("the counter is a BUTTON that goes somewhere (D-35)", () => {
-    const left = readSrc("builder/LeftPane.tsx");
-    assert.match(left, /data-builder-problems/);
-    assert.match(left, /onClick=\{p\.onJumpToProblem\}/);
+  /* WAS "the counter is a BUTTON that goes somewhere (D-35)" — the
+     "N details still to fill in" button at the top of the left pane.
+
+     LeftPane.tsx IS DELETED (§11.13.1, D-165): the left panel is the
+     widgets panel and nothing else, so the counter has no home there. The
+     JUMP itself is untouched and still pinned below — Send refuses a
+     document with blanks, names them and jumps to the blank ON THE PAGE,
+     which is §11.13.2's rule and the thing D-35 was actually about. */
+  test("the file the old left pane lived in is GONE, not hidden", () => {
+    assert.throws(() => readSrc("builder/LeftPane.tsx"), /ENOENT/,
+      "LeftPane.tsx is back");
+  });
+
+  test("the jump to the first blank still works, from the page (D-35)", () => {
     assert.match(shell, /function jumpToProblem\(\)/);
     assert.match(shell, /focusSelector\(problem\.focus!\)/);
   });
@@ -763,9 +782,16 @@ describe("the shell wires the rebuild without a second mechanism", () => {
     assert.match(toast, /getBoundingClientRect\(\)/);
   });
 
-  test("the outline is the pane's second tab, and hiding uses the styling pass's own flag", () => {
-    const left = readSrc("builder/LeftPane.tsx");
-    assert.match(left, /<Navigator/);
+  test("the outline is a FLOATING window, and hiding uses the styling pass's own flag", () => {
+    // §11.13.1 item 3 (D-165): "Structure" left the left panel. Same
+    // rows, same handlers, a window you can move and close — opened from
+    // the top bar and from Ctrl+I.
+    const nav = readSrc("builder/Navigator.tsx");
+    assert.match(nav, /export function StructureWindow/);
+    assert.match(nav, /data-builder-structure="open"/);
+    assert.match(nav, /data-structure-close/);
+    assert.match(shell, /<StructureWindow/);
+    assert.match(shell, /case "structure": setStructure\(\(v\) => !v\); return true;/);
     // M-21 folded the two copies of this into ONE `setHidden`, used by the
     // outline's eye, the widget handle's eye and the right-click menu — three
     // ways in, one writer. The flag is still the styling pass's own.
@@ -787,9 +813,9 @@ describe("the shell wires the rebuild without a second mechanism", () => {
 describe("no screen in the rebuild names another product", () => {
   const files = [
     "builder/Canvas.tsx", "builder/AddBar.tsx", "builder/WidgetPicker.tsx", "builder/Navigator.tsx",
-    "builder/LeftPane.tsx", "builder/FirstRun.tsx", "builder/AnchoredToast.tsx",
+    "builder/AddSection.tsx", "builder/FirstRun.tsx", "builder/AnchoredToast.tsx",
     "builder/BuilderFrame.tsx", "builder/BuilderShell.tsx", "builder/WidgetPane.tsx",
-    "builder/widgetTasks.ts", "builder/copy.ts", "builder/problems.ts", "builder/firstRunModel.ts",
+    "builder/widgetGroups.ts", "builder/copy.ts", "builder/problems.ts", "builder/firstRunModel.ts",
     "builder/shortcuts.ts", "builder/navigatorModel.ts", "builder/insertPosition.ts",
   ];
   test("not Elementor, not Gutenberg, not Wix — in anything that renders", () => {

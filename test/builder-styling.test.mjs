@@ -649,35 +649,67 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
   const shell = readSrc("builder/BuilderShell.tsx");
   const pane = readSrc("builder/WidgetPane.tsx");
 
-  /* THREE HALVES NOW, not two (§11.12, D-156): a BOX is a third kind of thing
-     that can be selected, and it gets its own two groups above the widget's.
-     The slices are taken from the markers rather than from position, so adding
-     a group cannot silently pass by shifting everything along. */
-  const groupOrder = () => [...inspector.matchAll(/<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|AdvancedGroup)/g)]
-    .map((m) => m[2] || m[1]);
+  /* THE THREE TABS (§11.13.1, D-165). Every group in the inspector declares
+     which tab it is in, and the assertions below read THAT rather than the
+     order of the file — a group that lost its `shownTab` guard would render in
+     all three tabs at once, which is the defect these pin. */
+  const GROUP_RE = /<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|ResponsiveGroup)/g;
+  /* The file cut at every `shownTab === "…"` marker: every group between one
+     marker and the next belongs to that tab. Reading the markers rather than
+     counting lines is what makes "one guard was dropped" a red test instead of
+     a silently shifted list. */
+  const byTab = (() => {
+    const out = { content: [], style: [], advanced: [] };
+    const cuts = [...inspector.matchAll(/shownTab === "(content|style|advanced)"/g)];
+    cuts.forEach((m, i) => {
+      const chunk = inspector.slice(m.index, i + 1 < cuts.length ? cuts[i + 1].index : inspector.length);
+      for (const g of chunk.matchAll(GROUP_RE)) out[m[1]].push(g[2] || g[1]);
+    });
+    return out;
+  })();
+  const groupsIn = (tab) => byTab[tab];
 
-  test("a BOX gets Layout then Style, above everything else (D-156)", () => {
-    const order = groupOrder();
-    assert.deepEqual(order.slice(0, order.indexOf("Content")), ["Layout", "Style"]);
+  test("EVERY group is behind a tab — none renders in all three", () => {
+    // The mutation that matters: drop one `shownTab ===` guard and that group
+    // appears on Content, Style and Advanced at once.
+    const all = [...inspector.matchAll(GROUP_RE)].map((m) => m[2] || m[1]);
+    const behind = [...groupsIn("content"), ...groupsIn("style"), ...groupsIn("advanced")];
+    assert.equal(all.length, behind.length,
+      `${all.length} groups, ${behind.length} behind a tab: ${all.filter((g) => !behind.includes(g))}`);
   });
 
-  test("a widget gets Content, Typography, Spacing, Advanced — in that order", () => {
-    const order = groupOrder();
-    const widgetHalf = order.slice(order.indexOf("Content"), order.lastIndexOf("Layout"));
-    assert.deepEqual(widgetHalf, ["Content", "TypographyGroup", "SpacingGroup", "AdvancedGroup"]);
+  test("a BOX's first tab is LAYOUT and its Style tab is its edge (D-165)", () => {
+    assert.match(inspector, /\{box && shownTab === "content" && \(/);
+    assert.match(inspector, /\{box && shownTab === "style" && \(/);
+    assert.match(inspector, /first=\{widget && !box \? "Content" : "Layout"\}/);
   });
 
-  test("a section gets Layout, Spacing, Style, Typography, Page — in that order", () => {
-    const order = groupOrder();
-    assert.deepEqual(order.slice(order.lastIndexOf("Layout")), ["Layout", "SpacingGroup", "Style", "Typography", "Page"]);
+  test("a widget: Content · Style is Typography · Advanced is Layout and Responsive", () => {
+    assert.ok(groupsIn("content").includes("Content"), "no Content group on the Content tab");
+    assert.ok(groupsIn("style").includes("TypographyGroup"), "Typography is not on Style");
+    const adv = groupsIn("advanced");
+    assert.ok(adv.includes("SpacingGroup") && adv.includes("ResponsiveGroup"), `Advanced holds ${adv}`);
+  });
+
+  test("a section: Layout · Background and Typography · Layout and Page", () => {
+    assert.ok(groupsIn("content").includes("Layout"), "the section's columns are not on its first tab");
+    assert.ok(groupsIn("style").includes("Background"), "the section's background is not on Style");
+    assert.ok(groupsIn("advanced").includes("Page"), "the page break is not on Advanced");
+  });
+
+  test("the section's own groups show ONLY when the section is selected (D-165)", () => {
+    // WAS: every section group repeated under every widget's, in one scroll,
+    // with two groups called "Layout" arguing. The reference shows the element
+    // you clicked and nothing else.
+    assert.match(inspector, /\{!widget && \(/);
   });
 
   test("a box has NO Content group and NO Typography group (D-156)", () => {
     // It holds things; it does not say anything. Both are guarded by `!box`,
     // and a mutation that drops either guard shows an empty Content panel on a
     // box, which is a control that lies.
-    assert.match(inspector, /\{!box && \(\s*<Group title="Content"/);
-    assert.match(inspector, /\{!box && isTypographic\(widget\.kind\)/);
+    assert.match(inspector, /\{!box && shownTab === "content" && \(\s*<Group title="Content"/);
+    assert.match(inspector, /\{!box && shownTab === "style" && isTypographic\(widget\.kind\)/);
   });
 
   test("every group can be reset and every group collapses", () => {
@@ -693,7 +725,13 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     assert.match(shell, /device=\{preview\}/);
     assert.match(shell, /onDevice=\{setPreview\}/);
     assert.equal((shell.match(/useState<PreviewKey>/g) || []).length, 1);
-    assert.doesNotMatch(inspector, /useState/, "the inspector must not keep a device of its own");
+    // The inspector keeps ONE piece of state and it is which TAB is showing
+    // (D-165). Never a device: two device states is exactly the drift this
+    // pass exists to delete.
+    assert.doesNotMatch(inspector, /useState<Device>/, "the inspector keeps a device of its own");
+    assert.doesNotMatch(inspector, /useState\(preview/, "the inspector keeps a device of its own");
+    assert.equal((inspector.match(/useState</g) || []).length, 1,
+      "the inspector grew a second piece of state");
   });
 
   test("the pane drags, the canvas draws the line, the shell holds the payload", () => {

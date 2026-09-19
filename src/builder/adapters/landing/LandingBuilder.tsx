@@ -313,7 +313,15 @@ export function LandingBuilder(p: LandingBuilderProps) {
           </button>
         </>
       }
-      paneHeader={
+      /* WAS `paneHeader` (§11.13.1, D-165, stream 1).
+
+         The left panel is the widgets panel and nothing else, so the slot
+         this came through is deleted. The words are unchanged and now ride
+         on `documentExtras`, which the inspector shows as Page settings.
+         This is a MECHANICAL move to keep the tree compiling; deciding where
+         this actually belongs is this adapter's own stream — see
+         D165_HANDOFF_2026-09-19.md. */
+      documentExtras={
         <div style={{ fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
           {p.arionSitePath && (
             <div style={{ color: "#1D4ED8" }}>

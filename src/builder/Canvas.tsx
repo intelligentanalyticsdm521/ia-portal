@@ -124,7 +124,17 @@ export interface CanvasProps {
   onDuplicateSection: (sectionId: string) => void;
   onDeleteSection: (sectionId: string) => void;
   onMoveSection: (sectionId: string, toIndex: number) => void;
-  onAddSection: (atIndex: number, how: "blank" | "premade") => void;
+  /**
+   * ADD A SECTION (§11.13.1 item 5, D-165).
+   *
+   * ONE button, and it opens the pop-up that asks Blank or Template. The two
+   * separate "Blank section" and "Ready-made section…" buttons this
+   * replaced made the choice before the author had been asked, and put a third
+   * and fourth control on a strip that already had a "+".
+   *
+   * The rectangle is where the button was, so the pop-up appears on it.
+   */
+  onAddSection: (atIndex: number, at: DOMRect) => void;
   /** A widget's own hover handle (D-12). */
   onDuplicateWidget?: (path: WidgetPath) => void;
   onDeleteWidget?: (path: WidgetPath) => void;
@@ -410,12 +420,11 @@ export function Canvas(props: CanvasProps) {
                 : null}
             >
               {i === doc.sections.length - 1 && (
-                <>
-                  <button type="button" className="bxc-tiny" title="Add a blank section here"
-                    onClick={(e) => { e.stopPropagation(); props.onAddSection(i + 1, "blank"); }}>Blank section</button>
-                  <button type="button" className="bxc-tiny" title="Add a ready-made section here"
-                    onClick={(e) => { e.stopPropagation(); props.onAddSection(i + 1, "premade"); }}>Ready-made section…</button>
-                </>
+                <button type="button" className="bxc-tiny" data-builder-addsection-btn
+                  title="Add a section here — blank, or from a template"
+                  onClick={(e) => { e.stopPropagation(); props.onAddSection(i + 1, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}>
+                  Add section
+                </button>
               )}
             </AddBar>
           </div>
@@ -425,10 +434,11 @@ export function Canvas(props: CanvasProps) {
         {!doc.sections.length && (
           <AddBar always label={`Add the first thing to this ${copy.noun}`}
             onAdd={(rect) => props.onOpenPicker?.({ kind: "newSection", index: 0 }, rect)}>
-            <button type="button" className="bxc-tiny" title="Add a blank section here"
-              onClick={(e) => { e.stopPropagation(); props.onAddSection(0, "blank"); }}>Blank section</button>
-            <button type="button" className="bxc-tiny" title="Add a ready-made section here"
-              onClick={(e) => { e.stopPropagation(); props.onAddSection(0, "premade"); }}>Ready-made section…</button>
+            <button type="button" className="bxc-tiny" data-builder-addsection-btn
+              title="Add a section here — blank, or from a template"
+              onClick={(e) => { e.stopPropagation(); props.onAddSection(0, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}>
+              Add section
+            </button>
           </AddBar>
         )}
 

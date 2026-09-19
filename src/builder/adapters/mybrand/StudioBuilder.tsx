@@ -701,18 +701,15 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </IadmButton>
           </div>
         }
+        /* THE PANE'S `header` SLOT IS GONE (§11.13.1, D-165, stream 1): the
+           left panel is the widgets panel and nothing else. These are the
+           studio's own insert tools — the shape chooser, the chart, the AI
+           box — so they sit ABOVE the widget list rather than inside its
+           component. Whether they belong here at all is this adapter's own
+           call; the request is in D165_HANDOFF_2026-09-19.md. */
         pane={
-          <WidgetPane
-            adapter="brand"
-            onInsert={onInsert}
-            /* D-30: a social graphic is a PICTURE, not a page and not a
-               document. The engine's generic line says "page". (The per-widget
-               sentences are still the proposal's in places — "optionally
-               numbered like '1. Scope of work'" on a social graphic — and that
-               is a registry entry, which belongs to another stream; the request
-               is in overnight-report/REBUILD_HANDOFF_2026-09-16.md.) */
-            hint="Click one to drop it on the picture, then drag it where you want it."
-            header={
+          <>
+            <div style={{ borderBottom: "1px solid #E2E8F0", padding: 12 }}>
               <>
               {/* D-36: "Which shape?" opened a SECOND full-screen modal over
                   the canvas, so the author could not see where the shape would
@@ -764,8 +761,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 }}
               />
               </>
-            }
-          />
+            </div>
+            <div style={{ minHeight: 0, flex: 1 }}>
+              <WidgetPane adapter="brand" onInsert={onInsert} />
+            </div>
+          </>
         }
         inspector={
           <LayerInspector

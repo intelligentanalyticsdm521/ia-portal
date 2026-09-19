@@ -12,17 +12,19 @@
  * inserts where the author is (insertPosition.ts), the picker inserts at the
  * "+" that opened it. One vocabulary, two doors.
  *
- * ── GROUPS BY TASK, NOT BY TYPE ───────────────────────────────────────────
- * "Information" and "Trust" are categories a developer wrote down. "Customer &
- * property" and "Products & services" are the two sentences Brandon actually
- * said. See widgetTasks.ts.
+ * ── ONE GROUPING, THE REFERENCE EDITOR'S (§11.13.1, D-165) ────────────────
+ * Layout / Basic / General / Intelligent Analytics, from widgetGroups.ts —
+ * the same call the left panel makes. WAS "Customer & property", "Products &
+ * services" etc. (D-147); those were the job a widget does, and the reference
+ * groups by what a widget IS. The panel and the "+" must never be two
+ * vocabularies, so there is one function and two callers.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import type { BuilderAdapter, WidgetDef } from "./registry";
 import { widgetDescription, widgetLabel, widgetTooltip } from "./registry";
 import type { WidgetLock } from "./tier";
-import { groupByTask, flatMatches, TASK_GROUPS, type WidgetTask } from "./widgetTasks";
+import { panelGroups, flatPanelMatches, PANEL_GROUPS, type PanelGroup } from "./widgetGroups";
 import { CONTAINER_PRESETS, type ContainerPreset } from "./treeOps";
 
 export interface WidgetPickerProps {
@@ -51,7 +53,7 @@ export interface WidgetPickerProps {
    */
   query?: string;
   /** Opened from an empty-page choice: start on one group. */
-  task?: WidgetTask | null;
+  group?: PanelGroup | null;
   /** Rendered along the bottom — "Blank section", "Ready-made section…". */
   footer?: React.ReactNode;
   /** The heading, in the adapter's words. */
@@ -79,13 +81,13 @@ export interface WidgetPickerProps {
  * means without either of them re-deriving it.
  */
 export function topMatch(adapter: BuilderAdapter, query: string): WidgetDef | null {
-  return flatMatches(adapter, query)[0] ?? null;
+  return flatPanelMatches(adapter, query)[0] ?? null;
 }
 
 /**
  * The boxes a search matches. Every word has to match, like the widget search.
  *
- * Kept beside the widgets rather than folded into `widgetTasks.groupByTask`,
+ * Kept beside the widgets rather than folded into `widgetGroups.panelGroups`,
  * because that module's whole promise is "every widget an ADAPTER offers
  * appears in exactly one group", and a box is not something an adapter offers.
  * Blurring that would make the test which protects it untrue.
@@ -102,7 +104,7 @@ export function boxMatches(query: string): ContainerPreset[] {
 export function WidgetPicker(p: WidgetPickerProps) {
   const controlled = p.query !== undefined;
   const [own, setOwn] = useState("");
-  const [task, setTask] = useState<WidgetTask | "All">(p.task ?? "All");
+  const [task, setTask] = useState<PanelGroup | "All">(p.group ?? "All");
   const boxRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const query = controlled ? (p.query as string) : own;
@@ -123,13 +125,13 @@ export function WidgetPicker(p: WidgetPickerProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const groups = useMemo(() => groupByTask(p.adapter, query), [p.adapter, query]);
+  const groups = useMemo(() => panelGroups(p.adapter, query), [p.adapter, query]);
 
   /**
    * THE BOXES THIS SEARCH MATCHES — and the reason the Layout group is put
    * back when only they match (V-3's sibling, found by driving it 2026-09-17).
    *
-   * `groupByTask` returns the groups that hold a matching WIDGET. A box is not
+   * `panelGroups` returns the groups that hold a matching WIDGET. A box is not
    * a widget, so typing "row" — which matches the Row box and no widget at all
    * — dropped the Layout group out of the list entirely and the picker said
    * *"Nothing here matches 'row'"* while holding exactly the thing asked for.
@@ -139,21 +141,21 @@ export function WidgetPicker(p: WidgetPickerProps) {
    */
   const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : []), [p.onPickBox, query]);
   const withLayout = useMemo(() => {
-    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;
+    if (!boxes.length || groups.some((g) => g.group === "Layout")) return groups;
     const out = [...groups];
-    // In TASK_GROUPS order, so Layout sits where it always sits.
-    const at = TASK_GROUPS.indexOf("Layout");
-    const i = out.findIndex((g) => TASK_GROUPS.indexOf(g.task) > at);
-    out.splice(i < 0 ? out.length : i, 0, { task: "Layout" as WidgetTask, widgets: [] });
+    // In PANEL_GROUPS order, so Layout sits where it always sits.
+    const at = PANEL_GROUPS.indexOf("Layout");
+    const i = out.findIndex((g) => PANEL_GROUPS.indexOf(g.group) > at);
+    out.splice(i < 0 ? out.length : i, 0, { group: "Layout" as PanelGroup, widgets: [] });
     return out;
   }, [boxes, groups]);
   const shown = useMemo(
-    () => (task === "All" ? withLayout : withLayout.filter((g) => g.task === task)),
+    () => (task === "All" ? withLayout : withLayout.filter((g) => g.group === task)),
     [withLayout, task]);
   const total = useMemo(
-    () => shown.reduce((n, g) => n + g.widgets.length, 0) + (shown.some((g) => g.task === "Layout") ? boxes.length : 0),
+    () => shown.reduce((n, g) => n + g.widgets.length, 0) + (shown.some((g) => g.group === "Layout") ? boxes.length : 0),
     [boxes, shown]);
-  const offered = useMemo(() => new Set(withLayout.map((g) => g.task)), [withLayout]);
+  const offered = useMemo(() => new Set(withLayout.map((g) => g.group)), [withLayout]);
 
   /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
      It asked, before the thing was on the page, a question the author could
@@ -217,7 +219,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
       )}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, padding: "8px 12px 0" }}>
-        {(["All", ...TASK_GROUPS.filter((t) => offered.has(t))] as Array<WidgetTask | "All">).map((t) => (
+        {(["All", ...PANEL_GROUPS.filter((t) => offered.has(t))] as Array<PanelGroup | "All">).map((t) => (
           <button key={t} type="button" onClick={() => setTask(t)} title={t === "All" ? "Show everything" : `Show ${t.toLowerCase()}`}
             style={{
               fontSize: 10, fontWeight: 600, borderRadius: 999, padding: "3px 9px", cursor: "pointer",
@@ -234,9 +236,9 @@ export function WidgetPicker(p: WidgetPickerProps) {
           </div>
         )}
         {shown.map((g) => (
-          <div key={g.task} style={{ marginBottom: 12 }}>
+          <div key={g.group} style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: ".06em", textTransform: "uppercase", color: "#5A7A8A", marginBottom: 6 }}>
-              {g.task}
+              {g.group}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               {/* THE BOXES, AT THE TOP OF LAYOUT (§11.12, D-156).
@@ -245,7 +247,7 @@ export function WidgetPicker(p: WidgetPickerProps) {
                   are FIRST in the group because they are the thing the group is
                   now for, and the three columns/sections rows below them are
                   what you reach for afterwards. */}
-              {g.task === "Layout" && p.onPickBox && boxes.map((preset) => (
+              {g.group === "Layout" && p.onPickBox && boxes.map((preset) => (
                 <button
                   key={preset.key}
                   type="button"

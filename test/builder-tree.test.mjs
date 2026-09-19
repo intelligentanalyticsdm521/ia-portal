@@ -680,7 +680,7 @@ describe("the surfaces carry the tree, and carry it once", () => {
 
   test("the picker's Layout group offers the boxes, and they are not fake widgets", () => {
     assert.match(picker, /CONTAINER_PRESETS/);
-    assert.match(picker, /g\.task === "Layout" && p\.onPickBox/);
+    assert.match(picker, /g\.group === "Layout" && p\.onPickBox/);
     assert.match(picker, /data-picker-box=/);
     // A container has no registry entry and must not pretend to.
     assert.doesNotMatch(picker, /WIDGETS_BY_KIND\["container"\]/);
@@ -688,7 +688,7 @@ describe("the surfaces carry the tree, and carry it once", () => {
 
   test("the outline can move something between levels, through the same moveNode", () => {
     assert.match(nav, /onMoveNode\?\.\(dragId, dropTargetFor\(rows, i\)\)/);
-    assert.match(shell, /onMoveNode: \(id, to\) =>/);
+    assert.match(shell, /onMoveNode=\{\(id, to\) =>/);
     assert.match(shell, /moveNode\(doc, id, to\.hostId, to\.index\)/);
   });
 
