@@ -217,7 +217,7 @@ export function renderTestimonial(w: Widget, ctx: RenderContext): string {
   const who = `<span class="bx-attrib-who" style="display:${aside ? "inline-block" : "block"};text-align:${esc(align)}">`
     + `${ctx.mode === "edit" ? nameRun : anchor(nameRun)}${jobRun}</span>`;
   const picture = image
-    ? anchor(`<img class="bx-attrib-img" src="${esc(image)}" alt=""`
+    ? anchor(`<img class="bx-attrib-img" src="${esc(image)}" alt="${esc(name || "A customer")}"`
       + ` style="width:36px;height:36px;border-radius:999px;object-fit:cover;border-style:none;border-width:0;border-color:transparent"/>`)
     : "";
   return `${css}<blockquote class="bx-quote ${esc(parts.cls)}" style="text-align:${esc(align)}">
@@ -285,7 +285,12 @@ export function emailTestimonial(w: Widget, ctx: EmailRenderContext): string {
      round. */
   const picture = image
     ? `<div style="${alignCss}margin-top:8px;">`
-      + wrap(`<img src="${esc(image)}" width="${px}" height="${px}" alt="" style="width:${px}px;height:${px}px;" />`)
+      /* THE ALT IS THE PERSON'S NAME, and it is the mailbox guard that says so:
+         "a picture has no description, so a reader with images off sees
+         nothing". Found by RUNNING `checkEmailSafe`, not by reading it. An
+         empty alt would be right for pure decoration and this is not — it is
+         the face of the person whose words these are. */
+      + wrap(`<img src="${esc(image)}" width="${px}" height="${px}" alt="${esc(name || "A customer")}" style="width:${px}px;height:${px}px;" />`)
       + `</div>`
     : "";
   return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>`

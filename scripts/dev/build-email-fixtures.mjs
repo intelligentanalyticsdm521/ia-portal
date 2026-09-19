@@ -165,6 +165,30 @@ const emailCases = [
   widgetCase("social links, from the business", "social_links", { links: [], align: "Centre" }),
   widgetCase("countdown shows the date", "countdown", { ends_at: "1 November 2026" }),
   widgetCase("review", "testimonial", { quote: "They were out before we opened.", attribution: "Hope Ministries", rating: 5 }),
+  /* B-168 F5 DEEP PASS — the same widget with Elementor's own Style tab used.
+     The case above is the UNTOUCHED one and its bytes have not moved, which is
+     the promise the deep pass made: every declaration is conditional. This one
+     proves the other half — that a colour, a size, a weight, an alignment, a
+     picture, a link and a job title all reach a real mailbox, under the keys
+     Elementor spells them with. Both repos run their own renderer against it. */
+  widgetCase("review, styled the way Elementor styles one", "testimonial", {
+    quote: "They were out before we opened.",
+    attribution: "Hope Ministries",
+    job: "Property manager",
+    image: "https://cdn.example.test/face.jpg",
+    link: "https://example.test/review",
+    align: "end",
+    rating: 5,
+    image_size: 64,
+    content_content_color: "#123456",
+    content_typography_font_size: 22,
+    content_typography_line_height: 1.4,
+    content_typography_font_weight: "700",
+    name_text_color: "#654321",
+    name_typography_text_transform: "uppercase",
+    name_typography_letter_spacing: 1,
+    job_typography_font_style: "italic",
+  }),
   /* B-168 F5 - IA Reviews in a mailbox: stacked, never a carousel, because a
      mailbox cannot swipe. Both spellings of the list are read; this case uses
      the page engine own key. */

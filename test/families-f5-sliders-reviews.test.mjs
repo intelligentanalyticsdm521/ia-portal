@@ -43,6 +43,14 @@ import { makeContext } from "../src/builder/render.ts";
 import { FAMILIES, renderFamily } from "../src/builder/widgets/families/index.ts";
 import { emptyDocument, makeWidget } from "../src/builder/model.ts";
 import { assertFamilyContract, SETTINGS_KEYS } from "./helpers/familyContract.mjs";
+/* The deep pass (2026-09-19) asks two things of the PANEL as well as of the
+   renderer: that a control is a type the Inspector draws, and that a
+   responsive one is stored under the spelling the panel really uses. Both
+   are EXECUTED, from the panel's own module, rather than restated here. */
+import { PANEL_CONTROL_TYPES, deviceKey } from "../src/builder/definitionControls.tsx";
+import { deviceContainerQuery } from "../src/builder/responsive.ts";
+/** A regular-expression-safe copy of a string — for the container queries. */
+const esc4 = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const FAMILY = FAMILIES.find(([name]) => name === "f5-sliders-reviews")[1];
 const defOf = (kind) => FAMILY.defs.find((d) => d.kind === kind);
@@ -233,6 +241,292 @@ describe("each widget draws the thing it promises", () => {
       const html = draw(kind, defOf(kind).defaults, "edit");
       assert.doesNotMatch(html, /undefined|\[object Object\]/, kind);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE DEEP PANEL — Elementor's own Testimonial, control by control
+   ══════════════════════════════════════════════════════════════════════════
+
+   The wave-2 job, in the brief's own words: *"the renderer honours EVERY
+   control you add — a control that changes nothing on the canvas is a defect,
+   not a feature."* So this suite does not read the definition and tick it off
+   against a list. It EXECUTES the renderer with one control set at a time and
+   looks for the change on the canvas, and it executes the panel's own
+   `deviceKey` for the responsive ones rather than assuming the spelling.
+
+   THE SOURCE IS THE MACHINE FILE, read at run time — `SETTINGS_KEYS` is
+   machine-cut from the two 2026-09-17 catalogues of a real Elementor install,
+   so "is this Elementor's key" is answered by Elementor and not by us.
+*/
+describe("Testimonial carries Elementor's own panel", () => {
+  const DEF = defOf("testimonial");
+  const keyOf = (c) => c.key;
+  const KEYS = DEF.controls.map(keyOf);
+  /** Every settings key Elementor's own `testimonial` widget has. */
+  const ELEMENTOR_KEYS = SETTINGS_KEYS.widgets.testimonial.keys;
+
+  test("every control is one Elementor has, or one of the five legacy names", () => {
+    /* MUTATION: rename `image_border_color` to `image_edge_colour` → red, by
+       name. A key Elementor does not have is DROPPED SILENTLY on publish: the
+       author changes a setting, the toast is green and the live page does not
+       move. */
+    const ours = new Set(["quote", "attribution", "job", "image", "align"]);
+    const strays = KEYS.filter((k) => !ELEMENTOR_KEYS.includes(k) && !ours.has(k));
+    assert.deepEqual(strays, [], "a control Elementor's Testimonial does not have");
+  });
+
+  test("the panel is Elementor's five sections, on Elementor's two tabs", () => {
+    const sections = [];
+    for (const c of DEF.controls) {
+      const at = `${c.tab || "content"}/${c.section}`;
+      if (sections[sections.length - 1] !== at) sections.push(at);
+    }
+    assert.deepEqual(sections, [
+      "content/Testimonial", "style/Content", "style/Image", "style/Name", "style/Title",
+    ]);
+  });
+
+  test("THIRTY-NINE controls, where there were eleven", () => {
+    /* Not a vanity number: it is the count the handoff reports and the number
+       that goes red if somebody quietly drops a section. Elementor's own panel
+       has fifty-three once the section headers and the device twins are folded
+       out of the ninety rows in the machine file. */
+    assert.equal(DEF.controls.length, 39);
+  });
+
+  test("the fourteen that are NOT here are the fourteen we said, and no others", () => {
+    /* Each of these is refused for a reason written in the file's own header:
+       a popover the engine has no control type for, a composite text shadow,
+       a font list only the brand kit can answer, and a WordPress image size
+       there is no media library behind. Naming them here means dropping a
+       control by accident cannot hide inside "we left some out". */
+    const LEFT_OUT = [
+      "content_typography_typography", "name_typography_typography", "job_typography_typography",
+      "content_shadow_text_shadow_type", "name_shadow_text_shadow_type", "job_shadow_text_shadow_type",
+      "content_shadow_text_shadow", "name_shadow_text_shadow", "job_shadow_text_shadow",
+      "content_typography_font_family", "name_typography_font_family", "job_typography_font_family",
+      "testimonial_image_size", "testimonial_image_custom_dimension",
+    ];
+    for (const k of LEFT_OUT) {
+      assert.ok(ELEMENTOR_KEYS.includes(k), `${k} is not even Elementor's — fix the list`);
+      assert.equal(KEYS.includes(k), false, `${k} is on the panel and the header says it is not`);
+    }
+    /* THE ARITHMETIC, so the two halves cannot drift: what we carry plus what we
+       refused is Elementor's whole panel, minus the five names of our own. */
+    const ours = new Set(["quote", "attribution", "job", "image", "align"]);
+    const carried = KEYS.filter((k) => !ours.has(k));
+    const twins = ELEMENTOR_KEYS.filter((k) => /_(tablet|mobile)$/.test(k));
+    /* `section_*` rows are the PANEL SECTIONS themselves, not settings — the
+       catalogue lists them because Elementor registers a section like a
+       control. Our five section names are asserted separately, above. */
+    const distinct = ELEMENTOR_KEYS
+      .filter((k) => !twins.includes(k) && !k.startsWith("section_"));
+    /* Our five stand in for five of Elementor's, which are therefore neither
+       carried under their own name nor refused. */
+    const standIns = ["testimonial_content", "testimonial_name", "testimonial_job",
+      "testimonial_image", "testimonial_alignment"];
+    assert.deepEqual(
+      distinct.filter((k) => !carried.includes(k) && !LEFT_OUT.includes(k) && !standIns.includes(k)),
+      [], "a control of Elementor's that is neither carried nor refused out loud");
+  });
+
+  test("every control is a TYPE the panel can actually draw, or words on the page", () => {
+    /* A control the Inspector draws nothing for is a setting nobody can reach,
+       which is the same defect as one the renderer ignores, at the other end.
+       `PANEL_CONTROL_TYPES` is the panel's own list, executed. */
+    const TYPED_ON_THE_PAGE = new Set(["quote", "attribution", "job"]);
+    for (const c of DEF.controls) {
+      if (TYPED_ON_THE_PAGE.has(c.key)) continue;
+      assert.ok(PANEL_CONTROL_TYPES.has(c.type), `${c.key} is a ${c.type}, which the panel draws nothing for`);
+    }
+  });
+
+  test("responsive is copied from the machine file, never guessed", () => {
+    /* A control marked responsive here must have `_tablet` and `_mobile` twins
+       in Elementor, and a control that has them must be marked. Both halves,
+       because getting it wrong either way is a device value that goes nowhere.
+       `deviceKey` is EXECUTED, so the spelling is the panel's own. */
+    for (const c of DEF.controls) {
+      const hasTwins = ELEMENTOR_KEYS.includes(`${c.key}_tablet`)
+        || (c.key === "align" && ELEMENTOR_KEYS.includes("testimonial_alignment_tablet"));
+      if (c.responsive) {
+        assert.ok(hasTwins, `${c.key} is marked responsive and Elementor has no device twin for it`);
+        assert.equal(deviceKey(c, "tablet"), `${c.key}_tablet`);
+        assert.equal(deviceKey(c, "phone"), `${c.key}_mobile`);
+      } else {
+        assert.equal(deviceKey(c, "phone"), c.key, `${c.key} is not responsive and must not vary`);
+      }
+    }
+  });
+
+  /* ── THE RENDERER HONOURS EVERY ONE OF THEM ──────────────────────────── */
+
+  /** Draw a testimonial with these props, in view mode. */
+  const tm = (props) => draw("testimonial", {
+    quote: "They were out before we opened.", attribution: "Hope Ministries", ...props,
+  }, "view");
+
+  test("EXECUTED: every Style control changes the canvas", () => {
+    /* One at a time, each looked for in the output. This is the guard the brief
+       asks for by name. MUTATION: delete one branch of `partTypeDeclarations`
+       and the pair naming that control goes red.
+
+       [key, value, what has to appear] */
+    const CASES = [
+      ["content_content_color", "#123456", /\.bx-quote-b\{[^}]*color:#123456/],
+      ["content_typography_font_size", 22, /\.bx-quote-b\{[^}]*font-size:22px/],
+      ["content_typography_line_height", 1.4, /\.bx-quote-b\{[^}]*line-height:1\.4/],
+      ["content_typography_letter_spacing", 2, /\.bx-quote-b\{[^}]*letter-spacing:2px/],
+      ["content_typography_word_spacing", 3, /\.bx-quote-b\{[^}]*word-spacing:3px/],
+      ["content_typography_font_weight", "700", /\.bx-quote-b\{[^}]*font-weight:700/],
+      ["content_typography_text_transform", "uppercase", /\.bx-quote-b\{[^}]*text-transform:uppercase/],
+      ["content_typography_font_style", "italic", /\.bx-quote-b\{[^}]*font-style:italic/],
+      ["content_typography_text_decoration", "underline", /\.bx-quote-b\{[^}]*text-decoration:underline/],
+      ["name_text_color", "#654321", /\.bx-attrib-n\{[^}]*color:#654321/],
+      ["name_typography_font_size", 18, /\.bx-attrib-n\{[^}]*font-size:18px/],
+      ["name_typography_font_weight", "600", /\.bx-attrib-n\{[^}]*font-weight:600/],
+      ["name_typography_text_transform", "capitalize", /\.bx-attrib-n\{[^}]*text-transform:capitalize/],
+      ["name_typography_line_height", 1.1, /\.bx-attrib-n\{[^}]*line-height:1\.1/],
+      ["name_typography_letter_spacing", 1, /\.bx-attrib-n\{[^}]*letter-spacing:1px/],
+      ["name_typography_word_spacing", 2, /\.bx-attrib-n\{[^}]*word-spacing:2px/],
+      ["name_typography_font_style", "oblique", /\.bx-attrib-n\{[^}]*font-style:oblique/],
+      ["name_typography_text_decoration", "none", /\.bx-attrib-n\{[^}]*text-decoration:none/],
+      ["job_text_color", "#0A0B0C", /\.bx-attrib-j\{[^}]*color:#0A0B0C/],
+      ["job_typography_font_size", 11, /\.bx-attrib-j\{[^}]*font-size:11px/],
+      ["job_typography_font_weight", "300", /\.bx-attrib-j\{[^}]*font-weight:300/],
+      ["job_typography_font_style", "italic", /\.bx-attrib-j\{[^}]*font-style:italic/],
+      ["job_typography_text_transform", "lowercase", /\.bx-attrib-j\{[^}]*text-transform:lowercase/],
+      ["job_typography_text_decoration", "line-through", /\.bx-attrib-j\{[^}]*text-decoration:line-through/],
+      ["job_typography_line_height", 2, /\.bx-attrib-j\{[^}]*line-height:2/],
+      ["job_typography_letter_spacing", 3, /\.bx-attrib-j\{[^}]*letter-spacing:3px/],
+      ["job_typography_word_spacing", 4, /\.bx-attrib-j\{[^}]*word-spacing:4px/],
+      ["image_size", 64, /\.bx-attrib-img\{[^}]*width:64px;height:64px/],
+      ["image_border_border", "dashed", /\.bx-attrib-img\{[^}]*border-style:dashed/],
+      ["image_border_width", 3, /\.bx-attrib-img\{[^}]*border-width:3px/],
+      ["image_border_color", "#FF00AA", /\.bx-attrib-img\{[^}]*border-color:#FF00AA/],
+      ["image_border_radius", 6, /\.bx-attrib-img\{[^}]*border-radius:6px/],
+    ];
+    for (const [key, value, wanted] of CASES) {
+      const html = tm({ job: "Property manager", image: "https://x.test/f.jpg", [key]: value });
+      assert.match(html, wanted, `${key} changed nothing on the canvas`);
+    }
+    /* Every Style control is in that list — so a control added later without a
+       case here fails rather than passing unnoticed. */
+    const covered = new Set(CASES.map(([k]) => k));
+    const styleKeys = DEF.controls.filter((c) => c.tab === "style").map(keyOf);
+    assert.deepEqual(styleKeys.filter((k) => !covered.has(k)), []);
+  });
+
+  test("EXECUTED: every Content control changes the canvas", () => {
+    assert.match(tm({}), /They were out before we opened\./);
+    assert.match(tm({}), /Hope Ministries/);
+    assert.match(tm({ job: "Property manager" }), /Property manager/);
+    assert.match(tm({ image: "https://x.test/f.jpg" }), /<img class="bx-attrib-img" src="https:\/\/x\.test\/f\.jpg"/);
+    assert.match(tm({ link: "https://example.test/r" }), /href="https:\/\/example\.test\/r"/);
+    assert.match(tm({ align: "end" }), /text-align:end/);
+    // Image Position is Elementor's `aside` (a row) or `top` (a column).
+    assert.match(tm({ image: "https://x.test/f.jpg", testimonial_image_position: "top" }), /flex-direction:column/);
+    assert.match(tm({ image: "https://x.test/f.jpg", testimonial_image_position: "aside" }), /flex-direction:row/);
+  });
+
+  test("EXECUTED: a device value is drawn under that device's own query", () => {
+    /* The responsive half. `deviceContainerQuery` is the platform's own §11.8
+       mechanism, so a phone override here comes in at the same width the
+       preview toggle shows — not at a fourth number typed into this folder.
+       MUTATION: emit the tablet rule without its query → the two `@container`
+       assertions go red. */
+    const html = tm({
+      content_typography_font_size: 20,
+      content_typography_font_size_tablet: 18,
+      content_typography_font_size_mobile: 15,
+      image: "https://x.test/f.jpg", image_size: 64, image_size_mobile: 40,
+    });
+    assert.match(html, /\.bx-quote-b\{[^}]*font-size:20px/);
+    assert.match(html, new RegExp(`${esc4(deviceContainerQuery("tablet"))}\\{[^@]*font-size:18px`));
+    assert.match(html, new RegExp(`${esc4(deviceContainerQuery("phone"))}\\{[^@]*font-size:15px`));
+    assert.match(html, new RegExp(`${esc4(deviceContainerQuery("phone"))}\\{[^@]*width:40px`));
+  });
+
+  test("EXECUTED: a widget nobody styled emits no stylesheet at all", () => {
+    /* The bytes of an untouched document do not move, which is what lets the
+       shared goldens stay as they were. MUTATION: emit the class and an empty
+       block unconditionally → red. */
+    const html = tm({});
+    assert.equal(/<style>/.test(html), false, "a document nobody styled grew a stylesheet");
+  });
+
+  test("EXECUTED: one testimonial's styling cannot reach the next", () => {
+    const a = draw("testimonial", { quote: "A", content_typography_font_size: 30 }, "view");
+    const cls = /class="bx-quote (bx-pt-[A-Za-z0-9_-]+)"/.exec(a);
+    assert.ok(cls, "the scoped class is not on the element");
+    assert.match(a, new RegExp(`\\.${cls[1]} \\.bx-quote-b\\{`), "the rule is not scoped to it");
+  });
+
+  test("EXECUTED: a stored value the control does not offer is dropped, not printed", () => {
+    /* A page that published `font-weight:; ` or `border-style:javascript:` is a
+       broken stylesheet on a customer's site. Both halves: a word off the list
+       is refused, and a value carrying a brace cannot close the block early. */
+    const bad = tm({
+      image: "https://x.test/f.jpg",
+      content_typography_font_weight: "heavy",
+      image_border_border: "sparkly",
+      name_text_color: "red;}</style><script>alert(1)</script>",
+    });
+    assert.equal(/font-weight:heavy/.test(bad), false);
+    assert.equal(/border-style:sparkly/.test(bad), false);
+    assert.equal(/<script/.test(bad), false, "a stored value closed the stylesheet");
+    assert.equal(/<\/style>[^<]*<script/.test(bad), false);
+  });
+
+  test("EXECUTED: the picture is a circle until somebody says otherwise", () => {
+    const round = tm({ image: "https://x.test/f.jpg" });
+    assert.match(round, /border-radius:999px/);
+    assert.match(tm({ image: "https://x.test/f.jpg", image_border_radius: 0 }), /\.bx-attrib-img\{[^}]*border-radius:0px/);
+  });
+
+  test("EXECUTED: a link is an anchor a reader can follow, and never round the editor", () => {
+    /* A contentEditable run inside an <a> swallows the first click, so the name
+       is only wrapped when nobody is editing. The PICTURE is wrapped either
+       way, because nobody types into a picture. */
+    const viewing = tm({ image: "https://x.test/f.jpg", link: { url: "https://example.test/r", is_external: "on", nofollow: "on" } });
+    assert.match(viewing, /rel="noopener nofollow"/);
+    assert.match(viewing, /target="_blank"/);
+    const editing = draw("testimonial", {
+      quote: "Q", attribution: "N", image: "https://x.test/f.jpg", link: "https://example.test/r",
+    }, "edit");
+    assert.match(editing, /<a class="bx-quote-link"[^>]*><img/, "the picture lost its link while editing");
+    assert.equal(/<a class="bx-quote-link"[^>]*><span class="bx-attrib-n"/.test(editing), false,
+      "the editable name is inside an anchor, so the first click will not land");
+  });
+
+  test("EXECUTED: every prop the legacy definition stored still reads", () => {
+    /* The override contract's whole point: the kind id did not change, so a
+       document saved before this pass opens and draws. `content_content_color`
+       is on the list because the first pass stored it and the pattern would
+       have renamed it to `content_text_color`. */
+    const stored = {
+      quote: "From July.", attribution: "Hope Ministries", job: "Property manager",
+      image: "https://x.test/f.jpg", link: "https://example.test/r",
+      align: "left", testimonial_image_position: "top", rating: 4,
+      content_content_color: "#111111", name_text_color: "#222222", job_text_color: "#333333",
+    };
+    const html = draw("testimonial", stored, "view");
+    assert.match(html, /From July\./);
+    assert.match(html, /Property manager/);
+    assert.match(html, /text-align:start/, "a stored `left` became something else");
+    assert.match(html, /★{4}/, "a rating a stored document carries stopped drawing");
+    assert.match(html, /\.bx-quote-b\{[^}]*color:#111111/);
+    assert.match(html, /\.bx-attrib-n\{[^}]*color:#222222/);
+    assert.match(html, /\.bx-attrib-j\{[^}]*color:#333333/);
+  });
+
+  test("the defaults name every key a control can write", () => {
+    /* A control with no default is a field that opens showing someone else's
+       value, because the panel reads the prop and the prop is not there. */
+    const defaults = Object.keys(DEF.defaults);
+    const missing = DEF.controls.map(keyOf).filter((k) => !defaults.includes(k));
+    assert.deepEqual(missing, []);
   });
 });
 
