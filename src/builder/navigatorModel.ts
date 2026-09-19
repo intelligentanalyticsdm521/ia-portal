@@ -49,6 +49,17 @@ export type OutlineRow =
     depth: number;
     /** True when this row IS a box. Its children are the rows under it. */
     container: boolean;
+    /**
+     * DOES ANYTHING SIT UNDER IT (D-172)?
+     *
+     * The reference puts an expand triangle on EVERY row that has children,
+     * containers included; ours drew one on section rows only, so a
+     * container row could not be collapsed. Carried on the row rather than
+     * counted at the point of drawing, because the component draws a flat
+     * list and counting children from a flat list is the nesting computed
+     * twice.
+     */
+    hasChildren: boolean;
     /** A box says which way it runs, because that is what it is FOR. */
     direction?: "row" | "column" | "grid";
     /** The box or column it lives in — what a drag in the outline drops into. */
@@ -64,16 +75,18 @@ export type OutlineRow =
  * arithmetic over the tree, which is why it lives here with a test on it.
  */
 export function rowLabel(w: Node): string {
+  /* THE ELEMENT'S NAME, AND NOTHING ELSE (D-172).
+     The reference's rows read "Container", "Flexbox", "Heading". Ours read
+     "Container · 2 things", "Container · 1 thing", "Heading · ZZ audit
+     headi…" — a count and a snippet of the words, which is the row saying
+     three things where the reference says one. `firstWords` stays exported
+     because a RENAMED row keeps the author's own label and the default has to
+     come from somewhere; it is no longer glued onto the name. */
   if (isContainer(w)) {
-    const dir = directionOf(w);
-    const name = dir === "grid" ? "Grid" : "Container";
-    const n = w.children.length;
-    return `${name} · ${n === 0 ? "empty" : n === 1 ? "1 thing" : `${n} things`}`;
+    return directionOf(w) === "grid" ? "Grid" : "Container";
   }
   const def = WIDGETS_BY_KIND[w.kind];
-  const name = def?.label || w.kind;
-  const words = firstWords(w.props);
-  return words ? `${name} · ${words}` : name;
+  return def?.label || w.kind;
 }
 
 /**
@@ -163,6 +176,7 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
       required: isRequired(hit.node as Widget),
       depth: hit.depth,
       container: box,
+      hasChildren: box && (hit.node as { children?: unknown[] }).children!.length > 0,
       ...(box ? { direction: directionOf(hit.node) } : {}),
       parentId: hit.parentId,
     });

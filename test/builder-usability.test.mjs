@@ -309,9 +309,12 @@ describe("the outline (D-12)", () => {
     assert.deepEqual(sectionRows(doc).map((r) => r.id), [a.id, b.id, c.id]);
   });
 
-  test("a row says what the widget ACTUALLY SAYS, not just its kind", () => {
-    // Eleven rows called "Paragraph" is not an outline.
-    assert.equal(rowLabel(makeWidget("heading", { text: "Scope of work" })), "Heading · Scope of work");
+  test("a row is the widget's NAME, as the reference writes it (D-172)", () => {
+    // WAS "a row says what the widget ACTUALLY SAYS": "Heading · Scope of
+    // work". The reference's rows are "Heading", "Text Editor" — the element's
+    // name, full stop — and the words are on the page where they can be read
+    // properly rather than clipped to forty characters in a 240px window.
+    assert.equal(rowLabel(makeWidget("heading", { text: "Scope of work" })), "Heading");
     assert.equal(rowLabel(makeWidget("paragraph", {})), "Text Editor");
   });
 

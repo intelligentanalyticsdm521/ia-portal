@@ -203,7 +203,10 @@ describe("§11.13.1 item 3 — Structure is a window, not a tab", () => {
     assert.match(nav, /data-structure-grip/);
     assert.match(nav, /data-structure-close/);
     // The SAME Navigator, not a second tree.
-    assert.match(nav, /<Navigator \{\.\.\.nav\} \/>/);
+    assert.match(nav, /<Navigator \{\.\.\.nav\} collapseAll=\{collapseAll\} \/>/);
+    // …and the two things the reference's title bar and footer carry.
+    assert.match(nav, /data-structure-collapse/);
+    assert.match(nav, /data-structure-resize/);
     assert.equal((shell.match(/<Navigator[ \n]/g) || []).length, 0,
       "the shell renders a second copy of the tree");
   });

@@ -244,7 +244,10 @@ describe("M-8 · one menu, wherever it is opened from", () => {
     assert.match(canvas, /onContextMenu=\{\(e\) => \{/, "right-click does nothing on the page");
     assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/, "right-click on a widget opens nothing");
     assert.match(canvas, /onContextMenu\(\{ kind: "section", sectionId: section\.id \}/);
-    assert.match(nav, /data-nav-more="1"/, "the outline row has no more menu");
+    /* AND THE OUTLINE'S OWN ⋯ IS GONE TOO (D-172). The reference puts no
+       menu button on a row: right-click is the one door, on the page and in
+       the tree alike. ABSENT here, PRESENT above. */
+    assert.ok(!nav.includes('data-nav-more'), "the ⋯ is back on every outline row");
     // One builder of the items, one runner of them.
     assert.equal((shell.match(/menuFor\(\{/g) || []).length, 1, "the menu is built in two places");
     assert.equal((shell.match(/const runMenuAction = useCallback/g) || []).length, 1);
@@ -282,11 +285,17 @@ describe("M-21 · lock and hide say which they are", () => {
     assert.equal(isRequired(makeWidget("paragraph")), false);
   });
 
-  test("the outline row shows the state and can change it", () => {
+  test("the outline row has NO padlock — the reference's tree has no lock control", () => {
+    // ABSENT (D-172): the author's own switch, drawn on every row all the
+    // time. PRESENT: the model still refuses to unlock a part the LAW locks —
+    // which is the half of M-21 that protects the unsubscribe footer, and it
+    // is tested above by `setWidgetLocked`, not by a button.
     const nav = SRC("builder/Navigator.tsx");
-    assert.match(nav, /data-nav-locked=\{rowLocked \? "1" : "0"\}/);
-    assert.match(nav, /data-nav-locked="required"/, "a required part offers an unlock it cannot honour");
-    assert.match(nav, /<LockOpen size=\{11\} \/>/);
+    assert.ok(!nav.includes("data-nav-locked"), "the padlock is back on every outline row");
+    assert.ok(!nav.includes("LockOpen"), "the open padlock is back");
+    assert.ok(!nav.includes("onLockWidget?.("), "a row can lock a widget again");
+    // PRESENT: the eye, on hover, as the reference draws it.
+    assert.match(nav, /hoverId === row\.id \|\| hidden/);
   });
 
   test("the padlock and the eye left the handle for the menu, and the state is still readable", () => {
@@ -299,18 +308,15 @@ describe("M-21 · lock and hide say which they are", () => {
     for (const gone of ["data-widget-hidden", "data-widget-locked", "bxc-wtool-lock", "bxc-wtool-eye"]) {
       assert.ok(!canvas.includes(gone), `"${gone}" is back on the widget handle`);
     }
-    // PRESENT 1 — the right-click menu offers one half of each at a time, and
-    // says which half in words.
-    const menu = SRC("builder/builderMenu.ts");
     // PRESENT 1 — the menu is the reference's, and neither Lock nor Hide is in
     // it (D-172). What the menu keeps is the refusal a LAW-locked part earns.
+    const menu = SRC("builder/builderMenu.ts");
     assert.ok(!menu.includes('action: "hide"'), "Hide is back in the menu");
     assert.ok(!menu.includes('action: "lock"'), "Lock is back in the menu");
     assert.match(menu, /action: "delete", label: "Delete"/);
     // PRESENT 2 — the outline row still SHOWS the state, which is where a
     // hidden section is found again.
     const nav = SRC("builder/Navigator.tsx");
-    assert.match(nav, /data-nav-locked=\{rowLocked \? "1" : "0"\}/);
     assert.match(nav, /\{hidden \? <EyeOff size=\{12\} \/> : <Eye size=\{12\} \/>\}/);
     assert.match(nav, /textDecoration: hidden \? "line-through" : "none"/);
   });

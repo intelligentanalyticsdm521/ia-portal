@@ -462,20 +462,22 @@ describe("the outline shows the nesting", () => {
     assert.equal(rows[3].container, false, "the card reads as a box");
   });
 
-  test("a box is called Container or Grid — the reference editor's two words — and says how much is in it", () => {
-    /* WAS "Box · empty" / "Row · 1 thing" / "Grid · 2 things". Three words for
-       two things: a Row IS a Container with its direction set, and calling it
-       something else in the outline made it a different thing to the author
-       from the one the inspector was about. "Box" and "Row" are gone from this
-       name and from `Inspector.boxName`, which reads the same `directionOf`. */
-    assert.equal(rowLabel(makeContainer()), "Container · empty");
-    assert.equal(rowLabel(makeContainer({ direction: "row" }, [makeWidget("card", {})])), "Container · 1 thing");
+  test("a row is the element's NAME and nothing else (D-172)", () => {
+    /* The reference's rows read "Container", "Flexbox", "Heading". Ours read
+       "Container · 2 things" / "Heading · ZZ audit headi…" — a count and a
+       snippet of the words glued on, which is the row saying three things
+       where the reference says one. ABSENT: the count. PRESENT: the name, and
+       it is still the SAME name the settings panel puts at its top. */
+    assert.equal(rowLabel(makeContainer()), "Container");
+    assert.equal(rowLabel(makeContainer({ direction: "row" }, [makeWidget("card", {})])), "Container");
     assert.equal(
       rowLabel(makeContainer({ direction: "grid" }, [makeWidget("card", {}), makeWidget("card", {})])),
-      "Grid · 2 things",
+      "Grid",
     );
-    // ABSENT, in both names, so the two surfaces cannot drift apart again.
-    assert.match(readSrc("builder/navigatorModel.ts"), /const name = dir === "grid" \? "Grid" : "Container";/);
+    for (const gone of ["thing", "things", "empty"]) {
+      assert.ok(!rowLabel(makeContainer()).includes(gone), `the count is back: ${gone}`);
+    }
+    assert.match(readSrc("builder/navigatorModel.ts"), /directionOf\(w\) === "grid" \? "Grid" : "Container";/);
     assert.match(readSrc("builder/Inspector.tsx"), /return d === "grid" \? "Grid" : "Container";/);
   });
 

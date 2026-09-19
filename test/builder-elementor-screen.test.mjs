@@ -193,7 +193,8 @@ describe("SCREEN LAW 5 — the words are Elementor's", () => {
     const inspector = code(readSrc("builder/Inspector.tsx"));
     const nav = code(readSrc("builder/navigatorModel.ts"));
     assert.ok(inspector.includes('d === "grid" ? "Grid" : "Container"'), "the settings panel names a container something else");
-    assert.ok(nav.includes('dir === "grid" ? "Grid" : "Container"'), "the structure window names a container something else");
+    assert.ok(nav.includes('directionOf(w) === "grid" ? "Grid" : "Container"'),
+      "the structure window names a container something else");
   });
 });
 
@@ -545,5 +546,51 @@ describe("SCREEN LAW 8 — the right-click menu is the reference's", () => {
       pasteStyle: "Ctrl+Shift+V", structure: "Ctrl+I", delete: "Del",
     });
     assert.match(code(readSrc("builder/ContextMenu.tsx")), /data-menu-shortcut=\{item\.action\}/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 9 — THE STRUCTURE WINDOW (D-172, round 1)
+
+   Read out of the live editor on 2026-09-19:
+     header = collapse-all, an AI icon, the CENTRED title "Structure", a close X
+     a row  = an expand triangle on every row that has children, the element's
+              type icon, and its NAME. Nothing else at rest.
+     footer = a "..." resize grip
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 9 — the structure window is the reference's", () => {
+  const nav = readSrc("builder/Navigator.tsx");
+  const model = readSrc("builder/navigatorModel.ts");
+
+  test("the paragraph, the per-row ... and the per-row padlock are DELETED", () => {
+    assert.ok(!nav.includes("Click to jump to it"), "the instructions are back above the first row");
+    assert.ok(!nav.includes("data-nav-more"), "the per-row ... is back");
+    assert.ok(!nav.includes("data-nav-locked"), "the per-row padlock is back");
+    assert.ok(!nav.includes("LockOpen"), "the open padlock is back");
+    // PRESENT: the rows, straight under the title bar.
+    assert.match(nav, /data-nav-row=\{row\.kind\}/);
+  });
+
+  test("a row is the element's NAME — no count, no snippet", () => {
+    assert.match(code(model), /return directionOf\(w\) === "grid" \? "Grid" : "Container";/);
+    assert.ok(!code(model).includes("1 thing"), "the count is back on a container row");
+    assert.ok(!code(model).includes("${name} · ${words}"), "the snippet is back on a widget row");
+  });
+
+  test("the eye is on HOVER, and every parent row has a triangle", () => {
+    assert.match(nav, /const \[hoverId, setHoverId\] = useState<string \| null>\(null\);/);
+    assert.match(nav, /\(hoverId === row\.id \|\| hidden\) \?/);
+    assert.match(nav, /data-nav-toggle=\{row\.id\}/);
+    assert.match(code(model), /hasChildren: box &&/);
+  });
+
+  test("the window has the reference's collapse-all, centred title and resize grip", () => {
+    assert.match(nav, /data-structure-collapse
+/);
+    assert.match(nav, /aria-label="Collapse all elements"/);
+    assert.match(nav, /textAlign: "center", fontSize: 11\.5/);
+    assert.match(nav, /data-structure-resize/);
+    assert.match(nav, /cursor: "nwse-resize"/);
   });
 });
