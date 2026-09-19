@@ -512,8 +512,17 @@ export const renderIaPosts: FamilyRenderer = (w: Widget, ctx: RenderContext) => 
         ? `<p class="ia-card-excerpt" style="margin:0;font-size:${s.excerptSize}px;color:${skin.quiet}">${esc(trimWords(post.excerpt, s.excerptLength))}</p>` : "")
       + (s.showTags
         ? `<div class="ia-card-tags" style="margin-top:6px;font-size:${s.metaSize}px;color:${skin.quiet}">#${esc((post.category || "news").toLowerCase())}</div>` : "")
+      /* TYPED ON THE PAGE, not in the panel. `definitionControls.tsx` draws
+         toggles, selects, colours, numbers, pictures, links and code, and
+         everything that is WORDS is typed where it appears — the platform's one
+         editing mechanism. `read_more_text` and `archive_label` are words, so
+         they carry `data-edit` and the author changes them in place. Found by
+         opening the real panel: both were declared and neither was drawn
+         anywhere, which is a control that does nothing. */
       + (s.showReadMore
-        ? `<a class="ia-card-more" href="${esc(post.url || "#")}" style="display:inline-block;margin-top:8px;font-size:${s.metaSize}px;text-decoration:none;color:${esc(ctx.accent)}">${esc(post.linkLabel || s.readMoreText)} &rarr;</a>` : "")
+        ? `<a class="ia-card-more" href="${esc(post.url || "#")}" style="display:inline-block;margin-top:8px;font-size:${s.metaSize}px;text-decoration:none;color:${esc(ctx.accent)}"${
+          ctx.mode === "edit" && !post.linkLabel ? ` data-edit="read_more_text" data-placeholder="Read"` : ""
+        }>${esc(post.linkLabel || s.readMoreText)} &rarr;</a>` : "")
       + `</div></article>`;
   };
 
@@ -525,7 +534,9 @@ export const renderIaPosts: FamilyRenderer = (w: Widget, ctx: RenderContext) => 
         + `</div>`;
 
   const archive = s.archiveLink
-    ? `<div class="ia-posts-archive" style="text-align:center;margin-top:10px"><a href="${esc(s.archiveLink)}" style="font-size:13px;color:${esc(ctx.accent)};text-decoration:none">${esc(s.archiveLabel)} &rarr;</a></div>`
+    ? `<div class="ia-posts-archive" style="text-align:center;margin-top:10px"><a href="${esc(s.archiveLink)}" style="font-size:13px;color:${esc(ctx.accent)};text-decoration:none"${
+      ctx.mode === "edit" ? ` data-edit="archive_label" data-placeholder="View all articles"` : ""
+    }>${esc(s.archiveLabel)} &rarr;</a></div>`
     : "";
 
   return `<div class="bx-ia-posts ia-posts-${esc(s.skin)}" id="${esc(w.id)}" data-skin="${esc(s.skin)}">`
@@ -614,7 +625,9 @@ export const emailIaPosts: FamilyEmailRenderer = (w: Widget, c: EmailRenderConte
       ? `<div style="font-family:${body};font-size:${s.excerptSize}px;line-height:1.6;color:#374151;margin:0 0 8px 0;"${editAttr(`items.${i}.excerpt`, c, "A line or two about it…")}>${t(trimWords(a.excerpt, s.excerptLength), c)}</div>`
       : "";
     const link = s.showReadMore && a.url
-      ? `<a href="${esc(a.url)}" style="font-family:${body};font-size:${s.excerptSize}px;font-weight:600;color:${accent};text-decoration:none;">${t(a.linkLabel || s.readMoreText, c)} &rarr;</a>`
+      ? `<a href="${esc(a.url)}" style="font-family:${body};font-size:${s.excerptSize}px;font-weight:600;color:${accent};text-decoration:none;"${
+        a.linkLabel ? editAttr(`items.${i}.linkLabel`, c) : editAttr("read_more_text", c, "Read")
+      }>${t(a.linkLabel || s.readMoreText, c)} &rarr;</a>`
       : "";
     const pic = s.imageMode !== "none" && a.image
       ? `<img src="${esc(a.image)}" alt="${esc(altTextFor({ alt: a.alt, caption: a.title, src: a.image }))}" width="${s.beside ? ARTICLE_PIC : CONTENT_WIDTH}" style="display:block;width:100%;max-width:${s.beside ? ARTICLE_PIC : CONTENT_WIDTH}px;height:auto;border:0;border-radius:6px;" />`
@@ -657,7 +670,7 @@ export const emailIaPosts: FamilyEmailRenderer = (w: Widget, c: EmailRenderConte
 
   const archive = s.archiveLink
     ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td align="center" style="padding:4px 0 0 0;">`
-      + `<a href="${esc(s.archiveLink)}" style="font-family:${body};font-size:${s.excerptSize}px;font-weight:600;color:${accent};text-decoration:none;">${t(s.archiveLabel, c)} &rarr;</a>`
+      + `<a href="${esc(s.archiveLink)}" style="font-family:${body};font-size:${s.excerptSize}px;font-weight:600;color:${accent};text-decoration:none;"${editAttr("archive_label", c, "View all articles")}>${t(s.archiveLabel, c)} &rarr;</a>`
       + `</td></tr></table>`
     : "";
 
