@@ -651,6 +651,18 @@ function upgradeNode(n: Node): Node {
     case "personal_detail":
       return labelledText(n, str((n.props as any)?.label), str((n.props as any)?.value));
     case "merge_field": return asWidget(n, "paragraph", { text: `{{${str((n.props as any)?.token)}}}` });
+    /* D-168 item 4 — TWO kinds wore the label "Social Icons" and one survives.
+       `social_links` is the id the shipped templates place, both goldens hold
+       and LUMEN renders, so it is the id that stays; a page saved while
+       `social_icons` was a separate widget comes in as one of those and keeps
+       its accounts, whichever key they were stored under. One tile, one kind,
+       and no stored document loses a row. */
+    case "social_icons": {
+      const p: any = n.props || {};
+      const rows = Array.isArray(p.social_icon_list) ? p.social_icon_list
+        : (Array.isArray(p.links) ? p.links : []);
+      return asWidget(n, "social_links", { ...p, social_icon_list: rows });
+    }
     case "map": return asWidget(n, "google_maps", { address: str((n.props as any)?.address), zoom: 10, height: 300 });
     /* `columns` was never a thing on the page — it SET a section's column count
        and the toolbar owned it from then on, and §11.13.1 takes it off the

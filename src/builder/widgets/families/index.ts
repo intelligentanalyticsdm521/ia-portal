@@ -31,7 +31,12 @@
 import type { Widget } from "../../model";
 import type { RenderContext } from "../../render";
 import type { WidgetDef } from "../../registry";
-import { type Family, type FamilyRenderer, type FamilyWidgetDef, toWidgetDef } from "./types";
+import {
+  type EmailRenderContext, type Family, type FamilyEmailRenderer, type FamilyLandingRenderer,
+  type FamilyRenderer, type FamilyStudioInsert, type FamilyWidgetDef, type LandingRenderContext,
+  type StudioBrandLite, type StudioCanvasDoc, type StudioInsertOptions, type StudioInsertResult,
+  toWidgetDef,
+} from "./types";
 
 import { FAMILY as CONTAINER } from "./container";
 import { FAMILY as F1_WORDS } from "./f1-words";
@@ -109,6 +114,93 @@ export const FAMILY_RENDERED_KINDS: readonly string[] = Object.keys(RENDERERS);
 export function renderFamily(w: Widget, ctx: RenderContext): string | null {
   const fn = RENDERERS[w.kind];
   return fn ? fn(w, ctx) : null;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE OTHER TWO DOORS — D-168 item 5b
+   ══════════════════════════════════════════════════════════════════════════
+
+   The seams commit wired the PAGE renderer and LUMEN's mailbox, and missed the
+   Portal's own mailbox and both landing renderers. Six of the eight families
+   found it separately, each wrote the same two lines in a file no family owns,
+   and each said in the handoff that the other nine would do the same. Here is
+   the door, once, in the file the families already import. ───────────────── */
+
+function mergeHalf<T>(
+  pick: (f: Family) => Record<string, T> | undefined,
+  what: string,
+): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const [name, family] of FAMILIES) {
+    for (const [kind, fn] of Object.entries(pick(family) || {})) {
+      if (out[kind]) {
+        throw new Error(
+          `Two families draw the widget "${kind}" ${what}: ${FAMILY_OF_KIND[kind] ?? "?"} and ${name}.`);
+      }
+      out[kind] = fn;
+    }
+  }
+  return out;
+}
+
+const EMAIL_RENDERERS = mergeHalf<FamilyEmailRenderer>((f) => f.emailRenderers, "in a mailbox");
+const LANDING_RENDERERS = mergeHalf<FamilyLandingRenderer>((f) => f.landingRenderers, "on a landing page");
+
+/** Every kind a family can draw IN A MAILBOX. */
+export const FAMILY_EMAIL_RENDERED_KINDS: readonly string[] = Object.keys(EMAIL_RENDERERS);
+/** Every kind a family can draw ON A HOSTED LANDING PAGE. */
+export const FAMILY_LANDING_RENDERED_KINDS: readonly string[] = Object.keys(LANDING_RENDERERS);
+
+/** Draw one in a mailbox, or `null` — the adapter's own switch tries next. */
+export function renderEmailFamily(w: Widget, ctx: EmailRenderContext): string | null {
+  const fn = EMAIL_RENDERERS[w.kind];
+  return fn ? fn(w, ctx) : null;
+}
+
+/** Draw one on a hosted landing page, or `null`. */
+export function renderLandingFamily(w: Widget, ctx: LandingRenderContext): string | null {
+  const fn = LANDING_RENDERERS[w.kind];
+  return fn ? fn(w, ctx) : null;
+}
+
+const STUDIO_INSERTS = mergeHalf<FamilyStudioInsert>((f) => f.studioInserts, "on the studio canvas");
+
+/** Every kind a family can PLACE on the My Brand canvas. */
+export const FAMILY_STUDIO_KINDS: readonly string[] = Object.keys(STUDIO_INSERTS);
+
+/** Turn one into canvas layers, or `null` — the adapter's switch tries next. */
+export function insertFamilyWidget(
+  kind: string,
+  doc: StudioCanvasDoc,
+  brand: StudioBrandLite,
+  opts: StudioInsertOptions,
+): StudioInsertResult | null {
+  const fn = STUDIO_INSERTS[kind];
+  return fn ? fn(doc, brand, opts) : null;
+}
+
+/**
+ * WHICH KINDS A FAMILY OFFERS TO A BUILDER AND CANNOT DRAW THERE.
+ *
+ * The presence guard behind item 5b: a tile on the newsletter panel whose
+ * family wrote no mailbox renderer is a widget that draws *"this part needs a
+ * newer version of the builder"* in a real person's inbox. The list is empty
+ * and `test/builder-override.test.mjs` says so by name.
+ */
+export function familySurfaceGaps(): Array<{ kind: string; builder: string }> {
+  const out: Array<{ kind: string; builder: string }> = [];
+  for (const d of FAMILY_DEFS) {
+    if (d.builders.includes("newsletter") && !EMAIL_RENDERERS[d.kind]) {
+      out.push({ kind: d.kind, builder: "newsletter" });
+    }
+    if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]) {
+      out.push({ kind: d.kind, builder: "landing" });
+    }
+    if (d.builders.includes("mybrand") && !STUDIO_INSERTS[d.kind]) {
+      out.push({ kind: d.kind, builder: "mybrand" });
+    }
+  }
+  return out;
 }
 
 /**
