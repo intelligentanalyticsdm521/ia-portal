@@ -14,7 +14,14 @@
  * only drawn once it has words is unreachable (D-01, the worst moment of the
  * 2026-09-16 walk), and each new widget would have re-invented the fix.
  */
-import { esc, paras as enginePara, t as engineFill, type RenderContext } from "../render";
+/* THE LEAF MODULES, never `../render`. Importing a VALUE out of render.ts
+   pulls `widgets/families/index.ts` into the graph of every family widget
+   that draws words, and that index is then read while the family is still
+   evaluating: "Cannot access 'F4_MOVING' before initialization". Same fix,
+   same reason, as `builder/esc.ts` — see `builder/textRuns.ts`. */
+import { esc } from "../esc";
+import { paras as enginePara, t as engineFill } from "../textRuns";
+import type { RenderContext } from "../render";
 
 /** Merge-fill, then escape. Never the other way round. */
 export function fillText(value: unknown, ctx: RenderContext): string {

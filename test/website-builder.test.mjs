@@ -153,10 +153,18 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  /* CHANGED 2026-09-19 (b168/f4-moving-deep), and here is exactly why.
+     b168/override gave the pane Elementor Pro's own SIX groups — Layout,
+     Basic, Pro, General, Site, Intelligent Analytics — instead of four, and a
+     group with nothing offered for THIS builder is still not drawn. So the
+     list a website author sees only gains a group the day a Pro-group tile is
+     offered to them, and that day is today: Progress Tracker now carries
+     Elementor's own group, which is Pro. `Site` is still absent because no
+     Site-group tile is offered yet, which is the same rule working. */
+  test("the pane opens with Elementor's groups, in Elementor's order", () => {
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });
 

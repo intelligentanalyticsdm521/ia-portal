@@ -58,10 +58,10 @@ import {
   FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
 } from "../../widgets/families";
 import { renderAtom } from "../../widgets";
-/* B-168 §C.1 — the ten families. One import; the default branch asks them and
-   the list below claims what they draw, so a family widget on a landing page
-   is neither silently blank nor reported as undrawn. */
-import { FAMILY_RENDERED_KINDS, renderFamily } from "../../widgets/families";
+/* b168/f4-moving's own import of the same two names was here; b168/override's
+   import above already brings them, together with the LANDING half. Two
+   imports of one name is a duplicate-identifier error, so f4's copy is
+   DELETED rather than renamed. One import, one seam. */
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -332,12 +332,12 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
-        /* B-168 §C.1 — THE TEN FAMILIES, asked first, exactly as the engine
-           asks them. The seam wired `renderFamily` into `render.ts` and not
-           into this adapter, so a family widget the landing panel offers drew
-           the "needs a newer version" line instead of itself. */
-        const fam = renderFamily(w, c as unknown as RenderContext);
-        if (fam != null) return fam;
+        /* b168/f4-moving wrote its own `renderFamily` call here, and so did
+           b168/override; the merge kept BOTH and `const fam` was declared
+           twice, which is a SyntaxError the whole builder fails to parse on.
+           One mechanism: the block above — landing renderer, then the page
+           renderer, then the engine — is override's, and it already does
+           everything f4's line did. f4's copy is DELETED, not commented out. */
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"
