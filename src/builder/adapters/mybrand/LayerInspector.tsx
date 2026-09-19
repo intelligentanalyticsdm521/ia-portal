@@ -40,15 +40,15 @@ import {
   AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceAround,
   Bold, Brush, ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, ChevronUp,
   Contrast, Copy, Group, Italic, Lock, Palette, Plus, Sparkles, Star, Strikethrough,
-  Trash2, Underline, Ungroup, Unlock, Wand2, WandSparkles, X,
+  Trash2, Underline, Ungroup, Unlock, Upload, Wand2, WandSparkles, X,
 } from "lucide-react";
 import {
-  familyOf, fontOptions, textFitWarning, ICON_PATHS,
-  type CanvasDoc, type ChartLayer, type ImageFilters, type ImageLayer, type ImageMask,
+  boundsOf, familyOf, fontOptions, selectionRotation, textFitWarning, ICON_PATHS,
+  type Box, type CanvasDoc, type ChartLayer, type ImageFilters, type ImageLayer, type ImageMask,
   type Layer, type PatternSpec, type ShapeLayer, type TextLayer,
 } from "./scene";
 
-import { TEXT_EFFECTS, type StrokeStyle, type TextCase } from "./textEffects";
+import { TEXT_EFFECTS, curveMaxBulge, type StrokeStyle, type TextCase } from "./textEffects";
 import type { StudioBrand } from "./insert";
 import { brandSwatches } from "./insert";
 
@@ -65,6 +65,10 @@ const FRAME_LABELS: Record<string, string> = {
   blob1: "Organic 1", blob2: "Organic 2", blob3: "Organic 3",
   wave: "Wave", wave2: "Wave, soft", halfcircle: "Half circle",
   quartercircle: "Quarter circle", xmark: "Cross", bubble: "Speech bubble",
+  // R2-D: the slanted quads designs 03 and 07 both wanted, named the way
+  // somebody laying out a page would ask for them.
+  parallelogram: "Slanted box", trapezoid: "Tapered box",
+  slant: "Angled edge", octagon: "Octagon",
 };
 
 /** The repeating fills, and what each one is for. */
@@ -99,6 +103,18 @@ export interface LayerInspectorProps {
   onUngroup: (ids: string[]) => void;
   onCopyStyle: (id: string) => void;
   onPasteStyle: (ids: string[]) => void;
+  /**
+   * R2-E: a whole selection moved and resized by NUMBER, not only by handle.
+   * The box is the one that contains all of them; the members keep their
+   * arrangement inside it.
+   */
+  onSelectionBox: (ids: string[], box: Partial<Box>) => void;
+  /** R2-E: turn the whole selection to an angle, from the one it was showing. */
+  onTurnSelection: (ids: string[], to: number, from: number) => void;
+  /** R2-C: put a picture into THIS slot instead of adding a new layer. */
+  onFillSlot?: (id: string) => void;
+  /** R2-C: the same, from a file on the author's machine. */
+  onUploadToSlot?: (id: string) => void;
   copiedStyleKind: Layer["kind"] | null;
   onFixContrast: (id: string) => void;
   onSetBackground: (colour: string) => void;
@@ -254,14 +270,80 @@ function ManySelected(p: LayerInspectorProps & { tab: InspectorTab }) {
   const ids = p.selectedLayers.map((l) => l.id);
   const grouped = p.selectedLayers.some((l) => l.groupId);
   const kinds = new Set(p.selectedLayers.map((l) => l.kind));
+  const words = p.selectedLayers.filter((l) => l.kind === "text") as TextLayer[];
+  const pictures = p.selectedLayers.filter((l) => l.kind === "image") as ImageLayer[];
   if (p.tab === "content") {
     return (
-      <Section title={`${ids.length} things selected`}>
-        <div className="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
-          {[...kinds].join(", ")} — {ids.length} of them. Line them up and space them out under
-          <strong> Advanced</strong>, or give them all one look under <strong>Style</strong>.
-        </div>
-      </Section>
+      <>
+        <Section title={`${ids.length} things selected`}>
+          <div className="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
+            {[...kinds].join(", ")} — {ids.length} of them. Line them up and space them out under
+            <strong> Advanced</strong>, or give them all one look under <strong>Style</strong>.
+          </div>
+        </Section>
+        {/*
+          R2-H: THE WORDS INSIDE A GROUP, WITHOUT TAKING THE GROUP APART.
+
+          A Button and a Social handle arrive grouped, which round 2 built and
+          which is right — but changing the label then meant Advanced ›
+          Ungroup, find the row in Structure, edit it, and group the pair again.
+          Four steps to retype two words, and the last one is the step people
+          forget, so the design quietly stops being a button.
+
+          Every set of words in the selection is listed here and edited in
+          place. Nothing is ungrouped, and a group of two labels shows two
+          boxes, each named by what it currently says.
+        */}
+        {/*
+          R2-C's other half: A GROUP THAT CONTAINS PICTURE SLOTS.
+
+          A photo grid drops its cells loose now, so the common case is one
+          cell selected and the Picture panel right there. But ANY set can be
+          grouped by the author, and a group whose slots cannot be filled is
+          the same dead end in a different place — the download would refuse a
+          design over slots nothing could reach. So the group lists them.
+        */}
+        {p.onFillSlot && pictures.length > 0 && (
+          <Section title={pictures.length === 1 ? "The picture inside" : "The pictures inside"}>
+            {pictures.map((im, i) => (
+              <button
+                key={im.id}
+                type="button"
+                data-fill-slot={im.id}
+                onClick={() => p.onFillSlot!(im.id)}
+                title={im.src
+                  ? "Swap the picture in this slot, keeping its size and shape"
+                  : "Choose a picture for this slot — it keeps its size, shape and corners"}
+                className={"inline-flex w-full items-center justify-center gap-1 rounded border px-2 py-1 text-[11px] font-semibold " +
+                  (im.src
+                    ? "border-slate-200 text-slate-700 hover:bg-slate-50"
+                    : "border-slate-800 bg-slate-800 text-white hover:bg-slate-700")}
+              >
+                <Plus className="h-3 w-3" />
+                {im.src ? `Replace picture ${i + 1}` : `Put a picture in slot ${i + 1}`}
+              </button>
+            ))}
+          </Section>
+        )}
+        {words.length > 0 && (
+          <Section title={words.length === 1 ? "The words inside" : "The words inside them"}>
+            {words.map((t) => (
+              <label key={t.id} className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                {(t.content || "").trim().slice(0, 24) || "Empty"}
+                <textarea
+                  value={t.content}
+                  data-inner-text={t.id}
+                  title="Change these words without taking the group apart"
+                  aria-label={`The words of ${(t.content || "this layer").trim().slice(0, 24)}`}
+                  onChange={(e) => p.onUpdate(t.id, { content: e.target.value } as Partial<Layer>)}
+                  rows={2}
+                  className="mt-0.5 w-full resize-y rounded border border-slate-200 px-2 py-1 text-[12px] font-normal normal-case focus:border-slate-500 focus:outline-none"
+                />
+              </label>
+            ))}
+          </Section>
+        )}
+      </>
     );
   }
   if (p.tab === "style") {
@@ -284,7 +366,54 @@ function ManySelected(p: LayerInspectorProps & { tab: InspectorTab }) {
       </Section>
     );
   }
-  return <ArrangeSections {...p} ids={ids} grouped={grouped} many />;
+  return (
+    <>
+      <GroupBox {...p} ids={ids} />
+      <ArrangeSections {...p} ids={ids} grouped={grouped} many />
+    </>
+  );
+}
+
+/**
+ * SIZE, POSITION AND ANGLE FOR A WHOLE SELECTION (R2-E).
+ *
+ * Round 1 asked for it, round 2 sent a multi-selection straight to the arrange
+ * blocks, and so design 07's two display lines had to be turned one at a time
+ * BEFORE they were grouped — the author doing by hand the one thing a group is
+ * for.
+ *
+ * The box is the one rectangle that holds all of them. Typing into it moves or
+ * scales every member about that box's own corner, so the arrangement inside
+ * survives. The angle is the one they share; when they disagree it reads zero
+ * and turns them all by whatever is typed, which is the only honest answer to
+ * "turn these" when they are not all facing the same way.
+ */
+function GroupBox(p: LayerInspectorProps & { ids: string[] }) {
+  const box = boundsOf(p.doc, p.ids);
+  const shared = selectionRotation(p.doc, p.ids);
+  if (!box) return null;
+  const set = (patch: Partial<Box>) => p.onSelectionBox(p.ids, patch);
+  return (
+    <Section title="Size and position">
+      <div className="grid grid-cols-2 gap-1.5">
+        <NumField label="X" title="How far the whole selection is from the left edge" value={box.x} onChange={(v) => set({ x: Math.round(v) })} />
+        <NumField label="Y" title="How far the whole selection is from the top edge" value={box.y} onChange={(v) => set({ y: Math.round(v) })} />
+        <NumField label="W" title="How wide the whole selection is — everything in it scales to match" value={box.w} min={1} onChange={(v) => set({ w: Math.max(1, Math.round(v)) })} />
+        <NumField label="H" title="How tall the whole selection is — everything in it scales to match" value={box.h} min={1} onChange={(v) => set({ h: Math.max(1, Math.round(v)) })} />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <NumField
+          label="↻"
+          title="Turn everything in the selection together, about the middle of the box"
+          value={shared ?? 0}
+          onChange={(v) => p.onTurnSelection(p.ids, ((Math.round(v) % 360) + 360) % 360, shared ?? 0)}
+        />
+        <div className="text-[10px] text-slate-400">
+          {shared === null ? "They face different ways — this turns them all by what you type." : "They all move as one."}
+        </div>
+      </div>
+    </Section>
+  );
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -345,6 +474,8 @@ function OneLayer(p: LayerInspectorProps & { tab: InspectorTab; layer: Layer }) 
             <ImageContent
               layer={layer as ImageLayer}
               onRemoveBackground={p.onRemoveBackground ? () => p.onRemoveBackground!(layer.id) : undefined}
+              onFillSlot={p.onFillSlot ? () => p.onFillSlot!(layer.id) : undefined}
+              onUploadToSlot={p.onUploadToSlot ? () => p.onUploadToSlot!(layer.id) : undefined}
               busy={p.removeBackgroundBusy}
               error={p.removeBackgroundError}
             />
@@ -589,9 +720,11 @@ function TextStyle({ layer, brand, update }: {
   const effectValue = layer.effect ? layer.effect : layer.outline ? "outline" : layer.shadow ? "shadow" : "none";
   const usesSecond = layer.effect === "echo" || layer.effect === "splice" || layer.effect === "neon";
   const size = layer.size || 24;
-  // A bulge bigger than the box is an arc with its top cut off, so the slider
-  // stops where the picture stops.
-  const maxBulge = Math.max(20, Math.round(Math.min(layer.w, layer.h * 2) * 0.5));
+  // R2-F: how far the bow goes, answered once in textEffects so the number the
+  // slider stops at and the number the painter draws cannot drift. It used to
+  // be clamped by the layer's HEIGHT as well, which on a one-line wordmark is
+  // barely taller than the type — the slider ran out long before the reference.
+  const maxBulge = curveMaxBulge(layer.w);
 
   return (
     <>
@@ -764,14 +897,56 @@ function TextStyle({ layer, brand, update }: {
 
 /* ── Content › Picture ─────────────────────────────────────────────────── */
 
-function ImageContent({ layer, onRemoveBackground, busy, error }: {
-  layer: ImageLayer; onRemoveBackground?: () => void; busy?: boolean; error?: string | null;
+function ImageContent({ layer, onRemoveBackground, onFillSlot, onUploadToSlot, busy, error }: {
+  layer: ImageLayer; onRemoveBackground?: () => void; onFillSlot?: () => void;
+  onUploadToSlot?: () => void; busy?: boolean; error?: string | null;
 }) {
   return (
     <>
       <div className="rounded border border-slate-200 bg-slate-50 p-2 text-[11px] text-slate-600">
-        {layer.src ? "A picture is in this slot. Its look is under Style." : "An empty slot. Place a picture from the pane on the left."}
+        {layer.src
+          ? "A picture is in this slot. Its look is under Style."
+          : "An empty slot. Put a picture in it below — the slot keeps its own size, shape and corners."}
       </div>
+      {/*
+        R2-C: THE SLOT CAN BE FILLED.
+
+        The photo grid laid its cells out correctly and then nothing could put
+        a picture in one: the Media Library and the upload button both added a
+        NEW centred layer, and the download refused the design over the empty
+        slots it could never lose. A built gallery was unreachable.
+
+        This is the button that was missing. It opens the same library the left
+        pane opens, and what comes back lands IN this slot rather than on top of
+        it — the cell's box, corners, crop shape and border are the layout, and
+        they survive the picture arriving.
+      */}
+      {onFillSlot && (
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            data-fill-slot
+            onClick={onFillSlot}
+            title={layer.src
+              ? "Swap the picture in this slot for another one, keeping the slot's size and shape"
+              : "Choose a picture for this slot from your Media Library — it keeps the slot's size, shape and corners"}
+            className="inline-flex flex-1 items-center justify-center gap-1 rounded border border-slate-800 bg-slate-800 px-2 py-1 text-[11px] font-semibold text-white hover:bg-slate-700"
+          >
+            <Plus className="h-3 w-3" /> {layer.src ? "Replace the picture" : "Put a picture in this slot"}
+          </button>
+          {onUploadToSlot && (
+            <button
+              type="button"
+              data-upload-slot
+              onClick={onUploadToSlot}
+              title="Upload a picture from this computer straight into this slot"
+              className="inline-flex items-center justify-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <Upload className="h-3 w-3" /> Upload
+            </button>
+          )}
+        </div>
+      )}
       {onRemoveBackground ? (
         <button
           type="button"

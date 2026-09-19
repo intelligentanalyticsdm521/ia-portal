@@ -341,6 +341,25 @@ export function isCurved(bulge: number | undefined | null): boolean {
 }
 
 /**
+ * HOW FAR THE SLIDER GOES (round-3 R2-F).
+ *
+ * It used to stop at `min(w, h × 2) × 0.5`, and the `h` half of that is what
+ * made the control useless: a one-line headline's box is barely taller than
+ * its type, so a 900 px wide wordmark at 96 pt could not be bowed further than
+ * about 115 px however hard it was pushed — well short of the references.
+ *
+ * The height clamp was there because "a bulge bigger than the box is an arc
+ * with its top cut off", and that stopped being true when the picture started
+ * growing with the bulge (`textLayerSvg`'s boxH). So the ceiling is the
+ * WIDTH's alone: at half the width the arc's radius equals its own half-chord,
+ * which is a spread of two radians — about 115° — past every reference and
+ * still a readable line rather than a closed ring.
+ */
+export function curveMaxBulge(width: number): number {
+  return Math.max(20, Math.round(Math.max(1, Number(width) || 0) * 0.5));
+}
+
+/**
  * Where every character lands on the arc.
  *
  * Spaces are placed and then skipped by the painter rather than dropped here —
@@ -352,9 +371,6 @@ export function curvedGlyphs(input: CurveInput): PlacedGlyph[] {
   if (!isCurved(bulge)) return [];
   const up = bulge > 0;
   const b = Math.abs(bulge);
-  const half = Math.max(1, num(input.span, size * 4)) / 2;
-  // The circle through the chord's two ends and its bowed middle.
-  const r = (half * half + b * b) / (2 * b);
   const chars = [...String(input.text ?? "")];
   if (!chars.length) return [];
   const family = String(input.family || "");
@@ -362,6 +378,22 @@ export function curvedGlyphs(input: CurveInput): PlacedGlyph[] {
   const ls = num(input.letterSpacing, 0);
   const widths = chars.map((c) => advanceEm(family, c, bold) * size + ls);
   const total = widths.reduce((a, w) => a + w, 0);
+  /**
+   * WHY THE CHORD IS THE BOX AND NOT THE WORDS (round-3 R2-F, considered and
+   * NOT changed).
+   *
+   * The obvious answer to "the bow is too shallow" is to measure the bulge over
+   * the words' own width, which bends a short word harder. It is the wrong
+   * answer: two lines of a lockup — BLUE HERON over COFFEE CO — would then sit
+   * on circles of DIFFERENT radius and cross each other, and an arched logo is
+   * the single most common thing this control is used for. Lines sharing a box
+   * share a circle, and that is worth keeping.
+   *
+   * What was actually wrong was the CEILING; see `curveMaxBulge`.
+   */
+  const half = Math.max(1, num(input.span, size * 4)) / 2;
+  // The circle through the chord's two ends and its bowed middle.
+  const r = (half * half + b * b) / (2 * b);
   const cyc = up ? input.y + r : input.y - r;
   let run = -total / 2;
   const out: PlacedGlyph[] = [];

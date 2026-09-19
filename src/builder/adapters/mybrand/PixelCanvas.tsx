@@ -25,7 +25,7 @@ import * as fabric from "fabric";
 import { Maximize, ZoomIn, ZoomOut } from "lucide-react";
 import { layerToFabricObject, fabricGradient } from "./fabricBridge";
 import {
-  isTransparent, textLayerSvg,
+  isTransparent, modelTopLeft, textLayerSvg,
   type BaseLayer, type CanvasDoc, type Layer, type ShapeLayer, type TextLayer,
 } from "./scene";
 
@@ -105,12 +105,22 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
     if (!layer) return;
     const w = (obj.width ?? layer.w) * (obj.scaleX ?? 1);
     const h = (obj.height ?? layer.h) * (obj.scaleY ?? 1);
+    const rotation = Math.round((((obj.angle ?? layer.rotation ?? 0) % 360) + 360) % 360);
+    /**
+     * R2-G, the way back. Fabric's `left`/`top` is the point it PINNED the
+     * object by, which for a turned object is not the box's top-left; the scene
+     * says x,y is the unturned top-left. `modelTopLeft` is the exact inverse of
+     * the `rotatedTopLeft` the bridge placed it with, and the identity at 0°,
+     * so an untouched, unturned drag reads back the same integers it always
+     * did. Without it, turning a layer with the handle and letting go moved it.
+     */
+    const box = modelTopLeft(obj.left ?? layer.x, obj.top ?? layer.y, w, h, rotation);
     const updates: Partial<BaseLayer> = {
-      x: Math.round(obj.left ?? layer.x),
-      y: Math.round(obj.top ?? layer.y),
+      x: Math.round(box.x),
+      y: Math.round(box.y),
       w: Math.round(w),
       h: Math.round(h),
-      rotation: Math.round((((obj.angle ?? layer.rotation ?? 0) % 360) + 360) % 360),
+      rotation,
     };
     if (layer.kind === "text" && obj instanceof fabric.IText) {
       // Fabric resizes type by SCALE; bake it into the font size so future

@@ -326,6 +326,25 @@ export const ICON_PATHS: Record<string, string> = {
   quartercircle: "M0 0 H100 A100 100 0 0 1 0 100 Z",
   scallop: "M0 100 V20 Q12 6 25 20 Q38 34 50 20 Q62 6 75 20 Q88 34 100 20 V100 Z",
   dots: "M15 8 A7 7 0 1 0 15 22 A7 7 0 1 0 15 8 Z M50 8 A7 7 0 1 0 50 22 A7 7 0 1 0 50 8 Z M85 8 A7 7 0 1 0 85 22 A7 7 0 1 0 85 8 Z M15 43 A7 7 0 1 0 15 57 A7 7 0 1 0 15 43 Z M50 43 A7 7 0 1 0 50 57 A7 7 0 1 0 50 43 Z M85 43 A7 7 0 1 0 85 57 A7 7 0 1 0 85 43 Z M15 78 A7 7 0 1 0 15 92 A7 7 0 1 0 15 78 Z M50 78 A7 7 0 1 0 50 92 A7 7 0 1 0 50 78 Z M85 78 A7 7 0 1 0 85 92 A7 7 0 1 0 85 78 Z",
+  /**
+   * THE FOUR SLANTED QUADS (round-3 R2-D).
+   *
+   * Designs 03 and 07 both want a photograph with a slanted edge, and round 2
+   * had to fake both with a turned rectangle laid OVER the picture — which is
+   * not a crop: the photo keeps its own corners underneath and the two come
+   * apart the moment either is nudged. Forty-seven paths and not one of them a
+   * slanted quad, so "any shape is a frame" could not answer the one shape the
+   * references actually asked for.
+   *
+   * Authored in the same 100×100 box as every other path, so they are frames,
+   * icons, patterned shapes and pickable symbols with no further work — and
+   * the server validates them by the same key lookup.
+   */
+  parallelogram: "M24 6 H98 L76 94 H2 Z",
+  trapezoid: "M20 6 H80 L98 94 H2 Z",
+  /** A rectangle whose right edge leans — design 03's photo edge. */
+  slant: "M0 0 H100 V72 L0 100 Z",
+  octagon: "M30 2 H70 L98 30 V70 L70 98 H30 L2 70 V30 Z",
 };
 
 export const DECOR_KEYS = new Set(["blob1","blob2","blob3","wave","wave2","arch","halfcircle","quartercircle","scallop","dots"]);
@@ -1289,6 +1308,204 @@ export function boundsOf(doc: CanvasDoc, ids: string[]): Box | null {
   const x2 = Math.max(...picked.map((l) => l.x + l.w));
   const y2 = Math.max(...picked.map((l) => l.y + l.h));
   return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   WHERE A TURNED LAYER IS PINNED (round-3 R2-G)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Design 10's second arch — 620 × 620 at (1150, −120), turned 180° — never
+   drew in the editor, while the identical arch at 0° drew fine. It was not the
+   arch: EVERY turned layer has been in the wrong place since the studio was
+   written, and 180° is simply the angle at which "wrong place" becomes "off
+   the paper entirely".
+
+   The two halves hold two different conventions and neither was written down:
+
+     • the SCENE (and LUMEN's `rotationAttr`) says x,y is the UNTURNED
+       top-left of the box and the turn pivots on the box's CENTRE;
+     • FABRIC pins the origin point — with the default left/top origin, the
+       (left, top) CORNER stays exactly where it is and the body swings round
+       it. `translateToCenterPoint` rotates the centre about that corner, which
+       is the line of Fabric this whole defect lives in.
+
+   At 180° the body swings a full width up and a full height left: the arch was
+   painted at (530, −740), entirely above the page. At 15° it was out by a
+   handful of pixels, which is why round 1 and round 2 both put "rotate them
+   one at a time and nudge" in the notes instead of naming a bug.
+
+   So the scene's convention wins — it is the one the server, the PDF and the
+   stored document already use — and these two functions convert. They are
+   exact inverses, they are the identity at 0°, and the unturned path therefore
+   comes out byte-identical to what it was. */
+
+/** The scene's box → the `left`/`top` Fabric must be given to land on it. */
+export function rotatedTopLeft(x: number, y: number, w: number, h: number, deg: number): { left: number; top: number } {
+  const a = ((Number(deg) || 0) * Math.PI) / 180;
+  const hx = (Number(w) || 0) / 2;
+  const hy = (Number(h) || 0) / 2;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  return {
+    left: x + hx - (hx * cos - hy * sin),
+    top: y + hy - (hx * sin + hy * cos),
+  };
+}
+
+/** Fabric's `left`/`top` → the scene's box. The exact inverse of the above. */
+export function modelTopLeft(left: number, top: number, w: number, h: number, deg: number): { x: number; y: number } {
+  const a = ((Number(deg) || 0) * Math.PI) / 180;
+  const hx = (Number(w) || 0) / 2;
+  const hy = (Number(h) || 0) / 2;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  return {
+    x: left - hx + (hx * cos - hy * sin),
+    y: top - hy + (hx * sin + hy * cos),
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A GROUP HAS A SIZE, A PLACE AND AN ANGLE (round-3 R2-E)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Round 1 asked for it and round 2 did not build it: a multi-selection could
+   be aligned, distributed and tidied, but it could not be typed a number. So
+   design 07's two display lines had to be turned one at a time BEFORE they
+   were grouped, which is the author doing by hand the one thing a group is
+   for.
+
+   Three pure functions, because "move the selection" is scene arithmetic and
+   not a React concern. Each takes the ids and returns a whole new scene. */
+
+/** The angle every member shares, or null when they disagree. */
+export function selectionRotation(doc: CanvasDoc, ids: string[]): number | null {
+  const picked = doc.layers.filter((l) => ids.includes(l.id));
+  if (!picked.length) return null;
+  const first = Math.round(((((picked[0].rotation || 0) % 360) + 360) % 360));
+  for (const l of picked) {
+    if (Math.round(((((l.rotation || 0) % 360) + 360) % 360)) !== first) return null;
+  }
+  return first;
+}
+
+/**
+ * Put the whole selection in a new box.
+ *
+ * Moving is a translation; resizing scales each member's own box about the
+ * selection's top-left, INCLUDING its width and height, so the arrangement
+ * survives — five things in a row stay five things in a row. A text layer's
+ * point size rides the vertical scale, the same rule `PixelCanvas` already
+ * applies when a set is dragged by its handles, so typing 50 % into W and H is
+ * the same act as halving it with the mouse.
+ */
+export function setSelectionBox(doc: CanvasDoc, ids: string[], box: Partial<Box>): CanvasDoc {
+  const from = boundsOf(doc, ids);
+  if (!from) return doc;
+  const toW = Math.max(1, Math.round(Number(box.w ?? from.w)));
+  const toH = Math.max(1, Math.round(Number(box.h ?? from.h)));
+  const toX = Math.round(Number(box.x ?? from.x));
+  const toY = Math.round(Number(box.y ?? from.y));
+  const sx = toW / Math.max(1, from.w);
+  const sy = toH / Math.max(1, from.h);
+  if (sx === 1 && sy === 1 && toX === from.x && toY === from.y) return doc;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      if (!ids.includes(l.id)) return l;
+      const next: Layer = {
+        ...l,
+        x: Math.round(toX + (l.x - from.x) * sx),
+        y: Math.round(toY + (l.y - from.y) * sy),
+        w: Math.max(1, Math.round(l.w * sx)),
+        h: Math.max(0, Math.round(l.h * sy)),
+      };
+      if (next.kind === "text" && sy !== 1) {
+        (next as TextLayer).size = Math.max(6, Math.round(((l as TextLayer).size ?? 24) * sy));
+      }
+      return next;
+    }),
+  };
+}
+
+/**
+ * Turn the whole selection to an angle.
+ *
+ * Every member's own angle moves by the SAME delta and its centre orbits the
+ * selection's centre by that delta — which is what turning one object made of
+ * several parts means. `from` is the angle the panel was showing, so the delta
+ * is what the author actually changed; a selection whose members disagree
+ * shows 0 and is turned relative to that, which is the only honest reading of
+ * "turn these by".
+ */
+export function turnSelection(doc: CanvasDoc, ids: string[], to: number, from = 0): CanvasDoc {
+  const delta = (((Math.round(Number(to) || 0) - Math.round(Number(from) || 0)) % 360) + 360) % 360;
+  if (!delta) return doc;
+  const box = boundsOf(doc, ids);
+  if (!box) return doc;
+  const a = (delta * Math.PI) / 180;
+  const cos = Math.cos(a);
+  const sin = Math.sin(a);
+  const gx = box.x + box.w / 2;
+  const gy = box.y + box.h / 2;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      if (!ids.includes(l.id)) return l;
+      const cx = l.x + l.w / 2 - gx;
+      const cy = l.y + l.h / 2 - gy;
+      const nx = gx + cx * cos - cy * sin;
+      const ny = gy + cx * sin + cy * cos;
+      return {
+        ...l,
+        x: Math.round(nx - l.w / 2),
+        y: Math.round(ny - l.h / 2),
+        rotation: ((Math.round((l.rotation || 0) + delta) % 360) + 360) % 360,
+      };
+    }),
+  };
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PUTTING A PICTURE INTO A SLOT THAT IS ALREADY THERE (round-3 R2-C)
+   ══════════════════════════════════════════════════════════════════════════
+
+   The photo grid lays its cells out correctly and then nothing on either side
+   of the screen can fill one: the Media Library and the upload button both add
+   a NEW centred layer, and the download then refuses the design for the empty
+   slots it can never lose. A built gallery was unreachable.
+
+   Filling a slot is a patch and not an insert — the cell's box, its corner
+   radius, its mask and its border are the LAYOUT, and they must survive the
+   picture landing in it. That is the whole function, and it is here rather
+   than in the component so the rule can be executed by a test. */
+
+export interface SlotAsset {
+  src: string;
+  asset_id?: string | null;
+  blob_ref?: string | null;
+}
+
+/** True when this layer is a picture slot waiting for a picture. */
+export function isEmptySlot(layer: Layer | null | undefined): boolean {
+  return !!layer && layer.kind === "image" && !(layer as ImageLayer).src;
+}
+
+/** The first empty slot in the CURRENT page, in stack order. Null when none. */
+export function firstEmptySlot(doc: CanvasDoc): ImageLayer | null {
+  for (const l of doc.layers) if (isEmptySlot(l)) return l as ImageLayer;
+  return null;
+}
+
+/** Drop a picture into an existing slot, keeping every layout property of it. */
+export function fillPictureSlot(doc: CanvasDoc, id: string, asset: SlotAsset): CanvasDoc {
+  const layer = doc.layers.find((l) => l.id === id);
+  if (!layer || layer.kind !== "image" || !asset?.src) return doc;
+  return patchLayer(doc, id, {
+    src: asset.src,
+    asset_id: asset.asset_id ?? null,
+    blob_ref: asset.blob_ref ?? null,
+  } as Partial<Layer>);
 }
 
 /**

@@ -225,12 +225,29 @@ export function insertWidget(
         width: Math.round(Math.min(W, H) * 0.82),
         gutter,
       });
-      return many(box.cells.map((cell) => ({
+      /**
+       * A GRID'S CELLS ARRIVE LOOSE, NOT GROUPED (round-3 R2-C).
+       *
+       * Round 2 put every multi-layer widget through `many`, which tags the
+       * lot with one group id — right for a Button, where a pill and its label
+       * are one thing that breaks if they come apart, and WRONG here. Clicking
+       * a cell selected all four, so the Picture panel never appeared and
+       * nothing could put a picture in one: the grid laid out perfectly and was
+       * unreachable, and the design then refused to download for the slots it
+       * could never lose.
+       *
+       * Four slots side by side are four pictures the author will fill one at
+       * a time. They are still a set — marquee them and Ctrl+G if you want to
+       * move them as one — but the default cannot be a lock on the only thing
+       * anybody does with a grid.
+       */
+      const cells = box.cells.map((cell) => ({
         id: uid("image"), kind: "image",
         x: cell.x, y: cell.y - Math.round(box.height / 2), w: cell.w, h: cell.h,
         src: null, visible: true,
         ...(radius > 0 ? { radius } : {}),
-      } as ImageLayer)));
+      } as ImageLayer));
+      return { layers: cells, behind: false, selectId: cells[0]?.id ?? null };
     }
     case "icon": {
       const key = opts.option && ICON_PATHS[opts.option] ? opts.option : "star";

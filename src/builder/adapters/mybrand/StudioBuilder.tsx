@@ -62,11 +62,13 @@ import {
   SIZE_PRESETS, resolveBrandTokens,
   addPage, docForPage, duplicatePage, emptySlotMessage, movePage, pageCount,
   removePage, setPage, MAX_PAGES,
+  fillPictureSlot, isEmptySlot, setSelectionBox, turnSelection,
   ICON_PATHS as ICON_PATHS_LIST,
   type CanvasDoc, type CopiedStyle, type DesignDto, type ExportResult, type ImageLayer,
   type Layer, type TemplateDto,
 } from "./scene";
 import { StructureWindow } from "./StructureWindow";
+import { setAssetBytesResolver, taintMessage, taintedIn } from "./fabricBridge";
 import { imagePdfFromPngDataUrls, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
@@ -520,7 +522,68 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const [structureOpen, setStructureOpen] = useState(false);
 
   /* ── Pictures ────────────────────────────────────────────────────────── */
+  /**
+   * WHICH SLOT A PICTURE IS FOR (R2-C).
+   *
+   * Null means "no slot in particular" and a picture lands as a new centred
+   * layer, exactly as it always did. An id means the author pressed "Put a
+   * picture in this slot" on a cell of a photo grid, and what comes back fills
+   * THAT cell — keeping its box, its corners, its crop shape and its border,
+   * because those are the layout and the picture is only its contents.
+   */
+  /**
+   * WHERE THE CANVAS GETS A LIBRARY PICTURE FROM (R2-A).
+   *
+   * `fabricBridge` must not know about tenants or auth, and the blob host will
+   * not answer a CORS request — so the bridge asks THIS for the bytes, and it
+   * asks LUMEN, with the same headers every other call carries. Registered here
+   * because this is where the API client lives, and asserted to be registered
+   * by the suite, because a seam that silently falls back hides the defect it
+   * was built for.
+   */
+  useEffect(() => {
+    setAssetBytesResolver(async (assetId: string) => {
+      const r = await get<{ dataUrl?: string }>(`/api/v1/my-brand/assets/${assetId}/bytes`);
+      return r?.dataUrl || null;
+    });
+    return () => setAssetBytesResolver(null);
+  }, [get]);
+
+  const [slotTarget, setSlotTarget] = useState<string | null>(null);
+  const openSlotPicker = useCallback((id: string) => {
+    setSlotTarget(id);
+    setLibraryOpen(true);
+  }, []);
+
+  /** The same slot, from a file on this machine — the library may be empty. */
+  const uploadToSlot = useCallback((id: string) => {
+    setSlotTarget(id);
+    fileInputRef.current?.click();
+  }, []);
+
   const placeAsset = useCallback((asset: PickerAsset) => {
+    /**
+     * A SLOT IS FILLED, NOT COVERED.
+     *
+     * The target is the slot the author asked to fill; failing that, the
+     * EMPTY picture layer they have selected — because clicking a grid cell
+     * and then picking a picture can only mean one thing, and round 2 answered
+     * it by dropping a second picture in the middle of the design instead.
+     */
+    const target = slotTarget
+      ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+      : isEmptySlot(selected) ? selected : null;
+    if (target && asset.url) {
+      apply(fillPictureSlot(doc, target.id, {
+        src: asset.url,
+        asset_id: asset.asset_id,
+        blob_ref: asset.blob_ref,
+      }));
+      selectOne(target.id);
+      setSlotTarget(null);
+      setLibraryOpen(false);
+      return;
+    }
     const maxSide = Math.min(doc.width, doc.height) * 0.6;
     const aw = asset.width_px || 800;
     const ah = asset.height_px || 800;
@@ -536,7 +599,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     apply(addLayers(doc, [layer]));
     selectOne(layer.id);
     setLibraryOpen(false);
-  }, [apply, doc]);
+  }, [apply, doc, selected, slotTarget]);
 
   const onUploadImage = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -553,11 +616,22 @@ export function StudioBuilder(p: StudioBuilderProps) {
           return;
         }
       } catch { /* fall through to a local-only layer */ }
+      // The upload did not reach the library, but the author still asked for a
+      // picture IN A SLOT — so it goes in the slot, as the bytes they chose.
+      const target = slotTarget
+        ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+        : isEmptySlot(selected) ? selected : null;
+      if (target) {
+        apply(fillPictureSlot(doc, target.id, { src: dataUrl }));
+        selectOne(target.id);
+        setSlotTarget(null);
+        return;
+      }
       place("image", { imageSrc: dataUrl });
     };
     reader.readAsDataURL(file);
     e.target.value = "";
-  }, [place, placeAsset, post]);
+  }, [apply, doc, place, placeAsset, post, selected, slotTarget]);
 
   const [bgRemoveBusy, setBgRemoveBusy] = useState(false);
   const [bgRemoveError, setBgRemoveError] = useState<string | null>(null);
@@ -710,6 +784,23 @@ export function StudioBuilder(p: StudioBuilderProps) {
        */
       const blocked = emptySlotMessage(design);
       if (blocked) throw new Error(blocked);
+      /**
+       * A PHOTOGRAPH THAT POISONED THE WHOLE DOWNLOAD (round-3 R2-A).
+       *
+       * Six of the ten reference designs could not be downloaded at all: PNG,
+       * JPG and PDF each died with the browser's own "Tainted canvases may not
+       * be exported", which tells an author nothing and offers them nothing.
+       *
+       * `fabricBridge` now asks every picture's host for permission, so the
+       * ordinary case simply works. This is the case where a host refuses:
+       * rather than let the browser throw, the design says which pictures and
+       * where to go instead. An SVG carries the picture by reference and never
+       * reads the canvas back, so it is not refused.
+       */
+      if (format !== "svg") {
+        const dirty = taintedIn(design.layers.concat(...(design.pages || []).map((pg) => pg.layers)));
+        if (dirty.length) throw new Error(taintMessage(dirty.length));
+      }
       if (format === "svg") {
         const svg = canvasRef.current?.toSVG();
         if (!svg) throw new Error("the design could not be drawn");
@@ -1011,6 +1102,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
             onUngroup={(ids) => apply(ungroupLayers(doc, ids))}
             onCopyStyle={copyStyle}
             onPasteStyle={applyCopiedStyle}
+            onSelectionBox={(ids, box) => apply(setSelectionBox(doc, ids, box))}
+            onTurnSelection={(ids, to, from) => apply(turnSelection(doc, ids, to, from))}
+            onFillSlot={openSlotPicker}
+            onUploadToSlot={uploadToSlot}
             copiedStyleKind={copiedStyle?.kind ?? null}
             onFixContrast={(id) => apply(fixTextContrast(doc, id))}
             onSetBackground={(c) => apply(setBackgroundColor(doc, c))}
@@ -1246,7 +1341,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
         </IadmModal>
       )}
 
-      {libraryOpen && <AssetPickerModal onClose={() => setLibraryOpen(false)} onPick={placeAsset} />}
+      {libraryOpen && <AssetPickerModal onClose={() => { setLibraryOpen(false); setSlotTarget(null); }} onPick={placeAsset} />}
 
       {resizeOpen && (
         <IadmModal

@@ -18,7 +18,7 @@
 import * as fabric from "fabric";
 import {
   DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, familyOf, iconToSvg, chartToSvg,
-  shapeToSvg, textLayerSvg,
+  rotatedTopLeft, shapeToSvg, textLayerSvg,
   type ChartLayer, type GradientSpec, type ImageLayer, type Layer,
   type ShapeLayer, type TextLayer,
 } from "./scene";
@@ -29,6 +29,128 @@ import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 /** Only ever reached by a scene that carries no colour of its own. */
 const FALLBACK = NEUTRAL_BRAND_KIT.colours;
 
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A PHOTOGRAPH MUST NOT POISON THE DOWNLOAD (round-3 R2-A)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Six of the ten reference designs could not be downloaded AT ALL. PNG, JPG
+   and PDF all died with "Tainted canvases may not be exported", because a
+   picture fetched from another origin and drawn without permission makes the
+   whole canvas unreadable to `toDataURL` — one photograph poisons the file.
+
+   The permission is one option long. `crossOrigin: "anonymous"` makes the
+   browser send the CORS preflight the blob host already answers for every
+   other request this app makes, and the canvas stays readable.
+
+   WHAT HAPPENS WHEN A HOST WILL NOT ANSWER IT
+   An anonymous request to a host with no CORS header fails outright, and
+   failing outright would lose the PICTURE as well as the download. So the load
+   falls back to the plain, tainting request — the author still sees their
+   photograph — and the source is remembered here. The export asks before it
+   tries, and says which picture and what to do instead, rather than handing
+   over a browser exception about canvases. */
+
+const TAINTED = new Set<string>();
+
+/** Remembered sources that had to be loaded without CORS. */
+export function taintedSources(): string[] {
+  return [...TAINTED];
+}
+
+/** Which of these layers' pictures the browser cannot read back. */
+export function taintedIn(layers: Array<{ kind?: string; src?: string | null }>): string[] {
+  const out: string[] = [];
+  for (const l of layers) {
+    if (l?.kind !== "image") continue;
+    const src = l.src ? String(l.src) : "";
+    if (src && TAINTED.has(src) && !out.includes(src)) out.push(src);
+  }
+  return out;
+}
+
+/** The sentence a refused download says. Never a browser exception. */
+export function taintMessage(count: number): string {
+  const many = count > 1;
+  return `${many ? `${count} pictures in this design were` : "A picture in this design was"} ` +
+    "loaded from a place that does not let the browser read it back, so the file cannot be " +
+    "made here. Use Save to Media Library, which draws it on our own server, and download it " +
+    "from there.";
+}
+
+/** Only the tests and a fresh document clear it. */
+export function forgetTaint(): void {
+  TAINTED.clear();
+}
+
+/**
+ * Remember that this source had to be drawn without permission.
+ *
+ * Exported because the loader below is the only caller in the app and a set
+ * nothing can put anything into is a set no test can prove anything about.
+ */
+export function noteTainted(src: string): void {
+  if (src) TAINTED.add(String(src));
+}
+
+/**
+ * WHERE A PICTURE'S BYTES COME FROM WHEN ITS HOST WILL NOT SAY YES.
+ *
+ * A brand asset is served as a short-lived SAS URL on the blob account, and a
+ * blob account answers no CORS header — so `crossOrigin: "anonymous"` is
+ * refused and the plain request taints the canvas. LUMEN, on the other hand,
+ * the Portal is already allowed to call, with the tenant header it already
+ * sends. So the editor asks LUMEN for the bytes and draws a `data:` URL, which
+ * belongs to no other origin and can never taint anything.
+ *
+ * The resolver is INJECTED because this file must not know about auth, tenants
+ * or the API client — and it is asserted to be REGISTERED by a test rather than
+ * quietly defaulting to nothing, because a seam that silently falls back is a
+ * seam that hides the very defect it was built for.
+ */
+type BytesResolver = (assetId: string) => Promise<string | null>;
+let resolveAssetBytes: BytesResolver | null = null;
+const BYTES = new Map<string, string>();
+
+export function setAssetBytesResolver(fn: BytesResolver | null): void {
+  resolveAssetBytes = fn;
+}
+
+export function hasAssetBytesResolver(): boolean {
+  return typeof resolveAssetBytes === "function";
+}
+
+/** Only the tests and a fresh sign-in clear the cache. */
+export function forgetAssetBytes(): void {
+  BYTES.clear();
+}
+
+/** One picture's bytes, fetched at most once a session. */
+export async function assetDataUrl(assetId: string): Promise<string | null> {
+  if (!assetId || !resolveAssetBytes) return null;
+  const had = BYTES.get(assetId);
+  if (had) return had;
+  const got = await resolveAssetBytes(assetId).catch(() => null);
+  if (got) BYTES.set(assetId, got);
+  return got || null;
+}
+
+/**
+ * A picture, loaded so the canvas stays readable when the host allows it.
+ *
+ * A `data:` URL is already same-origin, so it never tries twice.
+ */
+function loadImage(src: string): Promise<fabric.FabricImage> {
+  if (src.startsWith("data:")) return fabric.FabricImage.fromURL(src);
+  return fabric.FabricImage.fromURL(src, { crossOrigin: "anonymous" }).catch((err) => {
+    // Not "the picture is broken" — that rejects the second time too, and the
+    // caller's own catch draws the slot. This is only "the host said no".
+    return fabric.FabricImage.fromURL(src).then((img) => {
+      noteTainted(src);
+      return img;
+    }, () => Promise.reject(err));
+  });
+}
 
 function fabricGradient(g: GradientSpec): fabric.Gradient<"linear"> {
   return new fabric.Gradient({
@@ -156,8 +278,14 @@ function groupWith(
   baseProps: Record<string, unknown>,
 ): fabric.FabricObject {
   const group = new fabric.Group([img, ring]);
+  const angle = (baseProps.angle as number) || 0;
+  // Where the pair sits before it is turned — the photo's own box, grown by
+  // half the ring's stroke on each side, so its middle is the photo's middle.
+  const before = group.getBoundingRect();
+  const cx = before.left + before.width / 2;
+  const cy = before.top + before.height / 2;
   group.set({
-    angle: (baseProps.angle as number) || 0,
+    angle,
     opacity: (baseProps.opacity as number) ?? 1,
     visible: baseProps.visible !== false,
     flipX: baseProps.flipX === true,
@@ -165,6 +293,22 @@ function groupWith(
     selectable: baseProps.selectable !== false,
     evented: baseProps.evented !== false,
   });
+  if (angle) {
+    /**
+     * R2-G, the group's half. A Group pins its origin exactly as any other
+     * object does, so turning one walks it off its photo. Rather than assume
+     * which corner Fabric chose, put the MIDDLE back where the middle was —
+     * which is the scene's rule, stated in the one way that cannot be wrong
+     * about Fabric's own origin bookkeeping.
+     */
+    group.setCoords();
+    const after = group.getBoundingRect();
+    group.set({
+      left: (group.left ?? 0) + (cx - (after.left + after.width / 2)),
+      top: (group.top ?? 0) + (cy - (after.top + after.height / 2)),
+    });
+    group.setCoords();
+  }
   return group;
 }
 
@@ -182,9 +326,23 @@ export function layerToFabricObject(
   onSwap?: (obj: fabric.FabricObject) => void,
 ): fabric.FabricObject | null {
   const locked = layer.locked === true;
+  /**
+   * R2-G: FABRIC PINS THE CORNER; THE SCENE PIVOTS ON THE CENTRE.
+   *
+   * With the default left/top origin, Fabric keeps the (left, top) POINT where
+   * it is and swings the body around it, while the scene, LUMEN's exporter and
+   * the PDF all say x,y is the unturned top-left and the turn pivots on the
+   * box's middle. At 180° the difference is a whole width and a whole height:
+   * design 10's second arch was painted entirely off the top of the page, and
+   * every other turned layer in the studio has been out by less.
+   *
+   * `rotatedTopLeft` is the conversion, and it is the identity at 0°, so
+   * everything that was never turned is placed exactly where it always was.
+   */
+  const anchor = rotatedTopLeft(layer.x, layer.y, layer.w, layer.h, layer.rotation || 0);
   const baseProps = {
-    left: layer.x,
-    top: layer.y,
+    left: anchor.left,
+    top: anchor.top,
     angle: layer.rotation || 0,
     opacity: layer.opacity ?? 1,
     visible: layer.visible !== false,
@@ -222,7 +380,7 @@ export function layerToFabricObject(
       });
       const paint = (built: { svg: string; w: number; h: number }, target: fabric.FabricObject) => {
         const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(built.svg)}`;
-        return fabric.FabricImage.fromURL(dataUrl).then((img) => {
+        return loadImage(dataUrl).then((img) => {
           if (!img) return null;
           img.set({ ...baseProps });
           img.scaleX = built.w / (img.width || 1);
@@ -310,12 +468,54 @@ export function layerToFabricObject(
       stroke: "#9CA3AF",
       strokeWidth: 1,
     });
-    fabric.FabricImage.fromURL(il.src).then((img) => {
+    const ring = frameOutline(il);
+    /**
+     * A LIBRARY PICTURE COMES THROUGH OUR OWN API (R2-A).
+     *
+     * `asset_id` means the business owns this picture and LUMEN can hand us the
+     * bytes; anything else — a data URL from an upload that has not landed yet,
+     * or a stock URL — takes the ordinary path, which asks the host politely
+     * and remembers a refusal.
+     */
+    const source = il.asset_id
+      ? assetDataUrl(il.asset_id).then((url) => (url ? fabric.FabricImage.fromURL(url) : loadImage(il.src as string)))
+      : loadImage(il.src);
+    Promise.resolve(source).then((img) => {
       if (!img) return;
+      /**
+       * COVER, NOT STRETCH — and the two halves said different things.
+       *
+       * LUMEN draws every picture with `preserveAspectRatio="xMidYMid slice"`,
+       * which fills the box and crops the overflow. The editor scaled width and
+       * height independently, so a 4:3 photograph in a 3:2 grid cell was
+       * SQUASHED on screen and cropped in the file. Nobody noticed while every
+       * picture was dropped at its own aspect ratio; R2-C's grid cells make it
+       * the normal case.
+       *
+       * Fabric's own crop is the answer: narrow the image's width and height to
+       * the piece that shows and scale that piece to the box. The object's box
+       * stays exactly the layer's box, so dragging, the handles and the
+       * geometry sync are all untouched.
+       */
+      const srcW = img.width || 1;
+      const srcH = img.height || 1;
+      const cover = Math.max(il.w / srcW, il.h / srcH);
+      const cw = Math.min(srcW, Math.max(1, il.w / cover));
+      const ch = Math.min(srcH, Math.max(1, il.h / cover));
       img.set({
-        left: il.x,
-        top: il.y,
-        angle: il.rotation || 0,
+        cropX: (srcW - cw) / 2,
+        cropY: (srcH - ch) / 2,
+        width: cw,
+        height: ch,
+      });
+      img.set({
+        // A ring means the photo becomes a child of a group, and a group turns
+        // about its own centre — so the CHILD must not carry the angle as well,
+        // or the picture is turned twice.
+        ...(ring
+          ? { left: il.x, top: il.y, angle: 0 }
+          : rotatedTopLeft(il.x, il.y, il.w, il.h, il.rotation || 0)),
+        ...(ring ? {} : { angle: il.rotation || 0 }),
         opacity: il.opacity ?? 1,
         visible: il.visible !== false,
         selectable: true,
@@ -375,7 +575,6 @@ export function layerToFabricObject(
       img.scaleY = sy;
       // Replace the placeholder in the canvas. We have to do this through
       // the live canvas instance from the closure that holds fabricRef.
-      const ring = frameOutline(il);
       swapPlaceholder(placeholder, ring ? groupWith(img, ring, baseProps) : img, onSwap);
     }).catch(() => {
       /* D-24 (BUILDER_USER_TEST_2026-09-16): *"It opens broken. The logo layer
@@ -406,7 +605,7 @@ export function layerToFabricObject(
     });
     const svg = chartToSvg(ch);
     const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-    fabric.FabricImage.fromURL(dataUrl).then((img) => {
+    loadImage(dataUrl).then((img) => {
       if (!img) return;
       img.set({
         left: ch.x,
@@ -451,7 +650,7 @@ export function layerToFabricObject(
       });
       const svg = s.shape === "icon" ? iconToSvg(s) : shapeToSvg(s);
       const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-      fabric.FabricImage.fromURL(dataUrl).then((img) => {
+      loadImage(dataUrl).then((img) => {
         if (!img) return;
         img.set({ ...baseProps });
         img.scaleX = s.w / (img.width || 1);
