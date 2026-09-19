@@ -586,8 +586,7 @@ describe("SCREEN LAW 9 — the structure window is the reference's", () => {
   });
 
   test("the window has the reference's collapse-all, centred title and resize grip", () => {
-    assert.match(nav, /data-structure-collapse
-/);
+    assert.match(nav, /data-structure-collapse\b/);
     assert.match(nav, /aria-label="Collapse all elements"/);
     assert.match(nav, /textAlign: "center", fontSize: 11\.5/);
     assert.match(nav, /data-structure-resize/);
