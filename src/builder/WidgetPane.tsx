@@ -42,6 +42,8 @@ import { ChevronDown, ChevronRight, Search } from "lucide-react";
 import * as Icons from "lucide-react";
 import { widgetTooltip, type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
+import type { ContainerPreset } from "./treeOps";
+import { boxMatches } from "./WidgetPicker";
 import { openGroups, panelGroups, type PanelGroup } from "./widgetGroups";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
@@ -73,6 +75,19 @@ export interface WidgetPaneProps {
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
   /**
+   * A BOX WAS CHOSEN (§11.12) — "box", "row" or "grid".
+   *
+   * The reference editor's Layout group holds Container and Grid, and a panel
+   * whose Layout group has no container in it is a Layout group in name only.
+   * A separate handler and not a fake `WidgetDef`, because a container is not
+   * a widget: it has no registry entry, no adapter decides whether to offer
+   * it, and the shell puts it on the page with `makePreset` rather than
+   * `buildWidget`. Exactly the door WidgetPicker already has — the same
+   * prop, the same `boxMatches`, so the panel and the "+" cannot offer
+   * different boxes.
+   */
+  onPickBox?: (preset: ContainerPreset) => void;
+  /**
    * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
    *
    * The three states of §11.12: offered, not on this plan, or needs a product
@@ -84,10 +99,26 @@ export interface WidgetPaneProps {
   lockedKinds?: Record<string, WidgetLock>;
 }
 
-export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: WidgetPaneProps) {
+export function WidgetPane({ adapter, onInsert, onDragWidget, onPickBox, lockedKinds }: WidgetPaneProps) {
   const [query, setQuery] = useState("");
-  const groups = useMemo(() => panelGroups(adapter, query), [adapter, query]);
-  const total = useMemo(() => groups.reduce((n, g) => n + g.widgets.length, 0), [groups]);
+  const found = useMemo(() => panelGroups(adapter, query), [adapter, query]);
+  const boxes = useMemo(() => (onPickBox ? boxMatches(query) : []), [onPickBox, query]);
+  /**
+   * LAYOUT IS SHOWN WHEN EITHER HALF MATCHES.
+   *
+   * `panelGroups` returns the groups holding a matching WIDGET, and a box is
+   * not a widget — so typing "row", which matches the Row box and no
+   * widget at all, would drop Layout out of the list while the panel was
+   * holding exactly the thing asked for. The picker had this defect and it was
+   * found by driving it (2026-09-17); the same fix, in the same shape.
+   */
+  const groups = useMemo(() => {
+    if (!boxes.length || found.some((g) => g.group === "Layout")) return found;
+    return [{ group: "Layout" as PanelGroup, widgets: [] }, ...found];
+  }, [boxes, found]);
+  const total = useMemo(
+    () => groups.reduce((n, g) => n + g.widgets.length, 0) + boxes.length,
+    [boxes, groups]);
 
   /**
    * WHICH ACCORDIONS ARE OPEN.
@@ -152,6 +183,30 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
                    the picture and the sentence went: this panel is scanned, not
                    read. */
                 <div className="grid grid-cols-2 gap-px bg-slate-200 p-px">
+                  {/* THE BOXES, FIRST IN LAYOUT. "Drag that into this box"
+                      needs a box to exist before anything can go in one, and
+                      Layout is where a person looks for it. */}
+                  {g.group === "Layout" && onPickBox && boxes.map((preset) => (
+                    <button
+                      key={preset.key}
+                      type="button"
+                      data-pane-box={preset.key}
+                      title={preset.description}
+                      aria-label={`${preset.label} — ${preset.description}`}
+                      onClick={() => onPickBox(preset)}
+                      className="flex h-[86px] cursor-pointer flex-col items-center justify-center gap-1.5 bg-white px-1 text-center transition-colors hover:bg-slate-50"
+                    >
+                      <span aria-hidden="true" className="flex h-5 w-7 gap-[2px]"
+                        style={{ flexDirection: preset.key === "box" ? "column" : "row" }}>
+                        {(preset.key === "grid" ? [1, 2, 3] : [1, 2]).map((n) => (
+                          <span key={n} className="flex-1 rounded-[1px] bg-slate-400" />
+                        ))}
+                      </span>
+                      <span className="w-full truncate text-[10.5px] font-medium leading-tight text-slate-700">
+                        {preset.label}
+                      </span>
+                    </button>
+                  ))}
                   {g.widgets.map((w) => {
                     const lock = lockedKinds?.[w.kind] ?? null;
                     const label = widgetLabel(w, adapter);
@@ -183,7 +238,11 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
                           onDragWidget?.(w);
                         }}
                         onDragEnd={() => onDragWidget?.(null)}
-                        className={`flex aspect-[5/4] flex-col items-center justify-center gap-1.5 px-1 text-center transition-colors ${
+                        /* 86px tall, the reference editor's own tile height
+                           (measured 2026-09-19). An aspect ratio looks right
+                           at one panel width and makes a 120px tower at the
+                           next, which is four screens for twenty-six widgets. */
+                        className={`flex h-[86px] flex-col items-center justify-center gap-1.5 px-1 text-center transition-colors ${
                           lock
                             ? "cursor-not-allowed bg-slate-50 opacity-50"
                             : "cursor-grab bg-white hover:bg-slate-50 active:cursor-grabbing"}`}

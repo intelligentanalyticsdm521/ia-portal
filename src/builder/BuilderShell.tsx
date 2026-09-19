@@ -1245,6 +1245,11 @@ export function BuilderShell(p: BuilderShellProps) {
           adapter={p.adapter}
           onInsert={(def) => insertWidget(def)}
           onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
+          /* A BOX FROM THE PANEL lands where a widget from the panel lands:
+             at the selection, through the SAME `insertBox` the "+" picker
+             uses, refusals and all. `pickBoxFromPicker` is the picker's own
+             wrapper and needs a picker to be open. */
+          onPickBox={(preset) => insertBox(preset)}
           {...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {})}
         />
       ) : null}
@@ -1312,7 +1317,11 @@ export function BuilderShell(p: BuilderShellProps) {
               heading={copy.paneHeading}
               lockedKinds={p.lockedKinds}
               onPick={pickFromPicker}
-              onPickBox={pickBoxFromPicker}
+              /* A BOX FROM THE PANEL lands where a widget from the panel lands:
+             at the selection, through the SAME `insertBox` the "+" picker
+             uses, refusals and all. `pickBoxFromPicker` is the picker's own
+             wrapper and needs a picker to be open. */
+          onPickBox={(preset) => insertBox(preset)}
               onClose={() => setPicker(null)}
             />
           )}

@@ -55,7 +55,7 @@ export interface NavigatorProps {
   onLockWidget?: (path: WidgetPath, locked: boolean) => void;
   /** Is this section locked? (Every widget in it is.) */
   isSectionLocked?: (sectionId: string) => boolean;
-  /** The \u22ef \u2014 the SAME menu as right-clicking it on the page (M-8). */
+  /** The ⋯ — the SAME menu as right-clicking it on the page (M-8). */
   onRowMenu?: (
     target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
     at: { x: number; y: number },
@@ -243,13 +243,13 @@ export function Navigator(p: NavigatorProps) {
               {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
             </button>
 
-            {/* M-8 \u2014 the same menu, from the outline. */}
+            {/* M-8 — the same menu, from the outline. */}
             {p.onRowMenu && (
               <button
                 type="button"
                 data-nav-more="1"
                 aria-label="Everything you can do with this"
-                title="Everything you can do with this \u2014 the same as right-clicking it on the page"
+                title="Everything you can do with this — the same as right-clicking it on the page"
                 onClick={(e) => {
                   e.stopPropagation();
                   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -262,7 +262,7 @@ export function Navigator(p: NavigatorProps) {
                 }}
                 style={{ border: "none", background: "transparent", cursor: "pointer", color: "#CBD5E1", display: "inline-flex", padding: 0, fontSize: 13, lineHeight: 1 }}
               >
-                \u22ef
+                ⋯
               </button>
             )}
           </div>
