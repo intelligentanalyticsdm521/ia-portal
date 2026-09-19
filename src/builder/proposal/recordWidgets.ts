@@ -237,6 +237,44 @@ export function overriddenOn(kind: string, props: Record<string, unknown> | unde
    Drawing one
    ══════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * WHICH RECORD THIS BLOCK READS.
+ *
+ * Usually the one the top bar chose, which is what `book` holds. The
+ * exception is a **Service Location** the author pointed at a particular site:
+ * its `locationId` names a row in `ctx.locations`, and that row wins.
+ *
+ * ── FOUND BY DRIVING IT (2026-09-19) ──────────────────────────────────────
+ * The canvas did NOT have this branch and the server did
+ * (`documentModel.js flatRecord`). So a document whose Service Location was
+ * bound to one site, opened after the customer had been changed, read "Des
+ * Moines campus" in the editor and printed the OTHER site on the PDF. Two
+ * readings of one widget is precisely what the mirror exists to prevent, and
+ * the PDF was the one telling the truth — the author pointed that block
+ * somewhere, and changing the customer does not un-point it.
+ */
+function recordFor(
+  kind: RecordKind,
+  props: Record<string, unknown> | undefined | null,
+  ctx: RenderContext,
+  book: RecordBook,
+): RecordValues {
+  if (kind !== "service_location") return book[kind] || {};
+  const id = str((props as any)?.locationId).toLowerCase();
+  const loc: any = id ? (ctx.locations || {})[id] : null;
+  if (!loc) return book.service_location || {};
+  const line1 = loc.address_line1 ?? loc.address_line_1;
+  const line2 = loc.address_line2 ?? loc.address_line_2;
+  const address = [line1, line2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
+    .filter((x) => str(x)).join(", ");
+  const out: RecordValues = {};
+  if (str(loc.name)) out.name = str(loc.name);
+  if (address) out.address = address;
+  if (str(loc.site_contact)) out.site_contact = str(loc.site_contact);
+  if (str(loc.access_notes)) out.access_notes = str(loc.access_notes);
+  return out;
+}
+
 const LAYOUT_STYLE: Record<RecordLayout, string> = {
   stacked: "display:block",
   two_columns: "display:grid;grid-template-columns:1fr 1fr;gap:4px 18px",
@@ -260,7 +298,7 @@ const LAYOUT_STYLE: Record<RecordLayout, string> = {
  */
 export function renderRecordBlock(w: Widget, ctx: RenderContext, book: RecordBook): string {
   const kind = w.kind as RecordKind;
-  const fields = resolveRecord(kind, w.props, book[kind]);
+  const fields = resolveRecord(kind, w.props, recordFor(kind, w.props, ctx, book));
   const editing = ctx.mode === "edit";
   const heading = str((w.props as any)?.heading);
 
@@ -299,14 +337,23 @@ export function renderRecordBlock(w: Widget, ctx: RenderContext, book: RecordBoo
          data-placeholder="${esc(RECORD_HEADING_PLACEHOLDER[kind])}">${esc(heading)}</div>`
     : "";
 
-  // ONE sentence, only while editing, only when something really is bound.
+  /* ONE sentence, only while editing, only when something really is bound —
+     and it names WHOSE record, because "the customer's own record" printed
+     under the BUSINESS block, which is not true and is exactly the kind of
+     almost-right wording an author stops reading. */
   const note = editing && fields.some((f) => f.live.trim())
-    ? `<div class="bx-card-note">These come from the customer's own record, so this page and your crew's sheet cannot disagree.</div>`
+    ? `<div class="bx-card-note">${esc(RECORD_SOURCE_SENTENCE[kind])}</div>`
     : "";
 
   return `<div class="bx-record" data-record="${esc(kind)}" data-layout="${esc(layout)}">
     ${head}<div class="bx-record-fields" style="${LAYOUT_STYLE[layout]}">${rows}</div>${note}</div>`;
 }
+
+const RECORD_SOURCE_SENTENCE: Record<RecordKind, string> = {
+  customer: "These come from the customer's own record, so this page and your crew's sheet cannot disagree.",
+  service_location: "These come from the site's own record, so this page and your crew's sheet cannot disagree.",
+  business_info: "These are your own details, so every document you send says the same thing.",
+};
 
 const RECORD_HEADING_PLACEHOLDER: Record<RecordKind, string> = {
   customer: "Prepared for",

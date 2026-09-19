@@ -60,7 +60,8 @@ import { makeContext } from "../src/builder/render.ts";
 import { TYPED_NOT_LIVE, PUT_IT_BACK } from "../src/builder/widgets/binding.ts";
 
 const {
-  blankTokens, blanksRefusal, mergeValues, plainLabel, setMergeValue, tokensUsedBy, widgetForToken,
+  bindPlansToLocation, blankTokens, blanksRefusal, mergeValues, plainLabel, setMergeValue,
+  tokensUsedBy, widgetForToken,
 } = documentDetails;
 
 /** A document holding these widgets in one section's first column. */
@@ -232,6 +233,57 @@ describe("dynamic fields — the record fills the page", () => {
     assert.equal(renderRecordBlock(w, makeContext(emptyDocument(), { mode: "view" }), {}), "");
     const gap = makeWidget("customer", { ...WIDGETS_BY_KIND.customer.defaults, on_empty: "placeholder" });
     assert.match(renderRecordBlock(gap, makeContext(emptyDocument(), { mode: "view" }), {}), /bx-record-empty/);
+  });
+
+  test("A SERVICE LOCATION THE AUTHOR POINTED SOMEWHERE READS THAT SITE", () => {
+    /* FOUND BY DRIVING IT, 2026-09-19. The canvas read the record book and
+       the server read the widget's own `locationId` (documentModel.js
+       `flatRecord`), so a block bound to one site showed one name in the
+       editor and printed the other on the PDF. The PDF was right: the author
+       pointed that block somewhere, and changing the customer does not
+       un-point it. One reading now, and this is what pins it. */
+    const w = makeWidget("service_location", {
+      ...WIDGETS_BY_KIND.service_location.defaults, locationId: "abc",
+    });
+    const ctx = makeContext(emptyDocument(), {
+      mode: "edit",
+      locations: { abc: { name: "South Lot", address_line1: "9 Dock Road", city: "Northbrook", state: "IL" } },
+    });
+    const html = renderRecordBlock(w, ctx, { service_location: HARBOURVIEW.service_location });
+    assert.ok(html.includes("South Lot"), "the block ignored the site it was pointed at");
+    assert.ok(!html.includes("Harborview North Lot"), "the block read the top bar over the author");
+    assert.ok(html.includes("9 Dock Road"));
+
+    // Pointed nowhere, it is the document's own site, as it always was.
+    const loose = makeWidget("service_location", WIDGETS_BY_KIND.service_location.defaults);
+    assert.ok(renderRecordBlock(loose, ctx, { service_location: HARBOURVIEW.service_location })
+      .includes("Harborview North Lot"));
+  });
+
+  test("ONE CUSTOMER'S ADDRESS NEVER LANDS ON ANOTHER CUSTOMER'S PAPER", () => {
+    /* FOUND BY DRIVING IT, 2026-09-19. A Service Location bound to
+       Harborview's yard, on a document whose customer was then changed to
+       Hope Ministries, printed Harborview's address on Hope Ministries'
+       agreement. The canvas could not show it (it holds only the picked
+       customer's locations) while the PDF could, so it stayed invisible. */
+    const bound = makeWidget("service_location", { locationId: "harborview-yard" });
+    const mine = makeWidget("service_location", { locationId: "hope-north" });
+    const loose = makeWidget("service_location", { locationId: "" });
+    const doc = docWith(bound, mine, loose);
+    const out = bindPlansToLocation(doc, "hope-main", ["hope-main", "hope-north"]);
+    const at = (i) => out.sections[0].columns[0].widgets[i].props.locationId;
+    assert.equal(at(0), "hope-main", "a site from another customer was left on the page");
+    assert.equal(at(1), "hope-north", "a site the author picked was moved out from under them");
+    assert.equal(at(2), "hope-main", "an unbound block was not given the document's own site");
+  });
+
+  test("NOT KNOWING the locations yet never re-points anything", () => {
+    // Absence-based guards fail open. "We have not loaded them" must not read
+    // as "this customer has none", which would move every bound block on open.
+    const bound = makeWidget("service_location", { locationId: "harborview-yard" });
+    const doc = docWith(bound);
+    assert.equal(bindPlansToLocation(doc, "hope-main", []), doc, "it re-pointed on an empty list");
+    assert.equal(bindPlansToLocation(doc, "hope-main"), doc, "it re-pointed with no list at all");
   });
 
   test("isRecordKind is the one door and does not answer yes to anything else", () => {

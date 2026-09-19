@@ -41,7 +41,7 @@ import {
    are what the DELETED Details group is replaced by, so the adapter draws
    them (`ctx.extra`) and keeps their live values in one place. */
 import {
-  RECORD_WIDGET_DEFS, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
+  RECORD_WIDGET_DEFS, fieldsOf, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
   type RecordBook,
 } from "./recordWidgets";
 import { upgradeProposalDocument } from "./upgradeProposal";
@@ -508,10 +508,16 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    * alone. The panel's own picker says which location it is and changes it.
    */
   const documentLocationId = pickedLocationIds[0] || "";
+  /* The ids THIS customer really has, as one string, so the effect below runs
+     when the customer changes and not on every render. */
+  const knownLocationIds = useMemo(
+    () => locations.map((l) => String(l.location_id).toLowerCase()).sort().join(","),
+    [locations]);
   useEffect(() => {
     if (!documentLocationId) return;
-    setDoc((d) => bindPlansToLocation(d, documentLocationId));
-  }, [documentLocationId]);
+    setDoc((d) => bindPlansToLocation(d, documentLocationId,
+      knownLocationIds ? knownLocationIds.split(",") : []));
+  }, [documentLocationId, knownLocationIds]);
 
   /**
    * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
@@ -1711,7 +1717,7 @@ function WidgetExtras({
               <button key={key} type="button" style={miniBtn} data-put-back={key}
                 title={`${PUT_IT_BACK} — this field follows the customer's record again`}
                 onClick={() => patch(putFieldBackProps(p, key))}>
-                {PUT_IT_BACK}: {plainFieldName(key)}
+                {PUT_IT_BACK}: {recordFieldLabel(widget.kind, key)}
               </button>
             ))}
           </div>
@@ -2050,6 +2056,18 @@ function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<
  * "bullets" are the model's words rather than the author's. One map, beside
  * the sentence that reads them.
  */
+/**
+ * PLAIN WORDS FOR ONE RECORD FIELD — the label the page itself prints.
+ *
+ * "Put it back: name" was the raw key on a screen, which is the thing
+ * `plainLabel` exists to stop happening to merge tokens and had no equivalent
+ * here. The widget's own field list already holds the words, so there is one
+ * place they are written and the panel and the page cannot disagree.
+ */
+function recordFieldLabel(kind: string, key: string): string {
+  return fieldsOf(kind).find((f) => f.key === key)?.label || key;
+}
+
 function plainFieldName(key: string): string {
   const NAMES: Record<string, string> = {
     title: "the name", heading: "the name",

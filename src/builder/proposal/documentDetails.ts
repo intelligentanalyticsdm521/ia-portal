@@ -253,23 +253,55 @@ export function widgetForToken(
    Three small facts the DOCUMENT itself carries
    ══════════════════════════════════════════════════════════════════════════ */
 
+/** Every widget on the page that is ABOUT A SITE. One list, one rule. */
+const SITE_KINDS = new Set(["property_plan", "service_location"]);
+
 /**
- * THE LOCATION A PROPERTY PLAN IS ABOUT, defaulted to the DOCUMENT's (D-164).
+ * A SITE WIDGET POINTS AT A SITE THIS CUSTOMER HAS (D-164, and 2026-09-19).
  *
- * When the document has a chosen location and a plan has none, the plan is
- * BOUND to it. A plan the author has pointed somewhere else is left exactly
- * where they pointed it. Returns the SAME DOCUMENT by identity when there is
- * nothing to do, so a draft that is merely opened is byte-identical on save.
+ * Two cases, one rule, because they are the same fact:
+ *
+ *   · a widget with NO location takes the document's own (D-164). A plan
+ *     shipped with `locationId: ""` asked the author, on one widget, a
+ *     question the top bar had already answered.
+ *   · a widget pointing at a site that is NOT one of this customer's is
+ *     RE-POINTED at the document's own. FOUND BY DRIVING IT: a Service
+ *     Location bound to Harborview's yard, on a document whose customer was
+ *     then changed to Hope Ministries, printed **Harborview's address on Hope
+ *     Ministries' agreement**. The canvas could not even show it — it only
+ *     holds the picked customer's locations — while the server loads every id
+ *     the document names and found it. One customer's address on another
+ *     customer's paper is the worst thing this widget can do, and "the two
+ *     surfaces disagreed" is how it stayed invisible.
+ *
+ * `known` is the ids this customer really has. Pass an EMPTY set and nothing
+ * is re-pointed: "we have not loaded the locations yet" must never read as
+ * "this customer has none", which would blank every bound block on open.
+ *
+ * A widget the author pointed at another of THIS customer's sites is left
+ * exactly where they pointed it. Returns the SAME DOCUMENT by identity when
+ * there is nothing to do, so a draft that is merely opened is byte-identical
+ * on save.
  */
-export function bindPlansToLocation(doc: BuilderDocument, locationId: string): BuilderDocument {
+export function bindPlansToLocation(
+  doc: BuilderDocument,
+  locationId: string,
+  known?: Iterable<string>,
+): BuilderDocument {
   const id = String(locationId ?? "").trim().toLowerCase();
   if (!id) return doc;
-  const unbound = walkWidgets(doc)
-    .filter(({ widget }) => (widget.kind === "property_plan" || widget.kind === "service_location")
-      && !String((widget.props as any)?.locationId ?? "").trim())
+  const valid = new Set([...(known ?? [])].map((x) => String(x).trim().toLowerCase()).filter(Boolean));
+  const move = walkWidgets(doc)
+    .filter(({ widget }) => {
+      if (!SITE_KINDS.has(widget.kind)) return false;
+      const on = String((widget.props as any)?.locationId ?? "").trim().toLowerCase();
+      if (!on) return true;
+      // PRESENCE, not absence: only re-point when we actually know the list.
+      return valid.size > 0 && !valid.has(on);
+    })
     .map(({ widget }) => widget.id);
-  if (!unbound.length) return doc;
-  return unbound.reduce((d, widgetId) => patchNode(d, widgetId, { locationId: id }), doc);
+  if (!move.length) return doc;
+  return move.reduce((d, widgetId) => patchNode(d, widgetId, { locationId: id }), doc);
 }
 
 /**
