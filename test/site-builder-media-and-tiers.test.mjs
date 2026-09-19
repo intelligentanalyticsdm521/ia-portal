@@ -293,9 +293,16 @@ test('the phone can still add and reorder, where dragging does not fire', () => 
   assert.match(add, /title="Add New Container"/);
   assert.match(add, /title="Add Template"/);
   assert.match(add, /data-structure-preset=\{preset\.key\}/);
+  /* THE INSPECTOR'S Up / Down ARE DELETED (D-172): nothing like that row is in
+     the reference panel, so it was ours. ABSENT here, and the ADD doors above
+     are what this test actually protects — every one of them is a press, so a
+     phone can still put something on the page. Reordering by touch is a known
+     gap, recorded in D168_HANDOFF_2026-09-19 under SCREEN PARITY round 1. */
   const inspector = readSrc('src/builder/Inspector.tsx');
-  assert.match(inspector, /title="Move this up inside its column"/);
-  assert.match(inspector, /title="Move this down inside its column"/);
+  assert.doesNotMatch(inspector, /title="Move this up inside its column"/,
+    'the Up button is back in the panel');
+  assert.doesNotMatch(inspector, /title="Move this down inside its column"/,
+    'the Down button is back in the panel');
 });
 
 test('the widget pane becomes a drawer on a phone, and the canvas still offers everything', () => {

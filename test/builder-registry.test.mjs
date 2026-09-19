@@ -514,7 +514,9 @@ describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
 
   test("it has a title and a search box, and NOTHING else", () => {
     assert.match(pane, /type="search"/);
-    assert.match(pane, /aria-label="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /aria-label="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /aria-label=\{PANE_SEARCH_PLACEHOLDER\}/);
     assert.match(pane, /PANE_TITLE/);
     // §11.13.1: no outline, no totals, no customer box, no templates list,
     // no "still to fill in" counter, and no slot to inject one through.

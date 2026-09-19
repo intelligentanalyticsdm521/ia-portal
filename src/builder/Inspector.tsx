@@ -47,7 +47,7 @@
  * BuilderShell: two would let an author edit the phone and watch the desktop.
  */
 import { useState, type ReactNode } from "react";
-import { Sparkles, Trash2 } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
 import { widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
@@ -88,8 +88,6 @@ export interface InspectorProps extends InspectorSlots {
   selection: Selection;
   onPatchSection: (sectionId: string, patch: Partial<Section>) => void;
   onPatchWidget: (props: Record<string, unknown>) => void;
-  onDeleteWidget: () => void;
-  onMoveWidget: (delta: -1 | 1) => void;
   /** Any colour, any font — the brand kit only supplies the swatches. */
   swatches: string[];
   fonts: string[];
@@ -158,11 +156,8 @@ export function Inspector(p: InspectorProps) {
           <div style={{ fontSize: 14, fontWeight: 600 }}>Page settings</div>
         </div>
         {p.documentExtras}
-        <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>
-          <p style={{ lineHeight: 1.5 }}>
-            Click anything on the page to change it here. Words are typed straight on the page.
-          </p>
-        </div>
+        {/* THE COACHING SENTENCE IS DELETED (D-172). The reference panels
+            carry no such line. */}
       </div>
     );
   }
@@ -491,25 +486,12 @@ export function Inspector(p: InspectorProps) {
                 );
               })}
 
-              <div style={{ display: "flex", gap: 6 }}>
-                {/* The keyboard path, kept (§11.8): HTML5 drag does not fire
-                    on touch at all, so a phone has to be able to do everything
-                    a mouse can. Dragging is the other half, not the only one. */}
-                <button type="button" style={miniBtn} title="Move this up inside its column" onClick={() => p.onMoveWidget(-1)}>↑ Up</button>
-                <button type="button" style={miniBtn} title="Move this down inside its column" onClick={() => p.onMoveWidget(1)}>↓ Down</button>
-                {/* A locked widget is a part the law puts on the page, not the
-                    author. model.removeWidget refuses it too — this is the half
-                    that explains WHY, which a disabled button with no tooltip
-                    never does. */}
-                <button
-                  type="button"
-                  disabled={!!widget.locked}
-                  style={{ ...miniBtn, color: widget.locked ? "#94A3B8" : "#B91C1C", marginLeft: "auto", cursor: widget.locked ? "default" : "pointer" }}
-                  title={widget.locked
-                    ? "This has to be on every email you send — it carries the unsubscribe link and your postal address. You can change the wording; you cannot remove it."
-                    : "Remove this from the page"}
-                  onClick={p.onDeleteWidget}><Trash2 size={12} /> Remove</button>
-              </div>
+              {/* UP / DOWN / REMOVE WERE HERE AND ARE DELETED (D-172).
+                  Nothing like that row is in the reference panel: order is a
+                  drag or the Structure window, and deleting is right-click.
+                  Keeping them here was a second home for verbs the menu
+                  already owns. What stays is the ONE thing the panel has to
+                  say, which is WHY a locked part cannot be removed. */}
               {widget.locked && (
                 <div style={{ fontSize: 10, color: "#B45309", lineHeight: 1.45 }}>
                   Required on every marketing email. Edit the wording on the page; it stays where it is.
@@ -785,9 +767,8 @@ export function Inspector(p: InspectorProps) {
         )}
       </div>
 
-      <div style={{ marginTop: "auto", padding: "10px 16px", borderTop: "1px solid #E2E8F0", fontSize: 11, color: "#5A7A8A" }}>
-        Changes show on the page as you make them.
-      </div>
+      {/* THE FOOTER SENTENCE — "Changes show on the page as you make them."
+          — IS DELETED (D-172). No footer sentence in the reference panel. */}
     </div>
   );
 }

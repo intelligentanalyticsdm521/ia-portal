@@ -745,7 +745,7 @@ describe("the surfaces carry the tree, and carry it once", () => {
      Neither was reachable from a model test, because both are about what the
      canvas does with a click. */
 
-  test("the selection marks do NOT need a repaint (found by driving it)", () => {
+  test("the selection mark does NOT need a repaint (found by driving it)", () => {
     // The paint is deliberately skipped while the caret is inside a run of
     // text, and on this canvas clicking any words puts the caret inside one.
     // So shift-click set the model and drew nothing at all, and "select two
@@ -758,8 +758,13 @@ describe("the surfaces carry the tree, and carry it once", () => {
     // and its own dependency array.
     const from = canvas.indexOf("THE SELECTION MARKS, WITHOUT A REPAINT");
     assert.ok(from > 0, "the marks effect is gone");
-    const body = canvas.slice(from, canvas.indexOf("}, [selectedWidgetId, alsoKey, html]);", from));
-    assert.match(body, /classList\.toggle\("bxc-widget-also"/, "the marks effect draws no mark");
+    const body = canvas.slice(from, canvas.indexOf("}, [selectedWidgetId, html]);", from));
+    // ABSENT: the dotted "also selected" ring. There is no multi-select on the
+    // reference editor's canvas (D-172), so the second mark, the gesture that
+    // set it and the menu row it fed are all deleted.
+    assert.ok(!canvas.includes("bxc-widget-also"), "the also-selected ring is back on the canvas");
+    assert.ok(!canvas.includes("extendSelection"), "shift-click extends the selection again");
+    // PRESENT: the one mark, still drawn without a repaint.
     assert.match(body, /classList\.toggle\("bxc-widget-sel"/, "the marks effect draws no selection");
     // …and it is NOT behind the caret guard, and writes no HTML.
     assert.doesNotMatch(body, /data-bx-editable/, "the marks effect is behind the caret guard");
@@ -772,8 +777,10 @@ describe("the surfaces carry the tree, and carry it once", () => {
     // "hold Shift and click a second thing" beside it while two things were
     // selected. The gesture that opens the menu cannot undo what the menu is
     // for.
-    assert.match(canvas, /const already = alsoKey\.split\(","\)\.includes\(path\.id \|\| ""\) \|\| path\.id === selectedWidgetId;/);
-    assert.match(canvas, /if \(!already\) onSelect\(\{ kind: "widget", \.\.\.path \}\);/);
+    // With multi-select deleted (D-172) the rule is the simpler one it always
+    // meant: the gesture that opens the menu does not move the selection when
+    // the menu is already about the thing under the pointer.
+    assert.match(canvas, /if \(path\.id !== selectedWidgetId\) onSelect\(\{ kind: "widget", \.\.\.path \}\);/);
   });
 
   test("no vendor names anywhere the author can read them", () => {

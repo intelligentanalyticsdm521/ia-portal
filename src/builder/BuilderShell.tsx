@@ -131,7 +131,6 @@ export interface BuilderShellProps extends InspectorSlots {
   defaultFontLabel?: string;
   savedTemplates?: SavedTemplate[];
   onOpenTemplate?: (t: SavedTemplate) => void;
-  nextUp?: string | null;
   /* `paneHeader` WAS HERE AND IS DELETED (§11.13.1, D-165).
 
      It was the slot an adapter injected its own left-pane groups through, and
@@ -208,8 +207,6 @@ export interface BuilderShellProps extends InspectorSlots {
   paperWidth?: number | "full";
   /** What the page sits on, and the two lines above it. See Canvas. */
   paper?: string;
-  paperNote?: string;
-  canvasHint?: string;
   /** The renderer's own stylesheet, and the adapter's on top. See Canvas. */
   canvasCss?: string;
   extraCss?: string;
@@ -1160,8 +1157,6 @@ export function BuilderShell(p: BuilderShellProps) {
           documentExtras={p.documentExtras}
           onPatchSection={changeSection}
           onPatchWidget={patchSelectedWidget}
-          onDeleteWidget={() => { if (selection?.kind === "widget") deleteWidget(selection); }}
-          onMoveWidget={(d) => { if (selection?.kind === "widget") { apply(moveWidget(doc, selection, d)); select({ ...selection, widgetIndex: selection.widgetIndex + d }); } }}
         />
       }
       overlays={
@@ -1303,15 +1298,12 @@ export function BuilderShell(p: BuilderShellProps) {
         doc={doc}
         ctx={p.ctx}
         selection={selection}
-        nextUp={p.nextUp}
         copy={copy}
         renderSection={p.renderSection}
         /* The adapter says how wide its paper is; the preview toggle narrows
            it and never widens it. One function, no per-adapter fork. */
         paperWidth={previewPaperWidth(preview, p.paperWidth ?? 780)}
         paper={p.paper}
-        paperNote={previewNote(preview, p.paperWidth ?? 780) ?? p.paperNote}
-        canvasHint={p.canvasHint}
         canvasCss={p.canvasCss}
         extraCss={p.extraCss}
         chromeTop={p.chromeTop}

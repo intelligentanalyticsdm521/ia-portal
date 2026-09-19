@@ -274,13 +274,10 @@ export function LandingBuilder(p: LandingBuilderProps) {
         outlineHeading: "This page, top to bottom",
         defaultFontLabel: "This page's own font",
         pageBreakLabel: "",
-        canvasHint: "Click anything on the page to edit it. This is the page a visitor gets.",
         emptyHeading: "What goes on this page?",
         emptyHint: "A headline, a reason to care, and a form. Pick one to start.",
       }}
       onSave={() => void save(false)}
-      canvasHint="Click anything on the page to edit it. This is the page a visitor gets."
-      paperNote="hosted page"
       premade={LANDING_PREMADE_SECTIONS}
       premadeTags={LANDING_PREMADE_TAGS}
       swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}

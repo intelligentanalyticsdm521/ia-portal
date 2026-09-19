@@ -1046,7 +1046,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           outlineHeading: "This document, top to bottom",
           defaultFontLabel: "This document's own font",
           pageBreakLabel: "Start a new page here",
-          canvasHint: "Click anything to edit it. This is exactly what the customer sees.",
           emptyHeading: "What goes in this document?",
           emptyHint: "Pick one to start. You can add the rest after.",
           lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
@@ -1162,7 +1161,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           if (id === "ask-argus") setAskOpen(true);
         }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
-        nextUp={null}
         askArgus={
           <button type="button" onClick={() => setAskOpen(true)}
             title="Ask ARGUS to write, rewrite or build a section. Uses AI credits."

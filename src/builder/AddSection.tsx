@@ -110,9 +110,11 @@ export function AddSection(p: AddSectionProps) {
   const [view, setView] = useState<View>("buttons");
   const [layout, setLayout] = useState<SectionLayout>("flex");
 
-  const back = view === "layout" ? () => setView("buttons")
-    : view === "structure" ? () => setView("layout")
-      : null;
+  /* BACK IS ON THE STRUCTURE VIEW ONLY (D-172). The reference shows an X in
+     the top-right of the layout view and nothing in the top-left; a Back
+     chevron there was ours. From "Select your structure" it goes back to
+     "Which layout would you like to use?", which is what the reference does. */
+  const back = view === "structure" ? () => setView("layout") : null;
   const close = view !== "buttons" ? () => setView("buttons") : p.onClose ?? null;
 
   return (

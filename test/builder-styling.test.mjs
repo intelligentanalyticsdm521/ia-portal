@@ -767,9 +767,21 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     }
   });
 
-  test("the keyboard path stays — HTML5 drag never fires on touch", () => {
-    assert.match(inspector, /title="Move this up inside its column"/);
-    assert.match(inspector, /title="Move this down inside its column"/);
+  test("Up / Down / Remove are NOT in the panel — they are right-click (D-172)", () => {
+    // ABSENT: the three-button row at the foot of every Content section.
+    // Nothing like it is in the reference panel; ordering is a drag or the
+    // Structure window and deleting is the right-click menu, so the row was a
+    // second home for verbs the menu already owns.
+    assert.doesNotMatch(inspector, /title="Move this up inside its column"/,
+      "the Up button is back in the panel");
+    assert.doesNotMatch(inspector, /title="Move this down inside its column"/,
+      "the Down button is back in the panel");
+    assert.doesNotMatch(inspector, /onMoveWidget/, "the panel can still reorder a widget");
+    // PRESENT INSTEAD: the menu owns both, and the panel keeps only the one
+    // thing it has to say — WHY a locked part cannot be removed.
+    const menu = readSrc("builder/builderMenu.ts");
+    assert.match(menu, /"delete"/, "the menu lost Delete");
+    assert.match(inspector, /Required on every marketing email/);
   });
 
   test("the email inspector says what it cannot promise", () => {

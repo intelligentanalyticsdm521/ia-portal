@@ -136,7 +136,9 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
 
   test("the panel is a title, a search box and the groups — no injection slot", () => {
     assert.match(pane, /PANE_TITLE/);
-    assert.match(pane, /aria-label="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /aria-label="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /aria-label=\{PANE_SEARCH_PLACEHOLDER\}/);
     assert.match(pane, /data-pane-group-toggle=\{g\.group\}/);
     for (const gone of [/<Navigator/, /data-builder-problems/, /header\?:/, /hint\?:/]) {
       assert.doesNotMatch(pane, gone, `the left panel grew something again: ${gone}`);

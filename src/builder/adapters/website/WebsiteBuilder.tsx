@@ -834,7 +834,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         onChange={change}
         ctx={ctx}
         paperWidth="full"
-        paperNote={detail?.permalink ? String(detail.permalink).replace(/^https?:\/\//, "") : "your website"}
         extraCss={SITE_CSS}
         /* D-30. The engine was written for a proposal, so without this a
            website inspector offers "Start a new page here (when printed or
@@ -850,12 +849,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           outlineHeading: "This page, top to bottom",
           defaultFontLabel: "Your website's own font",
           pageBreakLabel: "",
-          canvasHint: "Click anything on the page to edit it. Everything here is what a visitor sees.",
           emptyHeading: "What goes on this page?",
           emptyHint: "Pick one to start. You can add the rest after.",
         }}
         onSave={saveNow}
-        canvasHint="Click anything on the page to edit it. Everything here is what a visitor sees."
         chromeTop={renderHeaderChrome({ businessName: chrome.businessName, logoUrl: chrome.logoUrl, menu: chrome.menu })}
         chromeBottom={renderFooterChrome({ businessName: chrome.businessName, menu: chrome.menu, contactLine: chrome.contactLine })}
         chromeNote="Your website's header and footer. They are the same on every page — change them under Website → Menus."
@@ -874,7 +871,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
         onAddBlank={(at) => { void addFromServer("content", at); return false; }}
-        nextUp={null}
         askArgus={
           <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
             title="Ask ARGUS to write or rewrite this page. Uses AI credits, and you see what it suggests before anything changes.">

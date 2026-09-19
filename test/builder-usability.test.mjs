@@ -714,7 +714,12 @@ describe("the canvas carries the chrome the walk asked for", () => {
 
   test("the new thing is scrolled to and glows (D-11)", () => {
     assert.match(canvas, /scrollIntoView\(\{ block: "center", behavior: "smooth" \}\)/);
-    assert.match(canvas, /bxc-flash/);
+    // ABSENT: the two-second glow. The reference does nothing after an
+    // insert beyond the widget appearing (D-172). PRESENT: the scroll,
+    // which is not chrome — it is how the author finds what just landed.
+    assert.doesNotMatch(canvas, /bxc-flash/, "the orange glow on a new widget is back");
+    assert.doesNotMatch(canvas, /bxc-flash-fade/, "the fading tint is back");
+    assert.match(canvas, /el\.scrollIntoView\(\{ block: "center", behavior: "smooth" \}\)/);
   });
 
   test("an empty page IS the add area, not three cards (D-148)", () => {
@@ -847,7 +852,9 @@ describe("the shell wires the rebuild without a second mechanism", () => {
     // PRESENT: the search box in the panel, which is how a widget is found by
     // typing now.
     assert.match(pane, /data-pane-search/);
-    assert.match(pane, /placeholder="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /placeholder="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /placeholder=\{PANE_SEARCH_PLACEHOLDER\}/);
   });
 
   /* WAS "the counter is a BUTTON that goes somewhere (D-35)" — the

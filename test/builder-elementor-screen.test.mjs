@@ -70,7 +70,16 @@ describe("SCREEN LAW 1 — widgets are in the left panel and nowhere else", () =
 
   test("and the left panel IS there, with every group open", () => {
     const pane = readSrc("builder/WidgetPane.tsx");
-    assert.ok(pane.includes('export const PANE_TITLE = "Widgets"'), "the left panel lost its title");
+    // ABSENT: our own word for the panel. PRESENT: the reference editor's.
+    // Driven in a live Elementor on 2026-09-19 — the panel is titled
+    // "Elements" and its search says "Search Widget..." to the character
+    // (capture: overnight-report/elementor-reference/widgets/
+    // _zz_screen_round1.json). "Widgets" and "Search widgets" were ours.
+    assert.ok(!pane.includes('PANE_TITLE = "Widgets"'), "the panel is called Widgets again");
+    assert.ok(pane.includes('export const PANE_TITLE = "Elements"'), "the left panel lost its title");
+    assert.ok(pane.includes('export const PANE_SEARCH_PLACEHOLDER = "Search Widget..."'),
+      "the search box lost the reference editor's placeholder");
+    assert.ok(!/placeholder="Search widgets"/.test(pane), "the search box says Search widgets again");
     assert.ok(pane.includes("data-widget-kind"), "the left panel draws no widget tiles");
     const groups = [{ group: "Layout", widgets: [] }, { group: "Basic", widgets: [] }, { group: "General", widgets: [] }];
     assert.deepEqual(openGroups(groups, ""), ["Layout", "Basic", "General"],
@@ -176,5 +185,175 @@ describe("SCREEN LAW 5 — the words are Elementor's", () => {
     const nav = code(readSrc("builder/navigatorModel.ts"));
     assert.ok(inspector.includes('d === "grid" ? "Grid" : "Container"'), "the settings panel names a container something else");
     assert.ok(nav.includes('dir === "grid" ? "Grid" : "Container"'), "the structure window names a container something else");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 6 — ROUND 1 OF THE SCREEN AUDIT (D-172, 2026-09-19)
+
+   Three auditors did the same thing in the real editor and in ours and listed
+   every place the two differed. Everything below was on OUR screen and is not
+   on the reference's, so it is DELETED — and each test here is the other half
+   of that deletion: the thing is ABSENT, and whatever the reference has in its
+   place is PRESENT.
+
+   The reference was DRIVEN, not remembered: Playwright on the installed Chrome
+   against the WordPress Playground blueprint, and the answers are written down
+   in overnight-report/elementor-reference/widgets/_zz_screen_round1.json and
+   _zz_screen_round1b.json. Two auditor rows did not survive that check and are
+   NOT acted on here — the reference's right-click menu DOES open with
+   "Edit <Widget>", and its settings tabs are words with no icons.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 6 — nothing sits between the top bar and the page", () => {
+  const canvas = code(readSrc("builder/Canvas.tsx"));
+
+  test("the hint strip and the section counter are DELETED, not restyled", () => {
+    // ABSENT — and absent from the PROPS as well, so no adapter can hand one
+    // back in. That is the difference between deleting a strip and hiding it.
+    assert.ok(!canvas.includes("canvasHint"), "the canvas hint strip is back");
+    assert.ok(!canvas.includes("paperNote"), "the counter above the page is back");
+    assert.ok(!/\bsection\{doc\.sections\.length === 1/.test(canvas), "the section counter is back");
+    for (const f of ["builder/BuilderShell.tsx", "builder/copy.ts",
+                     "builder/proposal/ProposalBuilder.tsx",
+                     "builder/adapters/email/EmailBuilder.tsx",
+                     "builder/adapters/landing/LandingBuilder.tsx",
+                     "builder/adapters/website/WebsiteBuilder.tsx"]) {
+      const t = code(readSrc(f));
+      assert.ok(!t.includes("canvasHint"), `${f} passes a canvas hint again`);
+      assert.ok(!t.includes("paperNote"), `${f} passes a paper note again`);
+    }
+    // PRESENT: the page itself, straight under the bar.
+    assert.ok(canvas.includes('boxShadow: "0 1px 2px rgba(0,0,0,0.06)'), "the page lost its sheet");
+  });
+
+  test('the "Next up in this template" note under the add area is DELETED', () => {
+    assert.ok(!canvas.includes("Next up in this template"), "the note under the add area is back");
+    assert.ok(!canvas.includes("nextUp"), "the note's prop is back on the canvas");
+    assert.ok(!code(readSrc("builder/BuilderShell.tsx")).includes("nextUp"), "the shell still carries nextUp");
+    // PRESENT: the reference's own three words, and nothing under them.
+    assert.ok(code(readSrc("builder/AddSection.tsx")).includes("Drag widget here"),
+      "the add area lost the words the reference puts there");
+  });
+});
+
+describe("SCREEN LAW 6 — a box is invisible until hovered or selected", () => {
+  const canvas = readSrc("builder/Canvas.tsx");
+
+  test("the permanent dashed hairline on every box is DELETED", () => {
+    // Measured in the reference on 2026-09-19: a container at rest has
+    // outline-style none. Ours drew a 1px dashed hairline on EVERY box, so an
+    // empty page of boxes read as graph paper.
+    assert.ok(!/\.bxc-sec \.bx-box \{ outline:/.test(canvas), "the at-rest hairline is back on every box");
+    // PRESENT: one on hover, and the selection ring.
+    assert.match(canvas, /\.bxc-sec \.bx-box:hover \{ outline: 1px dashed/);
+  });
+
+  test("selection is a 1px SOLID line with no tint", () => {
+    assert.ok(!/\.bxc-sec\.bxc-sel \{ outline: 2px/.test(canvas), "the selected section is 2px again");
+    assert.ok(!/bxc-sel \{ outline: [^}]*background: #FBFDFF/.test(canvas), "the selected section is tinted again");
+    assert.match(canvas, /\.bxc-sec\.bxc-sel \{ outline: 1px solid #2D9CDB/);
+    assert.ok(!/\.bxc-widget-sel \{ outline: 1px dashed/.test(canvas), "the selected widget is dashed again");
+    assert.match(canvas, /\.bxc-widget-sel \{ outline: 1px solid #2D9CDB/);
+  });
+
+  test("multi-select, the glow and the tooltip on every run of words are DELETED", () => {
+    for (const gone of ["bxc-widget-also", "extendSelection", "bxc-flash", "alsoSelectedIds",
+                        "Click and type. This is exactly what the customer reads."]) {
+      assert.ok(!canvas.includes(gone), `${gone} is back on the canvas`);
+    }
+    // PRESENT: one selection mark, and a widget that is still scrolled to.
+    assert.match(canvas, /classList\.toggle\("bxc-widget-sel"/);
+    assert.match(canvas, /el\.scrollIntoView\(/);
+  });
+});
+
+describe("SCREEN LAW 6 — a container wears ONE handle, at every depth", () => {
+  const canvas = readSrc("builder/Canvas.tsx");
+
+  test("a nested container gets the same three-icon tab, not a corner grip", () => {
+    // The reference's handle, read out of the live editor:
+    //   Add Container / Edit Container / Delete Container, top centre.
+    assert.match(canvas, /add\.title = "Add Container"/);
+    assert.match(canvas, /grip\.title = `Edit \$\{widgetName\}`/);
+    assert.match(canvas, /b\.title = "Delete Container"/);
+    // ABSENT: the sentence that used to hang off the grip.
+    assert.ok(!canvas.includes("Drag to move this anywhere on the page"),
+      "the handle carries a sentence again");
+    assert.ok(!canvas.includes("Drag to move this box, and everything in it"),
+      "a box's handle carries a sentence again");
+    // ABSENT: the word the model still uses leaking into what a client reads.
+    assert.ok(!canvas.includes('`Container: ${section.label'), 'the handle says "Container: Section" again');
+    assert.match(canvas, /aria-label="Container"/);
+  });
+
+  test("the empty container's + carries no instruction sentence", () => {
+    assert.ok(!canvas.includes("Drag a widget here, or press and then choose one on the left"),
+      "the + is explaining itself again");
+    assert.match(canvas, /b\.setAttribute\("aria-label", "Add Widget"\)/);
+  });
+});
+
+describe("SCREEN LAW 6 — a panel is its controls, not a paragraph about them", () => {
+  test("the settings panel's coaching line, footer sentence and Up/Down/Remove row are DELETED", () => {
+    const i = code(readSrc("builder/Inspector.tsx"));
+    for (const gone of ["Click anything on the page to change it here",
+                        "Changes show on the page as you make them",
+                        "Move this up inside its column",
+                        "Move this down inside its column",
+                        "onMoveWidget"]) {
+      assert.ok(!i.includes(gone), `the settings panel grew it back: ${gone}`);
+    }
+    // PRESENT: the page settings the reference shows with nothing selected.
+    assert.match(i, /data-inspector="page"/);
+    assert.match(i, />Page settings</);
+  });
+
+  test("the history panel is a list of steps, and is called History", () => {
+    const h = readSrc("builder/HistoryPanel.tsx");
+    assert.ok(!h.includes("Every step you have taken, newest first"),
+      "the coaching paragraph is back in the history panel");
+    assert.match(h, />History<\/strong>/);
+    assert.match(h, /data-history-step=\{s\.index\}/);
+  });
+
+  test("Structure has ONE name", () => {
+    const f = readSrc("builder/find.ts");
+    assert.ok(!/label: "Outline"/.test(f), "Find calls the structure window Outline again");
+    assert.match(f, /label: "Structure"/);
+  });
+});
+
+describe("SCREEN LAW 6 — the left panel is the reference's Elements panel", () => {
+  const pane = code(readSrc("builder/WidgetPane.tsx"));
+
+  test("the grid gap is no longer painted as a half-cell", () => {
+    // The odd last row of a group showed a shaded grey half-cell, because the
+    // grid itself was the colour and the gap let it through.
+    assert.ok(!/gap-px bg-slate-200/.test(pane), "the painted grid gap is back");
+    assert.match(pane, /border-b border-r border-slate-200/);
+  });
+
+  test("a search is one flat grid, and a locked tile wears a padlock", () => {
+    assert.match(pane, /data-pane-flat="1"/);
+    assert.match(pane, /const searching = query\.trim\(\)\.length > 0;/);
+    assert.match(pane, /data-widget-padlock/);
+    // ABSENT: the uppercase group heading.
+    assert.ok(!/font-bold uppercase tracking-wide text-slate-600/.test(pane),
+      "the group headings are UPPERCASE again");
+  });
+
+  test("the panel has the reference's own edge handle", () => {
+    assert.match(pane, /data-pane-collapse/);
+    assert.match(pane, /title="Hide Panel"/);
+  });
+});
+
+describe("SCREEN LAW 6 — the add area's corners are the reference's", () => {
+  test("Back is on the structure view only", () => {
+    const a = readSrc("builder/AddSection.tsx");
+    assert.ok(!a.includes('view === "layout" ? () => setView("buttons")'),
+      "the layout view has a Back chevron again");
+    assert.match(a, /const back = view === "structure" \? \(\) => setView\("layout"\) : null;/);
   });
 });

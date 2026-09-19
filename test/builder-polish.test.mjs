@@ -125,7 +125,13 @@ describe("M-7 · what you've changed, as named steps you can travel to", () => {
     const panel = SRC("builder/HistoryPanel.tsx");
     assert.match(panel, /data-builder-history="1"/);
     assert.match(panel, /data-history-step=\{s\.index\}/);
-    assert.match(panel, /What you&rsquo;ve changed/);
+    // ABSENT: the coaching paragraph, and our own name for the panel.
+    // PRESENT: the reference editor's one word, "History" (D-172).
+    assert.doesNotMatch(panel, /Every step you have taken, newest first/,
+      "the coaching paragraph is back inside the history panel");
+    assert.doesNotMatch(panel, /What you&rsquo;ve changed<\/strong>/,
+      "the panel is called What you've changed again");
+    assert.match(panel, />History<\/strong>/);
   });
 });
 

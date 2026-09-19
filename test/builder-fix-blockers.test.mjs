@@ -300,8 +300,13 @@ describe("V-3 · the corner + inside a box is gone, and the middle one replaces 
     assert.ok(canvas.includes('b.className = "bxc-addhere"'), "the empty container has no + in its middle");
     assert.ok(canvas.includes('b.setAttribute("data-builder-addhere", String(columnIndex))'),
       "the empty container's + is not addressable");
-    assert.ok(canvas.includes('b.title = "Drag a widget here, or press and then choose one on the left"'),
-      "the + does not say what pressing it does");
+    // ABSENT: the instruction sentence we hung on it. The reference's empty
+    // container is a "+" and nothing else — no tooltip, no sentence (D-172).
+    // PRESENT: a short accessible name, so the button is still reachable.
+    assert.ok(!canvas.includes("Drag a widget here, or press and then choose one on the left"),
+      "the + carries an instruction sentence again");
+    assert.ok(canvas.includes('b.setAttribute("aria-label", "Add Widget")'),
+      "the + has no accessible name at all");
     // Pressing it SELECTS, and the widgets are on the left. No list opens here.
     assert.ok(canvas.includes('onSelect({ kind: "widget", ...path })'),
       "pressing the + does not select the container it is in");
