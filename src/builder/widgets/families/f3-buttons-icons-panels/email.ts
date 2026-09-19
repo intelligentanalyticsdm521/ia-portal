@@ -10,6 +10,12 @@
  * needs tables. That is a difference in PAINT, never in model: the same props,
  * the same defaults, the same decisions, drawn with `<table>`.
  *
+ * ── BOTH SPELLINGS, EVERYWHERE ────────────────────────────────────────────
+ * A newsletter saved before D-165 stores an Icon Box as `title`/`description`
+ * and one saved after it stores `title_text`/`description_text`. Reading only
+ * the new pair blanked the old cards, which the Portal's own golden fixture
+ * caught the moment LUMEN's copy was compared against it byte for byte.
+ *
  * ── WHAT IT FIXES, NOT JUST WHAT IT ADDS ──────────────────────────────────
  * The mailbox switch had its own renderers for these kinds and they read its
  * OWN prop names, which the widget definitions stopped storing at D-165:
@@ -169,7 +175,7 @@ export function emailDivider(w: Widget, c: Ctx): string {
      border. The symbol is the same shape. */
   const look = str(p.look) || "line";
   const middle = look === "line_text"
-    ? `<td align="center" style="padding:0 ${num(p.text_spacing, 10, 0, 200)}px;font-family:${stackOf(c)};font-size:${num(p.text_typography_font_size, 14, 6, 200)}px;color:${esc(colour(p.text_color, inkOf(c)))};white-space:nowrap;"${edit("text", c, "A few words")}>${t(p.text, c)}</td>`
+    ? `<td align="center" style="padding:0 ${num(p.text_spacing, 10, 0, 200)}px;font-family:${stackOf(c)};font-size:${num(p.typography_font_size, 14, 6, 200)}px;color:${esc(colour(p.text_color, inkOf(c)))};white-space:nowrap;"${edit("text", c, "A few words")}>${t(p.text, c)}</td>`
     : look === "line_icon"
       ? `<td align="center" style="padding:0 ${num(p.icon_spacing, 10, 0, 200)}px;font-family:${stackOf(c)};font-size:${num(p.icon_size, 20, 6, 200)}px;line-height:1;color:${esc(colour(p.primary_color, accentOf(c)))};">${esc(glyphFor(p.icon ?? DEFAULT_ICON))}</td>`
       : "";
@@ -235,8 +241,8 @@ export function emailIconBox(w: Widget, c: Ctx): string {
   const glyph = `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="${side ? "left" : align}"><tr><td align="center" style="${skin}padding:${pad}px;font-family:${stackOf(c)};font-size:${size}px;line-height:1;">${esc(glyphFor(p.selected_icon ?? p.icon))}</td></tr></table>`;
 
   const gapUnder = num(p.title_bottom_space, 4, 0, 200);
-  const title = `<div style="font-family:${stackOf(c)};font-size:16px;font-weight:700;line-height:1.3;color:${esc(colour(p.title_color, inkOf(c)))};margin:0 0 ${gapUnder}px 0;text-align:${align};${c.typeCss ?? ""}"${edit("title_text", c, "A short title")}>${t(p.title_text, c)}</div>`;
-  const body = `<div style="font-family:${stackOf(c)};font-size:14px;line-height:1.6;color:${esc(colour(p.description_color, "#5A7A8A"))};text-align:${align};"${edit("description_text", c, "A line about it")}>${t(p.description_text, c)}</div>`;
+  const title = `<div style="font-family:${stackOf(c)};font-size:16px;font-weight:700;line-height:1.3;color:${esc(colour(p.title_color, inkOf(c)))};margin:0 0 ${gapUnder}px 0;text-align:${align};${c.typeCss ?? ""}"${edit("title_text", c, "A short title")}>${t(firstStr(p.title_text, p.title), c)}</div>`;
+  const body = `<div style="font-family:${stackOf(c)};font-size:14px;line-height:1.6;color:${esc(colour(p.description_color, "#5A7A8A"))};text-align:${align};"${edit("description_text", c, "A line about it")}>${t(firstStr(p.description_text, p.description), c)}</div>`;
   const words = `${title}${body}`;
 
   const gap = num(p.icon_space, 12, 0, 200);

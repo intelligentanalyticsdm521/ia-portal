@@ -71,8 +71,8 @@ export function renderDivider(w: Widget, ctx: RenderContext): string {
     const words = str(p.text);
     const tag = safeTag(p.html_tag, "span");
     const style = `color:${esc(colour(p.text_color, ctx.ink))};`
-      + (Number(p.text_typography_font_size) > 0 ? `font-size:${num(p.text_typography_font_size, 14, 6, 200)}px;` : "")
-      + (/^[1-9]00$/.test(str(p.text_typography_font_weight)) ? `font-weight:${str(p.text_typography_font_weight)};` : "")
+      + (Number(p.typography_font_size) > 0 ? `font-size:${num(p.typography_font_size, 14, 6, 200)}px;` : "")
+      + (/^[1-9]00$/.test(str(p.typography_font_weight)) ? `font-weight:${str(p.typography_font_weight)};` : "")
       + `padding:0 ${num(p.text_spacing, 10, 0, 200)}px;white-space:nowrap`;
     middle = `<${tag} class="bx-divider-text${words.trim() ? "" : " bx-slot"}" data-edit="text" data-placeholder="A few words" style="${style}">${fillText(words, ctx)}</${tag}>`;
   } else if (look === "line_icon") {
@@ -116,7 +116,7 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
     style: "solid", width: 100, align: "center", look: "line",
     text: "Divider", html_tag: "span", icon: { ...DEFAULT_ICON },
     color: "#000", weight: 1, gap: 15,
-    text_color: "", text_typography_font_size: 0, text_typography_font_weight: "",
+    text_color: "", typography_font_size: 0, typography_font_weight: "",
     text_align: "center", text_spacing: 10,
     icon_view: "default", icon_size: 20, primary_color: "", icon_align: "center", icon_spacing: 10,
   },
@@ -142,8 +142,13 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
 
     /* ── Style ▸ Text ─────────────────────────────────────────────────── */
     { key: "text_color", label: "Color", type: "colour", tab: "style", section: "Text" },
-    { key: "text_typography_font_size", label: "Size", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE },
-    { key: "text_typography_font_weight", label: "Weight", type: "select", tab: "style", section: "Text", options: FONT_WEIGHT_OPTIONS },
+    /* ELEMENTOR'S OWN KEYS. The Divider has exactly one Typography popover and
+       it belongs to the TEXT, so its keys are the bare `typography_*` ones —
+       not `text_typography_*`, which is what this said first and which
+       WIDGET_SETTINGS_KEYS.json has no record of. An emitted key Elementor does
+       not have is dropped silently on publish. */
+    { key: "typography_font_size", label: "Size", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE },
+    { key: "typography_font_weight", label: "Weight", type: "select", tab: "style", section: "Text", options: FONT_WEIGHT_OPTIONS },
     { key: "text_align", label: "Position", type: "select", tab: "style", section: "Text", options: LEFT_CENTER_RIGHT },
     { key: "text_spacing", label: "Spacing", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE },
 
