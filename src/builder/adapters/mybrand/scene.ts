@@ -26,8 +26,8 @@
 
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 import {
-  advanceEm, applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved,
-  needsSvgText, straightTextSvg, wrapLines,
+  applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved,
+  measureRun, needsSvgText, straightTextSvg, wrapLines,
   type StrokeStyle, type TextCase, type TextEffect,
 } from "./textEffects";
 
@@ -72,6 +72,14 @@ export interface BaseLayer {
    * tag. Nothing is nested, so nothing can be nested wrongly.
    */
   groupId?: string;
+  /**
+   * HOW FAR A SLANTED QUAD LEANS, in degrees on the page (round-3 R3-E).
+   *
+   * Only read when the shape or the crop is one of `SLANT_SHAPES`. Absent means
+   * "draw the authored path", so every design saved before this existed is
+   * untouched. See `slantPathD`.
+   */
+  slantDeg?: number | null;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -349,6 +357,107 @@ export const ICON_PATHS: Record<string, string> = {
 
 export const DECOR_KEYS = new Set(["blob1","blob2","blob3","wave","wave2","arch","halfcircle","quartercircle","scallop","dots"]);
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A SLANTED FRAME'S ANGLE CAN BE SET (round-3 R3-E)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Round 3 added the four quads above and they ARE real crops — but the lean is
+   baked into the path. `parallelogram` carries a 22-unit offset across an
+   88-unit drop, so designs 03 and 07, both of which want about nine degrees,
+   came out at nineteen and fifteen. Widening the box to bleed the far edge off
+   the page only steepens it, because the path stretches with the box.
+
+   So the lean is a NUMBER the author sets, and the path is written from it.
+   `slantPathD` is given the layer's real width and height and returns a path
+   whose slanted edge lands at exactly the asked-for angle ON THE PAGE — which
+   is the only angle anybody can see. The identical function is in LUMEN's
+   `templateStudio.js`, and both suites assert the same worked paths.
+
+   The authored path stays the default: a layer with no `slantDeg` draws exactly
+   what it drew before, so nothing already saved moves. */
+
+export const SLANT_SHAPES = ["parallelogram", "trapezoid", "slant"] as const;
+export type SlantShape = (typeof SLANT_SHAPES)[number];
+
+export function isSlantShape(key: string | null | undefined): key is SlantShape {
+  return (SLANT_SHAPES as readonly string[]).includes(String(key || ""));
+}
+
+/** Three decimals — enough for a 100-unit box, short enough to read. */
+const vb = (n: number) => Number(n.toFixed(3));
+
+/** How far the edge travels sideways, in viewBox units, for `deg` on the page. */
+function slantOffset(deg: number, across: number, along: number): number {
+  const a = Math.max(-60, Math.min(60, Number(deg) || 0));
+  const t = Math.abs(Math.tan((a * Math.PI) / 180));
+  return Math.min(100, (t * Math.max(1, along)) / Math.max(1, across) * 100);
+}
+
+/**
+ * One of the three quads, leaning by `deg` degrees in a `w` × `h` box.
+ *
+ * Positive leans the way the authored path does; negative mirrors it.
+ */
+export function slantPathD(kind: SlantShape, deg: number, w: number, h: number): string {
+  const a = Math.max(-60, Math.min(60, Number(deg) || 0));
+  if (kind === "slant") {
+    // The BOTTOM edge leans, so the run is measured across the width.
+    const dy = slantOffset(a, h, w);
+    return a >= 0
+      ? `M0 0 H100 V${vb(100 - dy)} L0 100 Z`
+      : `M0 0 H100 V100 L0 ${vb(100 - dy)} Z`;
+  }
+  const dx = slantOffset(a, w, h);
+  if (kind === "parallelogram") {
+    return a >= 0
+      ? `M${vb(dx)} 0 H100 L${vb(100 - dx)} 100 H0 Z`
+      : `M0 0 H${vb(100 - dx)} L100 100 H${vb(dx)} Z`;
+  }
+  // A trapezoid leans BOTH edges outward by the same angle, so each one moves
+  // half as far or the two would cross at forty-five degrees.
+  const half = Math.min(50, dx);
+  return `M${vb(half)} 0 H${vb(100 - half)} L100 100 H0 Z`;
+}
+
+/**
+ * The lean the AUTHORED path already has, on the page, in this box.
+ *
+ * What the slider reads before anybody has dragged it — so the control starts
+ * on the truth rather than on zero, and the first drag is a nudge instead of a
+ * jump.
+ */
+export function bakedSlantDeg(kind: SlantShape, w: number, h: number): number {
+  const W = Math.max(1, Number(w) || 1);
+  const H = Math.max(1, Number(h) || 1);
+  // Measured off the authored paths above: parallelogram M24 6 → H2 (22 across
+  // an 88 drop), trapezoid M20 6 → H2 (18 across 88), slant V72 → 100 (28 down
+  // a 100 run).
+  const run = kind === "slant" ? (28 / 100) * H : (kind === "parallelogram" ? 22 / 88 : 18 / 88) * W;
+  const rise = kind === "slant" ? W : H;
+  return Math.round((Math.atan(run / Math.max(1, rise)) * 180) / Math.PI);
+}
+
+/**
+ * The path a shape key draws with, once the layer has had its say.
+ *
+ * ONE answer, asked by the frame's crop, the frame's border and the icon
+ * picture alike, so a slanted frame's crop and its border can never lean by
+ * different amounts.
+ */
+export function shapePathD(
+  key: string | null | undefined,
+  layer: { slantDeg?: number | null; w?: number; h?: number },
+): string | undefined {
+  const k = String(key || "");
+  const authored = ICON_PATHS[k];
+  if (!authored) return undefined;
+  const deg = layer?.slantDeg;
+  if (isSlantShape(k) && deg != null && Number.isFinite(Number(deg))) {
+    return slantPathD(k, Number(deg), Number(layer.w) || 1, Number(layer.h) || 1);
+  }
+  return authored;
+}
+
 /**
  * HOW MUCH AN ICON'S OWN 100×100 SPACE IS STRETCHED BY (parity D-3).
  *
@@ -385,10 +494,17 @@ export function iconStrokeScale(w: number, h: number): number {
  * fallback colour belongs is a shape that was never given one at all, and
  * `insert.ts` gives every shape one.
  */
-export function shapeFill(layer: Pick<ShapeLayer, "fill" | "gradient" | "pattern">, idPrefix: string, defs: string[]): string {
+export function shapeFill(
+  layer: Pick<ShapeLayer, "fill" | "gradient" | "pattern">,
+  idPrefix: string,
+  defs: string[],
+  /** Where this little SVG sits on the page — see `patternDef` (R3-G). */
+  originX = 0,
+  originY = 0,
+): string {
   if (layer.pattern) {
     const id = `${idPrefix}p`;
-    defs.push(patternDef(layer.pattern, id));
+    defs.push(patternDef(layer.pattern, id, originX, originY));
     return `url(#${id})`;
   }
   if (layer.gradient) {
@@ -413,13 +529,30 @@ export function shapeFill(layer: Pick<ShapeLayer, "fill" | "gradient" | "pattern
  * The identical geometry is in LUMEN's `patternDef`; both suites assert the
  * same worked tile.
  */
-export function patternDef(spec: PatternSpec, id: string): string {
+export function patternDef(spec: PatternSpec, id: string, originX = 0, originY = 0): string {
   const size = Math.max(2, Number(spec.size) || 16);
   const weight = Math.min(0.95, Math.max(0.05, Number(spec.weight) || 0.5));
   const angle = Number(spec.angle) || 0;
   const ink = spec.colour || FALLBACK.primary;
   const paper = spec.background && spec.background !== "none" ? spec.background : null;
-  const turn = angle ? ` patternTransform="rotate(${angle})"` : "";
+  /**
+   * WHERE THE FIRST TILE STARTS, AND WHY THE EDITOR HAS TO BE TOLD (R3-G).
+   *
+   * A `userSpaceOnUse` pattern is laid out from the ORIGIN OF THE DOCUMENT it
+   * is in. LUMEN's document is the whole page, and the editor's is the layer's
+   * own little SVG — so the same stripe setting started its first band at two
+   * different places, and at 120 px nobody could see it. At the 400 px this
+   * round allows, a band-and-a-half of daylight moves, and the download stops
+   * matching the screen.
+   *
+   * `translate(-x -y)` before the turn puts the editor's tile back on the
+   * page's own grid: a point in the layer is then given the tile the page would
+   * have given it. LUMEN passes no origin, because the page IS the origin.
+   */
+  const shift = originX || originY ? `translate(${-originX} ${-originY})` : "";
+  const spin = angle ? `rotate(${angle})` : "";
+  const moves = [shift, spin].filter(Boolean).join(" ");
+  const turn = moves ? ` patternTransform="${moves}"` : "";
   const bg = paper ? `<rect width="${size}" height="${size}" fill="${paper}"/>` : "";
   let ink_ = "";
   if (spec.kind === "stripe") {
@@ -439,7 +572,7 @@ export function patternDef(spec: PatternSpec, id: string): string {
 }
 
 function iconToSvg(layer: ShapeLayer): string {
-  const d = ICON_PATHS[layer.icon || ""] || ICON_PATHS.star;
+  const d = shapePathD(layer.icon, layer) || ICON_PATHS.star;
   const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
   const defsParts: string[] = [];
   // The id carries the layer so two icons in one document cannot collide, and
@@ -454,7 +587,19 @@ function iconToSvg(layer: ShapeLayer): string {
     ? ` stroke-dasharray="${dash.map((n) => Number(n.toFixed(4))).join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
     : "";
   const defs = defsParts.length ? `<defs>${defsParts.join("")}</defs>` : "";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">${defs}` +
+  /**
+   * R3-B: AN ICON THAT IS NOT SQUARE WAS DRAWN SQUARE IN THE BROWSER.
+   *
+   * The server stretches its icons outright — `transform="translate(x y)
+   * scale(w/100 h/100)"` in `emitShapeLayer` — but this picture handed Chrome a
+   * 100×100 viewBox in a 1275×220 box and said nothing about how to reconcile
+   * the two, so SVG's default `xMidYMid meet` LETTERBOXED it: design 09's wave
+   * band came out 220 wide, square, and centred, and Fabric then scaled that
+   * already-wrong picture to the layer. `none` is what makes the two halves the
+   * same stretch.
+   */
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" ` +
+    `viewBox="0 0 100 100" preserveAspectRatio="none">${defs}` +
     `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${Number(swInBox.toFixed(4))}"${dashAttrs} /></svg>`;
 }
 
@@ -473,7 +618,10 @@ export function shapeToSvg(layer: ShapeLayer): string {
   const w = Math.max(1, layer.w);
   const h = Math.max(1, layer.h);
   const defsParts: string[] = [];
-  const fill = shapeFill(layer, `s${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts);
+  const fill = shapeFill(
+    layer, `s${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts,
+    Number(layer.x) || 0, Number(layer.y) || 0,
+  );
   const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
   const sw = Number(layer.strokeWidth) || 0;
   const dash = dashArray(layer.dash, sw || 1);
@@ -553,7 +701,9 @@ export function textLayerSvg(layer: TextLayer, fontFaceCss?: string | null): { s
     });
     return svg ? { svg, w, h: Math.round(boxH) } : null;
   }
-  const lines = wrapLines(content, w, size, weight);
+  // R3-D: measured against the FACE, not counted in characters — see
+  // textEffects.wrapLines.
+  const lines = wrapLines(content, w, size, weight, font, layer.letterSpacing || 0);
   const lineHeight = layer.lineHeight || 1.2;
   const align = layer.align === "center" ? "middle" : layer.align === "right" ? "end" : "start";
   const anchorX = align === "middle" ? w / 2 : align === "end" ? w : 0;
@@ -619,20 +769,19 @@ export function textFit(layer: TextLayer): TextFit | null {
   const w = Math.max(1, layer.w);
   const content = applyCase(layer.content || "", layer.textCase);
   if (!content.trim()) return null;
-  const lines = wrapLines(content, w, size, layer.weight);
+  const family0 = familyOf(layer.font || DEFAULT_FONTS[0]);
+  const lines = wrapLines(content, w, size, layer.weight, family0, layer.letterSpacing || 0);
   const lineHeight = layer.lineHeight || 1.2;
   const neededH = Math.round(size * 1.05 + (lines.length - 1) * size * lineHeight + size * 0.4);
   const boxH = Math.max(0, Number(layer.h) || 0);
   // A single word wider than the box cannot be wrapped out of trouble, and it
   // is the one case where making the box taller does not help — so it is
   // reported apart from plain overflow rather than folded into it.
-  const family = familyOf(layer.font || DEFAULT_FONTS[0]);
   const bold = Number(layer.weight) >= 600 || layer.weight === "bold";
-  const widest = content.split(/\s+/).reduce((max, word) => {
-    let run = 0;
-    for (const ch of word) run += advanceEm(family, ch, bold) * size + (layer.letterSpacing || 0);
-    return Math.max(max, run);
-  }, 0);
+  const widest = content.split(/\s+/).reduce(
+    (max, word) => Math.max(max, measureRun(family0, word, size, bold, layer.letterSpacing || 0)),
+    0,
+  );
   const fit: TextFit = {
     lines: lines.length,
     neededH,

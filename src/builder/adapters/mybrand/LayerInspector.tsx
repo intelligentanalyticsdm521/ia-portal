@@ -43,7 +43,8 @@ import {
   Trash2, Underline, Ungroup, Unlock, Upload, Wand2, WandSparkles, X,
 } from "lucide-react";
 import {
-  boundsOf, familyOf, fontOptions, selectionRotation, textFitWarning, ICON_PATHS,
+  bakedSlantDeg, boundsOf, familyOf, fontOptions, isSlantShape, selectionRotation,
+  textFitWarning, ICON_PATHS,
   type Box, type CanvasDoc, type ChartLayer, type ImageFilters, type ImageLayer, type ImageMask,
   type Layer, type PatternSpec, type ShapeLayer, type TextLayer,
 } from "./scene";
@@ -346,9 +347,134 @@ function ManySelected(p: LayerInspectorProps & { tab: InspectorTab }) {
       </>
     );
   }
-  if (p.tab === "style") {
-    return (
-      <Section title="One look for all of them">
+  if (p.tab === "style") return <ManyStyle {...p} />;
+  return (
+    <>
+      <GroupBox {...p} ids={ids} />
+      <ArrangeSections {...p} ids={ids} grouped={grouped} many />
+    </>
+  );
+}
+
+/**
+ * A GROUP'S LOOK, REACHABLE (round-3 R3-F).
+ *
+ * Round 3 gave a multi-selection its WORDS back — Content › The words inside —
+ * and left its LOOK behind: Style on a group offered one button, "Paste the
+ * look", which is no use at all until somebody has copied a look from something
+ * else. So design 01's Button had to be ungrouped to make the pill red, and
+ * grouped again afterwards, which is the step people forget.
+ *
+ * Every control here writes to EVERY member of the matching kind, and only
+ * those: the words in a Button take the type controls, the pill behind them
+ * takes the fill. A field reads the value the members SHARE, and reads blank
+ * when they disagree — typing into a blank field then sets them all, which is
+ * the only honest answer to "what colour are these three".
+ */
+function ManyStyle(p: LayerInspectorProps & { tab: InspectorTab }) {
+  const ids = p.selectedLayers.map((l) => l.id);
+  const words = p.selectedLayers.filter((l) => l.kind === "text") as TextLayer[];
+  const shapes = p.selectedLayers.filter((l) => l.kind === "shape") as ShapeLayer[];
+  const pictures = p.selectedLayers.filter((l) => l.kind === "image") as ImageLayer[];
+  const fonts = fontOptions(p.brand.fonts?.heading || null, p.brand.fonts?.body || null);
+
+  /** Write one patch to every layer in a list. */
+  const setAll = (layers: Layer[], patch: Partial<Layer>) => {
+    for (const l of layers) p.onUpdate(l.id, patch);
+  };
+  /** The value they all share, or undefined when they disagree. */
+  const shared = <T,>(layers: Layer[], read: (l: never) => T): T | undefined => {
+    if (!layers.length) return undefined;
+    const first = read(layers[0] as never);
+    return layers.every((l) => read(l as never) === first) ? first : undefined;
+  };
+
+  return (
+    <>
+      {words.length > 0 && (
+        <Section title={words.length === 1 ? "The words' look" : `The look of all ${words.length} sets of words`}>
+          <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            Typeface
+            <select
+              data-many-font
+              aria-label="Typeface for every set of words in the selection"
+              title="Set one typeface on every set of words in the selection"
+              value={shared(words, (l: TextLayer) => l.font || "") ?? ""}
+              onChange={(e) => e.target.value && setAll(words, { font: e.target.value } as Partial<Layer>)}
+              className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case"
+            >
+              <option value="">Mixed — choose one</option>
+              {fonts.map((f) => (
+                <option key={f.stack} value={f.stack}>
+                  {f.label}{f.brand ? ` (your ${f.brand})` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumField
+              label="Size" title="Type size for every set of words in the selection" min={1}
+              value={shared(words, (l: TextLayer) => l.size || 24) ?? 0}
+              onChange={(v) => v > 0 && setAll(words, { size: Math.max(1, Math.round(v)) } as Partial<Layer>)}
+            />
+            <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Weight
+              <select
+                data-many-weight
+                aria-label="Weight for every set of words in the selection"
+                title="Light, regular or bold — on every set of words in the selection"
+                value={shared(words, (l: TextLayer) => l.weight || "400") ?? ""}
+                onChange={(e) => e.target.value && setAll(words, { weight: e.target.value } as Partial<Layer>)}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case"
+              >
+                <option value="">Mixed</option>
+                {["300", "400", "500", "600", "700", "800"].map((w) => (
+                  <option key={w} value={w}>{w}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <ColourField
+            label="Words colour" brand={p.brand}
+            value={shared(words, (l: TextLayer) => l.color || "")}
+            onChange={(c) => setAll(words, { color: c } as Partial<Layer>)}
+          />
+        </Section>
+      )}
+      {shapes.length > 0 && (
+        <Section title={shapes.length === 1 ? "The shape's look" : `The look of all ${shapes.length} shapes`}>
+          <ColourField
+            label="Fill" brand={p.brand}
+            value={shared(shapes, (l: ShapeLayer) => l.fill || "")}
+            onChange={(c) => setAll(shapes, { fill: c, gradient: undefined, pattern: undefined } as Partial<Layer>)}
+          />
+          <ColourField
+            label="Outline colour" brand={p.brand}
+            value={shared(shapes, (l: ShapeLayer) => l.stroke || "")}
+            onChange={(c) => setAll(shapes, { stroke: c } as Partial<Layer>)}
+          />
+          <NumField
+            label="Outline width" title="How thick the outline is on every shape in the selection" min={0}
+            value={shared(shapes, (l: ShapeLayer) => l.strokeWidth ?? 0) ?? 0}
+            onChange={(v) => setAll(shapes, { strokeWidth: Math.max(0, Math.round(v)) } as Partial<Layer>)}
+          />
+        </Section>
+      )}
+      {pictures.length > 0 && (
+        <Section title={pictures.length === 1 ? "The picture's frame" : `The frame of all ${pictures.length} pictures`}>
+          <ColourField
+            label="Border colour" brand={p.brand}
+            value={shared(pictures, (l: ImageLayer) => l.frameStroke || "")}
+            onChange={(c) => setAll(pictures, { frameStroke: c } as Partial<Layer>)}
+          />
+          <NumField
+            label="Border width" title="How thick the frame border is on every picture in the selection" min={0}
+            value={shared(pictures, (l: ImageLayer) => l.frameStrokeWidth ?? 0) ?? 0}
+            onChange={(v) => setAll(pictures, { frameStrokeWidth: Math.max(0, Math.round(v)) } as Partial<Layer>)}
+          />
+        </Section>
+      )}
+      <Section title="Copy a look from somewhere else" startOpen={false}>
         <button
           type="button"
           disabled={!p.copiedStyleKind}
@@ -364,12 +490,6 @@ function ManySelected(p: LayerInspectorProps & { tab: InspectorTab }) {
           Only the things of the same kind take it — a words look is not a smaller version of a picture look.
         </div>
       </Section>
-    );
-  }
-  return (
-    <>
-      <GroupBox {...p} ids={ids} />
-      <ArrangeSections {...p} ids={ids} grouped={grouped} many />
     </>
   );
 }
@@ -993,6 +1113,49 @@ function IconSwap({ layer, update }: { layer: ShapeLayer; update: (p: Partial<La
           ))}
         </div>
       )}
+      <SlantControl shape={layer.icon} layer={layer} update={update} />
+    </>
+  );
+}
+
+/**
+ * HOW FAR A SLANTED SHAPE LEANS (round-3 R3-E).
+ *
+ * The three quads are real crops, and round 3 baked their angle into the path:
+ * `parallelogram` leans 22 units across an 88-unit drop, so designs 03 and 07,
+ * both of which want about nine degrees, got nineteen and fifteen. Widening the
+ * box to bleed the far edge off the page only steepened it.
+ *
+ * The slider is in degrees ON THE PAGE, which is the only angle anybody can
+ * see, and it starts on the lean the authored path already has in this box —
+ * so the first drag is a nudge rather than a jump, and an untouched shape draws
+ * exactly what it drew before. Renders nothing for a shape that does not lean.
+ */
+function SlantControl({ shape, layer, update }: {
+  shape: string | null | undefined;
+  layer: Layer;
+  update: (p: Partial<Layer>) => void;
+}) {
+  if (!isSlantShape(shape)) return null;
+  const baked = bakedSlantDeg(shape, layer.w, layer.h);
+  const value = layer.slantDeg == null ? baked : Math.round(Number(layer.slantDeg));
+  return (
+    <>
+      <Slider
+        label="Lean" title="How far the slanted edge leans, in degrees — measured on the page, not in the shape"
+        min={-45} max={45} value={value} unit="°"
+        onChange={(v) => update({ slantDeg: v } as Partial<Layer>)}
+      />
+      {layer.slantDeg != null && value !== baked && (
+        <button
+          type="button"
+          onClick={() => update({ slantDeg: null } as Partial<Layer>)}
+          title="Put the lean back to the shape's own angle"
+          className="text-[10px] font-semibold text-slate-500 hover:text-slate-700"
+        >
+          Back to {baked}&deg;
+        </button>
+      )}
     </>
   );
 }
@@ -1032,6 +1195,7 @@ function ImageStyle({ layer, brand, update }: {
             </optgroup>
           </select>
         </label>
+        <SlantControl shape={layer.mask} layer={layer} update={update} />
         {!layer.mask && (
           <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Rounded corners
@@ -1173,13 +1337,21 @@ function ShapeStyle({ layer, brand, update }: {
                 onChange={(c) => update({ pattern: { ...layer.pattern!, colour: c } } as Partial<Layer>)} />
               <ColourField label="Behind it" value={layer.pattern.background} brand={brand}
                 onChange={(c) => update({ pattern: { ...layer.pattern!, background: c } } as Partial<Layer>)} />
-              <Slider label="Tile size" title="How big one repeat is, in pixels" min={2} max={120}
+              {/*
+                R3-G: the cap was 120 px, and reference 01's diagonal bands are
+                about 270 px apart on a 1080 canvas. So every textured panel in
+                the studio read finer than the reference however far the slider
+                was pushed — a control that stops short of the job. 400 px is a
+                band you can see across a poster and still a texture on a
+                business card.
+              */}
+              <Slider label="Tile size" title="How big one repeat is, in pixels" min={2} max={400} unit="px"
                 value={layer.pattern.size ?? 16}
                 onChange={(v) => update({ pattern: { ...layer.pattern!, size: v } } as Partial<Layer>)} />
               <Slider label="Thickness" title="How much of each tile is ink" min={5} max={95}
                 value={Math.round((layer.pattern.weight ?? 0.5) * 100)}
                 onChange={(v) => update({ pattern: { ...layer.pattern!, weight: v / 100 } } as Partial<Layer>)} />
-              <Slider label="Angle" title="Turn the texture" min={0} max={180}
+              <Slider label="Angle" title="Turn the texture" min={0} max={180} unit="°"
                 value={layer.pattern.angle ?? 0}
                 onChange={(v) => update({ pattern: { ...layer.pattern!, angle: v } } as Partial<Layer>)} />
             </>
@@ -1441,13 +1613,19 @@ function NumField({ label, title, value, onChange, step = 1, min }: {
   );
 }
 
-function Slider({ label, title, min, max, value, onChange }: {
-  label: string; title: string; min: number; max: number; value: number; onChange: (v: number) => void;
+/**
+ * `unit` because not every slider is a percentage, and one that says so when it
+ * is not is the control lying quietly. Tile size is PIXELS and has read "16%"
+ * since it shipped; Lean is DEGREES and would have read "9%".
+ */
+function Slider({ label, title, min, max, value, unit = "%", onChange }: {
+  label: string; title: string; min: number; max: number; value: number;
+  unit?: string; onChange: (v: number) => void;
 }) {
   return (
     <div>
       <div className="mb-0.5 flex justify-between text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-        <span>{label}</span><span className="tabular-nums">{value}%</span>
+        <span>{label}</span><span className="tabular-nums">{value}{unit}</span>
       </div>
       <input type="range" min={min} max={max} value={value} title={title} aria-label={title}
         onChange={(e) => onChange(Number(e.target.value))} className="w-full" />

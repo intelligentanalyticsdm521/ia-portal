@@ -534,9 +534,11 @@ describe("D-8 · a box that is about to lose a line says so", () => {
     // Round 1 lost three lines to boxes a few pixels narrow, and two of them
     // only showed in the downloaded PNG. A warning that used its own wrap
     // would be a third opinion.
+    // R3-D grew the call: the wrap measures the FACE now, so the face and the
+    // letter-spacing travel with it. Still the one function, still the export's.
     const scene = STUDIO("scene.ts");
     const fn = scene.slice(scene.indexOf("export function textFit("));
-    assert.ok(/wrapLines\(content, w, size, layer\.weight\)/.test(fn),
+    assert.ok(/wrapLines\(content, w, size, layer\.weight, family0, layer\.letterSpacing \|\| 0\)/.test(fn),
       "textFit measures with something other than wrapLines");
   });
 });
@@ -572,8 +574,14 @@ describe("G-06 · any shape is a frame, and a frame can have a border", () => {
     assert.ok(bridge.includes("function frameOutline"));
     const fn = bridge.slice(bridge.indexOf("function frameOutline"), bridge.indexOf("function groupWith"));
     assert.ok(/il\.mask === "circle"/.test(fn), "a circle frame's border is not a circle");
-    assert.ok(/ICON_PATHS\[il\.mask\]/.test(fn), "an icon frame's border is not that icon");
-    assert.ok(/width \/ Math\.sqrt\(\(il\.w \/ 100\) \* \(il\.h \/ 100\)\)/.test(fn),
+    // R3-E: the path comes through `shapePathD`, so a slanted frame's crop and
+    // its border read ONE answer and cannot lean by different amounts.
+    assert.ok(/shapePathD\(il\.mask, il\)/.test(fn), "an icon frame's border is not that icon");
+    // R3-A: and it is laid on the layer the way the server lays it, by the one
+    // helper, rather than by centring a path on its own ink.
+    assert.ok(/viewBoxPath\(d, il\.x, il\.y, il\.w, il\.h/.test(fn),
+      "a path border is not placed the way the exporter places it");
+    assert.ok(/width \/ iconStrokeScale\(il\.w, il\.h\)/.test(fn),
       "a path border's width is not divided back out by its stretch");
   });
 });

@@ -17,12 +17,12 @@
  */
 import * as fabric from "fabric";
 import {
-  DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, familyOf, iconToSvg, chartToSvg,
-  rotatedTopLeft, shapeToSvg, textLayerSvg,
+  DEFAULT_FONTS, GRADIENT_COORDS, familyOf, iconStrokeScale, iconToSvg, chartToSvg,
+  rotatedTopLeft, shapePathD, shapeToSvg, textLayerSvg,
   type ChartLayer, type GradientSpec, type ImageLayer, type Layer,
   type ShapeLayer, type TextLayer,
 } from "./scene";
-import { applyCase, dashArray, dashLineCap } from "./textEffects";
+import { applyCase, dashArray, dashLineCap, wrapLines } from "./textEffects";
 import { cachedFontFace, loadFontFace } from "./fontEmbed";
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 
@@ -222,6 +222,81 @@ function emptySlot(
   return new fabric.Group([frame, label], { ...baseProps, width: w, height: h });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A PATH CENTRES ON ITS OWN INK, NOT ON THE BOX IT WAS DRAWN IN (round-3 R3-A)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every shape in the studio is authored in a 100 × 100 box, and the server lays
+   it onto the layer by saying so outright:
+
+       transform="translate(x y) scale(w/100 h/100)"
+
+   The editor said `new fabric.Path(d, { originX: "center", originY: "center" })`
+   and then set `scaleX = w / 100`. Those are not the same instruction. A Fabric
+   Path measures its OWN INK and puts the middle of that where `left`/`top` say
+   — and almost no path fills its 100 × 100 box. `arch` runs x 10…90, y 5…100:
+   its ink is 80 × 95 sitting off-centre in the box. So design 02's arch border,
+   drawn by `frameOutline` from the layer's own x and y, landed correctly, and
+   the photo's crop, drawn from the same path through Fabric's centring, landed
+   narrower and lower and outside it. Two drawings of one arch.
+
+   `viewBoxPath` states the server's instruction in Fabric's language: put the
+   path's ink where the path's ink BELONGS once the 0–100 box is laid over the
+   rectangle (x, y, w, h). Its one caller-visible rule is that (x, y) is the
+   viewBox's own origin, wherever the ink happens to start. */
+
+/**
+ * A 100 × 100 authored path, laid onto the rectangle (x, y, w, h) of whatever
+ * coordinate space it is about to be drawn in.
+ *
+ * For a clipPath that space is the image's own, centred on the image, so the
+ * caller passes (-iw/2, -ih/2, iw, ih); for a border on the canvas it is the
+ * layer's (x, y, w, h).
+ */
+export function viewBoxPath(
+  d: string, x: number, y: number, w: number, h: number, extra: Record<string, unknown> = {},
+): fabric.Path {
+  const sx = w / 100;
+  const sy = h / 100;
+  // A Path is born with a 1 px stroke whether anybody asked for one or not, and
+  // half of it hangs outside the shape. A crop wants the geometry and nothing
+  // else, so the default here is none and a border passes its own width in.
+  const path = new fabric.Path(d, { strokeWidth: 0, ...extra, originX: "left", originY: "top" });
+  path.scaleX = sx;
+  path.scaleY = sy;
+  // Where the ink starts inside the 0–100 box. `pathOffset` is the centre of
+  // the ink's own bounding box in path units, and `width`/`height` are that
+  // box's size, so the two together give its top-left corner.
+  const minX = (path.pathOffset?.x ?? 50) - (path.width || 0) / 2;
+  const minY = (path.pathOffset?.y ?? 50) - (path.height || 0) / 2;
+  const sw = path.strokeWidth || 0;
+  // Where the PAINT must start: the geometric edge, less the half of the
+  // stroke that straddles outside it — which is what the server's `<path>`
+  // draws, stroke centred on the outline.
+  const wantLeft = x + minX * sx - (sw * sx) / 2;
+  const wantTop = y + minY * sy - (sw * sy) / 2;
+  path.set({ left: wantLeft, top: wantTop });
+  path.setCoords();
+  /**
+   * AND THEN IT IS MEASURED, because `left` is not the question anybody asked.
+   *
+   * Fabric's `left` under a left/top origin is the left of the object's own
+   * box, and whether the stroke's overhang is inside that number depends on
+   * the object, the stroke and the version. Rather than encode a belief about
+   * Fabric's bookkeeping, the path is placed, its real painted box is read, and
+   * it is nudged by the difference — the same move `groupWith` makes for a
+   * turned group, and for the same reason: the one statement that cannot be
+   * wrong about somebody else's origin arithmetic is a measurement.
+   */
+  const got = path.getBoundingRect();
+  path.set({
+    left: (path.left ?? 0) + (wantLeft - got.left),
+    top: (path.top ?? 0) + (wantTop - got.top),
+  });
+  path.setCoords();
+  return path;
+}
+
 /**
  * A FRAME'S BORDER — the outline of the mask, not of the box (G-06).
  *
@@ -254,15 +329,19 @@ function frameOutline(il: ImageLayer): fabric.FabricObject | null {
     const r = il.mask === "rounded" ? Math.min(il.w, il.h) * 0.12 : Math.max(0, Number(il.radius) || 0);
     return new fabric.Rect({ ...common, width: il.w, height: il.h, rx: r, ry: r });
   }
-  const d = ICON_PATHS[il.mask];
+  const d = shapePathD(il.mask, il);
   if (!d) return new fabric.Rect({ ...common, width: il.w, height: il.h });
-  const path = new fabric.Path(d, common);
-  path.scaleX = il.w / 100;
-  path.scaleY = il.h / 100;
+  const { left: _bx, top: _by, originX: _ox, originY: _oy, ...rest } = common;
   // A path's stroke scales with the path, exactly as an icon's does (D-3), so
-  // the width is divided back out by the same geometric mean.
-  path.strokeWidth = width / Math.sqrt((il.w / 100) * (il.h / 100));
-  return path;
+  // the width is divided back out by the same geometric mean — and it is handed
+  // to `viewBoxPath` rather than set afterwards, because the placement has to
+  // know how far the paint hangs outside the outline.
+  const inBox = width / iconStrokeScale(il.w, il.h);
+  return viewBoxPath(d, il.x, il.y, il.w, il.h, {
+    ...rest,
+    strokeWidth: inBox,
+    strokeDashArray: dashArray(il.frameDash, inBox),
+  });
 }
 
 /**
@@ -312,6 +391,52 @@ function groupWith(
   return group;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   ONE WRAPPER, SO THE CANVAS CANNOT BREAK A LINE THE EXPORT WOULD NOT (R3-D)
+   ══════════════════════════════════════════════════════════════════════════
+
+   A Fabric Textbox breaks its lines on widths it measures out of the browser's
+   own text engine; LUMEN breaks its lines on `textEffects.wrapLines`. Two
+   engines, two answers: design 03's phone number fit a 160 px box in the
+   downloaded file and wrapped on screen, and its 42 px headline did the same in
+   a 560 px box, so both boxes had to be widened by hand until the two agreed.
+
+   Fabric asks ONE method where a line should break — `_wrapText(lines, width)`,
+   which hands back an array of grapheme arrays. Replacing it on the instance
+   is the whole fix: the Textbox stays a real, editable, in-place Textbox, and
+   the words break exactly where the exporter breaks them, because the same
+   function decides both. */
+
+type WrappingTextbox = fabric.Textbox & {
+  _wrapText: (lines: string[], desiredWidth: number) => string[][];
+  graphemeSplit: (value: string) => string[];
+  initDimensions: () => void;
+};
+
+export function useStudioWrap(
+  box: fabric.Textbox,
+  family: string,
+  size: number,
+  weight: string | undefined,
+  letterSpacing: number,
+): void {
+  const tb = box as WrappingTextbox;
+  tb._wrapText = function _wrapText(lines: string[], desiredWidth: number): string[][] {
+    const out: string[][] = [];
+    for (const line of lines) {
+      for (const piece of wrapLines(line, desiredWidth, size, weight, family, letterSpacing)) {
+        out.push(this.graphemeSplit(piece));
+      }
+    }
+    return out.length ? out : [[]];
+  };
+  // The constructor already laid the box out with Fabric's own wrapper, so it
+  // has to be laid out again now that it has ours. Skipping this is how a fix
+  // like it looks right in a test and does nothing on screen.
+  tb.initDimensions();
+  tb.setCoords();
+}
+
 /** The sentence in the slot. A logo says so; anything else is "a picture". */
 function slotCaption(il: ImageLayer): string {
   const isLogo = String((il as unknown as { role?: string }).role || "") === "logo"
@@ -319,6 +444,32 @@ function slotCaption(il: ImageLayer): string {
   return isLogo
     ? "Your logo goes here — add it under My Brand"
     : "Picture goes here — click the slot, then Replace";
+}
+
+/**
+ * DOES THIS LAYER ARRIVE AS A PLACEHOLDER FIRST?
+ *
+ * `layerToFabricObject` hands back a dashed rectangle for anything it has to
+ * fetch or draw as a picture, and swaps the real object in when it lands. A
+ * renderer that snapshots the canvas has to WAIT for those swaps, so it has to
+ * know which layers make one.
+ *
+ * It is one exported predicate because the copy of it inside
+ * `PixelCanvas.renderPage` fell out of step the moment a patterned rectangle
+ * joined the asynchronous list: the list still said "image, chart, icon, effect
+ * text", the wait loop found nothing outstanding, and a textured panel was
+ * missing from every exported page and every PDF — silently, because a
+ * placeholder is transparent. The predicate lives HERE, beside the branching it
+ * describes, so the two cannot disagree again.
+ */
+export function paintsAsynchronously(layer: Layer): boolean {
+  if (layer.kind === "image" || layer.kind === "chart") return true;
+  if (layer.kind === "text") return !!textLayerSvg(layer as TextLayer);
+  if (layer.kind === "shape") {
+    const s = layer as ShapeLayer;
+    return s.shape === "icon" || (!!s.pattern && (s.shape === "rect" || s.shape === "ellipse"));
+  }
+  return false;
 }
 
 export function layerToFabricObject(
@@ -404,6 +555,7 @@ export function layerToFabricObject(
     }
     // Textbox (not IText): wraps at the layer width like the export's
     // soft-wrap, so long copy never silently runs off the canvas.
+    const textFamily = familyOf(t.font || DEFAULT_FONTS[0]);
     const itext = new fabric.Textbox(applyCase(t.content || "", t.textCase), {
       ...baseProps,
       width: t.w,
@@ -447,6 +599,7 @@ export function layerToFabricObject(
             })
           : undefined,
     });
+    useStudioWrap(itext, textFamily, size, t.weight, t.letterSpacing || 0);
     return itext;
   }
   if (layer.kind === "image") {
@@ -549,12 +702,12 @@ export function layerToFabricObject(
           const r = Math.min(iw, ih) * 0.12;
           clip = new fabric.Rect({ width: iw, height: ih, rx: r, ry: r, originX: "center", originY: "center" });
         } else {
-          const d = ICON_PATHS[il.mask];
-          if (d) {
-            clip = new fabric.Path(d, { originX: "center", originY: "center" });
-            clip.scaleX = iw / 100;
-            clip.scaleY = ih / 100;
-          }
+          // R3-A: the viewBox's origin goes to the image's top-left corner, and
+          // the ink lands wherever the path says — the same instruction the
+          // server's translate/scale gives, and the same one `frameOutline`
+          // above now gives, so a crop and its border coincide.
+          const d = shapePathD(il.mask, il);
+          if (d) clip = viewBoxPath(d, -iw / 2, -ih / 2, iw, ih);
         }
         if (clip) img.clipPath = clip;
       } else if (il.radius && il.radius > 0) {

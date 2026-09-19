@@ -522,29 +522,60 @@ export function curvedTextSvg(input: CurvedSvgInput): string {
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
+ * How wide a run of words is, in canvas pixels, IN THE FACE IT WILL BE DRAWN IN.
+ *
+ * One measuring stick for the whole studio: the wrap, the underline rule, the
+ * "does it fit" warning and the arc packer all ask this, so none of them can
+ * decide a different width for the same words.
+ */
+export function measureRun(
+  family: string, text: string, size: number, bold: boolean, letterSpacing = 0,
+): number {
+  const s = Math.max(1, num(size, 1));
+  const ls = num(letterSpacing, 0);
+  let run = 0;
+  for (const ch of String(text ?? "")) run += advanceEm(family, ch, bold) * s + ls;
+  return run;
+}
+
+/**
  * Soft-wrap to the layer width.
  *
- * Lifted from LUMEN's `emitTextLayer` so the editor's SVG text and the
- * exporter's break in the SAME place — the heuristic is weight- and case-aware
- * because bold all-caps display type runs about 0.66 em per glyph against
- * about 0.5 em for body copy, and a wrap point that differs by one word is a
- * headline that reads as two lines on screen and three in the download.
+ * ── ROUND-3 R3-D: TWO TEXT ENGINES, TWO SETS OF METRICS ───────────────────
+ * This used to count CHARACTERS against one guessed average em — 0.5, plus
+ * 0.1 for bold and 0.06 for all-caps — while the editor's Fabric Textbox broke
+ * its lines on the browser's REAL glyph widths. So design 03's phone number fit
+ * a 160 px box in the downloaded file and wrapped on screen, and its 42 px
+ * headline did the same in a 560 px box: the boxes had to be widened 20–30 px
+ * by hand to make one engine agree with the other.
+ *
+ * Both engines now measure with `measureRun`, off the same `ADVANCE_TABLES`
+ * read out of the very TTFs LUMEN rasterises with — and `fabricBridge` hands
+ * this function to the Textbox in place of Fabric's own wrapper, so the canvas
+ * cannot break a line anywhere the exporter would not. Same words, same box,
+ * same lines, both sides.
+ *
+ * `family` is the FAMILY NAME ("Bebas Neue"), never the CSS stack.
  */
-export function wrapLines(content: string, width: number, size: number, weight: string | undefined): string[] {
+export function wrapLines(
+  content: string,
+  width: number,
+  size: number,
+  weight: string | undefined,
+  family = "",
+  letterSpacing = 0,
+): string[] {
   const text = String(content ?? "");
-  const isBold = Number(weight) >= 600 || weight === "bold";
-  const letters = text.replace(/[^a-zA-Z]/g, "");
-  const isCaps = letters.length > 0 && letters === letters.toUpperCase();
-  const glyphEm = 0.5 + (isBold ? 0.1 : 0) + (isCaps ? 0.06 : 0);
-  const maxChars = Math.max(4, Math.floor(width / (Math.max(1, size) * glyphEm)));
+  const bold = Number(weight) >= 600 || weight === "bold";
+  const max = Math.max(1, num(width, 1));
   return text.split(/\r?\n/).flatMap((para) => {
-    if (para.length <= maxChars) return [para];
     const words = para.split(/\s+/);
     const out: string[] = [];
     let cur = "";
     for (const word of words) {
-      if (!cur.length) cur = word;
-      else if ((cur + " " + word).length <= maxChars) cur += " " + word;
+      if (!cur.length) { cur = word; continue; }
+      const candidate = `${cur} ${word}`;
+      if (measureRun(family, candidate, size, bold, letterSpacing) <= max) cur = candidate;
       else { out.push(cur); cur = word; }
     }
     if (cur.length) out.push(cur);

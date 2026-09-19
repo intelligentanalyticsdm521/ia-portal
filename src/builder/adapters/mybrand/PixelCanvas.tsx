@@ -23,7 +23,7 @@ import {
 } from "react";
 import * as fabric from "fabric";
 import { Maximize, ZoomIn, ZoomOut } from "lucide-react";
-import { layerToFabricObject, fabricGradient } from "./fabricBridge";
+import { layerToFabricObject, fabricGradient, paintsAsynchronously } from "./fabricBridge";
 import {
   isTransparent, modelTopLeft, textLayerSvg,
   type BaseLayer, type CanvasDoc, type Layer, type ShapeLayer, type TextLayer,
@@ -433,12 +433,11 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
           const obj = layerToFabricObject(layer, () => { outstanding = Math.max(0, outstanding - 1); });
           if (!obj) continue;
           // Every async kind comes back as a dashed placeholder first, and the
-          // callback above fires when the real object replaces it.
-          if (layer.kind === "image" || layer.kind === "chart"
-            || (layer.kind === "shape" && (layer as ShapeLayer).shape === "icon")
-            || (layer.kind === "text" && !!textLayerSvg(layer as TextLayer))) {
-            outstanding += 1;
-          }
+          // callback above fires when the real object replaces it. The list of
+          // which kinds those are lives in fabricBridge, beside the branching
+          // it describes — a second copy of it here is what left a textured
+          // panel out of every exported page without a word.
+          if (paintsAsynchronously(layer)) outstanding += 1;
           surface.add(obj);
         }
         const deadline = Date.now() + 4000;

@@ -40,7 +40,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   applyCase, curvedGlyphs, curvedTextSvg, dashArray, dashLineCap, effectPasses,
-  advanceEm, isCurved, isNarrowFamily, mainPaint, needsSvgText, straightTextSvg, wrapLines,
+  advanceEm, isCurved, isNarrowFamily, mainPaint, measureRun, needsSvgText, straightTextSvg, wrapLines,
   TEXT_EFFECTS,
 } from "../src/builder/adapters/mybrand/textEffects.ts";
 import {
@@ -295,13 +295,23 @@ describe("Text effects are data, so the canvas and the download agree", () => {
 
   test("the wrap point is the exporter's own, so a headline breaks in one place", () => {
     const line = "Spring clean-up bookings are open now";
-    const mine = wrapLines(line, 600, 48, "700");
+    const mine = wrapLines(line, 600, 48, "700", "Montserrat", 0);
     assert.ok(mine.length > 1, "a long headline did not wrap at all");
-    // Every line fits the same allowance the server's heuristic gives it.
-    const allowance = Math.max(4, Math.floor(600 / (48 * (0.5 + 0.1))));
-    for (const l of mine) assert.ok(l.length <= allowance, `"${l}" is over the allowance`);
+    /**
+     * R3-D REPLACED THE ALLOWANCE THIS TEST USED TO CHECK.
+     *
+     * Round 1 measured the wrap in CHARACTERS against a guessed average em, and
+     * this assertion checked every line against that guess. The guess is what
+     * broke: the editor's Textbox broke on the browser's real glyph widths and
+     * the two engines disagreed by a word. Both now measure the FACE, so the
+     * honest check is that every line really does fit the box in pixels.
+     */
+    for (const l of mine) {
+      const width = measureRun("Montserrat", l, 48, true, 0);
+      assert.ok(width <= 600, `"${l}" is ${Math.round(width)} px in a 600 px box`);
+    }
     // A newline the author typed is always honoured.
-    assert.deepEqual(wrapLines("one\ntwo", 9999, 20, "400"), ["one", "two"]);
+    assert.deepEqual(wrapLines("one\ntwo", 9999, 20, "400", "Poppins", 0), ["one", "two"]);
   });
 });
 
