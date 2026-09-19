@@ -45,10 +45,16 @@ const IMAGE_POSITIONS = [
   { value: "top", label: "Top" },
 ];
 
+/* ELEMENTOR STORES start / center / end HERE, not left / right — read off the
+   machine file, and worth saying out loud because every other alignment control
+   on the platform stores left / right, and a value a control does not offer is
+   dropped silently on publish. They are also valid CSS `text-align` words, so
+   the renderer needs nothing special, and a document that already stored "left"
+   still draws exactly as it did. */
 const ALIGNMENTS = [
-  { value: "left", label: "Left" },
+  { value: "start", label: "Left" },
   { value: "center", label: "Centre" },
-  { value: "right", label: "Right" },
+  { value: "end", label: "Right" },
 ];
 
 export function renderTestimonial(w: Widget, ctx: RenderContext): string {

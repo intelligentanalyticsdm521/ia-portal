@@ -509,35 +509,17 @@ const landingCases = [
   lpCase("small print", "footer_note", { text: "Prices exclude tax." }),
   lpCase("social links", "social_links", { links: [{ label: "Facebook", url: "https://facebook.com/x" }] }),
   lpCase("review", "testimonial", { quote: "Never had to call twice.", attribution: "Hope Ministries" }),
-  /* B-168 F5 - the sliders family on a hosted page. No script: every strip is
-     a scroll-snap box, so slide one is simply the first thing in the flow. */
-  lpCase("reviews you typed in", "reviews", {
-    slides: [
-      { content: "Never had to call twice.", name: "Hope Ministries", title: "Google", rating: 5 },
-      { content: "Drive was clear by six.", name: "Cedar Ridge HOA", title: "Google", rating: 4 },
-    ],
-  }),
-  lpCase("the business own reviews", "ia_reviews", {
-    slides: [{ content: "Same crew every time.", name: "Cedar Ridge HOA", rating: 5 }],
-  }),
-  lpCase("testimonial carousel", "testimonial_carousel", {
-    slides: [
-      { content: "They were out before we opened.", name: "Hope Ministries", title: "Property manager" },
-      { content: "Fair price, no surprises.", name: "Cedar Ridge HOA", title: "Board chair" },
-    ],
-  }),
-  lpCase("slides", "slides", {
-    slides: [
-      { heading: "Winter is booked early", description: "Reserve your route now.", button_text: "Get a quote", link: "https://example.test/quote" },
-      { heading: "One crew, all season", description: "The same people every visit.", button_text: "", link: "" },
-    ],
-  }),
-  lpCase("media carousel", "media_carousel", {
-    slides: [
-      { type: "image", image: "https://cdn.example.test/before.jpg", alt: "Before" },
-      { type: "video", image: "https://cdn.example.test/poster.jpg", alt: "The crew at work", video: "https://example.test/clip" },
-    ],
-  }),
+  /* B-168 F5 - NO LANDING GOLDENS FOR THE SLIDERS, and the reason is a SEAM
+     gap rather than a gap in the family. A golden in this file is checked in
+     to BOTH repos and LUMEN-API runs ITS OWN copy of the landing renderer
+     against it (src/lib/landingRender.js, seams audit SEAM-6-A). That copy
+     has no door to the ten families: LUMEN has an emailFamilies folder and
+     nothing like it for landing pages, so a family widget on a HOSTED landing
+     page draws "needs a newer version of the builder" there, while drawing
+     correctly in the Portal and publishing correctly through arion. Pinning a
+     golden the server cannot produce would only turn both suites red. The gap
+     is item F5-S1 in D168_HANDOFF_2026-09-19.md, and it belongs to every page
+     family, not just this one. */
   lpCase("a widget from a newer build is inert", "hologram", {}),
 
   /* ── D-165 §11.13.3 — the standard set, and the page widgets with it ──────

@@ -33,11 +33,12 @@ const SKINS = [
   { value: "slideshow", label: "Slideshow" },
 ];
 
+/* Elementor's own three. "Coverflow" is a SKIN here, not an effect — the
+   machine file's `effect` offers slide, fade and cube and nothing else. */
 const EFFECTS = [
   { value: "slide", label: "Slide" },
   { value: "fade", label: "Fade" },
   { value: "cube", label: "Cube" },
-  { value: "coverflow", label: "Coverflow" },
 ];
 
 const PER_VIEW = [
@@ -52,8 +53,9 @@ const PAGINATION = [
   { value: "progressbar", label: "Progress" },
 ];
 
+/* No "None": the machine file's `caption` offers title, caption and
+   description, and an empty value would be dropped on publish. */
 const CAPTION = [
-  { value: "", label: "None" },
   { value: "title", label: "Title" },
   { value: "caption", label: "Caption" },
   { value: "description", label: "Description" },

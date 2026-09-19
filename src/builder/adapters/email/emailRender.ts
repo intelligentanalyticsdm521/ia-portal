@@ -350,7 +350,7 @@ export const EMAIL_RENDERED_KINDS = [
   "grid",
   // D-165 §11.13.3 — the standard set every builder offers, each one drawn
   // here as a TABLE rather than by the engine (see the switch below).
-  "icon", "icon_box", "image_box", "star_rating", "alert",
+  "icon", "icon_box", "image_box", "star_rating", "alert",
   /* B-168 F5 — the newsletter's IA Reviews. Stacked, never a carousel: a
      mailbox cannot swipe, so every review is on the page. */
   "ia_reviews",
@@ -430,7 +430,7 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "icon_box": return emIconBox(p, c);
       case "image_box": return emImageBox(p, c);
       case "star_rating": return emStarRating(p, c);
-      case "alert": return emAlert(p, c);
+      case "alert": return emAlert(p, c);
       case "ia_reviews": return emIaReviews(p, c);
       default:
         // Forward compatible, like migration 166's envelope: a widget from a
@@ -1416,6 +1416,26 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
             }
             break;
           case "testimonial": line(`"${String(p.quote ?? "")}"`); line(p.attribution); out.push(""); break;
+          /* B-168 F5 - IA Reviews. BOTH HALVES, always: a widget that draws
+             HTML and no text vanishes from the plain-text part, and an email
+             whose text part is a footer and nothing else is the bulk shape
+             that costs us the sending quota. Same bytes as LUMEN's copy in
+             src/lib/emailFamilies/f5-sliders-reviews.js. */
+          case "ia_reviews": {
+            const rows = Array.isArray(p.slides) && p.slides.length ? p.slides
+              : (Array.isArray(p.items) ? p.items : []);
+            const block = rows.map((r: any) => {
+              const quote = String((r?.content ?? r?.quote) || "").trim();
+              const who = String((r?.name ?? r?.author) || "").trim();
+              const stars = Math.max(0, Math.min(5, Math.round(Number(r?.rating) || 0)));
+              return [
+                quote ? `"${quote}"` : "",
+                [who, stars ? `${stars} out of 5` : ""].filter(Boolean).join(" - "),
+              ].filter(Boolean).join("\n");
+            }).filter(Boolean).join("\n\n");
+            if (block) { line(block); out.push(""); }
+            break;
+          }
           case "countdown": line(p.ends_at); break;
           case "social_links":
             for (const l of (Array.isArray(p.links) && p.links.length ? p.links : c.business.social || [])) line(`${l.label}: ${l.url}`);
