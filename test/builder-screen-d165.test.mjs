@@ -180,11 +180,17 @@ describe("§11.13.1 item 2 — Content / Style / Advanced, on the right", () => 
     assert.match(inspector, /Page settings/);
   });
 
-  test("a tab with nothing behind it is GREYED, never removed", () => {
-    // A row that changes width as the selection moves is a row nobody can aim
-    // at. The disabled list is computed, so the tab bar is always three wide.
-    assert.match(inspector, /const disabled: InspectorTab\[\] = hasStyle \? \[\] : \["style"\]/);
-    assert.match(inspector, /const shownTab: InspectorTab = disabled\.includes\(tab\) \? "content" : tab/);
+  test("a widget with no style controls has TWO tabs, not three with one greyed", () => {
+    /* WAS "a tab with nothing behind it is GREYED, never removed". Driving it
+       showed the worse half of that: pressing the greyed Style tab on a Spacer
+       re-rendered the CONTENT section under a Style heading — the same header,
+       the same fields. The reference's Spacer has Content and Advanced and
+       nothing between them (D-172), so the tab is not drawn at all. */
+    assert.ok(!inspector.includes('disabled: InspectorTab[] = hasStyle'),
+      "the greyed third tab is back");
+    assert.match(inspector, /const tabs: InspectorTab\[\] = hasStyle \? INSPECTOR_TABS : \["content", "advanced"\]/);
+    assert.match(inspector, /const shownTab: InspectorTab = tabs\.includes\(tab\) \? tab : "content"/);
+    assert.match(readSrc("builder/StyleGroups.tsx"), /const shown = tabs \?\? INSPECTOR_TABS;/);
   });
 });
 

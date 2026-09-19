@@ -18,15 +18,38 @@
  * them without a DOM.
  */
 import { useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight, Link2, Unlink, RotateCcw } from "lucide-react";
+import {
+  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Link2,
+  Monitor, Smartphone, Tablet, Unlink,
+} from "lucide-react";
 import {
   RATIO_PRESETS, normaliseRatios, setSide, sidesAreLinked,
   type BoxSides, type Device, type StyleLayer,
 } from "./style";
 import { PREVIEW_DEVICES } from "./responsive";
 
+/**
+ * A CONTROL'S LABEL (D-172).
+ *
+ * Measured in the reference: 12px, sentence case, `text-transform: none`. Ours
+ * was 10px UPPERCASE with letter-spacing, which is a heading's treatment on
+ * every field in the panel.
+ */
 const L: React.CSSProperties = {
-  fontSize: 10, fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A",
+  fontSize: 12, fontWeight: 400, color: "#515962",
+};
+
+/**
+ * A CONTROL ROW: label LEFT, control RIGHT (D-172).
+ *
+ * `elementor-label-inline` on the reference's selects and icon-button groups.
+ * Ours stacked the label above a full-width control, which is twice the height
+ * for every row in a 300px panel. A slider stays stacked, because the
+ * reference marks those `elementor-label-block`.
+ */
+const ROW: React.CSSProperties = {
+  display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.25fr)",
+  alignItems: "center", columnGap: 8, rowGap: 4,
 };
 const INPUT: React.CSSProperties = {
   border: "1px solid #CBD5E1", borderRadius: 4, padding: "6px 8px", fontSize: 12, background: "#fff",
@@ -58,19 +81,25 @@ export function tabLabel(tab: InspectorTab, first: "Content" | "Layout"): string
   return tab === "content" ? first : tab === "style" ? "Style" : "Advanced";
 }
 
-export function InspectorTabs({ tab, onTab, first, disabled }: {
+export function InspectorTabs({ tab, onTab, first, tabs }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
   first: "Content" | "Layout";
-  /** Tabs with nothing behind them. Shown, greyed — never hidden, so the row
-   *  does not change width as the selection moves from a widget to a box. */
-  disabled?: InspectorTab[];
+  /**
+   * WHICH TABS THIS SELECTION ACTUALLY HAS (D-172).
+   *
+   * A list, not a disabled set. The reference's Spacer shows Content and
+   * Advanced — two tabs, not three with one greyed — and a greyed tab that
+   * re-renders the Content section behind it is a tab that lies.
+   */
+  tabs?: InspectorTab[];
 }) {
+  const shown = tabs ?? INSPECTOR_TABS;
   return (
     <div role="tablist" aria-label="Settings" data-inspector-tab={tab}
       style={{ display: "flex", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
-      {INSPECTOR_TABS.map((t) => {
-        const off = !!disabled?.includes(t);
+      {shown.map((t) => {
+        const off = false;
         const on = tab === t;
         return (
           <button
@@ -99,6 +128,9 @@ export function InspectorTabs({ tab, onTab, first, disabled }: {
    A group
    ══════════════════════════════════════════════════════════════════════════ */
 
+/* THE HINT SENTENCE UNDER A SECTION HEADER IS DELETED (D-172). No
+   descriptive paragraph appears anywhere in the reference's panel; `hint`
+   is the header's TOOLTIP, which is where a sentence belongs. */
 export function Group({
   title, hint, defaultOpen = false, onReset, resetTitle, children,
 }: {
@@ -124,20 +156,16 @@ export function Group({
           }}
         >
           {open ? <ChevronDown size={13} color="#5A7A8A" /> : <ChevronRight size={13} color="#5A7A8A" />}
-          <span style={{ ...L, color: "#334155" }}>{title}</span>
+          {/* TITLE CASE (D-172): the reference's headings are "Container",
+              "Additional Options", measured `text-transform: none`. */}
+          <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{title}</span>
         </button>
-        {onReset && (
-          <button
-            type="button"
-            onClick={onReset}
-            title={resetTitle || `Put ${title.toLowerCase()} back to the default on every screen size`}
-            aria-label={`Reset ${title}`}
-            style={{
-              border: "none", background: "transparent", cursor: "pointer", color: "#94A3B8",
-              padding: "8px 10px", display: "inline-flex", alignItems: "center",
-            }}
-          ><RotateCcw size={12} /></button>
-        )}
+        {/* THE PER-SECTION ERASER IS DELETED (D-172). The reference has a reset
+            on a POPOVER control — Typography, Text Stroke, Text Shadow — and
+            nowhere else; ours put one titled "Put layout back to the default on
+            every screen size" in EVERY section header, which is a destructive
+            button on every row of the panel. `onReset` stays on the props
+            because the popover controls will want it; nothing draws it here. */}
       </div>
       {open && (
         <div style={{ padding: "10px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
@@ -159,34 +187,112 @@ export function Group({
  * nothing happened" arrives.
  */
 export function DeviceSegment({ device, onDevice }: { device: Device; onDevice: (d: Device) => void }) {
+  /* THE "EDITING FOR Desktop / Tablet / Phone" ROW IS DELETED (D-172).
+     The reference has no such row and no such sentence. Responsiveness there is
+     a small device ICON beside the label of the one control being set, so this
+     is now exactly that: three glyphs, on the control, saying which width the
+     number next to them belongs to. Same state, same `onDevice` — a per-control
+     switcher that owned its own state would let an author edit the phone while
+     the canvas showed the desktop. */
   return (
-    <div style={FIELD}>
-      <span style={L}>Editing for</span>
-      <div role="group" aria-label="Screen size being edited" data-style-device={device}
-        style={{ display: "flex", gap: 2, background: "#EEF2F6", borderRadius: 5, padding: 2 }}>
-        {PREVIEW_DEVICES.map((d) => (
+    <span role="group" aria-label="Screen size being edited" data-style-device={device}
+      style={{ display: "inline-flex", alignItems: "center", gap: 1, flex: "0 0 auto" }}>
+      {PREVIEW_DEVICES.map((d) => {
+        const Icon = d.key === "desktop" ? Monitor : d.key === "tablet" ? Tablet : Smartphone;
+        const on = device === d.key;
+        return (
           <button
             key={d.key}
             type="button"
-            aria-pressed={device === d.key}
-            title={d.key === "desktop"
-              ? "The normal setting. Tablet and phone start from whatever you put here."
-              : `Change this only for a ${d.label.toLowerCase()}. Anything you leave alone stays as it is on a computer.`}
+            aria-pressed={on}
+            title={d.label}
+            aria-label={d.label}
             onClick={() => onDevice(d.key)}
             style={{
-              flex: 1, border: "none", borderRadius: 4, padding: "4px 6px", fontSize: 11, fontWeight: 600,
-              cursor: "pointer",
-              background: device === d.key ? "#0C4A60" : "transparent",
-              color: device === d.key ? "#fff" : "#475569",
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 18, height: 16, border: "none", background: "transparent", cursor: "pointer",
+              color: on ? "#0C4A60" : "#BFC7CE", padding: 0,
             }}
-          >{d.label}</button>
-        ))}
-      </div>
-      <span style={{ fontSize: 10, color: "#94A3B8" }}>
-        {device === "desktop"
-          ? "These settings apply everywhere unless you change them for a tablet or a phone."
-          : `Only on a ${device}. The page above is showing that width.`}
-      </span>
+          ><Icon size={11} /></button>
+        );
+      })}
+    </span>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The two control shapes the reference uses everywhere
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A SWITCHER — the reference's pill (D-172).
+ *
+ * Ours was a native checkbox with a sentence for a label, which is a form
+ * field; the reference's on/off is a pill you slide. Same state, one shape,
+ * used everywhere an on/off is asked for.
+ */
+export function Switcher({ on, onChange, name, testId }: {
+  on: boolean; onChange: (v: boolean) => void; name: string; testId?: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={name}
+      title={name}
+      {...(testId ? { "data-style-switch": testId } : {})}
+      onClick={() => onChange(!on)}
+      style={{
+        width: 34, height: 18, borderRadius: 999, padding: 2, cursor: "pointer",
+        border: "1px solid " + (on ? "#0C4A60" : "#CBD5E1"),
+        background: on ? "#0C4A60" : "#EEF2F6",
+        display: "inline-flex", justifyContent: on ? "flex-end" : "flex-start",
+      }}
+    >
+      <span style={{ width: 12, height: 12, borderRadius: 999, background: "#fff" }} />
+    </button>
+  );
+}
+
+/**
+ * A ROW OF ICON BUTTONS — the reference's `choose` control (D-172).
+ *
+ * Alignment, Direction, Justify Content, Align Items and Wrap are all this
+ * shape in the reference; ours were text selects, or three buttons reading
+ * Left / Middle / Right. One component, so there is one answer to what a
+ * chooser looks like.
+ */
+export function IconChoice<T extends string>({ value, options, onPick, name, testAttr }: {
+  value: T | undefined;
+  options: Array<{ v: T; title: string; icon: ReactNode }>;
+  onPick: (v: T | undefined) => void;
+  name: string;
+  testAttr?: string;
+}) {
+  return (
+    <div role="group" aria-label={name}
+      style={{ display: "inline-flex", border: "1px solid #D5D8DC", borderRadius: 3, overflow: "hidden" }}>
+      {options.map((o) => {
+        const on = value === o.v;
+        return (
+          <button
+            key={o.v}
+            type="button"
+            aria-pressed={on}
+            title={o.title}
+            aria-label={o.title}
+            {...(testAttr ? { [testAttr]: o.v } : {})}
+            onClick={() => onPick(on ? undefined : o.v)}
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 24, border: "none", cursor: "pointer",
+              background: on ? "#0C4A60" : "#fff",
+              color: on ? "#fff" : "#515962",
+            }}
+          >{o.icon}</button>
+        );
+      })}
     </div>
   );
 }
@@ -199,10 +305,13 @@ const SIDE_KEYS: Array<keyof BoxSides> = ["top", "right", "bottom", "left"];
 const SIDE_LABEL: Record<string, string> = { top: "Top", right: "Right", bottom: "Bottom", left: "Left" };
 
 function SidesPad({
-  label, hint, value, seed, onChange,
+  label, hint, value, seed, onChange, device, onDevice,
 }: {
   label: string;
   hint: string;
+  /** The width this number belongs to, switched on the control itself. */
+  device?: Device;
+  onDevice?: (d: Device) => void;
   value: BoxSides | undefined;
   /** What the boxes show before the author has set anything. */
   seed?: BoxSides;
@@ -218,6 +327,7 @@ function SidesPad({
     <div style={FIELD}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <span style={L}>{label}</span>
+        {device && onDevice && <DeviceSegment device={device} onDevice={onDevice} />}
         <button
           type="button"
           onClick={() => setLinked((x) => !x)}
@@ -255,7 +365,6 @@ function SidesPad({
           </label>
         ))}
       </div>
-      <span style={{ fontSize: 10, color: "#94A3B8" }}>{hint}</span>
     </div>
   );
 }
@@ -288,50 +397,62 @@ export function SpacingGroup({
 }) {
   return (
     <Group title="Layout" hint="Room inside and around this, and how it lines up" defaultOpen onReset={onReset}>
-      <DeviceSegment device={device} onDevice={onDevice} />
-      <SidesPad
-        label="Padding"
-        hint="Room INSIDE, between the edge and what is in it. Pixels."
-        value={layer.padding}
-        seed={device === "desktop" ? seedPadding : undefined}
-        onChange={(next, key) => onPatch({ padding: next }, key)}
-      />
+      {/* MARGIN FIRST, THEN PADDING (D-172) — the reference's own order in
+          Advanced > Layout. Ours was the other way round. */}
       <SidesPad
         label="Margin"
+        device={device}
+        onDevice={onDevice}
         hint={what === "section"
           ? "Room OUTSIDE, between this section and the one above or below. Pixels."
           : "Room OUTSIDE, between this and whatever is next to it. Pixels."}
         value={layer.margin}
         onChange={(next, key) => onPatch({ margin: next }, key)}
       />
-      {align && <AlignRow layer={layer} onPatch={onPatch} />}
+      <SidesPad
+        label="Padding"
+        device={device}
+        onDevice={onDevice}
+        hint="Room INSIDE, between the edge and what is in it. Pixels."
+        value={layer.padding}
+        seed={device === "desktop" ? seedPadding : undefined}
+        onChange={(next, key) => onPatch({ padding: next }, key)}
+      />
+      {/* ALIGN IS NOT IN ADVANCED (D-172). There is no alignment control in the
+          reference's Advanced tab: alignment is a STYLE control on the widget
+          that has something to align. `align` stays on the props so the widget
+          style sections can ask for it; Advanced no longer draws it. */}
+      {void align}
     </Group>
   );
 }
 
-/** Left / middle / right. Shared by the Layout group and nothing else. */
-function AlignRow({ layer, onPatch }: {
+/**
+ * ALIGNMENT — the reference's icon group, in a widget's STYLE section (D-172).
+ *
+ * It used to be three text buttons reading Left / Middle / Right at the foot
+ * of Advanced > Layout. The reference has no alignment control in Advanced at
+ * all: it is the FIRST control of a widget's own style section, and it is
+ * icons. Exported, so the widget style sections can put it where it belongs.
+ */
+export function AlignRow({ layer, onPatch }: {
   layer: StyleLayer;
   onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
 }) {
   return (
-    <div style={FIELD}>
-      <span style={L}>Align</span>
-      <div style={{ display: "flex", gap: 4 }}>
-        {(["left", "center", "right"] as const).map((a) => (
-          <button key={a} type="button" data-style-align={a}
-            aria-pressed={layer.align === a}
-            title={`Line this up on the ${a === "center" ? "middle" : a}`}
-            onClick={() => onPatch({ align: layer.align === a ? undefined : a }, "align")}
-            style={{
-              flex: 1, borderRadius: 4, padding: "5px 6px", fontSize: 11, fontWeight: 600, cursor: "pointer",
-              border: "1px solid " + (layer.align === a ? "#0C4A60" : "#CBD5E1"),
-              background: layer.align === a ? "#0C4A60" : "#fff",
-              color: layer.align === a ? "#fff" : "#334155",
-            }}
-          >{a === "left" ? "Left" : a === "center" ? "Middle" : "Right"}</button>
-        ))}
-      </div>
+    <div style={ROW}>
+      <span style={L}>Alignment</span>
+      <IconChoice
+        name="Alignment"
+        testAttr="data-style-align"
+        value={layer.align}
+        onPick={(v) => onPatch({ align: v }, "align")}
+        options={[
+          { v: "left" as const, title: "Left", icon: <AlignLeft size={13} /> },
+          { v: "center" as const, title: "Center", icon: <AlignCenter size={13} /> },
+          { v: "right" as const, title: "Right", icon: <AlignRight size={13} /> },
+        ]}
+      />
     </div>
   );
 }
@@ -360,10 +481,12 @@ export function TypographyGroup({
     onPatch({ typography: { ...t, ...patch } as any }, key);
   return (
     <Group title="Typography" hint="How the words in this are set" onReset={onReset}>
-      <DeviceSegment device={device} onDevice={onDevice} />
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div style={FIELD}>
-          <span style={L}>Text size</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={L}>Size</span>
+            <DeviceSegment device={device} onDevice={onDevice} />
+          </span>
           <input type="number" style={INPUT} data-style-type="size" value={t.size ?? ""} placeholder="as set"
             title="How big the words are, in pixels. Leave empty to use the normal size."
             onChange={(e) => set({ size: e.target.value === "" ? undefined : Number(e.target.value) }, "type:size")} />
@@ -436,24 +559,28 @@ export function TypographyGroup({
 export function ResponsiveGroup({
   hiddenOn, onHide, onReset,
 }: {
-  hiddenOn: { tablet: boolean; phone: boolean };
-  onHide: (device: Exclude<Device, "desktop">, hidden: boolean) => void;
+  hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
+  onHide: (device: Device, hidden: boolean) => void;
   onReset: () => void;
 }) {
   return (
+    /* THREE SWITCHERS, IN THE REFERENCE'S WORDS (D-172): "Hide on Desktop",
+       "Hide on Tablet", "Hide on Mobile". Ours had two checkboxes with a
+       sentence for a label and no desktop, so the one width most of these
+       documents are read on could not be answered at all. */
     <Group title="Responsive" hint="Leaving this out on smaller screens" onReset={onReset}>
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-        title="Leave this out when somebody is reading on a tablet. It still shows on a computer.">
-        <input type="checkbox" data-style-hide="tablet" checked={hiddenOn.tablet}
-          onChange={(e) => onHide("tablet", e.target.checked)} />
-        Hide on a tablet
-      </label>
-      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-        title="Leave this out when somebody is reading on a phone — which is where most customers open it.">
-        <input type="checkbox" data-style-hide="phone" checked={hiddenOn.phone}
-          onChange={(e) => onHide("phone", e.target.checked)} />
-        Hide on a phone
-      </label>
+      {([["desktop", "Hide on Desktop"], ["tablet", "Hide on Tablet"], ["phone", "Hide on Mobile"]] as const)
+        .map(([key, label]) => (
+          <div key={key} style={ROW}>
+            <span style={L}>{label}</span>
+            <Switcher
+              on={hiddenOn[key]}
+              onChange={(v) => onHide(key, v)}
+              name={label}
+              testId={key}
+            />
+          </div>
+        ))}
     </Group>
   );
 }
@@ -565,5 +692,5 @@ export function RatioPicker({
   );
 }
 
-export { L, INPUT, FIELD };
+export { L, INPUT, FIELD, ROW };
 export default Group;

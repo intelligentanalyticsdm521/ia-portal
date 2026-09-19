@@ -684,15 +684,18 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     assert.match(inspector, /first=\{widget && !box \? "Content" : "Layout"\}/);
   });
 
-  test("a widget: Content · Style is Typography · Advanced is Layout and Responsive", () => {
-    assert.ok(groupsIn("content").includes("Content"), "no Content group on the Content tab");
+  test("a widget: its own name · Style is Typography · Advanced is Layout and Responsive", () => {
+    // The first section is NAMED AFTER THE WIDGET (D-172) — Heading, Image,
+    // Button — as the reference names it; "Content" is the TAB.
+    assert.match(inspector, /<Group title=\{def \? widgetLabel\(def, p\.adapter\) : "Content"\}/);
     assert.ok(groupsIn("style").includes("TypographyGroup"), "Typography is not on Style");
     const adv = groupsIn("advanced");
     assert.ok(adv.includes("SpacingGroup") && adv.includes("ResponsiveGroup"), `Advanced holds ${adv}`);
   });
 
   test("a section: Layout · Background and Typography · Layout and Page", () => {
-    assert.ok(groupsIn("content").includes("Layout"), "the section's columns are not on its first tab");
+    // The section's first group is called Container, as the reference calls it.
+    assert.ok(groupsIn("content").includes("Container"), "the section's first group is not Container");
     assert.ok(groupsIn("style").includes("Background"), "the section's background is not on Style");
     assert.ok(groupsIn("advanced").includes("Page"), "the page break is not on Advanced");
   });
@@ -708,15 +711,22 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     // It holds things; it does not say anything. Both are guarded by `!box`,
     // and a mutation that drops either guard shows an empty Content panel on a
     // box, which is a control that lies.
-    assert.match(inspector, /\{!box && shownTab === "content" && \(\s*<Group title="Content"/);
+    assert.match(inspector, /\{!box && shownTab === "content" && \(\s*<Group title=\{def \?/);
     assert.match(inspector, /\{!box && shownTab === "style" && isTypographic\(widget\.kind\)/);
   });
 
-  test("every group can be reset and every group collapses", () => {
+  test("every group collapses, and NO group header carries a reset (D-172)", () => {
     assert.match(groups.value ?? groups, /aria-expanded=\{open\}/);
-    assert.match(groups, /aria-label=\{`Reset \$\{title\}`\}/);
+    // ABSENT: the eraser in every section header, titled "Put layout back to
+    // the default on every screen size". The reference has a reset on a POPOVER
+    // control — Typography, Text Stroke, Text Shadow — and nowhere else, so a
+    // destructive button on every row of the panel was ours.
+    assert.ok(!groups.includes("aria-label={`Reset ${title}`}"),
+      "the per-section eraser is back in every group header");
+    assert.ok(!groups.includes("<RotateCcw"), "the eraser glyph is back");
+    // PRESENT: the handlers stay, for the popover controls that will want one.
     const resets = (inspector.match(/onReset=/g) || []).length;
-    assert.ok(resets >= 7, `only ${resets} groups offer a reset`);
+    assert.ok(resets >= 7, `only ${resets} groups hand in a reset`);
   });
 
   test("ONE device state — the inspector edits what the preview is showing", () => {

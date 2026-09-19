@@ -108,9 +108,12 @@ describe("the three-pane slots are part of the SHELL", () => {
     assert.deepEqual(withPanes, ["builder"]);
   });
 
-  test("the pane is 320px and the inspector is 320px", () => {
+  test("the inspector is 300px, the width the reference's panel measures (D-172)", () => {
     assert.equal(BUILDER_PANE_WIDTH, 320);
-    assert.equal(BUILDER_INSPECTOR_WIDTH, 320);
+    // Measured in the live editor on 2026-09-19: its panel reports exactly 300
+    // whether it is showing Elements or Edit Container. 320 was ours, and it
+    // is 20px of canvas on every builder.
+    assert.equal(BUILDER_INSPECTOR_WIDTH, 300);
   });
 
   const shell = read("components/IadmModal.tsx");

@@ -53,7 +53,7 @@ import { widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
 import {
   WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
-  widgetDescription, widgetLabel,
+  widgetLabel,
   type BuilderAdapter, type WidgetControl,
 } from "./registry";
 import {
@@ -61,8 +61,9 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  AttributesGroup, DeviceSegment, Group, InspectorTabs, RatioPicker, ResponsiveGroup, SpacingGroup, TypographyGroup,
-  FIELD, INPUT, L, type InspectorTab,
+  AttributesGroup, DeviceSegment, Group, INSPECTOR_TABS, InspectorTabs, RatioPicker,
+  ResponsiveGroup, SpacingGroup, TypographyGroup,
+  FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
 
 export interface InspectorSlots {
@@ -203,8 +204,15 @@ export function Inspector(p: InspectorProps) {
    * row nobody can aim at.
    */
   const hasStyle = box || !widget || isTypographic(widget.kind);
-  const disabled: InspectorTab[] = hasStyle ? [] : ["style"];
-  const shownTab: InspectorTab = disabled.includes(tab) ? "content" : tab;
+  /* A WIDGET WITH NO STYLE CONTROLS HAS NO STYLE TAB (D-172).
+     The reference's Spacer has Content and Advanced and nothing between them;
+     ours drew a greyed third tab, and pressing it re-rendered the Content
+     section under a Style heading — the same header, the same fields. A greyed
+     tab was the old answer ("a row that changes width is a row nobody can aim
+     at"); driving it showed the worse half, which is a tab that lies about what
+     is behind it. */
+  const tabs: InspectorTab[] = hasStyle ? INSPECTOR_TABS : ["content", "advanced"];
+  const shownTab: InspectorTab = tabs.includes(tab) ? tab : "content";
 
   return (
     <div data-inspector={widget ? (box ? "box" : "widget") : "section"}
@@ -219,7 +227,7 @@ export function Inspector(p: InspectorProps) {
         <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Edit {name}</div>
       </div>
 
-      <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} disabled={disabled} />
+      <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} tabs={tabs} />
 
       <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
         {widget && (
@@ -235,7 +243,7 @@ export function Inspector(p: InspectorProps) {
                 widget and is written ONCE. Two padding controls for one padding
                 is exactly the drift this file exists to stop. */}
             {box && shownTab === "content" && (
-              <Group title="Layout" hint="Which way what is inside this box runs, and how far apart" defaultOpen
+              <Group title="Container" hint="Which way what is inside this box runs, and how far apart" defaultOpen
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
                 <DeviceSegment device={p.device} onDevice={p.onDevice} />
@@ -326,30 +334,32 @@ export function Inspector(p: InspectorProps) {
                   Let them wrap onto a second line
                 </label>
 
-                {/* WHAT THE BOX IS DRAWN AS — `props.html_tag` (conformance,
-                    2026-09-17).
+              </Group>
+            )}
 
-                    The renderer has honoured this since stream C and NOTHING
-                    could set it, so the only way to have a page's main region
-                    be a `<main>` was to hand-edit the document. It is on the
-                    box's props rather than its style because it is the same on
-                    every device: a `<header>` does not become a `<div>` on a
-                    phone. That is also the ONE Elementor-spelled key the
-                    engine reads, and it keeps that name so the publish is a
-                    pass-through. */}
-                <div style={FIELD}>
-                  <span style={L}>What this box is, to a screen reader</span>
+            {/* HTML TAG, IN ITS OWN SECTION (D-172).
+
+                The reference's container Layout tab ends with a section called
+                "Additional Options" holding HTML Tag -- measured in the live
+                editor on 2026-09-19. Ours had a seven-option select inside
+                Layout labelled "WHAT THIS BOX IS, TO A SCREEN READER", which is
+                our own control, with our own words, in the wrong section. Same
+                prop, same renderer, the reference's name and place. */}
+            {box && shownTab === "content" && (
+              <Group title="Additional Options" hint="What this box is drawn as in the page's HTML">
+                <div style={ROW}>
+                  <span style={L}>HTML Tag</span>
                   <select style={INPUT} data-box-html-tag
-                    title="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
+                    title="Most boxes are a div. Say what this one is and a screen reader, and search, can tell."
                     value={String((widget.props as any)?.html_tag ?? "")}
                     onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
-                    <option value="">Just a box</option>
-                    <option value="header">The top of the page</option>
-                    <option value="main">The main part of the page</option>
-                    <option value="section">A section of the page</option>
-                    <option value="article">A whole article</option>
-                    <option value="aside">Something to one side</option>
-                    <option value="footer">The bottom of the page</option>
+                    <option value="">div</option>
+                    <option value="header">header</option>
+                    <option value="main">main</option>
+                    <option value="section">section</option>
+                    <option value="article">article</option>
+                    <option value="aside">aside</option>
+                    <option value="footer">footer</option>
                   </select>
                 </div>
               </Group>
@@ -386,11 +396,18 @@ export function Inspector(p: InspectorProps) {
             )}
 
             {/* ── CONTENT — everything that was here before ─────────────── */}
+            {/* NAMED AFTER THE WIDGET (D-172). The reference calls a widget's
+                first section by the widget's own name — Heading, Image, Button,
+                Divider, Spacer, Icon — not "Content"; "Content" is the TAB. */}
             {!box && shownTab === "content" && (
-            <Group title="Content" hint="What this shows, and where it comes from" defaultOpen>
-              {def && widgetDescription(def, p.adapter) && (
-                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{widgetDescription(def, p.adapter)}</div>
-              )}
+            <Group title={def ? widgetLabel(def, p.adapter) : "Content"}
+              hint="What this shows, and where it comes from" defaultOpen>
+              {/* THE WIDGET'S DESCRIPTION IS NOT DRAWN HERE (D-172). No
+                  descriptive paragraph appears anywhere in the reference's
+                  panel; the sentence is the TILE'S TOOLTIP in the left panel,
+                  which is where a description belongs and where it already is
+                  (WidgetPane, `widgetTooltip`). The registry keeps the text --
+                  this stops the panel printing it under every section header. */}
 
               {p.widgetExtras?.(widget, section.id)}
 
@@ -527,6 +544,7 @@ export function Inspector(p: InspectorProps) {
                 />
                 <ResponsiveGroup
                   hiddenOn={{
+                    desktop: !!widget.style?.hidden,
                     tablet: !!widget.style?.tablet?.hidden,
                     phone: !!widget.style?.phone?.hidden,
                   }}
@@ -565,47 +583,24 @@ export function Inspector(p: InspectorProps) {
 
           {/* ── LAYOUT ────────────────────────────────────────────────── */}
           {shownTab === "content" && (
-          <Group title="Layout" hint="How many columns, how they split, how wide they run" defaultOpen
+          <Group title="Container" hint="How wide the content runs inside the page" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["columnWidths", "gap"]))}>
-            <div style={FIELD}>
-              <span style={L}>Label</span>
-              <input style={INPUT} value={section.label || ""} title="Shown in the toolbar, and on the page when the section is numbered"
-                onChange={(e) => p.onPatchSection(section.id, { label: e.target.value })} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={FIELD}>
-                <span style={L}>Columns</span>
-                <select style={INPUT} value={section.layout} title="One, two or three columns side by side"
-                  onChange={(e) => p.onPatchSection(section.id, { layout: Number(e.target.value) as 1 | 2 | 3 })}>
-                  <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option>
-                </select>
-              </div>
-              <div style={FIELD}>
-                <span style={L}>Width</span>
-                <select style={INPUT} value={section.width} title="How wide the content runs inside the page"
-                  onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
-                  <option value="full">Full</option><option value="contained">Boxed</option><option value="narrow">Narrow</option>
-                </select>
-              </div>
-            </div>
-            <div style={FIELD}>
-              <span style={L}>Split</span>
-              <RatioPicker
-                layout={section.layout}
-                widths={sectionResolvedWidths(section)}
-                onPick={(widths) =>
-                  p.onSetSectionStyle(section.id, withLayer(section.style, "desktop", { columnWidths: widths }))}
-              />
-              <span style={{ fontSize: 10, color: "#94A3B8" }}>
-                How the width is shared between the columns. On a phone they go under each other whatever you pick.
-              </span>
-            </div>
-            <div style={FIELD}>
-              <span style={L}>Gap between columns</span>
-              <input type="number" style={INPUT} data-style-gap value={sectionLayer.gap ?? ""} placeholder="24"
-                title="Space between the columns, in pixels."
-                onChange={(e) => patchSectionStyle(
-                  { gap: e.target.value === "" ? undefined : Number(e.target.value) }, "gap")} />
+            {/* LABEL, COLUMNS, SPLIT and GAP BETWEEN COLUMNS WERE HERE AND ARE
+                DELETED (D-172).
+
+                The reference's container has Direction, Justify Content, Align
+                Items and Gaps — and NO column count, because a column IS a
+                child container. It has no name field on the canvas either, so
+                a LABEL text box holding the word "Section" was ours twice over:
+                our own control for our own word.
+
+                WIDTH stays: the reference's Content Width is the same idea. */}
+            <div style={ROW}>
+              <span style={L}>Width</span>
+              <select style={INPUT} value={section.width} title="How wide the content runs inside the page"
+                onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
+                <option value="full">Full</option><option value="contained">Boxed</option><option value="narrow">Narrow</option>
+              </select>
             </div>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
               title="Number this section on the page — 01, 02, 03. The numbers are worked out from the order, so moving a section renumbers both.">

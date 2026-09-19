@@ -593,3 +593,90 @@ describe("SCREEN LAW 9 — the structure window is the reference's", () => {
     assert.match(nav, /cursor: "nwse-resize"/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 10 — THE SETTINGS PANEL'S CHROME (D-172, round 1)
+
+   Measured in the live editor on 2026-09-19 (capture: _zz_screen_round1b.json):
+   the panel is 300px; a section heading is Title Case (text-transform none);
+   a control's label is 12px sentence case; a select or a chooser is
+   `elementor-label-inline` (label left, control right).
+
+   TWO AUDIT ROWS DID NOT SURVIVE THAT CHECK and are deliberately NOT acted on:
+   "put icons above the tab words" — the tabs have no ::before content at all —
+   and "centre the header title" — measured text-align: start.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("300px, measured", () => {
+    assert.match(readSrc("components/iadmModalSizes.ts"),
+      /export const BUILDER_INSPECTOR_WIDTH = 300;/);
+  });
+
+  test("the per-section eraser, the hint sentence and the EDITING FOR row are DELETED", () => {
+    assert.ok(!groups.includes("<RotateCcw"), "the per-section eraser is back");
+    assert.ok(!groups.includes("Put ${title.toLowerCase()} back to the default"),
+      "the eraser's sentence is back");
+    assert.ok(!groups.includes("These settings apply everywhere unless you change them"),
+      "the EDITING FOR sentence is back");
+    assert.ok(!groups.includes("Editing for"), "the EDITING FOR label is back");
+    // PRESENT: the device switcher is three glyphs ON the control.
+    assert.match(groups, /width: 18, height: 16/);
+    assert.match(groups, /const Icon = d\.key === "desktop" \? Monitor/);
+  });
+
+  test("a label is 12px sentence case, and a row is label-left / control-right", () => {
+    assert.match(groups, /const L: React\.CSSProperties = \{\s*fontSize: 12, fontWeight: 400/);
+    assert.ok(!/textTransform: "uppercase", color: "#5A7A8A"/.test(groups),
+      "the labels are 10px UPPERCASE again");
+    assert.match(groups, /const ROW: React\.CSSProperties = \{\s*display: "grid"/);
+  });
+
+  test("a chooser is icon buttons and a toggle is a pill", () => {
+    assert.match(groups, /export function IconChoice/);
+    assert.match(groups, /export function Switcher/);
+    assert.match(groups, /role="switch"/);
+    // Alignment left Advanced for a widget's own style section.
+    assert.match(groups, /export function AlignRow/);
+    assert.match(groups, /\{void align\}/);
+  });
+
+  test("Margin comes before Padding, and Responsive answers all three widths", () => {
+    const m = groups.indexOf('label="Margin"');
+    const pd = groups.indexOf('label="Padding"');
+    assert.ok(m > 0 && pd > m, "Padding is back above Margin");
+    for (const label of ["Hide on Desktop", "Hide on Tablet", "Hide on Mobile"]) {
+      assert.ok(groups.includes(label), `Responsive lost: ${label}`);
+    }
+    assert.ok(!groups.includes("Hide on a tablet"), "our own Responsive wording is back");
+  });
+
+  test("a section is named after its element, and the invented controls are gone", () => {
+    assert.match(inspector, /<Group title=\{def \? widgetLabel\(def, p\.adapter\) : "Content"\}/);
+    assert.match(inspector, /<Group title="Container"/);
+    assert.match(inspector, /<Group title="Additional Options"/);
+    assert.match(inspector, /<span style=\{L\}>HTML Tag<\/span>/);
+    for (const gone of ["What this box is, to a screen reader", "<span style={L}>Label</span>",
+                        "<span style={L}>Columns</span>", "<span style={L}>Split</span>",
+                        "Gap between columns"]) {
+      assert.ok(!inspector.includes(gone), `the section grew it back: ${gone}`);
+    }
+  });
+
+  test("no descriptive paragraph anywhere in the panel", () => {
+    // The widget's own sentence is the TILE'S TOOLTIP in the left panel, where
+    // the reference keeps that kind of thing; ours printed it again under the
+    // first section header of every widget's Content tab.
+    assert.ok(!inspector.includes("widgetDescription(def, p.adapter)"),
+      "the panel prints the widget's description again");
+    assert.match(code(readSrc("builder/WidgetPane.tsx")), /widgetTooltip\(w, adapter\)/);
+  });
+
+  test("a widget with no style controls has two tabs, not three", () => {
+    assert.match(inspector, /const tabs: InspectorTab\[\] = hasStyle \? INSPECTOR_TABS : \["content", "advanced"\]/);
+    assert.ok(!inspector.includes('disabled: InspectorTab[] = hasStyle'), "the greyed third tab is back");
+  });
+});
