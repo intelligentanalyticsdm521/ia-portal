@@ -82,12 +82,47 @@ export function assertFamilyContract(name, family) {
     `${name}: a family exports { defs, renderers }`);
 
   const defined = family.defs.map((d) => d.kind);
-  const drawn = Object.keys(family.renderers);
 
-  assert.deepEqual(defined.filter((k) => !drawn.includes(k)), [],
-    `${name}: declared with no renderer — the tile would put a blank on the page`);
-  assert.deepEqual(drawn.filter((k) => !defined.includes(k)), [],
-    `${name}: drawn with no definition — nothing can reach it`);
+  /*
+   * A WIDGET IS "DRAWN" ON THE SURFACE IT IS OFFERED ON — CHANGED 2026-09-19.
+   *
+   * This asked one question: is the kind in `renderers`? That was the whole
+   * contract when a family had one door. D-168 item 5b gave it three more —
+   * `emailRenderers`, `landingRenderers`, `studioInserts` — because a widget on
+   * the newsletter panel is drawn by the MAILBOX renderer and never by the page
+   * one. IA Posts (wave 2) is the first widget offered to the newsletter and
+   * nowhere else, and under the old rule the only way to pass was to write a
+   * page renderer nothing would ever call.
+   *
+   * So the question is now asked PER SURFACE, and it is the same question
+   * `familySurfaceGaps()` asks of the merged set in `families/index.ts` — one
+   * rule, in two places that cannot disagree because they are the same words:
+   * newsletter is the mailbox half; a landing page is its own half or the page
+   * one; My Brand is the studio insert; a website or a proposal is the page
+   * half. This is STRICTER than the line it replaces, not weaker: a widget
+   * offered on the newsletter used to pass with a page renderer alone.
+   */
+  const surfaceOf = (d, b) => {
+    if (b === "newsletter") return [["emailRenderers", family.emailRenderers]];
+    if (b === "landing") return [["landingRenderers", family.landingRenderers], ["renderers", family.renderers]];
+    if (b === "mybrand") return [["studioInserts", family.studioInserts]];
+    return [["renderers", family.renderers]];
+  };
+  for (const d of family.defs) {
+    for (const b of (d.builders || [])) {
+      const doors = surfaceOf(d, b);
+      assert.ok(doors.some(([, map]) => map && typeof map[d.kind] === "function"),
+        `${name}/${d.kind}: offered on the ${b} panel and nothing draws it there — `
+        + `the tile would put a blank in front of a customer. Write ${doors[0][0]}.${d.kind}.`);
+    }
+  }
+
+  for (const door of ["renderers", "emailRenderers", "landingRenderers", "studioInserts"]) {
+    for (const k of Object.keys(family[door] || {})) {
+      assert.ok(defined.includes(k),
+        `${name}: ${door}.${k} is drawn with no definition — nothing can reach it`);
+    }
+  }
   assert.equal(new Set(defined).size, defined.length,
     `${name}: the same kind is declared twice`);
 

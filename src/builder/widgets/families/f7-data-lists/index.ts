@@ -63,6 +63,7 @@
 import type { Family } from "../types";
 
 import { ARCHIVE_POSTS_DEF, renderArchivePosts } from "./archivePosts";
+import { ARTICLE_CARD_DEF, IA_POSTS_DEF, emailIaPosts, renderIaPosts } from "./iaPosts";
 import { AUTHOR_BOX_DEF, renderAuthorBox } from "./authorBox";
 import { LOOP_GRID_DEF, renderLoopGrid } from "./loopGrid";
 import { PORTFOLIO_DEF, renderPortfolio } from "./portfolio";
@@ -117,6 +118,11 @@ export const FAMILY: Family = {
     POST_NAVIGATION_DEF,
     POST_INFO_DEF,
     SITEMAP_DEF,
+    /* THE FAMILY'S IA TWIN, last, because the Intelligent Analytics group is
+       drawn after Elementor's own - a plugin's group, exactly as Elementor
+       draws one. Two stored kinds, one widget: see iaPosts.ts. */
+    IA_POSTS_DEF,
+    ARTICLE_CARD_DEF,
   ],
   renderers: {
     posts: renderPosts,
@@ -138,5 +144,12 @@ export const FAMILY: Family = {
     theme_post_excerpt: renderThemePostExcerpt,
     theme_post_featured_image: renderThemePostFeaturedImage,
     theme_archive_title: renderThemeArchiveTitle,
+    ia_posts: renderIaPosts,
   },
+  /* THE MAILBOX HALF (D-168 item 5b). `article_card` is the newsletter's
+     stored id for this same widget; the Portal's mailbox asks the families
+     before its own switch, so this row now draws IA Posts in the preview and
+     `adapters/email/emailRender.ts`'s `emArticles` is the shadowed copy the
+     lander deletes. */
+  emailRenderers: { article_card: emailIaPosts },
 };
