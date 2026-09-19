@@ -121,6 +121,8 @@ export interface BuilderShellProps extends InspectorSlots {
    * platform's floating bubble made a third. One door.
    */
   askArgus?: ReactNode;
+  /** Show the document as its reader will get it. The eye in the top bar. */
+  onPreviewDoc?: () => void;
   /** Buttons on the right of the header: Preview, Save, Send. */
   headerActions?: ReactNode;
   footer?: ReactNode;
@@ -1120,6 +1122,10 @@ export function BuilderShell(p: BuilderShellProps) {
          the panel on the right shows the document's own settings when
          nothing is selected (Inspector, the no-selection branch). */
       onPageSettings={() => select(null)}
+      /* PREVIEW CHANGES — the eye in the right-hand group. Only drawn for a
+         builder that HAS a preview to show; an eye that opens nothing is
+         worse than no eye. */
+      {...(p.onPreviewDoc ? { onPreviewDoc: p.onPreviewDoc } : {})}
       /* ONE DOOR TO THE AI (D-172): the bar's. The gold button that used to
          sit in the settings panel's header is gone, and the floating bubble
          steps aside while a builder is open (ArgusChatbot). */
@@ -1135,6 +1141,10 @@ export function BuilderShell(p: BuilderShellProps) {
           adapter={p.adapter}
           onInsert={(def) => insertWidget(def)}
           onDragWidget={(w) => setDrag(w ? { kind: "new", label: w.kind } : null)}
+          /* THE EDGE HANDLE (D-172): the reference's chevron tab on the
+             panel's right border folds it away, and the top bar's Add
+             Element brings it back. One state, two doors. */
+          onCollapse={() => setPanel(false)}
           /* The panel's Layout group is Elementor's two widgets, and the Grid
              tile inserts a grid container through `registry.presetFor`. */
           {...(p.lockedKinds ? { lockedKinds: p.lockedKinds } : {})}

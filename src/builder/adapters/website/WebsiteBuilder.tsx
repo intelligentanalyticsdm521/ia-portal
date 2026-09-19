@@ -853,23 +853,23 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
         onAddBlank={(at) => { void addFromServer("content", at); return false; }}
+        widgetExtras={widgetExtras}
+        /* OUR ANGIE, and the reference's eye — both in the bar's own
+           positions (D-172), not stacked in with the verbs. */
         askArgus={
-          <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write or rewrite this page. Uses AI credits, and you see what it suggests before anything changes.">
-            <Sparkles size={12} /> Ask ARGUS
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS" aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#38BDF8", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
           </button>
         }
-        widgetExtras={widgetExtras}
+        onPreviewDoc={() => { if (!busy) void runPreview(); }}
         headerActions={
           <>
-            <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-              title="Ask ARGUS to write or rewrite this page. Uses AI credits.">
-              <Sparkles size={13} /> Ask ARGUS
-            </button>
-            <button type="button" style={GHOST} disabled={!!busy} onClick={runPreview}
-              title="See the page on your own website, rendered by your own theme. Nothing is published.">
-              {busy === "preview" ? "Working…" : "Preview"}
-            </button>
             {/* D-05. On a LIVE page this holds the work beside the published
                 version; it does not touch the website and it does not send
                 `status: draft`, which is the same wire as Unpublish. */}

@@ -454,3 +454,26 @@ describe("SCREEN LAW 7 — the top bar is the reference editor's", () => {
       "Save and close is a flat button in the bar again");
   });
 });
+
+describe("SCREEN LAW 7b — found by driving the merged screen (D-172)", () => {
+  test("the customer picker is a PILL until it is pressed", () => {
+    // Driven on :5189 at 1600x1000: with no customer chosen the picker drew its
+    // search box AND all twenty-five matches, open, in the top bar — the list
+    // rendered on `contacts.length > 0` and nothing else. It had a row to
+    // itself in the deleted subtitle; the reference bar has one row.
+    const pb = code(readSrc("builder/proposal/ProposalBuilder.tsx"));
+    assert.match(pb, /data-customer-pill/);
+    assert.match(pb, /\{open && contacts\.length > 0 && \(/);
+    assert.ok(!/\{contacts\.length > 0 && \(/.test(pb), "the match list drops open again with nothing pressed");
+  });
+
+  test("the panel's edge handle and the eye are WIRED, not just built", () => {
+    const shell = code(readSrc("builder/BuilderShell.tsx"));
+    assert.match(shell, /onCollapse=\{\(\) => setPanel\(false\)\}/);
+    assert.match(shell, /onPreviewDoc/);
+    // the one builder that HAS a preview hands one in; an eye that opens
+    // nothing is worse than no eye.
+    assert.match(code(readSrc("builder/adapters/website/WebsiteBuilder.tsx")),
+      /onPreviewDoc=\{\(\) => \{ if \(!busy\) void runPreview\(\); \}\}/);
+  });
+});

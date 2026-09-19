@@ -1626,6 +1626,26 @@ function CustomerBar({
   const label = (c: ContactRow) =>
     c.company_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "";
 
+  /* FOUND BY DRIVING IT (D-172, 2026-09-19, :5189 at 1600x1000): with no
+     customer chosen this drew the search box AND all twenty-five matches, open,
+     in the top bar — because the list rendered on `contacts.length > 0` and
+     nothing else. It used to sit in the modal's subtitle, which had a row to
+     itself; the reference bar has one row. It is a PILL until it is pressed. */
+  if (!contact && !open) {
+    return (
+      <button type="button" data-customer-pill onClick={() => setOpen(true)}
+        title="Choose the customer once. Every merge field on the page fills from this."
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto",
+          background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px",
+          fontSize: 11, cursor: "pointer",
+        }}>
+        <UserRound size={12} /> Choose customer
+      </button>
+    );
+  }
+
   if (contact && !open) {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1669,7 +1689,8 @@ function CustomerBar({
       <UserRound size={12} />
       <input
         value={search}
-        autoFocus={open}
+        autoFocus
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
         onChange={(e) => onSearch(e.target.value)}
         placeholder="Type a customer's name…"
         title="Choose the customer once. Every merge field on the page fills from this."
@@ -1679,7 +1700,8 @@ function CustomerBar({
           border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px", fontSize: 11, width: 240, outline: "none",
         }}
       />
-      {contacts.length > 0 && (
+      {/* The matches drop only while the box is being used. */}
+      {open && contacts.length > 0 && (
         <span style={{
           position: "absolute", top: "100%", left: 20, zIndex: 20, marginTop: 4, background: "#fff",
           border: "1px solid #CBD5E1", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,.18)",
