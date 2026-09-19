@@ -214,6 +214,22 @@ describe("§3.2's union is registered", () => {
        snow agreement places it and D-164 pins its numbering) and its TILE is
        hidden, so there is one Terms door. */
     "terms",
+    /* B-168's f7-data-lists — LISTS THAT COME FROM DATA (2026-09-19).
+       Nineteen Elementor PRO widgets, every one of them in the offer file
+       Brandon approved under `website.elementor_pro`, declared in
+       `src/builder/widgets/families/f7-data-lists/`. They are listed here for
+       the same reason everything above is: this test is the ratchet that stops
+       a widget nobody asked for arriving, and a widget that IS asked for has to
+       be written down to pass it. Which panel each one reaches is
+       `test/builder-offers.test.mjs`'s question, not this file's.
+       BREADCRUMBS is in the offer and is deliberately NOT here: the 2026-09-17
+       Pro scrape has no such widget (Elementor registers it only with Yoast
+       installed) and the free scrape's entry is a Pro promotion with no
+       controls. See the family index and the D168 handoff. */
+    "posts", "portfolio", "loop_grid", "archive_posts", "taxonomy_filter", "search",
+    "sitemap", "template", "post_info", "post_navigation", "post_comments", "author_box",
+    "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title",
+    "theme_post_excerpt", "theme_post_featured_image", "theme_archive_title",
   ];
 
   for (const kind of REQUIRED) {

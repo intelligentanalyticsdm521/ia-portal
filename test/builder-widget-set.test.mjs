@@ -32,6 +32,7 @@ import {
   GRID_PRESET_KIND, controlTab, presetFor, unorderedKinds, widgetsFor, widgetLabel,
 } from "../src/builder/registry.ts";
 import { panelGroups, PANEL_GROUPS, unmappedKinds } from "../src/builder/widgetGroups.ts";
+import { FAMILY_DEFS, FAMILY_OF_KIND } from "../src/builder/widgets/families/index.ts";
 import { ATOM_KINDS, atomKindsAgree } from "../src/builder/widgets/index.ts";
 import {
   isCatalogueTile, isPickerTile, nodesForPicks,
@@ -120,8 +121,38 @@ describe("the left panel is Elementor's", () => {
     }
   });
 
-  test("every offered widget has a place in PANEL_ORDER", () => {
-    assert.deepEqual(unorderedKinds(), []);
+  /**
+   * WHO SAYS WHAT ORDER A WIDGET IS IN — SHARPENED 2026-09-19 (B-168 §C.1).
+   *
+   * There are now two answers, and they do not overlap. A widget declared in
+   * `registry.ts` is ordered by `PANEL_ORDER`, the literal list in that file. A
+   * widget declared by a FAMILY is ordered by its family's own index, which
+   * says in its header that the order of its `defs` is the order of the panel —
+   * and a family agent must never open `registry.ts`, which is the whole reason
+   * the families exist. Ten agents hand-editing one array in a 66 KB file is
+   * exactly the conflict §C.1 was written to remove.
+   *
+   * So the ratchet stays, aimed at the widgets it was written for, and the
+   * family kinds get the SAME question asked of their own index. Neither half
+   * is weaker than the one line it replaces: a registry widget with no place is
+   * still a failure, and a family widget that fell out of its family's order is
+   * a failure too.
+   */
+  test("every offered widget declared in the registry has a place in PANEL_ORDER", () => {
+    assert.deepEqual(unorderedKinds().filter((k) => !(k in FAMILY_OF_KIND)), []);
+  });
+
+  test("...and every offered widget declared by a family is in its family's own order", () => {
+    const declared = new Set(FAMILY_DEFS.map((d) => d.kind));
+    for (const k of unorderedKinds()) {
+      assert.ok(declared.has(k),
+        `${k} has no place in PANEL_ORDER and no family declares it, so nothing decides where it goes`);
+    }
+    // PRESENCE: the families really are on the panel, in the order they declare.
+    const onPanel = widgetsFor("website").map((w) => w.kind).filter((k) => declared.has(k));
+    const inOrder = FAMILY_DEFS
+      .filter((d) => d.builders.includes("website")).map((d) => d.kind);
+    assert.deepEqual(onPanel, inOrder);
   });
 });
 
@@ -208,6 +239,17 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "IA Posts", "Reviews", "Book Now",
       "IA Form",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
+      /* B-168's f7-data-lists — LISTS THAT COME FROM DATA (2026-09-19).
+         They read as a TAIL here and sit inside General on the screen: the pane
+         groups by `category` first, and every one of these is General, so the
+         author sees them after Menu Anchor and before the Intelligent Analytics
+         group. This list is `widgetsFor`'s FLAT order, which puts a kind with no
+         PANEL_ORDER entry after every kind that has one — see the note on
+         "every offered widget has a place in PANEL_ORDER" below. */
+      "Posts", "Portfolio", "Loop Grid", "Archive Posts", "Taxonomy Filter", "Search",
+      "Sitemap", "Template", "Post Info", "Post Navigation", "Post Comments", "Author Box",
+      "Site Logo", "Site Title", "Page Title", "Post Title", "Post Excerpt",
+      "Featured Image", "Archive Title",
     ]);
   });
 
@@ -228,7 +270,19 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
     /* D-168 widened this by one: the offer file lists IA OLIVER Invoice under
        `website.ia` only. A hosted landing page has no signed-in customer to
        show an invoice to, which is the same reason the menus are not there. */
-    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice"];
+    /* WIDENED BY f7-data-lists (2026-09-19), and by the offer file, not by us:
+       `website.elementor_pro` carries nineteen list-and-site widgets and
+       `landing.elementor_pro` carries five of them. A landing page has no blog,
+       no archive and no site furniture, so Search, Sitemap, the four theme-*
+       headings, the two theme-* pictures, Post Info, Post Navigation, Post
+       Comments, Author Box and Archive Posts are website-only — the same reason
+       the menus already were. */
+    const siteOnly = [
+      "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice",
+      "Archive Posts", "Search", "Sitemap", "Post Info", "Post Navigation",
+      "Post Comments", "Author Box", "Site Logo", "Site Title", "Page Title",
+      "Post Title", "Post Excerpt", "Featured Image", "Archive Title",
+    ];
     assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });
 

@@ -48,6 +48,7 @@ import {
   SITE_PAGE_TEMPLATES, SITE_PREMADE, SITE_PREMADE_TAGS, withCount, repeatFieldFor, blankRow,
 } from "../src/builder/adapters/website/siteTemplates.ts";
 import { makeContext, RENDERED_KINDS, UNRENDERED_KINDS } from "../src/builder/render.ts";
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { addSection, duplicateSection, moveSection, removeSection, makeWidget } from "../src/builder/model.ts";
 
 const FIXTURE = JSON.parse(
@@ -362,8 +363,14 @@ describe("duplicating a section", () => {
 
 describe("the canvas draws the page, not a form", () => {
   test("every widget the website pane offers is actually drawn", () => {
+    /* B-168 §C.1 — `FAMILY_RENDERED_KINDS` is the fifth source, and it is read
+       off the families' own index rather than typed out here: a second copy of
+       the list would agree with whatever the families did. `render.ts` asks
+       `renderFamily` before its own switch, so a kind in this set really is
+       drawn on the canvas. */
     const drawn = new Set([
       ...RENDERED_KINDS, ...SITE_RENDERED_KINDS, ...UNRENDERED_KINDS, ...SITE_UNRENDERED_KINDS,
+      ...FAMILY_RENDERED_KINDS,
     ]);
     for (const w of allWidgetsFor("website")) {
       assert.ok(drawn.has(w.kind), `${w.kind} is offered and nothing draws it`);

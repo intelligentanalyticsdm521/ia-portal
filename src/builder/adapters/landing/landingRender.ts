@@ -52,6 +52,12 @@ import {
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
 import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — THE TEN FAMILIES, asked in the same `default` branch and before
+   the atoms, exactly as `render.ts` asks them. One line, and no family agent
+   ever opens this file again. Without it a family's widget is offered on a
+   landing page and draws "needs a newer version of the builder", which is the
+   silent blank the seams were built to make impossible. */
+import { FAMILY_RENDERED_KINDS, renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -212,6 +218,10 @@ export const LANDING_RENDERED_KINDS = [
      LANDING_KIND_ALIASES above, and a slug that is both an alias and a kind is
      two answers for one widget. A test says so. */
   "shortcode",
+  /* B-168 §C.1 — every kind the ten families draw. Spread rather than typed
+     out, because a second copy of the list is the drift this file's own
+     parity test exists to catch. */
+  ...FAMILY_RENDERED_KINDS,
   "service_location", "customer",
   "product_cards", "ia_posts", "reviews", "book_now",
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
@@ -295,6 +305,10 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
+        /* B-168 §C.1 — THE TEN FAMILIES, first, so a merge with another
+           stream's line is trivial. `null` means no family owns this kind. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

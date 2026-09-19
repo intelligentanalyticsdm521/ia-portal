@@ -709,8 +709,21 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     const site = widgetsFor("website").map((w) => w.kind);
     /* D-168 added a third: the offer file lists IA OLIVER Invoice under
        `website.ia` only, because a hosted landing page has no signed-in
-       customer to show an invoice to. */
-    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
+       customer to show an invoice to.
+       B-168's f7-data-lists added fourteen more, and for the same kind of
+       reason: `website.elementor_pro` carries nineteen list-and-site widgets
+       and `landing.elementor_pro` carries five of them. A hosted landing page
+       has no blog, no archive, no comments and no site furniture, so the search
+       box, the sitemap, the four theme-* headings, the two theme-* pictures and
+       the five single-story pieces are website-only. Straight off the offer
+       file, which is where this decision belongs. */
+    const siteOnly = [
+      "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice",
+      "archive_posts", "search", "sitemap", "post_info", "post_navigation",
+      "post_comments", "author_box", "theme_site_logo", "theme_site_title",
+      "theme_page_title", "theme_post_title", "theme_post_excerpt",
+      "theme_post_featured_image", "theme_archive_title",
+    ];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
     /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
