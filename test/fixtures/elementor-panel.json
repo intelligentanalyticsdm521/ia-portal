@@ -1,0 +1,424 @@
+{
+ "_about": "Machine-cut by scripts/gen-elementor-panel.mjs. DO NOT EDIT. Elementor's own panel: which group a widget's tile is in, and where in that group it sits.",
+ "source": "BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json + .pro.json",
+ "elementor_version": "4.1.4",
+ "groups": [
+  "Layout",
+  "Basic",
+  "Pro",
+  "General",
+  "Site"
+ ],
+ "widgets": {
+  "Container": {
+   "slug": "container",
+   "group": "Layout",
+   "order": 0
+  },
+  "Grid": {
+   "slug": "container:grid",
+   "group": "Layout",
+   "order": 1
+  },
+  "Inner Section": {
+   "slug": "inner-section",
+   "group": "Basic",
+   "order": 0
+  },
+  "Heading": {
+   "slug": "heading",
+   "group": "Basic",
+   "order": 1
+  },
+  "Image": {
+   "slug": "image",
+   "group": "Basic",
+   "order": 2
+  },
+  "Text Editor": {
+   "slug": "text-editor",
+   "group": "Basic",
+   "order": 3
+  },
+  "Video": {
+   "slug": "video",
+   "group": "Basic",
+   "order": 4
+  },
+  "Button": {
+   "slug": "button",
+   "group": "Basic",
+   "order": 5
+  },
+  "Divider": {
+   "slug": "divider",
+   "group": "Basic",
+   "order": 6
+  },
+  "Spacer": {
+   "slug": "spacer",
+   "group": "Basic",
+   "order": 7
+  },
+  "Google Maps": {
+   "slug": "google_maps",
+   "group": "Basic",
+   "order": 8
+  },
+  "Icon": {
+   "slug": "icon",
+   "group": "Basic",
+   "order": 9
+  },
+  "Loop Grid": {
+   "slug": "loop-grid",
+   "group": "Pro",
+   "order": 0
+  },
+  "Loop Carousel": {
+   "slug": "loop-carousel",
+   "group": "Pro",
+   "order": 1
+  },
+  "Off-Canvas": {
+   "slug": "off-canvas",
+   "group": "Pro",
+   "order": 2
+  },
+  "Posts": {
+   "slug": "posts",
+   "group": "Pro",
+   "order": 3
+  },
+  "Portfolio": {
+   "slug": "portfolio",
+   "group": "Pro",
+   "order": 4
+  },
+  "Gallery": {
+   "slug": "gallery",
+   "group": "Pro",
+   "order": 5
+  },
+  "Form": {
+   "slug": "form",
+   "group": "Pro",
+   "order": 6
+  },
+  "Login": {
+   "slug": "login",
+   "group": "Pro",
+   "order": 7
+  },
+  "Slides": {
+   "slug": "slides",
+   "group": "Pro",
+   "order": 8
+  },
+  "WordPress Menu": {
+   "slug": "nav-menu",
+   "group": "Pro",
+   "order": 9
+  },
+  "Animated Headline": {
+   "slug": "animated-headline",
+   "group": "Pro",
+   "order": 10
+  },
+  "Hotspot": {
+   "slug": "hotspot",
+   "group": "Pro",
+   "order": 11
+  },
+  "Price List": {
+   "slug": "price-list",
+   "group": "Pro",
+   "order": 12
+  },
+  "Price Table": {
+   "slug": "price-table",
+   "group": "Pro",
+   "order": 13
+  },
+  "Flip Box": {
+   "slug": "flip-box",
+   "group": "Pro",
+   "order": 14
+  },
+  "Call to Action": {
+   "slug": "call-to-action",
+   "group": "Pro",
+   "order": 15
+  },
+  "Media Carousel": {
+   "slug": "media-carousel",
+   "group": "Pro",
+   "order": 16
+  },
+  "Testimonial Carousel": {
+   "slug": "testimonial-carousel",
+   "group": "Pro",
+   "order": 17
+  },
+  "Reviews": {
+   "slug": "reviews",
+   "group": "Pro",
+   "order": 18
+  },
+  "Table of Contents": {
+   "slug": "table-of-contents",
+   "group": "Pro",
+   "order": 19
+  },
+  "Countdown": {
+   "slug": "countdown",
+   "group": "Pro",
+   "order": 20
+  },
+  "Share Buttons": {
+   "slug": "share-buttons",
+   "group": "Pro",
+   "order": 21
+  },
+  "Blockquote": {
+   "slug": "blockquote",
+   "group": "Pro",
+   "order": 22
+  },
+  "Facebook Embed": {
+   "slug": "facebook-embed",
+   "group": "Pro",
+   "order": 23
+  },
+  "Facebook Page": {
+   "slug": "facebook-page",
+   "group": "Pro",
+   "order": 24
+  },
+  "Template": {
+   "slug": "template",
+   "group": "Pro",
+   "order": 25
+  },
+  "Lottie": {
+   "slug": "lottie",
+   "group": "Pro",
+   "order": 26
+  },
+  "Code Highlight": {
+   "slug": "code-highlight",
+   "group": "Pro",
+   "order": 27
+  },
+  "Video Playlist": {
+   "slug": "video-playlist",
+   "group": "Pro",
+   "order": 28
+  },
+  "PayPal Button": {
+   "slug": "paypal-button",
+   "group": "Pro",
+   "order": 29
+  },
+  "Stripe Button": {
+   "slug": "stripe-button",
+   "group": "Pro",
+   "order": 30
+  },
+  "Progress Tracker": {
+   "slug": "progress-tracker",
+   "group": "Pro",
+   "order": 31
+  },
+  "Carousel": {
+   "slug": "nested-carousel",
+   "group": "Pro",
+   "order": 32
+  },
+  "Taxonomy Filter": {
+   "slug": "taxonomy-filter",
+   "group": "Pro",
+   "order": 33
+  },
+  "Search": {
+   "slug": "search",
+   "group": "Pro",
+   "order": 34
+  },
+  "Menu": {
+   "slug": "mega-menu",
+   "group": "Pro",
+   "order": 35
+  },
+  "Breadcrumbs": {
+   "slug": "breadcrumbs",
+   "group": "Pro",
+   "order": 36
+  },
+  "Tabs": {
+   "slug": "nested-tabs",
+   "group": "General",
+   "order": 0
+  },
+  "Accordion": {
+   "slug": "nested-accordion",
+   "group": "General",
+   "order": 1
+  },
+  "Image Box": {
+   "slug": "image-box",
+   "group": "General",
+   "order": 2
+  },
+  "Icon Box": {
+   "slug": "icon-box",
+   "group": "General",
+   "order": 3
+  },
+  "Image Carousel": {
+   "slug": "image-carousel",
+   "group": "General",
+   "order": 4
+  },
+  "Basic Gallery": {
+   "slug": "image-gallery",
+   "group": "General",
+   "order": 5
+  },
+  "Icon List": {
+   "slug": "icon-list",
+   "group": "General",
+   "order": 6
+  },
+  "Counter": {
+   "slug": "counter",
+   "group": "General",
+   "order": 7
+  },
+  "Progress Bar": {
+   "slug": "progress",
+   "group": "General",
+   "order": 8
+  },
+  "Testimonial": {
+   "slug": "testimonial",
+   "group": "General",
+   "order": 9
+  },
+  "Social Icons": {
+   "slug": "social-icons",
+   "group": "General",
+   "order": 10
+  },
+  "Alert": {
+   "slug": "alert",
+   "group": "General",
+   "order": 11
+  },
+  "SoundCloud": {
+   "slug": "audio",
+   "group": "General",
+   "order": 12
+  },
+  "Shortcode": {
+   "slug": "shortcode",
+   "group": "General",
+   "order": 13
+  },
+  "HTML": {
+   "slug": "html",
+   "group": "General",
+   "order": 14
+  },
+  "Menu Anchor": {
+   "slug": "menu-anchor",
+   "group": "General",
+   "order": 15
+  },
+  "Sidebar": {
+   "slug": "sidebar",
+   "group": "General",
+   "order": 16
+  },
+  "Read More": {
+   "slug": "read-more",
+   "group": "General",
+   "order": 17
+  },
+  "Rating": {
+   "slug": "rating",
+   "group": "General",
+   "order": 18
+  },
+  "Text Path": {
+   "slug": "text-path",
+   "group": "General",
+   "order": 19
+  },
+  "Site Logo": {
+   "slug": "theme-site-logo",
+   "group": "Site",
+   "order": 0
+  },
+  "Site Title": {
+   "slug": "theme-site-title",
+   "group": "Site",
+   "order": 1
+  },
+  "Page Title": {
+   "slug": "theme-page-title",
+   "group": "Site",
+   "order": 2
+  },
+  "Post Title": {
+   "slug": "theme-post-title",
+   "group": "Site",
+   "order": 3
+  },
+  "Post Excerpt": {
+   "slug": "theme-post-excerpt",
+   "group": "Site",
+   "order": 4
+  },
+  "Featured Image": {
+   "slug": "theme-post-featured-image",
+   "group": "Site",
+   "order": 5
+  },
+  "Archive Title": {
+   "slug": "theme-archive-title",
+   "group": "Site",
+   "order": 6
+  },
+  "Archive Posts": {
+   "slug": "archive-posts",
+   "group": "Site",
+   "order": 7
+  },
+  "Author Box": {
+   "slug": "author-box",
+   "group": "Site",
+   "order": 8
+  },
+  "Post Comments": {
+   "slug": "post-comments",
+   "group": "Site",
+   "order": 9
+  },
+  "Post Navigation": {
+   "slug": "post-navigation",
+   "group": "Site",
+   "order": 10
+  },
+  "Post Info": {
+   "slug": "post-info",
+   "group": "Site",
+   "order": 11
+  },
+  "Sitemap": {
+   "slug": "sitemap",
+   "group": "Site",
+   "order": 12
+  }
+ }
+}

@@ -764,9 +764,15 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     }
     assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
     assert.ok(WIDGETS_BY_KIND.clauses, "the clauses KIND was deleted, so stored agreements stop drawing");
-    for (const k of ["article_card", "product_card", "email_footer", "hero", "social_links"]) {
+    /* `social_links` CAME OFF THIS LIST (D-168 item 4). It was here because the
+       kind was the mailbox's own Social Icons and a proposal had a different
+       widget with the same label; there is one widget now, and the offer file
+       gives Social Icons to the proposal builder by name. The other four are
+       still email-only shapes and still do not belong on paper. */
+    for (const k of ["article_card", "product_card", "email_footer", "hero"]) {
       assert.ok(!kinds.includes(k), `${k} leaked into the proposal builder`);
     }
+    assert.ok(kinds.includes("social_links"), "the offer file gives a proposal Social Icons");
   });
 });
 
