@@ -44,6 +44,7 @@ import { findNode, isContainer, nodeIdAt } from "./treeOps";
 import { extendSelection } from "./model";
 import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
+import { readEditedText } from "./editedText";
 import { AddBar, ADDBAR_CSS } from "./AddBar";
 import {
   FLASH_MS, sectionAtViewport, boxPlusPlacement, BOX_PLUS_SIZE,
@@ -873,11 +874,20 @@ function SectionHost({
 
   const draggingWidget = drag?.kind === "new" || drag?.kind === "move";
 
+  /**
+   * WHAT THE AUTHOR TYPED GOES BACK IN — in the case they typed it.
+   *
+   * `readEditedText` and never `el.innerText`: innerText is the RENDERING, so
+   * a run styled `text-transform: uppercase` — a property-plan row label, a
+   * pricing table's column heading — used to write its own capitals into the
+   * document the moment the caret left it, and the signed PDF printed them
+   * (found by driving it, 2026-09-18). editedText.ts is the one reader.
+   */
   const commit = useCallback((el: HTMLElement) => {
     const path = el.dataset.edit;
     const widgetEl = el.closest<HTMLElement>("[data-widget]");
     if (!path || !widgetEl?.dataset.widget) return;
-    const text = el.innerText.replace(/ /g, " ").replace(/\n{3,}/g, "\n\n").trimEnd();
+    const text = readEditedText(el).replace(/ /g, " ").replace(/\n{3,}/g, "\n\n").trimEnd();
     onEditText(section.id, widgetEl.dataset.widget, path, text, `${widgetEl.dataset.widget}:${path}`);
   }, [onEditText, section.id]);
 
@@ -891,7 +901,7 @@ function SectionHost({
    */
   const watchSlash = useCallback((el: HTMLElement) => {
     if (!onSlash) return;
-    const text = el.innerText.replace(/ /g, " ");
+    const text = readEditedText(el).replace(/ /g, " ");
     const widgetEl = el.closest<HTMLElement>("[data-widget]");
     if (!widgetEl?.dataset.widget || !el.dataset.edit) return;
     if (!text.startsWith("/")) { if (slash) onSlash(null); return; }

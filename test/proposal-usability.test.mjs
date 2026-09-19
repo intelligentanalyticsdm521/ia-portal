@@ -20,16 +20,15 @@ import { readFileSync } from "node:fs";
 
 import { deserialise, emptyDocument, makeSection, makeWidget, serialise, walkWidgets } from "../src/builder/model.ts";
 import { documentTotals } from "../src/builder/totals.ts";
-import { unfilledTokens } from "../src/builder/merge.ts";
 import { pricedOnOneBasis, templateByKey, withTotalBeforeSignature } from "../src/builder/templates.ts";
 import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import {
   basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
 } from "../src/components/oliver/ProposalCatalogPicker.tsx";
 import {
-  LEGACY_DETAILS_KEY, detailsMerge, documentLogo, packDetail, parseMoney, plainLabel,
-  readDetails, readLegacyDetails, reconcileDetails, tokensUsedBy, widgetForToken,
-  writeDetails,
+  LEGACY_DETAILS_KEY, blankTokens, blanksRefusal, detailsMerge, documentLogo, packDetail,
+  parseMoney, plainLabel, readDetails, readLegacyDetails, reconcileDetails, tokensUsedBy,
+  widgetForToken, writeDetails,
 } from "../src/builder/proposal/documentDetails.ts";
 
 
@@ -308,13 +307,10 @@ describe("D-03 · every blank the document carries is a field somewhere", () => 
       "a second carrier is still on a section's meta");
     assert.ok(!saved.sections.some((x) => x.visibility === "internal"),
       "the store is a section again");
-    // And it is never counted as a blank on the page.
-    const texts = [];
-    for (const x of saved.sections) {
-      if (x.visibility !== "customer") continue;
-      for (const c of x.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
-    }
-    assert.equal(unfilledTokens(texts, AUTO).length, 4);
+    // And it is never counted as a blank on the page. THE REAL GUARD, not a
+    // copy of its walk written out here: a test that re-implements the rule
+    // agrees with itself and not with the Send button (2026-09-18).
+    assert.equal(blankTokens(saved, AUTO).length, 4);
   });
 
   test("N-7 \u00b7 a document written the OLD way still opens with its values", () => {
@@ -365,11 +361,7 @@ describe("D-03 · every blank the document carries is a field somewhere", () => 
 
   test("filling everything in empties the blanks counter — the wanted output APPEARS", () => {
     const filled = { ...AUTO, snow_trigger: "2 inches", "contract.start_date": "1 November 2026", "contract.end_date": "31 March 2027", severe_event_threshold: "8 inches" };
-    const texts = [];
-    for (const s of agreementDoc().sections) {
-      for (const c of s.columns) for (const w of c.widgets) texts.push(JSON.stringify(w.props));
-    }
-    assert.deepEqual(unfilledTokens(texts, filled), []);
+    assert.deepEqual(blankTokens(agreementDoc(), filled), []);
   });
 
   test("a document nobody has typed a detail into is the document it always was", () => {
@@ -408,7 +400,7 @@ describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
 
   test("each problem is one plain sentence and knows where it lives", () => {
     assert.ok(BUILDER.includes("id: `blank:${token}`"));
-    assert.ok(BUILDER.includes("message: `${plainLabel(token, labels)} is still blank.`"));
+    assert.ok(BUILDER.includes("message: `${plainLabel(token, detailLabels)} is still blank.`"));
     assert.ok(BUILDER.includes("const at = widgetForToken(doc, token);"));
   });
 
@@ -418,9 +410,18 @@ describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
   });
 
   test("the refusal message names them in plain words too", () => {
-    assert.ok(BUILDER.includes("blanks.slice(0, 4).map((t) => plainLabel(t, labels))"));
-    assert.ok(BUILDER.includes("Type them into the Details boxes on the left"),
+    // EXECUTED, not grepped. The sentence has ONE writer now — the two Send
+    // buttons each carried their own copy of it, and a copy is where the two
+    // come to say different things about the same blank (2026-09-18).
+    const words = blanksRefusal(
+      ["snow_trigger", "contract.start_date"], { snow_trigger: "Trigger depth" });
+    assert.match(words, /Trigger depth/);
+    assert.match(words, /Service term starts/);
+    assert.ok(!/[{}_]/.test(words), `the refusal is not plain words: ${words}`);
+    assert.match(words, /Type them into the Details boxes on the left/,
       "the refusal still does not say where the fields are");
+    assert.equal((BUILDER.match(/blanksRefusal\(/g) || []).length, 2,
+      "a Send refusal is writing its own sentence again");
   });
 });
 

@@ -34,14 +34,13 @@ import {
   type BuilderDocument, type Section as BuilderSection, type Widget,
 } from "../model";
 import {
-  bindPlansToLocation, detailsMerge, detailsStartOpen, documentLogo, parseMoney,
-  plainLabel, readDetails, reconcileDetails, widgetForToken, writeDetails,
-  type DetailRow,
+  bindPlansToLocation, blankTokens, blanksRefusal, detailsMerge, detailsStartOpen,
+  documentLogo, parseMoney, plainLabel, readDetails, reconcileDetails, widgetForToken,
+  writeDetails, type DetailRow,
 } from "./documentDetails";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
 import { makeContext, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
-import { unfilledTokens, tagLabel } from "../merge";
 import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
 import {
@@ -695,16 +694,23 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     toWire(doc, { ...ctx, mode: "view", ...docMoney, fill: send ? "send" : "view" }),
     [ctx, doc, docMoney]);
 
-  const blanks = useMemo(() => {
-    const texts: string[] = [];
-    const walk = (v: unknown) => {
-      if (typeof v === "string") texts.push(v);
-      else if (Array.isArray(v)) v.forEach(walk);
-      else if (v && typeof v === "object") Object.values(v).forEach(walk);
-    };
-    for (const s of doc.sections) if (s.visibility === "customer") for (const c of s.columns) for (const w of c.widgets) walk(w.props);
-    return unfilledTokens(texts, ctx.merge);
-  }, [doc, ctx.merge]);
+  /**
+   * WHAT IS STILL BLANK — ONE RULE, at any depth (2026-09-18).
+   *
+   * `blankTokens` is the rule and `documentDetails.ts` is where it is written
+   * down. This used to be a hand-rolled walk over the top of each column, so a
+   * merge tag inside a BOX was invisible to Send: a snow agreement went out
+   * with both service-term dates empty, because the cover's key facts are a row
+   * container and the two term tags lived in it. The Details group walks the
+   * tree; the guard now walks the same one.
+   */
+  const blanks = useMemo(() => blankTokens(doc, ctx.merge), [doc, ctx.merge]);
+
+  /** Plain words for a token, as the Details group is showing them. ONE map,
+   *  read by the problems list and by both Send refusals. */
+  const detailLabels = useMemo(
+    () => Object.fromEntries(details.map((d) => [d.token, d.label])),
+    [details]);
 
   /**
    * WHAT IS STILL MISSING, in the engine's shape (A-1 / N-1).
@@ -715,17 +721,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    * else. Stream B's own chip row is DELETED: the problems list is what says
    * what is missing, and the Details boxes are where it is typed.
    */
-  const problems = useMemo<BuilderProblem[]>(() => {
-    const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
-    return blanks.map((token) => {
-      const at = widgetForToken(doc, token);
-      return {
-        id: `blank:${token}`,
-        message: `${plainLabel(token, labels)} is still blank.`,
-        ...(at ? { focus: at } : {}),
-      };
-    });
-  }, [blanks, details, doc]);
+  const problems = useMemo<BuilderProblem[]>(() => blanks.map((token) => {
+    const at = widgetForToken(doc, token);
+    return {
+      id: `blank:${token}`,
+      message: `${plainLabel(token, detailLabels)} is still blank.`,
+      ...(at ? { focus: at } : {}),
+    };
+  }), [blanks, detailLabels, doc]);
 
   /**
    * Save the document.
@@ -745,13 +748,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     if (!title.trim()) { refuse(anchor, "Give the document a title at the top first."); return; }
     if (send && !contactId) { refuse(anchor, "Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
     if (send && blanks.length) {
-      const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
-      const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
       // Assert the PRESENCE of the thing we want, not just the absence of an
       // error: a document sent with {{plow_rate}} on it is the failure. And
       // the names are PLAIN WORDS now — "snow_trigger" was two of the four
       // names a first-time user was shown and told to go and find (D-03).
-      refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
+      // ONE sentence, written down in documentDetails.ts, so the revision's
+      // Send below cannot refuse in different words.
+      refuse(anchor, blanksRefusal(blanks, detailLabels));
       return;
     }
     setSaved(null); setRefusal(null); setBusy(true);
@@ -831,9 +834,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       return;
     }
     if (send && blanks.length) {
-      const labels = Object.fromEntries(details.map((d) => [d.token, d.label]));
-      const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
-      refuse(anchor, `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}). Type them into the Details boxes on the left, or take them off the page, before sending.`);
+      refuse(anchor, blanksRefusal(blanks, detailLabels));
       return;
     }
     setSaved(null); setRefusal(null); setBusy(true);

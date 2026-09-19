@@ -28,6 +28,7 @@ import {
 } from "../src/builder/model.ts";
 import { documentTotals, lineTotals, siteTotals, money, PRICED_KINDS } from "../src/builder/totals.ts";
 import { fill, tokensIn, unfilledTokens, BUILTIN_TAGS } from "../src/builder/merge.ts";
+import { readEditedText } from "../src/builder/editedText.ts";
 import {
   renderDocument, renderSection, renderWidget, makeContext, RENDERED_KINDS,
   UNRENDERED_KINDS, esc,
@@ -381,6 +382,86 @@ describe("merge fields, against the fixture oliver-api runs too", () => {
 
   test("tokensIn finds each token once, in order", () => {
     assert.deepEqual(tokensIn("{{a}} {{b}} {{a}}"), ["a", "b"]);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Reading back a run the author edited (2026-09-18)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A run of text on a page, the way a browser behaves.
+ *
+ * `innerText` is the LAID-OUT text, so it applies whatever `text-transform` is
+ * in force: the class rule the stylesheet gave it (`.bx-plan-l`, `.bx-table
+ * th`), unless an inline value on the element itself says otherwise.
+ */
+function runEl(text, { inline, rule = "uppercase" } = {}) {
+  const style = inline === undefined ? {} : { textTransform: inline };
+  return {
+    style,
+    get innerText() {
+      const effective = style.textTransform || rule;
+      return effective === "none" ? text : text.toUpperCase();
+    },
+  };
+}
+
+describe("what the author typed is what the document stores", () => {
+  test("a run styled UPPERCASE reads back in the case it was typed in", () => {
+    // The defect, in one line: the property-plan row label in section 10 of
+    // the snow & ice agreement stored "AREAS WE PLOW" and the signed PDF
+    // printed it, because innerText is the rendering and not the document.
+    const el = runEl("Areas we plow");
+    assert.equal(el.innerText, "AREAS WE PLOW", "the fake is not behaving like a browser");
+    assert.equal(readEditedText(el), "Areas we plow");
+  });
+
+  test("the inline style it found is put back — an element with none keeps none", () => {
+    const el = runEl("Service");
+    readEditedText(el);
+    assert.ok(!el.style.textTransform,
+      `the read left an override behind: "${el.style.textTransform}"`);
+  });
+
+  test("…and an element that HAD an inline value gets that value back", () => {
+    const el = runEl("Service", { inline: "capitalize" });
+    assert.equal(readEditedText(el), "Service");
+    assert.equal(el.style.textTransform, "capitalize");
+  });
+
+  test("a run with no transform anywhere reads exactly as it always did", () => {
+    const el = runEl("Areas we plow", { rule: "" });
+    assert.equal(readEditedText(el), "Areas we plow");
+  });
+
+  test("a multi-line paragraph keeps its line breaks — this is not textContent", () => {
+    // `textContent` would have been one line of code and would have joined
+    // these two lines into one. The line breaks are why innerText is the read.
+    const el = runEl("First line\nSecond line", { rule: "" });
+    assert.equal(readEditedText(el), "First line\nSecond line");
+  });
+
+  test("an element with no style object at all is read, not thrown over", () => {
+    assert.equal(readEditedText({ innerText: "Areas we plow" }), "Areas we plow");
+    assert.equal(readEditedText(null), "");
+    assert.equal(readEditedText(undefined), "");
+  });
+
+  test("the style is restored even when the read itself throws", () => {
+    const style = { textTransform: "uppercase" };
+    const el = { style, get innerText() { throw new Error("detached"); } };
+    assert.throws(() => readEditedText(el), /detached/);
+    assert.equal(style.textTransform, "uppercase");
+  });
+
+  test("the CANVAS commits through it — there is no second reader", () => {
+    const canvas = readFileSync(
+      new URL("../src/builder/Canvas.tsx", import.meta.url), "utf8");
+    assert.ok(canvas.includes("readEditedText("),
+      "the canvas does not read an edited run through editedText.ts");
+    assert.ok(!/\binnerText\b/.test(canvas.replace(/^.*readEditedText.*$/gm, "")),
+      "something in the canvas still reads innerText directly");
   });
 });
 

@@ -32,7 +32,7 @@ import { fileURLToPath } from "node:url";
 import { CLIENT_NAMES } from "./client-names.mjs";
 import { deserialise, serialise, walkWidgets, sectionNumbers } from "../src/builder/model.ts";
 import { makeContext, renderDocument, RENDERED_KINDS } from "../src/builder/render.ts";
-import { tokensIn } from "../src/builder/merge.ts";
+import { tokensIn, BUILTIN_TAGS } from "../src/builder/merge.ts";
 import {
   SHIPPED_TEMPLATES, PREMADE_SECTIONS, templateByKey,
   PER_EVENT_AMOUNT, PER_EVENT_SENTENCE, pricedOnOneBasis, pricingBasisOf,
@@ -40,7 +40,8 @@ import {
 import { WIDGETS_BY_KIND } from "../src/builder/registry.ts";
 import { SAMPLE_MERGE } from "../src/builder/templateLibraryModel.ts";
 import {
-  bindPlansToLocation, detailsStartOpen, plainLabel, reconcileDetails, readDetails, tokensUsedBy,
+  bindPlansToLocation, blankTokens, blanksRefusal, detailsStartOpen, plainLabel,
+  reconcileDetails, readDetails, tokensUsedBy,
 } from "../src/builder/proposal/documentDetails.ts";
 import { priceLinePropsFromCatalogue, priceLineUnitNote } from "../src/builder/widgets/priceLine.ts";
 
@@ -323,6 +324,98 @@ describe("the blanks", () => {
       const label = plainLabel(token);
       assert.notEqual(label, token, `${token} has no plain words anywhere`);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   5b · Send refuses over ANY blank tag, at any depth (2026-09-18)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHAT WENT WRONG. An agreement was SENT with both service-term dates empty,
+ * and the cover printed two blank rules where the dates belong.
+ *
+ * The guard walked the top of each column — `for (section) for (column) for
+ * (widget)` — and the cover's four key facts are a ROW, which is a container.
+ * A container has children, not props, so the walk found no text in it and
+ * reported nothing missing. The two term tags are the only tags that live
+ * inside it, and they are BUILT-IN tags rather than a clause pack's, which is
+ * why the pack blanks were all caught and these two were not.
+ *
+ * ONE RULE NOW: a tag on the document that resolves to nothing is a blank,
+ * pack or built-in, at any depth. `blankTokens` is that rule and these tests
+ * execute it.
+ */
+describe("Send will not go with a blank on the page", () => {
+  /** Everything the page asks for EXCEPT the two service-term dates. */
+  const ALL_BUT_TERM = {
+    "customer.name": "Harborview Property Group",
+    "customer.legal_name": "Harborview Property Group LLC",
+    "customer.contact_name": "Dana Whitfield",
+    "property.name": "Harborview — North lot",
+    "property.address": "1400 Harbour Way, Riverton",
+    "business.name": "Northwind Lawn & Snow",
+    snow_trigger: "2 inches",
+    severe_event_threshold: "8 inches",
+    payment_terms: "30 days from the invoice date",
+    minimum_charge: "$175",
+  };
+  const TERM = { "contract.start_date": "1 November 2026", "contract.end_date": "31 March 2027" };
+
+  test("the term dates live inside a BOX — the walk the old guard never made", () => {
+    // Pinned as a SHAPE, because this is what made the defect invisible: take
+    // the container away and the old flat walk would have caught the dates.
+    const cover = doc().sections[0].columns[0].widgets;
+    const box = cover.find((n) => n.kind === "container");
+    assert.ok(box, "the cover's key facts are no longer a box — re-read this test");
+    const inside = JSON.stringify(box.children);
+    assert.ok(inside.includes("{{contract.start_date}}"), "the term is not in the box any more");
+    assert.ok(inside.includes("{{contract.end_date}}"));
+  });
+
+  test("with the term dates empty the guard NAMES them and the send is refused", () => {
+    const blanks = blankTokens(doc(), ALL_BUT_TERM);
+    assert.deepEqual(blanks, ["contract.start_date", "contract.end_date"]);
+    // `blanks.length` is what Send refuses on, so a non-empty list IS the
+    // refusal. And the words: plain, never a raw token.
+    const words = blanksRefusal(blanks);
+    assert.match(words, /Service term starts/);
+    assert.match(words, /Service term ends/);
+    assert.ok(!/contract\.|[{}_]/.test(words), `the refusal is not plain words: ${words}`);
+  });
+
+  test("filling the term dates in lets it go — the wanted output APPEARS", () => {
+    assert.deepEqual(blankTokens(doc(), { ...ALL_BUT_TERM, ...TERM }), []);
+  });
+
+  test("a pack blank and a built-in blank are the SAME rule, in one list", () => {
+    const { snow_trigger, ...noTrigger } = ALL_BUT_TERM;
+    assert.deepEqual(blankTokens(doc(), noTrigger),
+      ["contract.start_date", "contract.end_date", "snow_trigger"]);
+  });
+
+  test("a tag that is NOT on the document is never asked for", () => {
+    // Nothing filled at all: the list is still only what the page uses. A gate
+    // code and a valid-until date are perfectly good built-in tags, and this
+    // agreement does not mention either, so Send must not ask for them.
+    const blanks = blankTokens(doc(), {});
+    for (const absent of ["property.gate_code", "contract.valid_until", "signature_date", "business.phone"]) {
+      assert.ok(BUILTIN_TAGS.some((t) => t.token === absent), `${absent} is not a built-in any more`);
+      assert.ok(!blanks.includes(absent), `Send is asking for ${absent}, which is not on the page`);
+    }
+    assert.ok(blanks.includes("contract.start_date"), "the tags that ARE on the page went missing");
+  });
+
+  test("both Send buttons refuse in the SAME sentence", () => {
+    // One writer for the words. Two copies of this string is how a first
+    // draft and a revision come to say different things about the same blank.
+    const uses = BUILDER.match(/blanksRefusal\(/g) || [];
+    assert.equal(uses.length, 2, "a Send refusal is building its own sentence again");
+    assert.ok(!/still blank \(\$\{list\}\)/.test(BUILDER), "the sentence is written out inline again");
+  });
+
+  test("one blank reads as one, not as “1 details”", () => {
+    assert.match(blanksRefusal(["contract.start_date"]), /^1 detail is still blank/);
   });
 });
 

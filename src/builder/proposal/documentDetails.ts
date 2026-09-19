@@ -57,7 +57,7 @@
  */
 import { walkWidgets, type BuilderDocument, type Section } from "../model";
 import { patchNode } from "../treeOps";
-import { tokensIn, tagLabel, BUILTIN_TAGS } from "../merge";
+import { tokensIn, tagLabel, lookup, BUILTIN_TAGS, type MergeContext } from "../merge";
 
 /**
  * The key the values USED to live under, on `sections[0].meta`.
@@ -274,6 +274,53 @@ export function tokensUsedBy(doc: BuilderDocument): string[] {
 }
 
 /**
+ * THE ONE BLANK RULE — what Send refuses over (2026-09-18).
+ *
+ * **Any merge tag that is ON the document and resolves to nothing is a blank.**
+ * One rule, one list, whether the tag is a clause pack's own (`snow_trigger`)
+ * or one of the platform's built-ins (`contract.start_date`).
+ *
+ * ── THE DEFECT ────────────────────────────────────────────────────────────
+ * A commercial snow & ice agreement was SENT with both service-term dates
+ * empty, and the cover printed two blank rules where the dates belong. The
+ * guard it walked past read the top of each column only — `for (section) for
+ * (column) for (widget)` — and the cover's four key facts are a ROW, a
+ * container. A container has children, not props, so the walk looked at its
+ * (absent) props, found no text, and reported nothing missing. The two term
+ * tags were the only tags that lived inside it.
+ *
+ * The Details group had already been moved onto `walkWidgets` for exactly this
+ * reason, so the page offered boxes for two dates that Send never asked about:
+ * two answers to "what is still blank". There is one now — `tokensUsedBy` is
+ * the single walk, and the guard is a filter over it.
+ *
+ * A tag that is NOT on the document is never asked for: the list starts from
+ * what the page uses, so taking a paragraph off the page takes its blank with
+ * it, which is what the refusal's own words offer as the second way out.
+ */
+export function blankTokens(doc: BuilderDocument, merge: MergeContext): string[] {
+  return tokensUsedBy(doc).filter((token) => lookup(merge, token) == null);
+}
+
+/**
+ * The words Send refuses in — ONE sentence, and both buttons say it.
+ *
+ * A first draft and a revision each carried their own copy of this string, and
+ * a copy is a place the two can drift: the sentence names the blanks, says
+ * where the boxes are and offers the second way out, and a fix to one of those
+ * three in the wrong copy is a refusal that lies on one of the two buttons.
+ *
+ * Four names at most, so a document with eleven blanks refuses in a sentence a
+ * person reads rather than a list they scroll. PLAIN WORDS every time —
+ * "Service term starts", never `contract.start_date`.
+ */
+export function blanksRefusal(blanks: string[], labels: Record<string, string> = {}): string {
+  const list = blanks.slice(0, 4).map((t) => plainLabel(t, labels)).join(", ");
+  return `${blanks.length} detail${blanks.length === 1 ? " is" : "s are"} still blank (${list}).`
+    + " Type them into the Details boxes on the left, or take them off the page, before sending.";
+}
+
+/**
  * The Details group, reconciled against the document as it is NOW.
  *
  * · a token the page uses that nothing else fills gets a row (kept if it
@@ -439,6 +486,7 @@ export function parseMoney(v: unknown): number {
 
 export default {
   LEGACY_DETAILS_KEY, plainLabel, packDetail, readDetails, readLegacyDetails,
-  detailsMerge, writeDetails, tokensUsedBy, reconcileDetails, widgetForToken,
+  detailsMerge, writeDetails, tokensUsedBy, blankTokens, blanksRefusal,
+  reconcileDetails, widgetForToken,
   detailsStartOpen, bindPlansToLocation, documentLogo, parseMoney,
 };
