@@ -46,7 +46,7 @@ import { fill, tokensIn, unfilledTokens, lookup } from "../src/builder/merge.ts"
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, renderEmailWidget,
   makeEmailContext, checkEmailSafe, assertEmailSafe, altTextFor, contrastInk,
-  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
+  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_DRAWN_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
 } from "../src/builder/adapters/email/emailRender.ts";
 import {
   EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, emailTemplateByKey, startingEmail,
@@ -623,8 +623,13 @@ describe("the email builder never opens on a blank page", () => {
 
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
+    /* EMAIL_DRAWN_KINDS, not EMAIL_RENDERED_KINDS. The first is `emailRender.ts`
+       own hand-kept list; the second is that list PLUS every kind a family
+       declares a mailbox renderer for (b168/override item 5b), which is where
+       Book Now's inbox half lives. Reading the hand-kept list here would have
+       forced a family to edit a shared file to be allowed on a panel. */
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !EMAIL_DRAWN_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -645,10 +650,15 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        §11.13.3), `columns` (a Container set to row).
        ADDED AT INTEGRATION 2026-09-19: Icon, Icon Box, Image Box, Star Rating
        and Alert, because `emailRender.ts` now has a TABLE renderer for each —
-       the thing they were waiting on. HELD BACK still, for the same reason and
-       no other: Reviews and Book Now. */
+       the thing they were waiting on.
+       ADDED 2026-09-19, WAVE 2: **Book Now**. The offer file has listed it under
+       `newsletter.ia` since Brandon approved it at 12:58, and the only thing
+       holding it off the panel was that nothing drew it in an inbox.
+       `families/f8-contact-furniture` declares the mailbox half now, with three
+       golden cases of its own. HELD BACK still, for the same reason and no
+       other: Reviews. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
+      "alert", "article_card", "book_now", "button", "container", "divider", "email_footer", "grid",
       "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
       "product_card", "social_links", "spacer", "star_rating", "testimonial",
     ].sort());
@@ -670,10 +680,12 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     /* Icon, Icon Box, Image Box, Star Rating and Alert LEFT this list at
        integration on 2026-09-19: each has a table renderer in this file now,
        with its own golden case, so the rule "nothing a mailbox cannot draw" is
-       satisfied by drawing them rather than by hiding them. Reviews and Book
-       Now stay on it until they have one too. */
+       satisfied by drawing them rather than by hiding them. **Book Now LEFT
+       this list in wave 2, 2026-09-19**, for exactly the same reason: it has a
+       table renderer now (`families/f8-contact-furniture/bookNow.ts`, three
+       golden cases). Reviews stays on it until it has one too. */
     for (const kind of ["form", "signature", "price_line", "data_table", "gallery", "video",
-      "catalog_card", "reviews", "book_now"]) {
+      "catalog_card", "reviews"]) {
       const def = WIDGETS_BY_KIND[kind];
       if (!def) continue;
       assert.ok(!def.adapters.includes("email"), `${kind} is offered to the email builder`);

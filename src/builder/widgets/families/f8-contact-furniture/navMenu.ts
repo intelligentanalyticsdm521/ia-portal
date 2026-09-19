@@ -123,19 +123,42 @@ export function renderNavMenu(w: Widget, ctx: RenderContext): string {
   const padY = num(p.padding_vertical_menu_item, 8);
   const radius = num(p.border_radius_menu_item, 0);
   const toggleColour = str(p.toggle_color) || itemColour;
+  /* WAVE 2. Five Toggle Button and Dropdown settings were on the panel and
+     drew nothing, because the dropdown branch below was one hamburger and no
+     panel. Elementor's Dropdown section styles the OPEN list and its Toggle
+     Button section styles the button, so both are drawn: the author can see
+     what they are setting, which is the whole point of a canvas. */
+  const toggleSize = num(p.toggle_size, 18);
+  const toggleBg = str(p.toggle_background_color);
+  const dropInk = str(p.color_dropdown_item) || itemColour;
+  const dropBg = str(p.background_color_dropdown_item) || "#F8FAFC";
 
-  const burger = `<span class="bx-nav-toggle" aria-hidden="true" style="display:inline-flex;flex-direction:column;gap:3px;justify-content:center">
-    <span style="display:block;width:18px;height:2px;background:${esc(toggleColour)}"></span>
-    <span style="display:block;width:18px;height:2px;background:${esc(toggleColour)}"></span>
-    <span style="display:block;width:18px;height:2px;background:${esc(toggleColour)}"></span>
+  const burger = `<span class="bx-nav-toggle" aria-hidden="true" style="display:inline-flex;flex-direction:column;gap:3px;justify-content:center;padding:6px;border-radius:4px;${
+    toggleBg ? `background:${esc(toggleBg)};` : ""}">
+    <span style="display:block;width:${toggleSize}px;height:2px;background:${esc(toggleColour)}"></span>
+    <span style="display:block;width:${toggleSize}px;height:2px;background:${esc(toggleColour)}"></span>
+    <span style="display:block;width:${toggleSize}px;height:2px;background:${esc(toggleColour)}"></span>
   </span>`;
 
   /* Dropdown layout is the hamburger on every screen — Elementor's own
      behaviour for that value, and the reason it is a LAYOUT and not a
      breakpoint. */
   if (dropdownOnly) {
-    return `<nav class="bx-nav" style="display:flex;justify-content:${
-      str(p.toggle_align) === "left" ? "flex-start" : str(p.toggle_align) === "right" ? "flex-end" : "center"}">${burger}</nav>`;
+    /* Elementor's `toggle` is `burger` or nothing at all: choosing None takes
+       the button away, which on the dropdown layout leaves the list itself. */
+    const hasToggle = str(p.toggle) !== "" || p.toggle == null;
+    /* `text_align` is Elementor's Align own two values: `aside` puts the
+       dropdown's words against the edge, `center` puts them in the middle. */
+    const dropAlign = str(p.text_align) === "center" ? "center" : "left";
+    const dropRow = (label: string) => `<a href="#" class="bx-nav-d" style="display:block;`
+      + `padding:${padY}px ${padX}px;color:${esc(dropInk)};background:${esc(dropBg)};`
+      + `text-align:${dropAlign};text-decoration:none">${esc(label)}</a>`;
+    return `<nav class="bx-nav" style="display:flex;flex-direction:column;align-items:${
+      str(p.toggle_align) === "left" ? "flex-start" : str(p.toggle_align) === "right" ? "flex-end" : "center"}">
+      ${hasToggle ? burger : ""}
+      <div class="bx-nav-drop" style="width:100%;border-radius:${radius}px;overflow:hidden;margin-top:6px">${
+      SAMPLE.map(dropRow).join("")}</div>
+    </nav>`;
   }
 
   const justify = str(p.align_items) === "center" ? "center"
@@ -164,7 +187,7 @@ export const NAV_MENU_DEF: FamilyWidgetDef = {
   icon: "Menu",
   picture: pictureFrom(bar(6, 17, 12, 5) + bar(22, 17, 12, 5) + bar(38, 17, 8, 5)
     + box(50, 14, 10, 11)),
-  category: "General",
+  category: "Pro",
   builders: ["website"],
   tier: "pro",
   defaults: {

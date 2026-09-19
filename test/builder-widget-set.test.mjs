@@ -631,11 +631,34 @@ describe("every widget the panel offers draws something", () => {
     }
   });
 
-  test("the plugin's four say what they are on the canvas and nothing on the page", () => {
-    for (const kind of ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links"]) {
-      const doc = docOf([makeWidget(kind, {})]);
-      assert.ok(renderDocument(doc, makeContext(doc, { mode: "edit" })).includes("bx-plugin"), kind);
-      assert.equal(renderDocument(doc, ctx(doc)).includes("bx-plugin"), false, kind);
+  test("the plugin's four DRAW THEMSELVES now, on the canvas and on the page", () => {
+    /**
+     * THIS TEST INVERTED ON 2026-09-19 (b168/f8-contact-furniture-deep).
+     *
+     * It used to assert the opposite: that IA Mega Menu, IA Mobile Menu, IA
+     * OLIVER Invoice and IA Social Links drew a DASHED GREY BOX saying their
+     * own name while the page was being built, and NOTHING AT ALL on the
+     * published page. That was true, and it was the defect - four tiles with
+     * `defaults: {}` and `controls: []`, a panel with nothing in it, and a page
+     * with a hole where the widget should be.
+     *
+     * All four are real registered widgets of the IA WordPress plugin, and both
+     * 2026-09-17 scrapes carry their sections and keys. F8 wave 2 wrote the
+     * definition and the renderer from that registration, so each one now draws
+     * its own shape in the author's own colours, and the old `bx-plugin`
+     * placeholder is gone.
+     */
+    for (const [kind, props, marker] of [
+      ["ia_mega_menu", {}, "bx-mega"],
+      ["ia_mobile_menu", {}, "bx-mobilemenu"],
+      ["ia_oliver_invoice", {}, "bx-invoice"],
+      ["ia_social_links", { platforms: ["facebook"] }, "bx-social"],
+    ]) {
+      const doc = docOf([makeWidget(kind, props)]);
+      const live = renderDocument(doc, ctx(doc));
+      assert.ok(live.includes(marker), `${kind} draws nothing on a published page`);
+      assert.equal(live.includes("bx-plugin"), false,
+        `${kind} still draws the placeholder a visitor was never meant to see`);
     }
   });
 });

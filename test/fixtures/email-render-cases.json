@@ -1936,6 +1936,144 @@
       "text": "Facebook: https://facebook.com/x\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
+      "name": "book now",
+      "kind": "book_now",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "book_now",
+                    "props": {
+                      "text": "Book a visit",
+                      "link": "https://example.test/book"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td align=\"left\" style=\"padding:4px 0\"><a href=\"https://example.test/book\" style=\"display:inline-block;background:#0C4A60;color:#ffffff;padding:10px 18px;border-radius:6px;font-size:13px;text-decoration:none\">Book a visit</a></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Book a visit\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "book now, styled",
+      "kind": "book_now",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "book_now",
+                    "props": {
+                      "text": "Book a visit",
+                      "link": "https://example.test/book",
+                      "size": "lg",
+                      "align": "center",
+                      "background_color": "#0C4A60",
+                      "button_text_color": "#ffffff",
+                      "border_radius": 12
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td align=\"center\" style=\"padding:4px 0\"><a href=\"https://example.test/book\" style=\"display:inline-block;background:#0C4A60;color:#ffffff;padding:14px 28px;border-radius:12px;font-size:16px;text-decoration:none\">Book a visit</a></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Book a visit\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "book now, saved before D-168",
+      "kind": "book_now",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "book_now",
+                    "props": {
+                      "label": "Book now",
+                      "url": "https://example.test/book",
+                      "align": "right"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td align=\"right\" style=\"padding:4px 0\"><a href=\"https://example.test/book\" style=\"display:inline-block;background:#0C4A60;color:#ffffff;padding:10px 18px;border-radius:6px;font-size:13px;text-decoration:none\">Book now</a></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "Book now\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
       "name": "two columns side by side",
       "kind": "columns",
       "doc": {

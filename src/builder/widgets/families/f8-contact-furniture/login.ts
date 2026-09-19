@@ -56,6 +56,11 @@ const ALIGN = [
 
 const PAD: Record<string, number> = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20 };
 
+/** …and the BUTTON's own padding per size, which is a different control. */
+const BUTTON_PAD: Record<string, string> = {
+  xs: "6px 12px", sm: "9px 16px", md: "11px 20px", lg: "13px 26px", xl: "16px 34px",
+};
+
 /** Where the button sits, from Elementor's four alignment values. */
 function justify(align: string): string {
   if (align === "center") return "center";
@@ -82,6 +87,10 @@ export function renderLogin(w: Widget, ctx: RenderContext): string {
   const linksColour = str(p.links_color) || ctx.accent;
   const buttonBg = str(p.button_background_color) || ctx.accent;
   const buttonText = str(p.button_text_color) || "#ffffff";
+  /* WAVE 2. Size and Border Color were on the panel and drew nothing: the
+     button took one padding whatever Size said, and the colour was stored and
+     never read. Both are Elementor's own keys and both now move the page. */
+  const buttonBorder = str(p.button_border_color);
 
   const boxStyle =
     `display:block;width:100%;box-sizing:border-box;border:1px solid ${esc(fieldBorder)};`
@@ -107,7 +116,9 @@ export function renderLogin(w: Widget, ctx: RenderContext): string {
     ${on(p.show_lost_password) || p.show_lost_password == null
       ? `<a class="bx-login-l" href="#" style="font-size:12px;color:${esc(linksColour)}">Lost your password?</a>`
       : ""}
-    <style>.bx-login .bx-login-b{background:${esc(buttonBg)};color:${esc(buttonText)};${
+    <style>.bx-login .bx-login-b{background:${esc(buttonBg)};color:${esc(buttonText)};padding:${
+    esc(BUTTON_PAD[str(p.button_size) || "sm"] ?? BUTTON_PAD.sm)};${
+    buttonBorder ? `border:1px solid ${esc(buttonBorder)};` : ""}${
     align === "stretch" ? "width:100%;text-align:center;" : ""}}</style>
   </div>`;
 }
@@ -119,7 +130,7 @@ export const LOGIN_DEF: FamilyWidgetDef = {
   icon: "LogIn",
   picture: pictureFrom(box(10, 6, 44, 9) + box(10, 19, 44, 9)
     + `<rect x="10" y="32" width="18" height="6" rx="3" fill="#94A3B8" stroke="none"/>` + bar(34, 33, 20, 4)),
-  category: "General",
+  category: "Pro",
   /**
    * WEBSITE ONLY, and the offer file lists landing too. Why it is short.
    *

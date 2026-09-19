@@ -207,6 +207,19 @@ const emailCases = [
   widgetCase("the Elementor spelling reaches the kind we store", "social_icons", {
     links: [{ label: "Facebook", url: "https://facebook.com/x" }], align: "Centre",
   }),
+  /* BOOK NOW — new on the newsletter panel on 2026-09-19. The offer file lists
+     it under `newsletter.ia` and it had no mailbox renderer at all, so the tile
+     could not be offered; f8-contact-furniture wave 2 wrote one. Three cases:
+     the plainest, one with the Style tab set, and one holding the words a page
+     saved before today stored under `label` and `url`. */
+  widgetCase("book now", "book_now", { text: "Book a visit", link: "https://example.test/book" }),
+  widgetCase("book now, styled", "book_now", {
+    text: "Book a visit", link: "https://example.test/book", size: "lg", align: "center",
+    background_color: "#0C4A60", button_text_color: "#ffffff", border_radius: 12,
+  }),
+  widgetCase("book now, saved before D-168", "book_now", {
+    label: "Book now", url: "https://example.test/book", align: "right",
+  }),
 ];
 
 /** Two columns, which is the one thing a widget case cannot show. */

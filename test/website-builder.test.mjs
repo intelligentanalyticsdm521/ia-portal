@@ -154,11 +154,21 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  test("the pane opens with Elementor's groups, in Elementor's order", () => {
+    /* FIVE, not four, from 2026-09-19. b168/override added Elementor Pro's own
+       **Pro** group, because thirty-seven pro-elements widgets had nowhere to
+       go and sat in General behind a padlock — a difference a person sees the
+       second our panel is beside the real one. F8 wave 2 put Form, Login and
+       WordPress Menu in it, which is where the real editor draws all three.
+       A group with nothing offered for THIS builder is still not drawn, which
+       is why a proposal panel has no Pro group and never will. */
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
+    assert.deepEqual(
+      groups.find((g) => g.group === "Pro").widgets.map((w) => w.label),
+      ["Form", "Login", "WordPress Menu"]);
   });
 
   test("the twelve whole-page sections are understood and never offered", () => {
