@@ -249,15 +249,21 @@ export const RENDERED_KINDS = [
   ...ATOM_KINDS,
   // …and the box that holds them, which the engine draws itself.
   "container",
+  /* 11.13.2 (D-165) — the three widgets that fill from the database. They are
+     DRAWN, and drawn by `ctx.extra` (see the `own` branch below), because only
+     the proposal adapter has the customer, the site and the business in its
+     hand. They are on this list because the list answers "does something draw
+     this?", and something does: the hook this file declares. The renderer is
+     `proposal/recordWidgets.ts renderRecordBlock`. */
+  "customer", "service_location", "business_info",
 ] as const;
 
 /**
  * Widget kinds that are deliberately NOT drawn.
  *
- * `columns` is an ACTION, not a thing on the page: choosing it sets the
- * section's column count and the section toolbar owns it from then on. It is
- * listed here so the "offered but not rendered" test can tell a deliberate
- * omission from a forgotten one.
+ * A tile is an ACTION, not a thing on the page. It is listed here so the
+ * "offered but not rendered" test can tell a deliberate omission from a
+ * forgotten one.
  */
 export const UNRENDERED_KINDS = [
   /* `grid` is a LAYOUT PRESET, not a node type (§11.13.1: "columns are a
@@ -266,6 +272,10 @@ export const UNRENDERED_KINDS = [
      a grid layout before anything is stored, so no document ever holds one and
      there is nothing here to draw. A test asserts that. */
   "grid",
+  /* 11.13.2 (D-165) — the three TILES. Pressing one opens a picker and drops
+     an atomic widget; neither `product_cards`, `product_line_items` nor
+     `terms` is ever on a page or in a stored document, so nothing draws one. */
+  "product_cards", "product_line_items", "terms",
 ] as const;
 
 /* ══════════════════════════════════════════════════════════════════════════

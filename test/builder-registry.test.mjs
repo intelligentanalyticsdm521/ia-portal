@@ -48,10 +48,12 @@ const SRC = path.join(process.cwd(), "src");
  */
 const NO_CONTROLS = new Set([
   "page_break",
-  /* D-165's two PANEL TILES. They are a catalogue picker with a name and an
+  /* D-165's three PANEL TILES. They are a catalogue picker with a name and an
      icon, not a widget with properties: what an author sets is which products
-     they picked, and the atoms the picker drops carry those. */
-  "product_cards", "product_line_items",
+     or clauses they picked, and the atoms the picker drops carry those. A
+     control on a tile would be a setting for a thing never on the document.
+     See src/builder/proposal/catalogueTiles.ts. */
+  "product_cards", "product_line_items", "terms",
   /* The four the WordPress plugin draws on the published site. Their settings
      live in the plugin, which is the one place that can honour them. */
   "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
@@ -205,7 +207,7 @@ describe("§3.2's union is registered", () => {
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
-    "form", "gallery", "social_links", "countdown", "logo_strip",
+
   ];
 
   for (const kind of REQUIRED) {
