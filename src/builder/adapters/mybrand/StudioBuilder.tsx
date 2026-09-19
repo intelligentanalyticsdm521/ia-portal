@@ -53,14 +53,17 @@ import { TemplateGallery, type SavedTemplate } from "./TemplateGallery";
 import { insertWidget, chartLayer, brandSwatches, type StudioBrand } from "./insert";
 import { buildPremade, PREMADE_BY_KEY } from "./templates";
 import {
-  addLayers, addLayersBehind, alignLayer, brandSync, duplicateLayer, emptyCanvas,
-  exportFilename, fixTextContrast, patchLayer, removeLayer, reorderLayer,
-  setBackgroundColor, smartResize, toggleLayerVisibility, uid, SIZE_PRESETS,
-  resolveBrandTokens,
+  addLayers, addLayersBehind, alignLayers, brandSync, clampCanvasSide, copyStyleOf,
+  distributeLayers, duplicateLayer, emptyCanvas, expandSelection, exportFilename,
+  fixTextContrast, groupLayers, moveLayersToEdge, moveLayerToIndex, nudgeLayers,
+  pasteStyle, patchLayer, removeLayer, reorderLayer, setBackgroundColor, smartResize,
+  tidyUp, toggleLayerVisibility, uid, ungroupLayers, MAX_CANVAS_SIDE, MIN_CANVAS_SIDE,
+  SIZE_PRESETS, resolveBrandTokens,
   ICON_PATHS as ICON_PATHS_LIST,
-  type CanvasDoc, type DesignDto, type ExportResult, type ImageLayer, type Layer,
-  type TemplateDto,
+  type CanvasDoc, type CopiedStyle, type DesignDto, type ExportResult, type ImageLayer,
+  type Layer, type TemplateDto,
 } from "./scene";
+import { StructureWindow } from "./StructureWindow";
 import { imagePdfFromPngDataUrl, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
@@ -121,7 +124,14 @@ export function StudioBuilder(p: StudioBuilderProps) {
   /* ── The scene, and ONE history over it ──────────────────────────────── */
   const [doc, setDoc] = useState<CanvasDoc>(() => emptyCanvas());
   const [history, setHistory] = useState<History<CanvasDoc>>(() => initHistory(emptyCanvas()));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  /**
+   * THE SELECTION IS A LIST (G-01), and it lives here rather than in the
+   * canvas: the Structure window, the inspector and Fabric all have to agree
+   * on it, and the only way three surfaces agree is if none of them owns it.
+   */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const selectOne = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
 
   /**
    * THE HISTORY, in a ref as well as in state — D-18 and D-40, one cause.
@@ -155,7 +165,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const replaceScene = useCallback((next: CanvasDoc, select: string | null = null) => {
     setHist(initHistory(next));
     setDoc(next);
-    setSelectedId(select);
+    selectOne(select);
   }, [setHist]);
 
   const doUndo = useCallback(() => {
@@ -244,7 +254,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     const result = insertWidget(kind, doc, brand, opts);
     if (!result.layers.length) return;
     apply(result.behind ? addLayersBehind(doc, result.layers) : addLayers(doc, result.layers));
-    setSelectedId(result.selectId);
+    selectOne(result.selectId);
   }, [apply, brand, doc]);
 
   const onInsert = useCallback((def: WidgetDef, count?: number) => {
@@ -356,16 +366,82 @@ export function StudioBuilder(p: StudioBuilderProps) {
     apply(patchLayer(doc, id, patch));
   }, [apply, doc]);
 
-  const deleteLayer = useCallback((id: string) => {
-    apply(removeLayer(doc, id));
-    if (selectedId === id) setSelectedId(null);
-  }, [apply, doc, selectedId]);
-
   const duplicate = useCallback((id: string) => {
     const r = duplicateLayer(doc, id);
     apply(r.doc);
-    if (r.id) setSelectedId(r.id);
+    if (r.id) selectOne(r.id);
+  }, [apply, doc, selectOne]);
+
+  /* ── Selecting more than one thing (G-01) ────────────────────────────── */
+
+  /**
+   * THE ONE PLACE A SELECTION IS DECIDED.
+   *
+   * Every surface that can change it — the canvas, the Structure window, a
+   * keyboard shortcut — comes through here, and here is where a group becomes
+   * the whole group. Doing that in the canvas would leave the Structure window
+   * showing half a group selected; doing it in both would be two rules to keep
+   * in step.
+   */
+  const changeSelection = useCallback((ids: string[]) => {
+    setSelectedIds(expandSelection(doc, ids));
+  }, [doc]);
+
+  /** A row in the Structure window: plain click, Ctrl-click, Shift-click. */
+  const selectFromStructure = useCallback((id: string, mode: "replace" | "additive" | "range") => {
+    if (mode === "replace") { changeSelection([id]); return; }
+    if (mode === "additive") {
+      const next = selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
+      changeSelection(next);
+      return;
+    }
+    // Range: everything between the last thing picked and this one, in stack
+    // order — which is what a person means by Shift-click in a list.
+    const order = doc.layers.map((l) => l.id);
+    const anchor = selectedIds.length ? order.indexOf(selectedIds[selectedIds.length - 1]) : -1;
+    const here = order.indexOf(id);
+    if (anchor < 0 || here < 0) { changeSelection([id]); return; }
+    const [lo, hi] = anchor <= here ? [anchor, here] : [here, anchor];
+    changeSelection(order.slice(lo, hi + 1));
+  }, [changeSelection, doc.layers, selectedIds]);
+
+  const selectedLayers = useMemo(
+    () => doc.layers.filter((l) => selectedIds.includes(l.id)),
+    [doc.layers, selectedIds],
+  );
+
+  /** Several boxes moved as one drag — ONE undo step, not one per member. */
+  const onManyGeometry = useCallback((patches: Array<{ id: string; patch: Partial<Layer> }>) => {
+    let next = doc;
+    for (const { id, patch } of patches) next = patchLayer(next, id, patch);
+    apply(next);
   }, [apply, doc]);
+
+  const deleteLayers = useCallback((ids: string[]) => {
+    let next = doc;
+    for (const id of ids) next = removeLayer(next, id);
+    apply(next);
+    setSelectedIds((cur) => cur.filter((id) => !ids.includes(id)));
+  }, [apply, doc]);
+
+  const doGroup = useCallback((ids: string[]) => {
+    const r = groupLayers(doc, ids);
+    if (!r.groupId) return;
+    apply(r.doc);
+  }, [apply, doc]);
+
+  /* ── Copy the look (G-13) ────────────────────────────────────────────── */
+  const [copiedStyle, setCopiedStyle] = useState<CopiedStyle | null>(null);
+  const copyStyle = useCallback((id: string) => {
+    setCopiedStyle(copyStyleOf(doc.layers.find((l) => l.id === id) || null));
+  }, [doc.layers]);
+  const applyCopiedStyle = useCallback((ids: string[]) => {
+    if (!copiedStyle) return;
+    apply(pasteStyle(doc, ids, copiedStyle));
+  }, [apply, copiedStyle, doc]);
+
+  /* ── The floating Structure window (G-19, §11.13.1) ──────────────────── */
+  const [structureOpen, setStructureOpen] = useState(false);
 
   /* ── Pictures ────────────────────────────────────────────────────────── */
   const placeAsset = useCallback((asset: PickerAsset) => {
@@ -382,7 +458,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       rotation: 0, visible: true,
     };
     apply(addLayers(doc, [layer]));
-    setSelectedId(layer.id);
+    selectOne(layer.id);
     setLibraryOpen(false);
   }, [apply, doc]);
 
@@ -454,7 +530,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       const r = insertWidget("heading", doc, brand);
       const layers = r.layers.map((l) => (l.kind === "text" ? { ...l, content: textValue } : l));
       apply(addLayers(doc, layers as Layer[]));
-      setSelectedId(r.selectId);
+      selectOne(r.selectId);
     }
     setAiOptions([]); setAiPrompt("");
   }, [apply, brand, doc, selected]);
@@ -620,14 +696,41 @@ export function StudioBuilder(p: StudioBuilderProps) {
         duplicate(selectedId);
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedId) {
+      // Ctrl+I opens Structure — §11.13.1 names that key for every builder.
+      if (mod && e.key.toLowerCase() === "i") {
+        if (typing) return;
         e.preventDefault();
-        deleteLayer(selectedId);
+        setStructureOpen((v) => !v);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "g") {
+        if (typing || !selectedIds.length) return;
+        e.preventDefault();
+        if (e.shiftKey) apply(ungroupLayers(doc, selectedIds));
+        else doGroup(selectedIds);
+        return;
+      }
+      // Arrow-key nudge: one pixel, ten with Shift, the same as every design
+      // tool. Not wired before, and it is what "move it two pixels left"
+      // actually needs — a drag cannot do two pixels.
+      if (!typing && !mod && selectedIds.length &&
+          (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        // One undo step per burst of taps on the same arrow, not one per tap.
+        apply(nudgeLayers(doc, selectedIds, dx, dy), `nudge:${selectedIds.join(",")}`);
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedIds.length) {
+        e.preventDefault();
+        deleteLayers(selectedIds);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayer, selectedId]);
+  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayers, doGroup, apply, doc, selectedId, selectedIds]);
 
   const errorMessage = saveError ? `Could not save: ${saveError}`
     : exportError ? `Could not export: ${exportError}`
@@ -757,7 +860,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 onOpenGallery={() => setGalleryOpen(true)}
                 onUpload={() => fileInputRef.current?.click()}
                 onLibrary={() => setLibraryOpen(true)}
-                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); setSelectedId(l.id); }}
+                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); selectOne(l.id); }}
                 ai={{
                   prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
                   setPrompt: setAiPrompt, write: () => void aiWrite(), generate: () => void aiGenerate(), apply: aiApply,
@@ -772,13 +875,21 @@ export function StudioBuilder(p: StudioBuilderProps) {
             doc={doc}
             brand={brand}
             selected={selected}
-            onSelect={setSelectedId}
+            selectedLayers={selectedLayers}
             onUpdate={updateLayer}
-            onDelete={deleteLayer}
+            onDelete={deleteLayers}
             onDuplicate={duplicate}
             onReorder={(id, d) => apply(reorderLayer(doc, id, d))}
+            onToEdge={(ids, edge) => apply(moveLayersToEdge(doc, ids, edge))}
             onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
-            onAlign={(id, which) => apply(alignLayer(doc, id, which))}
+            onAlign={(ids, which) => apply(alignLayers(doc, ids, which))}
+            onDistribute={(ids, axis) => apply(distributeLayers(doc, ids, axis))}
+            onTidy={(ids) => apply(tidyUp(doc, ids))}
+            onGroup={doGroup}
+            onUngroup={(ids) => apply(ungroupLayers(doc, ids))}
+            onCopyStyle={copyStyle}
+            onPasteStyle={applyCopiedStyle}
+            copiedStyleKind={copiedStyle?.kind ?? null}
             onFixContrast={(id) => apply(fixTextContrast(doc, id))}
             onSetBackground={(c) => apply(setBackgroundColor(doc, c))}
             onBrandSync={() => apply(brandSync(doc, brandSwatches(brand).map((s) => s.colour)))}
@@ -805,18 +916,48 @@ export function StudioBuilder(p: StudioBuilderProps) {
             <PixelCanvas
               ref={canvasRef}
               doc={doc}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedIds={selectedIds}
+              onSelect={changeSelection}
               onLayerGeometry={onGeometry}
+              onManyGeometry={onManyGeometry}
+              overlay={
+                <StructureWindow
+                  open={structureOpen}
+                  onClose={() => setStructureOpen(false)}
+                  layers={doc.layers}
+                  selectedIds={selectedIds}
+                  onSelect={selectFromStructure}
+                  onMove={(id, toIndex) => apply(moveLayerToIndex(doc, id, toIndex))}
+                  onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
+                  onToggleLock={(id) => {
+                    const l = doc.layers.find((x) => x.id === id);
+                    if (l) apply(patchLayer(doc, id, { locked: l.locked !== true }));
+                  }}
+                />
+              }
               toolbar={
                 <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 shadow-sm">
                   <button
                     type="button"
-                    onClick={() => setResizeOpen(true)}
-                    title="Resize this design for another platform — everything re-anchors itself"
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                    data-structure-toggle
+                    onClick={() => setStructureOpen((v) => !v)}
+                    title="Structure — the list of everything on this design, as a window you can drag out of the way (⌘/Ctrl+I)"
+                    className={"inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold hover:bg-slate-100 " +
+                      (structureOpen ? "bg-slate-100 text-slate-900" : "text-slate-700")}
                   >
-                    <Scaling className="h-3 w-3" /> Resize
+                    <Layers className="h-3 w-3" /> Structure
+                  </button>
+                  <div className="h-4 w-px bg-slate-200" />
+                  <button
+                    type="button"
+                    onClick={hasProTools ? () => setResizeOpen(true) : undefined}
+                    disabled={!hasProTools}
+                    title={hasProTools
+                      ? "Resize this design for another platform, or a size of your own — everything re-anchors itself"
+                      : "Resizing a finished design is a Pro feature"}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    <Scaling className="h-3 w-3" /> Resize{!hasProTools && " · Pro+"}
                   </button>
                   <div className="h-4 w-px bg-slate-200" />
                   <button
@@ -911,17 +1052,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
         <IadmModal
           open onClose={() => setResizeOpen(false)} product="spark"
           eyebrow="MY BRAND · DESIGN STUDIO" title="Resize this design"
-          subtitle={hasProTools
-            ? "Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
-            : "Resizing a finished design is a Pro feature."}
+          subtitle="Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
           size="nav"
         >
-          <div className="p-5">
-            {!hasProTools && (
-              <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
-                Upgrade to Pro to resize one design for every platform in a click.
-              </div>
-            )}
+          <div className="max-h-[60vh] overflow-y-auto p-5">
             <div className="grid grid-cols-2 gap-2">
               {SIZE_PRESETS.map((s) => {
                 const activeSize = doc.width === s.w && doc.height === s.h;
@@ -929,13 +1063,12 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   <button
                     key={s.key}
                     type="button"
-                    disabled={!hasProTools || activeSize}
+                    disabled={activeSize}
                     title={activeSize ? "This is the size you are on" : `Resize to ${s.label}, ${s.w}×${s.h}`}
                     onClick={() => { apply(smartResize(doc, s.w, s.h)); setResizeOpen(false); }}
                     className={`flex items-center justify-between rounded-lg border-2 px-3 py-2 text-left text-xs transition-colors ${
                       activeSize ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
-                        : hasProTools ? "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-                          : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
                     }`}
                   >
                     <span className="font-semibold">{s.label}</span>
@@ -944,6 +1077,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 );
               })}
             </div>
+            <CustomSize
+              width={doc.width}
+              height={doc.height}
+              onApply={(w, h) => { apply(smartResize(doc, w, h)); setResizeOpen(false); }}
+            />
           </div>
         </IadmModal>
       )}
@@ -1095,6 +1233,85 @@ function StudioPaneHeader({ onOpenGallery, onUpload, onLibrary, onChart, ai }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A size of your own (G-11).
+ *
+ * The ratio lock is the whole reason this is not two boxes: the common job is
+ * "the same poster, but A3", and typing one number and having the other follow
+ * is what keeps a design from being squashed by a typo. The sides are clamped
+ * to what the SERVER will render — an export refuses over 6000 px a side, and
+ * a design authored at 8000 would be a design that can never be downloaded.
+ */
+function CustomSize({ width, height, onApply }: {
+  width: number; height: number; onApply: (w: number, h: number) => void;
+}) {
+  const [w, setW] = useState(String(width));
+  const [h, setH] = useState(String(height));
+  const [lock, setLock] = useState(false);
+  const ratio = height > 0 ? width / height : 1;
+  const cw = clampCanvasSide(w);
+  const ch = clampCanvasSide(h);
+  const unchanged = cw === width && ch === height;
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">A size of your own</div>
+      <div className="flex items-end gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Wide
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={w}
+            title={`How wide, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom width in pixels"
+            data-custom-width
+            onChange={(e) => {
+              setW(e.target.value);
+              if (lock) setH(String(clampCanvasSide(Number(e.target.value) / (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Tall
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={h}
+            title={`How tall, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom height in pixels"
+            data-custom-height
+            onChange={(e) => {
+              setH(e.target.value);
+              if (lock) setW(String(clampCanvasSide(Number(e.target.value) * (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+          title="Keep the same shape — change one side and the other follows"
+        >
+          <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
+          Keep the shape
+        </label>
+        <button
+          type="button"
+          disabled={unchanged}
+          onClick={() => onApply(cw, ch)}
+          title={unchanged ? "That is the size you are already on" : `Resize to ${cw}×${ch}`}
+          className="ml-auto rounded bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          Resize
+        </button>
+      </div>
+      {(cw !== Number(w) || ch !== Number(h)) && (
+        <div className="mt-1.5 text-[10px] text-amber-700">
+          Sides are kept between {MIN_CANVAS_SIDE} and {MAX_CANVAS_SIDE} pixels — that is the biggest picture we can render for you.
+        </div>
+      )}
     </div>
   );
 }

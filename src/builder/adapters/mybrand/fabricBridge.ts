@@ -17,10 +17,11 @@
  */
 import * as fabric from "fabric";
 import {
-  DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, iconToSvg, chartToSvg,
+  DEFAULT_FONTS, GRADIENT_COORDS, ICON_PATHS, iconToSvg, chartToSvg, textLayerSvg,
   type ChartLayer, type GradientSpec, type ImageLayer, type Layer,
   type ShapeLayer, type TextLayer,
 } from "./scene";
+import { applyCase, dashArray, dashLineCap } from "./textEffects";
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 
 /** Only ever reached by a scene that carries no colour of its own. */
@@ -126,14 +127,38 @@ export function layerToFabricObject(
   if (layer.kind === "text") {
     const t = layer as TextLayer;
     const size = t.size || 24;
+    // Echo, Splice, Neon and Curve need more painted copies than a Fabric
+    // object has, or glyphs on an arc that no text object draws. Those four
+    // come back as the SAME SVG the exporter writes (scene.textLayerSvg), so
+    // the canvas and the download are one drawing. Everything else stays a
+    // real Textbox, and stays editable in place.
+    const svgText = textLayerSvg(t);
+    if (svgText) {
+      const placeholder = new fabric.Rect({
+        ...baseProps, width: t.w, height: svgText.h,
+        fill: "transparent", stroke: "#CBD5E1", strokeWidth: 1, strokeDashArray: [4, 3],
+      });
+      const dataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgText.svg)}`;
+      fabric.FabricImage.fromURL(dataUrl).then((img) => {
+        if (!img) return;
+        img.set({ ...baseProps });
+        img.scaleX = svgText.w / (img.width || 1);
+        img.scaleY = svgText.h / (img.height || 1);
+        swapPlaceholder(placeholder, img, onSwap);
+      }).catch(() => { /* the dashed placeholder stays, so the layer is still there to click */ });
+      return placeholder;
+    }
     // Textbox (not IText): wraps at the layer width like the export's
     // soft-wrap, so long copy never silently runs off the canvas.
-    const itext = new fabric.Textbox(t.content || "", {
+    const itext = new fabric.Textbox(applyCase(t.content || "", t.textCase), {
       ...baseProps,
       width: t.w,
       fontSize: size,
       fontFamily: t.font || DEFAULT_FONTS[0],
       fontWeight: t.weight || "400",
+      fontStyle: t.italic ? "italic" : "normal",
+      underline: t.underline === true,
+      linethrough: t.strike === true,
       textAlign: t.align || "left",
       lineHeight: t.lineHeight || 1.2,
       // Fabric charSpacing is in 1/1000 em; our model stores px.
@@ -291,6 +316,13 @@ export function layerToFabricObject(
     const fill = s.fill && s.fill !== "none" ? s.fill : "transparent";
     const stroke = s.stroke && s.stroke !== "none" ? s.stroke : undefined;
     const strokeWidth = s.strokeWidth ?? 0;
+    // Dashed and dotted rules (G-05). The cap travels WITH the array — a
+    // zero-length dash only draws a dot under a round cap, and paints nothing
+    // at all without one, so the two are never set apart.
+    const dashProps = {
+      strokeDashArray: dashArray(s.dash, strokeWidth || 1),
+      strokeLineCap: dashLineCap(s.dash),
+    };
     if (s.shape === "icon") {
       // Same SVG the server emits, swapped in as an image — guarantees the
       // editor and export show the identical glyph.
@@ -324,6 +356,7 @@ export function layerToFabricObject(
         fill: s.gradient ? fabricGradient(s.gradient) : fill,
         stroke,
         strokeWidth,
+        ...dashProps,
       });
     }
     if (s.shape === "ellipse") {
@@ -338,6 +371,7 @@ export function layerToFabricObject(
         fill: s.gradient ? fabricGradient(s.gradient) : fill,
         stroke,
         strokeWidth,
+        ...dashProps,
       });
     }
     if (s.shape === "line") {
@@ -346,6 +380,7 @@ export function layerToFabricObject(
         {
           stroke: stroke || FALLBACK.primary,
           strokeWidth: strokeWidth || 2,
+          ...dashProps,
           selectable: true,
           opacity: layer.opacity ?? 1,
           visible: layer.visible !== false,

@@ -77,9 +77,13 @@ export function pdfPageSize(doc: Pick<CanvasDoc, "width" | "height">): PdfPageSi
     widthPt: round2(inW * PT_PER_INCH),
     heightPt: round2(inH * PT_PER_INCH),
     dpi: Math.round(w / inW),
+    // Shown to a person, so the inches are rounded to two places: A4 is 210 ×
+    // 297 MILLIMETRES and its true inch figures run to four, which on a menu
+    // reads as a mistake rather than as precision. The PAGE is still cut from
+    // the full figures above — only the sentence is rounded.
     label: physical
-      ? `${trim(inW)} × ${trim(inH)} in (${physical.label})`
-      : `${trim(inW)} × ${trim(inH)} in`,
+      ? `${trim(round2(inW))} × ${trim(round2(inH))} in (${physical.label})`
+      : `${trim(round2(inW))} × ${trim(round2(inH))} in`,
   };
 }
 

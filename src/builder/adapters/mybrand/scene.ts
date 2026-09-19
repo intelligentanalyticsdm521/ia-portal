@@ -25,6 +25,11 @@
  */
 
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
+import {
+  applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved, isNarrowFamily,
+  needsSvgText, straightTextSvg, wrapLines,
+  type StrokeStyle, type TextCase, type TextEffect,
+} from "./textEffects";
 
 /**
  * The ONE neutral, borrowed — never a second literal.
@@ -51,6 +56,22 @@ export interface BaseLayer {
   flipV?: boolean;
   /** Locked layers render but can't be selected/moved on the canvas. */
   locked?: boolean;
+  /**
+   * GROUPING, as a tag rather than a container (G-01).
+   *
+   * Canva's Group makes several things move, rotate and scale as one. The
+   * obvious model is a `group` LAYER holding children — and it is the wrong
+   * one here, because every painter (Fabric, LUMEN's SVG exporter, the PDF, the
+   * gallery thumbnail) would need to learn a recursive scene, and a stored
+   * design that a painter does not understand is a design that opens blank.
+   *
+   * A shared tag gets the whole behaviour with no new shape: selecting one
+   * member selects the tag, Fabric's own ActiveSelection moves the set, and
+   * EVERY EXISTING PAINTER IGNORES THE FIELD, which is exactly right — a group
+   * changes how a design is EDITED, never how it is drawn. Ungroup clears the
+   * tag. Nothing is nested, so nothing can be nested wrongly.
+   */
+  groupId?: string;
 }
 
 export interface TextLayer extends BaseLayer {
@@ -66,8 +87,30 @@ export interface TextLayer extends BaseLayer {
   shadow?: boolean;
   /** Outline color (behind-stroke); absent/none = no outline. */
   outline?: string;
-  /** "lift" = soft blurred shadow; "hollow" = stroke-only type. */
-  effect?: "lift" | "hollow";
+  /**
+   * Canva's Effects panel. "lift" and "hollow" predate the rest and are
+   * unchanged; "echo", "splice" and "neon" arrived with G-04. Every painter
+   * asks textEffects.ts what each one means, so the three of them cannot drift.
+   */
+  effect?: TextEffect;
+  /** Echo / Splice / Neon's second colour. Falls back to the text colour. */
+  effectColor?: string;
+  /** Italic, underline and strikethrough — Canva's other three type buttons. */
+  italic?: boolean;
+  underline?: boolean;
+  strike?: boolean;
+  /**
+   * UPPERCASE / lowercase / Title Case as a DISPLAY transform. The layer keeps
+   * the author's own words, so turning it off gives them back exactly as typed.
+   */
+  textCase?: TextCase;
+  /**
+   * Canva's Curve, as the bulge in canvas pixels: how far the middle of the
+   * line bows away from its baseline. Positive is a rainbow, negative a bowl,
+   * absent or under a pixel is a straight line. Never a radius — a radius is
+   * the number the maths wants and the bulge is the one a person can see.
+   */
+  curve?: number;
 }
 
 export interface ImageFilters {
@@ -136,6 +179,12 @@ export interface ShapeLayer extends BaseLayer {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  /**
+   * Solid, dashed or dotted. Reference designs 9 and 10 both need it — a
+   * dashed ring around a circle frame and three dotted fill-in rules — and a
+   * stroke control that can only draw one kind of line is the control lying.
+   */
+  dash?: StrokeStyle;
   /** rect only — corner radius in canvas px. */
   radius?: number;
   /** icon only — key into ICON_PATHS (validated server-side by key). */
@@ -219,8 +268,93 @@ function iconToSvg(layer: ShapeLayer): string {
       `<stop offset="0" stop-color="${layer.gradient.from}"/><stop offset="1" stop-color="${layer.gradient.to}"/></linearGradient></defs>`;
     fill = "url(#g)";
   }
+  // The dash array is in the icon's own 100×100 space, so it stays the same
+  // pattern whatever size the symbol is dragged to.
+  const dash = dashArray(layer.dash, ((layer.strokeWidth || 1) / Math.max(1, layer.w)) * 100);
+  const dashAttrs = dash.length
+    ? ` stroke-dasharray="${dash.join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
+    : "";
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" viewBox="0 0 100 100">${defs}` +
-    `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${layer.strokeWidth || 0}" /></svg>`;
+    `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${layer.strokeWidth || 0}"${dashAttrs} /></svg>`;
+}
+
+/**
+ * A text layer that Fabric cannot paint, as the SAME SVG the exporter writes.
+ *
+ * Echo, Splice and Neon need more than one painted copy of the words, and a
+ * Fabric object has exactly one shadow. Curve needs each glyph placed and
+ * rotated on an arc, which no text object anywhere does. So those four become
+ * a picture — drawn from textEffects.ts, which is also what LUMEN's emitter
+ * reads, so the canvas and the download are the same drawing rather than two
+ * drawings that agree today.
+ *
+ * The returned `h` is the height the words actually NEED, not the layer's own
+ * `h`: a text layer's height has always been nominal (Fabric's Textbox
+ * auto-grows) and an SVG rendered at a shorter box would clip the last line
+ * off silently, which is the worst possible failure for a design tool.
+ */
+export function textLayerSvg(layer: TextLayer): { svg: string; w: number; h: number } | null {
+  if (!needsSvgText(layer)) return null;
+  const size = Math.max(1, layer.size || 24);
+  const w = Math.max(1, layer.w);
+  const font = familyOf(layer.font || DEFAULT_FONTS[0]);
+  const weight = layer.weight || "400";
+  const content = applyCase(layer.content || "", layer.textCase);
+  const effectInput = {
+    effect: layer.effect ?? null,
+    shadow: layer.shadow === true,
+    outline: layer.outline ?? null,
+    size,
+    colour: layer.color || "#111827",
+    effectColour: layer.effectColor ?? null,
+  };
+  if (isCurved(layer.curve)) {
+    const bulge = Number(layer.curve);
+    const boxH = Math.max(size * 1.6, layer.h, Math.abs(bulge) + size * 1.6);
+    const svg = curvedTextSvg({
+      text: content,
+      cx: w / 2,
+      // A rainbow's middle is its highest point and its ends drop by the bulge;
+      // a bowl is the other way up. Anchoring each at the edge it grows away
+      // from is what keeps the whole arc inside the picture.
+      y: bulge > 0 ? size * 1.05 : boxH - size * 0.35,
+      span: w * 0.92,
+      bulge,
+      size,
+      letterSpacing: layer.letterSpacing || 0,
+      narrow: isNarrowFamily(layer.font),
+      font,
+      weight,
+      italic: layer.italic === true,
+      boxW: w,
+      boxH,
+      effectInput,
+    });
+    return svg ? { svg, w, h: Math.round(boxH) } : null;
+  }
+  const lines = wrapLines(content, w, size, weight);
+  const lineHeight = layer.lineHeight || 1.2;
+  const align = layer.align === "center" ? "middle" : layer.align === "right" ? "end" : "start";
+  const anchorX = align === "middle" ? w / 2 : align === "end" ? w : 0;
+  const boxH = Math.max(1, Math.round(size * 1.05 + (lines.length - 1) * size * lineHeight + size * 0.4));
+  const svg = straightTextSvg({
+    lines,
+    anchorX,
+    firstBaselineY: size,
+    align,
+    size,
+    lineHeight,
+    letterSpacing: layer.letterSpacing || 0,
+    font,
+    weight,
+    italic: layer.italic === true,
+    underline: layer.underline === true,
+    strike: layer.strike === true,
+    boxW: w,
+    boxH,
+    effectInput,
+  });
+  return { svg, w, h: boxH };
 }
 
 // Canva-style text presets — sized for a 1080 canvas; addTextLayer scales
@@ -333,6 +467,15 @@ export const SIZE_PRESETS = [
   { key: "flyer",         label: "Flyer (Letter)",   w: 1275, h: 1650 },
   { key: "business_card", label: "Business card",    w: 1050, h: 600 },
   { key: "email_header",  label: "Email header",     w: 1200, h: 400 },
+  // G-11. Four of the ten reference designs are sizes the list did not carry:
+  // a 16:9 presentation slide, a YouTube thumbnail, a landscape Letter gift
+  // certificate and the 4:5 portrait post every social planner asks for.
+  { key: "ig_portrait",   label: "Instagram portrait", w: 1080, h: 1350 },
+  { key: "slide_16_9",    label: "Presentation slide", w: 1920, h: 1080 },
+  { key: "thumbnail",     label: "Video thumbnail",    w: 1280, h: 720 },
+  { key: "letter_land",   label: "Letter, landscape",  w: 1650, h: 1275 },
+  { key: "a4_portrait",   label: "A4 portrait",        w: 1240, h: 1754 },
+  { key: "a4_landscape",  label: "A4 landscape",       w: 1754, h: 1240 },
 ] as const;
 
 export type SizePresetKey = (typeof SIZE_PRESETS)[number]["key"];
@@ -352,7 +495,27 @@ export type SizePresetKey = (typeof SIZE_PRESETS)[number]["key"];
 export const PRINT_INCHES: Partial<Record<SizePresetKey, { inches: readonly [number, number]; label: string }>> = {
   flyer:         { inches: [8.5, 11], label: "Letter" },
   business_card: { inches: [3.5, 2],  label: "Business card" },
+  letter_land:   { inches: [11, 8.5], label: "Letter, landscape" },
+  // A4 is 210 × 297 MILLIMETRES, so its inches are not round numbers and the
+  // pixels cannot be an exact whole-dpi multiple of them. The full figures are
+  // here because the PDF page is cut from them; the menu rounds them.
+  a4_portrait:   { inches: [8.2677, 11.6929], label: "A4" },
+  a4_landscape:  { inches: [11.6929, 8.2677], label: "A4, landscape" },
 };
+
+/**
+ * A custom size a person typed. The Resize dialog refuses anything the SERVER
+ * would refuse — `templateStudio.js` caps an export at 6000 px a side — so a
+ * design cannot be authored at a size that can never be downloaded.
+ */
+export const MAX_CANVAS_SIDE = 6000;
+export const MIN_CANVAS_SIDE = 40;
+
+export function clampCanvasSide(value: unknown): number {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return MIN_CANVAS_SIDE;
+  return Math.min(MAX_CANVAS_SIDE, Math.max(MIN_CANVAS_SIDE, n));
+}
 
 const EDGE_ZONE = 0.18; // a layer whose center sits in the outer 18% is edge-anchored
 
@@ -559,6 +722,279 @@ export function alignLayer(
   return patchLayer(doc, id, { y: Math.round(doc.height - l.h) });
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   Arranging more than one thing — G-01
+   ══════════════════════════════════════════════════════════════════════════
+
+   Canva's Arrange panel, as pure functions over an ID LIST. Three of the ten
+   reference designs are impossible without them: a rotated sticker made of a
+   ring and a word, two display lines that must turn as one, and a medallion of
+   three parts.
+
+   Every one of these takes `ids` and not a single id, and every one returns a
+   new scene. The editor holds the selection; the scene holds the grouping tag.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export interface Box { x: number; y: number; w: number; h: number }
+
+/** The one rectangle that contains all of them. Null when nothing matches. */
+export function boundsOf(doc: CanvasDoc, ids: string[]): Box | null {
+  const picked = doc.layers.filter((l) => ids.includes(l.id));
+  if (!picked.length) return null;
+  const x1 = Math.min(...picked.map((l) => l.x));
+  const y1 = Math.min(...picked.map((l) => l.y));
+  const x2 = Math.max(...picked.map((l) => l.x + l.w));
+  const y2 = Math.max(...picked.map((l) => l.y + l.h));
+  return { x: x1, y: y1, w: x2 - x1, h: y2 - y1 };
+}
+
+/**
+ * Clicking ONE member of a group selects the whole group — that is what makes
+ * a group a group. Locked layers are dropped: a lock has to mean "this cannot
+ * move", including when something it was grouped with moves.
+ */
+export function expandSelection(doc: CanvasDoc, ids: string[]): string[] {
+  const wanted = new Set(ids);
+  const groups = new Set(
+    doc.layers.filter((l) => wanted.has(l.id) && l.groupId).map((l) => l.groupId as string),
+  );
+  const out: string[] = [];
+  for (const l of doc.layers) {
+    if (l.locked === true) continue;
+    if (wanted.has(l.id) || (l.groupId && groups.has(l.groupId))) out.push(l.id);
+  }
+  return out;
+}
+
+/** Ctrl+G. Two or more layers gain one shared tag; fewer is not a group. */
+export function groupLayers(doc: CanvasDoc, ids: string[]): { doc: CanvasDoc; groupId: string | null } {
+  const picked = doc.layers.filter((l) => ids.includes(l.id));
+  if (picked.length < 2) return { doc, groupId: null };
+  const groupId = uid("group");
+  return {
+    doc: { ...doc, layers: doc.layers.map((l) => (ids.includes(l.id) ? { ...l, groupId } : l)) },
+    groupId,
+  };
+}
+
+/** Ctrl+Shift+G. The tag goes; nothing else about the layers changes. */
+export function ungroupLayers(doc: CanvasDoc, ids: string[]): CanvasDoc {
+  const groups = new Set(doc.layers.filter((l) => ids.includes(l.id) && l.groupId).map((l) => l.groupId));
+  if (!groups.size) return doc;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      if (!l.groupId || !groups.has(l.groupId)) return l;
+      const next = { ...l };
+      delete next.groupId;
+      return next;
+    }),
+  };
+}
+
+/**
+ * Align. ONE thing lines up with the page (that is `alignLayer`); TWO OR MORE
+ * line up with each other, inside the box they already occupy — which is what
+ * Canva does and what an author means by "line these up".
+ */
+export function alignLayers(
+  doc: CanvasDoc,
+  ids: string[],
+  which: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom",
+): CanvasDoc {
+  if (ids.length <= 1) return ids.length === 1 ? alignLayer(doc, ids[0], which) : doc;
+  const box = boundsOf(doc, ids);
+  if (!box) return doc;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      if (!ids.includes(l.id)) return l;
+      if (which === "left") return { ...l, x: Math.round(box.x) };
+      if (which === "hcenter") return { ...l, x: Math.round(box.x + (box.w - l.w) / 2) };
+      if (which === "right") return { ...l, x: Math.round(box.x + box.w - l.w) };
+      if (which === "top") return { ...l, y: Math.round(box.y) };
+      if (which === "vcenter") return { ...l, y: Math.round(box.y + (box.h - l.h) / 2) };
+      return { ...l, y: Math.round(box.y + box.h - l.h) };
+    }),
+  };
+}
+
+/**
+ * Distribute — equal SPACE between the outer two, which is the honest reading
+ * of "space them evenly". Distributing by centre leaves a wide item looking
+ * crowded; distributing by gap does not. Three or more, or there is nothing
+ * between the ends to space.
+ */
+export function distributeLayers(doc: CanvasDoc, ids: string[], axis: "h" | "v"): CanvasDoc {
+  const picked = doc.layers.filter((l) => ids.includes(l.id));
+  if (picked.length < 3) return doc;
+  const sorted = [...picked].sort((a, b) => (axis === "h" ? a.x - b.x : a.y - b.y));
+  const start = axis === "h" ? sorted[0].x : sorted[0].y;
+  const last = sorted[sorted.length - 1];
+  const end = axis === "h" ? last.x + last.w : last.y + last.h;
+  const used = sorted.reduce((sum, l) => sum + (axis === "h" ? l.w : l.h), 0);
+  const gap = (end - start - used) / (sorted.length - 1);
+  const at = new Map<string, number>();
+  let cursor = start;
+  for (const l of sorted) {
+    at.set(l.id, Math.round(cursor));
+    cursor += (axis === "h" ? l.w : l.h) + gap;
+  }
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      const pos = at.get(l.id);
+      if (pos == null) return l;
+      return axis === "h" ? { ...l, x: pos } : { ...l, y: pos };
+    }),
+  };
+}
+
+/**
+ * Tidy up. Canva's one-click "make this look deliberate": pick the axis the
+ * things are already strung along, give them one even gap, and line them up on
+ * the other axis. The gap is the MEDIAN of the gaps already there, so a tidy
+ * keeps the spacing the author was aiming for instead of imposing one.
+ */
+export function tidyUp(doc: CanvasDoc, ids: string[]): CanvasDoc {
+  const picked = doc.layers.filter((l) => ids.includes(l.id));
+  if (picked.length < 2) return doc;
+  const spanX = Math.max(...picked.map((l) => l.x + l.w)) - Math.min(...picked.map((l) => l.x));
+  const spanY = Math.max(...picked.map((l) => l.y + l.h)) - Math.min(...picked.map((l) => l.y));
+  const axis: "h" | "v" = spanX >= spanY ? "h" : "v";
+  const sorted = [...picked].sort((a, b) => (axis === "h" ? a.x - b.x : a.y - b.y));
+  const gaps: number[] = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    gaps.push(axis === "h" ? cur.x - (prev.x + prev.w) : cur.y - (prev.y + prev.h));
+  }
+  const ordered = [...gaps].sort((a, b) => a - b);
+  const median = ordered.length % 2
+    ? ordered[(ordered.length - 1) / 2]
+    : (ordered[ordered.length / 2 - 1] + ordered[ordered.length / 2]) / 2;
+  const gap = Math.round(Math.max(0, median));
+  // Centre everything on the axis it is NOT strung along.
+  const centres = picked.map((l) => (axis === "h" ? l.y + l.h / 2 : l.x + l.w / 2));
+  const centre = centres.reduce((a, b) => a + b, 0) / centres.length;
+  const at = new Map<string, { x: number; y: number }>();
+  let cursor = axis === "h" ? sorted[0].x : sorted[0].y;
+  for (const l of sorted) {
+    at.set(l.id, axis === "h"
+      ? { x: Math.round(cursor), y: Math.round(centre - l.h / 2) }
+      : { x: Math.round(centre - l.w / 2), y: Math.round(cursor) });
+    cursor += (axis === "h" ? l.w : l.h) + gap;
+  }
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      const pos = at.get(l.id);
+      return pos ? { ...l, x: pos.x, y: pos.y } : l;
+    }),
+  };
+}
+
+/** Arrow keys. One pixel, or ten with Shift — the same as every design tool. */
+export function nudgeLayers(doc: CanvasDoc, ids: string[], dx: number, dy: number): CanvasDoc {
+  if (!ids.length || (dx === 0 && dy === 0)) return doc;
+  return {
+    ...doc,
+    layers: doc.layers.map((l) =>
+      ids.includes(l.id) && l.locked !== true
+        ? { ...l, x: Math.round(l.x + dx), y: Math.round(l.y + dy) }
+        : l),
+  };
+}
+
+/**
+ * To front / to back, in one move rather than the N presses of "one step up"
+ * the panel offered. Relative order inside the moved set is kept.
+ */
+export function moveLayersToEdge(doc: CanvasDoc, ids: string[], edge: "front" | "back"): CanvasDoc {
+  const moving = doc.layers.filter((l) => ids.includes(l.id));
+  if (!moving.length || moving.length === doc.layers.length) return doc;
+  const rest = doc.layers.filter((l) => !ids.includes(l.id));
+  return { ...doc, layers: edge === "front" ? [...rest, ...moving] : [...moving, ...rest] };
+}
+
+/** Drop a layer at an exact index — what dragging a row in Structure means. */
+export function moveLayerToIndex(doc: CanvasDoc, id: string, index: number): CanvasDoc {
+  const from = doc.layers.findIndex((l) => l.id === id);
+  if (from === -1) return doc;
+  const to = Math.min(doc.layers.length - 1, Math.max(0, Math.round(index)));
+  if (to === from) return doc;
+  const next = [...doc.layers];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved);
+  return { ...doc, layers: next };
+}
+
+/**
+ * Copy style / format painter (G-13).
+ *
+ * The LOOK and nothing else: never the words, never the picture, never the
+ * position. A paste that moved things would be a paste nobody could undo in
+ * their head — which is the whole reason the field list is explicit here
+ * rather than "everything except x, y, w, h".
+ */
+export const TEXT_STYLE_FIELDS = [
+  "font", "size", "color", "weight", "align", "lineHeight", "letterSpacing",
+  "shadow", "outline", "effect", "effectColor", "italic", "underline", "strike",
+  "textCase", "curve",
+] as const;
+
+export const SHAPE_STYLE_FIELDS = ["fill", "stroke", "strokeWidth", "dash", "radius", "gradient"] as const;
+
+export const IMAGE_STYLE_FIELDS = ["filters", "mask"] as const;
+
+export type CopiedStyle = { kind: Layer["kind"]; style: Record<string, unknown> };
+
+function fieldsFor(kind: Layer["kind"]): readonly string[] {
+  if (kind === "text") return TEXT_STYLE_FIELDS;
+  if (kind === "shape") return SHAPE_STYLE_FIELDS;
+  if (kind === "image") return IMAGE_STYLE_FIELDS;
+  return [];
+}
+
+export function copyStyleOf(layer: Layer | null | undefined): CopiedStyle | null {
+  if (!layer) return null;
+  const fields = fieldsFor(layer.kind);
+  if (!fields.length) return null;
+  const style: Record<string, unknown> = {};
+  const any = layer as unknown as Record<string, unknown>;
+  for (const f of fields) if (any[f] !== undefined) style[f] = JSON.parse(JSON.stringify(any[f]));
+  style.opacity = layer.opacity ?? 1;
+  return { kind: layer.kind, style };
+}
+
+/**
+ * Paste onto every layer of the SAME kind in the selection, and say nothing
+ * about the others rather than half-applying: a text style on a photo is not a
+ * smaller version of itself, it is a different thing.
+ */
+export function pasteStyle(doc: CanvasDoc, ids: string[], copied: CopiedStyle | null): CanvasDoc {
+  if (!copied || !ids.length) return doc;
+  const fields = fieldsFor(copied.kind);
+  return {
+    ...doc,
+    layers: doc.layers.map((l) => {
+      if (!ids.includes(l.id) || l.kind !== copied.kind) return l;
+      const next = { ...l } as Layer & Record<string, unknown>;
+      for (const f of fields) {
+        if (copied.style[f] === undefined) delete next[f];
+        else next[f] = JSON.parse(JSON.stringify(copied.style[f]));
+      }
+      next.opacity = copied.style.opacity as number;
+      return next as Layer;
+    }),
+  };
+}
+
+/** What a text layer actually READS as, once its case toggle is applied. */
+export function displayText(layer: TextLayer): string {
+  return applyCase(layer.content || "", layer.textCase);
+}
+
 /**
  * Brand Sync — remap every colour in the scene to the nearest brand swatch.
  *
@@ -579,7 +1015,7 @@ export function brandSync(doc: CanvasDoc, swatches: string[]): CanvasDoc {
       : remap(doc.background_color) ?? doc.background_color,
     layers: doc.layers.map((l) => {
       const next = { ...l } as Layer & Record<string, unknown>;
-      for (const key of ["fill", "stroke", "color", "outline"]) {
+      for (const key of ["fill", "stroke", "color", "outline", "effectColor"]) {
         if (typeof next[key] === "string") next[key] = remap(next[key] as string);
       }
       const g = (next as Record<string, unknown>).gradient as GradientSpec | undefined;
@@ -739,7 +1175,7 @@ export function resolveBrandTokens(
   }
   for (const layer of Array.isArray(out.layers) ? out.layers : []) {
     const any = layer as unknown as Record<string, unknown>;
-    for (const key of ["fill", "stroke", "color", "outline"]) {
+    for (const key of ["fill", "stroke", "color", "outline", "effectColor"]) {
       if (any[key] != null) any[key] = one(any[key]);
     }
     const g = any.gradient as { from?: string; to?: string } | undefined;
