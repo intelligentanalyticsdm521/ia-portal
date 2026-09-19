@@ -17,16 +17,54 @@
  * think something is missing, write it in the handoff; do not build it.
  * test/builder-offers.test.mjs fails the build on an extra tile.
  *
- * -- HOW TO ADD ONE --------------------------------------------------------
- *   1. f5-sliders-reviews/<widget>.ts exports <WIDGET>_DEF: FamilyWidgetDef and
- *      render<Widget>(w, ctx): string.
- *   2. import both here; the def goes in `defs`, the renderer in `renderers`
- *      under the def's own `kind`.
- *   3. npm test -- test/families-f5-sliders-reviews.test.mjs
+ * -- WHAT IS HERE, AND WHAT IS NOT -----------------------------------------
+ * Six of the family's eight, in the order plan section C.3 asks for (cheapest
+ * first): Testimonial, Reviews, IA Reviews, Testimonial Carousel, Slides,
+ * Media Carousel.
+ *
+ * TWO ARE DELIBERATELY ABSENT, and each for a reason the seam enforces rather
+ * than a preference. Both are written up in D168_HANDOFF_2026-09-19.md:
+ *
+ *   `nested-carousel` (Carousel)  its slides are real CONTAINERS -
+ *     `carousel_items` is a `nested-elements-repeater` and the published node
+ *     carries `elements: [container, ...]`. An arion emitter row is
+ *     `settings(props, ctx)` and returns SETTINGS; there is no way through this
+ *     seam to publish a widget with children, and our own tree only allows
+ *     children on `container`. Offering the tile would publish a carousel of
+ *     empty boxes on a live website, which is the green-toast-over-a-blank-page
+ *     failure. It needs the box family's tree, not a workaround here.
+ *
+ *   `loop-carousel`  every slide is drawn by a saved LOOP TEMPLATE
+ *     (`template_id`) over a post QUERY (39 query keys). The template library
+ *     and the query block are F7's, and without a template the widget publishes
+ *     a carousel with nothing in it.
  */
-import { EMPTY_FAMILY, type Family } from "../types";
+import type { Family } from "../types";
+import { MEDIA_CAROUSEL_DEF, renderMediaCarousel } from "./mediaCarousel";
+import { IA_REVIEWS_DEF, REVIEWS_DEF, renderIaReviews, renderReviews } from "./reviews";
+import { SLIDES_DEF, renderSlides } from "./slides";
+import { TESTIMONIAL_CAROUSEL_DEF, renderTestimonialCarousel } from "./testimonialCarousel";
+import { TESTIMONIAL_DEF, renderTestimonial } from "./testimonial";
 
 export const FAMILY: Family = {
-  defs: [...EMPTY_FAMILY.defs],
-  renderers: { ...EMPTY_FAMILY.renderers },
+  /* Elementor's own registration order inside a group, then ours last - which
+     is how `families/index.ts` says the panel reads. */
+  defs: [
+    TESTIMONIAL_DEF,
+    REVIEWS_DEF,
+    TESTIMONIAL_CAROUSEL_DEF,
+    SLIDES_DEF,
+    MEDIA_CAROUSEL_DEF,
+    IA_REVIEWS_DEF,
+  ],
+  renderers: {
+    testimonial: renderTestimonial,
+    reviews: renderReviews,
+    testimonial_carousel: renderTestimonialCarousel,
+    slides: renderSlides,
+    media_carousel: renderMediaCarousel,
+    ia_reviews: renderIaReviews,
+  },
 };
+
+export { MEDIA_CAROUSEL_DEF, IA_REVIEWS_DEF, REVIEWS_DEF, SLIDES_DEF, TESTIMONIAL_CAROUSEL_DEF, TESTIMONIAL_DEF };

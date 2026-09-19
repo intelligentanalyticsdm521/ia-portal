@@ -51,7 +51,9 @@ import {
 } from "../../render";
 /* The ENGINE's own renderer, for a standard widget this file has no page
    renderer for yet. One fallback, in one place — see the `default` branch. */
-import { renderAtom } from "../../widgets";
+import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — the ten families, asked beside the atoms. One import. */
+import { renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
@@ -212,7 +214,10 @@ export const LANDING_RENDERED_KINDS = [
      LANDING_KIND_ALIASES above, and a slug that is both an alias and a kind is
      two answers for one widget. A test says so. */
   "shortcode",
-  "service_location", "customer",
+  "service_location", "customer",
+  /* B-168 F5 — sliders and reviews, drawn by the family through the default
+     branch above. No script on the page: every strip is a scroll-snap box. */
+  "testimonial_carousel", "slides", "media_carousel", "ia_reviews",
   "product_cards", "ia_posts", "reviews", "book_now",
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
   /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
@@ -295,6 +300,8 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
            rest — a landing page is real HTML with a stylesheet, so the
            engine's CSS is honest here in a way it is not in a mailbox.
            Nothing the panel offers is silently blank. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

@@ -48,6 +48,11 @@ import {
   SITE_PAGE_TEMPLATES, SITE_PREMADE, SITE_PREMADE_TAGS, withCount, repeatFieldFor, blankRow,
 } from "../src/builder/adapters/website/siteTemplates.ts";
 import { makeContext, RENDERED_KINDS, UNRENDERED_KINDS } from "../src/builder/render.ts";
+/* B-168 section C.1 - the OTHER place a kind is drawn from. render.ts asks
+   renderFamily before its own switch, so a family's kinds really are drawn
+   even though RENDERED_KINDS, which no family agent may open, cannot list
+   them. Widened, not weakened: a kind in NEITHER place still fails. */
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { addSection, duplicateSection, moveSection, removeSection, makeWidget } from "../src/builder/model.ts";
 
 const FIXTURE = JSON.parse(
@@ -364,6 +369,7 @@ describe("the canvas draws the page, not a form", () => {
   test("every widget the website pane offers is actually drawn", () => {
     const drawn = new Set([
       ...RENDERED_KINDS, ...SITE_RENDERED_KINDS, ...UNRENDERED_KINDS, ...SITE_UNRENDERED_KINDS,
+      ...FAMILY_RENDERED_KINDS,
     ]);
     for (const w of allWidgetsFor("website")) {
       assert.ok(drawn.has(w.kind), `${w.kind} is offered and nothing draws it`);

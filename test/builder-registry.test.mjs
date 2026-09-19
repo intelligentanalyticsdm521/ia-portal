@@ -196,6 +196,10 @@ describe("§3.2's union is registered", () => {
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "customer", "service_location", "business_info", "clauses", "signature", "page_break",
     "ia_posts", "reviews", "book_now",
+    /* B-168 F5 - the sliders family. Every one is in the offer file Brandon
+       approved on 2026-09-19 (D-168): Slides, Media Carousel and Testimonial
+       Carousel in the page builders' Pro column, IA Reviews in their IA one. */
+    "testimonial_carousel", "slides", "media_carousel", "ia_reviews",
     "ia_form", "newsletter_signup", "hours_location",
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
     // The studio's placed objects (§5 step 5). Not one of §11.13.3's four

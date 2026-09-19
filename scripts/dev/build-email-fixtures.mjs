@@ -165,6 +165,15 @@ const emailCases = [
   widgetCase("social links, from the business", "social_links", { links: [], align: "Centre" }),
   widgetCase("countdown shows the date", "countdown", { ends_at: "1 November 2026" }),
   widgetCase("review", "testimonial", { quote: "They were out before we opened.", attribution: "Hope Ministries", rating: 5 }),
+  /* B-168 F5 - IA Reviews in a mailbox: stacked, never a carousel, because a
+     mailbox cannot swipe. Both spellings of the list are read; this case uses
+     the page engine own key. */
+  widgetCase("the business reviews", "ia_reviews", {
+    slides: [
+      { content: "They were out before we opened.", name: "Hope Ministries", rating: 5 },
+      { content: "Same crew every time.", name: "Cedar Ridge HOA", rating: 4 },
+    ],
+  }),
   widgetCase("footer", "email_footer", {
     businessName: "Rolling In It", address: "1200 Prairie Ave, Marshalltown, IA 50158",
     note: "You are getting this because you asked us about winter services.",
@@ -500,6 +509,35 @@ const landingCases = [
   lpCase("small print", "footer_note", { text: "Prices exclude tax." }),
   lpCase("social links", "social_links", { links: [{ label: "Facebook", url: "https://facebook.com/x" }] }),
   lpCase("review", "testimonial", { quote: "Never had to call twice.", attribution: "Hope Ministries" }),
+  /* B-168 F5 - the sliders family on a hosted page. No script: every strip is
+     a scroll-snap box, so slide one is simply the first thing in the flow. */
+  lpCase("reviews you typed in", "reviews", {
+    slides: [
+      { content: "Never had to call twice.", name: "Hope Ministries", title: "Google", rating: 5 },
+      { content: "Drive was clear by six.", name: "Cedar Ridge HOA", title: "Google", rating: 4 },
+    ],
+  }),
+  lpCase("the business own reviews", "ia_reviews", {
+    slides: [{ content: "Same crew every time.", name: "Cedar Ridge HOA", rating: 5 }],
+  }),
+  lpCase("testimonial carousel", "testimonial_carousel", {
+    slides: [
+      { content: "They were out before we opened.", name: "Hope Ministries", title: "Property manager" },
+      { content: "Fair price, no surprises.", name: "Cedar Ridge HOA", title: "Board chair" },
+    ],
+  }),
+  lpCase("slides", "slides", {
+    slides: [
+      { heading: "Winter is booked early", description: "Reserve your route now.", button_text: "Get a quote", link: "https://example.test/quote" },
+      { heading: "One crew, all season", description: "The same people every visit.", button_text: "", link: "" },
+    ],
+  }),
+  lpCase("media carousel", "media_carousel", {
+    slides: [
+      { type: "image", image: "https://cdn.example.test/before.jpg", alt: "Before" },
+      { type: "video", image: "https://cdn.example.test/poster.jpg", alt: "The crew at work", video: "https://example.test/clip" },
+    ],
+  }),
   lpCase("a widget from a newer build is inert", "hologram", {}),
 
   /* ── D-165 §11.13.3 — the standard set, and the page widgets with it ──────

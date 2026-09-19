@@ -1164,6 +1164,60 @@
       "text": "\"They were out before we opened.\"\nHope Ministries\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
+      "name": "the business reviews",
+      "kind": "ia_reviews",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "ia_reviews",
+                    "props": {
+                      "slides": [
+                        {
+                          "content": "They were out before we opened.",
+                          "name": "Hope Ministries",
+                          "rating": 5
+                        },
+                        {
+                          "content": "Same crew every time.",
+                          "name": "Cedar Ridge HOA",
+                          "rating": 4
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 12px 0;\"><tr><td style=\"padding:12px 14px;background:#F8FAFC;border-left:3px solid #0C4A60;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;letter-spacing:2px;color:#0C4A60;\">&#9733;&#9733;&#9733;&#9733;&#9733;</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;\">They were out before we opened.</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;margin-top:6px;\">Hope Ministries</div></td></tr></table><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 12px 0;\"><tr><td style=\"padding:12px 14px;background:#F8FAFC;border-left:3px solid #0C4A60;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:13px;letter-spacing:2px;color:#0C4A60;\">&#9733;&#9733;&#9733;&#9733;</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;\">Same crew every time.</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;margin-top:6px;\">Cedar Ridge HOA</div></td></tr></table></td></tr></table></td></tr></table>",
+      "text": "—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
       "name": "footer",
       "kind": "email_footer",
       "doc": {

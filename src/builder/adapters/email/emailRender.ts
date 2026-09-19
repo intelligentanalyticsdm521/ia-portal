@@ -350,7 +350,10 @@ export const EMAIL_RENDERED_KINDS = [
   "grid",
   // D-165 §11.13.3 — the standard set every builder offers, each one drawn
   // here as a TABLE rather than by the engine (see the switch below).
-  "icon", "icon_box", "image_box", "star_rating", "alert",
+  "icon", "icon_box", "image_box", "star_rating", "alert",
+  /* B-168 F5 — the newsletter's IA Reviews. Stacked, never a carousel: a
+     mailbox cannot swipe, so every review is on the page. */
+  "ia_reviews",
 ] as const;
 
 /** Deliberately not drawn: `columns` is the SECTION's column count. */
@@ -427,7 +430,8 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "icon_box": return emIconBox(p, c);
       case "image_box": return emImageBox(p, c);
       case "star_rating": return emStarRating(p, c);
-      case "alert": return emAlert(p, c);
+      case "alert": return emAlert(p, c);
+      case "ia_reviews": return emIaReviews(p, c);
       default:
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
@@ -936,6 +940,38 @@ function emCountdown(p: any, c: EmailRenderContext): string {
     + `</tr></table>`;
 }
 
+/**
+ * IA REVIEWS, IN A MAILBOX — stacked, not swiped (B-168, F5).
+ *
+ * The page builders draw this as a strip the visitor scrolls. A mailbox has
+ * no scroll box and no script, so every review is drawn, one under the next,
+ * in its own table. That is the honest shape rather than a carousel that only
+ * ever shows its first slide.
+ *
+ * The slides are read with the page's own key (`slides`) and with `items`, the
+ * spelling a newsletter written before this family carries. Same reader, same
+ * bytes as LUMEN's copy in `src/lib/emailFamilies/f5-sliders-reviews.js`.
+ */
+function emIaReviews(p: any, c: EmailRenderContext): string {
+  const raw = Array.isArray(p.slides) && p.slides.length ? p.slides
+    : (Array.isArray(p.items) ? p.items : []);
+  if (!raw.length) {
+    return c.mode === "edit"
+      ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#94A3B8;padding:10px;">Your reviews appear here once they are brought in.</div>`
+      : "";
+  }
+  const rows = raw.map((r: any, i: number) => {
+    const stars = Math.max(0, Math.min(5, Math.round(Number(r?.rating) || 0)));
+    const name = r?.name ?? r?.author;
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 12px 0;"><tr>`
+      + `<td style="padding:12px 14px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
+      + (stars ? `<div style="font-family:${bodyStack(c)};font-size:13px;letter-spacing:2px;color:${c.accent};">${"&#9733;".repeat(stars)}</div>` : "")
+      + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};"${edit(`slides.${i}.content`, c, "What they said")}>${t(r?.content ?? r?.quote, c)}</div>`
+      + `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;"${edit(`slides.${i}.name`, c, "Who left it")}>${t(name, c)}</div>`
+      + `</td></tr></table>`;
+  });
+  return rows.join("");
+}
 function emTestimonial(p: any, c: EmailRenderContext): string {
   if (!String(p.quote ?? "").trim() && c.mode !== "edit") return "";
   const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));

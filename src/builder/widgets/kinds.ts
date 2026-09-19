@@ -32,8 +32,9 @@ export const ATOM_KINDS = [
         in one file, which is the rule. ─────────────────────────────────── */
   "icon",
   "icon_box",
-  "image_box",
-  "testimonial",
+  "image_box",  /* `testimonial` is NOT in this list any more: it MOVED to the
+     f5-sliders-reviews family (B-168), and this list is the atoms under
+     widgets/. Its kind id is unchanged. */
   "star_rating",
   "alert",
   "social_icons",
@@ -62,8 +63,7 @@ export const ATOM_KINDS = [
   "customer",
   "service_location",
   "business_info",
-  "ia_posts",
-  "reviews",
+  "ia_posts",  /* `reviews` MOVED to the f5-sliders-reviews family (B-168). */
   "book_now",
   "ia_form",
   "newsletter_signup",

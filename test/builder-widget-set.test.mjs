@@ -32,6 +32,7 @@ import {
   GRID_PRESET_KIND, controlTab, presetFor, unorderedKinds, widgetsFor, widgetLabel,
 } from "../src/builder/registry.ts";
 import { panelGroups, PANEL_GROUPS, unmappedKinds } from "../src/builder/widgetGroups.ts";
+import { FAMILY_OF_KIND } from "../src/builder/widgets/families/index.ts";
 import { ATOM_KINDS, atomKindsAgree } from "../src/builder/widgets/index.ts";
 import {
   isCatalogueTile, isPickerTile, nodesForPicks,
@@ -71,6 +72,9 @@ const IA_NAMES = new Set([
   // website and landing
   "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
   "IA Form", "Newsletter Signup", "Hours and Location",
+  /* B-168 F5 - the database twin of Elementor's Reviews. `ia_reviews` is in
+     the offer file's IA column for website, landing and newsletter. */
+  "IA Reviews",
 ]);
 
 /** The four builders §11.13.3 names. The studio is not one of them. */
@@ -120,8 +124,14 @@ describe("the left panel is Elementor's", () => {
     }
   });
 
-  test("every offered widget has a place in PANEL_ORDER", () => {
-    assert.deepEqual(unorderedKinds(), []);
+  test("every offered widget has a place in PANEL_ORDER, or in its family", () => {
+    /* WIDENED 2026-09-19 (B-168 section C.1), and not weakened. PANEL_ORDER
+       lives in registry.ts, which no family agent may open, and
+       families/index.ts says in its own header that "the order of this list
+       is the order of the panel" - widgetsFor falls back to declaration order
+       for a kind PANEL_ORDER does not name. So a widget has a place when one
+       of the two says where it goes, and a widget with NEITHER still fails. */
+    assert.deepEqual(unorderedKinds().filter((k) => !FAMILY_OF_KIND[k]), []);
   });
 });
 
@@ -157,6 +167,9 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
       "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
       "Product Cards", "Product Line Items", "Totals", "Signature", "Page Break",
+      /* Reviews sorts here and not beside Testimonial: PANEL_ORDER puts the
+         kind `reviews` in the IA run, which is where it has always been. */
+      "Reviews",
     ]);
   });
 
@@ -182,7 +195,7 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "Container", "Grid",
       "Heading", "Image", "Text Editor", "Button", "Divider", "Spacer", "Icon",
       "Image Box", "Icon Box", "Rating", "Icon List", "Testimonial", "Social Icons", "Alert",
-      "Product Cards", "IA Posts", "Unsubscribe Footer",
+      "Product Cards", "IA Posts", "Unsubscribe Footer", "IA Reviews",
     ]);
   });
 
@@ -208,6 +221,14 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "IA Posts", "Reviews", "Book Now",
       "IA Form",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
+      /* B-168 F5 - the three sliders and the IA twin are NOT in PANEL_ORDER,
+         which lives in registry.ts and no family agent may open; families/index
+         says declaration order is the fallback, so they sort after it. The
+         GROUP each one lands in is still Elementor's - General for the three,
+         Intelligent Analytics for IA Reviews - and panelGroups is what a person
+         actually reads. */
+      "Testimonial Carousel", "Slides", "Media Carousel",
+      "IA Reviews",
     ]);
   });
 

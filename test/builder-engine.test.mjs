@@ -33,6 +33,11 @@ import {
   renderDocument, renderSection, renderWidget, makeContext, RENDERED_KINDS,
   UNRENDERED_KINDS, esc,
 } from "../src/builder/render.ts";
+/* B-168 section C.1 - the OTHER place a kind is drawn from. render.ts asks
+   renderFamily before its own switch, so a family's kinds really are drawn
+   even though RENDERED_KINDS, which no family agent may open, cannot list
+   them. Widened, not weakened: a kind in NEITHER place still fails. */
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { initHistory, push, undo, redo, canUndo, canRedo } from "../src/builder/history.ts";
 import {
   PREMADE_SECTIONS, SHIPPED_TEMPLATES, hydrateClauses, searchPremade, templateByKey, premadeByKey,
@@ -518,7 +523,8 @@ describe("the ONE renderer", () => {
     // MUTATION: add a widget to the registry with the "proposal" adapter and
     // no renderer branch, and this names it.
     const missing = widgetsFor("proposal").map((w) => w.kind)
-      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k));
+      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k)
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
