@@ -192,6 +192,13 @@ describe("§3.2's union is registered", () => {
     "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
     "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
     "social_icons", "alert", "shortcode", "html", "menu_anchor",
+    /* B-168 f2-pictures (2026-09-19) — five Elementor widgets the panel did
+       not have, every one of them in the offer file Brandon approved:
+       `gallery` (Pro Gallery), `video-playlist`, `audio` (SoundCloud),
+       `lottie` and `hotspot`. The kind is `pro_gallery` because `gallery` is
+       already taken by the hidden legacy Photo gallery below, and because that
+       is the name arion's publisher has used for this widget since D-156. */
+    "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "customer", "service_location", "business_info", "clauses", "signature", "page_break",

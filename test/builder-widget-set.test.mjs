@@ -205,6 +205,11 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       "Image Box", "Icon Box", "Rating", "Image Carousel", "Basic Gallery", "Icon List",
       "Counter", "Progress Bar", "Testimonial", "Tabs", "Accordion",
       "Social Icons", "Alert", "Shortcode", "HTML", "Menu Anchor",
+      /* B-168 f2-pictures (2026-09-19) — five more of Elementor's own, by
+         Elementor's own titles, all five in the offer file. They sit here
+         because that is where PANEL_ORDER puts them: after the General group's
+         D-165 widgets and before the Intelligent Analytics group. */
+      "Gallery", "Video Playlist", "SoundCloud", "Lottie", "Hotspot",
       "IA Posts", "Reviews", "Book Now",
       "IA Form",
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
