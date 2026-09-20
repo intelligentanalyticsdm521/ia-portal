@@ -1141,7 +1141,16 @@ export function BuilderShell(p: BuilderShellProps) {
     const hit = t.kind === "widget" ? findNode(doc, nodeIdAt(doc, t.path) || "") : null;
     const depth = hit ? hostDepth(doc, hit.parentId) : 0;
     return menuFor({
-      kind: t.kind,
+      /* A BOX IS A BOX, WHICHEVER LEVEL IT IS AT (D-172, round 2).
+         `menuFor` splits its rows on "is this a container?" — Add New
+         Container and Save as a template are on one, Save as a global on the
+         other — and it was asking "is this a SECTION?" to find out. That was
+         the same answer until the carrier pair collapsed: right-clicking a
+         top-level box now hands over the CONTAINER, so a section that was
+         getting the container menu yesterday would have got the widget menu
+         today. The fact the menu wants is the box-ness, so that is what it is
+         given. */
+      kind: t.kind === "section" || box ? "section" : "widget",
       locked,
       /* THE ELEMENT'S OWN NAME, for the first row — "Edit Heading", "Edit
          Container", the same words the settings panel puts at its top. */
@@ -1302,6 +1311,14 @@ export function BuilderShell(p: BuilderShellProps) {
           }}
           widgetExtras={p.widgetExtras}
           documentExtras={p.documentExtras}
+          /* THE PAGE PANEL'S STYLE TAB (D-172, round 2). `settings` is the
+             ENGINE's own store — the canvas, the PDF, the mailbox and the
+             publisher all read it — so the writer is the engine's too and no
+             adapter has to hand one in. One undo step per change, like every
+             other write here. */
+          onPatchDocument={(patch) =>
+            apply({ ...doc, settings: { ...doc.settings, ...patch } }, `page:${Object.keys(patch)[0]}`,
+              "Changed the page settings")}
           onPatchSection={changeSection}
           onPatchWidget={patchSelectedWidget}
         />
@@ -1364,6 +1381,23 @@ export function BuilderShell(p: BuilderShellProps) {
                   && sec.columns.some((c) => c.widgets.length > 0);
               }}
               onRowMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+              {...(p.onAskArgus ? { onAskArgus: p.onAskArgus } : {})}
+              /* RENAME A ROW (D-172, round 2) — written to the element's own
+                 label, through the same two writers everything else uses. A
+                 CARRIER row is its container, so the name goes on the
+                 container and not on the carrier nobody can see. */
+              onRename={(row, name) => {
+                const step = name ? `Renamed it “${name}”` : "Cleared a name";
+                /* A SECTION ROW — carrier or not — writes the section's own
+                   `label`, the field the tree already reads. A deeper row
+                   writes `_label` on the node's props: additive, ignored by
+                   every renderer, and read back by `rowLabel`. */
+                if (row.kind === "section") {
+                  apply(patchSection(doc, row.id, { label: name } as Partial<Section>), null, step);
+                  return;
+                }
+                apply(patchNode(doc, row.id, { _label: name || undefined }), null, step);
+              }}
               /* MOVE BETWEEN LEVELS (§11.12). The nesting is on screen here and
                  the target is a whole row rather than a few pixels of gap, so
                  this is the easy way OUT of a deep box — through the same

@@ -1022,3 +1022,485 @@ describe("SCREEN LAW 13 — a carrier pair is ONE box on the screen", () => {
     assert.match(shell, /if \(sec && carrierContainer\(sec\)\?\.id === nodeIdAt\(doc, path\)\) \{/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 14 — the Structure window, the add area's third button, and the
+   eye in the bar (D-172, round 2)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every row below was checked by DRIVING the reference on 2026-09-19 with
+   Playwright on the installed Chrome, not read off a sheet — the capture is
+   `elementor-reference/widgets/_zz_fixer_r2b.json` and the script is
+   `elementor-reference/scripts/zz-fixer-r2b-ref.js`.  */
+
+describe("SCREEN LAW 14 — what the reference has here, and what it does not", () => {
+  const nav = readSrc("builder/Navigator.tsx");
+  const navModel = readSrc("builder/navigatorModel.ts");
+  const addSection = readSrc("builder/AddSection.tsx");
+  const pb = readSrc("builder/proposal/ProposalBuilder.tsx");
+
+  test("every Structure row carries its element's own icon, and no tooltip", () => {
+    // Driven: rows read { icon: "eicon-container" }, { icon: "eicon-text" },
+    // hasTitleAttr false on every one, and no grip.
+    // ABSENT: the generic box glyph on container rows only, and the sentence
+    // that hung off it.
+    assert.ok(!nav.includes("A box. What is under it, indented, is what is inside it."),
+      "the box icon explains itself again");
+    assert.ok(!nav.includes("data-nav-box"), "the container-only glyph is back");
+    // PRESENT: the widget's own icon, from the registry, on EVERY row.
+    assert.match(navModel, /export function rowIcon\(w: Node\): string \{/);
+    assert.match(navModel, /return WIDGETS_BY_KIND\[w\.kind\]\?\.icon \|\| "Square";/);
+    assert.match(nav, /<RowIcon name=\{row\.icon\} \/>/);
+  });
+
+  test("the Structure window renames on double-click and right-clicks to the menu", () => {
+    // Driven in the reference: double-click sets contenteditable on the row's
+    // title; right-click inside the window opens that element's own menu.
+    assert.match(nav, /onDoubleClick=\{\(e\) => \{ if \(p\.onRename\)/);
+    assert.match(nav, /data-nav-rename=\{row\.id\}/);
+    assert.match(nav, /onContextMenu=\{\(e\) => \{\s*\n\s*if \(!p\.onRowMenu\) return;/);
+    // …and its title bar has the reference's SECOND icon, which ours is ARGUS.
+    assert.match(nav, /data-structure-argus/);
+  });
+
+  test("the add area has THREE round buttons, as the reference's does", () => {
+    // Driven: `.elementor-add-section-button` (Add New Container),
+    // `.elementor-add-template-button` (Add Template), `.e-ai-layout-button`
+    // (Build with AI) — in that order.
+    assert.match(addSection, /data-builder-add="ai"/);
+    assert.match(addSection, /title="Build with ARGUS"/);
+    // Wired from a builder that HAS an ARGUS door, or not drawn at all.
+    assert.match(pb, /onAskArgus=\{\(\) => setAskOpen\(true\)\}/);
+  });
+
+  test("the bar has the eye, and the Save Options rows are Title Case", () => {
+    // Driven: the reference's bar carries "Preview Changes" at x1482; ours had
+    // no such button at all — Preview existed only as a row inside Find.
+    assert.match(pb, /onPreviewDoc=\{\(\) => setPreviewing\(true\)\}/);
+    assert.match(pb, /data-proposal-preview/);
+    // It is the ONE renderer in `view` mode, so a preview cannot drift from
+    // what gets sent.
+    assert.match(pb, /renderDocument\(doc, \{ \.\.\.ctx, mode: "view" \}\)/);
+    // PRESENT: the reference's own third row, in both menus.
+    assert.equal((pb.match(/data-view-page="1"/g) || []).length, 2);
+  });
+
+  test("no eyebrow on the door the author opens first", () => {
+    // ABSENT: "OLIVER · Document builder" over the start gallery. The frame
+    // already passed an empty eyebrow; the gallery that opens BEFORE it did
+    // not, so the first thing on screen was the one line the reference has
+    // nowhere in its chrome.
+    assert.ok(!pb.includes('eyebrow="OLIVER · Document builder"'),
+      "the start gallery has its eyebrow back");
+    assert.match(pb, /eyebrow=""\s*\n\s*open\s*\n\s*onClose=\{onClose\}/);
+  });
+
+  test("a tooltip in the bar is one or two words", () => {
+    // Driven: every tooltip in the reference's bar — Add Element, Angie, Page
+    // Settings, History, Design System, Desktop, Finder, Structure, Preview
+    // Changes, Save Options. Ours explained two of them in a sentence.
+    for (const sentence of [
+      "Choose the customer once. Every merge field on the page fills from this.",
+      "The document's title. The customer sees it in their email and at the top of the page.",
+    ]) {
+      assert.ok(!pb.includes(sentence), `a bar tooltip is a sentence again: ${sentence}`);
+    }
+    assert.match(pb, /title="Choose Customer"/);
+    assert.match(pb, /title="Document Name"/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 15 — the page panel, and a chord that did the wrong thing
+   (D-172, round 2)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 15 — page settings, and Ctrl+Shift+Y", () => {
+  const inspector = readSrc("builder/Inspector.tsx");
+  const shortcuts = readSrc("builder/shortcuts.ts");
+
+  test("Ctrl+Shift+Y opens Page Settings — it does not REDO", () => {
+    /* FOUND BY DRIVING IT on :5189 (D-172, round 2): the chord was advertised
+       in our own shortcuts table and it redid the last undone step, because
+       `if (lower === "y") return "redo";` was written ABOVE the shifted
+       answer. An advertised shortcut that does something else is worse than
+       one that does nothing.
+       ABSENT: the unshifted answer given first.
+       PRESENT: one line that answers both, shift first. */
+    assert.ok(!/if \(lower === "y"\) return "redo";/.test(shortcuts),
+      "Ctrl+Shift+Y redoes again — the plain chord is answered first");
+    assert.match(shortcuts, /if \(lower === "y"\) return shift \? "pageSettings" : "redo";/);
+  });
+
+  test("the page panel has tabs and a General Settings section", () => {
+    // Driven in the reference on 2026-09-19: the page panel is tabbed and its
+    // first tab holds one section, "General Settings".
+    // ABSENT: a bare heading with the adapter's one loose line under it.
+    assert.match(inspector, /<InspectorTabs tab=\{pageTab\} onTab=\{setTab\} first="Settings"/);
+    assert.match(inspector, /<Group title="General Settings"/);
+    // PRESENT: the page's own look, which no control anywhere could reach.
+    assert.match(inspector, /data-page-layout/);
+    assert.match(inspector, /data-page-accent/);
+    assert.match(inspector, /onPatchDocument\?: \(patch: Partial<DocumentSettings>\) => void;/);
+  });
+
+  test("a box gets the CONTAINER menu at every level, not the widget one", () => {
+    /* The carrier collapse hands a top-level box over as a CONTAINER, so the
+       menu's "is this a container?" question had to stop being "is this a
+       section?" — or Add New Container and Save as a template would have
+       vanished from the very thing they apply to, and Save as a global would
+       have appeared on it. */
+    assert.match(readSrc("builder/BuilderShell.tsx"),
+      /kind: t\.kind === "section" \|\| box \? "section" : "widget",/);
+  });
+});
+
+describe("SCREEN LAW 15b — no eyebrow on ANY builder door (D-172, round 2)", () => {
+  test("every gallery a builder opens through passes an empty eyebrow", () => {
+    /* The frame has passed an empty eyebrow since round 1, but the gallery
+       that opens BEFORE the editor did not — so on four of the five builders
+       the first thing on screen was a small-caps line the reference has
+       nowhere in its chrome.
+       ABSENT: the product eyebrow on a builder door.
+       PRESENT: an empty one, so the component keeps working for the callers
+       that are not builders. */
+    const doors = [
+      ["builder/proposal/ProposalBuilder.tsx", "OLIVER · Document builder"],
+      ["builder/adapters/email/EmailBuilder.tsx", "SPARK · Email builder"],
+      ["builder/adapters/landing/LandingBuilder.tsx", "SPARK · Landing page"],
+      ["builder/adapters/website/WebsiteBuilder.tsx", "ARION · Website"],
+      ["builder/adapters/mybrand/TemplateGallery.tsx", "MY BRAND · DESIGN STUDIO"],
+    ];
+    for (const [file, gone] of doors) {
+      const src = readSrc(file);
+      assert.ok(!src.includes('eyebrow="' + gone + '"'), file + " has its eyebrow back");
+      assert.match(src, /eyebrow=""/, file + " no longer passes an eyebrow at all");
+    }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 16 — THE PANEL'S OWN CHROME, MEASURED (D-172, round 3)
+
+   DRIVEN in the real editor on 2026-09-19 with Playwright on the installed
+   Chrome — `elementor-reference/scripts/zz-fixer-r3-panel-ref{,-b,-c,-d}.js`,
+   captures `elementor-reference/widgets/zz-fixer-r3-panel-ref*.json`:
+
+     · `#elementor-panel-header-title` — `justify-content: center`, 15px,
+       weight 700, and the ink of "Edit Heading" measured x=107 w=86, centre
+       150 of a 300px panel. No `title`, no `aria-label`.
+     · each tab — 57px tall, 13px at weight 400, an eicons glyph on
+       `span::before` at 16px `display: block` ABOVE the word. `title`,
+       `aria-label` and `data-tooltip` all null on all three.
+     · a section — x=0, width 300, `background: transparent`, `border: 0
+       none`, `border-radius: 0`; heading 48px, `padding: 0 20px`, caret on the
+       LEFT, title 13.33px weight 700, no tooltip on heading or title; every
+       band AFTER the first carries `border-top: 2px solid rgb(230,232,234)`.
+     · `#elementor-controls` — x=0, width 300, `padding: 15px 0 0`.
+     · the accordion — on a Heading's Advanced tab, Layout starts open with
+       twelve controls laid out; clicking Motion Effects leaves Layout with
+       NONE and Motion Effects with five; clicking Transform empties Motion
+       Effects. One section open at a time.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 16 — the panel's own chrome (D-172, round 3)", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("a tab carries NO tooltip, and wears its glyph above the word", () => {
+    // ABSENT: the three tooltips that said the word under the cursor again.
+    assert.ok(!groups.includes("${tabLabel(t, first)} settings"),
+      "the tabs have their tooltips back");
+    assert.ok(!groups.includes("Nothing to set here for this"),
+      "the greyed tab's tooltip is back");
+    // PRESENT: the glyph over the word, and the reference's own tab height.
+    assert.match(groups, /const TAB_ICON: Record<InspectorTab, typeof Pencil>/);
+    assert.match(groups, /<Icon size=\{16\} aria-hidden \/>/);
+    assert.match(groups, /height: 57, display: "flex", flexDirection: "column"/);
+  });
+
+  test("a section header carries NO tooltip — the `hint` prop is GONE, not emptied", () => {
+    // ABSENT: the prop itself, its use as a title, and every call site's
+    // sentence. An emptied prop is how the sentence comes back.
+    assert.ok(!/hint\?: string;/.test(groups), "Group takes a hint again");
+    assert.ok(!/title=\{hint/.test(groups), "the section header is a tooltip again");
+    assert.ok(!/<Group[^>]*hint=/.test(groups), "a group in StyleGroups passes a hint again");
+    assert.ok(!/<Group[^>]*hint=/.test(inspector), "a group in the Inspector passes a hint again");
+    for (const gone of ["What this shows, and where it comes from",
+                        "Room inside and around this, and how it lines up",
+                        "How the words in this are set"]) {
+      assert.ok(!groups.includes(gone) && !inspector.includes(gone),
+        `the section header explains itself again: ${gone}`);
+    }
+    // PRESENT: the band, and the caret that says open or shut.
+    assert.match(groups, /className="bx-pband-head"/);
+    assert.match(groups, /aria-expanded=\{open\}/);
+  });
+
+  test("a section is a full-bleed BAND, not a card", () => {
+    // ABSENT: the card — a 1px edge, a 6px radius, a grey header fill.
+    assert.ok(!groups.includes('style={{ border: "1px solid #E2E8F0", borderRadius: 6, overflow: "hidden" }}'),
+      "a section is a rounded card again");
+    assert.ok(!/background: "#F8FAFC" \}\}>\s*<button/.test(groups),
+      "the section header has its grey fill back");
+    // PRESENT: the reference's own measurements.
+    assert.match(groups, /className="bx-pband"/);
+    assert.match(groups, /height: 48, padding: "0 20px"/);
+    assert.match(groups, /fontSize: 13, fontWeight: 700, color: "#0C0D0E"/);
+    // The separator sits on the BAND: a heading is a <button> and its inline
+    // `border: none` beats a stylesheet rule, which is how the first version
+    // of this drew no line at all on the screen.
+    assert.match(groups, /\.bx-pband \+ \.bx-pband \{ border-top: 2px solid #E6E8EA; \}/);
+    // …and a body with no side padding of its own, so a band can be 300 wide.
+    assert.ok(!inspector.includes('padding: "14px 16px"'), "the panel body pads its sides again");
+    assert.match(inspector, /padding: "15px 0 0", display: "flex"/);
+  });
+
+  test("ONE section open at a time", () => {
+    assert.match(groups, /export function Accordion/);
+    assert.match(groups, /const AccordionCtx = createContext/);
+    // The toggle: pressing the open one shuts it, pressing another moves the
+    // open one. `null` is "nobody has pressed anything yet", and the BAND says
+    // whether it is open — found by driving ours, where a press on the
+    // default-open band left it open because the provider could not tell
+    // "nothing pressed yet" from "this one is open".
+    assert.match(groups, /toggle: \(t, isOpen\) => setOpen\(isOpen \? "" : t\)/);
+    assert.match(groups, /acc\.toggle\(title, open\)/);
+    assert.match(groups, /const open = acc \? \(acc\.open === null \? defaultOpen : acc\.open === title\) : solo;/);
+    // …and the panel is wrapped in one, per tab, on both panels.
+    assert.match(inspector, /<Accordion key=\{shownTab\}>/);
+    assert.match(inspector, /<Accordion key=\{pageTab\}>/);
+  });
+
+  test("the panel's title is CENTRED, 15px, weight 700", () => {
+    // ABSENT: the left-aligned 14px/600 title.
+    assert.ok(!inspector.includes('style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title'),
+      "the panel title is left-aligned again");
+    // PRESENT: one constant, used by both panels.
+    assert.match(inspector, /const PANEL_TITLE: React\.CSSProperties = \{\s*display: "flex", justifyContent: "center", fontSize: 15, fontWeight: 700/);
+    assert.match(inspector, /<div style=\{PANEL_TITLE\} data-inspector-title>Edit \{name\}<\/div>/);
+    assert.match(inspector, /<div style=\{PANEL_TITLE\} data-inspector-title>Page settings<\/div>/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 17 — A CONTAINER'S OWN CONTROLS, DRIVEN (D-172, round 3)
+
+   Read out of the live editor on 2026-09-19 — `zz-fixer-r3-panel-ref-c.js`
+   and `-e.js`. The Layout section, in order:
+
+     Container Layout (Flexbox | Grid) · Content Width (Boxed | Full Width) ·
+     Width · Min Height · "Items" · Direction (Row - horizontal, Column -
+     vertical, Row - reversed, Column - reversed) · Justify Content (Start,
+     Center, End, Space Between, Space Around, Space Evenly) · Align Items ·
+     Gaps · Wrap — and Align Content ONLY once Wrap is on, whose second word
+     is "Middle".
+
+   Then Additional Options: Overflow (Default | Hidden | Auto), then HTML Tag
+   (Default, div, header, footer, main, article, section, aside, nav, a
+   (link)). There is NO Link control in it — the audit sheet's row for one did
+   not survive driving.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 17 — the container's controls are the reference's (round 3)", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+  const styles = code(readSrc("builder/style.ts"));
+
+  test("GRID IS NOT A DIRECTION — it is the Container Layout select", () => {
+    // ABSENT: the third Direction button, and the pick that set `columns` from
+    // the direction chooser.
+    assert.ok(!inspector.includes('{ v: "grid" as const, title: "Grid", icon: <LayoutGrid size={13} /> }'),
+      "Grid is a Direction button again");
+    assert.ok(!inspector.includes('columns: next === "grid" ? (widgetLayer.columns ?? 3) : undefined'),
+      "the Direction chooser sets the grid's columns again");
+    // PRESENT: the select the reference puts first in the section.
+    assert.match(inspector, /<span style=\{L\}>Container Layout<\/span>/);
+    assert.match(inspector, /<option value="flex">Flexbox<\/option>/);
+    assert.match(inspector, /<option value="grid">Grid<\/option>/);
+  });
+
+  test("Direction is the reference's FOUR, in its own wording", () => {
+    for (const t of ["Row - horizontal", "Column - vertical", "Row - reversed", "Column - reversed"]) {
+      assert.ok(inspector.includes(`title: "${t}"`), `Direction lost: ${t}`);
+    }
+    /* THE SPELLING CHANGED IN THE B-168 LANDING, NOT THE SCREEN. Round 3 wrote
+       the two reversed directions as a `reverse` FLAG beside a row/column
+       flow; the landed model — and Elementor's own `flex_direction`, and the
+       three server mirrors — spell them as two of four VALUES. The four
+       buttons above are unchanged; these two lines read the surviving
+       spelling. Everything that only wants "row, column or grid?" asks
+       `baseDirection`, which is what the flag was for. */
+    assert.match(styles, /export type DirectionSpec = "row" \| "column" \| "row-reverse" \| "column-reverse" \| "grid";/);
+    assert.ok(!/reverse\?: boolean;/.test(styles), "the deleted `reverse` flag is back on the style layer");
+    assert.match(styles, /flex-direction:\$\{dir \?\? "column"\}/);
+  });
+
+  test("Justify Content is SIX, and Align Content appears only once Wrap is on", () => {
+    for (const t of ["Space Between", "Space Around", "Space Evenly"]) {
+      assert.ok(inspector.includes(`title: "${t}"`), `Justify Content lost: ${t}`);
+    }
+    assert.match(styles, /around: "space-around", evenly: "space-evenly"/);
+    // Align Content: behind the wrap, with the reference's own second word.
+    assert.match(inspector, /\{widgetLayer\.wrap && \(/);
+    assert.match(inspector, /testAttr="data-box-aligncontent"/);
+    assert.ok(inspector.includes('title: "Middle"'), "Align Content says Center, not Middle");
+  });
+
+  test("the section's own order: Min Height above an 'Items' heading", () => {
+    const minh = inspector.indexOf("<span style={L}>Min Height</span>");
+    const items = inspector.indexOf('data-control-subheading="Items"');
+    const dir = inspector.indexOf("<span style={L}>Direction</span>");
+    assert.ok(minh > 0 && items > minh, "Min Height is back below the Items heading");
+    assert.ok(dir > items, "Direction is above the Items heading");
+    assert.match(inspector, /<span style=\{L\}>Content Width<\/span>/);
+  });
+
+  test("Additional Options is Overflow then the reference's ten tags", () => {
+    const ov = inspector.indexOf("data-box-overflow");
+    const tag = inspector.indexOf("data-box-html-tag");
+    assert.ok(ov > 0 && tag > ov, "Overflow is not the section's first control");
+    assert.match(inspector, /<span style=\{L\}>Overflow<\/span>/);
+    for (const v of ["Default", "Hidden", "Auto"]) {
+      assert.ok(inspector.includes(`>${v}</option>`), `Overflow lost its value: ${v}`);
+    }
+    // ABSENT: our seven-value list that called the empty one "div".
+    assert.ok(!inspector.includes('<option value="">div</option>'),
+      "the empty HTML Tag is called div again");
+    // PRESENT: the reference's ten, in its order.
+    const tags = inspector.slice(tag, tag + 900);
+    const order = [...tags.matchAll(/<option value="([^"]*)">/g)].map((m) => m[1]);
+    assert.deepEqual(order.slice(0, 10),
+      ["", "div", "header", "footer", "main", "article", "section", "aside", "nav", "a"]);
+  });
+});
+
+describe("SCREEN LAW 17 — and the renderer can say all of it", () => {
+  test("the new layout words reach the page as CSS", async () => {
+    const { containerBoxDeclarations, containerLayoutDeclarations, readStyle } =
+      await import("../src/builder/style.ts");
+    // Reversed — two of the four stored direction VALUES (see SCREEN LAW 17
+    // above: the `reverse` flag this round wrote was deleted in the landing).
+    assert.ok(containerLayoutDeclarations({ direction: "row-reverse" })
+      .includes("flex-direction:row-reverse"));
+    assert.ok(containerLayoutDeclarations({ direction: "column-reverse" })
+      .includes("flex-direction:column-reverse"));
+    // The two spacings ours had no word for.
+    assert.ok(containerLayoutDeclarations({ direction: "row", justify: "around" })
+      .includes("justify-content:space-around"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", justify: "evenly" })
+      .includes("justify-content:space-evenly"));
+    // Align Content and Overflow.
+    assert.ok(containerLayoutDeclarations({ direction: "row", wrap: true, alignContent: "between" })
+      .includes("align-content:space-between"));
+    /* OVERFLOW IS THE BOX'S, not the arranging's (B-168 land). Both branches
+       emitted it and `styleBlockFor` concatenates the two lists for one box,
+       so it is written in exactly one — the one that also emits for a PLAIN
+       stacked box, which is where the other would have gone silent. Same
+       guard, the surviving writer, and no direction needed to prove it. */
+    assert.ok(containerBoxDeclarations({ overflow: "hidden" }).includes("overflow:hidden"));
+    // …and a stored style still drops any word the file does not know.
+    const read = readStyle({ justify: "sideways", overflow: "scroll", direction: "backwards", alignContent: "nope" });
+    assert.equal(read?.justify, undefined);
+    assert.equal(read?.overflow, undefined);
+    assert.equal(read?.direction, undefined);
+    assert.equal(read?.alignContent, undefined);
+    // ABSENCE: the deleted spelling is not read back either, so a document
+    // written by round 3's panel cannot bring the second key back to life.
+    assert.equal(readStyle({ reverse: true }), undefined);
+    assert.equal(readStyle({ direction: "row-reverse", alignContent: "evenly", overflow: "auto" })?.overflow, "auto");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 18 — A SIZE IS A SLIDER WITH A UNIT (D-172, round 3)
+
+   Driven on 2026-09-19: Width, Min Height, Columns, Rows, Space, Size, Gap and
+   the rest are all a slider with a number box, label ABOVE, the device
+   switcher on the label row and a unit switcher on its right — Min Height
+   px/em/rem/vh, Gaps px/%/em/rem/vw. Ours had no `input type="range"` in the
+   whole panel and no unit switcher anywhere at all: every size was a bare
+   pixel number, so "as tall as the screen" could not be said.
+
+   The label row itself stays written in Inspector.tsx, where SCREEN LAW 10 and
+   11 pin it. The slider is built AROUND it (`head`), rather than swallowing
+   the one thing those laws are pinned on.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 18 — a size is a slider with a unit (round 3)", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("the bare pixel boxes are GONE and a slider is in their place", () => {
+    // ABSENT: the two number-only inputs.
+    assert.ok(!inspector.includes('<input style={INPUT} type="number" min={0} data-box-gap'),
+      "Gaps is a bare pixel box again");
+    assert.ok(!inspector.includes('<input style={INPUT} type="number" min={0} data-box-minheight'),
+      "Min Height is a bare pixel box again");
+    // PRESENT: one Slider, used by both, with a range AND a number box.
+    assert.match(groups, /export function Slider/);
+    assert.match(groups, /type="range"/);
+    assert.match(groups, /\{\.\.\.\(testAttr \? \{ \[`\$\{testAttr\}-box`\]: "number" \} : \{\}\)\}/);
+    assert.match(inspector, /<Slider\s+label="Min Height"/);
+    assert.match(inspector, /<Slider\s+label="Gaps"/);
+  });
+
+  test("each size carries the reference's own units", () => {
+    assert.match(groups, /data-style-units=\{label\.toLowerCase\(\)\}/);
+    assert.match(inspector, /units=\{\["px", "em", "rem", "vh"\]\}/);
+    assert.match(inspector, /units=\{\["px", "%", "em", "rem", "vw"\]\}/);
+  });
+
+  test("the unit reaches the page, and an unset one still means px", async () => {
+    const { containerLayoutDeclarations, sectionBoxDeclarations, readStyle, sizeCss } =
+      await import("../src/builder/style.ts");
+    assert.equal(sizeCss(40, "vh"), "40vh");
+    assert.equal(sizeCss(40, undefined), "40px");
+    // …and a unit the file does not know is dropped rather than written out.
+    assert.equal(sizeCss(40, "furlongs"), "40px");
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 2, units: { gap: "rem" } })
+      .includes("gap:2rem"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 16 }).includes("gap:16px"),
+      "a document with no unit stopped meaning pixels");
+    assert.ok(sectionBoxDeclarations({ minHeight: 100, units: { minHeight: "vh" } })
+      .includes("min-height:100vh"));
+    assert.equal(readStyle({ units: { gap: "parsecs" } })?.units, undefined);
+    assert.equal(readStyle({ units: { gap: "vw" } })?.units?.gap, "vw");
+  });
+});
+
+describe("SCREEN LAW 18b — the last native checkboxes in the panel (round 3)", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("every on/off in the panel is the switcher pill", () => {
+    /* The reference has ONE on/off shape. These five were the last native
+       checkboxes left: the carrier's page break, numbering and internal-only,
+       and the section panel's own Number and Recommended — each with its
+       sentence AS the label rather than beside the control. */
+    assert.ok(!/type="checkbox"/.test(inspector), "a native checkbox is back in the panel");
+    assert.ok(!inspector.includes('display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>'),
+      "the checkbox-with-a-sentence row is back");
+    for (const id of ["carrier-pagebreak", "carrier-numbered", "carrier-internal",
+                      "section-numbered", "section-recommended", "section-pagebreak",
+                      "section-internal"]) {
+      assert.ok(inspector.includes(`testId="${id}"`), `no switcher for: ${id}`);
+    }
+    // …and the carrier's three keep the markers SCREEN LAW 13 reads them by.
+    assert.match(inspector, /<div style=\{ROW\} data-carrier-pagebreak>/);
+  });
+});
+
+describe("SCREEN LAW 18c — the verb button's tooltip is one word (round 3)", () => {
+  test("the sentence on the widest button in the bar is DELETED", () => {
+    /* DRIVEN on 2026-09-19: the reference's verb button reads "Update" and
+       carries `title="Publish"` — one word, the action. No tooltip node of its
+       own appears while hovering it. The audit sheet said "no tooltip at all",
+       which driving corrected to "one word". */
+    const bar = code(readSrc("builder/proposal/ProposalBuilder.tsx"));
+    assert.ok(!bar.includes("Email the customer a link to this document"),
+      "the verb button explains itself in a sentence again");
+    assert.match(bar, /: "Send"\}>/);
+    // PRESENT: the one tooltip that says something the button does not — why
+    // pressing it will not do what it says.
+    assert.match(bar, /\$\{blanks\.length\} detail\(s\) are still blank/);
+  });
+});

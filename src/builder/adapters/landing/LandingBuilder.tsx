@@ -198,7 +198,12 @@ export function LandingBuilder(p: LandingBuilderProps) {
   if (picking || !doc) {
     return (
       <TemplateLibrary
-        eyebrow="SPARK · Landing page"
+        /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow=""
         open
         onClose={p.onClose}
         product="spark"

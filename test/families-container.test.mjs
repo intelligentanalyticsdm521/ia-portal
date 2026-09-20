@@ -143,16 +143,26 @@ describe("the container's panel is Elementor's own", () => {
   });
 
   test("the panel draws every control the table names", () => {
-    // The table is data; this is the half that says the panel reads it. Each
-    // control's `data-box-field` is its own short name, and every group in
-    // StyleGroups.tsx is one of the reference's sections.
-    const GROUPS = readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8");
+    /* The table is data; this is the half that says the panel reads it.
+       THE PANEL IS TWO FILES (B-168 land, the b168/demo merge). The box's
+       LAYOUT tab is written out in Inspector.tsx, where THE SCREEN LAW pins
+       every row of it by name; its Style and Advanced tabs are the shared
+       groups in StyleGroups.tsx. The dead second copy of the Layout tab —
+       `ContainerLayoutGroup` — is deleted, so this reads both files rather
+       than the one the copy happened to live in. Same sections, same guard.
+       And "Items" is a SUB-heading inside the Container section, which is
+       where the reference puts it, so either shape counts. */
+    const GROUPS = [
+      readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8"),
+      readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8"),
+    ].join("\n");
     for (const title of [
       "Container", "Items", "Additional Options",
       "Background", "Background Overlay", "Border", "Shape Divider",
       "Motion Effects", "Custom CSS", "Responsive", "Layout",
     ]) {
-      assert.ok(GROUPS.includes(`title="${title}"`), `no group is called ${title}`);
+      assert.ok(GROUPS.includes(`title="${title}"`)
+        || GROUPS.includes(`data-control-subheading="${title}"`), `no group is called ${title}`);
     }
     assert.equal(CONTAINER_LAYOUT_CONTROLS.length, 15);
     assert.equal(CONTAINER_STYLE_CONTROLS.length, 38);
@@ -259,6 +269,14 @@ describe("what an author sets on a box reaches the page", () => {
     });
     assert.ok(d.includes("width:80%"), "a full-width box measures in per cent");
     assert.ok(d.includes("overflow:auto"));
+    /* AND ONLY HERE (B-168 land, the b168/demo merge): both branches wrote
+       Overflow, in two functions `styleBlockFor` concatenates for the same
+       box. This one emits for a plain stacked box too, so it is the one that
+       survived — a second `overflow:` was one declaration pretending to be
+       two. */
+    assert.ok(containerBoxDeclarations({ overflow: "hidden" }).includes("overflow:hidden"));
+    assert.ok(!containerLayoutDeclarations({ direction: "row", overflow: "auto" })
+      .some((x) => x.startsWith("overflow:")), "overflow is written twice again");
     assert.ok(d.includes("position:fixed"));
     assert.ok(d.includes("z-index:4"));
     assert.ok(d.includes("align-self:center"));

@@ -228,13 +228,20 @@ describe("every layout a box can hold is one Elementor can be told", () => {
 
   test("every VALUE the renderer can emit is one Elementor offers", () => {
     const emitted = {
+      /* ROUND 3: the two REVERSED directions are emitted now, and they are two
+         of the four VALUES this control offers — which is why `DirectionSpec`
+         holds all four rather than three and a `reverse` flag beside them. */
       flex_direction: ["row", "column", "row-reverse", "column-reverse"],
-      flex_justify_content: [
-        "flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly",
-      ],
+      /* ROUND 3: six, not four. Driven in the live editor and confirmed here:
+         Space Around and Space Evenly are Elementor's own options, and ours
+         had no word for either. */
+      flex_justify_content: ["flex-start", "center", "flex-end", "space-between",
+                             "space-around", "space-evenly"],
       flex_align_items: ["flex-start", "center", "flex-end", "stretch"],
       flex_wrap: ["wrap", "nowrap"],
-      html_tag: ["div", "header", "footer", "main", "article", "section", "aside"],
+      /* ROUND 3: the reference's ten, in its order, including the two ours
+         never offered — nav and a. */
+      html_tag: ["", "div", "header", "footer", "main", "article", "section", "aside", "nav", "a"],
       container_type: ["flex", "grid"],
     };
     for (const [key, values] of Object.entries(emitted)) {

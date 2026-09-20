@@ -586,16 +586,21 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
     // MUTATION: delete the HTML tag picker from the container's Layout group
     // → red here. It was honoured by the renderer and settable by nobody.
     //
-    // THE PANEL MOVED (B-168, family F0). The box's three tabs were written
-    // out inside Inspector.tsx with five of the reference editor's fifteen
-    // Layout controls; they are `ContainerLayoutGroup` in StyleGroups.tsx now
-    // and the other ten came with them. This reads where the control lives.
-    const GROUPS = readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8");
-    assert.ok(GROUPS.includes('attr="html-tag"'), "nothing in any UI sets what a box is drawn as");
-    assert.ok(GROUPS.includes("onPatchProps({ html_tag: v })"), "the control writes into the wrong key");
+    // THE PANEL MOVED, AND THEN MOVED BACK (B-168, family F0, then the
+    // b168/demo merge). The Layout tab was written out inside Inspector.tsx;
+    // family F0 copied it into `ContainerLayoutGroup` in StyleGroups.tsx and
+    // nothing rendered the copy, so the copy is deleted and the one panel the
+    // author sees — the one THE SCREEN LAW pins row by row — is in
+    // Inspector.tsx. This reads where the control lives.
+    const PANEL = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
+    assert.ok(PANEL.includes("data-box-html-tag"), "nothing in any UI sets what a box is drawn as");
+    assert.ok(PANEL.includes("p.onPatchWidget({ html_tag: e.target.value })"),
+      "the control writes into the wrong key");
     // Every value the control offers is a value Elementor offers.
-    const offered = [...GROUPS.matchAll(/attr="html-tag"[\s\S]*?onChange=/g)][0][0]
-      .match(/\["([a-z]*)",/g).map((m) => m.slice(2, -2));
+    const tagAt = PANEL.indexOf("data-box-html-tag");
+    const offered = [...PANEL.slice(tagAt, tagAt + 900).matchAll(/<option value="([a-z]*)">/g)]
+      .map((m) => m[1]);
+    assert.ok(offered.length >= 10, "the HTML Tag control lost its options");
     for (const v of offered) {
       assert.ok(CONTAINER.controls.html_tag.options.includes(v),
         `the Layout group offers html_tag="${v}", which Elementor does not`);
@@ -668,20 +673,27 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
     // whose values are stored and were silently dropped on the way to a
     // website. This is the Portal's half of that contract — it writes all
     // seven — and the handoff names them for the arion side.
-    // The box's panel is `ContainerLayoutGroup` in StyleGroups.tsx now
-    // (B-168, family F0), so this reads there. Same guard, same seven keys,
-    // plus the ten the reference has that we did not.
-    const GROUPS = readFileSync(new URL("../src/builder/StyleGroups.tsx", import.meta.url), "utf8");
-    for (const [attr, key] of [
-      ["direction", "direction"], ["justify", "justify"],
-      ["align-items", "alignItems"], ["wrap", "wrap"],
-      ["gap-column", "gap"], ["gap-row", "rowGap"], ["grid-columns", "columns"],
-      ["grid-rows", "rows"], ["grid-auto-flow", "autoFlow"],
-      ["container-type", "direction (flex or grid)"], ["content-width", "contentWidth"],
-      ["width", "width"], ["min-height", "minHeight"], ["overflow", "overflow"],
-      ["html-tag", "html_tag"],
+    /* The box's panel is the one written out in Inspector.tsx (see the note in
+       the html_tag test above), so this reads there — and it reads each
+       control by the MARKER it carries rather than by a bare word, which is a
+       stronger guard than the substring check this used to be: `"width"`
+       appears in any React file by accident, `data-box-width` does not.
+       Same fifteen keys. */
+    const PANEL = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
+    for (const [marker, key] of [
+      ["data-box-direction", "direction"], ["data-box-justify", "justify"],
+      ["data-box-align", "alignItems"], ["data-box-wrap", "wrap"],
+      ["data-box-gap", "gap"], ["data-box-rowgap", "rowGap"], ["data-box-columns", "columns"],
+      ["data-box-rows", "rows"], ["data-box-autoflow", "autoFlow"],
+      ["data-box-layout", "direction (flex or grid)"], ["data-box-content-width", "contentWidth"],
+      ["data-box-width", "width"], ["data-box-minheight", "minHeight"],
+      ["data-box-overflow", "overflow"], ["data-box-html-tag", "html_tag"],
     ]) {
-      assert.ok(GROUPS.includes(`"${attr}"`), `no control writes \`${key}\``);
+      assert.ok(PANEL.includes(marker), `no control writes \`${key}\``);
+    }
+    // …and each of the four that are new here WRITES the key, not just draws.
+    for (const write of ["{ contentWidth:", "{ width: v }", "{ rowGap: v }", "rows:", "{ autoFlow:"]) {
+      assert.ok(PANEL.includes(write), `the panel draws but never writes: ${write}`);
     }
     // …and `width` still means exactly ONE thing per key. It now HAS a meaning
     // on a style layer — how wide the box itself runs, the reference's Layout ▸

@@ -67,7 +67,7 @@ import {
   type CatalogueTileKind,
 } from "./catalogueTiles";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
-import { makeContext, type LocationLite, type RenderContext } from "../render";
+import { DOCUMENT_CSS, makeContext, renderDocument, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
@@ -719,6 +719,18 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }
   }, [api]);
 
+  /**
+   * PREVIEW CHANGES (D-172, round 2) — the reference's eye, and its Save
+   * Options row "View Page", which are two doors to ONE thing.
+   *
+   * The reference's Preview Changes shows the page as its reader gets it. Ours
+   * had no such button in the bar at all: Preview existed only as a row inside
+   * Find. What it shows is the document through the ONE renderer in `view`
+   * mode — literally the customer's own copy, not an editor's impression of
+   * it — so there is nothing here that can drift from what gets sent.
+   */
+  const [previewing, setPreviewing] = useState(false);
+
   /* ── The one render context ──────────────────────────────────────────── */
   const ctx: RenderContext = useMemo(() => {
     // What was typed on the page first, the customer pick over the top: the
@@ -1082,7 +1094,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   if (picking) {
     return (
       <TemplateLibrary
-        eyebrow="OLIVER · Document builder"
+        /* NO EYEBROW (D-172, round 2). The reference has no eyebrow line
+           anywhere in the editor chrome, and the builder frame already passes
+           an empty one — but the gallery that opens FIRST still read
+           "OLIVER · DOCUMENT BUILDER" in small caps above its title, so the
+           very first thing the author saw was the one line the reference
+           never draws. Empty, not removed from the component: three other
+           callers of TemplateLibrary are not the builder. */
+        eyebrow=""
         open
         onClose={onClose}
         product="oliver"
@@ -1120,6 +1139,17 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
         }}
         resetKey={resetKey}
+        /* THE EYE IN THE BAR (D-172, round 2). `BuilderFrame` has drawn one
+           all along for any adapter that hands in a preview; the proposal
+           builder never did, so the reference's own Preview Changes button
+           was missing from the one builder the owner opens first. */
+        onPreviewDoc={() => setPreviewing(true)}
+        /* THE ADD AREA'S THIRD ROUND BUTTON and the Structure window's own
+           AI icon (D-172, round 2). The reference has a pink "Build with AI"
+           as the third button in its add area and an `ai-titles` icon in its
+           navigator's title bar; ours is Ask ARGUS in both, opening the SAME
+           door the bar's button opens. One door, three ways to it. */
+        onAskArgus={() => setAskOpen(true)}
         /* OUR ANGIE: one door to the AI, in the bar (D-172). */
         askArgus={
           <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
@@ -1138,7 +1168,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Title this document — e.g. Commercial Service Agreement"
-            title="The document's title. The customer sees it in their email and at the top of the page."
+            /* TWO WORDS (D-172, round 2). Every tooltip in the reference's bar
+               is one or two: Add Element, Angie, Page Settings, Finder,
+               Structure, Preview Changes, Save Options — driven 2026-09-19.
+               Ours explained what a title is, in a sentence, in the bar. */
+            title="Document Name"
             style={{
               background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
               color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 420, padding: "0 0 2px",
@@ -1299,13 +1333,20 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               <SaveOptions busy={busy}>
                 <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
                   onClick={() => { void saveRevision(false); }} disabled={busy}
-                  title="Save this revision and carry on.">
-                  {busy ? "Working…" : "Save draft"}
+                  title="Save Draft">
+                  {busy ? "Working…" : "Save Draft"}
                 </button>
                 <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
                   onClick={() => { void saveRevision(false).then(() => onClose()); }} disabled={busy}
-                  title="Save and go back to the document.">
-                  Save and close
+                  title="Save and Close">
+                  Save and Close
+                </button>
+                {/* The reference's View Page, in both menus, so the two menus
+                    hold the same rows for the same job. */}
+                <button type="button" data-view-page="1" data-builder-anchor="preview" style={saveRow}
+                  onClick={() => setPreviewing(true)} disabled={busy}
+                  title="View Page">
+                  View Page
                 </button>
               </SaveOptions>
               <button type="button" data-builder-anchor="send" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
@@ -1327,25 +1368,48 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                   three of the four widest things in the bar. Ask ARGUS moved
                   to the bar's own AI position, where the reference keeps
                   Angie. */}
+              {/* ONE WORD ON THE VERB (D-172, round 3). DRIVEN: the
+                  reference's verb button reads "Update" and carries
+                  `title="Publish"` — one word, the action, no sentence, and no
+                  tooltip node of its own while hovering. Ours carried "Email
+                  the customer a link to this document", a sentence on the
+                  widest button in the bar. The blanks warning stays: that one
+                  says why the button will not do what it says. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
+                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Send"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
               <SaveOptions busy={busy}>
                 <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
                   onClick={() => save(false, false)} disabled={busy}
-                  title="Save your work and carry on. The builder stays open.">
-                  {busy ? "Working…" : "Save draft"}
+                  title="Save Draft">
+                  {busy ? "Working…" : "Save Draft"}
                 </button>
+                {/* SAVE AND CLOSE STAYS, and it is THE SCREEN LAW that keeps
+                    it: `builder-elementor-screen.test.mjs` pins this row as a
+                    MENU row (that was D-36, and the law's own point is that
+                    the three save actions are rows in one chevron rather than
+                    three flat buttons in the strip). The round-2 sheet asked
+                    for it to be swapped for View Page; that would need the law
+                    edited, so View Page is ADDED beside it and the extra row
+                    is recorded as a difference instead. */}
                 <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
                   onClick={() => save(false, true)} disabled={busy}
-                  title="Save and go back to the list. You can open it again from the row.">
-                  Save and close
+                  title="Save and Close">
+                  Save and Close
                 </button>
                 <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate} style={saveRow}
                   onClick={() => setNamingTemplate(true)} disabled={busy}
-                  title="Save this document's sections as a template you can start from next time">
-                  Save as template
+                  title="Save as Template">
+                  Save as Template
+                </button>
+                {/* THE REFERENCE'S THIRD ROW (D-172, round 2) — it shows the
+                    document as its reader gets it. The eye in the bar is the
+                    other door to it, and both run the SAME preview. */}
+                <button type="button" data-view-page="1" data-builder-anchor="preview" style={saveRow}
+                  onClick={() => setPreviewing(true)} disabled={busy}
+                  title="View Page">
+                  View Page
                 </button>
               </SaveOptions>
             </>
@@ -1503,6 +1567,22 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         />
       )}
 
+      {/* PREVIEW CHANGES (D-172, round 2) — the document as its reader gets
+          it, through the ONE renderer in `view` mode. Not a second view of the
+          document: the same `renderDocument` the sent copy and the PDF are
+          built from, with the same context, so a preview that looks right and
+          a send that does not is impossible by construction. */}
+      {previewing && (
+        <IadmModal open onClose={() => setPreviewing(false)} product="oliver" eyebrow=""
+          title={title.trim() || "Preview"} size="builder" z={70}>
+          <div data-proposal-preview style={{ overflowY: "auto", height: "100%", background: "#E6ECF1", padding: "24px 0" }}>
+            <style>{DOCUMENT_CSS}</style>
+            <div style={{ width: "min(860px, 92%)", margin: "0 auto", background: "#fff", padding: 32, boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}
+              dangerouslySetInnerHTML={{ __html: renderDocument(doc, { ...ctx, mode: "view" }) }} />
+          </div>
+        </IadmModal>
+      )}
+
       {/* M-23's dialog, reused: "Save as template" asks the same two questions
           in the same box, instead of the browser's `window.prompt`. */}
       {namingTemplate && (
@@ -1657,7 +1737,7 @@ function CustomerBar({
   if (!contact && !open) {
     return (
       <button type="button" data-customer-pill onClick={() => setOpen(true)}
-        title="Choose the customer once. Every merge field on the page fills from this."
+        title="Choose Customer"
         style={{
           display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto",
           background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
@@ -1716,7 +1796,7 @@ function CustomerBar({
         onBlur={() => window.setTimeout(() => setOpen(false), 150)}
         onChange={(e) => onSearch(e.target.value)}
         placeholder="Type a customer's name…"
-        title="Choose the customer once. Every merge field on the page fills from this."
+        title="Choose Customer"
         data-customer-search="1"
         style={{
           background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,

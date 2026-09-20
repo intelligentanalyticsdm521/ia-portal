@@ -496,11 +496,24 @@ describe("Advanced ▸ Attributes: a name the author gives a part, and it reache
     assert.match(out, /class="[^"]*\bbad\b/);
   });
 
-  test("the panel offers it, on the Advanced tab", () => {
+  test("the panel offers it — inside LAYOUT, where the reference keeps it (round 3)", () => {
+    /* REWRITTEN AS AN ABSENCE + PRESENCE PAIR (D-172, round 3). This used to
+       pin a section of our own called "Attributes" holding the two fields.
+       Driven in the real editor on 2026-09-19: CSS ID and CSS Classes are
+       inside the LAYOUT section — Margin, Padding, Width, Align Self, Order,
+       Size, Position, Z-Index, CSS ID, CSS Classes, Cache Settings — and the
+       reference's own "Attributes" section holds a Pro promo instead. */
     const groups = readSrc("builder/StyleGroups.tsx");
-    assert.match(groups, /export function AttributesGroup/);
     const inspector = readSrc("builder/Inspector.tsx");
-    assert.match(inspector, /<AttributesGroup/);
+    // ABSENT: the section, the component, and the call.
+    assert.ok(!/export function AttributesGroup/.test(groups), "the Attributes section is back");
+    assert.ok(!/<Group title="Attributes"/.test(groups), "a section called Attributes is drawn again");
+    assert.ok(!/<AttributesGroup/.test(inspector), "the Inspector draws the Attributes section again");
+    // PRESENT: the same two fields, in Layout, written by the same handler.
+    assert.match(groups, />CSS ID</);
+    assert.match(groups, />CSS Classes</);
+    assert.match(groups, /data-style-css-id/);
+    assert.match(inspector, /onPatchNames=\{\(patch\) => p\.onSetWidgetStyle\(\{ \.\.\.\(widget\.style \|\| \{\}\), \.\.\.patch \}\)\}/);
     // …and it is NOT per device: an id is an id on every screen.
     assert.ok(!/withLayer\([^)]*cssId/.test(inspector), "the id is written per device");
   });

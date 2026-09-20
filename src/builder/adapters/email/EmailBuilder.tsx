@@ -407,7 +407,12 @@ export function EmailBuilder(p: EmailBuilderProps) {
         open
         onClose={p.onClose}
         product="spark"
-        eyebrow="SPARK · Email builder"
+        /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow=""
         title="Start from a shape that already works"
         subtitle="Every one of these opens with your logo at the top and your unsubscribe footer at the bottom. Pick the one closest to what you want to say, then change anything on it."
         entries={libraryEntries}

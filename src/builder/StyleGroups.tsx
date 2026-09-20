@@ -17,15 +17,15 @@
  * and the ratio presets all live in style.ts, pure, so `node --test` drives
  * them without a DOM.
  */
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import {
-  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Link2,
-  Monitor, Smartphone, Tablet, Unlink,
+  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Contrast, Link2,
+  Monitor, Pencil, Settings2, Smartphone, Tablet, Unlink,
 } from "lucide-react";
 import {
-  RATIO_PRESETS, SHAPE_DIVIDERS, normaliseRatios, setSide, sidesAreLinked,
+  RATIO_PRESETS, SHAPE_DIVIDERS, normaliseRatios, setSide, sidesAreLinked, unitsOffered,
   type BackgroundSpec, type BoxSides, type Device, type ElementStyle,
-  type OverlaySpec, type ShapeDividerSpec, type StyleLayer,
+  type OverlaySpec, type ShapeDividerSpec, type SizeUnit, type StyleLayer,
 } from "./style";
 import { PREVIEW_DEVICES } from "./responsive";
 import {
@@ -81,14 +81,29 @@ export type InspectorTab = "content" | "style" | "advanced";
 export const INSPECTOR_TABS: InspectorTab[] = ["content", "style", "advanced"];
 
 /** What each tab is called. The first one changes; the other two never do. */
-export function tabLabel(tab: InspectorTab, first: "Content" | "Layout"): string {
+export function tabLabel(tab: InspectorTab, first: "Content" | "Layout" | "Settings"): string {
   return tab === "content" ? first : tab === "style" ? "Style" : "Advanced";
 }
+
+/**
+ * THE GLYPH OVER EACH TAB (D-172, round 3).
+ *
+ * Driven in the reference on 2026-09-19: every tab is 57px tall and carries an
+ * eicons glyph on `span::before` — `display: block`, 16px — ABOVE the word,
+ * which is 13px at weight 400. Ours was the word alone on one line. The three
+ * glyphs are its own: a pencil over Content, a contrast circle over Style, a
+ * gear over Advanced.
+ */
+const TAB_ICON: Record<InspectorTab, typeof Pencil> = {
+  content: Pencil, style: Contrast, advanced: Settings2,
+};
 
 export function InspectorTabs({ tab, onTab, first, tabs }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
-  first: "Content" | "Layout";
+  /* "Settings" is the PAGE panel's own first word — the reference titles
+     its page-settings tab that, and its element panels Content or Layout. */
+  first: "Content" | "Layout" | "Settings";
   /**
    * WHICH TABS THIS SELECTION ACTUALLY HAS (D-172).
    *
@@ -103,25 +118,30 @@ export function InspectorTabs({ tab, onTab, first, tabs }: {
     <div role="tablist" aria-label="Settings" data-inspector-tab={tab}
       style={{ display: "flex", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
       {shown.map((t) => {
-        const off = false;
         const on = tab === t;
+        const Icon = TAB_ICON[t];
         return (
+          /* NO TOOLTIP ON A TAB (D-172, round 3). Driven: `title`,
+             `aria-label` and `data-tooltip` are all null on all three of the
+             reference's tabs. Ours read "Content settings", "Style settings",
+             "Advanced settings" — the word under the cursor, said again. */
           <button
             key={t}
             type="button"
             role="tab"
             data-inspector-tabbtn={t}
             aria-selected={on}
-            disabled={off}
-            title={off ? `Nothing to set here for this` : `${tabLabel(t, first)} settings`}
             onClick={() => onTab(t)}
             style={{
               flex: 1, border: "none", borderBottom: `2px solid ${on ? "#0B1C24" : "transparent"}`,
-              background: "transparent", padding: "9px 6px", fontSize: 11.5,
-              fontWeight: on ? 700 : 600, color: off ? "#CBD5E1" : on ? "#0B1C24" : "#64748B",
-              cursor: off ? "default" : "pointer",
+              background: "transparent", height: 57, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13,
+              fontWeight: on ? 700 : 400, color: on ? "#0B1C24" : "#64748B", cursor: "pointer",
             }}
-          >{tabLabel(t, first)}</button>
+          >
+            <Icon size={16} aria-hidden />
+            <span>{tabLabel(t, first)}</span>
+          </button>
         );
       })}
     </div>
@@ -132,47 +152,97 @@ export function InspectorTabs({ tab, onTab, first, tabs }: {
    A group
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* THE HINT SENTENCE UNDER A SECTION HEADER IS DELETED (D-172). No
-   descriptive paragraph appears anywhere in the reference's panel; `hint`
-   is the header's TOOLTIP, which is where a sentence belongs. */
+/**
+ * ONE SECTION OPEN AT A TIME (D-172, round 3).
+ *
+ * DRIVEN in the reference on 2026-09-19, on a Heading's Advanced tab: Layout
+ * starts open with twelve controls laid out; clicking Motion Effects leaves
+ * Layout with NONE and Motion Effects with five; clicking Transform empties
+ * Motion Effects in turn. A panel is an accordion there, and ours let every
+ * section stand open at once, so a 300px column became a scroll of everything.
+ *
+ * `null` means nobody has pressed anything yet, so the section that asked for
+ * `defaultOpen` is the open one; `""` means the author shut that one and wants
+ * none. A Group with no Accordion round it keeps its own open/shut, which is
+ * what a lone group outside the panel does.
+ */
+const AccordionCtx = createContext<{
+  open: string | null;
+  /** The band says whether IT is open — the provider cannot know which band
+   *  asked for `defaultOpen`, and a first press on the open one must SHUT it.
+   *  Found by driving our own panel: pressing the open Layout band left it
+   *  open, because "nothing pressed yet" and "Layout is open" were the same
+   *  state to the toggle. */
+  toggle: (title: string, isOpen: boolean) => void;
+} | null>(null);
+
+export function Accordion({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <AccordionCtx.Provider value={{ open, toggle: (t, isOpen) => setOpen(isOpen ? "" : t) }}>
+      {/* THE SEPARATOR, MEASURED: every band after the first carries
+          `border-top: 2px solid rgb(230, 232, 234)` on its heading. It is a
+          sibling rule, which an inline style cannot say, so it is said once
+          here rather than by handing every Group its own index. */}
+      {/* ON THE BAND, NOT ITS HEADING (found by driving ours): the heading is
+          a <button> whose inline `border: none` beats any stylesheet rule, so
+          the first version of this drew no line at all. The band sits directly
+          above its heading, so the line lands in the same place. */}
+      <style>{".bx-pband + .bx-pband { border-top: 2px solid #E6E8EA; }"}</style>
+      {children}
+    </AccordionCtx.Provider>
+  );
+}
+
+/* A SECTION IS A FULL-BLEED BAND, NOT A CARD (D-172, round 3).
+   Measured in the reference: the section box is x=0, width 300 — the whole
+   panel — `background: transparent`, `border: 0 none`, `border-radius: 0`, and
+   its heading is 48px tall with `padding: 0 20px` and the caret on the LEFT.
+   Ours was a rounded card with a 1px #E2E8F0 edge and a grey header fill,
+   inset 16px from the panel's edge, so the panel read as a stack of cards.
+
+   THE HEADER'S TOOLTIP IS DELETED with it. Driven: `title`, `aria-label` and
+   `data-tooltip` are null on every one of the reference's section headings.
+   Ours carried a sentence on each — "What this shows, and where it comes
+   from", "Room inside and around this, and how it lines up" — so the `hint`
+   prop is gone from the component and from all fourteen call sites. */
 export function Group({
-  title, hint, defaultOpen = false, onReset, resetTitle, children,
+  title, defaultOpen = false, onReset, resetTitle, children,
 }: {
   title: string;
-  hint?: string;
   defaultOpen?: boolean;
   onReset?: () => void;
   resetTitle?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const acc = useContext(AccordionCtx);
+  const [solo, setSolo] = useState(defaultOpen);
+  const open = acc ? (acc.open === null ? defaultOpen : acc.open === title) : solo;
   return (
-    <div data-style-group={title} style={{ border: "1px solid #E2E8F0", borderRadius: 6, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", background: "#F8FAFC" }}>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          title={hint || `Show or hide ${title.toLowerCase()}`}
-          aria-expanded={open}
-          style={{
-            flex: 1, display: "flex", alignItems: "center", gap: 6, border: "none", background: "transparent",
-            padding: "8px 10px", cursor: "pointer", textAlign: "left",
-          }}
-        >
-          {open ? <ChevronDown size={13} color="#5A7A8A" /> : <ChevronRight size={13} color="#5A7A8A" />}
-          {/* TITLE CASE (D-172): the reference's headings are "Container",
-              "Additional Options", measured `text-transform: none`. */}
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{title}</span>
-        </button>
-        {/* THE PER-SECTION ERASER IS DELETED (D-172). The reference has a reset
-            on a POPOVER control — Typography, Text Stroke, Text Shadow — and
-            nowhere else; ours put one titled "Put layout back to the default on
-            every screen size" in EVERY section header, which is a destructive
-            button on every row of the panel. `onReset` stays on the props
-            because the popover controls will want it; nothing draws it here. */}
-      </div>
+    <div className="bx-pband" data-style-group={title} style={{ background: "transparent" }}>
+      <button
+        type="button"
+        className="bx-pband-head"
+        onClick={() => (acc ? acc.toggle(title, open) : setSolo((o) => !o))}
+        aria-expanded={open}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8, border: "none",
+          background: "transparent", height: 48, padding: "0 20px", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        {open ? <ChevronDown size={13} color="#5A7A8A" /> : <ChevronRight size={13} color="#5A7A8A" />}
+        {/* TITLE CASE, 13px (D-172): measured 13.3333px, weight 700,
+            `letter-spacing: normal`, `text-transform: none`. */}
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#0C0D0E" }}>{title}</span>
+      </button>
+      {/* THE PER-SECTION ERASER IS DELETED (D-172). The reference has a reset
+          on a POPOVER control — Typography, Text Stroke, Text Shadow — and
+          nowhere else; ours put one titled "Put layout back to the default on
+          every screen size" in EVERY section header, which is a destructive
+          button on every row of the panel. `onReset` stays on the props
+          because the popover controls will want it; nothing draws it here. */}
       {open && (
-        <div style={{ padding: "10px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+        <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
       )}
     </div>
   );
@@ -302,6 +372,107 @@ export function IconChoice<T extends string>({ value, options, onPick, name, tes
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   A SIZE — a slider, a number box and a unit switcher (D-172, round 3)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * THE SHAPE EVERY SIZE IN THE REFERENCE WEARS.
+ *
+ * Driven on 2026-09-19: Width, Min Height, Columns, Rows, Space, Size, Weight,
+ * Gap, Opacity, Rotate, Paragraph Spacing and Columns Gap are all a slider with
+ * a number box beside it, the label ABOVE (`elementor-label-block`), the device
+ * switcher on the label row, and a unit switcher on the right of it. Ours had
+ * no `input type="range"` anywhere in the panel and no unit switcher anywhere
+ * at all — every size was a bare pixel number, so "as tall as the screen" could
+ * not be said.
+ *
+ * The slider and the box are ONE value: dragging writes the same key typing
+ * does, and the box is there because a slider alone cannot be given 137.
+ */
+export function Slider({
+  label, head, value, unit, units, onChange, onUnit, testAttr, max, placeholder, adapter,
+}: {
+  label: string;
+  /**
+   * THE LABEL ROW ITSELF, handed in by the panel.
+   *
+   * The label and its device switcher stay written where THE SCREEN LAW pins
+   * them — in Inspector.tsx, beside the control they belong to — and the slider
+   * is built round them. A component that swallowed the label would have moved
+   * the one thing that file is pinned on, to add a slider under it.
+   */
+  head: ReactNode;
+  value: number | undefined;
+  unit: SizeUnit | undefined;
+  /** Which units this size may be in. The reference's list, per control. */
+  units: ReadonlyArray<SizeUnit>;
+  onChange: (v: number | undefined) => void;
+  onUnit: (u: SizeUnit | undefined) => void;
+  testAttr?: string;
+  /** The slider's far end. A number box may go past it; the slider may not. */
+  max?: number;
+  placeholder?: string;
+  /**
+   * WHICH BUILDER THIS IS, so a size cannot be set in a unit that builder's
+   * emitter throws away on publish. The rule is `style.unitsOffered` — ONE
+   * rule, read here, rather than an `if` at every size control.
+   */
+  adapter?: string;
+}) {
+  const offered = unitsOffered(adapter, units);
+  const shownUnit = unit ?? offered[0] ?? "px";
+  const top = max ?? (shownUnit === "px" ? 800 : 100);
+  return (
+    <div style={FIELD}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {head}
+        <span role="group" aria-label={`${label} unit`} data-style-units={label.toLowerCase()}
+          style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
+          {offered.map((u) => {
+            const on = shownUnit === u;
+            return (
+              <button
+                key={u}
+                type="button"
+                aria-pressed={on}
+                title={u}
+                onClick={() => onUnit(u === (offered[0] ?? "px") ? undefined : u)}
+                style={{
+                  border: "none", background: "transparent", cursor: "pointer", padding: "0 2px",
+                  fontSize: 10, fontWeight: on ? 700 : 400, color: on ? "#0C4A60" : "#BFC7CE",
+                }}
+              >{u}</button>
+            );
+          })}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", gap: 8, alignItems: "center" }}>
+        <input
+          type="range"
+          min={0}
+          max={top}
+          aria-label={label}
+          {...(testAttr ? { [testAttr]: "range" } : {})}
+          value={value ?? 0}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ width: "100%" }}
+        />
+        <input
+          type="number"
+          min={0}
+          aria-label={`${label} value`}
+          {...(testAttr ? { [`${testAttr}-box`]: "number" } : {})}
+          value={value ?? ""}
+          placeholder={placeholder ?? "0"}
+          onChange={(e) => onChange(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0))}
+          style={{ ...INPUT, padding: "4px 6px", textAlign: "center" }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    Spacing
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -388,6 +559,7 @@ function SidesPad({
  */
 export function SpacingGroup({
   device, onDevice, layer, seedPadding, onPatch, onReset, what, align, box,
+  cssId, cssClasses, onPatchNames,
 }: {
   device: Device;
   onDevice: (d: Device) => void;
@@ -408,9 +580,22 @@ export function SpacingGroup({
    * already. So they are drawn INSIDE this group, for a box only.
    */
   box?: boolean;
+  /**
+   * CSS ID AND CSS CLASSES LIVE IN LAYOUT (D-172, round 3).
+   *
+   * Driven on a Heading's Advanced tab: the Layout section is Margin, Padding,
+   * Width, Align Self, Order, Size, Position, Z-Index, CSS ID, CSS Classes,
+   * Cache Settings. Ours kept the two in an "Attributes" section of their own,
+   * which is a section the reference does have — and it holds a Pro promo, not
+   * these. They are NOT per device, so they are written on the element's own
+   * style and never through `withLayer`.
+   */
+  cssId?: string;
+  cssClasses?: string;
+  onPatchNames?: (patch: { cssId?: string; cssClasses?: string }) => void;
 }) {
   return (
-    <Group title="Layout" hint="Room inside and around this, and how it lines up" defaultOpen onReset={onReset}>
+    <Group title="Layout" defaultOpen onReset={onReset}>
       {/* MARGIN FIRST, THEN PADDING (D-172) — the reference's own order in
           Advanced > Layout. Ours was the other way round. */}
       <SidesPad
@@ -438,6 +623,30 @@ export function SpacingGroup({
           style sections can ask for it; Advanced no longer draws it. */}
       {void align}
       {box && <BoxSelfRows layer={layer} onPatch={onPatch} />}
+      {onPatchNames && (
+        <>
+          <div style={ROW}>
+            <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
+            <input
+              style={{ ...INPUT, borderRadius: 6 }}
+              data-style-css-id
+              value={cssId ?? ""}
+              placeholder="e.g. prices"
+              onChange={(e) => onPatchNames({ cssId: e.target.value })}
+            />
+          </div>
+          <div style={ROW}>
+            <span style={L} title="Class names on this element, separated by a space.">CSS Classes</span>
+            <input
+              style={{ ...INPUT, borderRadius: 6 }}
+              data-style-css-classes
+              value={cssClasses ?? ""}
+              placeholder="e.g. tight two-up"
+              onChange={(e) => onPatchNames({ cssClasses: e.target.value })}
+            />
+          </div>
+        </>
+      )}
     </Group>
   );
 }
@@ -455,12 +664,12 @@ function BoxSelfRows({ layer, onPatch }: {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <NumberField
           label="Width" attr="box-self-width" value={layer.selfWidth} placeholder="as needed"
-          hint="How much of the row this box takes, out of 100."
+          
           onChange={(v) => onPatch({ selfWidth: v === undefined ? undefined : Math.min(100, Math.max(0, v)) }, "selfWidth")}
         />
         <SelectField
           label="Align self" attr="box-align-self" value={layer.alignSelf ?? ""}
-          hint="Where this box sits across the row that holds it."
+          
           options={[
             ["", "As the row says"], ["start", "At the top or left"], ["center", "In the middle"],
             ["end", "At the bottom or right"], ["stretch", "Fill the row"],
@@ -471,18 +680,18 @@ function BoxSelfRows({ layer, onPatch }: {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <NumberField
           label="Order" attr="box-order" value={layer.order} placeholder="as placed"
-          hint="A lower number comes first. Useful to put a picture above the words on a phone."
+          
           onChange={(v) => onPatch({ order: v }, "order")}
         />
         <NumberField
           label="Z-index" attr="box-zindex" value={layer.zIndex} placeholder="auto"
-          hint="Which box is on top when two overlap. Higher wins."
+          
           onChange={(v) => onPatch({ zIndex: v }, "zIndex")}
         />
       </div>
       <SelectField
         label="Position" attr="box-position" value={layer.position ?? ""}
-        hint="Normally a box sits in the flow. Pinned takes it out of the flow."
+        
         options={[["", "In the flow"], ["absolute", "Pinned to this page area"], ["fixed", "Pinned to the screen"]]}
         onChange={(v) => onPatch({ position: (v || undefined) as StyleLayer["position"] }, "position")}
       />
@@ -491,28 +700,36 @@ function BoxSelfRows({ layer, onPatch }: {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   The three small fields every container group is made of
+   The four small fields every container group is made of
    ══════════════════════════════════════════════════════════════════════════
-   One number box, one picker, one switch. Written once here rather than forty
-   times across the container's three tabs — the same reason `SidesPad` exists.
-   Each carries a plain-words tooltip, SD-010, not optional. */
+   One number box, one picker, one switch, one text box. Written once here
+   rather than forty times across the container's three tabs — the same reason
+   `SidesPad` exists.
 
-function NumberField({ label, attr, value, placeholder, hint, min, max, step, onChange }: {
+   THEY WEAR THE ROUND-3 LOOK (B-168 land, the b168/demo merge). Each was a
+   label STACKED over a full-width control carrying a sentence in its `title`.
+   The reference's row is the label LEFT and the control RIGHT (`ROW`), its
+   on/off is the Switcher pill and never a native checkbox, and nothing in the
+   panel explains itself in a sentence. The deeper controls these draw —
+   Background, Overlay, Shape Divider, Position, Auto Flow — are the same
+   controls; they are drawn the way the rest of the panel is drawn, rather
+   than in an older style beside it. */
+
+function NumberField({ label, attr, value, placeholder, min, max, step, onChange }: {
   label: string;
   attr: string;
   value: number | undefined;
   placeholder?: string;
-  hint: string;
   min?: number;
   max?: number;
   step?: number;
   onChange: (v: number | undefined) => void;
 }) {
   return (
-    <div style={FIELD}>
+    <div style={ROW}>
       <span style={L}>{label}</span>
       <input
-        type="number" style={INPUT} data-box-field={attr} title={hint}
+        type="number" style={INPUT} data-box-field={attr}
         min={min} max={max} step={step}
         value={value ?? ""} placeholder={placeholder ?? ""}
         onChange={(e) => {
@@ -526,18 +743,17 @@ function NumberField({ label, attr, value, placeholder, hint, min, max, step, on
   );
 }
 
-function SelectField({ label, attr, value, hint, options, onChange }: {
+function SelectField({ label, attr, value, options, onChange }: {
   label: string;
   attr: string;
   value: string;
-  hint: string;
   options: ReadonlyArray<readonly [string, string]>;
   onChange: (v: string) => void;
 }) {
   return (
-    <div style={FIELD}>
+    <div style={ROW}>
       <span style={L}>{label}</span>
-      <select style={INPUT} data-box-field={attr} title={hint} value={value}
+      <select style={INPUT} data-box-field={attr} value={value}
         onChange={(e) => onChange(e.target.value)}>
         {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
       </select>
@@ -545,34 +761,31 @@ function SelectField({ label, attr, value, hint, options, onChange }: {
   );
 }
 
-function SwitchField({ label, attr, checked, hint, onChange }: {
+function SwitchField({ label, attr, checked, onChange }: {
   label: string;
   attr: string;
   checked: boolean;
-  hint: string;
   onChange: (on: boolean) => void;
 }) {
   return (
-    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }} title={hint}>
-      <input type="checkbox" data-box-field={attr} checked={checked}
-        onChange={(e) => onChange(e.target.checked)} />
-      {label}
-    </label>
+    <div style={ROW} data-box-field={attr}>
+      <span style={L}>{label}</span>
+      <Switcher on={checked} onChange={onChange} name={label} testId={attr} />
+    </div>
   );
 }
 
-function TextField({ label, attr, value, placeholder, hint, onChange }: {
+function TextField({ label, attr, value, placeholder, onChange }: {
   label: string;
   attr: string;
   value: string;
   placeholder?: string;
-  hint: string;
   onChange: (v: string) => void;
 }) {
   return (
-    <div style={FIELD}>
+    <div style={ROW}>
       <span style={L}>{label}</span>
-      <input style={INPUT} data-box-field={attr} title={hint} value={value} placeholder={placeholder ?? ""}
+      <input style={INPUT} data-box-field={attr} value={value} placeholder={placeholder ?? ""}
         onChange={(e) => onChange(e.target.value)} />
     </div>
   );
@@ -631,7 +844,7 @@ export function TypographyGroup({
   const set = (patch: Record<string, unknown>, key: string) =>
     onPatch({ typography: { ...t, ...patch } as any }, key);
   return (
-    <Group title="Typography" hint="How the words in this are set" onReset={onReset}>
+    <Group title="Typography" onReset={onReset}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div style={FIELD}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -735,7 +948,7 @@ export function ResponsiveGroup({
        the reference names the BREAKPOINT, because "tablet" and "tablet
        portrait" are different widths and hiding on one is not hiding on the
        other. */
-    <Group title="Responsive" hint="Leaving this out on smaller screens" onReset={onReset}>
+    <Group title="Responsive" onReset={onReset}>
       {visibilityHeading && (
         <div data-control-subheading="Visibility" style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
           Visibility
@@ -775,188 +988,14 @@ export function ResponsiveGroup({
    Inspector's job is "bind to the selection", and a box's Layout tab is a set
    of controls that a section will want next. */
 
-/** The reference's Layout tab: Container · Items · Additional Options. */
-export function ContainerLayoutGroup({
-  device, onDevice, layer, htmlTag, onPatch, onPatchProps, onReset,
-}: {
-  device: Device;
-  onDevice: (d: Device) => void;
-  layer: StyleLayer;
-  htmlTag: string;
-  onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
-  onPatchProps: (patch: Record<string, unknown>) => void;
-  onReset: () => void;
-}) {
-  const grid = layer.direction === "grid";
-  // THE CHAIN IS ON WHEN NOBODY HAS SET A ROW GAP — which is exactly what the
-  // one stored key means. No second "isLinked" field to fall out of step with
-  // the numbers the author can see (the lesson SidesPad learned on 09-17).
-  const linkedGaps = layer.rowGap === undefined;
-  return (
-    <>
-      <Group title="Container" hint="What this box is and how wide it runs" defaultOpen onReset={onReset}>
-        <DeviceSegment device={device} onDevice={onDevice} />
-        <SelectField
-          label="Container layout" attr="container-type" value={grid ? "grid" : "flex"}
-          hint="Flexbox puts things in a line — across or down. Grid puts them in even cells."
-          options={[["flex", "Flexbox"], ["grid", "Grid"]]}
-          onChange={(v) => onPatch(v === "grid"
-            ? { direction: "grid", columns: layer.columns ?? 3 }
-            : { direction: layer.direction === "grid" ? undefined : layer.direction, columns: undefined },
-          "container-type")}
-        />
-        <SelectField
-          label="Content width" attr="content-width" value={layer.contentWidth ?? "boxed"}
-          hint="Boxed keeps what is inside within the page width. Full runs edge to edge."
-          options={[["boxed", "Boxed"], ["full", "Full width"]]}
-          onChange={(v) => onPatch({ contentWidth: v === "full" ? "full" : undefined }, "contentWidth")}
-        />
-        <NumberField
-          label={layer.contentWidth === "full" ? "Width (%)" : "Width (px)"}
-          attr="width" value={layer.width} min={0}
-          placeholder={layer.contentWidth === "full" ? "100" : "1140"}
-          hint="How wide this box runs. Leave it empty for the page's own width."
-          onChange={(v) => onPatch({ width: v }, "width")}
-        />
-        <NumberField
-          label="Min height" attr="min-height" value={layer.minHeight} min={0} placeholder="as tall as it needs"
-          hint="The box is at least this tall, whatever is in it. Pixels."
-          onChange={(v) => onPatch({ minHeight: v }, "minHeight")}
-        />
-      </Group>
-
-      <Group title="Items" hint="How the things inside this box are arranged" defaultOpen
-        onReset={() => onPatch({
-          direction: grid ? "grid" : undefined, justify: undefined, alignItems: undefined,
-          wrap: undefined, gap: undefined, rowGap: undefined, rows: undefined, autoFlow: undefined,
-        }, "items")}>
-        <DeviceSegment device={device} onDevice={onDevice} />
-        {!grid && (
-          <SelectField
-            label="Direction" attr="direction" value={layer.direction ?? "column"}
-            hint="Which way the things inside run. The reverse pair puts the last one first."
-            options={[
-              ["column", "Down the page"], ["row", "Across, left to right"],
-              ["column-reverse", "Up the page (reversed)"], ["row-reverse", "Across, right to left"],
-            ]}
-            onChange={(v) => onPatch({ direction: v === "column" ? undefined : v as StyleLayer["direction"] }, "direction")}
-          />
-        )}
-        {grid && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            <NumberField
-              label="Columns" attr="grid-columns" value={layer.columns ?? 3} min={1} max={12}
-              hint="How many even columns the things inside sit in."
-              onChange={(v) => onPatch({ columns: v === undefined ? undefined : Math.min(12, Math.max(1, v)) }, "columns")}
-            />
-            <NumberField
-              label="Rows" attr="grid-rows" value={layer.rows} min={1} max={12} placeholder="as many as needed"
-              hint="How many rows the grid has. Leave it empty and it makes as many as it needs."
-              onChange={(v) => onPatch({ rows: v === undefined ? undefined : Math.min(12, Math.max(1, v)) }, "rows")}
-            />
-          </div>
-        )}
-        {grid && (
-          <SelectField
-            label="Auto flow" attr="grid-auto-flow" value={layer.autoFlow ?? "row"}
-            hint="Which way a new cell is added — along a row, or down a column."
-            options={[["row", "Fill rows first"], ["column", "Fill columns first"]]}
-            onChange={(v) => onPatch({ autoFlow: v === "row" ? undefined : "column" }, "autoFlow")}
-          />
-        )}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-          <SelectField
-            label="Justify content" attr="justify" value={layer.justify ?? ""}
-            hint="Where the things sit along the direction they run in."
-            options={[
-              ["", "At the start"], ["center", "In the middle"], ["end", "At the end"],
-              ["between", "Spread out, edge to edge"], ["around", "Spread out, with room at the ends"],
-              ["evenly", "Spread out evenly"],
-            ]}
-            onChange={(v) => onPatch({ justify: (v || undefined) as StyleLayer["justify"] }, "justify")}
-          />
-          <SelectField
-            label="Align items" attr="align-items" value={layer.alignItems ?? ""}
-            hint="Whether the things fill the box across, or line up at one edge."
-            options={[
-              ["", "Fill the box"], ["start", "At the top or left"], ["center", "In the middle"],
-              ["end", "At the bottom or right"], ["stretch", "Fill the box"],
-            ]}
-            onChange={(v) => onPatch({ alignItems: (v || undefined) as StyleLayer["alignItems"] }, "alignItems")}
-          />
-        </div>
-
-        {/* GAPS — two numbers and a chain, the reference's own control. */}
-        <div style={FIELD}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={L}>Gaps</span>
-            <button
-              type="button" data-box-field="gaps-link" aria-pressed={linkedGaps}
-              title={linkedGaps
-                ? "The gap across and the gap down are the same. Click to set each on its own."
-                : "Each gap is on its own. Click to make them the same."}
-              onClick={() => onPatch({ rowGap: linkedGaps ? (layer.gap ?? 0) : undefined }, "gaps-link")}
-              style={{
-                marginLeft: "auto", border: "1px solid " + (linkedGaps ? "#0C4A60" : "#CBD5E1"),
-                background: linkedGaps ? "#0C4A60" : "#fff", color: linkedGaps ? "#fff" : "#64748B",
-                borderRadius: 4, padding: "2px 5px", cursor: "pointer", display: "inline-flex", alignItems: "center",
-              }}
-            >{linkedGaps ? <Link2 size={11} /> : <Unlink size={11} />}</button>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}>
-            <label style={{ display: "flex", flexDirection: "column", gap: 2 }}
-              title="The gap BETWEEN columns, in pixels.">
-              <span style={{ fontSize: 9, color: "#94A3B8", textAlign: "center" }}>Column</span>
-              <input type="number" min={0} style={{ ...INPUT, padding: "4px", textAlign: "center" }}
-                data-box-field="gap-column" aria-label="Gap between columns"
-                value={layer.gap ?? ""} placeholder="0"
-                onChange={(e) => {
-                  const n = e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0);
-                  onPatch(linkedGaps ? { gap: n } : { gap: n }, "gap");
-                }} />
-            </label>
-            <label style={{ display: "flex", flexDirection: "column", gap: 2 }}
-              title="The gap BETWEEN rows, in pixels.">
-              <span style={{ fontSize: 9, color: "#94A3B8", textAlign: "center" }}>Row</span>
-              <input type="number" min={0} style={{ ...INPUT, padding: "4px", textAlign: "center" }}
-                data-box-field="gap-row" aria-label="Gap between rows" disabled={linkedGaps}
-                value={(linkedGaps ? layer.gap : layer.rowGap) ?? ""} placeholder="0"
-                onChange={(e) => onPatch(
-                  { rowGap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "rowGap")} />
-            </label>
-          </div>
-        </div>
-
-        {!grid && (
-          <SwitchField
-            label="Wrap onto a second line" attr="wrap" checked={!!layer.wrap}
-            hint="When there is not enough room, let them carry on to a second line rather than squeezing."
-            onChange={(on) => onPatch({ wrap: on ? true : undefined }, "wrap")}
-          />
-        )}
-      </Group>
-
-      <Group title="Additional Options" hint="What this box is, and what it does when things do not fit">
-        <SelectField
-          label="HTML tag" attr="html-tag" value={htmlTag}
-          hint="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
-          options={[
-            ["", "Just a box"], ["header", "The top of the page"], ["main", "The main part of the page"],
-            ["section", "A section of the page"], ["article", "A whole article"],
-            ["aside", "Something to one side"], ["footer", "The bottom of the page"],
-          ]}
-          onChange={(v) => onPatchProps({ html_tag: v })}
-        />
-        <SelectField
-          label="Overflow" attr="overflow" value={layer.overflow ?? ""}
-          hint="What happens when what is inside is bigger than the box."
-          options={[["", "Let it show"], ["hidden", "Cut it off"], ["auto", "Give it a scrollbar"]]}
-          onChange={(v) => onPatch({ overflow: (v || undefined) as StyleLayer["overflow"] }, "overflow")}
-        />
-      </Group>
-    </>
-  );
-}
+/* THE LAYOUT TAB IS NOT HERE. `ContainerLayoutGroup` drew the reference's
+   Container · Items · Additional Options and was exported and rendered by
+   nobody: the panel the author actually sees is written out in Inspector.tsx,
+   where THE SCREEN LAW (test/builder-elementor-screen.test.mjs, laws 10, 11 and
+   17) pins every row of it by name. Two copies of one panel is two answers to
+   "what does a box offer", so the dead one is DELETED rather than left beside
+   the live one — and the fifteen keys it wrote are all written by the live one.
+   B-168 land, the b168/demo merge. */
 
 /** The reference's Style tab: Background · Background Overlay · Border · Shape Divider. */
 export function ContainerStyleGroups({
@@ -979,12 +1018,12 @@ export function ContainerStyleGroups({
     onPatch({ overlay: { ...ov, ...patch } }, `overlay:${key}`);
   return (
     <>
-      <Group title="Background" hint="What is behind this box" defaultOpen
+      <Group title="Background" defaultOpen
         onReset={() => onReset(["background"])}>
         <DeviceSegment device={device} onDevice={onDevice} />
         <SelectField
           label="Background type" attr="bg-type" value={bg.type ?? ""}
-          hint="A colour or a picture, two colours blending, a film, or pictures that change."
+          
           options={[
             ["", "None"], ["classic", "Colour or picture"], ["gradient", "Two colours blending"],
             ["video", "A film"], ["slideshow", "Pictures that change"],
@@ -1007,13 +1046,13 @@ export function ContainerStyleGroups({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <SelectField
                 label="Type" attr="bg-gradient" value={bg.gradient ?? "linear"}
-                hint="A straight blend, or one that spreads out from the middle."
+                
                 options={[["linear", "Straight"], ["radial", "From the middle"]]}
                 onChange={(v) => setBg({ gradient: v === "radial" ? "radial" : undefined }, "gradient")}
               />
               <NumberField
                 label="Angle" attr="bg-angle" value={bg.angle} placeholder="180"
-                hint="Which way the blend runs, in degrees. 180 is top to bottom."
+                
                 onChange={(v) => setBg({ angle: v }, "angle")}
               />
             </div>
@@ -1023,13 +1062,13 @@ export function ContainerStyleGroups({
           <>
             <TextField
               label="Image" attr="bg-image" value={bg.image ?? ""} placeholder="Paste an image address"
-              hint="A picture behind the box. Leave it empty for a plain colour."
+              
               onChange={(v) => setBg({ image: v || undefined }, "image")}
             />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <SelectField
                 label="Position" attr="bg-position" value={bg.position ?? ""}
-                hint="Which part of the picture stays in view."
+                
                 options={[
                   ["", "Middle"], ["center center", "Middle"], ["top center", "Top"], ["bottom center", "Bottom"],
                   ["center left", "Left"], ["center right", "Right"],
@@ -1038,14 +1077,14 @@ export function ContainerStyleGroups({
               />
               <SelectField
                 label="Size" attr="bg-size" value={bg.size ?? ""}
-                hint="Cover fills the box and crops. Contain shows all of it."
+                
                 options={[["", "Cover the box"], ["cover", "Cover the box"], ["contain", "Show all of it"], ["auto", "Its own size"]]}
                 onChange={(v) => setBg({ size: v || undefined }, "size")}
               />
             </div>
             <SelectField
               label="Repeat" attr="bg-repeat" value={bg.repeat ?? ""}
-              hint="Whether the picture tiles across the box."
+              
               options={[["", "Once"], ["no-repeat", "Once"], ["repeat", "Tile it"], ["repeat-x", "Tile across"], ["repeat-y", "Tile down"]]}
               onChange={(v) => setBg({ repeat: v || undefined }, "repeat")}
             />
@@ -1055,12 +1094,12 @@ export function ContainerStyleGroups({
           <>
             <TextField
               label="Video link" attr="bg-video" value={bg.videoUrl ?? ""} placeholder="https://"
-              hint="A film that plays behind the box on your website."
+              
               onChange={(v) => setBg({ videoUrl: v || undefined }, "videoUrl")}
             />
             <TextField
               label="Still picture" attr="bg-video-poster" value={bg.image ?? ""} placeholder="Paste an image address"
-              hint="What shows before the film starts — and everywhere a film cannot play, like an email."
+              
               onChange={(v) => setBg({ image: v || undefined }, "image")}
             />
             <div style={{ fontSize: 10, color: "#B45309", lineHeight: 1.45 }}>
@@ -1074,7 +1113,7 @@ export function ContainerStyleGroups({
             <TextField
               label="Pictures" attr="bg-slideshow" value={(bg.images ?? []).join(", ")}
               placeholder="Paste image addresses, separated by commas"
-              hint="The pictures the box cycles through on your website."
+              
               onChange={(v) => setBg({ images: v.split(",").map((s) => s.trim()).filter(Boolean) }, "images")}
             />
             <div style={{ fontSize: 10, color: "#B45309", lineHeight: 1.45 }}>
@@ -1085,12 +1124,12 @@ export function ContainerStyleGroups({
         )}
       </Group>
 
-      <Group title="Background Overlay" hint="A wash of colour over the background"
+      <Group title="Background Overlay" 
         onReset={() => onReset(["overlay"])}>
         <DeviceSegment device={device} onDevice={onDevice} />
         <SelectField
           label="Background type" attr="overlay-type" value={ov.type ?? ""}
-          hint="A wash over the background, so words on top of a picture can be read."
+          
           options={[["", "None"], ["classic", "Colour or picture"], ["gradient", "Two colours blending"]]}
           onChange={(v) => onPatch({ overlay: v ? { ...ov, type: v as OverlaySpec["type"] } : undefined }, "overlay:type")}
         />
@@ -1109,12 +1148,12 @@ export function ContainerStyleGroups({
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
               <NumberField
                 label="Opacity" attr="overlay-opacity" value={ov.opacity} min={0} max={1} step={0.05} placeholder="0.5"
-                hint="How strong the wash is, from 0 (invisible) to 1 (solid)."
+                
                 onChange={(v) => setOv({ opacity: v }, "opacity")}
               />
               <SelectField
                 label="Blend mode" attr="overlay-blend" value={ov.blend ?? ""}
-                hint="How the wash mixes with what is behind it."
+                
                 options={[
                   ["", "Normal"], ["multiply", "Multiply"], ["screen", "Screen"], ["overlay", "Overlay"],
                   ["darken", "Darken"], ["lighten", "Lighten"], ["color-dodge", "Colour dodge"],
@@ -1127,13 +1166,13 @@ export function ContainerStyleGroups({
         )}
       </Group>
 
-      <Group title="Border" hint="The edge round this box, and its corners" defaultOpen
+      <Group title="Border" defaultOpen
         onReset={() => onReset(["border", "radius", "shadow"])}>
         <DeviceSegment device={device} onDevice={onDevice} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <SelectField
             label="Border type" attr="border-style" value={layer.border?.style ?? ""}
-            hint="A solid line, a dashed one or a dotted one."
+            
             options={[["", "None"], ["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"]]}
             onChange={(v) => onPatch({
               border: v ? { ...(layer.border || {}), style: v as "solid" | "dashed" | "dotted" } : undefined,
@@ -1141,7 +1180,7 @@ export function ContainerStyleGroups({
           />
           <NumberField
             label="Border width" attr="border-width" value={layer.border?.width} min={0} placeholder="none"
-            hint="How thick the line round this box is, in pixels."
+            
             onChange={(v) => onPatch({
               border: v === undefined && !layer.border?.color && !layer.border?.style
                 ? undefined
@@ -1157,16 +1196,12 @@ export function ContainerStyleGroups({
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <NumberField
             label="Border radius" attr="radius" value={layer.radius} min={0} placeholder="0"
-            hint={isEmail
-              ? "Not in email — Outlook renders through Word and squares the corners off, so this is left out rather than promised."
-              : "How round the corners of this box are, in pixels."}
+            
             onChange={(v) => onPatch({ radius: v }, "radius")}
           />
           <SelectField
             label="Box shadow" attr="shadow" value={layer.shadow ?? "none"}
-            hint={isEmail
-              ? "Not in email — a mailbox drops a shadow, so this is left out rather than promised."
-              : "A soft shadow lifts the box off the page."}
+            
             options={[["none", "None"], ["soft", "Soft"], ["strong", "Strong"]]}
             onChange={(v) => onPatch({ shadow: v === "none" ? undefined : v as StyleLayer["shadow"] }, "shadow")}
           />
@@ -1178,7 +1213,7 @@ export function ContainerStyleGroups({
         )}
       </Group>
 
-      <Group title="Shape Divider" hint="A shaped edge at the top or the bottom of this box"
+      <Group title="Shape Divider" 
         onReset={() => onReset(["shapeTop", "shapeBottom"])}>
         <DeviceSegment device={device} onDevice={onDevice} />
         <ShapeRows edge="top" spec={layer.shapeTop} swatches={swatches}
@@ -1207,7 +1242,7 @@ function ShapeRows({ edge, spec, swatches, onPatch }: {
     <div data-shape-edge={edge} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <SelectField
         label={`${where} shape`} attr={`shape-${edge}`} value={s.shape ?? ""}
-        hint={`The shape cut into the ${edge} edge of this box.`}
+        
         options={[["", "None"], ...SHAPE_DIVIDERS.map((n) => [n, sentence(n)] as const)]}
         onChange={(v) => onPatch(v ? { ...s, shape: v as ShapeDividerSpec["shape"] } : undefined)}
       />
@@ -1219,17 +1254,17 @@ function ShapeRows({ edge, spec, swatches, onPatch }: {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
             <NumberField label="Height" attr={`shape-${edge}-height`} value={s.height} min={0} placeholder="60"
-              hint="How tall the shape is, in pixels." onChange={(v) => set({ height: v })} />
+              onChange={(v) => set({ height: v })} />
             <NumberField label="Width (%)" attr={`shape-${edge}-width`} value={s.width} min={100} placeholder="100"
-              hint="How wide the shape is, out of 100. Over 100 makes it bolder."
+              
               onChange={(v) => set({ width: v })} />
           </div>
           <SwitchField label="Flip" attr={`shape-${edge}-flip`} checked={!!s.flip}
-            hint="Mirror the shape left to right." onChange={(on) => set({ flip: on || undefined })} />
+            onChange={(on) => set({ flip: on || undefined })} />
           <SwitchField label="Invert" attr={`shape-${edge}-invert`} checked={!!s.invert}
-            hint="Turn the shape over, so the cut goes the other way." onChange={(on) => set({ invert: on || undefined })} />
+            onChange={(on) => set({ invert: on || undefined })} />
           <SwitchField label="Bring to front" attr={`shape-${edge}-front`} checked={!!s.aboveContent}
-            hint="Draw the shape over what is in the box rather than behind it."
+            
             onChange={(on) => set({ aboveContent: on || undefined })} />
         </>
       )}
@@ -1276,11 +1311,11 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
   return (
     <>
       {only !== "css" && (
-      <Group title="Motion Effects" hint="Keeping this box in view as the reader scrolls"
+      <Group title="Motion Effects" 
         onReset={() => set({ sticky: undefined, stickyOn: undefined, stickyOffset: undefined })}>
         <SelectField
           label="Sticky" attr="sticky" value={s.sticky ?? ""}
-          hint="Keep this box in view as the reader scrolls past it."
+          
           options={[["", "No"], ["top", "Stick to the top"], ["bottom", "Stick to the bottom"]]}
           onChange={(v) => set({ sticky: (v || undefined) as ElementStyle["sticky"] })}
         />
@@ -1288,7 +1323,7 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
           <>
             <NumberField
               label="Sticky offset" attr="sticky-offset" value={s.stickyOffset} min={0} placeholder="0"
-              hint="How far from the edge it stops, in pixels."
+              
               onChange={(v) => set({ stickyOffset: v })}
             />
             <div style={FIELD}>
@@ -1297,7 +1332,7 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
                 <SwitchField
                   key={d.key} label={`On a ${d.label.toLowerCase()}`} attr={`sticky-on-${d.key}`}
                   checked={on.includes(d.key)}
-                  hint={`Stick this box on a ${d.label.toLowerCase()}.`}
+                  
                   onChange={(checked) => {
                     const next = checked ? [...new Set([...on, d.key])] : on.filter((x) => x !== d.key);
                     set({ stickyOn: next.length && next.length < 3 ? next : (next.length ? undefined : []) });
@@ -1311,7 +1346,7 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
       )}
 
       {only !== "motion" && (
-      <Group title="Custom CSS" hint="Your own styling for this box, for anything the controls do not cover"
+      <Group title="Custom CSS" 
         onReset={() => set({ customCss: undefined })}>
         <textarea
           data-box-field="custom-css"
@@ -1339,75 +1374,13 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
 export { CONTAINER_LAYOUT_CONTROLS, CONTAINER_STYLE_CONTROLS, CONTAINER_ADVANCED_CONTROLS };
 
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Advanced ▸ Attributes — the CSS id and classes (§11.13.1)
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* THE "ATTRIBUTES" SECTION IS DELETED (D-172, round 3).
 
-/**
- * The reference editor's Advanced tab ends with CSS ID and CSS Classes, and
- * they are the third of §11.13.1's three Advanced sections. The other two
- * shipped with the screen; this one waited for somewhere to PUT the values and
- * somebody to READ them — a control that writes a field nothing reads is worse
- * than a missing one. `ElementStyle` carries them now and all three renderers
- * emit them, so here it is.
- *
- * PLAIN WORDS on screen, not "CSS ID": the label says what it is FOR, and the
- * hint says what it does, because a business owner reading "CSS ID" learns
- * nothing. The catalogue's own name is in the tooltip for anybody who wants it.
- */
-export function AttributesGroup({
-  cssId, cssClasses, onPatch, onReset,
-}: {
-  cssId: string;
-  cssClasses: string;
-  onPatch: (patch: { cssId?: string; cssClasses?: string }) => void;
-  onReset: () => void;
-}) {
-  /* THE REFERENCE'S OWN TWO NAMES, IN LAYOUT (D-172, round 2).
-     Two things changed here and both were ours:
-
-       · THE TWO EXPLANATION PARAGRAPHS ARE DELETED. "A Menu Anchor and a link
-         like #prices jump to this name. Use it once on a page." and "Separate
-         them with a space. Your own stylesheet can then style every part with
-         the same name." The reference's Advanced tab has no prose in it at
-         all. What each field is for is in its tooltip.
-       · THE LABELS ARE "CSS ID" AND "CSS CLASSES". Ours read "Its own name"
-         and "Styling names", invented on the argument that a business owner
-         learns nothing from "CSS ID" — which is true, and is why the sentence
-         that explains it is the tooltip. A NAME that appears nowhere else in
-         the world is worse than a technical one: somebody who searches for how
-         to use it finds every answer written about CSS ID.
-
-     The group is rendered inside the Layout section now — the reference keeps
-     both of these there, not in an Attributes section of their own. */
-  const field: React.CSSProperties = {
-    ...INPUT, borderRadius: 6,
-  };
-  return (
-    <Group title="Attributes" hint="A name for this part, so a link or your own styling can find it" onReset={onReset}>
-      <div style={ROW}>
-        <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
-        <input
-          style={field}
-          data-style-css-id
-          value={cssId}
-          placeholder="e.g. prices"
-          onChange={(e) => onPatch({ cssId: e.target.value })}
-        />
-      </div>
-      <div style={ROW}>
-        <span style={L} title="Class names on this element, separated by a space.">CSS Classes</span>
-        <input
-          style={field}
-          data-style-css-classes
-          value={cssClasses}
-          placeholder="e.g. tight two-up"
-          onChange={(e) => onPatch({ cssClasses: e.target.value })}
-        />
-      </div>
-    </Group>
-  );
-}
+   The reference DOES have a section by that name on the Advanced tab — and
+   what is in it is a Pro promo, not these two fields. CSS ID and CSS Classes
+   are inside LAYOUT there, which is where ours are now (see SpacingGroup).
+   The component is gone rather than emptied: an unused export is how a second
+   home for the same two fields comes back. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    A section's Layout — columns, the split, the gap

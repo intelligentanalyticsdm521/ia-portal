@@ -83,11 +83,48 @@ export type AlignSpec = "left" | "center" | "right";
  */
 export type DirectionSpec = "row" | "column" | "row-reverse" | "column-reverse" | "grid";
 
-/** Along the box's own direction. The reference editor's own six. */
+/**
+ * Along the box's own direction.
+ *
+ * SIX, not four (D-172, round 3). Driven in the reference on 2026-09-19: its
+ * Justify Content chooser offers Start, Center, End, Space Between, Space
+ * Around and Space Evenly. Ours had no word for the last two at all, so an
+ * author who wanted even air round three cards could not ask for it.
+ */
 export type JustifySpec = "start" | "center" | "end" | "between" | "around" | "evenly";
 
 /** Across it. */
 export type ItemsSpec = "start" | "center" | "end" | "stretch";
+
+/**
+ * THE WRAPPED LINES, not the items (D-172, round 3).
+ *
+ * The reference's container carries Align Content beside Align Items, with the
+ * same six words as Justify Content. It only says anything once the box wraps,
+ * which is exactly why it is its own control and not a second meaning for
+ * `alignItems`.
+ */
+export type ContentSpec = JustifySpec;
+
+/**
+ * THE UNIT A SIZE IS IN (D-172, round 3).
+ *
+ * Driven in the reference: every size control carries a unit switcher — Min
+ * Height is px/em/rem/vh/custom, Gaps px/%/em/rem/vw/custom, font Size
+ * px/em/rem/vw/custom. Ours had none anywhere: every size in the panel was a
+ * bare pixel number, so "make this box as tall as the screen" could not be
+ * said at all.
+ *
+ * "custom" is not offered: it takes a CSS expression, and a box that can be
+ * given `calc(100% - 3rem)` is a box the PDF and the mailbox cannot promise.
+ */
+export type SizeUnit = "px" | "%" | "em" | "rem" | "vh" | "vw";
+
+/** Which sizes may carry a unit. One key per size the panel can set. */
+export interface UnitMap {
+  minHeight?: SizeUnit;
+  gap?: SizeUnit;
+}
 
 /** Boxed keeps the contents inside the page width; full runs edge to edge. */
 export type ContentWidthSpec = "boxed" | "full";
@@ -203,12 +240,32 @@ export interface StyleLayer {
   minHeight?: number;
 
   /* Container only — a box, a column, or a section, which is one too. */
+  /**
+   * THE REFERENCE'S FOUR DIRECTIONS ARE FOUR VALUES, NOT THREE AND A FLAG.
+   *
+   * Its chooser reads Row - horizontal, Column - vertical, Row - reversed,
+   * Column - reversed, and its own machine key `flex_direction` offers exactly
+   * `row | column | row-reverse | column-reverse` — which is what
+   * `DirectionSpec` holds. A separate `reverse` flag beside it was tried on
+   * b168/demo and is DELETED: two keys would let a document say `row` and
+   * `reverse` at once while the three server mirrors (arion's container
+   * emitter, LUMEN, oliver's PDF) only ever read the value, so the reversal
+   * would be lost on publish. Every reader that only wants "row, column or
+   * grid?" asks `baseDirection`.
+   */
   direction?: DirectionSpec;
   justify?: JustifySpec;
   alignItems?: ItemsSpec;
+  /** The wrapped LINES, once `wrap` is on. The reference's Align Content. */
+  alignContent?: ContentSpec;
   wrap?: boolean;
   /** Grid only: how many even columns. */
   columns?: number;
+  /**
+   * WHAT UNIT EACH SIZE IS IN. Absent means px, which is what every stored
+   * document already means, so nothing has to be migrated.
+   */
+  units?: UnitMap;
 
   /* ── THE REST OF THE REFERENCE EDITOR'S CONTAINER PANEL (B-168, F0) ────
      Every one of these is a control the reference draws and we did not, and
@@ -298,6 +355,44 @@ const ALIGNS: ReadonlyArray<AlignSpec> = ["left", "center", "right"];
 const DIRECTIONS: ReadonlyArray<DirectionSpec> = ["row", "column", "row-reverse", "column-reverse", "grid"];
 const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "between", "around", "evenly"];
 const ITEMS: ReadonlyArray<ItemsSpec> = ["start", "center", "end", "stretch"];
+export const SIZE_UNITS: ReadonlyArray<SizeUnit> = ["px", "%", "em", "rem", "vh", "vw"];
+
+/** A size with its unit, ready for CSS. Absent unit means px. */
+export function sizeCss(value: number, unit: SizeUnit | undefined): string {
+  return `${round(value)}${SIZE_UNITS.includes(unit as SizeUnit) ? unit : "px"}`;
+}
+
+/**
+ * WHICH BUILDERS CANNOT CARRY A UNIT YET (B-168 land, the b168/demo merge).
+ *
+ * A unit switcher is new; the emitters are not. arion's container emitter
+ * (`lib/websiteBuilder/elementorTree.js`) writes every size as
+ * `{ unit: 'px', size }` — so a box set to `100vh` here would be published as
+ * `100px`, which is worse than losing it: the author watches the control work
+ * and the page comes out a different shape. The landing page's inline boxes go
+ * through `render.containerLayoutCss`, which writes px the same way.
+ *
+ * A CONTROL THAT CHANGES NOTHING ON THE PUBLISHED PAGE IS A DEFECT, so on
+ * those two builders the switcher offers px and nothing else, in ONE place,
+ * rather than each size control remembering. Delete an entry the day that
+ * builder's emitter carries the unit.
+ */
+export const PX_ONLY_BUILDERS: ReadonlyArray<string> = ["website", "landing"];
+
+/**
+ * The units a size control may offer in THIS builder.
+ *
+ * A list of ONE is left alone: a control with a single unit is stating what it
+ * is measured in rather than offering a choice — Width says px or % because
+ * Content Width already decided which, and the emitter carries that pair.
+ */
+export function unitsOffered(
+  adapter: string | undefined, units: ReadonlyArray<SizeUnit>,
+): ReadonlyArray<SizeUnit> {
+  if (!adapter || units.length < 2 || !PX_ONLY_BUILDERS.includes(adapter)) return units;
+  const kept = units.filter((u) => u === "px");
+  return kept.length ? kept : units;
+}
 const CONTENT_WIDTHS: ReadonlyArray<ContentWidthSpec> = ["boxed", "full"];
 const AUTO_FLOWS: ReadonlyArray<AutoFlowSpec> = ["row", "column"];
 const OVERFLOWS: ReadonlyArray<OverflowSpec> = ["hidden", "auto"];
@@ -448,7 +543,14 @@ function readLayer(v: unknown): StyleLayer | undefined {
   if (DIRECTIONS.includes(o.direction)) L.direction = o.direction;
   if (JUSTIFIES.includes(o.justify)) L.justify = o.justify;
   if (ITEMS.includes(o.alignItems)) L.alignItems = o.alignItems;
+  if (JUSTIFIES.includes(o.alignContent)) L.alignContent = o.alignContent;
   if (o.wrap === true) L.wrap = true;
+  if (o.units && typeof o.units === "object") {
+    const u: UnitMap = {};
+    if (SIZE_UNITS.includes(o.units.minHeight)) u.minHeight = o.units.minHeight;
+    if (SIZE_UNITS.includes(o.units.gap)) u.gap = o.units.gap;
+    if (Object.keys(u).length) L.units = u;
+  }
   const columns = num(o.columns);
   if (columns !== undefined && columns >= 1) L.columns = Math.min(12, Math.round(columns));
   /* ── The rest of the reference editor's container panel (B-168, F0) ────
@@ -786,7 +888,7 @@ export function sectionBoxDeclarations(layer: StyleLayer): string[] {
   }
   if (layer.radius !== undefined) out.push(`border-radius:${round(layer.radius)}px`);
   if (layer.shadow) out.push(`box-shadow:${SHADOW_CSS[layer.shadow]}`);
-  if (layer.minHeight !== undefined) out.push(`min-height:${round(layer.minHeight)}px`);
+  if (layer.minHeight !== undefined) out.push(`min-height:${sizeCss(layer.minHeight, layer.units?.minHeight)}`);
   return out;
 }
 
@@ -804,8 +906,8 @@ export function sectionBoxDeclarations(layer: StyleLayer): string[] {
  * `sectionBoxDeclarations`; this is only the arranging.
  */
 export const JUSTIFY_CSS: Record<JustifySpec, string> = {
-  start: "flex-start", center: "center", end: "flex-end",
-  between: "space-between", around: "space-around", evenly: "space-evenly",
+  start: "flex-start", center: "center", end: "flex-end", between: "space-between",
+  around: "space-around", evenly: "space-evenly",
 };
 export const ITEMS_CSS: Record<ItemsSpec, string> = {
   start: "flex-start", center: "center", end: "flex-end", stretch: "stretch",
@@ -820,7 +922,8 @@ export function baseDirection(dir: DirectionSpec | undefined): "row" | "column" 
 export function containerLayoutDeclarations(layer: StyleLayer): string[] {
   const dir = layer.direction;
   const arranged = baseDirection(dir) !== "column" || dir === "column-reverse" || !!layer.justify
-    || !!layer.alignItems || !!layer.wrap || layer.gap !== undefined || layer.rowGap !== undefined;
+    || !!layer.alignItems || !!layer.alignContent || !!layer.wrap
+    || layer.gap !== undefined || layer.rowGap !== undefined;
   if (!arranged) return [];
 
   const out: string[] = [];
@@ -835,22 +938,36 @@ export function containerLayoutDeclarations(layer: StyleLayer): string[] {
     }
     if (layer.autoFlow) out.push(`grid-auto-flow:${layer.autoFlow}`);
   } else {
+    /* REVERSED IS ONE OF THE FOUR VALUES, not a flag beside three of them: the
+       stored direction IS the CSS word, which is why nothing has to be
+       assembled here and why the three server mirrors can write the same
+       reversal without knowing about a second key. */
     out.push("display:flex", `flex-direction:${dir ?? "column"}`);
     if (layer.wrap) out.push("flex-wrap:wrap");
   }
   if (layer.justify) out.push(`justify-content:${JUSTIFY_CSS[layer.justify]}`);
   if (layer.alignItems) out.push(`align-items:${ITEMS_CSS[layer.alignItems]}`);
+  /* ALIGN CONTENT only says anything once the lines wrap, which is the
+     reference's own rule for offering it. */
+  if (layer.alignContent) out.push(`align-content:${JUSTIFY_CSS[layer.alignContent]}`);
   // THE GAPS CONTROL IS TWO NUMBERS AND A CHAIN (the reference's own `flex_gap`
   // / `grid_gaps`). `gap` is the column half and, when nobody has unlinked the
   // chain by setting a row gap, both halves — which is what a linked chain
-  // means and why one key can answer for two.
+  // means and why one key can answer for two. Both halves are written through
+  // `sizeCss`, so the unit the author picked is the unit the page gets.
+  const unit = layer.units?.gap;
   const column = layer.gap;
   const row = layer.rowGap ?? layer.gap;
   if (column !== undefined || row !== undefined) {
     out.push(row === column
-      ? `gap:${round(column ?? 0)}px`
-      : `gap:${round(row ?? 0)}px ${round(column ?? 0)}px`);
+      ? `gap:${sizeCss(column ?? 0, unit)}`
+      : `gap:${sizeCss(row ?? 0, unit)} ${sizeCss(column ?? 0, unit)}`);
   }
+  /* OVERFLOW IS NOT WRITTEN HERE. It is the BOX's, not the arranging's, and it
+     is in `containerBoxDeclarations` — which emits for a plain stacked box
+     too, where this function deliberately emits nothing at all. Writing it in
+     both would put `overflow:` twice in one rule, because `styleBlockFor`
+     concatenates the two lists for the same box. */
   return out;
 }
 
@@ -878,6 +995,10 @@ export function containerBoxDeclarations(layer: StyleLayer): string[] {
   } else if (layer.width !== undefined) {
     out.push(`max-width:${round(layer.width)}px`);
   }
+  /* OVERFLOW IS WRITTEN HERE AND ONLY HERE (B-168 land, the b168/demo merge).
+     Both branches wrote it, in two different functions that `styleBlockFor`
+     concatenates for the same box; this is the one that emits for a PLAIN
+     stacked box as well, so the control is never silent. */
   if (layer.overflow) out.push(`overflow:${layer.overflow}`);
   if (layer.position) out.push(`position:${layer.position}`);
   if (layer.zIndex !== undefined) out.push(`z-index:${Math.round(layer.zIndex)}`);

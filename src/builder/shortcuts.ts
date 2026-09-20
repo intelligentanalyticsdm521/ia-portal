@@ -155,7 +155,14 @@ export function matchShortcut(e: KeyLike, target?: TargetLike | null): BuilderAc
 /** The Ctrl/Cmd chords, in one place. `lower` is the key, lower-cased. */
 function modChord(lower: string, shift: boolean): BuilderAction | null {
   if (lower === "z") return shift ? "redo" : "undo";
-  if (lower === "y") return "redo";
+  /* SHIFT FIRST ON `y`, FOUND BY DRIVING IT (D-172, round 2).
+     `Ctrl+Y` is the second redo chord and `Ctrl+Shift+Y` is the reference's
+     Page Settings — and the plain answer was given first, so pressing
+     Ctrl+Shift+Y in our builder REDID the last undone step instead of opening
+     the panel. An advertised shortcut that does something else is worse than
+     one that does nothing: the row was in our own shortcuts table. Exactly the
+     trap `v` already carries a note about, three lines down. */
+  if (lower === "y") return shift ? "pageSettings" : "redo";
   if (lower === "s") return "save";
   // M-22. `Ctrl+E` and not `Ctrl+F`: the browser's own Find is a useful thing
   // to leave alone on a page whose whole content is text, and the reference
@@ -174,8 +181,9 @@ function modChord(lower: string, shift: boolean): BuilderAction | null {
   if (lower === "i") return "structure";
   if (lower === "p") return "togglePanel";
   if (lower === "m" && shift) return "cycleDevice";
-  /* D-172 round 2 — the reference's Panels group, driven 2026-09-19. */
-  if (lower === "y" && shift) return "pageSettings";
+  /* D-172 round 2 — the reference's Panels group, driven 2026-09-19.
+     Page Settings is answered ABOVE, with the other `y` chord, so the two
+     cannot be written in an order where one hides the other. */
   if (lower === "l" && shift) return "templates";
   return null;
 }
