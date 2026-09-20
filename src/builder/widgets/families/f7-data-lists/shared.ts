@@ -33,7 +33,7 @@
  * names no client and no real business (`feedback_no_real_client_data_in_dev`).
  */
 import type { WidgetControl } from "../../../registry";
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 
 /** `null`/`undefined` become the empty string, everywhere in this family. */
 export const str = (v: unknown): string => (v == null ? "" : String(v));

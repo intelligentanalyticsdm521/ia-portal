@@ -40,8 +40,9 @@
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
 import { fill } from "../../../merge";
-import { inlineSafe } from "../../../inlineSafe";
-import { boldRuns, paras, type RenderContext } from "../../../render";
+import { inlineSafe } from "../../../emailBox";
+import { boldRuns, paras } from "../../../runs";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { EmailRenderContext, FamilyWidgetDef } from "../types";
 import {

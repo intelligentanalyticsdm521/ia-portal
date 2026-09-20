@@ -11,7 +11,8 @@
  * ordinary links.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";
 import { COLUMN_OPTIONS, HTML_TAG_OPTIONS, fromTheSite, grid, num, str } from "./shared";

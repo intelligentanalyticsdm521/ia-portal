@@ -14,7 +14,8 @@
  * handoff rather than papered over with a select that has nothing in it.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";
 import { fromTheSite, str } from "./shared";

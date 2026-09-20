@@ -29,7 +29,7 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import { editRun } from "../../text";
 import type { EmailRenderContext, FamilyWidgetDef } from "../types";

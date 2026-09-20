@@ -59,7 +59,8 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
+import { deviceContainerQuery } from "../../../responsive";
 import { bar, pictureFrom } from "../../../pictures";
 import { editRun, proseRun } from "../../text";
 import type { EmailRenderContext, FamilyWidgetDef } from "../types";

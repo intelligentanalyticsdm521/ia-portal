@@ -8,7 +8,8 @@
  * `BUILDER_WIDGET_CATALOG_2026-09-17.pro.json`.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";

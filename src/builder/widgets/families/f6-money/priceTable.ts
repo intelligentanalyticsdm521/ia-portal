@@ -46,7 +46,7 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 /* ONE currency table on the platform, and it is `widgets/card.ts`'s — the
    widget that has drawn a price with a symbol in front of it since D-156.

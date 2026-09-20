@@ -29,7 +29,7 @@
  */
 import type { Widget } from "../model";
 import { esc } from "../esc";
-import { type RenderContext } from "../render";
+import type { RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, box, pictureFrom } from "../pictures";
 

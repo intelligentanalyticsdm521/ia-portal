@@ -221,6 +221,16 @@ export interface SurfacesAlreadyDrawn {
   newsletter: readonly string[];
   /** Every kind the My Brand studio can place. Executed by its own test. */
   mybrand: readonly string[];
+  /**
+   * Every kind the HOSTED LANDING renderer draws in its own look.
+   *
+   * The question this guard asks is "can this tile show something on that
+   * surface", NOT "did a family write the code that shows it". B-168 wave 2
+   * left Image and Image Box in the landing renderer's own hands on purpose
+   * and corrected the property names it reads, so stored pages did not change
+   * shape; a family row beside it would have been the second mechanism.
+   */
+  landing: readonly string[];
 }
 
 export function familySurfaceGaps(drawn: SurfacesAlreadyDrawn): Array<{ kind: string; builder: string }> {
@@ -231,7 +241,7 @@ export function familySurfaceGaps(drawn: SurfacesAlreadyDrawn): Array<{ kind: st
       out.push({ kind: d.kind, builder: "newsletter" });
     }
     if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]
-      && !also("landing", d.kind)) {
+      && !drawn.landing.includes(d.kind)) {
       out.push({ kind: d.kind, builder: "landing" });
     }
     if (d.builders.includes("mybrand")

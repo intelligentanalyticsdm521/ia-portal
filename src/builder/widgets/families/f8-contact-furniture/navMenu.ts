@@ -31,7 +31,8 @@
  * Dropdown and Toggle Button — is copied from the catalogue key by key.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 

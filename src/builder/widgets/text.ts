@@ -15,7 +15,7 @@
  * 2026-09-16 walk), and each new widget would have re-invented the fix.
  */
 import { esc } from "../esc";
-import { paras as enginePara, t as engineFill } from "../prose";
+import { paras as enginePara, t as engineFill } from "../runs";
 import type { RenderContext } from "../render";
 
 /** Merge-fill, then escape. Never the other way round. */

@@ -17,7 +17,8 @@
  * in one sentence while editing.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { pictureFrom, solid } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";

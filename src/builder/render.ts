@@ -70,6 +70,7 @@ import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker
    into its own graph and reads that index's tables while the family is still
    evaluating. See esc.ts's own header for the error and who found it. */
 export { esc } from "./esc";
+import { esc } from "./esc";
 import { childrenOf, walkTree } from "./walk";
 
 export interface LocationLite {
@@ -170,12 +171,10 @@ export function makeContext(
   };
 }
 
-/* MOVED TO `prose.ts` (B-168, landing) and re-exported here: `t`, `paras`
-   and `boldRuns` are what `widgets/text.ts` draws with, and a family that
-   reaches this module for them closes the families cycle. One filler, one
-   chip, one paragraph rule — in a module that imports no family. */
-export { t, paras, boldRuns } from "./prose";
-import { t, paras, boldRuns } from "./prose";
+/* THE TEXT PIPELINE IS IMPORTED AND RE-EXPORTED AT THE TOP OF THIS FILE, from
+   `runs.ts`. Three waves each moved it out of here into a module of their own
+   (`prose.ts`, `runs.ts`, `textRuns.ts`); one filler, one chip, one paragraph
+   rule, one module — the other two are DELETED. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    Widgets

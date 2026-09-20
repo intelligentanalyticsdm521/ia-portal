@@ -16,7 +16,8 @@
  * the markup we publish either way, not a second copy.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";
 import { fromTheSite, num, on, str } from "./shared";

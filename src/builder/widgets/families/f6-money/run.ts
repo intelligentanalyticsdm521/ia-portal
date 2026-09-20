@@ -22,7 +22,7 @@
  * there is still exactly one place that decides what a word on a page is.
  */
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { fillText } from "../../text";
 
 /**

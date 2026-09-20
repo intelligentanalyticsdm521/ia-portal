@@ -23,7 +23,7 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { pictureFrom, bar, box } from "../../../pictures";
 import { editRun, proseRun } from "../../text";
 import { DEFAULT_ICON, ICON_OPTIONS, glyphFor } from "../../glyph";

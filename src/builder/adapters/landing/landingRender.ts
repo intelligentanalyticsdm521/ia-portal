@@ -58,6 +58,16 @@ import {
   FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
 } from "../../widgets/families";
 import { renderAtom } from "../../widgets";
+/* THE PICTURE READERS, from the family that owns these widgets (B-168 wave 2),
+   for the same reason the mailbox imports them: ONE answer to "what did the
+   author choose", with this file keeping the hosted page's own LOOK. It fixes
+   three quiet blanks on the way past — this file read `p.images` for a carousel
+   that stores `carousel`, `p.title` for a box that stores `title_text`, and
+   `p.url` for a video that stores `youtube_url`. */
+import {
+  altOf as picAlt, boxPicture, boxTitle, boxWords, captionOf, carouselSlides,
+  pictureOf, rawUrl as videoUrl, slideAlt,
+} from "../../widgets/families/f2-pictures/index";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,

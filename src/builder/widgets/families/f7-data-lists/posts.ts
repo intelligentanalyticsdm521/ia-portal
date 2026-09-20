@@ -19,7 +19,7 @@
  * throws the author's Layout choices away.
  */
 import type { Widget } from "../../../model";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom, solid } from "../../../pictures";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";
 import {

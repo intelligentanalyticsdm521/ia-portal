@@ -40,7 +40,7 @@
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
 import { fill } from "../../../merge";
-import { inlineSafe } from "../../../inlineSafe";
+import { inlineSafe } from "../../../emailBox";
 import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import { fillText } from "../../text";

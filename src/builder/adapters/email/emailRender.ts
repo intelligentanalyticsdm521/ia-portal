@@ -77,12 +77,21 @@ import {
 /* B-168 / D-168 item 5b — the families' MAILBOX half. One import, one call at
    the top of the switch below, and no family ever opens this file. */
 import {
-  FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily, renderFamily,
+  FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily, renderFamily, textEmailFamily,
 } from "../../widgets/families";
 /* …and the PAGE renderer as the last resort in the default branch, for a
    family that is offered in the newsletter and has not written its mailbox
    half yet. Safe because `checkEmailSafe` runs over every golden case and
    names the widget that puts flex, grid or a class in a mailbox. */
+/* THE PICTURE READERS, from the family that owns these widgets (B-168 wave 2).
+   `image` and `image_box` were deepened to Elementor's own control keys, so the
+   picture is stored under `image` and the words under `title_text` /
+   `description_text` — and this file was reading `src`, `title` and
+   `description`. Reading through the family's own readers means ONE answer to
+   "what did the author choose" on every surface. */
+import {
+  altOf as picAlt, boxAlt, boxPicture, boxTitle, boxWords, captionOf, pictureOf,
+} from "../../widgets/families/f2-pictures/index";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -232,14 +241,9 @@ const bodyStack = (c: EmailRenderContext) => stack(c.bodyFont);
  * runs and stays that way. This is STRICTER than what the platform does
  * today, where a campaign's content_html is stored and mailed verbatim.
  */
-/* MOVED to `builder/inlineSafe.ts` (D-168 wave 2), a module that imports
-   nothing, and re-exported here so no existing caller changes. A FAMILY
-   folder needs it for its own mailbox renderer and must not import an
-   adapter; a second allowlist inside the family would be two answers to
-   "what mark-up may an author write", and one of them would quietly keep a
-   script. Same move, and the same reason, as `esc` in b168/override. */
-export { inlineSafe } from "../../inlineSafe";
-import { inlineSafe } from "../../inlineSafe";
+/* `inlineSafe` LIVES IN `builder/emailBox.ts` with the rest of the mailbox
+   primitives and is imported at the top of this file. Two waves each moved it
+   out of here, to two different modules; one allowlist, one module. */
 
 /** Merge-fill, escape, then re-permit the six inline tags. */
 function t(text: unknown, c: EmailRenderContext): string {
@@ -407,7 +411,6 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "image_box": return emImageBox(p, c);
       case "star_rating": return emStarRating(p, c);
       case "alert": return emAlert(p, c);
-      case "ia_reviews": return emIaReviews(p, c);
       default: {
         /* B-168 §C.1 — THE TEN FAMILIES, asked before giving up.
          *
@@ -780,14 +783,10 @@ function emImage(p: any, c: EmailRenderContext): string {
  * the MODEL as well as on the string — the builder warns before the send, and
  * the renderer never emits an empty alt.
  */
-export function altTextFor(p: any): string {
-  /* ONE ladder, the family's: the author's own words, then the caption, then
-     the file name made readable, then "Picture" — never an empty `alt`, which
-     is the one thing a screen reader cannot do anything with. It reads the
-     picture through `pictureOf` so a document storing Elementor's `image` key
-     gets a file name out of it too. */
-  return picAlt(p);
-}
+/* `altTextFor` LIVES IN `builder/emailBox.ts` now, with the other mailbox
+   primitives, and is imported at the top of this file. Its ladder is the
+   family's: the author's own words, then the caption, then the file name made
+   readable, then "Picture" — never an empty `alt`. */
 
 /**
  * The button.

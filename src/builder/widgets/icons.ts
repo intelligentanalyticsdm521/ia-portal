@@ -15,7 +15,7 @@
  */
 import type { Widget } from "../model";
 import { esc } from "../esc";
-import { type RenderContext } from "../render";
+import type { RenderContext } from "../render";
 import type { WidgetControl, WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import { editRun } from "./text";

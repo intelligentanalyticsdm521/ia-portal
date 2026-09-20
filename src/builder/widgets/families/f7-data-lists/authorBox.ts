@@ -14,7 +14,8 @@
  * the same as every other typed widget on the platform.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";

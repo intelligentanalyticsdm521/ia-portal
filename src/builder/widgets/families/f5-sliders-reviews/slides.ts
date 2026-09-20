@@ -23,7 +23,7 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { type RenderContext } from "../../../render";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom, solid } from "../../../pictures";
 import { editRun } from "../../text";
 import type { FamilyWidgetDef } from "../types";

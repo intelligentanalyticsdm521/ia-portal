@@ -12,7 +12,8 @@
  * fallback Taxonomy Filter has, and for the same reason.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom, solid } from "../../../pictures";
 import type { FamilyRenderer, FamilyWidgetDef } from "../types";
 import {
