@@ -38,7 +38,7 @@
  *     One sentence at the top of a panel nobody reads twice.
  */
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Search } from "lucide-react";
+import { ChevronDown, ChevronRight, Lock, Search } from "lucide-react";
 import * as Icons from "lucide-react";
 import { widgetTooltip, type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
@@ -96,9 +96,42 @@ export interface WidgetPaneProps {
    * canvas rather than a plan.
    */
   lockedKinds?: Record<string, WidgetLock>;
+  /**
+   * WHERE "UPGRADE" GOES, when a whole group is behind a bigger plan.
+   *
+   * D-168 item 6. On a website plan that carries no paid page widgets, every
+   * tile in the **Pro** and **Site** groups is refused, and a column of greyed
+   * tiles with no way forward is the screen
+   * `reference_nav_visibility_semantics` calls the defect: the client can see
+   * there is something there and cannot find out what to do about it. The
+   * heading of a group whose every tile is refused ON PLAN carries one link.
+   *
+   * Absent means no link is drawn at all, which is right for a surface that has
+   * nowhere to send somebody — a link that goes nowhere is worse than none.
+   */
+  upgradeHref?: string;
 }
 
-export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: WidgetPaneProps) {
+/**
+ * IS EVERY TILE IN THIS GROUP REFUSED, AND REFUSED ON PLAN?
+ *
+ * Only then is "Upgrade" the true answer. A group where ONE tile is refused
+ * because the business does not own OLIVER is not a group a bigger website plan
+ * opens, and `reference_nav_visibility_semantics` is explicit that collapsing
+ * those two answers into one word is the defect. Exported so the test can run
+ * it rather than read the JSX.
+ */
+export function groupLockedOnPlan(
+  group: { widgets: WidgetDef[] },
+  lockedKinds?: Record<string, WidgetLock> | null,
+): boolean {
+  if (!group.widgets.length) return false;
+  return group.widgets.every((w) => lockedKinds?.[w.kind]?.reason === "plan");
+}
+
+export function WidgetPane({
+  adapter, onInsert, onDragWidget, lockedKinds, upgradeHref,
+}: WidgetPaneProps) {
   const [query, setQuery] = useState("");
   const found = useMemo(() => panelGroups(adapter, query), [adapter, query]);
   /**
@@ -176,6 +209,21 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
               >
                 {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 {g.group}
+                {upgradeHref && groupLockedOnPlan(g, lockedKinds) && (
+                  /* D-168 item 6 — ONE link, on the heading of a group whose
+                     every tile this plan refuses. It is a real anchor and not a
+                     button, so it works with the middle mouse button and with
+                     the keyboard, and `stopPropagation` keeps a click on it
+                     from also collapsing the group it is explaining. */
+                  <a
+                    href={upgradeHref}
+                    data-pane-group-upgrade={g.group}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold normal-case text-sky-700 underline hover:bg-sky-50"
+                  >
+                    Upgrade
+                  </a>
+                )}
               </button>
 
               {isOpen && (
@@ -235,7 +283,14 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds }: Wid
                             ? "cursor-not-allowed bg-slate-50 opacity-50"
                             : "cursor-grab bg-white hover:bg-slate-50 active:cursor-grabbing"}`}
                       >
-                        <WidgetIcon name={w.icon} className="h-5 w-5 text-slate-500" />
+                        {/* D-168 item 6 — THE PADLOCK. A greyed tile alone says
+                            "broken"; a padlock says "not yours yet", which is
+                            the difference between the three states of §11.12
+                            being on the screen and being only in the tooltip.
+                            The reason is still the tooltip, in plain words. */}
+                        {lock
+                          ? <Lock className="h-5 w-5 text-slate-400" data-widget-padlock={w.kind} />
+                          : <WidgetIcon name={w.icon} className="h-5 w-5 text-slate-500" />}
                         <span className="w-full truncate text-[10.5px] font-medium leading-tight text-slate-700">
                           {label}
                         </span>
