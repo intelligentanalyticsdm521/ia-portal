@@ -31,7 +31,8 @@ import {
 import {
   RATIO_PRESETS, emailColumnWidths, emailStyleDeclarations, gridTemplateFor, hasStyle,
   isTypographic, layerFor, normaliseRatios, readStyle, resetKeys, resolveStyle, seedFromPadding,
-  setSide, sidesAreLinked, sidesToCss, styleBlockFor, widgetStyleClass, withLayer,
+  setSide, sidesAreLinked, sidesToCss, styleBlockFor, unitsOffered, widgetStyleClass, withLayer,
+  PX_ONLY_BUILDERS, SIZE_UNITS,
 } from "../src/builder/style.ts";
 import { makeContext, renderSection, renderDocument } from "../src/builder/render.ts";
 import {
@@ -825,5 +826,65 @@ describe("diff.ts needs no change, and that is the point", () => {
   test("a document nobody styled is still identical to itself", () => {
     const a = plainDoc();
     assert.equal(hasStyle(a.sections[0].style), false);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   12. A UNIT THE EMITTER THROWS AWAY IS NOT OFFERED (B-168 land, b168/demo)
+   ══════════════════════════════════════════════════════════════════════════
+
+   The unit switcher is new; the emitters are not. arion's container emitter
+   writes every size as `{ unit: 'px', size }` and the landing page's inline
+   boxes go through `render.containerLayoutCss`, which writes px too — so a box
+   set to `100vh` in those two builders would be PUBLISHED as `100px`: the
+   author watches the control work and the page comes out a different shape.
+
+   A CONTROL THAT CHANGES NOTHING ON THE PUBLISHED PAGE IS A DEFECT, so those
+   two builders offer px alone. ONE rule, in one place, read by `Slider` —
+   never an `if` at each size control. Delete a builder from the list the day
+   its emitter carries the unit.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("the unit switcher only offers what the builder can publish", () => {
+  const GAPS = ["px", "%", "em", "rem", "vw"];
+
+  test("the two builders whose emitters write px get px, and only px", () => {
+    // MUTATION: return `units` unchanged → red here, and a published website
+    // silently reads 100vh as 100px.
+    assert.deepEqual(PX_ONLY_BUILDERS.slice().sort(), ["landing", "website"]);
+    for (const a of PX_ONLY_BUILDERS) {
+      assert.deepEqual(unitsOffered(a, GAPS), ["px"], `${a} still offers a unit it cannot publish`);
+      assert.deepEqual(unitsOffered(a, ["px", "em", "rem", "vh"]), ["px"]);
+    }
+  });
+
+  test("PRESENCE: the builders the Portal's own renderer draws keep all of them", () => {
+    // The proposal's PDF and the newsletter's mailbox are drawn by the Portal
+    // and by the two mirrors that copy it; the unit reaches the canvas today.
+    for (const a of ["proposal", "email", "brand"]) {
+      assert.deepEqual(unitsOffered(a, GAPS), GAPS, `${a} lost a unit it can draw`);
+    }
+    assert.deepEqual(unitsOffered(undefined, GAPS), GAPS, "a panel with no builder lost its units");
+    // …and every unit offered anywhere is one `sizeCss` knows.
+    for (const u of GAPS) assert.ok(SIZE_UNITS.includes(u), `sizeCss cannot write ${u}`);
+  });
+
+  test("a control with ONE unit is stating it, not offering a choice", () => {
+    // Width says px or % because Content Width already decided which, and
+    // arion's emitter carries that pair. Narrowing it to [] would leave the
+    // switcher blank and the slider unitless.
+    assert.deepEqual(unitsOffered("website", ["%"]), ["%"]);
+    assert.deepEqual(unitsOffered("website", ["px"]), ["px"]);
+  });
+
+  test("the Slider reads the rule rather than each call site repeating it", () => {
+    const groups = readFileSync(path.join(SRC, "builder", "StyleGroups.tsx"), "utf8");
+    assert.match(groups, /const offered = unitsOffered\(adapter, units\);/);
+    // ABSENT: a per-control if. The panel hands Slider the reference's full
+    // list and the rule does the narrowing, in one place.
+    const inspector = readFileSync(path.join(SRC, "builder", "Inspector.tsx"), "utf8");
+    assert.ok(!/adapter === "website"|adapter === "landing"/.test(inspector),
+      "a size control decides for itself which units to offer again");
+    assert.match(inspector, /units=\{\["px", "%", "em", "rem", "vw"\]\}/);
   });
 });
