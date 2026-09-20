@@ -668,6 +668,11 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        and they meet it from the FAMILY folder rather than from this file, now
        that the default branch asks `renderFamily` in both halves. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
+    /* ADDED BY B-168 WAVE 2: **Video**. It was in the offer file Brandon
+       approved all along — `newsletter.elementor` lists `video`, with the note
+       *"video shows as a clickable picture"* — and the tile was simply never
+       turned on. The f2-pictures family draws it as a real picture that is a
+       real link, which is the only thing a video can be in a mailbox. */
       "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
       "heading", "ia_reviews", "icon", "icon_box", "image", "image_box", "list", "paragraph",
       "product_card", "social_links", "spacer", "star_rating", "testimonial",
@@ -692,7 +697,11 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        with its own golden case, so the rule "nothing a mailbox cannot draw" is
        satisfied by drawing them rather than by hiding them. Reviews and Book
        Now stay on it until they have one too. */
-    for (const kind of ["form", "signature", "price_line", "data_table", "gallery", "video",
+    /* `video` LEFT this list in B-168 wave 2, and for the rule's own reason
+       rather than against it: the offer file gives the newsletter Video, and
+       the family now draws it as a picture that is a link. No mail client
+       plays a video and none is asked to. */
+    for (const kind of ["form", "signature", "price_line", "data_table", "gallery",
       "catalog_card", "reviews", "book_now"]) {
       const def = WIDGETS_BY_KIND[kind];
       if (!def) continue;

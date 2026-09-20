@@ -169,7 +169,21 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
   return groups.map((g) => g.group);
 }
 
-/** Every widget the query matches, best first — what Enter picks. */
+/**
+ * Every widget the query matches, IN THE ORDER THE PANEL DRAWS THEM — which is
+ * what Enter picks, and the point is that those are the same list.
+ *
+ * `byRelevance` was applied a SECOND time here, across the flattened groups,
+ * which quietly undid the fix the comment on `byRelevance` describes. Ranking
+ * across groups can pull a widget out of a later group to the front, and the
+ * grid cannot do that — a group is drawn under its own heading — so the first
+ * card and the thing Enter inserted became two different widgets again the
+ * moment a widget in an earlier group matched the query by MENTION rather than
+ * by name. Found on 2026-09-19 the same way as the first time: a description
+ * that happened to contain the typed word.
+ *
+ * One order, computed once in `panelGroups`, read here in reading order.
+ */
 export function flatPanelMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
   /* READING ORDER, and nothing else. `panelGroups` has already ranked inside
      each group; ranking the flattened list a SECOND time re-sorts it ACROSS

@@ -808,7 +808,9 @@ function emList(p: any, c: EmailRenderContext): string {
  * with images off still learns something. The test refuses `alt=""`.
  */
 function emImage(p: any, c: EmailRenderContext): string {
-  if (!p.src) {
+  const picture = pictureOf(p);
+  const caption = captionOf(p);
+  if (!picture) {
     return c.mode === "edit"
       ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:20px;text-align:center;color:#94A3B8;font-size:12px;font-family:${bodyStack(c)};">Choose a picture in the panel on the right.</div>`
       : "";
@@ -816,10 +818,11 @@ function emImage(p: any, c: EmailRenderContext): string {
   const align = ALIGN(p.align, "center");
   const width = Math.min(EMAIL_WIDTH - 48, Math.max(40, Number(p.width) || EMAIL_WIDTH - 48));
   const alt = esc(altTextFor(p));
-  const img = `<img src="${esc(p.src)}" alt="${alt}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;${align === "center" ? "margin:0 auto;" : ""}" />`;
-  const wrapped = p.url ? `<a href="${esc(p.url)}" style="text-decoration:none;">${img}</a>` : img;
-  const cap = p.caption || c.mode === "edit"
-    ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;text-align:${align};"${edit("caption", c, "Caption (optional)")}>${t(p.caption, c)}</div>` : "";
+  const img = `<img src="${esc(picture)}" alt="${alt}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;${align === "center" ? "margin:0 auto;" : ""}" />`;
+  const href = p.url || (String(p.link_to ?? "") === "custom" ? p.link : "");
+  const wrapped = href ? `<a href="${esc(href)}" style="text-decoration:none;">${img}</a>` : img;
+  const cap = caption || c.mode === "edit"
+    ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;text-align:${align};"${edit("caption", c, "Caption (optional)")}>${t(caption, c)}</div>` : "";
   return `<div style="text-align:${align};margin:0 0 16px 0;">${wrapped}${cap}</div>`;
 }
 
@@ -831,13 +834,12 @@ function emImage(p: any, c: EmailRenderContext): string {
  * the renderer never emits an empty alt.
  */
 export function altTextFor(p: any): string {
-  const explicit = String(p?.alt ?? "").trim();
-  if (explicit) return explicit;
-  const caption = String(p?.caption ?? "").trim();
-  if (caption) return caption;
-  const name = String(p?.src ?? "").split("?")[0].split("/").pop() || "";
-  const pretty = name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim();
-  return pretty || "Picture";
+  /* ONE ladder, the family's: the author's own words, then the caption, then
+     the file name made readable, then "Picture" — never an empty `alt`, which
+     is the one thing a screen reader cannot do anything with. It reads the
+     picture through `pictureOf` so a document storing Elementor's `image` key
+     gets a file name out of it too. */
+  return picAlt(p);
 }
 
 /**
@@ -1129,14 +1131,22 @@ function emIcon(p: any, c: EmailRenderContext): string {
 
 /** The words of an icon box or an image box — one shape, two leading parts. */
 function emBoxWords(p: any, c: EmailRenderContext, align: string): string {
-  const title = p.title || c.mode === "edit"
-    ? `<div style="font-family:${headStack(c)};font-size:17px;font-weight:700;line-height:1.3;color:${c.ink};text-align:${align};margin:0 0 6px 0;${c.typeCss ?? ""}"${edit("title", c, "A short heading")}>${t(p.title, c)}</div>`
+  /* BOTH SPELLINGS. Elementor's own keys for an Image Box are `title_text` and
+     `description_text`, which is what the panel has written since D-165 and
+     what this file was NOT reading — so an Image Box built in the newsletter
+     builder reached the mailbox with no words at all. `boxTitle` / `boxWords`
+     read the new keys and the old ones, so every stored email is unchanged. */
+  const titleWords = boxTitle(p);
+  const descWords = boxWords(p);
+  const title = titleWords || c.mode === "edit"
+    ? `<div style="font-family:${headStack(c)};font-size:17px;font-weight:700;line-height:1.3;color:${c.ink};text-align:${align};margin:0 0 6px 0;${c.typeCss ?? ""}"${edit("title", c, "A short heading")}>${t(titleWords, c)}</div>`
     : "";
-  const desc = p.description || c.mode === "edit"
-    ? `<div style="font-family:${bodyStack(c)};font-size:14px;line-height:1.6;color:#374151;text-align:${align};"${edit("description", c, "A line or two about it…")}>${t(p.description, c)}</div>`
+  const desc = descWords || c.mode === "edit"
+    ? `<div style="font-family:${bodyStack(c)};font-size:14px;line-height:1.6;color:#374151;text-align:${align};"${edit("description", c, "A line or two about it…")}>${t(descWords, c)}</div>`
     : "";
   const words = `${title}${desc}`;
-  return p.url && words ? `<a href="${esc(p.url)}" style="text-decoration:none;color:inherit;">${words}</a>` : words;
+  const href = p.url || p.link;
+  return href && words ? `<a href="${esc(href)}" style="text-decoration:none;color:inherit;">${words}</a>` : words;
 }
 
 /**
@@ -1170,8 +1180,9 @@ function emImageBox(p: any, c: EmailRenderContext): string {
   const width = position === "top"
     ? Math.min(emWidth(c), Math.max(40, Number(p.width) || emWidth(c)))
     : Math.max(40, Math.min(240, Number(p.width) || ARTICLE_PIC));
-  const pic = p.src
-    ? `<img src="${esc(p.src)}" alt="${esc(altTextFor({ alt: p.alt, caption: p.title, src: p.src }))}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;" />`
+  const boxSrc = boxPicture(p);
+  const pic = boxSrc
+    ? `<img src="${esc(boxSrc)}" alt="${esc(boxAlt(p))}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;" />`
     : (c.mode === "edit"
       ? `<div style="border:1px dashed #CBD5E1;padding:16px;text-align:center;color:#94A3B8;font-size:12px;font-family:${bodyStack(c)};">Choose a picture in the panel on the right.</div>`
       : "");
@@ -1484,7 +1495,7 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
           case "paragraph": line(p.text); out.push(""); break;
           case "personal_note": line(p.greeting); line(p.text); line(p.signoff); out.push(""); break;
           case "list": for (const it of (Array.isArray(p.items) ? p.items : [])) line(`· ${it}`); out.push(""); break;
-          case "image": if (altTextFor(p) && p.src) line(`[${altTextFor(p)}]`); break;
+          case "image": if (pictureOf(p)) line(`[${altTextFor(p)}]`); break;
           case "button": if (p.label || p.url) line(`${String(p.label || "Open").trim()}: ${p.url || ""}`); out.push(""); break;
           case "divider": out.push("—————————————"); break;
           case "article_card":
@@ -1554,6 +1565,17 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
              a second, drifting copy of its own sentences. */
           default: {
             const markup = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+            /* A FAMILY MAY SAY IT IN ITS OWN WORDS. Reading the markup back is
+               right for a widget whose markup IS its words and wrong for one
+               whose markup is a PICTURE: a Video's mailbox half is a still and
+               a play mark, so the markup reads as "▶ Watch the video" and the
+               text part carries no address at all. LUMEN's `emailFamilies` has
+               had both halves since its first commit and refuses an `html`
+               with no `text`; this is the Portal's side of the same pair, and
+               the golden cases — byte-identical in both repos — catch the two
+               drifting apart. */
+            const own = textEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+            if (own != null) { line(own); break; }
             if (markup != null) for (const l of textFromMarkup(markup)) line(l);
             /* …and the page renderer as the last resort, the same order the
                HTML half uses. BOTH HALVES OR NEITHER: a widget drawn in the

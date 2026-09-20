@@ -113,7 +113,10 @@ export const PRO_GALLERY_DEF: FamilyWidgetDef = {
   icon: "LayoutGrid",
   picture: pictureFrom(solid(6, 6, 16, 16) + solid(24, 6, 16, 10) + solid(42, 6, 16, 16)
     + solid(6, 24, 16, 10) + solid(24, 18, 16, 16) + solid(42, 24, 16, 10) + bar(6, 36, 20, 2)),
-  category: "General",
+  /* Elementor draws its Pro widgets in their own PRO group, and D-168 item 6
+     gave our panel the same six groups. A Pro widget sitting in General is a
+     difference a person sees the moment our panel is beside the real one. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

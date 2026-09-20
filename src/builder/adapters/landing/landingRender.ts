@@ -263,13 +263,39 @@ export const LANDING_KIND_ALIASES: Record<string, string> = {
   text_editor: "paragraph",
   icon_list: "list",
   social_icons: "social_links",
-  basic_gallery: "gallery",
+  /* `basic_gallery` IS NOT ALIASED ANY MORE (B-168 wave 2, f2-pictures).
+     It resolved to `gallery`, the hidden legacy Photo gallery, whose renderer
+     `lpGallery` reads `p.items` — and the `basic_gallery` definition has
+     stored its pictures under `wp_gallery` since D-165. So a Basic Gallery on
+     a hosted landing page drew an empty band however many photographs the
+     author had chosen: the alias sent it to a renderer that looks for a
+     property nothing writes. The family owns the kind now and reads every
+     spelling a document can hold. `gallery` keeps its own case below for the
+     stored documents that really are the old Photo gallery. */
   map: "google_maps",
 };
 
 export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): string {
   const p: any = w.props || {};
   const body = (() => {
+    /* B-168 / D-168 item 5b — THE FAMILIES, BEFORE THIS SWITCH, exactly as
+       `render.ts` (line ~486) and `emailRender.ts` already ask them.
+
+       The seam put this ask in the `default` branch only, which is enough for
+       a family's NEW kind and not enough for one that REPLACES an existing
+       one: `image`, `image_box`, `image_carousel` and `video` all have a
+       hand-written `case` below, so a family that takes those kinds over —
+       with Elementor's own property spellings — would draw correctly on the
+       canvas, publish correctly through arion, and still draw the OLD widget,
+       reading property names nothing writes any more, on a hosted landing
+       page. Same position on all three surfaces, one rule: the family wins,
+       then this file's own renderer, then the engine.
+
+       `LANDING_KIND_ALIASES` is applied here too, so `basic_gallery` resolves
+       to the one stored kind before either side is asked. */
+    const famLanding = renderLandingFamily(
+      { ...w, kind: LANDING_KIND_ALIASES[w.kind] || w.kind }, c as never);
+    if (famLanding != null) return famLanding;
     switch (LANDING_KIND_ALIASES[w.kind] || w.kind) {
       case "container": return lpBox(w, c, depth);
       case "card": return lpCard(lpCardFields(p, c), c);
@@ -561,9 +587,11 @@ function lpList(p: any, c: LandingContext): string {
 }
 
 function lpImage(p: any, c: LandingContext): string {
-  if (!p.src) return c.mode === "edit" ? `<div class="lp-drop">Choose a picture in the panel on the right.</div>` : "";
-  return `<figure class="lp-fig"><img src="${esc(p.src)}" alt="${esc(altOf(p))}">${
-    p.caption || c.mode === "edit" ? `<figcaption${edit("caption", c, "Caption")}>${t(p.caption, c)}</figcaption>` : ""}</figure>`;
+  const src = pictureOf(p);
+  const caption = captionOf(p);
+  if (!src) return c.mode === "edit" ? `<div class="lp-drop">Choose a picture in the panel on the right.</div>` : "";
+  return `<figure class="lp-fig"><img src="${esc(src)}" alt="${esc(picAlt(p))}">${
+    caption || c.mode === "edit" ? `<figcaption${edit("caption", c, "Caption")}>${t(caption, c)}</figcaption>` : ""}</figure>`;
 }
 
 function lpGallery(p: any, c: LandingContext): string {
@@ -585,8 +613,10 @@ function lpGallery(p: any, c: LandingContext): string {
  * of a client. The link opens it where it lives.
  */
 function lpVideo(p: any, c: LandingContext): string {
-  if (!p.url) return c.mode === "edit" ? `<div class="lp-drop">Paste the video's address in the panel on the right.</div>` : "";
-  return `<p class="lp-video"><a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Watch the video</a></p>`;
+  /* `rawUrl` reads `url` and Elementor's own `youtube_url` / `vimeo_url`. */
+  const url = videoUrl(p);
+  if (!url) return c.mode === "edit" ? `<div class="lp-drop">Paste the video's address in the panel on the right.</div>` : "";
+  return `<p class="lp-video"><a href="${esc(url)}" target="_blank" rel="noopener noreferrer">Watch the video</a></p>`;
 }
 
 function lpButton(p: any, c: LandingContext): string {
@@ -637,12 +667,18 @@ function lpIcon(p: any, c: LandingContext): string {
 
 /** The words of an icon box or an image box. One shape, two leading parts. */
 function lpBoxWords(p: any, c: LandingContext): string {
-  const title = p.title || c.mode === "edit"
-    ? `<div class="lp-bx-t"${edit("title", c, "A short heading")}>${t(p.title, c)}</div>` : "";
-  const desc = p.description || c.mode === "edit"
-    ? `<div class="lp-bx-d"${edit("description", c, "A line or two about it…")}>${t(p.description, c)}</div>` : "";
+  /* BOTH SPELLINGS, for the same reason as the mailbox's `emBoxWords`: the
+     panel writes Elementor's `title_text` / `description_text` and this file
+     read `title` / `description`, so a box built here arrived wordless. */
+  const titleWords = boxTitle(p);
+  const descWords = boxWords(p);
+  const title = titleWords || c.mode === "edit"
+    ? `<div class="lp-bx-t"${edit("title", c, "A short heading")}>${t(titleWords, c)}</div>` : "";
+  const desc = descWords || c.mode === "edit"
+    ? `<div class="lp-bx-d"${edit("description", c, "A line or two about it…")}>${t(descWords, c)}</div>` : "";
   const words = `${title}${desc}`;
-  return p.url && words ? `<a class="lp-bx-link" href="${esc(p.url)}">${words}</a>` : words;
+  const href = p.url || p.link;
+  return href && words ? `<a class="lp-bx-link" href="${esc(href)}">${words}</a>` : words;
 }
 
 function lpIconBox(p: any, c: LandingContext): string {
@@ -652,8 +688,9 @@ function lpIconBox(p: any, c: LandingContext): string {
 
 function lpImageBox(p: any, c: LandingContext): string {
   const position = String(p.position || "top").toLowerCase();
-  const pic = p.src
-    ? `<img src="${esc(p.src)}" alt="${esc(altOf(p))}">`
+  const boxSrc = boxPicture(p);
+  const pic = boxSrc
+    ? `<img src="${esc(boxSrc)}" alt="${esc(picAlt(p))}">`
     : (c.mode === "edit" ? `<div class="lp-drop">Choose a picture in the panel on the right.</div>` : "");
   return `<div class="lp-bx lp-bx-${esc(position)}"><div class="lp-bx-lead">${pic}</div><div class="lp-bx-body">${lpBoxWords(p, c)}</div></div>`;
 }
@@ -742,13 +779,13 @@ function lpAccordion(w: Widget, p: any, c: LandingContext): string {
 
 /** A carousel that scrolls, because a browser already knows how to do that. */
 function lpCarousel(p: any, c: LandingContext): string {
-  const images: any[] = Array.isArray(p.images) ? p.images : [];
-  if (!images.length) return c.mode === "edit" ? `<div class="lp-drop">Add the pictures in the panel on the right.</div>` : "";
-  const slides = images.map((im: any) => {
-    const src = typeof im === "string" ? im : im?.src ?? im?.url;
-    if (!src) return "";
-    return `<img src="${esc(String(src))}" alt="${esc(altOf(typeof im === "string" ? { src } : im))}">`;
-  }).join("");
+  /* `carouselSlides` reads `carousel` — the key the widget has stored since
+     D-165 — and `images` beside it. This read `images` alone, so a carousel
+     built in the builder arrived on a hosted page as nothing at all. */
+  const pictures = carouselSlides(p);
+  if (!pictures.length) return c.mode === "edit" ? `<div class="lp-drop">Add the pictures in the panel on the right.</div>` : "";
+  const slides = pictures.map((s: any) =>
+    `<img src="${esc(s.url)}" alt="${esc(slideAlt(s))}">`).join("");
   return `<div class="lp-carousel">${slides}</div>`;
 }
 

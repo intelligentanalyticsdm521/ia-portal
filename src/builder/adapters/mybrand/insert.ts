@@ -79,6 +79,27 @@ export interface InsertOptions {
 const EMPTY: InsertResult = { layers: [], behind: false, selectId: null };
 
 /**
+ * THE KINDS THIS ADAPTER PLACES ITSELF, by name, beside the switch that does it.
+ *
+ * The studio is not a renderer: a widget does not "draw" here, it becomes
+ * absolute-positioned LAYERS out of `opts` — a count, an icon key, an uploaded
+ * address — and not out of the widget's stored properties. So a kind in this
+ * list needs nothing from the family that declares it, and a family writing a
+ * second insert for one of them would be a second mechanism for a job already
+ * done once.
+ *
+ * `families/familySurfaceGaps()` is the PRESENCE guard — a tile on the My Brand
+ * panel that places nothing when it is pressed — and it reads this list so it
+ * asks the real question instead of "did a family write one". Add a `case`
+ * below, add its name here; `builder-override.test.mjs` §5b fails on a name
+ * here with no case, so the two cannot drift apart quietly.
+ */
+export const STUDIO_OWN_KINDS: readonly string[] = Object.freeze([
+  "heading", "paragraph", "list", "image", "brand_logo", "icon", "shape",
+  "divider", "colour_block", "background", "button", "qr_code", "social_handle",
+]);
+
+/**
  * Turn one registry widget into layers.
  *
  * Returns an empty result for a kind this adapter does not offer, rather than

@@ -167,6 +167,8 @@ describe("the seam — what the pane offers is what the website can build", () =
     assert.deepEqual(groups.map((g) => g.group),
       ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
+    assert.deepEqual(groups.find((g) => g.group === "Pro").widgets.map((w) => w.label),
+      ["Gallery", "Hotspot", "Lottie", "Video Playlist"]);
   });
 
   test("the twelve whole-page sections are understood and never offered", () => {

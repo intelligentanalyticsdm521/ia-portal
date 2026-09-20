@@ -32,7 +32,8 @@ import type { Widget } from "../../model";
 import type { RenderContext } from "../../render";
 import type { WidgetDef } from "../../registry";
 import {
-  type EmailRenderContext, type Family, type FamilyEmailRenderer, type FamilyLandingRenderer,
+  type EmailRenderContext, type Family, type FamilyEmailRenderer, type FamilyEmailText,
+  type FamilyLandingRenderer,
   type FamilyRenderer, type FamilyStudioInsert, type FamilyWidgetDef, type LandingRenderContext,
   type StudioBrandLite, type StudioCanvasDoc, type StudioInsertOptions, type StudioInsertResult,
   toWidgetDef,
@@ -144,6 +145,7 @@ function mergeHalf<T>(
 }
 
 const EMAIL_RENDERERS = mergeHalf<FamilyEmailRenderer>((f) => f.emailRenderers, "in a mailbox");
+const EMAIL_TEXTS = mergeHalf<FamilyEmailText>((f) => f.emailTexts, "in a plain-text email");
 const LANDING_RENDERERS = mergeHalf<FamilyLandingRenderer>((f) => f.landingRenderers, "on a landing page");
 
 /** Every kind a family can draw IN A MAILBOX. */
@@ -155,6 +157,18 @@ export const FAMILY_LANDING_RENDERED_KINDS: readonly string[] = Object.keys(LAND
 export function renderEmailFamily(w: Widget, ctx: EmailRenderContext): string | null {
   const fn = EMAIL_RENDERERS[w.kind];
   return fn ? fn(w, ctx) : null;
+}
+
+/**
+ * THE PLAIN-TEXT TWIN, or `null` — then the caller reads the words back out of
+ * the mailbox markup, which is the right answer for a widget whose markup IS
+ * its words and the wrong one for a widget whose markup is a picture.
+ */
+export function textEmailFamily(w: Widget, ctx: EmailRenderContext): string | null {
+  const fn = EMAIL_TEXTS[w.kind];
+  if (!fn) return null;
+  const out = fn((w.props || {}) as Record<string, unknown>, ctx);
+  return out == null ? null : String(out);
 }
 
 /** Draw one on a hosted landing page, or `null`. */
@@ -216,7 +230,8 @@ export function familySurfaceGaps(drawn: SurfacesAlreadyDrawn): Array<{ kind: st
       && !EMAIL_RENDERERS[d.kind] && !drawn.newsletter.includes(d.kind)) {
       out.push({ kind: d.kind, builder: "newsletter" });
     }
-    if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]) {
+    if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]
+      && !also("landing", d.kind)) {
       out.push({ kind: d.kind, builder: "landing" });
     }
     if (d.builders.includes("mybrand")

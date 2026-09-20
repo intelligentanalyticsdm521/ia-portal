@@ -1485,6 +1485,109 @@
       "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-carousel\"><img src=\"https://cdn.example.test/1.jpg\" alt=\"1\"><img src=\"https://cdn.example.test/2.jpg\" alt=\"After\"></div></div></div></section>"
     },
     {
+      "name": "image carousel, stored the way the panel writes it",
+      "kind": "image_carousel",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "image_carousel",
+                    "props": {
+                      "carousel": [
+                        {
+                          "url": "https://cdn.example.test/1.jpg",
+                          "title": "Before"
+                        },
+                        {
+                          "url": "https://cdn.example.test/2.jpg",
+                          "title": "After"
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-carousel\"><img src=\"https://cdn.example.test/1.jpg\" alt=\"Before\"><img src=\"https://cdn.example.test/2.jpg\" alt=\"After\"></div></div></div></section>"
+    },
+    {
+      "name": "basic gallery",
+      "kind": "basic_gallery",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "landing",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "basic_gallery",
+                    "props": {
+                      "wp_gallery": [
+                        {
+                          "url": "https://cdn.example.test/a.jpg",
+                          "caption": "Before"
+                        },
+                        {
+                          "url": "https://cdn.example.test/b.jpg",
+                          "caption": "After"
+                        }
+                      ],
+                      "gallery_columns": "2"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"bx-gallery lp-gal\" style=\"display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:15px;text-align:center\"><div class=\"bx-gallery-cell\"><a href=\"https://cdn.example.test/a.jpg\"><img src=\"https://cdn.example.test/a.jpg\" alt=\"Before\" loading=\"lazy\" style=\"display:block;width:100%;object-fit:cover;aspect-ratio:1/1;\"/></a><div class=\"bx-gallery-cap\" style=\"font-size:12px;color:#64748B;text-align:center;margin-top:6px;\">Before</div></div><div class=\"bx-gallery-cell\"><a href=\"https://cdn.example.test/b.jpg\"><img src=\"https://cdn.example.test/b.jpg\" alt=\"After\" loading=\"lazy\" style=\"display:block;width:100%;object-fit:cover;aspect-ratio:1/1;\"/></a><div class=\"bx-gallery-cap\" style=\"font-size:12px;color:#64748B;text-align:center;margin-top:6px;\">After</div></div></div></div></div></section>"
+    },
+    {
       "name": "a place on the page to jump to",
       "kind": "menu_anchor",
       "doc": {

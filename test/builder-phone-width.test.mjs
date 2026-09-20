@@ -282,8 +282,15 @@ describe("A1 · the document a customer signs on a phone", () => {
     // `max-width:900px` inline BEATS the stylesheet, so a big picture used to
     // push the whole document sideways on a phone.
     const d = doc([{ kind: "image", props: { src: "https://x.test/a.png", alt: "The yard", width: 900 } }]);
+    /* The style attribute carries more than the width since B-168 wave 2 gave
+       Image Elementor's whole Style tab, so this asks for the two declarations
+       rather than for the exact attribute. The RULE is unchanged and both
+       halves of it are still checked. A stored 900 is still read as pixels —
+       `widthCss` in families/f2-pictures/styling.ts is the one place that is
+       decided, and it says why. */
     const html = renderSection(d.sections[0], view(d));
-    assert.match(html, /style="width:900px;max-width:100%"/);
+    assert.match(html, /width:900px;/);
+    assert.match(html, /max-width:100%;/);
     assert.doesNotMatch(html, /max-width:900px/);
   });
 
