@@ -36,7 +36,7 @@
  * Pure: no React, no fetch, so the round trip is a `node --test` file.
  */
 import {
-  makeSection, makeWidget, emptyDocument,
+  CONTAINER_KIND, isContainer, makeContainer, makeSection, makeWidget, emptyDocument,
   type BuilderDocument, type Section, type Widget,
 } from "../../model";
 import { arionKindOf, siteWidgetKindFor } from "../../registry";
@@ -118,6 +118,57 @@ export function contentBlockKind(widgetKind: string): string {
   return widgetKind;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A BLOCK IS A NODE (B-168, "one vocabulary for what a page may hold")
+
+   A free section used to send a FLAT list of `{ kind, col, ...props }`, which
+   was right while the only things it could hold were nine atoms. It now holds
+   whatever the panel offers, including a BOX, and a box has children and a
+   layout — neither of which `...props` carries, because a container keeps its
+   children in `children` and its arranging in `style`.
+
+   Two reserved keys carry them, both `__`-prefixed like every other prop that
+   is ours rather than the widget's, so neither can ever collide with a control
+   key (`divider` really does have a control called `style`). arion-api's
+   `sectionSchema.js` spells them the same way and nothing else does.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** What is inside a box. */
+export const BLOCK_CHILDREN_KEY = "__children";
+/** A block's own §11.8 look, which for a box is also its layout. */
+export const BLOCK_STYLE_KEY = "__style";
+
+/** One builder node → one ARION content block. */
+function blockFor(w: Widget, col?: number): Record<string, any> {
+  const props: Record<string, any> = {};
+  for (const [k, v] of Object.entries((w.props || {}) as Record<string, unknown>)) {
+    // Every `__` prop is OURS — the Elementor node, the lock, the adoption
+    // record — and none of them is content. Stripped in one rule rather than
+    // named one at a time, so a new one cannot leak onto somebody's website.
+    if (k.startsWith("__")) continue;
+    props[k] = v;
+  }
+  const out: Record<string, any> = { kind: contentBlockKind(w.kind), ...(col != null ? { col } : {}), ...props };
+  if (w.style && Object.keys(w.style).length) out[BLOCK_STYLE_KEY] = w.style;
+  if (isContainer(w)) {
+    out[BLOCK_CHILDREN_KEY] = (w.children || []).map((k) => blockFor(k as Widget));
+  }
+  return out;
+}
+
+/** One ARION content block → one builder node. */
+function nodeForBlock(b: any): Widget {
+  const { kind, col: _col, [BLOCK_CHILDREN_KEY]: kids, [BLOCK_STYLE_KEY]: style, ...rest } =
+    (b || {}) as Record<string, any>;
+  const name = blockWidgetKind(String(kind || "paragraph"));
+  const base: Widget = name === CONTAINER_KIND
+    ? makeContainer(style, Array.isArray(kids) ? kids.map(nodeForBlock) : [])
+    : makeWidget(name, rest);
+  if (name === CONTAINER_KIND) return base;
+  if (style && typeof style === "object" && Object.keys(style).length) base.style = style;
+  return base;
+}
+
 function sectionFor(entry: ArionSection): Section {
   const node = entry.node ?? null;
 
@@ -155,12 +206,7 @@ function sectionFor(entry: ArionSection): Section {
     const blocks: any[] = Array.isArray(fields.blocks) ? fields.blocks : [];
     const columns = Array.from({ length: layout }, (_, i) => ({
       id: `c_${entry.index}_${i}`,
-      widgets: blocks
-        .filter((b) => (Number(b?.col) || 0) === i)
-        .map((b) => {
-          const { kind, col, ...rest } = b || {};
-          return makeWidget(blockWidgetKind(String(kind || "paragraph")), rest);
-        }),
+      widgets: blocks.filter((b) => (Number(b?.col) || 0) === i).map(nodeForBlock),
     }));
     // A free section's node has nowhere to hang inside it — its widgets ARE
     // the blocks — so it rides on the section's own `meta`, which the engine
@@ -270,8 +316,7 @@ export function contentFieldsOf(s: Section): Record<string, any> {
   s.columns.forEach((col, i) => {
     for (const w of col.widgets) {
       if (w.kind.startsWith("site_")) continue;
-      const { [NODE_PROP]: _drop, ...rest } = (w.props || {}) as any;
-      blocks.push({ kind: contentBlockKind(w.kind), col: i, ...rest });
+      blocks.push(blockFor(w, i));
     }
   });
   const style = styleOf(s);
