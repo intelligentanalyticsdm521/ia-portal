@@ -576,6 +576,48 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    */
   const [selection, setSelection] = useState<Selection>(null);
   const selectedSectionId = selection?.sectionId ?? null;
+  /**
+   * WHAT A PICKER JUST PUT ON THE PAGE, handed back to the engine (R2-3).
+   *
+   * The engine selects, scrolls to and flashes anything IT inserts. A
+   * catalogue pick is the one insert it does not make — the tile opens this
+   * adapter's own picker — so the caret stayed BEHIND the lines that landed
+   * and everything added next went in above them. The round-2 scorer measured
+   * the harm as money: targets 03, 04 and 06 each print a Totals reading
+   * Subtotal $0.00 / Total $0.00 above the lines it should be adding up.
+   */
+  const [pickLanded, setPickLanded] = useState<Selection>(null);
+
+  /**
+   * PUT PICKED NODES ON THE PAGE — the one path both pickers take.
+   *
+   * The catalogue and the clause library each drop a handful of ordinary
+   * widgets, and they were two copies of the same six lines. One function, so
+   * "where does a pick land and where does the caret end up" has one answer.
+   *
+   * THE CARET GOES ON THE LAST ONE. A pick of three priced lines followed by a
+   * Totals has to put the Totals AFTER the lines; selecting the first would
+   * put the next insert between line 1 and line 2.
+   */
+  const placePicked = useCallback((nodes: Widget[], label: string) => {
+    if (!nodes.length) return;
+    const last = nodes[nodes.length - 1];
+    const landed = insertNodes(doc, selection, nodes);
+    if (landed.spot) {
+      setDoc(landed.doc);
+      // `landed.selection` and not one built here: the placement rule answers
+      // where the caret goes, so the two cannot disagree.
+      setPickLanded(landed.selection);
+      return;
+    }
+    // NO SECTION TO LAND IN — a brand-new document. Make one, the same way the
+    // add area does, and put the pick in it.
+    const section = makeSection({ label, columns: [{ ...emptyColumn(), widgets: nodes }] });
+    setDoc(addSection(doc, section));
+    setPickLanded({
+      kind: "widget", sectionId: section.id, columnIndex: 0, widgetIndex: nodes.length - 1, id: last.id,
+    });
+  }, [doc, selection]);
 
   /**
    * SECTION 10 IS ABOUT THE LOCATION THE DOCUMENT IS ABOUT (D-164).
@@ -1215,6 +1257,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           return true;
         }}
         onSelectionChange={(s) => setSelection(s ?? null)}
+        /* THE CARET FOLLOWS A PICK (R2-3). The other half of the line
+           above: what THIS adapter put on the page, handed to the engine so
+           it finishes the insert the way it finishes its own. */
+        selectLanded={pickLanded}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
            was the one that did not honour it. Save draft, which is what the
            other three do: it saves and stays open. */
@@ -1488,24 +1534,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               onAdd={(picks) => {
                 const nodes = nodesForPicks(pickingCatalogue, picks);
                 if (!nodes.length) { setPickingCatalogue(null); return; }
-                /* WHERE AN INSERT GOES (G-2). The engine's one placement rule:
-                   into the selected container, after the selected widget, or
-                   into the section the author is in. A pick used to make a NEW
-                   SECTION after the selected one, which put a rate table at the
-                   foot of the page whatever the author had the caret in. One
-                   Undo still takes the whole pick back, because the document is
-                   applied once. */
-                setDoc((d) => {
-                  const landed = insertNodes(d, selection, nodes);
-                  if (landed.spot) return landed.doc;
-                  // NO SECTION TO LAND IN — a brand-new document. Make one, the
-                  // same way the add area does, and put the pick in it.
-                  const section = makeSection({
-                    label: pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing",
-                    columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
-                  });
-                  return addSection(d, section);
-                });
+                /* WHERE AN INSERT GOES (G-2), AND WHERE THE CARET GOES AFTER
+                   IT (R2-3). The engine's one placement rule: into the
+                   selected container, after the selected widget, or into the
+                   section the author is in — and then the caret sits on the
+                   last thing that landed, so the next thing goes after it and
+                   not above it. One Undo still takes the whole pick back,
+                   because the document is applied once. */
+                placePicked(nodes as Widget[],
+                  pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing");
                 setPickingCatalogue(null);
                 setSaved(`Added ${nodes.length === 1 && pickingCatalogue === "product_cards" ? picks.length : nodes.length} from your catalogue.`);
               }}
@@ -1533,18 +1570,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               onAdd={(picked) => {
                 const nodes = nodesForClauses(picked);
                 if (!nodes.length) { setPickingTerms(false); return; }
-                // Where an insert goes, for the same reason as the catalogue
-                // above: a term picked with the caret in a container belongs in
-                // that container, not in a new section at the end.
-                setDoc((d) => {
-                  const landed = insertNodes(d, selection, nodes);
-                  if (landed.spot) return landed.doc;
-                  const section = makeSection({
-                    label: "Terms",
-                    columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
-                  });
-                  return addSection(d, section);
-                });
+                // Where an insert goes, and where the caret goes after it, for
+                // the same reason as the catalogue above: a term picked with
+                // the caret in a container belongs in that container, not in a
+                // new section at the end — and the next one belongs after it.
+                placePicked(nodes as Widget[], "Terms");
                 setPickingTerms(false);
                 setSaved(`Added ${picked.length} term${picked.length === 1 ? "" : "s"}. They are ordinary text now — edit them however you like.`);
               }}

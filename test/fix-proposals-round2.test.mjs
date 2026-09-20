@@ -120,3 +120,99 @@ describe("R2-2 — the caret guard spans the hand-over from one run to the next"
       "nothing raises the guard when a run takes the caret");
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════
+   R2-3 — A PICK LANDS WHERE THE AUTHOR IS, AND THE CARET FOLLOWS IT.
+   Round 1 closed the first half. The second half is why targets 03, 04 and 06
+   print a Totals reading Subtotal $0.00 / Total $0.00 ABOVE its own lines.
+   ════════════════════════════════════════════════════════════════════════ */
+describe("R2-3 — the caret follows a catalogue pick", () => {
+  const load = async () => {
+    const [model, insert] = await Promise.all([
+      import("../src/builder/model.ts"),
+      import("../src/builder/insertPosition.ts"),
+    ]);
+    return { ...model, ...insert };
+  };
+
+  /** One section, one column, one heading in it — a page the author is on. */
+  async function page() {
+    const m = await load();
+    m.resetIds();
+    const heading = m.makeWidget("heading", { text: "Your pricing" });
+    const sec = m.makeSection({ label: "Section" });
+    sec.columns[0].widgets = [heading];
+    return { m, heading, sec, doc: m.addSection(m.emptyDocument(), sec) };
+  }
+
+  test("THE DEFECT: with the caret left behind, the next insert goes ABOVE the lines", async () => {
+    const { m, heading, sec, doc } = await page();
+    const caret = { kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id: heading.id };
+    const lines = ["Mowing", "Clean-up", "Snow"].map((n) => m.makeWidget("price_line", { name: n }));
+    const first = m.insertNodes(doc, caret, lines);
+    // The caret is NOT moved — this is what the scorer measured.
+    const totals = m.makeWidget("totals", {});
+    const after = m.insertNodes(first.doc, caret, [totals]);
+    const order = after.doc.sections[0].columns[0].widgets.map((w) => w.props.name || w.kind);
+    assert.deepEqual(order, ["heading", "totals", "Mowing", "Clean-up", "Snow"],
+      "with the caret left behind the Totals is printed above the lines it adds up");
+  });
+
+  test("THE FIX: the caret sits on the LAST thing that landed", async () => {
+    const { m, heading, sec, doc } = await page();
+    const caret = { kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id: heading.id };
+    const lines = ["Mowing", "Clean-up", "Snow"].map((n) => m.makeWidget("price_line", { name: n }));
+    const first = m.insertNodes(doc, caret, lines);
+    // THE RULE ITSELF, executed: the placement answers where the caret goes.
+    const moved = first.selection;
+    assert.equal(moved.id, lines[2].id, "the caret went to the first line, so the next pick splits the list");
+    const totals = m.makeWidget("totals", {});
+    const after = m.insertNodes(first.doc, moved, [totals]);
+    const order = after.doc.sections[0].columns[0].widgets.map((w) => w.props.name || w.kind);
+    assert.deepEqual(order, ["heading", "Mowing", "Clean-up", "Snow", "totals"],
+      "the Totals must come after the lines it adds up");
+  });
+
+  test("a second pick carries on where the first one stopped", async () => {
+    const { m, heading, sec, doc } = await page();
+    let caret = { kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id: heading.id };
+    let d = doc;
+    for (const batch of [["A1", "A2"], ["B1", "B2"], ["C1"]]) {
+      const nodes = batch.map((n) => m.makeWidget("price_line", { name: n }));
+      const landed = m.insertNodes(d, caret, nodes);
+      d = landed.doc;
+      caret = landed.selection;
+    }
+    assert.deepEqual(d.sections[0].columns[0].widgets.map((w) => w.props.name || w.kind),
+      ["heading", "A1", "A2", "B1", "B2", "C1"], "the picks came out interleaved or reversed");
+  });
+
+  test("a pick INTO a container leaves the caret inside it", async () => {
+    const m = await load();
+    m.resetIds();
+    const box = m.makeContainer(undefined, []);
+    const sec = m.makeSection({ label: "Section" });
+    sec.columns[0].widgets = [box];
+    const doc = m.addSection(m.emptyDocument(), sec);
+    const caret = { kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id: box.id };
+    const nodes = ["One", "Two"].map((n) => m.makeWidget("price_line", { name: n }));
+    const landed = m.insertNodes(doc, caret, nodes);
+    assert.equal(landed.spot.hostId, box.id, "the pick landed beside the box instead of inside it");
+    const next = m.insertNodes(landed.doc, landed.selection, [m.makeWidget("totals", {})]);
+    const inside = next.doc.sections[0].columns[0].widgets[0].children.map((w) => w.props.name || w.kind);
+    assert.deepEqual(inside, ["One", "Two", "totals"], "the Totals left the box the lines are in");
+  });
+
+  test("both pickers go through ONE placement, and the engine finishes the insert", () => {
+    const adapter = readSrc("builder/proposal/ProposalBuilder.tsx");
+    const shell = readSrc("builder/BuilderShell.tsx");
+    assert.ok(adapter.includes("const placePicked = useCallback("), "the one placement is gone");
+    assert.ok(adapter.includes("setPickLanded(landed.selection)"),
+      "the adapter is building the caret's new home itself instead of taking the placement rule's answer");
+    assert.equal((adapter.match(/\bplacePicked\(nodes as Widget\[\]/g) || []).length, 2,
+      "the catalogue and the clause pickers are not both going through placePicked");
+    assert.ok(adapter.includes("selectLanded={pickLanded}"), "the adapter never tells the engine what it put down");
+    assert.ok(/landed\(s\.sectionId, s\.columnIndex, s\.widgetIndex, s\.id \|\| ""\)/.test(shell),
+      "the engine finishes an adapter's insert some other way than `landed`");
+  });
+});

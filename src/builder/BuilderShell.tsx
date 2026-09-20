@@ -275,6 +275,23 @@ export interface BuilderShellProps extends InspectorSlots {
    */
   onSelectionChange?: (selection: Selection) => void;
   /**
+   * THE ADAPTER PUT SOMETHING ON THE PAGE ITSELF — SELECT IT (R2-3, 2026-09-20).
+   *
+   * The other half of `onSelectionChange`, and it exists because a catalogue
+   * pick is the one insert the engine does not make. Pressing Product Line
+   * Items opens the proposal adapter's own picker, so `onInsertWidget` answers
+   * "I handled it", the engine's insert stops there, and `landed` — the one
+   * place an insert selects, scrolls to and flashes what it just put down —
+   * never ran. The lines landed where the caret was and the caret stayed
+   * BEHIND them, so the next thing the author added went in above them: the
+   * round-2 scorer's targets 03, 04 and 06 each print a Totals widget reading
+   * Subtotal $0.00 / Total $0.00 ABOVE the lines it should be adding up.
+   *
+   * A fresh Selection object each time, read by identity — the same shape
+   * `refusal` uses — so picking the same widget twice still moves the caret.
+   */
+  selectLanded?: Selection;
+  /**
    * SAVE YOUR OWN BLOCK (M-23).
    *
    * Right-click a section → name it and say in one line what it is for → it is
@@ -513,6 +530,21 @@ export function BuilderShell(p: BuilderShellProps) {
     setFlashId(widgetId);
     setTimeout(() => setFlashId((cur) => (cur === widgetId ? null : cur)), FLASH_MS);
   }, [select]);
+
+  /**
+   * WHAT THE ADAPTER JUST PUT ON THE PAGE, through the SAME door (R2-3).
+   *
+   * `landed` and not a bare `select`: an insert selects the new thing, brings
+   * it into view and flashes it, and an insert the adapter made is still an
+   * insert. Two ways of finishing an insert is how one of them ends up not
+   * moving the caret — which is the defect this closes.
+   */
+  useEffect(() => {
+    const s = p.selectLanded;
+    if (!s || s.kind !== "widget") return;
+    landed(s.sectionId, s.columnIndex, s.widgetIndex, s.id || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.selectLanded]);
 
   /**
    * A widget, built from its definition.

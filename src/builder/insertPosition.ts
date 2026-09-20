@@ -160,25 +160,42 @@ export function insertSpotFor(
  * in the order the picks were made, and one Undo takes the whole pick back
  * because the caller applies the returned document once.
  *
- * `spot` comes back so the caller can select and flash the first thing that
- * landed; it is null when nothing did, and the document is then unchanged by
- * identity.
+ * `spot` comes back so the caller can flash the first thing that landed; it is
+ * null when nothing did, and the document is then unchanged by identity.
+ *
+ * ── AND WHERE THE CARET GOES AFTERWARDS (R2-3, 2026-09-20) ────────────────
+ * `selection` comes back too, and it is THE LAST NODE. Round 1 made a pick
+ * land where the author is; the caret then stayed BEHIND it, so the next thing
+ * added went in above the lines and the round-2 scorer's targets 03, 04 and 06
+ * each printed a Totals reading Subtotal $0.00 / Total $0.00 above the lines
+ * it should be adding up. The last and not the first: a caret on the first of
+ * three priced lines puts the next pick between line one and line two.
+ *
+ * It is answered HERE, and not by each caller, because "where does the caret
+ * end up after an insert" is the same question as "where does the insert go"
+ * and the two must not be able to disagree.
  */
 export function insertNodes(
   doc: BuilderDocument,
   selection: Selection,
   nodes: readonly Node[],
   visibleSectionId?: string | null,
-): { doc: BuilderDocument; spot: InsertSpot | null } {
-  if (!nodes.length) return { doc, spot: null };
+): { doc: BuilderDocument; spot: InsertSpot | null; selection: Selection } {
+  if (!nodes.length) return { doc, spot: null, selection: null };
   const spot = insertSpotFor(doc, selection, visibleSectionId);
-  if (!spot) return { doc, spot: null };
+  if (!spot) return { doc, spot: null, selection: null };
   let next = doc;
   nodes.forEach((node, i) => { next = insertNode(next, spot.hostId, spot.index + i, node); });
   // REFUSED, NOT SILENTLY DROPPED: `insertNode` returns the same document when
   // the box is already as deep as boxes go. Saying so is the caller's job, and
   // it cannot say it if this pretends something landed.
-  return next === doc ? { doc, spot: null } : { doc: next, spot };
+  if (next === doc) return { doc, spot: null, selection: null };
+  const last = nodes[nodes.length - 1];
+  return {
+    doc: next,
+    spot,
+    selection: selectionAt({ ...spot, index: spot.index + nodes.length - 1 }, last.id),
+  };
 }
 
 /**
