@@ -659,8 +659,11 @@ describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => 
     assert.match(inspector, /<Group title="Container"/);
     assert.match(inspector, /<Group title="Additional Options"/);
     assert.match(inspector, /<span style=\{L\}>HTML Tag<\/span>/);
+    // NOTE: a GRID container still has a Columns count, which the reference's
+    // grid has too. What went is the SECTION's own column count — the control
+    // bound to `section.layout` — because a column IS a child container.
     for (const gone of ["What this box is, to a screen reader", "<span style={L}>Label</span>",
-                        "<span style={L}>Columns</span>", "<span style={L}>Split</span>",
+                        "value={section.layout}", "<span style={L}>Split</span>",
                         "Gap between columns"]) {
       assert.ok(!inspector.includes(gone), `the section grew it back: ${gone}`);
     }
@@ -678,5 +681,50 @@ describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => 
   test("a widget with no style controls has two tabs, not three", () => {
     assert.match(inspector, /const tabs: InspectorTab\[\] = hasStyle \? INSPECTOR_TABS : \["content", "advanced"\]/);
     assert.ok(!inspector.includes('disabled: InspectorTab[] = hasStyle'), "the greyed third tab is back");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 11 — A CONTAINER'S OWN CONTROLS (D-172, round 1)
+
+   Read out of the live editor on 2026-09-19: Direction, Justify Content,
+   Align Items, Gaps, Wrap and Min Height, and every one of the choosers is a
+   row of ICON BUTTONS. Ours were selects of plain-English sentences under
+   UPPERCASE labels reading WHICH WAY THINGS RUN, ALONG THAT WAY, ACROSS IT,
+   SPACE BETWEEN THEM and LEAST HEIGHT.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 11 — a container is set the reference's way", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("our own names for the five controls are DELETED", () => {
+    for (const ours of ["Which way things run", "Along that way", "Across it",
+                        "Space between them", "Least height",
+                        "Let them wrap onto a second line",
+                        "Stacked, top to bottom", "Side by side", "Even columns",
+                        "At the start", "In the middle", "Fill the box"]) {
+      assert.ok(!inspector.includes(ours), `our own container wording is back: ${ours}`);
+    }
+  });
+
+  test("the reference's six names are PRESENT", () => {
+    for (const name of ["Direction", "Justify Content", "Align Items", "Gaps", "Wrap", "Min Height"]) {
+      assert.ok(inspector.includes(`<span style={L}>${name}</span>`), `the container lost: ${name}`);
+    }
+  });
+
+  test("every chooser is a row of icon buttons, not a select", () => {
+    for (const attr of ["data-box-direction", "data-box-justify", "data-box-align", "data-box-wrap"]) {
+      assert.ok(inspector.includes(`testAttr="${attr}"`), `${attr} is not an icon chooser`);
+      assert.ok(!new RegExp(`<select[^>]*${attr}`).test(inspector), `${attr} is a select again`);
+    }
+    // …and Justify Content now offers the spacing option ours had no answer for.
+    assert.match(inspector, /title: "Space Between"/);
+  });
+
+  test("Gaps and Min Height carry the per-control device switcher", () => {
+    const gaps = inspector.slice(inspector.indexOf("<span style={L}>Gaps</span>") - 200,
+                                 inspector.indexOf("data-box-gap"));
+    assert.match(gaps, /<DeviceSegment device=\{p\.device\} onDevice=\{p\.onDevice\} \/>/);
   });
 });

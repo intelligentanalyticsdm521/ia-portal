@@ -47,7 +47,11 @@
  * BuilderShell: two would let an author edit the phone and watch the desktop.
  */
 import { useState, type ReactNode } from "react";
-import { Sparkles } from "lucide-react";
+import {
+  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
+  AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, ArrowDown,
+  ArrowRight, LayoutGrid, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
+} from "lucide-react";
 import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
 import { widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
@@ -61,7 +65,7 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  AttributesGroup, DeviceSegment, Group, INSPECTOR_TABS, InspectorTabs, RatioPicker,
+  AttributesGroup, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs, RatioPicker,
   ResponsiveGroup, SpacingGroup, TypographyGroup,
   FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
@@ -247,30 +251,36 @@ export function Inspector(p: InspectorProps) {
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
                 <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                <div style={FIELD}>
-                  <span style={L}>Which way things run</span>
-                  <select
-                    style={INPUT}
-                    data-box-direction
-                    title="Top to bottom, side by side, or in even columns. You can say something different for phones."
-                    value={widgetLayer.direction || "column"}
-                    onChange={(e) => {
-                      const v = e.target.value as "row" | "column" | "grid";
+                {/* DIRECTION — the reference's four icon buttons (D-172).
+                    Ours was a select reading "Stacked, top to bottom" / "Side
+                    by side" / "Even columns" under a label reading WHICH WAY
+                    THINGS RUN. The reference's row-reverse and column-reverse
+                    are not offered because the renderer does not emit them;
+                    the three that ARE offered wear its glyphs and its name. */}
+                <div style={ROW}>
+                  <span style={L}>Direction</span>
+                  <IconChoice
+                    name="Direction"
+                    testAttr="data-box-direction"
+                    value={(widgetLayer.direction || "column") as "row" | "column" | "grid"}
+                    onPick={(v) => {
+                      const next = v || "column";
                       patchWidgetStyle({
-                        direction: v === "column" ? undefined : v,
-                        columns: v === "grid" ? (widgetLayer.columns ?? 3) : undefined,
+                        direction: next === "column" ? undefined : next,
+                        columns: next === "grid" ? (widgetLayer.columns ?? 3) : undefined,
                       }, "direction");
                     }}
-                  >
-                    <option value="column">Stacked, top to bottom</option>
-                    <option value="row">Side by side</option>
-                    <option value="grid">Even columns</option>
-                  </select>
+                    options={[
+                      { v: "column" as const, title: "Column", icon: <ArrowDown size={13} /> },
+                      { v: "row" as const, title: "Row", icon: <ArrowRight size={13} /> },
+                      { v: "grid" as const, title: "Grid", icon: <LayoutGrid size={13} /> },
+                    ]}
+                  />
                 </div>
 
                 {widgetLayer.direction === "grid" && (
-                  <div style={FIELD}>
-                    <span style={L}>How many columns</span>
+                  <div style={ROW}>
+                    <span style={L}>Columns</span>
                     <input
                       style={INPUT} type="number" min={1} max={12} data-box-columns
                       title="How many even columns the things inside sit in"
@@ -281,58 +291,82 @@ export function Inspector(p: InspectorProps) {
                   </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Along that way</span>
-                    <select style={INPUT} data-box-justify value={widgetLayer.justify || "start"}
-                      title="Where the things sit along the direction they run in"
-                      onChange={(e) => patchWidgetStyle(
-                        { justify: e.target.value === "start" ? undefined : e.target.value as JustifySpec }, "justify")}>
-                      <option value="start">At the start</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the end</option>
-                      <option value="between">Spread out</option>
-                    </select>
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Across it</span>
-                    <select style={INPUT} data-box-align value={widgetLayer.alignItems || "stretch"}
-                      title="Whether the things fill the box across, or line up at one edge"
-                      onChange={(e) => patchWidgetStyle(
-                        { alignItems: e.target.value === "stretch" ? undefined : e.target.value as ItemsSpec }, "alignItems")}>
-                      <option value="stretch">Fill the box</option>
-                      <option value="start">At the top or left</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the bottom or right</option>
-                    </select>
-                  </div>
+                {/* JUSTIFY CONTENT — the reference's five, including the three
+                    spacing ones ours had no answer for at all. */}
+                <div style={ROW}>
+                  <span style={L}>Justify Content</span>
+                  <IconChoice
+                    name="Justify Content"
+                    testAttr="data-box-justify"
+                    value={(widgetLayer.justify || "start") as JustifySpec}
+                    onPick={(v) => patchWidgetStyle(
+                      { justify: !v || v === "start" ? undefined : v }, "justify")}
+                    options={[
+                      { v: "start" as JustifySpec, title: "Start", icon: <AlignStartVertical size={13} /> },
+                      { v: "center" as JustifySpec, title: "Center", icon: <AlignCenterVertical size={13} /> },
+                      { v: "end" as JustifySpec, title: "End", icon: <AlignEndVertical size={13} /> },
+                      { v: "between" as JustifySpec, title: "Space Between", icon: <AlignHorizontalSpaceBetween size={13} /> },
+                    ]}
+                  />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Space between them</span>
-                    <input style={INPUT} type="number" min={0} data-box-gap
-                      title="The gap between the things inside this box, in pixels"
-                      value={widgetLayer.gap ?? ""} placeholder="0"
-                      onChange={(e) => patchWidgetStyle(
-                        { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Least height</span>
-                    <input style={INPUT} type="number" min={0} data-box-minheight
-                      title="The box is at least this tall, whatever is in it"
-                      value={widgetLayer.minHeight ?? ""} placeholder="auto"
-                      onChange={(e) => patchWidgetStyle(
-                        { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
-                  </div>
+                <div style={ROW}>
+                  <span style={L}>Align Items</span>
+                  <IconChoice
+                    name="Align Items"
+                    testAttr="data-box-align"
+                    value={(widgetLayer.alignItems || "stretch") as ItemsSpec}
+                    onPick={(v) => patchWidgetStyle(
+                      { alignItems: !v || v === "stretch" ? undefined : v }, "alignItems")}
+                    options={[
+                      { v: "start" as ItemsSpec, title: "Start", icon: <AlignStartHorizontal size={13} /> },
+                      { v: "center" as ItemsSpec, title: "Center", icon: <AlignCenterHorizontal size={13} /> },
+                      { v: "end" as ItemsSpec, title: "End", icon: <AlignEndHorizontal size={13} /> },
+                      { v: "stretch" as ItemsSpec, title: "Stretch", icon: <StretchHorizontal size={13} /> },
+                    ]}
+                  />
                 </div>
 
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                  title="When there is not enough room, let them carry on to a second line rather than squeezing">
-                  <input type="checkbox" data-box-wrap checked={!!widgetLayer.wrap}
-                    onChange={(e) => patchWidgetStyle({ wrap: e.target.checked ? true : undefined }, "wrap")} />
-                  Let them wrap onto a second line
-                </label>
+                {/* GAPS and MIN HEIGHT — the reference's names, and the device
+                    switcher on the control rather than in a row above it. */}
+                <div style={ROW}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={L}>Gaps</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                  </span>
+                  <input style={INPUT} type="number" min={0} data-box-gap
+                    title="The gap between the things inside this box, in pixels"
+                    value={widgetLayer.gap ?? ""} placeholder="0"
+                    onChange={(e) => patchWidgetStyle(
+                      { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
+                </div>
+                <div style={ROW}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={L}>Min Height</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                  </span>
+                  <input style={INPUT} type="number" min={0} data-box-minheight
+                    title="The box is at least this tall, whatever is in it"
+                    value={widgetLayer.minHeight ?? ""} placeholder="auto"
+                    onChange={(e) => patchWidgetStyle(
+                      { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
+                </div>
+
+                {/* WRAP — the reference's two icon buttons, not a checkbox with
+                    a sentence for a label. */}
+                <div style={ROW}>
+                  <span style={L}>Wrap</span>
+                  <IconChoice
+                    name="Wrap"
+                    testAttr="data-box-wrap"
+                    value={widgetLayer.wrap ? "wrap" : "nowrap"}
+                    onPick={(v) => patchWidgetStyle({ wrap: v === "wrap" ? true : undefined }, "wrap")}
+                    options={[
+                      { v: "nowrap" as const, title: "No Wrap", icon: <MoveHorizontal size={13} /> },
+                      { v: "wrap" as const, title: "Wrap", icon: <WrapText size={13} /> },
+                    ]}
+                  />
+                </div>
 
               </Group>
             )}
@@ -702,9 +736,11 @@ export function Inspector(p: InspectorProps) {
                 both, so we leave them out rather than show you something your reader will not get.
               </div>
             )}
-            <div style={FIELD}>
-              <span style={L}>Least height</span>
-              <input type="number" style={INPUT} data-style-minheight value={sectionLayer.minHeight ?? ""} placeholder="as tall as it needs"
+            <div style={ROW}>
+              {/* "Min Height", the reference's name (D-172). "Least height" was
+                  ours, and the same control on a container already says it. */}
+              <span style={L}>Min Height</span>
+              <input type="number" style={INPUT} data-style-minheight value={sectionLayer.minHeight ?? ""} placeholder="auto"
                 title="The shortest this section may be, in pixels. Useful for a band with a background picture."
                 onChange={(e) => patchSectionStyle({ minHeight: e.target.value === "" ? undefined : Number(e.target.value) }, "minHeight")} />
             </div>
