@@ -1097,3 +1097,48 @@ describe("SCREEN LAW 14 — what the reference has here, and what it does not", 
     assert.match(pb, /title="Document Name"/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 15 — the page panel, and a chord that did the wrong thing
+   (D-172, round 2)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 15 — page settings, and Ctrl+Shift+Y", () => {
+  const inspector = readSrc("builder/Inspector.tsx");
+  const shortcuts = readSrc("builder/shortcuts.ts");
+
+  test("Ctrl+Shift+Y opens Page Settings — it does not REDO", () => {
+    /* FOUND BY DRIVING IT on :5189 (D-172, round 2): the chord was advertised
+       in our own shortcuts table and it redid the last undone step, because
+       `if (lower === "y") return "redo";` was written ABOVE the shifted
+       answer. An advertised shortcut that does something else is worse than
+       one that does nothing.
+       ABSENT: the unshifted answer given first.
+       PRESENT: one line that answers both, shift first. */
+    assert.ok(!/if \(lower === "y"\) return "redo";/.test(shortcuts),
+      "Ctrl+Shift+Y redoes again — the plain chord is answered first");
+    assert.match(shortcuts, /if \(lower === "y"\) return shift \? "pageSettings" : "redo";/);
+  });
+
+  test("the page panel has tabs and a General Settings section", () => {
+    // Driven in the reference on 2026-09-19: the page panel is tabbed and its
+    // first tab holds one section, "General Settings".
+    // ABSENT: a bare heading with the adapter's one loose line under it.
+    assert.match(inspector, /<InspectorTabs tab=\{pageTab\} onTab=\{setTab\} first="Settings"/);
+    assert.match(inspector, /<Group title="General Settings"/);
+    // PRESENT: the page's own look, which no control anywhere could reach.
+    assert.match(inspector, /data-page-layout/);
+    assert.match(inspector, /data-page-accent/);
+    assert.match(inspector, /onPatchDocument\?: \(patch: Partial<DocumentSettings>\) => void;/);
+  });
+
+  test("a box gets the CONTAINER menu at every level, not the widget one", () => {
+    /* The carrier collapse hands a top-level box over as a CONTAINER, so the
+       menu's "is this a container?" question had to stop being "is this a
+       section?" — or Add New Container and Save as a template would have
+       vanished from the very thing they apply to, and Save as a global would
+       have appeared on it. */
+    assert.match(readSrc("builder/BuilderShell.tsx"),
+      /kind: t\.kind === "section" \|\| box \? "section" : "widget",/);
+  });
+});

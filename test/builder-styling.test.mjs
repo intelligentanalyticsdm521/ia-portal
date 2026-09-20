@@ -660,7 +660,7 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
      a silently shifted list. */
   const byTab = (() => {
     const out = { content: [], style: [], advanced: [] };
-    const cuts = [...inspector.matchAll(/shownTab === "(content|style|advanced)"/g)];
+    const cuts = [...inspector.matchAll(/(?:shownTab|pageTab) === "(content|style|advanced)"/g)];
     cuts.forEach((m, i) => {
       const chunk = inspector.slice(m.index, i + 1 < cuts.length ? cuts[i + 1].index : inspector.length);
       for (const g of chunk.matchAll(GROUP_RE)) out[m[1]].push(g[2] || g[1]);

@@ -77,14 +77,16 @@ export type InspectorTab = "content" | "style" | "advanced";
 export const INSPECTOR_TABS: InspectorTab[] = ["content", "style", "advanced"];
 
 /** What each tab is called. The first one changes; the other two never do. */
-export function tabLabel(tab: InspectorTab, first: "Content" | "Layout"): string {
+export function tabLabel(tab: InspectorTab, first: "Content" | "Layout" | "Settings"): string {
   return tab === "content" ? first : tab === "style" ? "Style" : "Advanced";
 }
 
 export function InspectorTabs({ tab, onTab, first, tabs }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
-  first: "Content" | "Layout";
+  /* "Settings" is the PAGE panel's own first word — the reference titles
+     its page-settings tab that, and its element panels Content or Layout. */
+  first: "Content" | "Layout" | "Settings";
   /**
    * WHICH TABS THIS SELECTION ACTUALLY HAS (D-172).
    *

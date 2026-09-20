@@ -52,7 +52,7 @@ import {
   AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, ArrowDown,
   ArrowRight, LayoutGrid, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
 } from "lucide-react";
-import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
+import type { BuilderDocument, DocumentSettings, Node, Section, Selection, Widget } from "./model";
 import { carrierContainer, widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
 import {
@@ -88,7 +88,25 @@ export interface InspectorSlots {
    * would hide them.
    */
   documentExtras?: ReactNode;
+  /**
+   * THE DOCUMENT'S OWN LOOK (D-172, round 2) — the page panel's Style tab.
+   *
+   * `settings.style`, `accent`, `headingFont` and `bodyFont` are ENGINE-owned
+   * facts that the canvas, the PDF, the mailbox and the publisher all read,
+   * and until the page panel got tabs there was no control for any of them
+   * anywhere in the builder. Optional: a builder that hands in no writer gets
+   * the same controls, disabled, rather than a tab that is not there on one
+   * screen and is on another.
+   */
+  onPatchDocument?: (patch: Partial<DocumentSettings>) => void;
 }
+
+/** The page treatments `settings.style` may hold — templates.ts reads them. */
+const PAGE_LAYOUTS: Array<{ value: string; label: string }> = [
+  { value: "plain", label: "Default" },
+  { value: "bordered", label: "Boxed" },
+  { value: "card", label: "Card" },
+];
 
 export interface InspectorProps extends InspectorSlots {
   doc: BuilderDocument;
@@ -157,12 +175,89 @@ export function Inspector(p: InspectorProps) {
     /* NOTHING SELECTED = PAGE SETTINGS (§11.13.1 item 2). The reference shows
        the document's own settings here rather than an empty panel, and the
        adapter's `documentExtras` is exactly that. */
+    /* THE SAME THREE TABS AS EVERY OTHER PANEL (D-172, round 2).
+       Driven in the reference on 2026-09-19: its page-settings panel is
+       Settings | Style | Advanced, with a "General Settings" section under the
+       first. Ours had NO tabs and one line — "No priced lines yet" — because
+       `documentExtras` was the whole of it and the adapter had nothing else to
+       put there. A panel with a heading and one sentence is a panel that
+       taught the author the page has no settings.
+
+       The document's own fields are the adapter's — only it knows whether this
+       thing has a customer, a currency or a tax rate — so they arrive through
+       `documentExtras` as they always did; what is added here is the SHAPE the
+       reference gives them, and a General Settings section for the two facts
+       the ENGINE owns about any document, whatever builder it is. */
+    /* SETTINGS and STYLE, and no Advanced (D-172, round 2).
+       The reference's page panel has three; ours has two, because there is
+       nothing engine-owned or adapter-owned behind a third and a tab that
+       re-renders the one beside it is a tab that lies — the same rule the
+       Spacer's missing Style tab already follows. Recorded as an omission. */
+    const pageTabs: InspectorTab[] = ["content", "style"];
+    const pageTab: InspectorTab = pageTabs.includes(tab) ? tab : "content";
     return (
-      <div data-inspector="page" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflowY: "auto" }}>
+      <div data-inspector="page" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>Page settings</div>
+          <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Page settings</div>
         </div>
-        {p.documentExtras}
+        <InspectorTabs tab={pageTab} onTab={setTab} first="Settings" tabs={pageTabs} />
+        <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+          <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+            {pageTab === "content" && (
+              /* GENERAL SETTINGS — the reference's own heading over the
+                 document's own fields. The FIELDS are the adapter's: only it
+                 knows whether this document has a customer, a currency or a
+                 tax rate, and they arrive through `documentExtras` as they
+                 always did. What is added is the section the reference puts
+                 round them, so a page panel is a panel rather than one loose
+                 line reading "No priced lines yet". */
+              <Group title="General Settings" hint="The facts about this document itself" defaultOpen>
+                {p.documentExtras}
+              </Group>
+            )}
+            {pageTab === "style" && (
+              /* THE PAGE'S OWN LOOK — engine-owned, every builder, and until
+                 now reachable from nowhere: `settings.style`, `accent`,
+                 `headingFont` and `bodyFont` are read by the canvas, the PDF,
+                 the mailbox and the publisher, and had no control anywhere. */
+              <Group title="Page Layout" hint="How the whole document is laid out and coloured" defaultOpen>
+                <div style={ROW}>
+                  <span style={L}>Page Layout</span>
+                  <select style={INPUT} data-page-layout value={doc.settings.style || "plain"}
+                    onChange={(e) => p.onPatchDocument?.({ style: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    {PAGE_LAYOUTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Accent Color</span>
+                  <input style={INPUT} type="color" data-page-accent
+                    value={doc.settings.accent || p.swatches[0] || "#0C4A60"}
+                    onChange={(e) => p.onPatchDocument?.({ accent: e.target.value })}
+                    disabled={!p.onPatchDocument} />
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Heading Font</span>
+                  <select style={INPUT} data-page-headingfont value={doc.settings.headingFont || ""}
+                    onChange={(e) => p.onPatchDocument?.({ headingFont: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    <option value="">Default</option>
+                    {p.fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Body Font</span>
+                  <select style={INPUT} data-page-bodyfont value={doc.settings.bodyFont || ""}
+                    onChange={(e) => p.onPatchDocument?.({ bodyFont: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    <option value="">Default</option>
+                    {p.fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+              </Group>
+            )}
+          </div>
+        </div>
         {/* THE COACHING SENTENCE IS DELETED (D-172). The reference panels
             carry no such line. */}
       </div>
