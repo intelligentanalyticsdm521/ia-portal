@@ -28,8 +28,8 @@
  * Pure: no React, no DOM. The canvas measures; this decides.
  */
 import { carrierContainer } from "./model";
-import type { BuilderDocument, Selection } from "./model";
-import { findNode, hostChildren, isContainer, nodeIdAt } from "./treeOps";
+import type { BuilderDocument, Node, Selection } from "./model";
+import { findNode, hostChildren, insertNode, isContainer, nodeIdAt } from "./treeOps";
 
 /**
  * WHERE AN INSERT GOES: a box, and an index in it.
@@ -144,6 +144,41 @@ export function insertSpotFor(
     columnIndex: 0,
     index: column?.widgets.length ?? 0,
   };
+}
+
+/**
+ * SEVERAL THINGS, LANDING WHERE ONE WOULD (G-2, 2026-09-19).
+ *
+ * The catalogue picker drops one `price_line` per pick, and it used to drop
+ * them into a NEW SECTION appended after the selected one. So a rate table
+ * picked with the caret in the middle of a container came out after the
+ * heading, the bullets, the call-out and the contact tiles — the last thing on
+ * the page — and the customer read the document in an order the author did not
+ * build. The scorer measured it on two of the six targets.
+ *
+ * A pick is an insert. It lands where an insert lands, by the one rule above,
+ * in the order the picks were made, and one Undo takes the whole pick back
+ * because the caller applies the returned document once.
+ *
+ * `spot` comes back so the caller can select and flash the first thing that
+ * landed; it is null when nothing did, and the document is then unchanged by
+ * identity.
+ */
+export function insertNodes(
+  doc: BuilderDocument,
+  selection: Selection,
+  nodes: readonly Node[],
+  visibleSectionId?: string | null,
+): { doc: BuilderDocument; spot: InsertSpot | null } {
+  if (!nodes.length) return { doc, spot: null };
+  const spot = insertSpotFor(doc, selection, visibleSectionId);
+  if (!spot) return { doc, spot: null };
+  let next = doc;
+  nodes.forEach((node, i) => { next = insertNode(next, spot.hostId, spot.index + i, node); });
+  // REFUSED, NOT SILENTLY DROPPED: `insertNode` returns the same document when
+  // the box is already as deep as boxes go. Saying so is the caller's job, and
+  // it cannot say it if this pretends something landed.
+  return next === doc ? { doc, spot: null } : { doc: next, spot };
 }
 
 /**

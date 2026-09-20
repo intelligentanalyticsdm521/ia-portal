@@ -31,8 +31,11 @@ import {
   // model's own rules on it (it comes from `treeOps`, re-exported here so
   // there is one door). See `patch` below for the walk this replaced.
   insertBeside, patchNode, removeWidgetsWhere, walkWidgets,
-  type BuilderDocument, type Section as BuilderSection, type Widget,
+  type BuilderDocument, type Section as BuilderSection, type Selection, type Widget,
 } from "../model";
+/* WHERE A PICK LANDS (G-2). The engine's one placement rule, so the catalogue
+   picker and a tile pressed in the left panel put things in the same place. */
+import { insertNodes } from "../insertPosition";
 import {
   bindPlansToLocation, blankTokens, blanksRefusal, documentLogo, mergeValues, parseMoney,
   plainLabel, setMergeValue, tokenHelp, widgetForToken,
@@ -562,8 +565,17 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   const [pickingCatalogue, setPickingCatalogue] = useState<CatalogueTileKind | null>(null);
   /** The Terms tile's picker: saved clauses in, plain text out (11.13.2 item 5). */
   const [pickingTerms, setPickingTerms] = useState(false);
-  /** Where the picked widgets go: after the section the author is looking at. */
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  /**
+   * WHAT IS SELECTED — the WHOLE selection, not just its section (G-2).
+   *
+   * This kept `s?.sectionId` alone, and the catalogue picker then had nothing
+   * finer than "which section" to aim at, so it appended a new section after
+   * that one and the priced lines came out at the foot of the page. The engine
+   * already knows where an insert goes (`insertPosition.ts`); it only needs to
+   * be told what the author has selected.
+   */
+  const [selection, setSelection] = useState<Selection>(null);
+  const selectedSectionId = selection?.sectionId ?? null;
 
   /**
    * SECTION 10 IS ABOUT THE LOCATION THE DOCUMENT IS ABOUT (D-164).
@@ -1168,7 +1180,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           if (t.key === CLAUSE_TEMPLATE_KEY) setPickingTerms(true);
           return true;
         }}
-        onSelectionChange={(s) => setSelectedSectionId(s?.sectionId ?? null)}
+        onSelectionChange={(s) => setSelection(s ?? null)}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
            was the one that did not honour it. Save draft, which is what the
            other three do: it saves and stays open. */
@@ -1412,17 +1424,24 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               onAdd={(picks) => {
                 const nodes = nodesForPicks(pickingCatalogue, picks);
                 if (!nodes.length) { setPickingCatalogue(null); return; }
-                // ONE section, after the one the author is looking at — so the
-                // cards land where they were looking and one Undo takes the
-                // whole pick back, rather than one press per card.
-                const at = selectedSectionId
-                  ? doc.sections.findIndex((s) => s.id === selectedSectionId) + 1
-                  : undefined;
-                const section = makeSection({
-                  label: pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing",
-                  columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                /* WHERE AN INSERT GOES (G-2). The engine's one placement rule:
+                   into the selected container, after the selected widget, or
+                   into the section the author is in. A pick used to make a NEW
+                   SECTION after the selected one, which put a rate table at the
+                   foot of the page whatever the author had the caret in. One
+                   Undo still takes the whole pick back, because the document is
+                   applied once. */
+                setDoc((d) => {
+                  const landed = insertNodes(d, selection, nodes);
+                  if (landed.spot) return landed.doc;
+                  // NO SECTION TO LAND IN — a brand-new document. Make one, the
+                  // same way the add area does, and put the pick in it.
+                  const section = makeSection({
+                    label: pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing",
+                    columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                  });
+                  return addSection(d, section);
                 });
-                setDoc((d) => addSection(d, section, at === 0 ? undefined : at));
                 setPickingCatalogue(null);
                 setSaved(`Added ${nodes.length === 1 && pickingCatalogue === "product_cards" ? picks.length : nodes.length} from your catalogue.`);
               }}
@@ -1450,14 +1469,18 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               onAdd={(picked) => {
                 const nodes = nodesForClauses(picked);
                 if (!nodes.length) { setPickingTerms(false); return; }
-                const at = selectedSectionId
-                  ? doc.sections.findIndex((s) => s.id === selectedSectionId) + 1
-                  : undefined;
-                const section = makeSection({
-                  label: "Terms",
-                  columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                // Where an insert goes, for the same reason as the catalogue
+                // above: a term picked with the caret in a container belongs in
+                // that container, not in a new section at the end.
+                setDoc((d) => {
+                  const landed = insertNodes(d, selection, nodes);
+                  if (landed.spot) return landed.doc;
+                  const section = makeSection({
+                    label: "Terms",
+                    columns: [{ ...emptyColumn(), widgets: nodes as Widget[] }],
+                  });
+                  return addSection(d, section);
                 });
-                setDoc((d) => addSection(d, section, at === 0 ? undefined : at));
                 setPickingTerms(false);
                 setSaved(`Added ${picked.length} term${picked.length === 1 ? "" : "s"}. They are ordinary text now — edit them however you like.`);
               }}

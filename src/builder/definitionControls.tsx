@@ -39,6 +39,12 @@ import {
 } from "./registry";
 import type { PreviewKey } from "./responsive";
 import { FIELD, INPUT, L, ROW, Swatches, Switcher } from "./StyleGroups";
+/* THE REPEATER'S ARITHMETIC (G-1). Every "what is a row" question is answered
+   in one pure module the tests execute; this file only draws. */
+import {
+  addRow, blankRow, cellCount, duplicateRow, isRepeater, moveRow, removeRow,
+  rowFields, rowsOf, rowTitle, setRowField, type RepeaterRow,
+} from "./repeater";
 
 /**
  * The control types the PANEL draws.
@@ -50,6 +56,18 @@ import { FIELD, INPUT, L, ROW, Swatches, Switcher } from "./StyleGroups";
 export const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
   "toggle", "select", "colour", "number", "image", "link", "code",
 ]);
+
+/**
+ * IS THIS CONTROL DRAWN AT ALL?
+ *
+ * The seven types above, plus a `list` whose definition has said what one row
+ * is — Elementor's repeater (`repeater.ts`). `list` is deliberately NOT added
+ * to `PANEL_CONTROL_TYPES`: a list that has NOT declared its row shape is still
+ * typed on the page, which is what every family's own contract test asks of it.
+ */
+export function isDrawnInPanel(c: WidgetControl): boolean {
+  return PANEL_CONTROL_TYPES.has(c.type) || (c.type === "list" && isRepeater(c));
+}
 
 /**
  * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
@@ -91,6 +109,98 @@ export interface DefinitionControlsProps {
   onPatch: (patch: Record<string, unknown>) => void;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE REPEATER — Elementor's own rows, add, duplicate and delete
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The small square buttons on a row: duplicate, delete, up, down. */
+const ROW_BTN: React.CSSProperties = {
+  border: "1px solid #D7E2E9", background: "#fff", borderRadius: 3,
+  width: 22, height: 22, lineHeight: "20px", padding: 0, cursor: "pointer",
+  color: "#48697A", fontSize: 12,
+};
+
+export interface RepeaterControlProps {
+  control: WidgetControl;
+  /** The widget's whole props: a table's rows are as wide as its columns. */
+  props: Record<string, unknown>;
+  onPatch: (patch: Record<string, unknown>) => void;
+}
+
+/**
+ * One repeating control.
+ *
+ * Elementor's shape: a stack of rows, each collapsed to its own title with a
+ * duplicate and a delete beside it, opening to the row's fields; and one
+ * full-width "Add Item" under the stack. The two arrows are ours in place of
+ * Elementor's drag handle — a row has to be movable, and a drag inside a panel
+ * that already drags widgets onto a page is a second meaning for one gesture.
+ */
+export function RepeaterControl({ control, props, onPatch }: RepeaterControlProps) {
+  const [open, setOpen] = React.useState<number | null>(null);
+  const rows = rowsOf(props, control.key);
+  const headings = control.cellsFrom
+    ? rowsOf(props, control.cellsFrom).map((h) => String(h ?? ""))
+    : undefined;
+  const width = control.cellsFrom ? cellCount(control, props) : undefined;
+  const write = (next: RepeaterRow[]) => onPatch({ [control.key]: next });
+
+  return (
+    <div data-repeater={control.key}>
+      {rows.map((row, i) => {
+        const fields = rowFields(row, { width, headings });
+        return (
+          <div key={i} data-repeater-row={i}
+            style={{ border: "1px solid #E2E8F0", borderRadius: 4, marginBottom: 4, background: "#fff" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 6px" }}>
+              <button type="button" data-repeater-open={i}
+                onClick={() => setOpen((cur) => (cur === i ? null : i))}
+                style={{ flex: 1, textAlign: "left", border: 0, background: "none", cursor: "pointer",
+                  font: "inherit", fontSize: 12, color: "#0B1C24", padding: 0, overflow: "hidden",
+                  textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {rowTitle(row, i, headings)}
+              </button>
+              <button type="button" title="Move up" aria-label={`Move item ${i + 1} up`}
+                data-repeater-up={i} style={ROW_BTN}
+                onClick={() => write(moveRow(rows, i, i - 1))}>↑</button>
+              <button type="button" title="Move down" aria-label={`Move item ${i + 1} down`}
+                data-repeater-down={i} style={ROW_BTN}
+                onClick={() => write(moveRow(rows, i, i + 1))}>↓</button>
+              <button type="button" title="Duplicate" aria-label={`Duplicate item ${i + 1}`}
+                data-repeater-duplicate={i} style={ROW_BTN}
+                onClick={() => write(duplicateRow(rows, i))}>⧉</button>
+              <button type="button" title="Delete" aria-label={`Delete item ${i + 1}`}
+                data-repeater-remove={i} style={ROW_BTN}
+                onClick={() => { write(removeRow(rows, i)); setOpen(null); }}>×</button>
+            </div>
+            {open === i && (
+              <div style={{ padding: "0 6px 6px 6px", display: "grid", gap: 4 }}>
+                {fields.map((f) => (
+                  <div key={f.name} style={FIELD} data-repeater-field={`${i}.${f.name}`}>
+                    {f.label && <span style={L}>{f.label}</span>}
+                    <input style={INPUT} value={f.value}
+                      onChange={(e) => {
+                        const next = rows.slice();
+                        next[i] = setRowField(row, f.name, e.target.value);
+                        write(next);
+                      }} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" data-repeater-add={control.key}
+        onClick={() => { write(addRow(rows, blankRow(control, props, control.key))); setOpen(rows.length); }}
+        style={{ width: "100%", padding: "6px 8px", border: "1px dashed #B9CBD6", borderRadius: 4,
+          background: "#F6FAFC", cursor: "pointer", font: "inherit", fontSize: 12, color: "#0C4A60" }}>
+        Add Item
+      </button>
+    </div>
+  );
+}
+
 /** Every control of `def` that belongs on `tab`, in its own panel sections. */
 export function DefinitionControls(p: DefinitionControlsProps) {
   const props = p.props || {};
@@ -101,7 +211,7 @@ export function DefinitionControls(p: DefinitionControlsProps) {
   return (
     <>
       {controlSections(onTab).map((grp) => {
-        const shown = grp.controls.filter((c) => PANEL_CONTROL_TYPES.has(c.type));
+        const shown = grp.controls.filter(isDrawnInPanel);
         if (!shown.length) return null;
         return (
           <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
@@ -122,7 +232,17 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                 the label at x=20 and the input at x=172. `code`, whose control
                 is a textarea with a preview under it, keeps the stacked shape —
                 the reference marks that kind `elementor-label-block` too. */}
-            {shown.map((c) => (
+            {/* A REPEATER IS A BLOCK, not a label-left row: Elementor stacks
+                its rows and its Add Item button under the control's name, full
+                width. Drawn before the row map and returning early, so the row
+                below stays the one shape SCREEN LAW 10 pins. */}
+            {shown.filter((c) => c.type === "list").map((c) => (
+              <div key={c.key} style={FIELD} data-control={c.key} data-control-key={c.key}>
+                <span style={L}>{c.label}</span>
+                <RepeaterControl control={c} props={props} onPatch={p.onPatch} />
+              </div>
+            ))}
+            {shown.filter((c) => c.type !== "list").map((c) => (
               <div key={c.key} style={c.type === "code" ? FIELD : ROW} data-control={c.key}
                 data-control-key={deviceKey(c, p.device)}
                 data-control-responsive={c.responsive ? "yes" : undefined}>

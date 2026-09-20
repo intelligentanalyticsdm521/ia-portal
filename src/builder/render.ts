@@ -567,17 +567,36 @@ function offerNote(c: Container): string {
 /** A plain table with a header row. Nothing is added up — see totals.ts. */
 function dataTable(p: any, ctx: RenderContext): string {
   const cols: string[] = Array.isArray(p.columns) ? p.columns : [];
-  const rs: any[] = Array.isArray(p.rows) ? p.rows : [];
+  const all: any[] = Array.isArray(p.rows) ? p.rows : [];
+  /* A BLANK LINE IS A LINE NOBODY FILLED IN. A table arrives with three of
+     them so the author has somewhere to type; the customer's copy and the PDF
+     print what was typed and nothing else — the same rule `list` has always
+     had, and the reason an empty table can be shipped as a default at all. */
+  const cellsIn = (r: any): string[] => (Array.isArray(r) ? r : Array.isArray(r?.cells) ? r.cells : []);
+  const printed = (r: any) => ctx.mode === "edit" || cellsIn(r).some((c) => String(c ?? "").trim());
+  const rs: any[] = all.filter(printed);
   if (!cols.length && !rs.length) return "";
+  /* AN EMPTY CELL IS STILL SOMEWHERE TO TYPE (G-1, 2026-09-19). A table now
+     arrives with blank lines in its body, and a `<td>` with nothing in it is a
+     hairline the author cannot aim at. `bx-slot` is the engine's own empty-run
+     class and `data-placeholder` its grey hint — the same pair every other
+     renderer uses, so there is no second way of saying "type here". */
+  const slot = (text: unknown, hint: string) =>
+    ctx.mode === "edit" && !String(text ?? "").trim()
+      ? ` class="bx-slot" data-placeholder="${esc(hint)}"` : "";
   const head = cols.length
-    ? `<thead><tr style="background:${esc(ctx.accent)}">${cols.map((c, i) => `<th data-edit="columns.${i}">${t(c, ctx)}</th>`).join("")}</tr></thead>` : "";
-  const body = rs.map((r, ri) => {
-    const cells: string[] = Array.isArray(r) ? r : Array.isArray(r?.cells) ? r.cells : [];
+    ? `<thead><tr style="background:${esc(ctx.accent)}">${cols.map((c, i) => `<th${slot(c, "heading…")} data-edit="columns.${i}">${t(c, ctx)}</th>`).join("")}</tr></thead>` : "";
+  // THE INDEX IS THE ROW'S OWN, not its place in what survived the filter: an
+  // edit path that counted only the printed rows would write the third typed
+  // line into the first blank one the moment a blank row sat above it.
+  const body = all.map((r, ri) => {
+    if (!printed(r)) return "";
+    const cells: string[] = cellsIn(r);
     // data-label carries the column heading INTO the cell, because the phone
     // stylesheet drops the header row and prints it above the value instead.
     // Emitted for every surface, so the customer page, the canvas and a
     // printed copy are one document — see DOCUMENT_CSS's phone block.
-    return `<tr>${cells.map((c, ci) => `<td data-label="${esc(cols[ci] ?? "")}" data-edit="rows.${ri}.${Array.isArray(r) ? ci : `cells.${ci}`}">${t(c, ctx)}</td>`).join("")}</tr>`;
+    return `<tr>${cells.map((c, ci) => `<td${slot(c, "…")} data-label="${esc(cols[ci] ?? "")}" data-edit="rows.${ri}.${Array.isArray(r) ? ci : `cells.${ci}`}">${t(c, ctx)}</td>`).join("")}</tr>`;
   }).join("");
   return `<table class="bx-table">${head}<tbody>${body}</tbody></table>`;
 }
