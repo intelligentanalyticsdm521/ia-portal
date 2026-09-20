@@ -1460,3 +1460,19 @@ describe("SCREEN LAW 18b — the last native checkboxes in the panel (round 3)",
     assert.match(inspector, /<div style=\{ROW\} data-carrier-pagebreak>/);
   });
 });
+
+describe("SCREEN LAW 18c — the verb button's tooltip is one word (round 3)", () => {
+  test("the sentence on the widest button in the bar is DELETED", () => {
+    /* DRIVEN on 2026-09-19: the reference's verb button reads "Update" and
+       carries `title="Publish"` — one word, the action. No tooltip node of its
+       own appears while hovering it. The audit sheet said "no tooltip at all",
+       which driving corrected to "one word". */
+    const bar = code(readSrc("builder/proposal/ProposalBuilder.tsx"));
+    assert.ok(!bar.includes("Email the customer a link to this document"),
+      "the verb button explains itself in a sentence again");
+    assert.match(bar, /: "Send"\}>/);
+    // PRESENT: the one tooltip that says something the button does not — why
+    // pressing it will not do what it says.
+    assert.match(bar, /\$\{blanks\.length\} detail\(s\) are still blank/);
+  });
+});

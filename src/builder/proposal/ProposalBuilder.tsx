@@ -1356,8 +1356,15 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                   three of the four widest things in the bar. Ask ARGUS moved
                   to the bar's own AI position, where the reference keeps
                   Angie. */}
+              {/* ONE WORD ON THE VERB (D-172, round 3). DRIVEN: the
+                  reference's verb button reads "Update" and carries
+                  `title="Publish"` — one word, the action, no sentence, and no
+                  tooltip node of its own while hovering. Ours carried "Email
+                  the customer a link to this document", a sentence on the
+                  widest button in the bar. The blanks warning stays: that one
+                  says why the button will not do what it says. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
+                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Send"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
               <SaveOptions busy={busy}>
