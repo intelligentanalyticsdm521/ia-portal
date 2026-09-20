@@ -49,8 +49,10 @@
 import { useState, type ReactNode } from "react";
 import {
   AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
-  AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, ArrowDown,
-  ArrowRight, LayoutGrid, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
+  AlignHorizontalDistributeCenter, AlignHorizontalSpaceAround, AlignHorizontalSpaceBetween,
+  AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
+  AlignVerticalSpaceAround, AlignVerticalSpaceBetween, ArrowDown, ArrowLeft, ArrowRight,
+  ArrowUp, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
 } from "lucide-react";
 import type { BuilderDocument, DocumentSettings, Node, Section, Selection, Widget } from "./model";
 import { carrierContainer, widgetAt } from "./model";
@@ -391,32 +393,89 @@ export function Inspector(p: InspectorProps) {
                     reference has no such row anywhere in its panel: the
                     switcher belongs ON the label of the control being set,
                     which is where Gaps and Min Height already carry it. */}
-                {/* DIRECTION — the reference's four icon buttons (D-172).
-                    Ours was a select reading "Stacked, top to bottom" / "Side
-                    by side" / "Even columns" under a label reading WHICH WAY
-                    THINGS RUN. The reference's row-reverse and column-reverse
-                    are not offered because the renderer does not emit them;
-                    the three that ARE offered wear its glyphs and its name. */}
+                {/* CONTAINER LAYOUT — the section's FIRST control (D-172,
+                    round 3). Driven in the reference: a grid is a CONTAINER
+                    with Container Layout set to Grid, not a third Direction
+                    button. Ours put Grid beside Column and Row, which said a
+                    grid is a way of running a flexbox — so the Direction
+                    chooser had three answers where the reference has four and
+                    the Flexbox/Grid question had nowhere to be asked at all. */}
+                <div style={ROW}>
+                  <span style={L}>Container Layout</span>
+                  <select style={INPUT} data-box-layout
+                    value={widgetLayer.direction === "grid" ? "grid" : "flex"}
+                    onChange={(e) => patchWidgetStyle(e.target.value === "grid"
+                      ? { direction: "grid", columns: widgetLayer.columns ?? 3 }
+                      : { direction: undefined, columns: undefined }, "layout")}>
+                    <option value="flex">Flexbox</option>
+                    <option value="grid">Grid</option>
+                  </select>
+                </div>
+
+                {/* CONTENT WIDTH — the reference's second control. Ours is the
+                    SECTION's own `width`, which is the same idea and the same
+                    three the renderer already understands; on a carrier pair
+                    this panel is the only way left to reach it. Narrow is
+                    ours, kept because documents are set to it. */}
+                {carried && (
+                  <div style={ROW}>
+                    <span style={L}>Content Width</span>
+                    <select style={INPUT} data-box-content-width value={section.width}
+                      onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
+                      <option value="contained">Boxed</option>
+                      <option value="full">Full Width</option>
+                      <option value="narrow">Narrow</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* MIN HEIGHT, ABOVE "Items" (D-172, round 3) — the
+                    reference's own order: the box's own size comes before
+                    anything about what is inside it. */}
+                <div style={FIELD}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={L}>Min Height</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                  </span>
+                  <input style={INPUT} type="number" min={0} data-box-minheight
+                    value={widgetLayer.minHeight ?? ""} placeholder="auto"
+                    onChange={(e) => patchWidgetStyle(
+                      { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
+                </div>
+
+                {/* "Items" — the reference's own sub-heading, splitting the
+                    box's own settings from its children's. */}
+                <div data-control-subheading="Items"
+                  style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>Items</div>
+
+                {/* DIRECTION — the reference's FOUR, in its own wording
+                    (D-172, round 3). "Reversed" is a flag beside the flow, so
+                    the outline, the Structure row and the canvas handle all
+                    still get "row" or "column" when they ask which way a box
+                    runs. */}
+                {widgetLayer.direction !== "grid" && (
                 <div style={ROW}>
                   <span style={L}>Direction</span>
                   <IconChoice
                     name="Direction"
                     testAttr="data-box-direction"
-                    value={(widgetLayer.direction || "column") as "row" | "column" | "grid"}
+                    value={`${widgetLayer.direction === "row" ? "row" : "column"}${widgetLayer.reverse ? "-rev" : ""}`}
                     onPick={(v) => {
-                      const next = v || "column";
+                      const flow = String(v || "column").startsWith("row") ? "row" : "column";
                       patchWidgetStyle({
-                        direction: next === "column" ? undefined : next,
-                        columns: next === "grid" ? (widgetLayer.columns ?? 3) : undefined,
+                        direction: flow === "column" ? undefined : "row",
+                        reverse: String(v || "").endsWith("-rev") ? true : undefined,
                       }, "direction");
                     }}
                     options={[
-                      { v: "column" as const, title: "Column", icon: <ArrowDown size={13} /> },
-                      { v: "row" as const, title: "Row", icon: <ArrowRight size={13} /> },
-                      { v: "grid" as const, title: "Grid", icon: <LayoutGrid size={13} /> },
+                      { v: "row", title: "Row - horizontal", icon: <ArrowRight size={13} /> },
+                      { v: "column", title: "Column - vertical", icon: <ArrowDown size={13} /> },
+                      { v: "row-rev", title: "Row - reversed", icon: <ArrowLeft size={13} /> },
+                      { v: "column-rev", title: "Column - reversed", icon: <ArrowUp size={13} /> },
                     ]}
                   />
                 </div>
+                )}
 
                 {widgetLayer.direction === "grid" && (
                   <div style={ROW}>
@@ -431,9 +490,9 @@ export function Inspector(p: InspectorProps) {
                   </div>
                 )}
 
-                {/* JUSTIFY CONTENT — the reference's five, including the three
-                    spacing ones ours had no answer for at all. */}
-                <div style={ROW}>
+                {/* JUSTIFY CONTENT — the reference's SIX, label ABOVE, which is
+                    the shape it gives this one (`elementor-label-block`). */}
+                <div style={FIELD}>
                   <span style={L}>Justify Content</span>
                   <IconChoice
                     name="Justify Content"
@@ -446,6 +505,8 @@ export function Inspector(p: InspectorProps) {
                       { v: "center" as JustifySpec, title: "Center", icon: <AlignCenterVertical size={13} /> },
                       { v: "end" as JustifySpec, title: "End", icon: <AlignEndVertical size={13} /> },
                       { v: "between" as JustifySpec, title: "Space Between", icon: <AlignHorizontalSpaceBetween size={13} /> },
+                      { v: "around" as JustifySpec, title: "Space Around", icon: <AlignHorizontalSpaceAround size={13} /> },
+                      { v: "evenly" as JustifySpec, title: "Space Evenly", icon: <AlignHorizontalDistributeCenter size={13} /> },
                     ]}
                   />
                 </div>
@@ -467,29 +528,16 @@ export function Inspector(p: InspectorProps) {
                   />
                 </div>
 
-                {/* GAPS and MIN HEIGHT — the reference's names, and the device
-                    switcher on the control rather than in a row above it. */}
-                <div style={ROW}>
+                {/* GAPS — label ABOVE, the shape the reference gives it. */}
+                <div style={FIELD}>
                   <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={L}>Gaps</span>
                     <DeviceSegment device={p.device} onDevice={p.onDevice} />
                   </span>
                   <input style={INPUT} type="number" min={0} data-box-gap
-                    title="The gap between the things inside this box, in pixels"
                     value={widgetLayer.gap ?? ""} placeholder="0"
                     onChange={(e) => patchWidgetStyle(
                       { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
-                </div>
-                <div style={ROW}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <span style={L}>Min Height</span>
-                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                  </span>
-                  <input style={INPUT} type="number" min={0} data-box-minheight
-                    title="The box is at least this tall, whatever is in it"
-                    value={widgetLayer.minHeight ?? ""} placeholder="auto"
-                    onChange={(e) => patchWidgetStyle(
-                      { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
                 </div>
 
                 {/* WRAP — the reference's two icon buttons, not a checkbox with
@@ -508,6 +556,34 @@ export function Inspector(p: InspectorProps) {
                   />
                 </div>
 
+                {/* ALIGN CONTENT — ONLY ONCE THE LINES WRAP (D-172, round 3).
+                    The audit sheet said the reference always offers it; driving
+                    it says otherwise — it is not in the section at all until
+                    Wrap is on, and then it appears under Wrap, label above,
+                    with SIX choices whose second word is "Middle", not
+                    "Center". Offered on the same condition here, because a
+                    control that can do nothing is worse than a missing one. */}
+                {widgetLayer.wrap && (
+                  <div style={FIELD}>
+                    <span style={L}>Align Content</span>
+                    <IconChoice
+                      name="Align Content"
+                      testAttr="data-box-aligncontent"
+                      value={(widgetLayer.alignContent || "start") as JustifySpec}
+                      onPick={(v) => patchWidgetStyle(
+                        { alignContent: !v || v === "start" ? undefined : v }, "alignContent")}
+                      options={[
+                        { v: "start" as JustifySpec, title: "Start", icon: <AlignStartHorizontal size={13} /> },
+                        { v: "center" as JustifySpec, title: "Middle", icon: <AlignCenterHorizontal size={13} /> },
+                        { v: "end" as JustifySpec, title: "End", icon: <AlignEndHorizontal size={13} /> },
+                        { v: "between" as JustifySpec, title: "Space Between", icon: <AlignVerticalSpaceBetween size={13} /> },
+                        { v: "around" as JustifySpec, title: "Space Around", icon: <AlignVerticalSpaceAround size={13} /> },
+                        { v: "evenly" as JustifySpec, title: "Space Evenly", icon: <AlignVerticalDistributeCenter size={13} /> },
+                      ]}
+                    />
+                  </div>
+                )}
+
               </Group>
             )}
 
@@ -521,19 +597,42 @@ export function Inspector(p: InspectorProps) {
                 prop, same renderer, the reference's name and place. */}
             {box && shownTab === "content" && (
               <Group title="Additional Options">
+                {/* OVERFLOW comes FIRST (D-172, round 3) — driven: the section
+                    is Overflow then HTML Tag, and its values are Default,
+                    Hidden and Auto. There is no Link control in it; the audit
+                    sheet's row for one did not survive driving. */}
+                <div style={ROW}>
+                  <span style={L}>Overflow</span>
+                  <select style={INPUT} data-box-overflow
+                    value={widgetLayer.overflow ?? ""}
+                    onChange={(e) => patchWidgetStyle(
+                      { overflow: (e.target.value || undefined) as "hidden" | "auto" | undefined }, "overflow")}>
+                    <option value="">Default</option>
+                    <option value="hidden">Hidden</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </div>
+                {/* THE REFERENCE'S TEN, IN ITS ORDER (D-172, round 3): Default,
+                    div, header, footer, main, article, section, aside, nav, a
+                    (link) — read off the live select, and the same ten the
+                    machine catalogue's `html_tag` offers. Ours had seven, in an
+                    order of its own, and called the empty one "div" although
+                    the reference calls it Default. */}
                 <div style={ROW}>
                   <span style={L}>HTML Tag</span>
                   <select style={INPUT} data-box-html-tag
-                    title="Most boxes are a div. Say what this one is and a screen reader, and search, can tell."
                     value={String((widget.props as any)?.html_tag ?? "")}
                     onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
-                    <option value="">div</option>
+                    <option value="">Default</option>
+                    <option value="div">div</option>
                     <option value="header">header</option>
-                    <option value="main">main</option>
-                    <option value="section">section</option>
-                    <option value="article">article</option>
-                    <option value="aside">aside</option>
                     <option value="footer">footer</option>
+                    <option value="main">main</option>
+                    <option value="article">article</option>
+                    <option value="section">section</option>
+                    <option value="aside">aside</option>
+                    <option value="nav">nav</option>
+                    <option value="a">a (link)</option>
                   </select>
                 </div>
               </Group>

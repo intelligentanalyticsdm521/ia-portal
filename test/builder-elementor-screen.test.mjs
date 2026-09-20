@@ -1270,3 +1270,115 @@ describe("SCREEN LAW 16 — the panel's own chrome (D-172, round 3)", () => {
     assert.match(inspector, /<div style=\{PANEL_TITLE\} data-inspector-title>Page settings<\/div>/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 17 — A CONTAINER'S OWN CONTROLS, DRIVEN (D-172, round 3)
+
+   Read out of the live editor on 2026-09-19 — `zz-fixer-r3-panel-ref-c.js`
+   and `-e.js`. The Layout section, in order:
+
+     Container Layout (Flexbox | Grid) · Content Width (Boxed | Full Width) ·
+     Width · Min Height · "Items" · Direction (Row - horizontal, Column -
+     vertical, Row - reversed, Column - reversed) · Justify Content (Start,
+     Center, End, Space Between, Space Around, Space Evenly) · Align Items ·
+     Gaps · Wrap — and Align Content ONLY once Wrap is on, whose second word
+     is "Middle".
+
+   Then Additional Options: Overflow (Default | Hidden | Auto), then HTML Tag
+   (Default, div, header, footer, main, article, section, aside, nav, a
+   (link)). There is NO Link control in it — the audit sheet's row for one did
+   not survive driving.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 17 — the container's controls are the reference's (round 3)", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+  const styles = code(readSrc("builder/style.ts"));
+
+  test("GRID IS NOT A DIRECTION — it is the Container Layout select", () => {
+    // ABSENT: the third Direction button, and the pick that set `columns` from
+    // the direction chooser.
+    assert.ok(!inspector.includes('{ v: "grid" as const, title: "Grid", icon: <LayoutGrid size={13} /> }'),
+      "Grid is a Direction button again");
+    assert.ok(!inspector.includes('columns: next === "grid" ? (widgetLayer.columns ?? 3) : undefined'),
+      "the Direction chooser sets the grid's columns again");
+    // PRESENT: the select the reference puts first in the section.
+    assert.match(inspector, /<span style=\{L\}>Container Layout<\/span>/);
+    assert.match(inspector, /<option value="flex">Flexbox<\/option>/);
+    assert.match(inspector, /<option value="grid">Grid<\/option>/);
+  });
+
+  test("Direction is the reference's FOUR, in its own wording", () => {
+    for (const t of ["Row - horizontal", "Column - vertical", "Row - reversed", "Column - reversed"]) {
+      assert.ok(inspector.includes(`title: "${t}"`), `Direction lost: ${t}`);
+    }
+    // `reverse` is a flag beside the flow, so everything that asks which way a
+    // box runs still gets row, column or grid.
+    assert.match(styles, /reverse\?: boolean;/);
+    assert.match(styles, /flex-direction:\$\{layer\.reverse \? `\$\{flow\}-reverse` : flow\}/);
+  });
+
+  test("Justify Content is SIX, and Align Content appears only once Wrap is on", () => {
+    for (const t of ["Space Between", "Space Around", "Space Evenly"]) {
+      assert.ok(inspector.includes(`title: "${t}"`), `Justify Content lost: ${t}`);
+    }
+    assert.match(styles, /around: "space-around", evenly: "space-evenly"/);
+    // Align Content: behind the wrap, with the reference's own second word.
+    assert.match(inspector, /\{widgetLayer\.wrap && \(/);
+    assert.match(inspector, /testAttr="data-box-aligncontent"/);
+    assert.ok(inspector.includes('title: "Middle"'), "Align Content says Center, not Middle");
+  });
+
+  test("the section's own order: Min Height above an 'Items' heading", () => {
+    const minh = inspector.indexOf("<span style={L}>Min Height</span>");
+    const items = inspector.indexOf('data-control-subheading="Items"');
+    const dir = inspector.indexOf("<span style={L}>Direction</span>");
+    assert.ok(minh > 0 && items > minh, "Min Height is back below the Items heading");
+    assert.ok(dir > items, "Direction is above the Items heading");
+    assert.match(inspector, /<span style=\{L\}>Content Width<\/span>/);
+  });
+
+  test("Additional Options is Overflow then the reference's ten tags", () => {
+    const ov = inspector.indexOf("data-box-overflow");
+    const tag = inspector.indexOf("data-box-html-tag");
+    assert.ok(ov > 0 && tag > ov, "Overflow is not the section's first control");
+    assert.match(inspector, /<span style=\{L\}>Overflow<\/span>/);
+    for (const v of ["Default", "Hidden", "Auto"]) {
+      assert.ok(inspector.includes(`>${v}</option>`), `Overflow lost its value: ${v}`);
+    }
+    // ABSENT: our seven-value list that called the empty one "div".
+    assert.ok(!inspector.includes('<option value="">div</option>'),
+      "the empty HTML Tag is called div again");
+    // PRESENT: the reference's ten, in its order.
+    const tags = inspector.slice(tag, tag + 900);
+    const order = [...tags.matchAll(/<option value="([^"]*)">/g)].map((m) => m[1]);
+    assert.deepEqual(order.slice(0, 10),
+      ["", "div", "header", "footer", "main", "article", "section", "aside", "nav", "a"]);
+  });
+});
+
+describe("SCREEN LAW 17 — and the renderer can say all of it", () => {
+  test("the new layout words reach the page as CSS", async () => {
+    const { containerLayoutDeclarations, readStyle } = await import("../src/builder/style.ts");
+    // Reversed.
+    assert.ok(containerLayoutDeclarations({ direction: "row", reverse: true })
+      .includes("flex-direction:row-reverse"));
+    assert.ok(containerLayoutDeclarations({ reverse: true }).includes("flex-direction:column-reverse"));
+    // The two spacings ours had no word for.
+    assert.ok(containerLayoutDeclarations({ direction: "row", justify: "around" })
+      .includes("justify-content:space-around"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", justify: "evenly" })
+      .includes("justify-content:space-evenly"));
+    // Align Content and Overflow.
+    assert.ok(containerLayoutDeclarations({ direction: "row", wrap: true, alignContent: "between" })
+      .includes("align-content:space-between"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", overflow: "hidden" })
+      .includes("overflow:hidden"));
+    // …and a stored style still drops any word the file does not know.
+    const read = readStyle({ justify: "sideways", overflow: "scroll", reverse: "yes", alignContent: "nope" });
+    assert.equal(read?.justify, undefined);
+    assert.equal(read?.overflow, undefined);
+    assert.equal(read?.reverse, undefined);
+    assert.equal(read?.alignContent, undefined);
+    assert.equal(readStyle({ reverse: true, alignContent: "evenly", overflow: "auto" })?.overflow, "auto");
+  });
+});

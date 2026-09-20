@@ -228,11 +228,20 @@ describe("every layout a box can hold is one Elementor can be told", () => {
 
   test("every VALUE the renderer can emit is one Elementor offers", () => {
     const emitted = {
-      flex_direction: ["row", "column"],
-      flex_justify_content: ["flex-start", "center", "flex-end", "space-between"],
+      /* ROUND 3: the two REVERSED directions are emitted now — `reverse` is a
+         flag beside the flow, and `flex-direction: row-reverse` is one of the
+         four this control offers. */
+      flex_direction: ["row", "column", "row-reverse", "column-reverse"],
+      /* ROUND 3: six, not four. Driven in the live editor and confirmed here:
+         Space Around and Space Evenly are Elementor's own options, and ours
+         had no word for either. */
+      flex_justify_content: ["flex-start", "center", "flex-end", "space-between",
+                             "space-around", "space-evenly"],
       flex_align_items: ["flex-start", "center", "flex-end", "stretch"],
       flex_wrap: ["wrap", "nowrap"],
-      html_tag: ["div", "header", "footer", "main", "article", "section", "aside"],
+      /* ROUND 3: the reference's ten, in its order, including the two ours
+         never offered — nav and a. */
+      html_tag: ["", "div", "header", "footer", "main", "article", "section", "aside", "nav", "a"],
       container_type: ["flex", "grid"],
     };
     for (const [key, values] of Object.entries(emitted)) {
@@ -243,7 +252,7 @@ describe("every layout a box can hold is one Elementor can be told", () => {
     // And the renderer cannot produce anything else: the two tables it maps
     // through are closed, and `readStyle` drops any word that is not in them.
     assert.deepEqual(Object.values(JUSTIFY_CSS).sort(),
-      ["center", "flex-end", "flex-start", "space-between"]);
+      ["center", "flex-end", "flex-start", "space-around", "space-between", "space-evenly"]);
     assert.deepEqual(Object.values(ITEMS_CSS).sort(),
       ["center", "flex-end", "flex-start", "stretch"]);
   });

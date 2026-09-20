@@ -74,11 +74,31 @@ export type AlignSpec = "left" | "center" | "right";
 /** Which way a box runs. Absent means "column", which is how boxes stack. */
 export type DirectionSpec = "row" | "column" | "grid";
 
-/** Along the box's own direction. */
-export type JustifySpec = "start" | "center" | "end" | "between";
+/**
+ * Along the box's own direction.
+ *
+ * SIX, not four (D-172, round 3). Driven in the reference on 2026-09-19: its
+ * Justify Content chooser offers Start, Center, End, Space Between, Space
+ * Around and Space Evenly. Ours had no word for the last two at all, so an
+ * author who wanted even air round three cards could not ask for it.
+ */
+export type JustifySpec = "start" | "center" | "end" | "between" | "around" | "evenly";
 
 /** Across it. */
 export type ItemsSpec = "start" | "center" | "end" | "stretch";
+
+/**
+ * THE WRAPPED LINES, not the items (D-172, round 3).
+ *
+ * The reference's container carries Align Content beside Align Items, with the
+ * same six words as Justify Content. It only says anything once the box wraps,
+ * which is exactly why it is its own control and not a second meaning for
+ * `alignItems`.
+ */
+export type ContentSpec = JustifySpec;
+
+/** What a box does with what will not fit. The reference's Overflow. */
+export type OverflowSpec = "hidden" | "auto";
 
 export interface TypographySpec {
   /** px. */
@@ -112,9 +132,24 @@ export interface StyleLayer {
 
   /* Container only — a box, a column, or a section, which is one too. */
   direction?: DirectionSpec;
+  /**
+   * THE REFERENCE'S TWO "REVERSED" DIRECTIONS (D-172, round 3).
+   *
+   * Its chooser is four: Row - horizontal, Column - vertical, Row - reversed,
+   * Column - reversed. A separate flag rather than two more words in
+   * `DirectionSpec`, because every reader of a direction — the outline, the
+   * Structure row, the canvas handle, `containerFlow` — asks "row, column or
+   * grid?", and a fourth and fifth word there would make each of them answer
+   * a question it was not asked.
+   */
+  reverse?: boolean;
   justify?: JustifySpec;
   alignItems?: ItemsSpec;
+  /** The wrapped LINES, once `wrap` is on. The reference's Align Content. */
+  alignContent?: ContentSpec;
   wrap?: boolean;
+  /** What happens to what does not fit. The reference's Overflow. */
+  overflow?: OverflowSpec;
   /** Grid only: how many even columns. */
   columns?: number;
 
@@ -148,8 +183,9 @@ const BORDER_STYLES: ReadonlyArray<NonNullable<BorderSpec["style"]>> = ["solid",
 const SHADOWS: ReadonlyArray<ShadowSpec> = ["none", "soft", "strong"];
 const ALIGNS: ReadonlyArray<AlignSpec> = ["left", "center", "right"];
 const DIRECTIONS: ReadonlyArray<DirectionSpec> = ["row", "column", "grid"];
-const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "between"];
+const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "between", "around", "evenly"];
 const ITEMS: ReadonlyArray<ItemsSpec> = ["start", "center", "end", "stretch"];
+const OVERFLOWS: ReadonlyArray<OverflowSpec> = ["hidden", "auto"];
 
 function num(v: unknown): number | undefined {
   const n = Number(v);
@@ -216,9 +252,12 @@ function readLayer(v: unknown): StyleLayer | undefined {
   // A box's layout, read as tolerantly as everything else: anything that is not
   // one of the words this file knows is dropped rather than carried.
   if (DIRECTIONS.includes(o.direction)) L.direction = o.direction;
+  if (o.reverse === true) L.reverse = true;
   if (JUSTIFIES.includes(o.justify)) L.justify = o.justify;
   if (ITEMS.includes(o.alignItems)) L.alignItems = o.alignItems;
+  if (JUSTIFIES.includes(o.alignContent)) L.alignContent = o.alignContent;
   if (o.wrap === true) L.wrap = true;
+  if (OVERFLOWS.includes(o.overflow)) L.overflow = o.overflow;
   const columns = num(o.columns);
   if (columns !== undefined && columns >= 1) L.columns = Math.min(12, Math.round(columns));
   const typography = readTypography(o.typography); if (typography) L.typography = typography;
@@ -535,6 +574,7 @@ export function sectionBoxDeclarations(layer: StyleLayer): string[] {
  */
 export const JUSTIFY_CSS: Record<JustifySpec, string> = {
   start: "flex-start", center: "center", end: "flex-end", between: "space-between",
+  around: "space-around", evenly: "space-evenly",
 };
 export const ITEMS_CSS: Record<ItemsSpec, string> = {
   start: "flex-start", center: "center", end: "flex-end", stretch: "stretch",
@@ -543,7 +583,8 @@ export const ITEMS_CSS: Record<ItemsSpec, string> = {
 export function containerLayoutDeclarations(layer: StyleLayer): string[] {
   const dir = layer.direction;
   const arranged = dir === "row" || dir === "grid" || !!layer.justify
-    || !!layer.alignItems || !!layer.wrap || layer.gap !== undefined;
+    || !!layer.alignItems || !!layer.alignContent || !!layer.wrap || !!layer.reverse
+    || layer.gap !== undefined;
   if (!arranged) return [];
 
   const out: string[] = [];
@@ -551,12 +592,20 @@ export function containerLayoutDeclarations(layer: StyleLayer): string[] {
     const n = Math.max(1, Math.min(12, Math.round(layer.columns ?? 3)));
     out.push("display:grid", `grid-template-columns:repeat(${n},minmax(0,1fr))`);
   } else {
-    out.push("display:flex", `flex-direction:${dir === "row" ? "row" : "column"}`);
+    /* REVERSED IS A FLAG ON THE SAME DIRECTION (D-172, round 3): the flow is
+       still row or column to everything that reads it, and only the CSS knows
+       which end it starts from. */
+    const flow = dir === "row" ? "row" : "column";
+    out.push("display:flex", `flex-direction:${layer.reverse ? `${flow}-reverse` : flow}`);
     if (layer.wrap) out.push("flex-wrap:wrap");
   }
   if (layer.justify) out.push(`justify-content:${JUSTIFY_CSS[layer.justify]}`);
   if (layer.alignItems) out.push(`align-items:${ITEMS_CSS[layer.alignItems]}`);
+  /* ALIGN CONTENT only says anything once the lines wrap, which is the
+     reference's own rule for offering it. */
+  if (layer.alignContent) out.push(`align-content:${JUSTIFY_CSS[layer.alignContent]}`);
   if (layer.gap !== undefined) out.push(`gap:${round(layer.gap)}px`);
+  if (layer.overflow) out.push(`overflow:${layer.overflow}`);
   return out;
 }
 
