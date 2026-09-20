@@ -1362,7 +1362,7 @@ export const PANEL_ORDER: string[] = [
   "brand_logo", "shape",
   // General
   "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
-  "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
+  "counter", "progress_bar", "progress_tracker", "testimonial", "tabs", "accordion", "toggle",
   "social_icons", "social_links", "alert", "shortcode", "html", "menu_anchor",
   "colour_block", "background", "qr_code", "social_handle",
   /* B-168 f2-pictures — the five picture widgets the panel did not have. THE

@@ -212,6 +212,8 @@ describe("§3.2's union is registered", () => {
     "blockquote", "animated_headline", "text_path", "table_of_contents", "code_highlight", "read_more", "sidebar",
     /* B-168 f3: the five Elementor Pro widgets of the buttons, icons and panels family. */
     "share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page",
+    /* B-168 f4-moving: Elementor's Progress Tracker, Pro, in the website and landing offers. */
+    "progress_tracker",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",
