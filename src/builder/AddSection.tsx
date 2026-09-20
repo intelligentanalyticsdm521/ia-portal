@@ -39,7 +39,7 @@
  * so there is one place that knows what a box is.
  */
 import { useState } from "react";
-import { ChevronLeft, FolderOpen, Plus, X } from "lucide-react";
+import { ChevronLeft, FolderOpen, Plus, Sparkles, X } from "lucide-react";
 
 /** Flexbox, or a grid with even cells. Elementor's first question. */
 export type SectionLayout = "flex" | "grid";
@@ -90,6 +90,13 @@ export interface AddSectionProps {
   onBlank: (layout: SectionLayout, preset: StructurePreset) => void;
   /** The folder — hands over to the template library (§11.9, D-153). */
   onTemplate: () => void;
+  /**
+   * THE THIRD ROUND BUTTON (D-172, round 2) — our counterpart of the
+   * reference's pink "Build with AI". Optional: a builder with no ARGUS door
+   * draws two buttons, as it did before, rather than a third that opens
+   * nothing.
+   */
+  onAskArgus?: () => void;
   /**
    * Present on the one opened from a container's "+": it has an "×" and goes
    * away. Absent on the one at the bottom of the page, which is always there.
@@ -153,6 +160,23 @@ export function AddSection(p: AddSectionProps) {
               onClick={p.onTemplate}>
               <FolderOpen size={16} />
             </button>
+            {/* THE THIRD ROUND BUTTON (D-172, round 2). Driven on 2026-09-19:
+                the reference's add area has THREE — `.elementor-add-section-
+                button` titled "Add New Container", `.elementor-add-template-
+                button` titled "Add Template", and `.e-ai-layout-button`
+                titled "Build with AI", in that order. Ours had two, so the
+                one place the reference offers to build the page FOR you was
+                the one place ours did not. Ask ARGUS is our counterpart of
+                Elementor AI (agreed difference (e)), so it is our third
+                button — drawn only where a builder hands one in, because a
+                button that opens nothing is worse than none. */}
+            {p.onAskArgus && (
+              <button type="button" className="bxc-addarea-btn bxc-addarea-ai" data-builder-add="ai"
+                title="Build with ARGUS" aria-label="Build with ARGUS"
+                onClick={p.onAskArgus}>
+                <Sparkles size={16} />
+              </button>
+            )}
           </div>
           <div className="bxc-addarea-title">Drag widget here</div>
           {p.note}
@@ -229,6 +253,9 @@ export const ADDSECTION_CSS = `
 .bxc-addarea-plus:hover { background: #12607c; }
 .bxc-addarea-folder { background: #69727D; }
 .bxc-addarea-folder:hover { background: #515962; }
+/* The reference's third button is its own colour, not a third grey one. */
+.bxc-addarea-ai { background: #84CC16; }
+.bxc-addarea-ai:hover { background: #65A30D; }
 .bxc-addarea-title { margin-top: 14px; font-size: 12px; font-style: italic; color: #9DA5AE; }
 .bxc-addarea-q { font-size: 13px; color: #515962; margin: 0 28px 16px; }
 .bxc-addarea-corner { position: absolute; top: 8px; border: none; background: transparent; cursor: pointer;

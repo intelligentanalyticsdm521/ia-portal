@@ -34,7 +34,10 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { BuilderFrame } from "./BuilderFrame";
 import { WidgetPane } from "./WidgetPane";
 import { StructureWindow } from "./Navigator";
-import type { SectionLayout, StructurePreset } from "./AddSection";
+import { STRUCTURE_PRESETS, type SectionLayout, type StructurePreset } from "./AddSection";
+
+/** One column — what the menu's "Add New Container" makes, as the reference does. */
+const ONE_COLUMN: StructurePreset = STRUCTURE_PRESETS[0];
 import { Canvas, type CanvasDrag } from "./Canvas";
 import { Inspector, type InspectorSlots } from "./Inspector";
 import { SectionGallery, type SavedTemplate } from "./SectionGallery";
@@ -44,7 +47,7 @@ import { ContextMenu } from "./ContextMenu";
 import { FindBox } from "./FindBox";
 import { HistoryPanel } from "./HistoryPanel";
 import { NameBlockDialog } from "./NameBlockDialog";
-import { menuFor, type MenuAction } from "./builderMenu";
+import { documentMenu, menuFor, type MenuAction } from "./builderMenu";
 import { openBuilder } from "./builderOpen";
 import { type FindAction, type FindResult } from "./find";
 import {
@@ -81,7 +84,11 @@ import type { BuilderAction } from "./shortcuts";
 /** What a menu, a lock or a hide is being applied to (M-8 / M-21). */
 export type MenuTarget =
   | { kind: "section"; sectionId: string }
-  | { kind: "widget"; path: WidgetPath };
+  | { kind: "widget"; path: WidgetPath }
+  /* THE PAGE ITSELF (D-172, round 2) — right-clicking the sheet, not a thing
+     on it. The reference answers that with its own five-row document menu;
+     ours let the browser answer it. */
+  | { kind: "document" };
 
 /** Which array a counted widget repeats. One map, so "how many?" works once. */
 export function repeatKeyFor(kind: string): string | null {
@@ -122,6 +129,15 @@ export interface BuilderShellProps extends InspectorSlots {
    * platform's floating bubble made a third. One door.
    */
   askArgus?: ReactNode;
+  /**
+   * THE ADD AREA'S THIRD ROUND BUTTON (D-172, round 2).
+   *
+   * The reference's add area has three: "+", the folder, and a pink "Build
+   * with AI". `askArgus` above is the BAR's node, which the adapter draws
+   * itself; this is the ACTION the round button runs, because the add area
+   * draws its own three buttons and cannot take a node. Optional.
+   */
+  onAskArgus?: () => void;
   /** Show the document as its reader will get it. The eye in the top bar. */
   onPreviewDoc?: () => void;
   /** Buttons on the right of the header: Preview, Save, Send. */
@@ -858,6 +874,8 @@ export function BuilderShell(p: BuilderShellProps) {
       );
       return;
     }
+    /* The page itself cannot be hidden — the document menu has no such row. */
+    if (target.kind !== "section") return;
     const sec = doc.sections.find((x) => x.id === target.sectionId);
     if (!sec) return;
     apply(
@@ -881,6 +899,8 @@ export function BuilderShell(p: BuilderShellProps) {
       apply(setWidgetLocked(doc, target.path, locked), null, `${word} a block`);
       return;
     }
+    /* The page itself cannot be locked — the document menu has no such row. */
+    if (target.kind !== "section") return;
     const sec = doc.sections.find((x) => x.id === target.sectionId);
     if (!sec) return;
     // A section is locked by locking what is in it: one flag, on the widget,
@@ -905,6 +925,37 @@ export function BuilderShell(p: BuilderShellProps) {
   /** So one row can run another's body rather than keeping a second copy. */
   const runMenuActionRef = useRef<((a: MenuAction, t: MenuTarget) => void) | null>(null);
   const runMenuAction = useCallback((action: MenuAction, target: MenuTarget) => {
+    /* THE DOCUMENT MENU'S OWN FIVE (D-172, round 2). Answered first, because
+       none of the rows below have a section to act on. Every one of them is
+       an action the shell already performs — Paste is the same paste, Delete
+       All Content is `emptyDocument` through the same `apply`, so undo picks
+       them up like anything else. */
+    if (target.kind === "document") {
+      switch (action) {
+        case "paste": {
+          if (!clip) return;
+          if (clip.kind === "section") {
+            const fresh = cloneSection(clip.section);
+            apply(addSection(doc, fresh, doc.sections.length), null, `Pasted ${named(fresh.label)}`);
+            select({ kind: "section", sectionId: fresh.id });
+          }
+          return;
+        }
+        case "pasteFromOtherSite": runMenuActionRef.current?.("paste", target); return;
+        case "copyAll":
+          if (!doc.sections.length) return;
+          setClip({ kind: "section", section: doc.sections[0] });
+          refuse("Copied the page. Right-click where you want it and press Paste.");
+          return;
+        case "deleteAll":
+          if (!doc.sections.length) return;
+          apply({ ...doc, sections: [] }, null, "Deleted everything on the page");
+          select(null);
+          return;
+        case "structure": setStructure(true); return;
+        default: return;
+      }
+    }
     const sectionId = target.kind === "section" ? target.sectionId : target.path.sectionId;
     const index = doc.sections.findIndex((x) => x.id === sectionId);
     const sec = doc.sections[index];
@@ -978,6 +1029,18 @@ export function BuilderShell(p: BuilderShellProps) {
         return;
       }
       case "saveDefault": if (sec) setNaming(sec); return;
+      /* THE CONTAINER MENU'S OWN TWO (D-172, round 2). "Add New Container"
+         is the reference's third row and opens the same add area the handle's
+         "+" does; "Save as a template" is its badged row and reaches the same
+         template store `onSaveBlock` already owns. Neither is a new
+         mechanism. */
+      case "addContainer":
+        /* The reference adds one straight away — it does not open the layout
+           chooser, which is what the handle's "+" is for. One column, right
+           after the box that was right-clicked. */
+        addStructure(index < 0 ? doc.sections.length : index + 1, "flex", ONE_COLUMN);
+        return;
+      case "saveTemplate": if (sec) setNaming(sec); return;
       case "structure":
         select(target.kind === "widget" ? { kind: "widget", ...target.path } : { kind: "section", sectionId });
         setStructure(true);
@@ -1001,13 +1064,14 @@ export function BuilderShell(p: BuilderShellProps) {
         return;
       default: return;
     }
-  }, [apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select]);
+  }, [addStructure, apply, clip, deleteSection, deleteWidget, doc, landed, refuse, select]);
   runMenuActionRef.current = runMenuAction;
 
   /** What the open menu should contain, from the document as it is right now. */
   const menuItems = useMemo(() => {
     if (!menu) return [];
     const t = menu.target;
+    if (t.kind === "document") return documentMenu({ canPaste: !!clip, empty: !doc.sections.length });
     const index = doc.sections.findIndex((x) => x.id === (t.kind === "section" ? t.sectionId : t.path.sectionId));
     const sec = doc.sections[index];
     const locked = t.kind === "widget"
@@ -1075,15 +1139,34 @@ export function BuilderShell(p: BuilderShellProps) {
         if (selection?.kind === "widget") { deleteWidget(selection); return true; }
         if (selection?.kind === "section") { deleteSection(selection.sectionId); return true; }
         return false;
+      /* THE REFERENCE'S OWN TWO PANEL CHORDS (D-172, round 2). Both are
+         listed in its shortcuts panel and both did nothing here; each points
+         at the door the top bar already has, never at a second one. */
+      case "pageSettings": select(null); return true;
+      case "templates": setGallery({ at: doc.sections.length }); return true;
       case "escape":
+        /* WHAT ESCAPE CLOSES, IN THE ORDER IT IS STACKED (D-172, round 2).
+           FIND AND HISTORY WERE MISSING FROM THIS LIST, and the consequence
+           was the worst defect on the round-2 sheet: with the finder open,
+           Escape fell through to `return false`, the frame took that as "the
+           builder did not want it", and `requestClose()` shut the WHOLE
+           builder and put the author back on the proposals list — with no
+           "discard?" question. The reference closes the finder and leaves the
+           editor exactly where it was.
+
+           The frame already swallows Escape for its own four (the menu, the
+           help panel, the confirm and a drawer); these are the shell's, and
+           they have to be answered here because the shell is what owns them. */
         if (menu) { setMenu(null); return true; }
+        if (find) { setFind(false); return true; }
+        if (historyOpen) { setHistoryOpen(false); return true; }
         if (structure) { setStructure(false); return true; }
         if (selection) { select(null); return true; }
         return false;
       default: return false;
     }
-  }, [apply, clip, deleteSection, deleteWidget, doc, doRedo, doUndo, menu, p, preview,
-      refuse, runMenuAction, select, selection, structure]);
+  }, [apply, clip, deleteSection, deleteWidget, doc, doRedo, doUndo, find, historyOpen, menu, p,
+      preview, refuse, runMenuAction, select, selection, structure]);
 
   return (
     <BuilderFrame
@@ -1329,6 +1412,7 @@ export function BuilderShell(p: BuilderShellProps) {
         onDeleteWidget={deleteWidget}
         /* M-21 and M-8, on the page itself. */
         onContextMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+        onDocumentMenu={(at) => setMenu({ target: { kind: "document" }, x: at.x, y: at.y })}
         onPatchSection={changeSection}
         onDuplicateSection={(id) => apply(duplicateSection(doc, id), null,
           `Copied ${named(doc.sections.find((x) => x.id === id)?.label)}`)}
@@ -1340,6 +1424,7 @@ export function BuilderShell(p: BuilderShellProps) {
            adapter's veto — it runs inside `addStructure`. */
         onAddBlank={(at: number, layout: SectionLayout, preset: StructurePreset) => addStructure(at, layout, preset)}
         onAddTemplate={(at: number) => setGallery({ at })}
+        {...(p.onAskArgus ? { onAskArgus: p.onAskArgus } : {})}
         onDropOnAddArea={dropOnAddArea}
       />
     </BuilderFrame>

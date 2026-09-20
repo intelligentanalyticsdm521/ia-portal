@@ -53,6 +53,20 @@ export interface ModalDims {
   wideFrom?: number;
   /** Whether this size carries the three-pane builder shell. */
   panes?: boolean;
+  /**
+   * THE SURFACE IS THE WHOLE WINDOW (D-172, round 2).
+   *
+   * Measured in the reference on 2026-09-19: top bar 0,0 1680x48; panel 0,48
+   * 300x952; canvas 300,48 1380x952. Nothing behind it, above it or under it.
+   * Ours was 94vh CENTRED, so at 1000px of viewport the builder's bar started
+   * at y=30 and its foot ended at 970 — a strip of the Portal's own nav
+   * showing above the editor and a strip of the proposals table showing below
+   * it, with the dark scrim over both. A builder is not a dialog laid on the
+   * app; for as long as it is open it IS the app.
+   *
+   * Set, this drops the centring gutter, the rounded corner and the backdrop.
+   */
+  fullBleed?: boolean;
 }
 
 /** The floor SD-010 sets for a builder, as a number a test can check. */
@@ -82,8 +96,9 @@ export const MODAL_SIZES: Record<IadmModalSize, ModalDims> = {
   // whole Portal in an iframe.
   xl: { width: "90vw", height: "90vh" },
 
-  // 2026-09-15 — THE builder surface (SD-010 addendum).
-  builder: { width: "96vw", height: "94vh", widthAtWide: "100vw", wideFrom: 1400, panes: true },
+  // 2026-09-15 — THE builder surface (SD-010 addendum), full-bleed since
+  // D-172 round 2: the reference's editor fills the window exactly.
+  builder: { width: "100vw", height: "100vh", panes: true, fullBleed: true },
 };
 
 /**

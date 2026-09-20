@@ -74,11 +74,27 @@ describe('"builder" clears the SD-010 floor on every screen', () => {
     });
   }
 
-  test("at 1400px and up it takes the FULL width", () => {
-    assert.equal(widthFractionAt("builder", 1400), 1);
-    assert.equal(widthFractionAt("builder", 2560), 1);
-    // ...and below the breakpoint it keeps a small gutter.
-    assert.ok(widthFractionAt("builder", 1399) < 1);
+  // D-172 round 2 — THE BUILDER FILLS THE WINDOW, at every width.
+  //
+  // ABSENT: the gutter, and the breakpoint that used to switch it off. The
+  // surface was 96vw up to 1400px and 100vw above it, so on a 1366px laptop
+  // the Portal's own nav showed down both sides of the editor. Measured in
+  // the reference on 2026-09-19: top bar 0,0 1680x48, panel 0,48 300x952,
+  // canvas 300,48 1380x952 — nothing behind it, at any size.
+  // PRESENT: full width on every screen, and the `fullBleed` flag that drops
+  // the rounded corner and the backdrop with it.
+  test("it takes the FULL width at EVERY size — no gutter, no breakpoint", () => {
+    for (const w of SCREENS) {
+      assert.equal(widthFractionAt("builder", w), 1, `builder must fill a ${w}px screen`);
+    }
+    assert.equal(MODAL_SIZES.builder.widthAtWide, undefined, "the wide override is deleted");
+    assert.equal(MODAL_SIZES.builder.wideFrom, undefined, "the breakpoint is deleted");
+    assert.equal(MODAL_SIZES.builder.fullBleed, true, "the builder is a full-bleed surface");
+  });
+
+  test("it is the ONLY full-bleed size — a dialog is still a dialog", () => {
+    const full = Object.entries(MODAL_SIZES).filter(([, d]) => d.fullBleed).map(([k]) => k);
+    assert.deepEqual(full, ["builder"]);
   });
 
   test("it is TALLER than the xl surface it replaces, and over the floor", () => {

@@ -118,6 +118,12 @@ export interface CanvasProps {
   onAddBlank: (atIndex: number, layout: SectionLayout, preset: StructurePreset) => void;
   onAddTemplate: (atIndex: number) => void;
   /**
+   * THE ADD AREA'S THIRD ROUND BUTTON (D-172, round 2) — the reference's
+   * "Build with AI", which ours is Ask ARGUS. Optional, so a builder with no
+   * ARGUS door draws the two it always had.
+   */
+  onAskArgus?: () => void;
+  /**
    * "DRAG WIDGET HERE". Whatever is in the air (`drag`) was let go on the add
    * area: it lands in a NEW section at this index. The shell owns the payload.
    */
@@ -136,6 +142,16 @@ export interface CanvasProps {
     target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
     at: { x: number; y: number },
   ) => void;
+  /**
+   * RIGHT-CLICK THE PAGE ITSELF (D-172, round 2).
+   *
+   * Driven in the reference on 2026-09-19: right-clicking the empty page, or
+   * the add area at the foot of it, opens a FIVE-row menu of its own — Paste,
+   * Paste from other site, Copy All Content, Delete All Content, Structure.
+   * Ours opened the BROWSER'S menu, which is the one place in the editor where
+   * the page stopped being the editor.
+   */
+  onDocumentMenu?: (at: { x: number; y: number }) => void;
   /**
    * The widget that just landed — SCROLLED TO, and nothing else (D-172).
    *
@@ -308,6 +324,16 @@ export function Canvas(props: CanvasProps) {
          canvas has the page on it" are two different, measurable things and a
          builder cannot report a fast open by showing an empty grey sheet. */
       data-builder-canvas={doc.sections.length}
+      /* RIGHT-CLICK THE PAGE (D-172, round 2). On the sheet itself and on the
+         add area — anywhere that is not a section or a widget, both of which
+         stop this from firing with their own handler. The reference answers
+         the same click with a five-row document menu; ours gave the browser's
+         own, which on a canvas whose every part has a menu is the one hole. */
+      onContextMenu={(e) => {
+        if (!props.onDocumentMenu) return;
+        e.preventDefault();
+        props.onDocumentMenu({ x: e.clientX, y: e.clientY });
+      }}
       style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
       <style>{props.canvasCss ?? DOCUMENT_CSS}{CANVAS_CSS}{ADDBAR_CSS}{ADDSECTION_CSS}{props.extraCss || ""}</style>
 
@@ -331,6 +357,7 @@ export function Canvas(props: CanvasProps) {
                 onClose={() => setAddAreaAt(null)}
                 onBlank={(layout, preset) => { setAddAreaAt(null); props.onAddBlank(i, layout, preset); }}
                 onTemplate={() => { setAddAreaAt(null); props.onAddTemplate(i); }}
+                {...(props.onAskArgus ? { onAskArgus: props.onAskArgus } : {})}
                 {...areaDropProps(i)}
               />
             )}
@@ -377,6 +404,7 @@ export function Canvas(props: CanvasProps) {
         <AddSection
           onBlank={(layout, preset) => props.onAddBlank(doc.sections.length, layout, preset)}
           onTemplate={() => props.onAddTemplate(doc.sections.length)}
+          {...(props.onAskArgus ? { onAskArgus: props.onAskArgus } : {})}
           {...areaDropProps(doc.sections.length)}
         />
 
