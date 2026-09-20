@@ -565,7 +565,10 @@ describe("G-06 · any shape is a frame, and a frame can have a border", () => {
     assert.ok(lumen.includes("function isMaskKey"), "the server still has a five-name mask list");
     assert.ok(/mask === "circle" \|\| mask === "rounded" \|\| Object\.prototype\.hasOwnProperty\.call\(ICON_PATHS, mask\)/.test(lumen));
     assert.ok(lumen.includes("function frameStrokeSvg"), "the server draws no frame border");
-    assert.ok(lumen.includes("iconStrokeScale(Number(layer.w || 0), Number(layer.h || 0))"),
+    // R4-F: the stretch is the layer box over the box the path is DRAWN in,
+    // which is 100 unless the frame is sized by its ink. Still divided back
+    // out, still by `iconStrokeScale`, now by the right number.
+    assert.ok(/iconStrokeScale\(\s*Number\(layer\.w \|\| 0\) \* \(100 \/ \(shape\.inkScale/.test(lumen),
       "a path frame's border is not divided back out by its own stretch");
   });
 
@@ -581,7 +584,10 @@ describe("G-06 · any shape is a frame, and a frame can have a border", () => {
     // helper, rather than by centring a path on its own ink.
     assert.ok(/viewBoxPath\(d, il\.x, il\.y, il\.w, il\.h/.test(fn),
       "a path border is not placed the way the exporter places it");
-    assert.ok(/width \/ iconStrokeScale\(il\.w, il\.h\)/.test(fn),
+    // R4-F: divided back out by the stretch the path is DRAWN at, which is the
+    // layer box over the ink box when a frame is sized by its ink and over the
+    // authored 100 otherwise.
+    assert.ok(/width \/ iconStrokeScale\(il\.w \* \(100 \/ vb\[2\]\)/.test(fn),
       "a path border's width is not divided back out by its stretch");
   });
 });

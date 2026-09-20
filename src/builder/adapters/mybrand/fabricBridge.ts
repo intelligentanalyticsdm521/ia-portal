@@ -18,11 +18,13 @@
 import * as fabric from "fabric";
 import {
   DEFAULT_FONTS, GRADIENT_COORDS, familyOf, iconStrokeScale, iconToSvg, chartToSvg,
-  rotatedTopLeft, shapePathD, shapeToSvg, textLayerSvg,
+  inkViewBox, rotatedTopLeft, shapePathD, shapeToSvg, textLayerSvg,
   type ChartLayer, type GradientSpec, type ImageLayer, type Layer,
   type ShapeLayer, type TextLayer,
 } from "./scene";
-import { applyCase, dashArray, dashLineCap, wrapLines } from "./textEffects";
+import {
+  applyCase, dashArray, dashLineCap, fabricTypeMetrics, mainPaint, wrapLines,
+} from "./textEffects";
 import { cachedFontFace, loadFontFace } from "./fontEmbed";
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 
@@ -255,9 +257,16 @@ function emptySlot(
  */
 export function viewBoxPath(
   d: string, x: number, y: number, w: number, h: number, extra: Record<string, unknown> = {},
+  /**
+   * R4-F: the box the path is laid out from, [x, y, w, h] in path units. The
+   * authored 0–100 box by default; the path's own INK box when a frame is
+   * sized by its ink, which is what makes a 700 px arch draw 700 px of arch.
+   */
+  viewBox: [number, number, number, number] = [0, 0, 100, 100],
 ): fabric.Path {
-  const sx = w / 100;
-  const sy = h / 100;
+  const [vx, vy, vw, vh] = viewBox;
+  const sx = w / vw;
+  const sy = h / vh;
   // A Path is born with a 1 px stroke whether anybody asked for one or not, and
   // half of it hangs outside the shape. A crop wants the geometry and nothing
   // else, so the default here is none and a border passes its own width in.
@@ -267,8 +276,8 @@ export function viewBoxPath(
   // Where the ink starts inside the 0–100 box. `pathOffset` is the centre of
   // the ink's own bounding box in path units, and `width`/`height` are that
   // box's size, so the two together give its top-left corner.
-  const minX = (path.pathOffset?.x ?? 50) - (path.width || 0) / 2;
-  const minY = (path.pathOffset?.y ?? 50) - (path.height || 0) / 2;
+  const minX = (path.pathOffset?.x ?? 50) - (path.width || 0) / 2 - vx;
+  const minY = (path.pathOffset?.y ?? 50) - (path.height || 0) / 2 - vy;
   const sw = path.strokeWidth || 0;
   // Where the PAINT must start: the geometric edge, less the half of the
   // stroke that straddles outside it — which is what the server's `<path>`
@@ -336,12 +345,16 @@ function frameOutline(il: ImageLayer): fabric.FabricObject | null {
   // the width is divided back out by the same geometric mean — and it is handed
   // to `viewBoxPath` rather than set afterwards, because the placement has to
   // know how far the paint hangs outside the outline.
-  const inBox = width / iconStrokeScale(il.w, il.h);
+  // R4-F: the stretch a stroke is divided back out by is the stretch the path
+  // is DRAWN at, which with `fitInk` is the layer box over the ink box — and
+  // the same viewBox goes to the crop below, so the two cannot come apart.
+  const vb = inkViewBox(il.mask, il.fitInk === true);
+  const inBox = width / iconStrokeScale(il.w * (100 / vb[2]), il.h * (100 / vb[3]));
   return viewBoxPath(d, il.x, il.y, il.w, il.h, {
     ...rest,
     strokeWidth: inBox,
     strokeDashArray: dashArray(il.frameDash, inBox),
-  });
+  }, vb);
 }
 
 /**
@@ -388,6 +401,24 @@ function groupWith(
     });
     group.setCoords();
   }
+  /**
+   * A GROUP'S BOX IS THE UNION OF ITS CHILDREN, AND A UNION IS NOT ROUND.
+   *
+   * Everything inside a Fabric group is drawn relative to the group's centre,
+   * so when the ring sticks out by an odd number of pixels the centre lands on
+   * a half pixel and the PHOTOGRAPH inside is resampled half a pixel off the
+   * grid the exporter draws it on. The crop and the border stay exactly on each
+   * other — they are one path — and on a photograph nobody can see it; on the
+   * chequerboard the parity harness crops with, an ink-sized arch frame reads
+   * 3.5% different between the two engines for this reason alone
+   * (round5-driver/out, r4f-an-arch-frame-by-its-ink).
+   *
+   * ROUNDING THE GROUP'S CORNER WAS TRIED AND PUT BACK. It halved that probe
+   * and made the slanted frame worse — 1.218% to 1.646% — because a frame whose
+   * union already landed on whole pixels was moved off them. A fix that trades
+   * one case for another is not a fix, and the honest thing is to leave the
+   * measurement on the record instead of hiding it in an average.
+   */
   return group;
 }
 
@@ -419,8 +450,45 @@ export function useStudioWrap(
   size: number,
   weight: string | undefined,
   letterSpacing: number,
+  /** R4-B — see textEffects.fabricTypeMetrics. */
+  fontSizeFraction?: number,
 ): void {
   const tb = box as WrappingTextbox;
+  /**
+   * The baseline fraction is a PROTOTYPE property on Fabric's Text, so setting
+   * it here shadows it for this object alone: the glyphs move down onto the
+   * exporter's baselines and the object's own box, which the canvas reads
+   * x and y back off, does not move at all.
+   */
+  if (fontSizeFraction != null && Number.isFinite(fontSizeFraction)) {
+    (tb as unknown as { _fontSizeFraction: number })._fontSizeFraction = fontSizeFraction;
+  }
+  /**
+   * R4-A, the second half: A STROKE MOVED THE WORDS SIDEWAYS.
+   *
+   * Fabric measures an object as `width + strokeWidth` and centres THAT on
+   * `left`, so the moment a hollow or outlined run got a 6 px stroke its
+   * glyphs slid 3 px right and 3 px down of where the exporter draws them —
+   * every stroked word in the studio, off by half its own outline, and
+   * invisible until the two pictures were laid on top of each other.
+   *
+   * The two offsets below are the only place Fabric asks where its content
+   * goes inside its box. Shifting them leaves `left`, `top`, `width` and
+   * `height` exactly as they were — so the handles, the snapping and the
+   * read-back that turns a drag into an x and a y are all untouched — and
+   * moves the glyphs, the caret and the underline together.
+   */
+  const shifted = tb as unknown as {
+    _getLeftOffset: () => number; _getTopOffset: () => number;
+    width: number; height: number; strokeWidth: number; direction: string;
+  };
+  shifted._getLeftOffset = function _getLeftOffset() {
+    const half = (this.strokeWidth || 0) / 2;
+    return (this.direction === "rtl" ? this.width / 2 : -this.width / 2) - half;
+  };
+  shifted._getTopOffset = function _getTopOffset() {
+    return -this.height / 2 - (this.strokeWidth || 0) / 2;
+  };
   tb._wrapText = function _wrapText(lines: string[], desiredWidth: number): string[][] {
     const out: string[][] = [];
     for (const line of lines) {
@@ -556,6 +624,10 @@ export function layerToFabricObject(
     // Textbox (not IText): wraps at the layer width like the export's
     // soft-wrap, so long copy never silently runs off the canvas.
     const textFamily = familyOf(t.font || DEFAULT_FONTS[0]);
+    // R4-B: Fabric's own baseline is 0.12086 em higher than the exporter's and
+    // its line pitch 1.13× wider. These two cancel both, so the canvas paints
+    // on the exporter's baselines — see textEffects.fabricTypeMetrics.
+    const metrics = fabricTypeMetrics(t.lineHeight || 1.2);
     const itext = new fabric.Textbox(applyCase(t.content || "", t.textCase), {
       ...baseProps,
       width: t.w,
@@ -566,21 +638,44 @@ export function layerToFabricObject(
       underline: t.underline === true,
       linethrough: t.strike === true,
       textAlign: t.align || "left",
-      lineHeight: t.lineHeight || 1.2,
+      lineHeight: metrics.lineHeight,
       // Fabric charSpacing is in 1/1000 em; our model stores px.
       charSpacing: t.letterSpacing ? (t.letterSpacing / size) * 1000 : 0,
-      // Hollow: stroke-only type. Outline: stroke painted behind the fill.
-      ...(t.effect === "hollow"
-        ? {
-            fill: "transparent",
-            stroke: t.color || "#111827",
-            strokeWidth: Math.max(1, Math.round(size * 0.05)),
-          }
-        : {
-            fill: t.color || "#111827",
-            stroke: t.outline && t.outline !== "none" ? t.outline : undefined,
-            strokeWidth: t.outline && t.outline !== "none" ? Math.max(1, Math.round(size * 0.08)) : 0,
-          }),
+      /**
+       * R4-A: ONE HOLLOW, NOT TWO.
+       *
+       * The paint itself already came from `mainPaint`, the same function the
+       * exporter asks — but the two engines were told to JOIN the corners
+       * differently. The SVG says `stroke-linejoin="round"`; a Fabric object's
+       * default is `miter` with a limit of ten, so every sharp corner of a
+       * boxy display face grew a spike, and at 128 px Bebas the spikes met
+       * across the counters. Design 09's FREE ENTRY and design 02's TIMETABLE
+       * came out as mush in the downloaded file while the server's matched the
+       * reference — the same paint, mitred.
+       *
+       * So the joins are round here too, and `fill: "none"` is the literal the
+       * exporter writes rather than a second spelling of it.
+       */
+      ...(() => {
+        const paint = mainPaint({
+          effect: t.effect ?? null,
+          shadow: t.shadow === true,
+          outline: t.outline ?? null,
+          size,
+          colour: t.color || "#111827",
+          effectColour: t.effectColor ?? null,
+        });
+        return {
+          // SVG's "no paint" is spelt `none`; Fabric's colour parser does not
+          // know that word and reads it as black, which is how a see-through
+          // word becomes a solid one. `transparent` is the same instruction in
+          // the language this object speaks.
+          fill: paint.fill === "none" ? "transparent" : paint.fill,
+          stroke: paint.stroke ?? undefined,
+          strokeWidth: paint.strokeWidth,
+        };
+      })(),
+      strokeLineJoin: "round" as const,
       paintFirst: "stroke",
       // Lift = soft blurred shadow; Shadow = hard offset (both match export).
       shadow: t.effect === "lift"
@@ -599,7 +694,7 @@ export function layerToFabricObject(
             })
           : undefined,
     });
-    useStudioWrap(itext, textFamily, size, t.weight, t.letterSpacing || 0);
+    useStudioWrap(itext, textFamily, size, t.weight, t.letterSpacing || 0, metrics.fontSizeFraction);
     return itext;
   }
   if (layer.kind === "image") {
@@ -707,7 +802,7 @@ export function layerToFabricObject(
           // server's translate/scale gives, and the same one `frameOutline`
           // above now gives, so a crop and its border coincide.
           const d = shapePathD(il.mask, il);
-          if (d) clip = viewBoxPath(d, -iw / 2, -ih / 2, iw, ih);
+          if (d) clip = viewBoxPath(d, -iw / 2, -ih / 2, iw, ih, {}, inkViewBox(il.mask, il.fitInk === true));
         }
         if (clip) img.clipPath = clip;
       } else if (il.radius && il.radius > 0) {

@@ -538,6 +538,43 @@ export function measureRun(
   return run;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   AN ADVANCE IS NOT WHERE THE INK STOPS — ROUND-5 R4-C
+   ══════════════════════════════════════════════════════════════════════════
+
+   `measureRun` adds up ADVANCES: where the next glyph starts. A glyph's ink is
+   free to reach past its own advance — that is what a round terminal, an
+   italic tail or a slash does — so a line packed until its advances exactly
+   fill the box is painted with its last glyph's ink hanging OUT of the box,
+   and whatever the box was sized to hold takes the overhang off.
+
+   MEASURED, not chosen: Chrome was asked for `actualBoundingBoxRight` and
+   `width` for ASCII 32…126 in each of the six bundled faces at 400 and 700
+   (bearing.mjs in the round-5 harness, against the very TTFs LUMEN
+   rasterises with). The worst overhang in the whole pack:
+
+     Playfair Display 700  f   0.0855 em      Lora 700  f   0.0685 em
+     Playfair Display 400  f   0.0742 em      Montserrat 700  /  0.0455 em
+     Oswald 700  g  0.0136 em                 Bebas Neue  _   0.0125 em
+     Poppins 700  w  0.0090 em
+
+   0.0855 em is the allowance, for every face rather than one table per face:
+   the widest of them costs a 42 px line three and a half pixels of a box that
+   is hundreds wide, and a second table is a second thing to keep in step for
+   under one per cent.
+
+   The identical number and the identical function are in LUMEN's
+   `textEffects.js`, and both suites assert the same worked width.
+*/
+export const SIDE_BEARING_EM = 0.0855;
+
+/** The width a run may actually be packed into, ink and all. */
+export function fittableWidth(width: number, size: number): number {
+  const w = num(width, 1);
+  const s = Math.max(1, num(size, 1));
+  return Math.max(1, w - s * SIDE_BEARING_EM);
+}
+
 /**
  * Soft-wrap to the layer width.
  *
@@ -567,7 +604,7 @@ export function wrapLines(
 ): string[] {
   const text = String(content ?? "");
   const bold = Number(weight) >= 600 || weight === "bold";
-  const max = Math.max(1, num(width, 1));
+  const max = Math.max(1, fittableWidth(width, size));
   return text.split(/\r?\n/).flatMap((para) => {
     const words = para.split(/\s+/);
     const out: string[] = [];
@@ -581,6 +618,71 @@ export function wrapLines(
     if (cur.length) out.push(cur);
     return out.length ? out : [para];
   });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   WHERE A LINE OF TYPE SITS IN ITS BOX — ROUND-5 R4-B
+   ══════════════════════════════════════════════════════════════════════════
+
+   Round 4 said the whole designs differed by 3.1%, 7.1% and 5.5% while the
+   probes differed by fractions of a per cent, and blamed the hollow word. The
+   hollow word was part of it. THIS was the rest, and it is under every single
+   text layer in every design:
+
+     the exporter puts the first baseline ONE EM below the box top and the next
+     line ONE LINE-HEIGHT further down — `firstY = y + size`, `dy = size *
+     lineHeight`, and it has always said so out loud;
+
+     Fabric puts the first baseline at `fontSize × _fontSizeMult × (1 −
+     _fontSizeFraction)` = 1.13 × 0.778 = 0.87914 em below the box top, and its
+     next line 1.13 × lineHeight further down.
+
+   MEASURED, not read off the source: a single "H" in each of the six bundled
+   faces at 40, 100 and 160 px, rendered by both engines, put the browser's ink
+   0.12 em higher every time (baseline.mjs in the round-5 harness). 1 − 0.87914
+   = 0.12086. So a 96 px headline was five-eighths of a pixel-row shy of nine
+   pixels out of place on screen against the file the author downloaded, and a
+   two-line block drifted a further 0.156 em per line.
+
+   Nobody could see it on one layer. On ten designs it was most of the number.
+
+   The exporter's rule is the one that stays, because it is the one already
+   written down, already in the stored designs' geometry and already in the
+   delivered files. `fabricTypeMetrics` states it in Fabric's own language:
+   feed Fabric a line height and a baseline fraction that cancel its two
+   constants, and its glyphs land exactly where the SVG's do. The object's box
+   does not move, so nothing that reads a layer's x/y back off the canvas has
+   to know this happened.
+*/
+
+/** Fabric's own two constants (`Text` prototype, fabric 6.9.1). */
+export const FABRIC_FONT_SIZE_MULT = 1.13;
+export const FABRIC_FONT_SIZE_FRACTION = 0.222;
+
+/** The exporter's rule: first baseline one em below the top of the box. */
+export const FIRST_BASELINE_EM = 1;
+
+/**
+ * The `lineHeight` and `_fontSizeFraction` a Fabric text object needs so that
+ * it paints on the exporter's baselines.
+ *
+ * `lineHeight` — Fabric's line pitch is `fontSize × _fontSizeMult ×
+ * lineHeight`; the exporter's is `fontSize × lineHeight`. Dividing by the
+ * multiplier makes the two the same distance.
+ *
+ * `fontSizeFraction` — Fabric's first baseline is `fontSize × _fontSizeMult ×
+ * (1 − fraction)` below the top; solving that for one em gives 1 − 1/1.13.
+ *
+ * Both are pure functions of Fabric's constants, so a Fabric upgrade that
+ * moves either one is answered by changing the two numbers above, in one place.
+ */
+export function fabricTypeMetrics(
+  lineHeight: number,
+  mult = FABRIC_FONT_SIZE_MULT,
+): { lineHeight: number; fontSizeFraction: number } {
+  const lh = num(lineHeight, 1.2) || 1.2;
+  const m = Math.max(0.01, num(mult, FABRIC_FONT_SIZE_MULT));
+  return { lineHeight: lh / m, fontSizeFraction: 1 - FIRST_BASELINE_EM / m };
 }
 
 export interface StraightSvgInput {

@@ -1244,6 +1244,22 @@ function ImageStyle({ layer, brand, update }: {
             </select>
           </label>
         </div>
+        {/*
+          R4-F: A FRAME'S BOX AND ITS INK ARE TWO DIFFERENT RECTANGLES.
+
+          An arch fills only x 10…90 of the box it was drawn in, so a 700 px
+          arch frame cropped 560 px of arch and read narrower than the
+          reference's. The crop and the border read this one setting, so they
+          cannot come apart. Off by default: nothing already framed moves.
+        */}
+        {layer.mask && layer.mask !== "circle" && layer.mask !== "rounded" && (
+          <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+            title="Stretch the frame so its shape fills the whole box. Off, the shape keeps the margins it was drawn with.">
+            <input type="checkbox" data-frame-fit-ink checked={layer.fitInk === true}
+              onChange={(e) => update({ fitInk: e.target.checked } as Partial<Layer>)} />
+            Fill the box with the frame
+          </label>
+        )}
         {!layer.src && (
           <ColourField label="Empty frame colour" value={layer.frameFill} brand={brand}
             onChange={(c) => update({ frameFill: c } as Partial<Layer>)} />
@@ -1413,6 +1429,46 @@ function ShapeStyle({ layer, brand, update }: {
             </select>
           </label>
         </div>
+        {layer.shape === "icon" && (
+          <>
+            {/*
+              R4-E: THE PACK HAD ONE WEIGHT.
+
+              Design 01's instagram mark came out a filled blob where the
+              reference draws a camera outline, and nothing in the panel said
+              which of the two a symbol was. Outline draws the same symbol's
+              edge, in the colour the fill would have been.
+            */}
+            <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+              Symbol weight
+              <select
+                data-icon-weight
+                value={layer.iconWeight || "filled"}
+                title="Filled paints the symbol solid; Outline draws its edge, the way a line icon looks"
+                aria-label="Symbol weight"
+                onChange={(e) => update({ iconWeight: e.target.value as "filled" | "outline" } as Partial<Layer>)}
+                className="mt-0.5 w-full rounded border border-slate-200 px-1.5 py-1 text-[11px] font-normal normal-case"
+              >
+                <option value="filled">Filled</option>
+                <option value="outline">Outline</option>
+              </select>
+            </label>
+            {/*
+              R4-F: A SHAPE'S BOX AND ITS INK ARE TWO DIFFERENT RECTANGLES.
+
+              An arch is drawn in a 0–100 box and only fills x 10…90 of it, so a
+              700 px arch layer drew 560 px of arch and read narrower than the
+              reference. This makes the layer's box the arch, not the arch's
+              paper. Off by default, so nothing already drawn moves.
+            */}
+            <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+              title="Stretch the symbol so its ink fills the whole box. Off, the symbol keeps the margins it was drawn with.">
+              <input type="checkbox" data-fit-ink checked={layer.fitInk === true}
+                onChange={(e) => update({ fitInk: e.target.checked } as Partial<Layer>)} />
+              Fill the box with the shape
+            </label>
+          </>
+        )}
         {layer.shape === "rect" && (
           <label className="block text-[10px] font-semibold uppercase tracking-wide text-slate-500">
             Rounded corners
@@ -1499,6 +1555,35 @@ function ChartDataPanel({ layer, brand, onUpdate }: {
         className="inline-flex items-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-40">
         <Plus className="h-3 w-3" /> Add a number
       </button>
+      {/*
+        R4-D: THE REST OF THE BARS, IN THE BRAND'S OWN COLOUR.
+
+        Picking one bar out worked; everything else fell back to the cycle's
+        cold blue-greys, and the only way to get the reference's pale teal was
+        to type a hex into every other row by hand. One colour here puts every
+        bar that was NOT picked out into tints of it, palest first.
+      */}
+      <div className="flex items-center gap-1.5">
+        <label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+          title="Every bar you have not picked out is drawn in tints of this one colour, palest first">
+          <input
+            type="color"
+            data-chart-ramp
+            value={/^#[0-9a-fA-F]{6}$/.test(layer.ramp || "") ? (layer.ramp as string) : brand.colours.primary}
+            onChange={(e) => onUpdate({ ramp: e.target.value })}
+            className="h-5 w-5 cursor-pointer rounded border border-slate-300 p-0"
+          />
+          The rest in tints of
+        </label>
+        {layer.ramp && (
+          <button type="button" title="Back to the brand cycle" aria-label="Back to the brand cycle"
+            data-chart-ramp-clear
+            onClick={() => onUpdate({ ramp: null })}
+            className="rounded px-0.5 text-[9px] font-semibold text-slate-400 hover:text-slate-700">
+            auto
+          </button>
+        )}
+      </div>
       {/*
         G-10: the number on the mark. Without it a bar chart on a slide is a
         row of shapes with no reading, which is what design 08 came out as.

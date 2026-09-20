@@ -157,8 +157,10 @@ describe("R3-B · a wave band 1275 wide is drawn 1275 wide", () => {
     assert.match(svg, /viewBox="0 0 100 100"/);
     assert.match(svg, /preserveAspectRatio="none"/);
     // The server's own instruction, in its own file, is a non-uniform scale.
+    // R4-F named the box in the divisor. It is still 100 × 100 unless the
+    // author sizes a shape by its ink, so this is the same instruction.
     assert.ok(LUMEN("src/lib/myBrand/templateStudio.js")
-      .includes("transform=\"translate(${x} ${y}) scale(${w / 100} ${h / 100})\""));
+      .includes("transform=\"translate(${x} ${y}) scale(${w / vw} ${h / vh}) translate(${-vx} ${-vy})\""));
   });
 
   test("MUTATION · without the attribute SVG letterboxes, and by how much", () => {
@@ -308,7 +310,7 @@ describe("R3-D · one wrapper, measured against the face", () => {
 
   test("the editor's Textbox branch installs it", () => {
     const src = STUDIO("fabricBridge.ts");
-    assert.ok(src.includes("useStudioWrap(itext, textFamily, size, t.weight, t.letterSpacing || 0);"));
+    assert.ok(src.includes("useStudioWrap(itext, textFamily, size, t.weight, t.letterSpacing || 0, metrics.fontSizeFraction);"));
     // And the server no longer carries a second wrapper of its own.
     const lumen = LUMEN("src/lib/myBrand/templateStudio.js");
     assert.ok(lumen.includes("wrapLines(content, w, size, weightValue, metricFamily, letterSpacing)"));

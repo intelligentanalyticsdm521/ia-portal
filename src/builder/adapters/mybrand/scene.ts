@@ -26,7 +26,7 @@
 
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 import {
-  applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved,
+  applyCase, curvedTextSvg, dashArray, dashLineCap, fittableWidth, isCurved,
   measureRun, needsSvgText, straightTextSvg, wrapLines,
   type StrokeStyle, type TextCase, type TextEffect,
 } from "./textEffects";
@@ -182,6 +182,12 @@ export interface ImageLayer extends BaseLayer {
    * when `mask` is set, because a mask already says what the shape is.
    */
   radius?: number;
+  /**
+   * R4-F: size the frame by its mask's INK rather than by the 0–100 box the
+   * path was authored in, so a 700 px arch frame is 700 px of arch. The crop
+   * and the border read the same flag, so they cannot come apart.
+   */
+  fitInk?: boolean;
 }
 // ── Color math for Brand Sync + Fix contrast (deterministic, no model) ─────
 function hexToRgb(hex: string): [number, number, number] | null {
@@ -272,6 +278,16 @@ export interface ShapeLayer extends BaseLayer {
   gradient?: GradientSpec;
   /** Overrides BOTH fill and gradient when present — see PatternSpec. */
   pattern?: PatternSpec;
+  /**
+   * R4-E: icon only — "outline" draws the path's edge instead of filling it.
+   * Absent means filled, which is what every icon stored before round 5 is.
+   */
+  iconWeight?: "filled" | "outline";
+  /**
+   * R4-F: icon only — size the layer box by the path's INK rather than by the
+   * 0–100 box it was authored in. See `inkViewBox`.
+   */
+  fitInk?: boolean;
 }
 
 const GRADIENT_COORDS: Record<GradientSpec["dir"], { x1: number; y1: number; x2: number; y2: number }> = {
@@ -354,6 +370,111 @@ export const ICON_PATHS: Record<string, string> = {
   slant: "M0 0 H100 V72 L0 100 Z",
   octagon: "M30 2 H70 L98 30 V70 L70 98 H30 L2 70 V30 Z",
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A SHAPE'S BOX AND ITS INK ARE TWO DIFFERENT RECTANGLES — ROUND-5 R4-F
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every path above is authored in a 0–100 box and almost none of them fills
+   it. `arch` runs x 10…90, so design 02's 700 px arch layer draws 560 px of
+   arch and reads narrower than the reference's — and a frame could not be
+   sized by the one thing anybody can see, which is its ink. Round 3 made the
+   crop and the border coincide; this makes the pair sizeable.
+
+   MEASURED, not read off the path data: a quadratic's control point lies
+   OUTSIDE its own curve, so the bounding box of the numbers in a `d` string is
+   wrong for every blob, wave and arch in the pack. Each path was rasterised on
+   its own at 1000 × 1000 with `preserveAspectRatio="none"` — the very stretch
+   both engines apply — and the ink looked for (ink.mjs in the round-5 parity
+   harness, 2026-09-19). In viewBox units, to one decimal, [x0, y0, x1, y1].
+
+   Three paths fill their box exactly (burst, quartercircle, slant) and are not
+   listed; `inkViewBox` falls back to the full box, so the table carries only
+   the paths it changes anything for.
+
+   The identical table is in LUMEN's `templateStudio.js` ICON_INK, and both
+   suites assert the same worked numbers.
+*/
+export const ICON_INK: Record<string, [number, number, number, number]> = {
+  star: [4, 5.1, 96, 92],
+  heart: [5, 4, 95, 88],
+  arrow: [5, 22, 95, 78],
+  check: [10, 12, 90, 83],
+  bubble: [5, 10, 95, 85],
+  seal: [2, 2, 98, 88],
+  bolt: [15, 2, 85, 98],
+  pin: [15, 2, 85, 98],
+  plus: [5, 5, 95, 95],
+  triangle: [5, 8, 95, 92],
+  arrowleft: [5, 22, 95, 78],
+  arrowup: [22, 5, 78, 95],
+  arrowdown: [22, 5, 78, 95],
+  xmark: [8, 8, 92, 92],
+  diamond: [2, 2, 98, 98],
+  hexagon: [2, 7, 98, 93],
+  pentagon: [3, 4, 97, 94],
+  ring: [5, 5, 95, 95],
+  sparkle: [5.1, 5.1, 94.9, 94.9],
+  tag: [5, 5, 95, 85],
+  gift: [10, 8, 90, 95],
+  percent: [11, 5, 89, 95],
+  home: [5, 5, 95, 95],
+  user: [10, 8, 90, 95],
+  phone: [28, 5, 72, 95],
+  mail: [5, 20, 95, 80],
+  calendar: [10, 5, 90, 95],
+  thumbs: [8, 8.6, 94.4, 95],
+  camera: [5, 12, 95, 90],
+  music: [13.2, 5, 85, 91.2],
+  leaf: [15, 15, 85.3, 90],
+  coffee: [15, 30, 97, 90],
+  flag: [20, 5, 85, 95],
+  crown: [5, 15, 95, 92],
+  shield: [10, 3, 90, 97],
+  gem: [8, 8, 92, 95],
+  blob1: [5.5, 4.9, 93.9, 93.8],
+  blob2: [4.2, 3.8, 96.1, 93.4],
+  blob3: [3.1, 4.5, 95.6, 94.5],
+  wave: [0, 47.5, 100, 100],
+  wave2: [0, 30, 100, 100],
+  arch: [10, 5, 90, 100],
+  halfcircle: [0, 50, 100, 100],
+  scallop: [0, 13, 100, 100],
+  dots: [8, 8, 92, 92],
+  parallelogram: [2, 6, 98, 94],
+  trapezoid: [2, 6, 98, 94],
+  octagon: [2, 2, 98, 98],
+};
+
+/**
+ * The viewBox that makes a path's INK fill the layer box, as [x, y, w, h].
+ *
+ * Without `fitInk` this is the authored box, so every design stored before
+ * round 5 draws exactly what it always drew.
+ *
+ * LINE FOR LINE with LUMEN's `inkViewBox`.
+ */
+export function inkViewBox(
+  key: string | null | undefined, fitInk?: boolean,
+): [number, number, number, number] {
+  const ink = fitInk ? ICON_INK[String(key || "")] : null;
+  if (!ink) return [0, 0, 100, 100];
+  return [ink[0], ink[1], Math.max(0.1, ink[2] - ink[0]), Math.max(0.1, ink[3] - ink[1])];
+}
+
+/**
+ * HOW HEAVY AN OUTLINE ICON'S LINE IS — ROUND-5 R4-E.
+ *
+ * The pack had one weight: filled. Design 01's instagram mark came out as a
+ * filled blob where the reference draws a camera outline, and an icon offered
+ * no choice between the two. An outline icon is the same path with no fill and
+ * a stroke, and 6 viewBox units — six per cent of the icon's own box — reads as
+ * a line rather than a hairline or a second fill at every size the studio
+ * places an icon at.
+ *
+ * LINE FOR LINE with LUMEN's `ICON_OUTLINE_WEIGHT`.
+ */
+export const ICON_OUTLINE_WEIGHT = 6;
 
 export const DECOR_KEYS = new Set(["blob1","blob2","blob3","wave","wave2","arch","halfcircle","quartercircle","scallop","dots"]);
 
@@ -573,15 +694,35 @@ export function patternDef(spec: PatternSpec, id: string, originX = 0, originY =
 
 function iconToSvg(layer: ShapeLayer): string {
   const d = shapePathD(layer.icon, layer) || ICON_PATHS.star;
-  const stroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : "none";
   const defsParts: string[] = [];
   // The id carries the layer so two icons in one document cannot collide, and
   // so a pattern tile is never shared between two shapes that set it apart.
-  const fill = shapeFill(layer, `i${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts);
+  const fillPaint = shapeFill(layer, `i${String(layer.id || "x").replace(/[^A-Za-z0-9]/g, "")}`, defsParts);
+  /**
+   * R4-E: AN OUTLINE ICON IS THE SAME PATH WITH NO FILL AND A LINE.
+   *
+   * The colour the outline is drawn in is the colour the fill would have been,
+   * so switching an icon from filled to outline keeps it the author's colour
+   * without asking a second question — unless a stroke was already set, which
+   * is theirs and stays. A gradient or pattern fill cannot be a line, so an
+   * outline icon falls back to the flat colour under it.
+   */
+  const outline = layer.iconWeight === "outline";
+  const authoredStroke = layer.stroke && layer.stroke !== "none" ? layer.stroke : null;
+  const lineColour = authoredStroke
+    || (layer.fill && layer.fill !== "none" ? layer.fill : FALLBACK.primary);
+  const fill = outline ? "none" : fillPaint;
+  const stroke = outline ? lineColour : (authoredStroke || "none");
+  // R4-F: with `fitInk` the layer box is filled by the path's INK, so a 700 px
+  // arch draws 700 px of arch. Without it these are the authored 0–100 box and
+  // nothing that was stored before round 5 moves.
+  const [vx, vy, vw, vh] = inkViewBox(layer.icon, layer.fitInk === true);
   // D-3: divide the asked-for width by the icon's own stretch, so the number in
   // the inspector is the number of canvas pixels that get painted.
   const sw = Number(layer.strokeWidth) || 0;
-  const swInBox = sw > 0 ? sw / iconStrokeScale(layer.w, layer.h) : 0;
+  const swInBox = sw > 0
+    ? sw / iconStrokeScale(layer.w * (100 / vw), layer.h * (100 / vh))
+    : (outline ? ICON_OUTLINE_WEIGHT : 0);
   const dash = dashArray(layer.dash, swInBox || 1);
   const dashAttrs = dash.length && swInBox > 0
     ? ` stroke-dasharray="${dash.map((n) => Number(n.toFixed(4))).join(" ")}" stroke-linecap="${dashLineCap(layer.dash)}"`
@@ -599,7 +740,7 @@ function iconToSvg(layer: ShapeLayer): string {
    * same stretch.
    */
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${layer.w}" height="${layer.h}" ` +
-    `viewBox="0 0 100 100" preserveAspectRatio="none">${defs}` +
+    `viewBox="${vx} ${vy} ${vw} ${vh}" preserveAspectRatio="none">${defs}` +
     `<path d="${d}" fill-rule="evenodd" fill="${fill}" stroke="${stroke}" stroke-width="${Number(swInBox.toFixed(4))}"${dashAttrs} /></svg>`;
 }
 
@@ -778,17 +919,21 @@ export function textFit(layer: TextLayer): TextFit | null {
   // is the one case where making the box taller does not help — so it is
   // reported apart from plain overflow rather than folded into it.
   const bold = Number(layer.weight) >= 600 || layer.weight === "bold";
+  // R4-C: against the width a run can actually be PACKED into — the box less
+  // the ink that hangs past the last advance — so the warning fires on the
+  // same edge the wrap respects.
   const widest = content.split(/\s+/).reduce(
     (max, word) => Math.max(max, measureRun(family0, word, size, bold, layer.letterSpacing || 0)),
     0,
   );
+  const packable = fittableWidth(w, size);
   const fit: TextFit = {
     lines: lines.length,
     neededH,
     boxH,
     wrapped: lines.length > 1,
     overflows: boxH > 0 && neededH > boxH + 1,
-    wordTooWide: widest > w + 1,
+    wordTooWide: widest > packable + 1,
   };
   return fit;
 }
@@ -828,6 +973,11 @@ export interface ChartLayer extends BaseLayer {
    */
   values: Array<{ label?: string; value: number; colour?: string }>;
   colors?: string[];
+  /**
+   * R4-D: one brand colour, and every mark that was NOT picked out drawn in a
+   * tint of it. See `rampColour`.
+   */
+  ramp?: string | null;
   /**
    * Print the number on the mark (G-10). Canva calls it a value label, and
    * without it a bar chart on a slide is a shape with no reading.
@@ -1275,6 +1425,50 @@ export function smartResize(doc: CanvasDoc, newW: number, newH: number): CanvasD
 // to be IA navy and IA gold written out, on a CLIENT's chart.
 const CHART_DEFAULT_CYCLE = [FALLBACK.primary, FALLBACK.secondary, "#64748B", "#94A3B8", "#CBD5E1", "#475569"];
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE REST OF THE BARS, IN THE BRAND'S OWN COLOUR — ROUND-5 R4-D
+   ══════════════════════════════════════════════════════════════════════════
+
+   Design 08 picks one bar out in the brand teal and leaves the other three
+   quiet. Until now "quiet" meant the cycle's neutrals — #64748B, #94A3B8,
+   #CBD5E1 — which are a cold blue-grey, and the only way to get the
+   reference's pale teal was to type a hex into every unpicked row by hand.
+
+   A RAMP is the thing that was missing: one brand colour, and the rest of the
+   marks in tints of it, palest at the start and deepest at the end, so a chart
+   reads as one family instead of a highlight sitting on somebody else's greys.
+
+   The two ends are 0.72 and 0.28 of the way to white. 0.72 is as pale as a
+   mark can go and still hold an edge against white paper; 0.28 is as deep as
+   the quiet marks can go before they compete with a mark that was picked out
+   in the full colour. A row with its OWN colour is untouched, so picking one
+   bar out still works exactly as it did.
+
+   `tintTowardWhite` and these two numbers are mirrored in LUMEN's
+   `templateStudio.js`, and both suites assert the same worked hex.
+*/
+export const RAMP_PALEST = 0.72;
+export const RAMP_DEEPEST = 0.28;
+
+/** A hex colour mixed `amount` of the way to white. Anything else comes back. */
+export function tintTowardWhite(hex: string, amount: number): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || "").trim());
+  if (!m) return hex;
+  const t = Math.max(0, Math.min(1, Number(amount) || 0));
+  const n = parseInt(m[1], 16);
+  const mix = (c: number) => Math.round(c + (255 - c) * t);
+  const r = mix((n >> 16) & 255), g = mix((n >> 8) & 255), b = mix(n & 255);
+  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, "0")).join("")}`.toUpperCase();
+}
+
+/** The `index`-th of `count` marks, in a ramp of tints of `base`. */
+export function rampColour(base: string, index: number, count: number): string {
+  const n = Math.max(1, Math.floor(count));
+  if (n === 1) return tintTowardWhite(base, RAMP_DEEPEST);
+  const step = (RAMP_PALEST - RAMP_DEEPEST) / (n - 1);
+  return tintTowardWhite(base, RAMP_PALEST - step * Math.max(0, Math.min(n - 1, index)));
+}
+
 export function chartToSvg(layer: ChartLayer): string {
   const w = layer.w, h = layer.h;
   const values = (layer.values || []).map((v) => ({
@@ -1283,7 +1477,11 @@ export function chartToSvg(layer: ChartLayer): string {
   }));
   const cycle = layer.colors?.length ? layer.colors : CHART_DEFAULT_CYCLE;
   // G-10: a row's OWN colour wins over the cycle, so one bar can be picked out.
-  const color = (i: number) => (layer.values || [])[i]?.colour || cycle[i % cycle.length];
+  // R4-D: with a ramp set, everything that has NOT been picked out is a tint of
+  // the ramp colour rather than the cycle's cold neutrals.
+  const ramp = layer.ramp && layer.ramp !== "none" ? layer.ramp : null;
+  const color = (i: number) => (layer.values || [])[i]?.colour
+    || (ramp ? rampColour(ramp, i, (layer.values || []).length) : cycle[i % cycle.length]);
   const labelSize = Math.max(10, Math.round(Math.min(w, h) * 0.055));
   const esc = (t: string) => t.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const parts: string[] = [];
