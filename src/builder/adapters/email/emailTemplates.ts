@@ -680,7 +680,7 @@ export function settleFooter(doc: BuilderDocument): BuilderDocument {
       rest.push({
         ...footer,
         id: `${footer.id}-body`,
-        label: "Section",
+        label: "Container",
         columns: [{ id: `${footer.id}-body-c0`, widgets: strays }],
       });
     }

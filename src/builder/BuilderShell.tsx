@@ -513,7 +513,7 @@ export function BuilderShell(p: BuilderShellProps) {
     let next = from ?? doc;
     let spot = at ?? insertSpotFor(doc, selection, visibleSectionId);
     if (!spot) {
-      const made = makeSection({ label: "Section" });
+      const made = makeSection({ label: "Container" });
       next = addSection(next, made);
       spot = firstSpotIn(next, made.id);
     }
@@ -560,7 +560,7 @@ export function BuilderShell(p: BuilderShellProps) {
     let next = from ?? doc;
     let spot = at ?? insertSpotFor(next, selection, visibleSectionId);
     if (!spot) {
-      const made = makeSection({ label: "Section" });
+      const made = makeSection({ label: "Container" });
       next = addSection(next, made);
       spot = firstSpotIn(next, made.id);
     }
@@ -626,7 +626,7 @@ export function BuilderShell(p: BuilderShellProps) {
     setDrag(null);
     if (!payload) return;
     if (p.onAddBlank && p.onAddBlank(at) === false) return;
-    const sec = makeSection({ label: "Section" });
+    const sec = makeSection({ label: "Container" });
     const next = addSection(doc, sec, at);
     const spot = firstSpotIn(next, sec.id);
     if (!spot) return;
@@ -683,7 +683,7 @@ export function BuilderShell(p: BuilderShellProps) {
    */
   const addStructure = useCallback((at: number, layout: SectionLayout, preset: StructurePreset) => {
     if (p.onAddBlank && p.onAddBlank(at) === false) return;
-    const sec = makeSection({ label: "Section" });
+    const sec = makeSection({ label: "Container" });
     if (preset.cells.length > 1) {
       const cells = preset.cells.map(() => makeContainer());
       const row = makeContainer(

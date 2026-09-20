@@ -187,7 +187,11 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
     rows.push({
       kind: "section",
       id: s.id,
-      label: s.label || `Section ${index + 1}`,
+      /* "Container", not "Section 1" (D-172) — the reference's tree has one
+         kind of box and one word for it. A section the author (or a template)
+         HAS named keeps that name, because the reference lets a row be renamed
+         and shows the rename; what goes is our own default. */
+      label: s.label || "Container",
       index,
       hiddenOn: hiddenOf(s.style),
       required: sectionRequired(s),

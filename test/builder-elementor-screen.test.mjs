@@ -728,3 +728,36 @@ describe("SCREEN LAW 11 — a container is set the reference's way", () => {
     assert.match(gaps, /<DeviceSegment device=\{p\.device\} onDevice=\{p\.onDevice\} \/>/);
   });
 });
+
+describe("SCREEN LAW 12 — the word Section is not on the screen (D-172)", () => {
+  test("the settings panel over a top-level section says Edit Container", () => {
+    const i = code(readSrc("builder/Inspector.tsx"));
+    assert.ok(!i.includes('(section.label || "Section")'), 'the panel says "Edit Section" again');
+    assert.match(i, /: "Container";/);
+  });
+
+  test("a Structure row for an unnamed section says Container", () => {
+    const m = code(readSrc("builder/navigatorModel.ts"));
+    assert.ok(!m.includes("`Section ${index + 1}`"), "the tree numbers Sections again");
+    assert.match(m, /label: s\.label \|\| "Container",/);
+  });
+
+  test("nothing the engine CREATES is labelled Section", () => {
+    // A new container was stamped `label: "Section"` in four places in the
+    // shell and two adapters, so the tree printed the word however it was
+    // named on the panel.
+    for (const f of ["builder/BuilderShell.tsx",
+                     "builder/adapters/email/emailTemplates.ts",
+                     "builder/adapters/landing/landingRender.ts"]) {
+      assert.ok(!code(readSrc(f)).includes('label: "Section"'),
+        `${f} still stamps a new container "Section"`);
+    }
+    assert.match(code(readSrc("builder/BuilderShell.tsx")), /makeSection\(\{ label: "Container" \}\)/);
+  });
+
+  test("the canvas handle's label has no Section in it either", () => {
+    const c = code(readSrc("builder/Canvas.tsx"));
+    assert.ok(!c.includes("`Container: ${section.label"), "the handle leaks the word again");
+    assert.match(c, /aria-label="Container"/);
+  });
+});

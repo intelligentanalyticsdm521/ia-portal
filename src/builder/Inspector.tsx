@@ -194,9 +194,16 @@ export function Inspector(p: InspectorProps) {
   };
 
   /** The name on the panel — "Edit <Widget name>", as the reference writes it. */
+  /* A TOP-LEVEL SECTION IS A CONTAINER ON THE SCREEN (D-172).
+     The reference has ONE kind of box and calls it Container; the panel over a
+     section used to read "Edit Scope of work" or, with no label, "Edit
+     Section" — a word the reference never puts in front of a client. The
+     STORED model is untouched: what the author is editing is still
+     `doc.sections[n]`, and the PDF, the email and the publisher all still read
+     it as a section. Only the name on the panel changes. */
   const name = widget
     ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
-    : (section.label || "Section");
+    : "Container";
 
   /**
    * WHICH TABS HAVE ANYTHING BEHIND THEM.
