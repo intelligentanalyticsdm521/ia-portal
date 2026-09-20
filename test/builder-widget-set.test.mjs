@@ -33,6 +33,7 @@ import {
 } from "../src/builder/registry.ts";
 import { panelGroups, PANEL_GROUPS, unmappedKinds } from "../src/builder/widgetGroups.ts";
 import { ATOM_KINDS, atomKindsAgree } from "../src/builder/widgets/index.ts";
+import { FAMILY_OF_KIND } from "../src/builder/widgets/families/index.ts";
 import {
   isCatalogueTile, isPickerTile, nodesForPicks,
 } from "../src/builder/proposal/catalogueTiles.ts";
@@ -137,8 +138,31 @@ describe("the left panel is Elementor's", () => {
     }
   });
 
-  test("every offered widget has a place in PANEL_ORDER", () => {
-    assert.deepEqual(unorderedKinds(), []);
+  /**
+   * WHERE A TILE SITS, and who gets to say so — WIDENED 2026-09-19 (B-168).
+   *
+   * `PANEL_ORDER` lives in `registry.ts` and is the order of the widgets the
+   * ENGINE declares. It is still exhaustive for those, and this test still
+   * fails if one of them is added without a place — which is the failure it
+   * was written to catch.
+   *
+   * What changed is that a FAMILY declares its own order and does not touch
+   * registry.ts: §C.1 is explicit that "no family agent ever opens registry.ts",
+   * because ten agents editing one 66 KB list is ten conflicts a day. A family
+   * kind therefore falls through `widgetsFor`’s own fallback — PANEL_ORDER.length
+   * plus its index in WIDGETS — which lands it after the ordered tiles of its
+   * group, in the order its folder declares. Elementor draws its Pro group after
+   * Basic and General, so that is also where these read.
+   *
+   * MUTATION (run 2026-09-19, not assumed): a `hidden: false` def added to
+   * registry.ts with no PANEL_ORDER entry turned this red naming the kind; the
+   * same def moved into a family folder turned it green, which is exactly the
+   * line this test is now drawing.
+   */
+  test("every offered widget has a place — PANEL_ORDER, or its own family", () => {
+    const loose = unorderedKinds().filter((k) => !FAMILY_OF_KIND[k]);
+    assert.deepEqual(loose, [],
+      "the engine declares these and PANEL_ORDER does not place them");
   });
 });
 

@@ -208,6 +208,10 @@ describe("§3.2's union is registered", () => {
     "social_links", "alert", "shortcode", "html", "menu_anchor",
     /* B-168 f2-pictures: five of Elementor's own, all five in the offer file. The kind is pro_gallery because gallery is the hidden legacy Photo gallery below. */
     "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
+    /* B-168 f1-words: the seven Elementor widgets of the words family, every one in the offer file. */
+    "blockquote", "animated_headline", "text_path", "table_of_contents", "code_highlight", "read_more", "sidebar",
+    /* B-168 f3: the five Elementor Pro widgets of the buttons, icons and panels family. */
+    "share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",

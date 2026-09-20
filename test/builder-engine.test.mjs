@@ -33,6 +33,12 @@ import {
   renderDocument, renderSection, renderWidget, makeContext, RENDERED_KINDS,
   UNRENDERED_KINDS, esc,
 } from "../src/builder/render.ts";
+/* B-168 §C.1 — THE TEN FAMILIES ANSWER FOR THEMSELVES. `RENDERED_KINDS` is
+   render.ts’s hand-kept list and a family agent never opens that file;
+   `FAMILY_RENDERED_KINDS` is derived from the ten folders, so "does something
+   draw this?" is answered by the code instead of by a list somebody has to
+   remember. render.ts asks `renderFamily` FIRST, before its own switch. */
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { initHistory, push, undo, redo, canUndo, canRedo } from "../src/builder/history.ts";
 import {
   PREMADE_SECTIONS, SHIPPED_TEMPLATES, hydrateClauses, searchPremade, templateByKey, premadeByKey,
@@ -518,7 +524,8 @@ describe("the ONE renderer", () => {
     // MUTATION: add a widget to the registry with the "proposal" adapter and
     // no renderer branch, and this names it.
     const missing = widgetsFor("proposal").map((w) => w.kind)
-      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k));
+      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k)
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
