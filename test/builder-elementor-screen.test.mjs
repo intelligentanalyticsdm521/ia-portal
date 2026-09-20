@@ -1929,3 +1929,99 @@ describe("SCREEN LAW 22 — a size, an alignment and a band look the same everyw
     assert.match(controls, /grp\.section !== p\.bandTitle && !band && \(/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 23 — A GRID IS NOT A FLEXBOX, AND GAPS IS ONE CONTROL
+   (2026-09-20, audit round 4 rows 19, 73, 74, 82 and 94–99)
+
+   Driven out of the live control model on 2026-09-20: every control under the
+   container's "Items" heading carries `condition: { container_type: ["flex"] }`
+   or `["grid"]`. The grid's are Grid Outline, Columns, Rows, Gaps, Auto Flow,
+   Justify Items and Align Items — and NO Direction, NO Justify Content, NO
+   Wrap. Ours showed the whole flexbox block over a grid, so Justify Items could
+   not be set at all and three settings the browser throws away could.
+
+   GRID OUTLINE IS DELIBERATELY ABSENT. In the reference it dashes the empty
+   cells INSIDE THE EDITOR and prints nothing on the page; our canvas draws the
+   same HTML the page gets, so it needs the canvas, which this pass does not
+   own. Named in the handoff under what is left.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 23 — the grid's own panel, and one linked Gaps", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+
+  test("a grid loses the flexbox block and gains its own", () => {
+    // ABSENT over a grid: the three the reference conditions on `flex`.
+    assert.match(inspector, /\{widgetLayer\.direction !== "grid" && \(\s*<div style=\{ROW\}>\s*<span style=\{L\}>Direction<\/span>/);
+    assert.match(inspector, /\{widgetLayer\.direction !== "grid" && \(\s*<div style=\{FIELD\}>\s*<span style=\{L\}>Justify Content<\/span>/);
+    assert.match(inspector, /\{widgetLayer\.direction !== "grid" && \(<>\s*<div style=\{ROW\}>\s*<span style=\{L\}>Wrap<\/span>/);
+    // PRESENT over a grid: Columns, Rows, Auto Flow and Justify Items.
+    assert.match(inspector, /testAttr="data-box-columns"/);
+    assert.match(inspector, /testAttr="data-box-rows"/);
+    assert.match(inspector, /testAttr="data-box-justifyitems"/);
+    assert.match(inspector, /\{widgetLayer\.direction === "grid" && \(\s*<div style=\{ROW\}>\s*<span style=\{L\}>Auto Flow<\/span>/);
+    // …and Columns and Rows are SLIDERS measured in `fr`, not bare boxes.
+    assert.ok(!inspector.includes('type="number" min={1} max={12} data-box-columns'),
+      "the grid's Columns is a bare number box again");
+    assert.match(inspector, /units=\{\["fr"\]\}/);
+  });
+
+  test("Justify Items reaches the page, and only from a grid", async () => {
+    const { containerLayoutDeclarations, readStyle } = await import("../src/builder/style.ts");
+    assert.ok(containerLayoutDeclarations({ direction: "grid", justifyItems: "center" })
+      .includes("justify-items:center"));
+    assert.ok(containerLayoutDeclarations({ direction: "grid", justifyItems: "start" })
+      .includes("justify-items:flex-start"));
+    // A flex box never emits it: the browser would throw the declaration away.
+    assert.ok(!containerLayoutDeclarations({ direction: "row", justifyItems: "center" })
+      .some((d) => d.startsWith("justify-items")));
+    // …and a word this file does not know is dropped, like every other.
+    assert.equal(readStyle({ justifyItems: "sideways" })?.justifyItems, undefined);
+    assert.equal(readStyle({ justifyItems: "center" })?.justifyItems, "center");
+  });
+
+  test("Gaps is ONE control with a chain, and the chain IS the stored model", async () => {
+    const { containerLayoutDeclarations } = await import("../src/builder/style.ts");
+    assert.match(inspector, /const gapsLinked = widgetLayer\.rowGap === undefined;/);
+    assert.match(inspector, /data-box-gap-link=\{gapsLinked \? "on" : "off"\}/);
+    assert.match(inspector, /\{!gapsLinked && \(/);
+    // ABSENT: the second stand-alone slider with its own label and device row.
+    assert.ok(!inspector.includes('label="Row Gap"'), "Row Gap is a second control again");
+    // …and the stored meaning is unchanged, which is why no document moves:
+    // one gap linked, two when the chain is off.
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 16 }).includes("gap:16px"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 16, rowGap: 4 }).includes("gap:4px 16px"));
+    // The label row SCREEN LAW 10 and 11 pin is still written in that order.
+    assert.match(inspector, /<span style=\{L\}>Gaps<\/span>\s*<DeviceSegment device=\{p\.device\} onDevice=\{p\.onDevice\} \/>/);
+  });
+
+  test("Content Width offers TWO, and Narrow only where a document already says so", () => {
+    assert.match(inspector, /\{section\.width === "narrow" && <option value="narrow">Narrow<\/option>\}/);
+    assert.ok(!inspector.includes('<option value="narrow">Narrow</option>\n                      <'),
+      "Narrow is an unconditional choice again");
+    // PRESENT: the two the reference offers.
+    assert.match(inspector, /<option value="contained">Boxed<\/option>/);
+    assert.match(inspector, /<option value="full">Full Width<\/option>/);
+  });
+
+  test("Width carries the reference's units, and the unit reaches the page", async () => {
+    const { containerBoxDeclarations } = await import("../src/builder/style.ts");
+    assert.match(inspector, /units=\{widgetLayer\.contentWidth === "full" \? \["%"\] : \["px", "%", "em", "rem", "vw"\]\}/);
+    assert.match(inspector, /unit=\{widgetLayer\.contentWidth === "full" \? undefined : widgetLayer\.units\?\.width\}/);
+    assert.ok(containerBoxDeclarations({ width: 40, units: { width: "rem" } }).includes("max-width:40rem"));
+    // …and a document with no unit still means px, so nothing is migrated.
+    assert.ok(containerBoxDeclarations({ width: 960 }).includes("max-width:960px"));
+    // A full box is still a per cent of its parent.
+    assert.ok(containerBoxDeclarations({ contentWidth: "full", width: 80 }).includes("width:80%"));
+  });
+
+  test("a container's Style tab opens ONE band", () => {
+    const from = groups.indexOf("export function ContainerStyleGroups");
+    const to = groups.indexOf("function ShapeRows", from);
+    const body = groups.slice(from, to);
+    const opens = (body.match(/<Group title="[^"]+" defaultOpen/g) || []);
+    assert.deepEqual(opens, ['<Group title="Background" defaultOpen'],
+      "more than one band on the container's Style tab opens itself");
+  });
+});

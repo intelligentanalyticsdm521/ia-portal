@@ -52,7 +52,7 @@ import {
   AlignHorizontalDistributeCenter, AlignHorizontalSpaceAround, AlignHorizontalSpaceBetween,
   AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
   AlignVerticalSpaceAround, AlignVerticalSpaceBetween, ArrowDown, ArrowLeft, ArrowRight,
-  ArrowUp, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
+  ArrowUp, Link2, MoveHorizontal, Sparkles, StretchHorizontal, Unlink, WrapText,
 } from "lucide-react";
 import type { BuilderDocument, DocumentSettings, Node, Section, Selection, Widget } from "./model";
 import { carrierContainer, widgetAt } from "./model";
@@ -322,6 +322,12 @@ export function Inspector(p: InspectorProps) {
     if (!widget) return;
     p.onSetWidgetStyle(withLayer(widget.style, p.device, patch), `${widget.id}:${mergeKey}:${p.device}`);
   };
+  /* IS THE GAPS CHAIN ON? The stored model answers it: `rowGap` absent has
+     always meant "the same as the column gap", which is exactly what a
+     linked chain means — so there is nothing new to store and nothing to
+     migrate. See the Gaps control below. */
+  const gapsLinked = widgetLayer.rowGap === undefined;
+
   const patchSectionStyle = (patch: Partial<StyleLayer>, mergeKey: string) => {
     p.onSetSectionStyle(section.id, withLayer(section.style, p.device, patch), `${section.id}:${mergeKey}:${p.device}`);
   };
@@ -410,7 +416,8 @@ export function Inspector(p: InspectorProps) {
               <Group title="Container" defaultOpen
                 onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, [
                   "direction", "justify", "alignItems", "alignContent", "wrap", "columns",
-                  "rows", "autoFlow", "gap", "rowGap", "minHeight", "contentWidth", "width", "units",
+                  "rows", "autoFlow", "justifyItems", "gap", "rowGap", "minHeight",
+                  "contentWidth", "width", "units",
                 ]))}>
                 {/* THE BARE DEVICE ROW IS DELETED (D-172, round 2). The
                     Container section's FIRST row was three unlabelled device
@@ -452,12 +459,22 @@ export function Inspector(p: InspectorProps) {
                     the one that changes the page. */}
                 <div style={ROW}>
                   <span style={L}>Content Width</span>
+                  {/* TWO VALUES, AND A THIRD ONLY WHERE A DOCUMENT ALREADY
+                      HOLDS IT (2026-09-20, audit round 4 row 73). Driven:
+                      the reference's `content_width` offers `boxed` and
+                      `full` and nothing else. "Narrow" is ours, the renderer
+                      still understands it, and section templates on the
+                      estate are set to it — so it is not deleted from the
+                      MODEL, it is deleted from the CHOICE. A section already
+                      set to Narrow shows it (an author has to be able to see
+                      and change what their own document says); nothing else
+                      can be made Narrow from here again. */}
                   {carried ? (
                     <select style={INPUT} data-box-content-width value={section.width}
                       onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
                       <option value="contained">Boxed</option>
                       <option value="full">Full Width</option>
-                      <option value="narrow">Narrow</option>
+                      {section.width === "narrow" && <option value="narrow">Narrow</option>}
                     </select>
                   ) : (
                     <select style={INPUT} data-box-content-width value={widgetLayer.contentWidth ?? "boxed"}
@@ -475,6 +492,22 @@ export function Inspector(p: InspectorProps) {
                     `width` on the one control. One unit, so the switcher shows
                     the one it is in rather than offering a choice the emitter
                     would throw away. */}
+                {/* THE REFERENCE'S FIVE UNITS ON A BOXED BOX (2026-09-20,
+                    audit round 4 row 74). Driven: `boxed_width.size_units` is
+                    px / % / em / rem / vw / custom, and "custom" is a CSS
+                    expression the PDF and the mailbox cannot promise, which
+                    style.ts has refused since round 3.
+
+                    A FULL box still offers one. Its width is a per cent of
+                    its parent — `containerBoxDeclarations` writes `width:N%`
+                    and the three server mirrors read that pair — so one unit
+                    here is a STATEMENT, not a choice withheld. Said out loud
+                    in the handoff rather than shown as a switcher that would
+                    put `40em` on the panel and 40% on the page.
+
+                    On the website and the landing page `unitsOffered` cuts
+                    the five back to px, because those two emitters publish
+                    px — the rule is style.ts's, not this control's. */}
                 <Slider
                   label="Width"
                   head={<>
@@ -482,13 +515,15 @@ export function Inspector(p: InspectorProps) {
                     <DeviceSegment device={p.device} onDevice={p.onDevice} />
                   </>}
                   testAttr="data-box-width"
-                  units={widgetLayer.contentWidth === "full" ? ["%"] : ["px"]}
-                  unit={undefined}
+                  adapter={p.adapter}
+                  units={widgetLayer.contentWidth === "full" ? ["%"] : ["px", "%", "em", "rem", "vw"]}
+                  unit={widgetLayer.contentWidth === "full" ? undefined : widgetLayer.units?.width}
                   max={widgetLayer.contentWidth === "full" ? 100 : 1600}
                   value={widgetLayer.width}
                   placeholder={widgetLayer.contentWidth === "full" ? "100" : "as the page allows"}
                   onChange={(v) => patchWidgetStyle({ width: v }, "width")}
-                  onUnit={() => undefined}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), width: u } }, "width:unit")}
                 />
 
                 {/* MIN HEIGHT, ABOVE "Items" (D-172, round 3) — the
@@ -548,43 +583,72 @@ export function Inspector(p: InspectorProps) {
                     way a cell that was not placed is added. Only in a grid: a
                     `grid-auto-flow` on a flex box is a declaration the browser
                     throws away and the next reader has to wonder about. */}
+                {/* A GRID GETS THE GRID'S PANEL (2026-09-20, audit round 4
+                    rows 94–99). Driven out of the live control model on
+                    2026-09-20: every control under "Items" carries
+                    `condition: { container_type: ["grid"] }` or `["flex"]`,
+                    and the grid's are Grid Outline, Columns, Rows, Gaps,
+                    Auto Flow, Justify Items, Align Items — in that order,
+                    with NO Direction, NO Justify Content and NO Wrap. Ours
+                    showed the whole flexbox block, so a grid could not be
+                    given a Justify Items at all and could be given three
+                    settings the browser throws away.
+
+                    GRID OUTLINE IS NOT HERE, on purpose. In the reference it
+                    dashes the empty cells INSIDE THE EDITOR and prints
+                    nothing on the published page; our canvas draws the same
+                    HTML the page gets, so emitting it would put dashes on a
+                    customer's page and not emitting it would be a switch
+                    that does nothing. It needs the canvas, which this pass
+                    does not own. Left, and named in the handoff. */}
                 {widgetLayer.direction === "grid" && (
                   <>
-                    <div style={ROW}>
-                      <span style={L}>Columns</span>
-                      <input
-                        style={INPUT} type="number" min={1} max={12} data-box-columns
-                        value={widgetLayer.columns ?? 3}
-                        onChange={(e) => patchWidgetStyle(
-                          { columns: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }, "columns")}
-                      />
-                    </div>
-                    <div style={ROW}>
-                      <span style={L}>Rows</span>
-                      <input
-                        style={INPUT} type="number" min={1} max={12} data-box-rows
-                        value={widgetLayer.rows ?? ""} placeholder="as many as it needs"
-                        onChange={(e) => patchWidgetStyle({
-                          rows: e.target.value === ""
-                            ? undefined
-                            : Math.max(1, Math.min(12, Number(e.target.value) || 1)),
-                        }, "rows")}
-                      />
-                    </div>
-                    <div style={ROW}>
-                      <span style={L}>Auto Flow</span>
-                      <select style={INPUT} data-box-autoflow value={widgetLayer.autoFlow ?? "row"}
-                        onChange={(e) => patchWidgetStyle(
-                          { autoFlow: e.target.value === "column" ? "column" : undefined }, "autoFlow")}>
-                        <option value="row">Row</option>
-                        <option value="column">Column</option>
-                      </select>
-                    </div>
+                    <Slider
+                      label="Columns"
+                      head={<>
+                        <span style={L}>Columns</span>
+                        <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                      </>}
+                      testAttr="data-box-columns"
+                      /* `fr` is what a track is measured in, and the emitter
+                         writes `repeat(N, minmax(0,1fr))` — so the word on
+                         the panel is the word on the page. It is a STATEMENT:
+                         a second unit would need a track list, which is what
+                         the reference's own `custom` is and what its Justify
+                         Content waits on. */
+                      units={["fr"]}
+                      unit={undefined}
+                      max={12}
+                      value={widgetLayer.columns ?? 3}
+                      onChange={(v) => patchWidgetStyle(
+                        { columns: Math.max(1, Math.min(12, v ?? 1)) }, "columns")}
+                      onUnit={() => undefined}
+                    />
+                    <Slider
+                      label="Rows"
+                      head={<>
+                        <span style={L}>Rows</span>
+                        <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                      </>}
+                      testAttr="data-box-rows"
+                      units={["fr"]}
+                      unit={undefined}
+                      max={12}
+                      value={widgetLayer.rows}
+                      placeholder="as many as it needs"
+                      onChange={(v) => patchWidgetStyle(
+                        { rows: v === undefined ? undefined : Math.max(1, Math.min(12, v)) }, "rows")}
+                      onUnit={() => undefined}
+                    />
                   </>
                 )}
 
                 {/* JUSTIFY CONTENT — the reference's SIX, label ABOVE, which is
-                    the shape it gives this one (`elementor-label-block`). */}
+                    the shape it gives this one (`elementor-label-block`).
+                    FLEX ONLY: driven, its `flex_justify_content` is
+                    `condition: { container_type: ["flex"] }`, and a grid's
+                    own Justify Content waits on a custom track list. */}
+                {widgetLayer.direction !== "grid" && (
                 <div style={FIELD}>
                   <span style={L}>Justify Content</span>
                   <IconChoice
@@ -603,6 +667,29 @@ export function Inspector(p: InspectorProps) {
                     ]}
                   />
                 </div>
+                )}
+
+                {/* JUSTIFY ITEMS — the GRID's way of lining its children up
+                    across a track (audit row 98). Four, the same four Align
+                    Items has, which is what the reference offers. */}
+                {widgetLayer.direction === "grid" && (
+                  <div style={ROW}>
+                    <span style={L}>Justify Items</span>
+                    <IconChoice
+                      name="Justify Items"
+                      testAttr="data-box-justifyitems"
+                      value={(widgetLayer.justifyItems || "stretch") as ItemsSpec}
+                      onPick={(v) => patchWidgetStyle(
+                        { justifyItems: !v || v === "stretch" ? undefined : v }, "justifyItems")}
+                      options={[
+                        { v: "start" as ItemsSpec, title: "Start", icon: <AlignStartVertical size={13} /> },
+                        { v: "center" as ItemsSpec, title: "Center", icon: <AlignCenterVertical size={13} /> },
+                        { v: "end" as ItemsSpec, title: "End", icon: <AlignEndVertical size={13} /> },
+                        { v: "stretch" as ItemsSpec, title: "Stretch", icon: <StretchHorizontal size={13} /> },
+                      ]}
+                    />
+                  </div>
+                )}
 
                 <div style={ROW}>
                   <span style={L}>Align Items</span>
@@ -621,14 +708,45 @@ export function Inspector(p: InspectorProps) {
                   />
                 </div>
 
-                {/* GAPS — a slider with its own units, px / % / em / rem / vw,
-                    and the label above, which is the shape the reference gives
-                    it (`elementor-label-block`). */}
+                {/* GAPS IS ONE CONTROL WITH A CHAIN (2026-09-20, audit round
+                    4 row 82). Driven: the reference has a single `gaps`
+                    control — a column value and a row value under ONE label,
+                    linked — and ours drew two sliders, "Gaps" and "Row Gap",
+                    with nothing between them and no way to tell that leaving
+                    the second empty meant "the same".
+
+                    THE CHAIN IS THE STORED MODEL, not a new key. `rowGap`
+                    absent has always meant "the same as Gaps" —
+                    `containerLayoutDeclarations` reads `layer.rowGap ??
+                    layer.gap` — so linking CLEARS it and unlinking seeds it
+                    from the column value. No document is migrated and no
+                    second spelling is invented.
+
+                    The label row stays `<span style={L}>Gaps</span>` followed
+                    by the device switcher, where SCREEN LAW 10 and 11 pin it;
+                    the chain goes after them. */}
                 <Slider
                   label="Gaps"
                   head={<>
                     <span style={L}>Gaps</span>
                     <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                    <button
+                      type="button"
+                      data-box-gap-link={gapsLinked ? "on" : "off"}
+                      aria-pressed={gapsLinked}
+                      title={gapsLinked
+                        ? "Columns and rows use one gap. Click to set the row gap on its own."
+                        : "The row gap is set on its own. Click to use one gap for both."}
+                      onClick={() => patchWidgetStyle(
+                        { rowGap: gapsLinked ? (widgetLayer.gap ?? 0) : undefined }, "rowGap")}
+                      style={{
+                        border: "1px solid " + (gapsLinked ? "#0C4A60" : "#CBD5E1"),
+                        background: gapsLinked ? "#0C4A60" : "#fff",
+                        color: gapsLinked ? "#fff" : "#64748B",
+                        borderRadius: 4, padding: "1px 4px", cursor: "pointer",
+                        display: "inline-flex", alignItems: "center",
+                      }}
+                    >{gapsLinked ? <Link2 size={11} /> : <Unlink size={11} />}</button>
                   </>}
                   testAttr="data-box-gap"
                   adapter={p.adapter}
@@ -641,21 +759,19 @@ export function Inspector(p: InspectorProps) {
                     { units: { ...(widgetLayer.units || {}), gap: u } }, "gap:unit")}
                 />
 
-                {/* THE ROW HALF OF THE SAME CONTROL — the reference's Gaps is
-                    two numbers with a chain between them, and the chain IS the
-                    one stored key: `rowGap` absent means "the same as Gaps",
-                    which is what one gap key always meant, so no document is
-                    migrated. Leave this empty to link them again. One unit for
-                    the pair, because the emitter writes one. */}
+                {/* …AND THE ROW HALF, BEHIND THE CHAIN. The same one control:
+                    it is the SECOND number of the reference's Gaps, so it has
+                    no device switcher and no unit row of its own — one unit
+                    for the pair, because the emitter writes one. It is drawn
+                    only while the chain is off, which is exactly when the
+                    stored `rowGap` is saying something. */}
+                {!gapsLinked && (
                 <Slider
-                  label="Row Gap"
-                  head={<>
-                    <span style={L}>Row Gap</span>
-                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                  </>}
+                  label="Row"
+                  head={<span style={L}>Row</span>}
                   testAttr="data-box-rowgap"
                   adapter={p.adapter}
-                  units={["px", "%", "em", "rem", "vw"]}
+                  units={[]}
                   unit={widgetLayer.units?.gap}
                   value={widgetLayer.rowGap}
                   max={120}
@@ -664,9 +780,29 @@ export function Inspector(p: InspectorProps) {
                   onUnit={(u) => patchWidgetStyle(
                     { units: { ...(widgetLayer.units || {}), gap: u } }, "gap:unit")}
                 />
+                )}
+
+                {/* AUTO FLOW — which way a cell nobody placed is added. The
+                    reference puts it AFTER Gaps and before Justify Items,
+                    which is where it is now; it was up with Columns and Rows
+                    before anybody had driven the order. */}
+                {widgetLayer.direction === "grid" && (
+                  <div style={ROW}>
+                    <span style={L}>Auto Flow</span>
+                    <select style={INPUT} data-box-autoflow value={widgetLayer.autoFlow ?? "row"}
+                      onChange={(e) => patchWidgetStyle(
+                        { autoFlow: e.target.value === "column" ? "column" : undefined }, "autoFlow")}>
+                      <option value="row">Row</option>
+                      <option value="column">Column</option>
+                    </select>
+                  </div>
+                )}
 
                 {/* WRAP — the reference's two icon buttons, not a checkbox with
-                    a sentence for a label. */}
+                    a sentence for a label. FLEX ONLY: driven, `flex_wrap` is
+                    `condition: { container_type: ["flex"] }`, and a grid wraps
+                    by having tracks. */}
+                {widgetLayer.direction !== "grid" && (<>
                 <div style={ROW}>
                   <span style={L}>Wrap</span>
                   <IconChoice
@@ -708,6 +844,7 @@ export function Inspector(p: InspectorProps) {
                     />
                   </div>
                 )}
+                </>)}
 
               </Group>
             )}

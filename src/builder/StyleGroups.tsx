@@ -1198,7 +1198,12 @@ export function ContainerStyleGroups({
         )}
       </Group>
 
-      <Group title="Border" defaultOpen
+      {/* ONE BAND OPEN ON ARRIVAL (2026-09-20, audit round 4 row 19). Driven:
+          a Container's Style tab opened with Background AND Border laid out,
+          because two Groups asked for `defaultOpen` and the Accordion's "nobody
+          has pressed anything yet" state honours every one that asks. The
+          reference opens the FIRST section of a tab and only that one. */}
+      <Group title="Border"
         onReset={() => onReset(["border", "radius", "shadow"])}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <SelectField

@@ -124,6 +124,14 @@ export type SizeUnit = "px" | "%" | "em" | "rem" | "vh" | "vw";
 export interface UnitMap {
   minHeight?: SizeUnit;
   gap?: SizeUnit;
+  /**
+   * Layout ▸ Container ▸ Width (2026-09-20, audit row 74). The reference
+   * offers px / % / em / rem / vw on this control — driven off its own
+   * `boxed_width.size_units`. Absent means the unit the box already
+   * meant: px for a boxed box (a max-width) and % for a full one, so no
+   * stored document changes shape.
+   */
+  width?: SizeUnit;
 }
 
 /** Boxed keeps the contents inside the page width; full runs edge to edge. */
@@ -291,6 +299,16 @@ export interface StyleLayer {
   rows?: number;
   /** Grid only: Auto Flow. */
   autoFlow?: AutoFlowSpec;
+  /**
+   * Grid only: Layout ▸ Items ▸ Justify Items (2026-09-20, audit rows 98
+   * and 99). A grid lines its children up ACROSS the row with
+   * `justify-items`, not with `justify-content` — the reference's grid
+   * panel offers Justify Items and Align Items and NO Justify Content
+   * (its `grid_justify_content` waits on a custom track list, driven).
+   * `alignItems` is shared with the flex box, because `align-items` means
+   * the same thing in both.
+   */
+  justifyItems?: ItemsSpec;
   /** Layout ▸ Additional Options ▸ Overflow. */
   overflow?: OverflowSpec;
 
@@ -563,6 +581,7 @@ function readLayer(v: unknown): StyleLayer | undefined {
     const u: UnitMap = {};
     if (SIZE_UNITS.includes(o.units.minHeight)) u.minHeight = o.units.minHeight;
     if (SIZE_UNITS.includes(o.units.gap)) u.gap = o.units.gap;
+    if (SIZE_UNITS.includes(o.units.width)) u.width = o.units.width;
     if (Object.keys(u).length) L.units = u;
   }
   const columns = num(o.columns);
@@ -577,6 +596,7 @@ function readLayer(v: unknown): StyleLayer | undefined {
   const rows = num(o.rows);
   if (rows !== undefined && rows >= 1) L.rows = Math.min(12, Math.round(rows));
   const autoFlow = word(o.autoFlow, AUTO_FLOWS); if (autoFlow) L.autoFlow = autoFlow;
+  if (ITEMS.includes(o.justifyItems)) L.justifyItems = o.justifyItems;
   const overflow = word(o.overflow, OVERFLOWS); if (overflow) L.overflow = overflow;
   const background = readBackground(o.background); if (background) L.background = background;
   const overlay = readOverlay(o.overlay); if (overlay) L.overlay = overlay;
@@ -936,7 +956,7 @@ export function baseDirection(dir: DirectionSpec | undefined): "row" | "column" 
 export function containerLayoutDeclarations(layer: StyleLayer): string[] {
   const dir = layer.direction;
   const arranged = baseDirection(dir) !== "column" || dir === "column-reverse" || !!layer.justify
-    || !!layer.alignItems || !!layer.alignContent || !!layer.wrap
+    || !!layer.alignItems || !!layer.alignContent || !!layer.wrap || !!layer.justifyItems
     || layer.gap !== undefined || layer.rowGap !== undefined;
   if (!arranged) return [];
 
@@ -951,6 +971,10 @@ export function containerLayoutDeclarations(layer: StyleLayer): string[] {
       out.push(`grid-template-rows:repeat(${Math.max(1, Math.min(12, Math.round(layer.rows)))},minmax(0,auto))`);
     }
     if (layer.autoFlow) out.push(`grid-auto-flow:${layer.autoFlow}`);
+    /* ACROSS the track, which is what a grid's children line up along.
+       Written in the grid branch only: `justify-items` on a flex box is a
+       declaration the browser throws away. */
+    if (layer.justifyItems) out.push(`justify-items:${ITEMS_CSS[layer.justifyItems]}`);
   } else {
     /* REVERSED IS ONE OF THE FOUR VALUES, not a flag beside three of them: the
        stored direction IS the CSS word, which is why nothing has to be
@@ -1007,7 +1031,12 @@ export function containerBoxDeclarations(layer: StyleLayer): string[] {
     out.push(layer.width === undefined ? "width:100%" : `width:${round(Math.min(100, layer.width))}%`);
     out.push("max-width:none");
   } else if (layer.width !== undefined) {
-    out.push(`max-width:${round(layer.width)}px`);
+    /* THE UNIT THE AUTHOR PICKED (2026-09-20, audit row 74). Absent still
+       means px, which is what every stored boxed width already meant. A
+       FULL box stays a per cent of its parent and offers no choice — one
+       unit is a statement, and it is the one the three server mirrors
+       carry; see the handoff. */
+    out.push(`max-width:${sizeCss(layer.width, layer.units?.width)}`);
   }
   /* OVERFLOW IS WRITTEN HERE AND ONLY HERE (B-168 land, the b168/demo merge).
      Both branches wrote it, in two different functions that `styleBlockFor`
