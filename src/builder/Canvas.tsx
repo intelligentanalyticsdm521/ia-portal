@@ -45,6 +45,7 @@ import { WIDGETS_BY_KIND } from "./registry";
 import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
 import { readEditedText } from "./editedText";
+import { caretEntered, caretSettled, mayPaint, newCaretGuard } from "./caretGuard";
 import { AddBar, ADDBAR_CSS } from "./AddBar";
 import { AddSection, ADDSECTION_CSS, type SectionLayout, type StructurePreset } from "./AddSection";
 import {
@@ -470,6 +471,24 @@ function SectionHost({
   const wrapRef = useRef<HTMLDivElement | null>(null);
   /** Where the line is drawn right now. Null when nothing is over this section. */
   const [spot, setSpot] = useState<DropSpot | null>(null);
+  /**
+   * THE CARET IS IN THE WORDS — INCLUDING WHILE IT IS MOVING (R2-2, 2026-09-20).
+   *
+   * Four fields typed straight through a Price Table used to leave two of them
+   * behind, because the paint's guard was asked in the instant between
+   * `focusout` on one run and `focusin` on the next — when nothing is focused
+   * and the answer to "is the author typing" is wrong. The rule, and the whole
+   * write-up of what it was measured doing, is `caretGuard.ts`. This ref is
+   * the state it keeps; the effect below does what it says.
+   */
+  const caret = useRef(newCaretGuard());
+  const [caretSettledAt, setCaretSettledAt] = useState(0);
+  /** Is the caret in a run of words belonging to THIS section, right now? */
+  const caretInRun = useCallback(() => {
+    const host = hostRef.current;
+    const active = document.activeElement as HTMLElement | null;
+    return !!(host && active && host.contains(active) && active.closest("[data-bx-editable]"));
+  }, []);
   const html = (renderOne || renderSection)(section, ctx);
   /** True when this section holds a part the law puts there. See model.ts. */
   const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
@@ -514,11 +533,14 @@ function SectionHost({
   //
   // The rule protects the CARET, so it asks about the caret: an editable run,
   // not any descendant. A button is not somewhere text is being typed.
+  //
+  // `caretGuard.mayPaint` is the same question asked over the whole gesture
+  // rather than at one instant (R2-2). A paint it refuses is REMEMBERED,
+  // because the thing that was about to be drawn is still owed.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
-    const active = document.activeElement as HTMLElement | null;
-    if (active && host.contains(active) && active.closest("[data-bx-editable]")) return;
+    if (!mayPaint(caret.current, caretInRun())) return;
     host.innerHTML = html;
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-edit]"))) {
       el.contentEditable = "true";
@@ -650,7 +672,26 @@ function SectionHost({
       });
       box.appendChild(b);
     }
-  }, [html, selectedWidgetId, onAddAbove, onDragWidget, onDeleteWidget, onSelect, pathOf, section]);
+    // `caretSettledAt`: the paint owed from a gesture that has now finished.
+  }, [html, selectedWidgetId, onAddAbove, onDragWidget, onDeleteWidget, onSelect, pathOf, section, caretSettledAt, caretInRun]);
+
+  /**
+   * THE CARET HAS FINISHED MOVING — ask again (R2-2).
+   *
+   * Scheduled from the host's own blur, and deliberately a task later:
+   * `focusout` on the old run and `focusin` on the new one are dispatched back
+   * to back inside the mousedown's default action, so anything that reads
+   * `document.activeElement` in between reads the BODY and calls a hand-over a
+   * departure. A timeout of 0 is the first moment both have been delivered.
+   *
+   * `setTimeout` and not `requestAnimationFrame`: rAF does not run in a hidden
+   * tab, and a builder left on a background tab would keep a stale page.
+   */
+  const settleEditing = useCallback(() => {
+    window.setTimeout(() => {
+      if (caretSettled(caret.current, caretInRun())) setCaretSettledAt((n) => n + 1);
+    }, 0);
+  }, [caretInRun]);
 
   /**
    * THE SELECTION MARKS, WITHOUT A REPAINT.
@@ -955,6 +996,12 @@ function SectionHost({
         ref={hostRef}
         className="bx-doc"
         style={{ ["--bx-accent" as any]: ctx.accent, ["--bx-head" as any]: ctx.headingFont, ["--bx-body" as any]: ctx.bodyFont }}
+        /* A RUN HAS THE CARET (R2-2). Raised here and lowered only by
+           `settleEditing`, so the hand-over from one run to the next is one
+           gesture and not a departure followed by an arrival. */
+        onFocus={(e) => {
+          if ((e.target as HTMLElement).closest("[data-bx-editable]")) caretEntered(caret.current);
+        }}
         onInput={(e) => {
           const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]");
           if (!el) return;
@@ -963,6 +1010,7 @@ function SectionHost({
         onBlur={(e) => {
           const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]");
           if (el) commit(el);
+          settleEditing();
         }}
       />
 
