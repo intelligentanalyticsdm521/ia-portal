@@ -40,6 +40,21 @@ import {
   rotatingPhrases, textPathD, tocEntries, blockquotePlain,
 } from "../src/builder/widgets/families/f1-words/index.ts";
 import { assertFamilyContract } from "./helpers/familyContract.mjs";
+import { mailboxFontStack } from "../src/builder/widgets/families/f1-words/words.ts";
+/* The MAILBOX, drawn by the adapter that really sends it — imported so the
+   family's own font stack can be held equal to the adapter's by execution
+   rather than by a promise in a comment. */
+import { makeEmailContext, renderEmailSection } from "../src/builder/adapters/email/emailRender.ts";
+import { emptyDocument as freshDoc, makeSection, makeWidget } from "../src/builder/model.ts";
+
+/** One section holding one widget, drawn the way a mailbox really draws it. */
+function emailSection(kind, props) {
+  const doc = freshDoc();
+  const section = makeSection();
+  section.columns[0].widgets.push(makeWidget(kind, props));
+  doc.sections = [section];
+  return renderEmailSection(doc.sections[0], makeEmailContext(doc, { bodyFont: "Helvetica" }));
+}
 
 /* TWELVE since wave 2. The five the first wave could not declare - heading,
    paragraph, html, shortcode, menu_anchor - are here now: `mergeWidgetDefs`
@@ -642,4 +657,29 @@ test("a document saved before this pass still draws, for all five kinds", () => 
   assert.equal(draw("html", { html: "<i>old</i>" }), "<i>old</i>");
   assert.equal(draw("shortcode", { shortcode: "[old]" }), "[old]");
   assert.match(draw("menu_anchor", { anchor: "old" }, "edit"), /#old/);
+});
+
+test("a Shortcode draws NOTHING on a hosted landing page", () => {
+  /* Without a landing renderer the page one answers instead, and in view mode
+     that is the code ITSELF — `[ia_book_now]` in front of a visitor as literal
+     text. A page LUMEN serves has no page engine to run a shortcode, so there
+     is nothing it could become. LUMEN's `landingFamilies/f1-words.js` says the
+     same thing on the server, and the tile stays on the panel because a landing
+     page can also be published to WordPress, where it does run. */
+  const fn = FAMILY.landingRenderers.shortcode;
+  assert.ok(fn, "the hosted page falls back to the page renderer without this");
+  assert.equal(fn({ id: "w1", kind: "shortcode", props: { shortcode: "[ia_book_now]" } }, { mode: "view" }), "");
+  // …and the page renderer is still the one that puts it on a published page.
+  assert.equal(draw("shortcode", { shortcode: "[ia_book_now]" }), "[ia_book_now]");
+});
+
+test("the Portal's mailbox font stack is the one LUMEN sends with", () => {
+  /* Two copies of one rule, held equal by EXECUTING both ends: the string this
+     family puts on a Blockquote is the string the adapter puts on an ordinary
+     paragraph in the same email. The day somebody changes the fallbacks in one
+     place, this names it instead of a client finding a quote set in Times. */
+  const paragraph = emailSection("paragraph", { text: "Ordinary words." });
+  const mine = mailboxFontStack("Helvetica");
+  assert.ok(paragraph.includes(`font-family:${mine};`),
+    `the adapter writes a different stack from the family's "${mine}"`);
 });

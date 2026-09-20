@@ -277,3 +277,29 @@ export function linked(inner: string, v: unknown): string {
   const target = linkExternal(v) ? ` target="_blank" rel="noopener"` : "";
   return `<a href="${esc(url)}" style="color:inherit"${target}>${inner}</a>`;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The mailbox's font stack
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The fallbacks every mail client on earth has. `emailRender.ts`'s own. */
+const MAILBOX_FALLBACK = "Helvetica, Arial, sans-serif";
+
+/**
+ * THE CHOSEN FACE, THEN THE ONES EVERY CLIENT HAS, never the same name twice.
+ *
+ * `adapters/email/emailRender.ts` has this rule as `stack()` and does not
+ * export it, and a family folder must not import an adapter — that is the
+ * contract in `families/types.ts`, and the reason is the import ring. So the
+ * rule is written once HERE for the family's mailbox renderers, and
+ * `test/families-f1-words.test.mjs` pins the two EQUAL by reading the string
+ * the adapter itself puts on a paragraph: the day somebody changes the
+ * fallbacks in one place, that test names it rather than a client finding a
+ * Blockquote set in Times.
+ */
+export function mailboxFontStack(face: unknown): string {
+  const first = str(face).trim();
+  const rest = MAILBOX_FALLBACK.split(",").map((f) => f.trim())
+    .filter((f) => f.toLowerCase() !== first.toLowerCase());
+  return [first, ...rest].filter(Boolean).join(", ");
+}

@@ -39,12 +39,14 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
-import { paras, type RenderContext } from "../../../render";
+import { fill } from "../../../merge";
+import { inlineSafe } from "../../../inlineSafe";
+import { boldRuns, paras, type RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
-import type { FamilyWidgetDef } from "../types";
+import type { EmailRenderContext, FamilyWidgetDef } from "../types";
 import {
   ALIGNMENTS, DECORATIONS, DROP_CAP_VIEWS, FONT_STYLES, TEXT_COLUMNS, TRANSFORMS,
-  alignCss, deviceCss, effectsCss, num, ownClass, perDevice, shadowCss, str,
+  alignCss, deviceCss, effectsCss, mailboxFontStack, num, ownClass, perDevice, shadowCss, str,
 } from "./words";
 
 /** The words, whichever key they were stored under. */
@@ -199,3 +201,63 @@ export const TEXT_EDITOR_DEF: FamilyWidgetDef = {
     { key: "drop_cap_typography_font_style", label: "Style", type: "select", tab: "style", section: "Drop Cap", options: FONT_STYLES },
   ],
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE MAILBOX HALF
+   ══════════════════════════════════════════════════════════════════════════
+
+   Same reason as Heading's. The offer file gives Text Editor to the newsletter,
+   wave 2 gave it a Style tab, and driving it showed the adapter's own `paras`
+   drawing the canvas — so Alignment, Text Color, Columns and the rest were on
+   the panel of a newsletter and changed nothing. With none of the new keys set
+   this produces the SAME BYTES `paras` did, which is what keeps every golden
+   case unchanged.
+
+   The DROP CAP does not reach a mailbox and that is not an oversight: it is a
+   `::first-letter` rule in a stylesheet, and an email has no stylesheet —
+   Gmail strips one and Outlook never had one. The columns are the same story.
+   Both stay on the panel because the same widget is offered on a page, where
+   they work; what a mailbox cannot do, it does not pretend to do. */
+
+/** Merge-fill, escape, then the six inline tags a mailbox accepts. */
+function emailInline(value: unknown, ctx: EmailRenderContext): string {
+  return inlineSafe(esc(fill(str(value), (ctx as any).merge || {}, str(ctx.mode) as any)));
+}
+
+/** Elementor's alignment words and ours, as a mailbox spells them. */
+function emailAlign(v: unknown, dflt = "left"): string {
+  const s = str(v).toLowerCase();
+  if (s.startsWith("cent")) return "center";
+  if (s === "right" || s === "end") return "right";
+  if (s === "left" || s === "start") return "left";
+  if (s === "justify") return "justify";
+  return dflt;
+}
+
+export function emailTextEditor(w: Widget, ctx: EmailRenderContext): string {
+  const p: any = w.props || {};
+  const face = mailboxFontStack(ctx.bodyFont);
+  const colour = str(p.text_color) || str(ctx.ink) || "#111827";
+  const extra = [...effectsCss(p), ...shadowCss(p)];
+  const spacing = num(p.paragraph_spacing);
+  const base = `font-family:${face};font-size:15px;line-height:1.6;color:${colour};`
+    + `text-align:${emailAlign(p.align)};${extra.length ? `${extra.join(";")};` : ""}`;
+
+  const filled = fill(editorText(p), (ctx as any).merge || {}, str(ctx.mode) as any);
+  if (!filled.trim()) {
+    return ctx.mode === "edit"
+      ? `<div style="${base}"${ctx.mode === "edit" ? ` data-edit="text" data-placeholder="Type here…"` : ""}></div>`
+      : "";
+  }
+  const blocks = filled.split(/\n{2,}/)
+    .map((b) => boldRuns(inlineSafe(esc(b.trim()))).replace(/\n/g, "<br />"));
+  const margin = `margin:0 0 ${spacing == null ? 12 : spacing}px 0;`;
+  if (ctx.mode === "edit") {
+    return `<div style="${base}${str(ctx.typeCss)}" data-edit="text">`
+      + blocks.map((b) => `<p style="${margin}">${b}</p>`).join("")
+      + `</div>`;
+  }
+  return blocks.map((b) => `<p style="${base}${margin}${str(ctx.typeCss)}">${b}</p>`).join("");
+}
+
+void emailInline;

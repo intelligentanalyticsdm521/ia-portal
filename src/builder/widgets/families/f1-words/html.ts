@@ -79,13 +79,13 @@ export function emailHtml(w: Widget, ctx: EmailRenderContext): string {
   const code = htmlOf(w.props);
   if (!code.trim()) {
     return editing
-      ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`
-        + `<td style="padding:8px 0;font-size:12px;color:#64748B">`
+      ? `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"`
+        + ` style="margin:0 0 16px 0;"><tr><td style="padding:0;font-size:12px;color:#64748B;">`
         + `Paste your own HTML — it goes in the email exactly as you type it.</td></tr></table>`
       : "";
   }
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`
-    + `<td style="padding:0">${code}</td></tr></table>`;
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"`
+    + ` style="margin:0 0 16px 0;"><tr><td style="padding:0;">${code}</td></tr></table>`;
 }
 
 export const HTML_DEF: FamilyWidgetDef = {

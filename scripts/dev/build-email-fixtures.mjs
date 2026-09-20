@@ -227,6 +227,38 @@ const emailCases = [
   widgetCase("the author's own HTML, in a cell", "html", {
     html: '<p style="margin:0">A block the author pasted.</p>',
   }),
+
+  /* THE STYLE TAB, IN A REAL INBOX. Heading and Text Editor gained one in
+     wave 2 and the mailbox drew neither, so every control on it changed the
+     preview and not the email. These two cases carry the new keys, so the
+     Portal's canvas and LUMEN-API's send are held to the same bytes for them
+     rather than only for an untouched widget. */
+  widgetCase("heading with Elementor's Style tab set", "heading", {
+    text: "Before the first snow",
+    header_size: "h1",
+    size: "xxl",
+    title_color: "#B45309",
+    typography_text_transform: "uppercase",
+    typography_font_style: "italic",
+    typography_word_spacing: 3,
+    text_shadow_text_shadow_blur: 6,
+    text_shadow_text_shadow_color: "#0F172A",
+    blend_mode: "multiply",
+    align: "center",
+  }),
+  widgetCase("text editor with Elementor's Style tab set", "paragraph", {
+    text: "We cleared forty lots this week.\n\nSalt is in and the crews are booked.",
+    align: "center",
+    text_color: "#0B1C24",
+    paragraph_spacing: 20,
+    typography_text_transform: "capitalize",
+    /* The DROP CAP is set here on purpose and must NOT appear in the mailbox
+       bytes: it is a ::first-letter rule in a stylesheet, and an email has no
+       stylesheet. The golden is what says so. */
+    drop_cap: "yes",
+    drop_cap_view: "framed",
+    text_columns: "2",
+  }),
 ];
 
 /** Two columns, which is the one thing a widget case cannot show. */

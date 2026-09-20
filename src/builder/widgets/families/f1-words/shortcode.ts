@@ -42,6 +42,23 @@ export function renderShortcode(w: Widget, ctx: RenderContext): string {
     : code;
 }
 
+/**
+ * A HOSTED LANDING PAGE DRAWS NOTHING, and that is the honest answer.
+ *
+ * A shortcode is a WordPress page-engine thing. A landing page LUMEN serves has
+ * no page engine to run one, so there is nothing it could become — and without
+ * this row the page renderer answers instead and puts `[ia_book_now]` in front
+ * of a visitor as literal text, which is worse than an empty space.
+ *
+ * The tile stays on the landing panel, because the offer file offers it and a
+ * landing page can also be published to WordPress, where it runs. This is the
+ * hosted copy, kept clean. LUMEN's `landingFamilies/f1-words.js` says the same
+ * thing on the server.
+ */
+export function landingShortcode(): string {
+  return "";
+}
+
 export const SHORTCODE_DEF: FamilyWidgetDef = {
   kind: "shortcode",
   label: "Shortcode",

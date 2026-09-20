@@ -1977,7 +1977,7 @@
           }
         ]
       },
-      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"border-left:3px solid #0C4A60;padding:2px 0 2px 16px;text-align:left\"><div style=\"font-size:16px;line-height:1.6;font-style:italic;color:#111827\">They cleared the lot before we opened.</div><div style=\"margin-top:8px;font-size:13px;color:#64748B\">Dana Reyes</div></td></tr></table></td></tr></table></td></tr></table>",
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:4px 0 4px 16px;border-left:3px solid #0C4A60;text-align:left;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#111827;font-style:italic;\">They cleared the lot before we opened.</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;margin-top:6px;\">Dana Reyes</div></td></tr></table></td></tr></table></td></tr></table>",
       "text": "They cleared the lot before we opened.\nDana Reyes\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
@@ -2025,7 +2025,7 @@
           }
         ]
       },
-      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"background:#EFF6FF;padding:16px;text-align:center\"><div style=\"font-size:16px;line-height:1.6;font-style:italic;color:#0B1C24\">Best winter we have had.</div><div style=\"margin-top:8px;font-size:13px;color:#64748B\">Site manager</div></td></tr></table></td></tr></table></td></tr></table>",
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:14px 16px;background:#EFF6FF;text-align:center;\"><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#0B1C24;font-style:italic;\">Best winter we have had.</div><div style=\"font-family:Helvetica, Arial, sans-serif;font-size:12px;color:#6B7280;margin-top:6px;\">Site manager</div></td></tr></table></td></tr></table></td></tr></table>",
       "text": "Best winter we have had.\nSite manager\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
@@ -2068,8 +2068,111 @@
           }
         ]
       },
-      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" border=\"0\"><tr><td style=\"padding:0\"><p style=\"margin:0\">A block the author pasted.</p></td></tr></table></td></tr></table></td></tr></table>",
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"margin:0 0 16px 0;\"><tr><td style=\"padding:0;\"><p style=\"margin:0\">A block the author pasted.</p></td></tr></table></td></tr></table></td></tr></table>",
       "text": "A block the author pasted.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "heading with Elementor's Style tab set",
+      "kind": "heading",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "heading",
+                    "props": {
+                      "text": "Before the first snow",
+                      "header_size": "h1",
+                      "size": "xxl",
+                      "title_color": "#B45309",
+                      "typography_text_transform": "uppercase",
+                      "typography_font_style": "italic",
+                      "typography_word_spacing": 3,
+                      "text_shadow_text_shadow_blur": 6,
+                      "text_shadow_text_shadow_color": "#0F172A",
+                      "blend_mode": "multiply",
+                      "align": "center"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><h1 style=\"margin:0 0 12px 0;font-family:Georgia, Helvetica, Arial, sans-serif;font-size:59px;line-height:1.25;font-weight:700;color:#B45309;text-align:center;text-transform:uppercase;font-style:italic;word-spacing:3px;text-shadow:0px 0px 6px #0F172A;mix-blend-mode:multiply;\">Before the first snow</h1></td></tr></table></td></tr></table>",
+      "text": "BEFORE THE FIRST SNOW\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
+    },
+    {
+      "name": "text editor with Elementor's Style tab set",
+      "kind": "paragraph",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "w1",
+                    "kind": "paragraph",
+                    "props": {
+                      "text": "We cleared forty lots this week.\n\nSalt is in and the crews are booked.",
+                      "align": "center",
+                      "text_color": "#0B1C24",
+                      "paragraph_spacing": 20,
+                      "typography_text_transform": "capitalize",
+                      "drop_cap": "yes",
+                      "drop_cap_view": "framed",
+                      "text_columns": "2"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"\"><tr><td align=\"center\" style=\"padding:16px 24px;\"><table role=\"presentation\" width=\"100%\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" style=\"max-width:552px;\"><tr><td valign=\"top\" style=\"width:100%;\"><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#0B1C24;text-align:center;text-transform:capitalize;margin:0 0 20px 0;\">We cleared forty lots this week.</p><p style=\"font-family:Helvetica, Arial, sans-serif;font-size:15px;line-height:1.6;color:#0B1C24;text-align:center;text-transform:capitalize;margin:0 0 20px 0;\">Salt is in and the crews are booked.</p></td></tr></table></td></tr></table>",
+      "text": "We cleared forty lots this week.\n\nSalt is in and the crews are booked.\n\n—————————————\nRolling In It · 1200 Prairie Ave, Marshalltown, IA 50158\nUnsubscribe: https://customer.example.test/unsubscribe/TOKEN"
     },
     {
       "name": "two columns side by side",

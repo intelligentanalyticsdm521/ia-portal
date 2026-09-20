@@ -42,14 +42,14 @@ import type { Family } from "../types";
 import { ANIMATED_HEADLINE_DEF, renderAnimatedHeadline } from "./animatedHeadline";
 import { BLOCKQUOTE_DEF, emailBlockquote, renderBlockquote, studioBlockquote } from "./blockquote";
 import { CODE_HIGHLIGHT_DEF, renderCodeHighlight } from "./codeHighlight";
-import { HEADING_DEF, renderHeading } from "./heading";
+import { HEADING_DEF, emailHeading, renderHeading } from "./heading";
 import { HTML_DEF, emailHtml, renderHtml } from "./html";
 import { MENU_ANCHOR_DEF, renderMenuAnchor } from "./menuAnchor";
 import { READ_MORE_DEF, renderReadMore } from "./readMore";
-import { SHORTCODE_DEF, renderShortcode } from "./shortcode";
+import { SHORTCODE_DEF, landingShortcode, renderShortcode } from "./shortcode";
 import { SIDEBAR_DEF, renderSidebar } from "./sidebar";
 import { TABLE_OF_CONTENTS_DEF, renderTableOfContents } from "./tableOfContents";
-import { TEXT_EDITOR_DEF, renderTextEditor } from "./textEditor";
+import { TEXT_EDITOR_DEF, emailTextEditor, renderTextEditor } from "./textEditor";
 import { TEXT_PATH_DEF, renderTextPath } from "./textPath";
 
 /**
@@ -99,8 +99,20 @@ export const FAMILY: Family = {
    * already has.
    */
   emailRenderers: {
+    [HEADING_DEF.kind]: emailHeading,
+    [TEXT_EDITOR_DEF.kind]: emailTextEditor,
     [BLOCKQUOTE_DEF.kind]: emailBlockquote,
     [HTML_DEF.kind]: emailHtml,
+  },
+  /**
+   * THE HOSTED LANDING PAGE. Only where it differs from the page renderer the
+   * landing adapter already falls back to — which is Shortcode, and only
+   * Shortcode: nothing on a page LUMEN serves can run one, so the page
+   * renderer's view-mode answer (the code itself, as literal text in front of
+   * a visitor) is the wrong one there.
+   */
+  landingRenderers: {
+    [SHORTCODE_DEF.kind]: landingShortcode,
   },
   /** My Brand places LAYERS. Same reasoning: only the one the studio lacks. */
   studioInserts: {
@@ -121,6 +133,6 @@ export { textPathD } from "./textPath";
 export { headingTag, headingText } from "./heading";
 export { dropCapCss, editorText, isOn } from "./textEditor";
 export { htmlBody, htmlOf } from "./html";
-export { shortcodeOf } from "./shortcode";
+export { landingShortcode, shortcodeOf } from "./shortcode";
 export { anchorId } from "./menuAnchor";
 export * from "./words";

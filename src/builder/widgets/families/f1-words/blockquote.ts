@@ -38,6 +38,8 @@ import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import { editRun } from "../../text";
+import { fill } from "../../../merge";
+import { mailboxFontStack } from "./words";
 import type {
   EmailRenderContext, FamilyWidgetDef, StudioBrandLite, StudioCanvasDoc,
   StudioInsertOptions, StudioInsertResult,
@@ -182,35 +184,61 @@ export const BLOCKQUOTE_DEF: FamilyWidgetDef = {
    LUMEN already SENDS this widget correctly — `emailFamilies/f1-words.js`, both
    halves — so only the Portal's own preview was blank. These two close it. */
 
-/** A mailbox cannot do flex, grid, absolute or a class. A table and a cell can. */
+/**
+ * A MAILBOX CANNOT DO FLEX, GRID, ABSOLUTE OR A CLASS. A table and a cell can.
+ *
+ * ── BYTE-IDENTICAL TO LUMEN'S ─────────────────────────────────────────────
+ * `LUMEN-API/src/lib/emailFamilies/f1-words.js` draws the same widget for the
+ * email that is actually SENT; this one draws the canvas the author is looking
+ * at while they write it. Two renderers for one widget is the drift the golden
+ * fixture exists to stop, so this produces the same bytes, and
+ * `test/fixtures/email-render-cases.json` — the fixture both repos read — is
+ * what proves it rather than a promise in a comment.
+ *
+ * The words are merge-filled and then ESCAPED, and nothing is let back in:
+ * Elementor's `blockquote_content` is a TEXTAREA, so a `<b>` an author typed
+ * is the author's literal text and showing it as bold in the mailbox while the
+ * canvas shows the angle brackets is two surfaces disagreeing about one quote.
+ */
 export function emailBlockquote(w: Widget, ctx: EmailRenderContext): string {
   const p: any = w.props || {};
   const f = blockquoteFields(p);
-  if (!f.content.trim() && !f.author.trim() && ctx.mode !== "edit") return "";
+  const mode = str(ctx.mode) || "view";
+  if (!f.content.trim() && !f.author.trim() && mode !== "edit") return "";
   const skin = blockquoteSkin(p.blockquote_skin);
-  const ink = str(p.content_text_color) || str(ctx.ink) || "#0B1C24";
-  const authorInk = str(p.author_text_color) || "#64748B";
-  const rule = str(p.border_color) || str(ctx.accent) || "#0C4A60";
-  const ruleWidth = Number(p.border_width) > 0 ? Number(p.border_width) : 3;
+  const face = mailboxFontStack(ctx.bodyFont);
+  const accent = str(ctx.accent) || "#0F172A";
+  const ink = str(ctx.ink) || "#111827";
+  const rule = str(p.border_color) || accent;
   const panel = str(p.box_background_color) || "#F8FAFC";
-  const pad = Number(p.box_padding) >= 0 && p.box_padding !== "" && p.box_padding != null
-    ? Number(p.box_padding) : 16;
+  const quoteInk = str(p.quote_text_color) || rule;
+  const contentInk = str(p.content_text_color) || ink;
+  const authorInk = str(p.author_text_color) || "#6B7280";
   const align = str(p.alignment) || "left";
 
-  const cell = skin === "border"
-    ? `border-left:${ruleWidth}px solid ${esc(rule)};padding:2px 0 2px ${pad}px;`
-    : skin === "boxed" ? `background:${esc(panel)};padding:${pad}px;` : `padding:0;`;
-  const mark = skin === "quotation"
-    ? `<div style="font-family:Georgia,serif;font-size:${
-      Number(p.quote_size) > 0 ? Number(p.quote_size) : 36}px;line-height:1;color:${
-      esc(str(p.quote_text_color) || rule)}">&ldquo;</div>` : "";
-  const author = f.author.trim()
-    ? `<div style="margin-top:8px;font-size:13px;color:${esc(authorInk)}">${esc(f.author)}</div>` : "";
+  const cell =
+    skin === "border" ? `padding:4px 0 4px 16px;border-left:3px solid ${rule};`
+    : skin === "boxed" ? `padding:14px 16px;background:${panel};`
+    : `padding:0;`;
 
-  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>`
-    + `<td style="${cell}text-align:${esc(align)}">${mark}`
-    + `<div style="font-size:16px;line-height:1.6;font-style:italic;color:${esc(ink)}">${esc(f.content)}</div>`
-    + `${author}</td></tr></table>`;
+  const mark = skin === "quotation"
+    ? `<div style="font-family:Georgia,'Times New Roman',serif;font-size:34px;line-height:1;`
+      + `color:${quoteInk};">&ldquo;</div>`
+    : "";
+
+  const merge = (ctx as any).merge || {};
+  const words = esc(fill(f.content, merge, mode as any));
+  const who = esc(fill(f.author, merge, mode as any));
+
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"`
+    + ` style="margin:0 0 16px 0;"><tr><td style="${cell}text-align:${align};">`
+    + mark
+    + `<div style="font-family:${face};font-size:15px;line-height:1.6;color:${contentInk};`
+    + `font-style:italic;${str(ctx.typeCss)}">${words}</div>`
+    + (who
+      ? `<div style="font-family:${face};font-size:12px;color:${authorInk};margin-top:6px;">${who}</div>`
+      : "")
+    + `</td></tr></table>`;
 }
 
 /**

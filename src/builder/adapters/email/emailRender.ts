@@ -292,14 +292,14 @@ const bodyStack = (c: EmailRenderContext) => stack(c.bodyFont);
  * runs and stays that way. This is STRICTER than what the platform does
  * today, where a campaign's content_html is stored and mailed verbatim.
  */
-export function inlineSafe(escaped: string): string {
-  return String(escaped)
-    .replace(/&lt;(\/?)(strong|b|em|i)&gt;/gi, (_m, slash, tag) => `<${slash}${tag.toLowerCase()}>`)
-    .replace(/&lt;br\s*\/?&gt;/gi, "<br />")
-    .replace(/&lt;a href=&quot;((?:https?:\/\/|mailto:)[^"&<>\s]*)&quot;&gt;/gi,
-      (_m, href) => `<a href="${href}" style="color:inherit;text-decoration:underline;">`)
-    .replace(/&lt;\/a&gt;/gi, "</a>");
-}
+/* MOVED to `builder/inlineSafe.ts` (D-168 wave 2), a module that imports
+   nothing, and re-exported here so no existing caller changes. A FAMILY
+   folder needs it for its own mailbox renderer and must not import an
+   adapter; a second allowlist inside the family would be two answers to
+   "what mark-up may an author write", and one of them would quietly keep a
+   script. Same move, and the same reason, as `esc` in b168/override. */
+export { inlineSafe } from "../../inlineSafe";
+import { inlineSafe } from "../../inlineSafe";
 
 /** Merge-fill, escape, then re-permit the six inline tags. */
 function t(text: unknown, c: EmailRenderContext): string {

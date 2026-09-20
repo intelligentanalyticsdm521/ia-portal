@@ -39,14 +39,16 @@
  */
 import type { Widget } from "../../../model";
 import { esc } from "../../../esc";
+import { fill } from "../../../merge";
+import { inlineSafe } from "../../../inlineSafe";
 import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import { fillText } from "../../text";
-import type { FamilyWidgetDef } from "../types";
+import type { EmailRenderContext, FamilyWidgetDef } from "../types";
 import {
   ALIGNMENTS, BLEND_MODES, DECORATIONS, FONT_STYLES, HEADING_SIZES, HTML_TAGS, TRANSFORMS,
-  alignCss, blendCss, deviceCss, effectsCss, headingSizeCss, linked, num, ownClass, perDevice,
-  shadowCss, str, strokeCss,
+  alignCss, blendCss, deviceCss, effectsCss, headingSizeCss, linked, mailboxFontStack, num,
+  ownClass, perDevice, shadowCss, str, strokeCss,
 } from "./words";
 
 /** Elementor's nine tags, and the one a heading is when a document says junk. */
@@ -170,3 +172,86 @@ export const HEADING_DEF: FamilyWidgetDef = {
       help: "Seconds. How long the colour takes to change." },
   ],
 };
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE MAILBOX HALF
+   ══════════════════════════════════════════════════════════════════════════
+
+   Wave 2 gave Heading a Style tab, and the offer file gives Heading to the
+   NEWSLETTER. Driving it on 2026-09-19 showed what that meant: the mailbox
+   adapter's own `emHeading` drew the canvas, so Transform, Blend Mode, Size and
+   the rest were on the panel of a newsletter and changed nothing at all. A
+   control that changes nothing is a defect, not a feature — so the family owns
+   this widget in a mailbox too.
+
+   ── IT IS THE ADAPTER'S OWN OUTPUT, EXTENDED, NOT A NEW ONE ──────────────
+   With none of the new keys set it produces the SAME BYTES `emHeading` did, so
+   every golden case in `test/fixtures/email-render-cases.json` — the fixture
+   the Portal and LUMEN-API both read — is unchanged, and that is what proves
+   it rather than a promise in a comment. The declarations Elementor adds go on
+   the END of the style attribute, where they win, and only when set.
+
+   A mailbox has no `::first-letter` worth trusting, no container queries and no
+   stylesheet at all, so the per-device values and the drop cap do not reach it.
+   `styleBlockFor` has said the same about device overrides since §11.8, and the
+   inspector already says so beside the controls it is true of. */
+
+/** The chosen face, then the ones every client has. `words.ts` owns the rule. */
+function emailStack(face: unknown): string {
+  return mailboxFontStack(face);
+}
+
+/** A colour a mailbox will accept, or the fallback. The adapter's own test. */
+function emailColour(v: unknown, fallback: string): string {
+  const s = str(v).trim();
+  return /^#[0-9a-fA-F]{3,8}$|^rgb|^hsl/.test(s) ? s : fallback;
+}
+
+/** Elementor's alignment words and ours, as a mailbox spells them. */
+function emailAlign(v: unknown, dflt = "left"): string {
+  const s = str(v).toLowerCase();
+  if (s.startsWith("cent")) return "center";
+  if (s === "right" || s === "end") return "right";
+  if (s === "left" || s === "start") return "left";
+  if (s === "justify") return "justify";
+  return dflt;
+}
+
+/** `data-edit`, only while editing — a sent email carries no markers. */
+function emailEdit(path: string, ctx: EmailRenderContext, placeholder?: string): string {
+  if (ctx.mode !== "edit") return "";
+  return ` data-edit="${esc(path)}"${placeholder ? ` data-placeholder="${esc(placeholder)}"` : ""}`;
+}
+
+/** Merge-fill, escape, then the six inline tags a mailbox accepts. In that order. */
+function emailText(value: unknown, ctx: EmailRenderContext): string {
+  return inlineSafe(esc(fill(str(value), (ctx as any).merge || {}, str(ctx.mode) as any)));
+}
+
+export function emailHeading(w: Widget, ctx: EmailRenderContext): string {
+  const p: any = w.props || {};
+  /* The adapter's own three sizes, from the stored `level`. Elementor's `size`
+     preset overrides it when the author picked one, which is the whole reason
+     that control is on the panel. */
+  const level = p.level === "Page title" || p.level === 1 ? 1 : p.level === "Sub-section" || p.level === 3 ? 3 : 2;
+  const legacySize = level === 1 ? 26 : level === 2 ? 20 : 16;
+  const preset = headingSizeCss(p.size);
+  const size = preset ? preset.replace("font-size:", "").replace("px", "") : String(legacySize);
+  /* `header_size` is Elementor's own tag and wins; `level` is what the stored
+     document has. The mailbox has always drawn h1/h2/h3 and nothing else, and a
+     `span` or a `div` in a table cell is what Outlook reflows worst, so a tag
+     outside h1–h6 stays the heading the adapter already drew. */
+  const tag = /^h[1-6]$/.test(str(p.header_size)) ? str(p.header_size) : `h${level}`;
+  const col = emailColour(p.title_color != null && p.title_color !== "" ? p.title_color : p.colour, str(ctx.ink) || "#111827");
+
+  const extra: string[] = [];
+  extra.push(...effectsCss(p), ...shadowCss(p), ...blendCss(p));
+  const strokes = strokeCss(p);
+  if (strokes.length) extra.push(strokes[0]);
+
+  const body = linked(emailText(p.text != null && p.text !== "" ? p.text : p.title, ctx), p.link);
+  return `<${tag} style="margin:0 0 12px 0;font-family:${emailStack(ctx.headingFont)};font-size:${size}px;`
+    + `line-height:1.25;font-weight:700;color:${col};text-align:${emailAlign(p.align)};`
+    + `${str(ctx.typeCss)}${extra.length ? `${extra.join(";")};` : ""}"`
+    + `${emailEdit("text", ctx, "Your heading")}>${body}</${tag}>`;
+}

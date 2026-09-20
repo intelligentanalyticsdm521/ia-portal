@@ -381,8 +381,12 @@ describe("5b. every surface a widget is offered on asks the families first", () 
     const gaps = familySurfaceGaps({ newsletter: everything, mybrand: widgetsFor("brand").map((w) => w.kind) });
     assert.deepEqual(gaps, [], "a family that draws it itself is never a gap");
     const noFamily = familySurfaceGaps({ newsletter: [], mybrand: [] });
-    assert.ok(noFamily.some((g) => g.kind === "heading" && g.builder === "newsletter"),
-      "a kind nothing draws in a mailbox has to be named");
+    /* `heading` on MY BRAND: the f1-words family writes no studio insert for
+       it, because `adapters/mybrand/insert.ts` has placed a heading on that
+       canvas since the studio existed. Told that the studio places nothing,
+       the guard has to name it. */
+    assert.ok(noFamily.some((g) => g.kind === "heading" && g.builder === "mybrand"),
+      "a kind nothing places on the studio canvas has to be named");
   });
 
   test("the escaper is in a module that imports nothing", () => {
