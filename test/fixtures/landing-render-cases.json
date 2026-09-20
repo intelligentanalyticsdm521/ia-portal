@@ -2377,6 +2377,228 @@
         ]
       },
       "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><style>.bx-sy-b1{display:flex;flex-direction:column;gap:16px}.bx-sy-b2{display:flex;flex-direction:row;gap:16px}</style><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-w bx-sy-b1\"><div class=\"lp-box lp-box-column bx-sy-b1\" data-box=\"b1\"><h1 class=\"lp-h\">Choose your plan</h1><p>Pick one. Whichever you choose becomes the priced line below.</p><div class=\"lp-w bx-sy-b2\"><div class=\"lp-box lp-box-row bx-sy-b2\" data-box=\"b2\"><div class=\"lp-card\">\n    \n    <div class=\"lp-card-name\">Snow &amp; ice — Essentials, per push</div>\n    <div class=\"lp-card-price\"><span class=\"lp-now\">$185.00</span><span class=\"lp-per\">per push</span></div>\n    <div class=\"lp-card-pitch\">Every 2 inch trigger, plowed and salted.</div>\n    <ul class=\"lp-list\"><li>Plowing</li><li>Walks cleared</li><li>Salt applied</li></ul>\n    \n    \n  </div><div class=\"lp-card lp-card-rec\" style=\"border-color:#0C4A60\">\n    <div class=\"lp-tag\" style=\"background:#0C4A60\">Most popular</div>\n    <div class=\"lp-card-name\">Snow &amp; ice — Seasonal</div>\n    <div class=\"lp-card-price\"><span class=\"lp-now\">$2,400.00</span><span class=\"lp-per\">per season</span></div>\n    <div class=\"lp-card-pitch\">Every 2 inch trigger, plowed and salted.</div>\n    <ul class=\"lp-list\"><li>Plowing</li><li>Walks cleared</li><li>Salt applied</li></ul>\n    \n    <a class=\"lp-btn\" style=\"background:#0C4A60\" href=\"#\">Use this plan</a>\n  </div><div class=\"lp-card\">\n    \n    <div class=\"lp-card-name\">Grounds care</div>\n    <div class=\"lp-card-price\"><span class=\"lp-now\">$320.00</span><span class=\"lp-per\">monthly</span></div>\n    <div class=\"lp-card-pitch\">Kept on through the summer.</div>\n    <ul class=\"lp-list\"><li>Mowing</li><li>Edging</li></ul>\n    \n    \n  </div></div></div></div></div></div></div></section>"
+    },
+    {
+      "name": "tree · a box wearing the whole container panel",
+      "kind": "tree",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "b1",
+                    "kind": "container",
+                    "props": {},
+                    "style": {
+                      "direction": "row-reverse",
+                      "justify": "evenly",
+                      "alignItems": "center",
+                      "gap": 24,
+                      "rowGap": 8,
+                      "wrap": true,
+                      "contentWidth": "full",
+                      "width": 90,
+                      "minHeight": 220,
+                      "overflow": "hidden",
+                      "background": {
+                        "type": "classic",
+                        "color": "#F4F7F8",
+                        "image": "https://cdn.example.test/bg.png",
+                        "position": "top center",
+                        "repeat": "no-repeat",
+                        "size": "cover"
+                      },
+                      "overlay": {
+                        "type": "gradient",
+                        "color": "#0B1C24",
+                        "colorB": "#0C4A60",
+                        "angle": 135,
+                        "opacity": 0.4,
+                        "blend": "multiply"
+                      },
+                      "shapeTop": {
+                        "shape": "waves",
+                        "color": "#FFFFFF",
+                        "height": 70,
+                        "width": 110,
+                        "flip": true
+                      },
+                      "shapeBottom": {
+                        "shape": "tilt",
+                        "color": "#F4F7F8",
+                        "height": 50
+                      },
+                      "alignSelf": "center",
+                      "order": 2,
+                      "selfWidth": 60,
+                      "zIndex": 3,
+                      "padding": {
+                        "top": 24,
+                        "right": 20,
+                        "bottom": 24,
+                        "left": 20
+                      },
+                      "cssId": "the-box",
+                      "cssClasses": "tight two-up",
+                      "customCss": "selector { letter-spacing: .2px }",
+                      "sticky": "top",
+                      "stickyOffset": 12,
+                      "tablet": {
+                        "gap": 16,
+                        "rowGap": 6,
+                        "minHeight": 180
+                      },
+                      "phone": {
+                        "direction": "column",
+                        "gap": 12,
+                        "hidden": true
+                      }
+                    },
+                    "children": [
+                      {
+                        "id": "w1",
+                        "kind": "heading",
+                        "props": {
+                          "text": "First in the document",
+                          "level": "Section"
+                        }
+                      },
+                      {
+                        "id": "w2",
+                        "kind": "paragraph",
+                        "props": {
+                          "text": "A reversed row puts this one first on the page."
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><style>.bx-sy-b1{min-height:220px;padding:24px 20px 24px 20px;display:flex;flex-direction:row-reverse;flex-wrap:wrap;justify-content:space-evenly;align-items:center;gap:8px 24px;width:90%;max-width:none;overflow:hidden;z-index:3;align-self:center;order:2;flex-basis:60%;max-width:60%;background-color:#F4F7F8;background-image:url(\"https://cdn.example.test/bg.png\");background-position:top center;background-repeat:no-repeat;background-size:cover;position:relative}.bx-sy-b1::before{content:\"\";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(135deg, #0B1C24 0%, #0C4A60 100%);opacity:0.4;mix-blend-mode:multiply}.bx-sy-b1{position:sticky;top:12px}@container (max-width: 768px){.bx-sy-b1{min-height:180px !important;display:flex !important;flex-direction:column !important;gap:6px 16px !important}.bx-sy-b1{position:sticky !important;top:12px !important}}@container (max-width: 390px){.bx-sy-b1{display:none !important;display:flex !important;flex-direction:column !important;gap:12px !important}.bx-sy-b1{position:sticky !important;top:12px !important}}.bx-sy-b1 { letter-spacing: .2px }</style><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-w bx-sy-b1 tight two-up\" id=\"the-box\"><div class=\"lp-box lp-box-row bx-sy-b1\" data-box=\"b1\"><div class=\"bx-shape bx-shape-top\" aria-hidden=\"true\" style=\"position:absolute;left:0;width:100%;overflow:hidden;line-height:0;pointer-events:none;top:0;z-index:0\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 100\" preserveAspectRatio=\"none\" style=\"height:70px;width:110%;display:block;margin:0 auto;transform:scaleX(-1)\"><path d=\"M0,100 L0,50 Q125,0 250,50 Q375,100 500,50 Q625,0 750,50 Q875,100 1000,50 L1000,100 Z\" fill=\"#FFFFFF\"/></svg></div><h2 class=\"lp-h\">First in the document</h2><p>A reversed row puts this one first on the page.</p><div class=\"bx-shape bx-shape-bottom\" aria-hidden=\"true\" style=\"position:absolute;left:0;width:100%;overflow:hidden;line-height:0;pointer-events:none;bottom:0;z-index:0\"><svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1000 100\" preserveAspectRatio=\"none\" style=\"height:50px;width:100%;display:block;transform:scaleY(-1)\"><path d=\"M0,100 L1000,0 L1000,100 Z\" fill=\"#F4F7F8\"/></svg></div></div></div></div></div></section>"
+    },
+    {
+      "name": "tree · a grid with rows and auto flow, beside a box hidden on a computer",
+      "kind": "tree",
+      "doc": {
+        "v": 2,
+        "settings": {
+          "style": "newsletter",
+          "accent": "#0C4A60"
+        },
+        "sections": [
+          {
+            "id": "s1",
+            "label": "Case",
+            "numbered": false,
+            "layout": 1,
+            "width": "contained",
+            "background": "",
+            "headingFont": "",
+            "padding": 16,
+            "theme": "light",
+            "recommended": false,
+            "pageBreakBefore": false,
+            "visibility": "customer",
+            "columns": [
+              {
+                "id": "c1",
+                "widgets": [
+                  {
+                    "id": "b1",
+                    "kind": "container",
+                    "props": {},
+                    "style": {
+                      "direction": "column",
+                      "gap": 16
+                    },
+                    "children": [
+                      {
+                        "id": "b2",
+                        "kind": "container",
+                        "props": {},
+                        "style": {
+                          "direction": "grid",
+                          "columns": 3,
+                          "rows": 2,
+                          "autoFlow": "column",
+                          "gap": 18
+                        },
+                        "children": [
+                          {
+                            "id": "w1",
+                            "kind": "paragraph",
+                            "props": {
+                              "text": "One"
+                            }
+                          },
+                          {
+                            "id": "w2",
+                            "kind": "paragraph",
+                            "props": {
+                              "text": "Two"
+                            }
+                          },
+                          {
+                            "id": "w3",
+                            "kind": "paragraph",
+                            "props": {
+                              "text": "Three"
+                            }
+                          }
+                        ]
+                      },
+                      {
+                        "id": "b3",
+                        "kind": "container",
+                        "props": {},
+                        "style": {
+                          "direction": "column",
+                          "gap": 8,
+                          "hidden": true
+                        },
+                        "children": [
+                          {
+                            "id": "w4",
+                            "kind": "paragraph",
+                            "props": {
+                              "text": "Phones and tablets only."
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><style>.bx-sy-b1{display:flex;flex-direction:column;gap:16px}.bx-sy-b2{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,auto));grid-auto-flow:column;gap:18px}.bx-sy-b3{display:none;display:flex;flex-direction:column;gap:8px}@container (max-width: 768px){.bx-sy-b3{display:flex !important}}@container (max-width: 390px){.bx-sy-b3{display:flex !important}}</style><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-w bx-sy-b1\"><div class=\"lp-box lp-box-column bx-sy-b1\" data-box=\"b1\"><div class=\"lp-w bx-sy-b2\"><div class=\"lp-box lp-box-grid bx-sy-b2\" data-box=\"b2\"><p>One</p><p>Two</p><p>Three</p></div></div><div class=\"lp-w bx-sy-b3\"><div class=\"lp-box lp-box-column bx-sy-b3\" data-box=\"b3\"><p>Phones and tablets only.</p></div></div></div></div></div></div></section>"
     }
   ]
 }

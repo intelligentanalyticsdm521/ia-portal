@@ -288,7 +288,15 @@ describe("Grid is a Container", () => {
     for (const t of SHIPPED_TEMPLATES) for (const s of t.build().sections) for (const c of s.columns) walk(c.widgets);
     for (const p of PREMADE_SECTIONS) for (const c of p.build().columns) walk(c.widgets);
     assert.equal(kinds.has(GRID_PRESET_KIND), false);
-    assert.equal(Object.keys(LAYOUT_PRESETS).length, 2);
+    /* THREE presets now: Container, Grid and Inner Section (B-168, family F0).
+       Every one of them inserts a `container` and none of them is ever STORED,
+       which is the thing this test is really about — so it is asserted for all
+       three rather than counted and left. */
+    assert.deepEqual(Object.keys(LAYOUT_PRESETS).sort(), ["container", "grid", "inner-section"]);
+    for (const [key, preset] of Object.entries(LAYOUT_PRESETS)) {
+      assert.equal(preset.kind, "container", `the ${key} tile inserts something that is not a box`);
+      assert.equal(kinds.has(key) && key !== "container", false, `a shipped template stored a \`${key}\``);
+    }
   });
 });
 

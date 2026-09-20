@@ -40,7 +40,7 @@ import { fill, type MergeContext } from "../../merge";
 import { STACK_QUERY, deviceContainerQuery } from "../../responsive";
 import {
   attributeAttrs, hasStyle, isTypographic, layerFor, resolveStyle, sectionBoxDeclarations,
-  sidesToCss, styleBlockFor, widgetStyleClass,
+  shapeDividerHtml, sidesToCss, styleBlockFor, widgetStyleClass,
 } from "../../style";
 // THE TREE, read in one place (D-156). render.ts owns what a container is and
 // how deep it may go; a second answer here would be a page that disagrees with
@@ -221,8 +221,11 @@ export const LANDING_RENDERED_KINDS = [
   "service_location", "customer",
   "product_cards", "ia_posts", "reviews", "book_now",
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
-  /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`. */
-  "grid",
+  /* A LAYOUT PRESET, never a stored kind — the tile inserts a `container`.
+     `inner-section` is the same thing (B-168, family F0): the reference still
+     lists Inner Section under Basic, and pressing it inserts a row Container
+     holding two Containers, so no stored page ever holds one. */
+  "grid", "inner-section",
 ] as const;
 
 /**
@@ -365,7 +368,16 @@ function lpBox(w: Widget, c: LandingContext, depth: number): string {
   // same way the document's does (§11.8 + §11.12) — not inline. One mechanism,
   // and the author's "a column on a phone" works here for nothing.
   const sy = hasStyle(w.style) ? ` ${widgetStyleClass(w.id)}` : "";
-  return `<${tag} class="lp-box lp-box-${containerFlow(layout)}${sy}" data-box="${esc(w.id)}">${inner || empty}</${tag}>`;
+  /* SHAPE DIVIDERS (B-168, family F0). Markup and not CSS, because a shape is
+     an SVG — drawn by `style.shapeDividerHtml`, the one place the eighteen
+     paths live, so the canvas, a hosted landing page and LUMEN's copy of this
+     renderer cannot draw three different waves. The DESKTOP layer: a divider's
+     height is per device, its shape is not. */
+  const own = resolveStyle(w.style, "desktop");
+  const top = shapeDividerHtml(own.shapeTop, "top");
+  const bottom = shapeDividerHtml(own.shapeBottom, "bottom");
+  return `<${tag} class="lp-box lp-box-${containerFlow(layout)}${sy}" data-box="${esc(w.id)}">`
+    + `${top}${inner || empty}${bottom}</${tag}>`;
 }
 
 interface LpCard {

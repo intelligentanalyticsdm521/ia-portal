@@ -228,8 +228,10 @@ describe("every layout a box can hold is one Elementor can be told", () => {
 
   test("every VALUE the renderer can emit is one Elementor offers", () => {
     const emitted = {
-      flex_direction: ["row", "column"],
-      flex_justify_content: ["flex-start", "center", "flex-end", "space-between"],
+      flex_direction: ["row", "column", "row-reverse", "column-reverse"],
+      flex_justify_content: [
+        "flex-start", "center", "flex-end", "space-between", "space-around", "space-evenly",
+      ],
       flex_align_items: ["flex-start", "center", "flex-end", "stretch"],
       flex_wrap: ["wrap", "nowrap"],
       html_tag: ["div", "header", "footer", "main", "article", "section", "aside"],
@@ -242,8 +244,13 @@ describe("every layout a box can hold is one Elementor can be told", () => {
     }
     // And the renderer cannot produce anything else: the two tables it maps
     // through are closed, and `readStyle` drops any word that is not in them.
+    /* SIX, not four (B-168, family F0). The reference editor's Justify Content
+       is six buttons and the machine file's `flex_justify_content` offers all
+       six; ours stopped at four, so an author could not say "spread out with
+       room at the ends" at all. The check above is what proves the two new
+       words are Elementor's own and not ours. */
     assert.deepEqual(Object.values(JUSTIFY_CSS).sort(),
-      ["center", "flex-end", "flex-start", "space-between"]);
+      ["center", "flex-end", "flex-start", "space-around", "space-between", "space-evenly"]);
     assert.deepEqual(Object.values(ITEMS_CSS).sort(),
       ["center", "flex-end", "flex-start", "stretch"]);
   });

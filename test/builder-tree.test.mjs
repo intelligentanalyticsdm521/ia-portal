@@ -693,7 +693,11 @@ describe("the surfaces carry the tree, and carry it once", () => {
     const layout = panelGroups("proposal").find((g) => g.group === "Layout");
     assert.deepEqual(layout.widgets.map((w) => w.kind).sort(), ["container", "grid"]);
     assert.match(shell, /const preset = presetFor\(def\.kind\);/);
-    assert.match(shell, /makeContainer\(preset\.style as ElementStyle, \[\]\)/);
+    /* B-168 LANDED: a preset may now bring CHILDREN (Inner Section is a row
+       holding two boxes), so the call spans lines. What this pins is the same
+       thing it always pinned — the tile makes a REAL container out of the
+       preset, and no fake widget of kind `grid` reaches the page. */
+    assert.match(shell, /makeContainer\(\s*preset\.style as ElementStyle,/);
   });
 
   test("the outline can move something between levels, through the same moveNode", () => {
