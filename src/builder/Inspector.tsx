@@ -894,23 +894,40 @@ export function Inspector(p: InspectorProps) {
                   <Group title="Page"
                     onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer", numbered: false })}
                     resetTitle="Back to: no page break, no number, and the customer sees it">
+                    {/* THE SWITCHER PILL, NOT A CHECKBOX (D-172, round 3).
+                        The reference has ONE on/off shape and these three were
+                        the last native checkboxes left in the panel — a form
+                        field in a settings panel, with the sentence as its
+                        label instead of beside it. */}
                     {p.pageBreakLabel !== "" && (
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                        <input type="checkbox" data-carrier-pagebreak checked={!!section.pageBreakBefore}
-                          onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
-                        {p.pageBreakLabel || "Start a new page here"}
-                      </label>
+                      <div style={ROW} data-carrier-pagebreak>
+                        <span style={L}>{p.pageBreakLabel || "Start a new page here"}</span>
+                        <Switcher
+                          name={p.pageBreakLabel || "Start a new page here"}
+                          testId="carrier-pagebreak"
+                          on={!!section.pageBreakBefore}
+                          onChange={(v) => p.onPatchSection(section.id, { pageBreakBefore: v })}
+                        />
+                      </div>
                     )}
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" data-carrier-numbered checked={!!section.numbered}
-                        onChange={(e) => p.onPatchSection(section.id, { numbered: e.target.checked })} />
-                      Number this section (01, 02, 03…)
-                    </label>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" data-carrier-internal checked={section.visibility === "internal"}
-                        onChange={(e) => p.onPatchSection(section.id, { visibility: e.target.checked ? "internal" : "customer" })} />
-                      Internal note only
-                    </label>
+                    <div style={ROW} data-carrier-numbered>
+                      <span style={L}>Number this section</span>
+                      <Switcher
+                        name="Number this section"
+                        testId="carrier-numbered"
+                        on={!!section.numbered}
+                        onChange={(v) => p.onPatchSection(section.id, { numbered: v })}
+                      />
+                    </div>
+                    <div style={ROW} data-carrier-internal>
+                      <span style={L}>Internal note only</span>
+                      <Switcher
+                        name="Internal note only"
+                        testId="carrier-internal"
+                        on={section.visibility === "internal"}
+                        onChange={(v) => p.onPatchSection(section.id, { visibility: v ? "internal" : "customer" })}
+                      />
+                    </div>
                   </Group>
                 )}
               </>
@@ -948,18 +965,24 @@ export function Inspector(p: InspectorProps) {
                 <option value="full">Full</option><option value="contained">Boxed</option><option value="narrow">Narrow</option>
               </select>
             </div>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Number this section on the page — 01, 02, 03. The numbers are worked out from the order, so moving a section renumbers both.">
-              <input type="checkbox" data-section-numbered checked={!!section.numbered}
-                onChange={(e) => p.onPatchSection(section.id, { numbered: e.target.checked })} />
-              Number this section (01, 02, 03…)
-            </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Put a Recommended badge on this section, so the reader knows which one you suggest">
-              <input type="checkbox" data-section-recommended checked={!!section.recommended}
-                onChange={(e) => p.onPatchSection(section.id, { recommended: e.target.checked })} />
-              Mark as Recommended
-            </label>
+            <div style={ROW}>
+              <span style={L}>Number this section</span>
+              <Switcher
+                name="Number this section"
+                testId="section-numbered"
+                on={!!section.numbered}
+                onChange={(v) => p.onPatchSection(section.id, { numbered: v })}
+              />
+            </div>
+            <div style={ROW}>
+              <span style={L}>Mark as Recommended</span>
+              <Switcher
+                name="Mark as Recommended"
+                testId="section-recommended"
+                on={!!section.recommended}
+                onChange={(v) => p.onPatchSection(section.id, { recommended: v })}
+              />
+            </div>
           </Group>
           )}
 
@@ -1092,19 +1115,25 @@ export function Inspector(p: InspectorProps) {
                 and a control that cannot do anything is worse than a missing
                 one — D-30. The adapter's own words, through copy.ts. */}
             {p.pageBreakLabel !== "" && (
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                title="Start a new page here when this is printed or saved as a PDF">
-                <input type="checkbox" checked={!!section.pageBreakBefore}
-                  onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
-                {p.pageBreakLabel || "Start a new page here"}
-              </label>
+              <div style={ROW}>
+                <span style={L}>{p.pageBreakLabel || "Start a new page here"}</span>
+                <Switcher
+                  name={p.pageBreakLabel || "Start a new page here"}
+                  testId="section-pagebreak"
+                  on={!!section.pageBreakBefore}
+                  onChange={(v) => p.onPatchSection(section.id, { pageBreakBefore: v })}
+                />
+              </div>
             )}
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Your crew sees this; the customer never does, and it is left out of the PDF">
-              <input type="checkbox" checked={section.visibility === "internal"}
-                onChange={(e) => p.onPatchSection(section.id, { visibility: e.target.checked ? "internal" : "customer" })} />
-              Internal note only
-            </label>
+            <div style={ROW}>
+              <span style={L}>Internal note only</span>
+              <Switcher
+                name="Internal note only"
+                testId="section-internal"
+                on={section.visibility === "internal"}
+                onChange={(v) => p.onPatchSection(section.id, { visibility: v ? "internal" : "customer" })}
+              />
+            </div>
           </Group>
           )}
         </div>

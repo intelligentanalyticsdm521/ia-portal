@@ -1439,3 +1439,24 @@ describe("SCREEN LAW 18 — a size is a slider with a unit (round 3)", () => {
     assert.equal(readStyle({ units: { gap: "vw" } })?.units?.gap, "vw");
   });
 });
+
+describe("SCREEN LAW 18b — the last native checkboxes in the panel (round 3)", () => {
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("every on/off in the panel is the switcher pill", () => {
+    /* The reference has ONE on/off shape. These five were the last native
+       checkboxes left: the carrier's page break, numbering and internal-only,
+       and the section panel's own Number and Recommended — each with its
+       sentence AS the label rather than beside the control. */
+    assert.ok(!/type="checkbox"/.test(inspector), "a native checkbox is back in the panel");
+    assert.ok(!inspector.includes('display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>'),
+      "the checkbox-with-a-sentence row is back");
+    for (const id of ["carrier-pagebreak", "carrier-numbered", "carrier-internal",
+                      "section-numbered", "section-recommended", "section-pagebreak",
+                      "section-internal"]) {
+      assert.ok(inspector.includes(`testId="${id}"`), `no switcher for: ${id}`);
+    }
+    // …and the carrier's three keep the markers SCREEN LAW 13 reads them by.
+    assert.match(inspector, /<div style=\{ROW\} data-carrier-pagebreak>/);
+  });
+});
