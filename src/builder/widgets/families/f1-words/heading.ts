@@ -46,7 +46,7 @@ import { bar, pictureFrom } from "../../../pictures";
 import { fillText } from "../../text";
 import type { EmailRenderContext, FamilyWidgetDef } from "../types";
 import {
-  ALIGNMENTS, BLEND_MODES, DECORATIONS, FONT_STYLES, HEADING_SIZES, HTML_TAGS, TRANSFORMS,
+  ALIGNMENTS, BLEND_MODES, DECORATIONS, FONT_STYLES, HTML_TAGS, TRANSFORMS,
   alignCss, blendCss, deviceCss, effectsCss, headingSizeCss, linked, mailboxFontStack, num,
   ownClass, perDevice, shadowCss, str, strokeCss,
 } from "./words";
@@ -164,7 +164,15 @@ export const HEADING_DEF: FamilyWidgetDef = {
        every other `textarea` on the estate is unchanged — the control asks. */
     { key: "text", label: "Title", type: "textarea", tab: "content", section: "Heading", panel: true },
     { key: "link", label: "Link", type: "link", tab: "content", section: "Heading" },
-    { key: "size", label: "Size", type: "select", tab: "content", section: "Heading", options: HEADING_SIZES },
+    /* "Size" IS DELETED (2026-09-20, audit round 4 row 103). Driven out of a
+       live Elementor 4.2.4 on 2026-09-20: `heading.size` carries
+       `condition: { "size!": "default" }` and its own default IS `"default"`,
+       so the condition can never fire and the control is NEVER on the
+       reference's panel. HTML Tag is the only size control a Heading has
+       there. `headingSizeCss(p.size)` still READS the key, so a document saved
+       with a size opens and prints exactly as it did; nothing new can set one.
+       `HEADING_SIZES` stays in words.ts beside `headingSizeCss`, which reads
+       it; it is no longer imported here. */
     { key: "header_size", label: "HTML Tag", type: "select", tab: "content", section: "Heading", options: HTML_TAGS },
 
     /* Style — Elementor's section is called "Heading" too. */

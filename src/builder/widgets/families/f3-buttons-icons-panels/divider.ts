@@ -131,9 +131,17 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
     { key: "look", label: "Add Element", type: "select", tab: "content", section: "Divider", options: [
       { value: "line", label: "None" }, { value: "line_text", label: "Text" },
       { value: "line_icon", label: "Icon" }] },
-    { key: "text", label: "Text", type: "text", tab: "content", section: "Divider" },
-    { key: "html_tag", label: "HTML Tag", type: "select", tab: "content", section: "Divider", options: TAG_OPTIONS },
-    { key: "icon", label: "Icon", type: "select", tab: "content", section: "Divider", options: ICON_OPTIONS },
+    /* THE THREE THAT WAIT FOR "Add Element" (2026-09-20, audit round 4 row
+       146). The reference's own conditions, driven on 2026-09-20:
+       `text` and `html_tag` are `{ "look": "line_text" }`, `icon` is
+       `{ "look": "line_icon" }`. Ours drew the tag and the icon on a plain
+       rule, where neither of them reaches the page. */
+    { key: "text", label: "Text", type: "text", tab: "content", section: "Divider",
+      condition: { look: "line_text" } },
+    { key: "html_tag", label: "HTML Tag", type: "select", tab: "content", section: "Divider",
+      condition: { look: "line_text" }, options: TAG_OPTIONS },
+    { key: "icon", label: "Icon", type: "select", tab: "content", section: "Divider",
+      condition: { look: "line_icon" }, options: ICON_OPTIONS },
 
     /* ── Style ▸ Divider ──────────────────────────────────────────────── */
     { key: "color", label: "Color", type: "colour", tab: "style", section: "Divider" },

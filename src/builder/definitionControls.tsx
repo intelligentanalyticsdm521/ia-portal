@@ -45,6 +45,10 @@ import {
   cellCount, isRepeater, repeaterOp, rowFields, rowsOf, rowTitle, setRowField,
   type RepeaterOp, type RepeaterRow,
 } from "./repeater";
+/* WHEN A CONTROL IS DRAWN AT ALL (2026-09-20). Elementor's `condition`, whose
+   arithmetic is one pure module the tests execute — same shape, and the same
+   reason, as the repeater's above: this file draws and does not decide. */
+import { controlIsShown } from "./controlCondition";
 
 /**
  * The control types the PANEL draws.
@@ -108,6 +112,17 @@ export interface DefinitionControlsProps {
   props: Record<string, unknown>;
   /** The device being previewed AND edited. One state, from BuilderShell. */
   device: PreviewKey;
+  /**
+   * THE NAME OF THE BAND THESE CONTROLS ARE DRAWN INSIDE (2026-09-20).
+   *
+   * The reference never says a band's name twice: the band is "Heading" and
+   * nothing under it says "Heading" again. Ours drew a `data-control-subheading`
+   * with the SAME word as the band above it on every widget's first section —
+   * audit round 4, row 24, one of the nine extras. A sub-heading whose text
+   * equals this is not drawn. The OTHER sub-headings stay: a price table's
+   * Pricing / Features / Ribbon are the reference's own in-section headings.
+   */
+  bandTitle?: string;
   /** The brand kit's colours, for a colour control. */
   swatches?: string[];
   /** Write one property. The key is already resolved for the device. */
@@ -234,7 +249,11 @@ export function DefinitionControls(p: DefinitionControlsProps) {
   return (
     <>
       {controlSections(onTab).map((grp) => {
-        const shown = grp.controls.filter(isDrawnInPanel);
+        /* DRAWN, AND ITS CONDITION MET (2026-09-20). One filter, in the one
+           place a definition's control becomes a row — so a family declares a
+           condition and writes no code, and a control the reference hides
+           cannot be on our screen by accident. */
+        const shown = grp.controls.filter((c) => isDrawnInPanel(c) && controlIsShown(c, props));
         if (!shown.length) return null;
         return (
           <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
@@ -244,7 +263,10 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                 no shouting. Ours was the label style with uppercase and 0.4 of
                 tracking, so a heading inside a section looked louder than the
                 section's own name above it. */}
-            {grp.section && (
+            {/* …AND NEVER THE BAND'S OWN NAME AGAIN (2026-09-20, round 4 row
+                24). Driven: the reference's first band on a Heading is called
+                "Heading" and nothing inside it repeats the word. */}
+            {grp.section && grp.section !== p.bandTitle && (
               <div data-control-subheading={grp.section}
                 style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
                 {grp.section}

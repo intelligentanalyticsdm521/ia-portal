@@ -133,6 +133,13 @@ export type ControlSection = string;
 /** Elementor's three panel tabs, and ours. */
 export type ControlTab = "content" | "style" | "advanced";
 
+/* WHEN A CONTROL IS DRAWN AT ALL — Elementor's `condition`, whose arithmetic
+   is `controlCondition.ts` (pure, so `node --test` executes it) and whose only
+   trace here is the field on `WidgetControl` below. Re-exported so a family
+   file types a condition without importing a second module. */
+export type { ControlCondition } from "./controlCondition";
+import type { ControlCondition } from "./controlCondition";
+
 export const CONTROL_TABS: ControlTab[] = ["content", "style", "advanced"];
 
 /** Which tab this control is on. `content` unless it says otherwise. */
@@ -197,6 +204,17 @@ export interface WidgetControl {
   row?: unknown;
   /** A `list` whose rows are lines of cells, one per entry of this control. */
   cellsFrom?: string;
+  /**
+   * DRAWN ONLY WHEN ANOTHER CONTROL SAYS SO — Elementor's `condition`
+   * (2026-09-20, the settings audit's round 4).
+   *
+   * `{ look: "line_text" }` is "only when Add Element is Text"; a key ending in
+   * `!` is "is not", so `{ "view!": "default" }` is "only when View is not
+   * Default" and `{ "text!": "" }` is "only once there are words". Every term
+   * must hold. The arithmetic — and the reference's own driven conditions, key
+   * by key — is `controlCondition.ts`; declaring one here is all a family does.
+   */
+  condition?: ControlCondition;
   /**
    * DRAW THIS ONE IN THE PANEL TOO (2026-09-20).
    *

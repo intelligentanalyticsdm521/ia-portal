@@ -77,7 +77,11 @@ export const ICON_DEF: FamilyWidgetDef = {
     /* ── Content ▸ Icon ───────────────────────────────────────────────── */
     { key: "selected_icon", label: "Icon", type: "select", tab: "content", section: "Icon", options: ICON_OPTIONS },
     { key: "view", label: "View", type: "select", tab: "content", section: "Icon", options: VIEW_OPTIONS },
-    { key: "shape", label: "Shape", type: "select", tab: "content", section: "Icon", options: SHAPE_OPTIONS },
+    /* THE SHAPE ONLY ONCE THERE IS ONE (2026-09-20, audit round 4 row 153).
+       Driven: `icon.shape` is `{ "view!": "default" }`. A plain icon has no
+       shape behind it, so Circle or Square changed nothing at all. */
+    { key: "shape", label: "Shape", type: "select", tab: "content", section: "Icon",
+      condition: { "view!": "default" }, options: SHAPE_OPTIONS },
     { key: "link", label: "Link", type: "link", tab: "content", section: "Icon" },
 
     /* ── Style ▸ Icon ─────────────────────────────────────────────────── */

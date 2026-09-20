@@ -240,14 +240,33 @@ export const IMAGE_DEF: FamilyWidgetDef = {
     { key: "caption", label: "Custom Caption", type: "text", tab: "content", section: "Image" },
     { key: "link_to", label: "Link", type: "select", tab: "content", section: "Image", options: [
       { value: "none", label: "None" }, { value: "file", label: "Media File" }, { value: "custom", label: "Custom URL" }] },
-    { key: "link", label: "Link", type: "link", tab: "content", section: "Image" },
-    { key: "open_lightbox", label: "Lightbox", type: "select", tab: "content", section: "Image", options: LIGHTBOX },
+    /* THE URL BOX ONLY FOR A CUSTOM URL (2026-09-20, audit round 4 row 122).
+       Driven: `image.link` carries `condition: { "image[url]!": "", "link_to":
+       "custom" }`. Ours drew the select AND a second row also labelled "Link"
+       at all times, so the panel asked for an address it was going to ignore.
+       (The reference's first term — an image has been chosen — is recorded in
+       the handoff and NOT applied here: our Choose Image is still a plain
+       address box, and gating half the Content tab on it is a change to make
+       when the picker lands, not beside a condition.) */
+    { key: "link", label: "Link", type: "link", tab: "content", section: "Image",
+      condition: { link_to: "custom" } },
+    /* THE LIGHTBOX ONLY FOR A MEDIA FILE (row 123) — `{ "link_to": "file" }`,
+       driven. It is what opens when the picture itself is the link, so it can
+       say nothing at all about a custom URL or about no link. */
+    { key: "open_lightbox", label: "Lightbox", type: "select", tab: "content", section: "Image",
+      condition: { link_to: "file" }, options: LIGHTBOX },
     /* ── Style ▸ Image ───────────────────────────────────────────────── */
     { key: "align", label: "Alignment", type: "select", tab: "style", section: "Image", options: ALIGNMENTS, responsive: true },
     { key: "width", label: "Width", type: "number", tab: "style", section: "Image", responsive: true,
       help: "A share of the space it sits in, from 1 to 100." },
     { key: "height", label: "Height", type: "number", tab: "style", section: "Image", responsive: true },
-    { key: "object-fit", label: "Object Fit", type: "select", tab: "style", section: "Image", options: OBJECT_FITS, responsive: true },
+    /* OBJECT FIT ONLY ONCE A HEIGHT IS SET (2026-09-20, audit round 4 row
+       128). Driven: `{ "height[size]!": "" }`. It answers "what happens to the
+       picture inside the box you have forced it into", and with no height
+       there is no such box — so ours was a select of five that changed nothing
+       on the page. */
+    { key: "object-fit", label: "Object Fit", type: "select", tab: "style", section: "Image",
+      condition: { "height!": "" }, options: OBJECT_FITS, responsive: true },
     { key: "opacity", label: "Opacity", type: "number", tab: "style", section: "Image" },
     { key: "image_border_border", label: "Border Type", type: "select", tab: "style", section: "Image", options: BORDER_TYPES },
     { key: "image_border_width", label: "Border Width", type: "number", tab: "style", section: "Image", responsive: true },

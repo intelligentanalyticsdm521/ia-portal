@@ -352,6 +352,10 @@ export function Inspector(p: InspectorProps) {
      tab could exist, so a family widget with a Style section and no words
      would have declared controls nobody could reach. */
   const hasDefTab = (t: ControlTab) => (def?.controls || []).some((c) => controlTab(c) === t);
+  /* Does this widget's own definition already offer a colour on its Style tab?
+     If it does, the Typography band does not draw a second one — see row 51. */
+  const defHasStyleColour = (def?.controls || [])
+    .some((c) => controlTab(c) === "style" && c.type === "colour");
   const hasStyle = box || !widget || isTypographic(widget.kind) || hasDefTab("style");
   /* A WIDGET WITH NO STYLE CONTROLS HAS NO STYLE TAB (D-172).
      The reference's Spacer has Content and Advanced and nothing between them;
@@ -821,7 +825,14 @@ export function Inspector(p: InspectorProps) {
                   to be written out here; it is `definitionControls.tsx` now,
                   called on all three tabs, so a family that adds a widget adds
                   no line to this file. */}
+              {/* `bandTitle` IS THE GROUP ABOVE (2026-09-20, round 4 row 24).
+                  The Group is titled with the widget's own name and the
+                  section under it carried the same word again; handing the
+                  name down is how the panel stops saying "Heading / Heading".
+                  It is the SAME expression the Group is given, so the two
+                  cannot drift. */}
               <DefinitionControls def={def} tab="content" props={widget.props as any}
+                bandTitle={def ? widgetLabel(def, p.adapter) : "Content"}
                 device={p.device} swatches={p.swatches} onPatch={p.onPatchWidget} />
 
               {/* UP / DOWN / REMOVE WERE HERE AND ARE DELETED (D-172).
@@ -848,12 +859,19 @@ export function Inspector(p: InspectorProps) {
             )}
 
             {/* ── STYLE ▸ TYPOGRAPHY — only where there are words to set ── */}
+            {/* ONE HOME FOR ONE COLOUR (2026-09-20, audit round 4 row 51).
+                A Heading's Style tab drew "Text Color" from its definition AND
+                "Text colour" inside this band — two controls, two stored keys,
+                one thing. The reference keeps colour out of typography, so the
+                band gives its copy up to the widget's OWN control wherever the
+                definition declares one. A kind that declares none keeps it. */}
             {!box && shownTab === "style" && isTypographic(widget.kind) && (
               <TypographyGroup
                 device={p.device}
                 onDevice={p.onDevice}
                 layer={widgetLayer}
                 fonts={p.fonts}
+                colour={!defHasStyleColour}
                 onPatch={patchWidgetStyle}
                 onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["typography"]))}
               />
@@ -904,8 +922,36 @@ export function Inspector(p: InspectorProps) {
                 {/* THE "ATTRIBUTES" SECTION IS DELETED (D-172, round 3): the
                     reference has one by that name and it holds a Pro promo,
                     not these two fields. They are in Layout above. */}
+                {/* …and CUSTOM CSS last, which is where the reference puts it
+                    and where an author expects the escape hatch to be. Neither
+                    it nor Sticky is per device, so neither goes through
+                    `withLayer`.
+
+                    B-168 land: this and the carrier's Page group above landed
+                    in the same place from two branches and are BOTH kept. They
+                    answer different questions — one is the box's own escape
+                    hatch, one is what only a section can hold — and the
+                    reference's Advanced tab ends with Custom CSS, so the order
+                    is the carrier group, then this. */}
+                {box && (
+                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="css" />
+                )}
                 {/* WHAT ONLY A SECTION CAN HOLD, ON THE BOX THAT CARRIES IT
-                    (D-172, round 2).
+                    (D-172, round 2) — AND ONLY WHERE THERE ARE PAGES
+                    (2026-09-20, audit round 4 row 69).
+
+                    The reference has nothing of this kind on an element
+                    panel, and the audit counts it as one of the nine
+                    extras. It is KEPT, because a proposal is printed and
+                    signed and a page break the author cannot reach is
+                    worse than one in a tab the reference does not have —
+                    but it is kept the way an extra has to be kept: only
+                    in a builder that HAS pages (`pageBreakLabel`, the
+                    adapter's own signal, already used by the row inside;
+                    the website, the landing page and the mailbox all pass
+                    ""), never open on arrival, and LAST — under Custom
+                    CSS, so nothing the reference DOES draw is pushed down
+                    the panel by it.
 
                     A carrier pair is ONE box on the screen, so there is no
                     second panel to put these in — and a page break the author
@@ -914,7 +960,7 @@ export function Inspector(p: InspectorProps) {
                     section panel below uses, so there is one writer of
                     "pageBreakBefore" and it is not copied here. A section that
                     is NOT a carrier still has its own panel, unchanged. */}
-                {carried && (
+                {carried && p.pageBreakLabel !== "" && (
                   <Group title="Page"
                     onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer", numbered: false })}
                     resetTitle="Back to: no page break, no number, and the customer sees it">
@@ -953,20 +999,6 @@ export function Inspector(p: InspectorProps) {
                       />
                     </div>
                   </Group>
-                )}
-                {/* …and CUSTOM CSS last, which is where the reference puts it
-                    and where an author expects the escape hatch to be. Neither
-                    it nor Sticky is per device, so neither goes through
-                    `withLayer`.
-
-                    B-168 land: this and the carrier's Page group above landed
-                    in the same place from two branches and are BOTH kept. They
-                    answer different questions — one is the box's own escape
-                    hatch, one is what only a section can hold — and the
-                    reference's Advanced tab ends with Custom CSS, so the order
-                    is the carrier group, then this. */}
-                {box && (
-                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="css" />
                 )}
               </>
             )}

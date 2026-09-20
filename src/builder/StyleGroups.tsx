@@ -831,7 +831,7 @@ const WEIGHTS = [
 ];
 
 export function TypographyGroup({
-  device, onDevice, layer, fonts, onPatch, onReset,
+  device, onDevice, layer, fonts, onPatch, onReset, colour = true,
 }: {
   device: Device;
   onDevice: (d: Device) => void;
@@ -839,6 +839,21 @@ export function TypographyGroup({
   fonts: string[];
   onPatch: (patch: Partial<StyleLayer>, mergeKey: string) => void;
   onReset: () => void;
+  /**
+   * DRAW THE TEXT COLOUR — unless the widget already has one (2026-09-20).
+   *
+   * Audit round 4, row 51, one of the nine extras: a Heading's Style tab had
+   * "Text Color" at the top AND "Text colour" inside the Typography band — two
+   * controls, two stored keys, one thing, and whichever was set last won. The
+   * reference keeps colour OUT of typography, so the band's copy goes wherever
+   * the widget's own definition declares a colour on its Style tab.
+   *
+   * It is NOT deleted outright: this group is drawn over every kind in
+   * `TYPOGRAPHIC_KINDS`, and plenty of them — a Quote, a Callout, a Key fact —
+   * declare no colour control at all, so deleting it would take their only way
+   * of colouring words. One home each, and the definition decides which.
+   */
+  colour?: boolean;
 }) {
   const t = layer.typography ?? {};
   const set = (patch: Record<string, unknown>, key: string) =>
@@ -888,6 +903,7 @@ export function TypographyGroup({
           </select>
         </div>
       )}
+      {colour && (
       <div style={FIELD}>
         <span style={L}>Text colour</span>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -904,6 +920,7 @@ export function TypographyGroup({
           )}
         </div>
       </div>
+      )}
     </Group>
   );
 }
@@ -1016,11 +1033,24 @@ export function ContainerStyleGroups({
     onPatch({ background: { ...bg, ...patch } }, `bg:${key}`);
   const setOv = (patch: Partial<OverlaySpec>, key: string) =>
     onPatch({ overlay: { ...ov, ...patch } }, `overlay:${key}`);
+  /* `device` / `onDevice` ARE STILL TAKEN AND NOT DRAWN (2026-09-20). The four
+     bare device rows below them are deleted (row 26); the pair stays on the
+     props because Border Radius is responsive in the reference and this is the
+     band that will carry it. Said out loud, the way `SpacingGroup` says it of
+     `align`, rather than left as a prop a reader has to search for. */
+  void device; void onDevice;
   return (
     <>
       <Group title="Background" defaultOpen
         onReset={() => onReset(["background"])}>
-        <DeviceSegment device={device} onDevice={onDevice} />
+        {/* THE BARE DEVICE ROW IS DELETED (2026-09-20, audit round 4 row 26).
+            Each of these four Style bands opened on three unlabelled device
+            glyphs attached to no control. The reference has no such row
+            anywhere in its panel — its switcher sits ON the label of the
+            control being set, which is what the Container section already
+            does with Gaps and Min Height. Nothing is lost: the band writes
+            the layer for whatever device the page is showing, and that is
+            switched from the top bar and from every responsive control. */}
         <SelectField
           label="Background type" attr="bg-type" value={bg.type ?? ""}
           
@@ -1126,7 +1156,6 @@ export function ContainerStyleGroups({
 
       <Group title="Background Overlay" 
         onReset={() => onReset(["overlay"])}>
-        <DeviceSegment device={device} onDevice={onDevice} />
         <SelectField
           label="Background type" attr="overlay-type" value={ov.type ?? ""}
           
@@ -1168,7 +1197,6 @@ export function ContainerStyleGroups({
 
       <Group title="Border" defaultOpen
         onReset={() => onReset(["border", "radius", "shadow"])}>
-        <DeviceSegment device={device} onDevice={onDevice} />
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
           <SelectField
             label="Border type" attr="border-style" value={layer.border?.style ?? ""}
@@ -1215,14 +1243,15 @@ export function ContainerStyleGroups({
 
       <Group title="Shape Divider" 
         onReset={() => onReset(["shapeTop", "shapeBottom"])}>
-        <DeviceSegment device={device} onDevice={onDevice} />
         <ShapeRows edge="top" spec={layer.shapeTop} swatches={swatches}
           onPatch={(s) => onPatch({ shapeTop: s }, "shapeTop")} />
         <ShapeRows edge="bottom" spec={layer.shapeBottom} swatches={swatches}
           onPatch={(s) => onPatch({ shapeBottom: s }, "shapeBottom")} />
-        <div style={{ fontSize: 10, color: "#94A3B8", lineHeight: 1.45 }}>
-          A shaped edge shows on a web page. An email and a printed copy leave it out.
-        </div>
+        {/* THE GREY SENTENCE IS DELETED (2026-09-20, audit round 4 row 23).
+            "A shaped edge shows on a web page. An email and a printed copy
+            leave it out." The reference puts no explanation paragraph anywhere
+            in its panel, and the rule that a shaped edge is a web-page thing
+            is already enforced by the renderers that leave it out. */}
       </Group>
     </>
   );
@@ -1359,10 +1388,11 @@ export function ContainerAdvancedGroups({ style, onStyle, only }: {
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11,
           }}
         />
-        <div style={{ fontSize: 10, color: "#94A3B8", lineHeight: 1.45 }}>
-          The word <code>selector</code> means this box. Three declarations with no <code>selector</code> around them
-          are wrapped in one for you.
-        </div>
+        {/* THE GREY SENTENCE IS DELETED (2026-09-20, audit round 4 row 23).
+            "The word selector means this box…" — the reference has no
+            explanation paragraph in its panel, and the placeholder in the box
+            already shows `selector { … }`, which is the same thing said where
+            an author is looking. */}
       </Group>
       )}
     </>

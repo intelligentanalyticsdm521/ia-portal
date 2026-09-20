@@ -1504,3 +1504,196 @@ describe("SCREEN LAW 18c — the verb button's tooltip is one word (round 3)", (
     assert.match(bar, /\$\{blanks\.length\} detail\(s\) are still blank/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 19 — THE NINE EXTRAS (the settings audit's round 4, 2026-09-20)
+
+   Round 4 scored the panel 56% and counted NINE things on our screen that the
+   reference has nowhere: two grey explanation sentences, a sub-heading that
+   repeats its band's own name, a bare device-glyph row, two homes for one
+   colour, a "Page" section, a "Size" select on Heading and another on Button,
+   and Image's Lightbox and Object Fit drawn unconditionally.
+
+   Every one of them is DELETED here, and each test below says what must be
+   ABSENT and what must be PRESENT in its place. The two Sizes were driven on
+   2026-09-20 — `heading.size` is `{ "size!": "default" }` over a default of
+   `default`, `button.size` is `{ "size[value]!": "sm" }` over a default of
+   `sm` — so neither condition can ever fire and neither control is ever on the
+   reference's panel.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 19 — the nine extras are DELETED (round 4)", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+  const controls = code(readSrc("builder/definitionControls.tsx"));
+
+  test("the two grey sentences in the panel are GONE, not restyled", () => {
+    assert.ok(!groups.includes("A shaped edge shows on a web page"),
+      "the Shape Divider sentence is back");
+    assert.ok(!groups.includes("means this box"),
+      "the Custom CSS sentence is back");
+    // PRESENT: the controls the sentences sat under are still there.
+    assert.match(groups, /<Group title="Shape Divider"/);
+    assert.match(groups, /<Group title="Custom CSS"/);
+    assert.match(groups, /data-box-field="custom-css"/);
+  });
+
+  test("a sub-heading never repeats the band's own name", () => {
+    // The band is "Heading" and nothing under it says "Heading" again.
+    assert.match(controls, /grp\.section && grp\.section !== p\.bandTitle/);
+    // PRESENT: the Inspector hands the band's name down, and it is the SAME
+    // expression the Group is titled with, so the two cannot drift.
+    assert.match(inspector, /<Group title=\{def \? widgetLabel\(def, p\.adapter\) : "Content"\}/);
+    assert.match(inspector, /bandTitle=\{def \? widgetLabel\(def, p\.adapter\) : "Content"\}/);
+    // …and the OTHER sub-headings are untouched.
+    assert.match(controls, /data-control-subheading=\{grp\.section\}/);
+  });
+
+  test("no band on the container's Style tab opens on a bare device row", () => {
+    // The four bands of ContainerStyleGroups — Background, Background Overlay,
+    // Border, Shape Divider — each opened on three unlabelled glyphs attached
+    // to no control. Read that component's own body, and nothing else.
+    const from = groups.indexOf("export function ContainerStyleGroups");
+    const to = groups.indexOf("function ShapeRows", from);
+    assert.ok(from > 0 && to > from, "ContainerStyleGroups moved; this law cannot see it");
+    assert.ok(!groups.slice(from, to).includes("<DeviceSegment"),
+      "a bare device row is back in ContainerStyleGroups");
+    // PRESENT: the switcher still rides on the label of a control that IS per
+    // device — the sides pad carries it beside Margin and Padding, and the
+    // typography band beside Size.
+    assert.match(groups, /\{device && onDevice && <DeviceSegment device=\{device\} onDevice=\{onDevice\} \/>\}/);
+    assert.match(groups, /<span style=\{L\}>Size<\/span>\s*<DeviceSegment/);
+  });
+
+  test("one colour has one home: the Typography band gives way to the widget's own", () => {
+    assert.match(inspector, /const defHasStyleColour = /);
+    assert.match(inspector, /colour=\{!defHasStyleColour\}/);
+    assert.match(groups, /\{colour && \(/);
+    // …and a kind that declares no colour control keeps the band's one.
+    assert.match(groups, /colour = true/);
+  });
+
+  test('the "Page" section is only where there are pages, and it is LAST', () => {
+    assert.match(inspector, /\{carried && p\.pageBreakLabel !== "" && \(/);
+    const css = inspector.indexOf('only="css"');
+    const page = inspector.indexOf('<Group title="Page"');
+    assert.ok(css > 0 && page > css,
+      "the Page section is above Custom CSS again — the reference ends on Custom CSS");
+    // ABSENT: it never opens on arrival.
+    assert.ok(!/<Group title="Page" defaultOpen/.test(inspector), "the Page section opens itself");
+  });
+
+  test("Heading and Button lose their Size select, and a stored one still draws", async () => {
+    const heading = await import("../src/builder/widgets/families/f1-words/heading.ts");
+    const { BUTTON_DEF } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/button.ts");
+    assert.ok(!heading.HEADING_DEF.controls.some((c) => c.key === "size"),
+      "the Heading's Size select is back");
+    assert.ok(!BUTTON_DEF.controls.some((c) => c.key === "size"),
+      "the Button's Size select is back");
+    // PRESENT: HTML Tag is the Heading's only size control, as in the reference.
+    assert.ok(heading.HEADING_DEF.controls.some((c) => c.key === "header_size" && c.label === "HTML Tag"));
+    // …and the stored key is still READ, so no document changes shape.
+    const ctx = { mode: "view", merge: {}, accent: "#0C4A60" };
+    const big = heading.renderHeading({ id: "h1", kind: "heading", props: { text: "Hi", size: "xxl" } }, ctx);
+    const plain = heading.renderHeading({ id: "h1", kind: "heading", props: { text: "Hi" } }, ctx);
+    assert.notEqual(big, plain, "a heading stored with a Size stopped being drawn at that size");
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 20 — A CONTROL IS DRAWN ONLY WHEN ITS CONDITION HOLDS
+
+   Round 4: "Nothing on a widget's Content tab is conditional … one missing
+   mechanism (`condition` on a control) behind six rows." The mechanism is
+   `controlCondition.ts`, pure, and it is EXECUTED here rather than read.
+
+   The conditions themselves are the reference's own, read out of a live
+   Elementor 4.2.4 on 2026-09-20 with Playwright on the installed Chrome
+   (`elementor-reference/scripts/zz-settings-fix-conditions.js`, capture
+   `elementor-reference/widgets/_zz_settings_fix_conditions.json`).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 20 — Elementor's `condition`, executed", () => {
+  test("the arithmetic: is, is-not, one-of, and every term must hold", async () => {
+    const { conditionMet, controlIsShown, conditionValue } =
+      await import("../src/builder/controlCondition.ts");
+
+    // No condition at all is "always" — nothing already declared moves.
+    assert.equal(conditionMet(undefined, {}), true);
+    assert.equal(conditionMet({}, {}), true);
+    assert.equal(controlIsShown({ label: "x" }, {}), true);
+
+    // is
+    assert.equal(conditionMet({ look: "line_text" }, { look: "line_text" }), true);
+    assert.equal(conditionMet({ look: "line_text" }, { look: "line_icon" }), false);
+    assert.equal(conditionMet({ look: "line_text" }, {}), false);
+
+    // is not, and the empty-string form that means "is set"
+    assert.equal(conditionMet({ "view!": "default" }, { view: "stacked" }), true);
+    assert.equal(conditionMet({ "view!": "default" }, { view: "default" }), false);
+    assert.equal(conditionMet({ "text!": "" }, { text: "Press me" }), true);
+    assert.equal(conditionMet({ "text!": "" }, { text: "" }), false);
+    assert.equal(conditionMet({ "text!": "" }, {}), false);
+    // …and zero is a VALUE, not an absence: a Height of 0 is a height.
+    assert.equal(conditionMet({ "height!": "" }, { height: 0 }), true);
+
+    // one of
+    assert.equal(conditionMet({ container_type: ["flex"] }, { container_type: "flex" }), true);
+    assert.equal(conditionMet({ container_type: ["flex"] }, { container_type: "grid" }), false);
+
+    // EVERY term — Elementor's condition is an AND, which is the whole reason
+    // a Button's Icon Position waits for the words AND the icon.
+    const both = { "text!": "", "selected_icon!": "" };
+    assert.equal(conditionMet(both, { text: "Go", selected_icon: "check" }), true);
+    assert.equal(conditionMet(both, { text: "Go" }), false);
+    assert.equal(conditionMet(both, { selected_icon: "check" }), false);
+
+    // An icon is stored two ways on this platform and reads the same either way.
+    assert.equal(conditionValue({ selected_icon: { value: "fas fa-star" } }, "selected_icon"), "fas fa-star");
+    assert.equal(conditionMet(both, { text: "Go", selected_icon: { value: "", library: "" } }), false);
+    assert.equal(conditionMet(both, { text: "Go", selected_icon: { value: "fas fa-star" } }), true);
+  });
+
+  test("the panel asks it, in the one place a definition becomes a row", () => {
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    assert.match(controls, /isDrawnInPanel\(c\) && controlIsShown\(c, props\)/);
+    assert.match(readSrc("builder/definitionControls.tsx"),
+      /import \{ controlIsShown \} from "\.\/controlCondition"/);
+  });
+
+  test("the seven controls the audit named now carry the reference's own condition", async () => {
+    const { conditionMet } = await import("../src/builder/controlCondition.ts");
+    const { IMAGE_DEF } = await import("../src/builder/widgets/families/f2-pictures/image.ts");
+    const { BUTTON_DEF } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/button.ts");
+    const { DIVIDER_DEF } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/divider.ts");
+    const { ICON_DEF } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/icon.ts");
+    const at = (def, key) => def.controls.find((c) => c.key === key);
+    const shown = (def, key, props) => conditionMet(at(def, key).condition, props);
+
+    // Image: the url box for a Custom URL, the Lightbox for a Media File,
+    // Object Fit once a Height is set.
+    assert.equal(shown(IMAGE_DEF, "link", { link_to: "custom" }), true);
+    assert.equal(shown(IMAGE_DEF, "link", { link_to: "file" }), false);
+    assert.equal(shown(IMAGE_DEF, "link", IMAGE_DEF.defaults), false);
+    assert.equal(shown(IMAGE_DEF, "open_lightbox", { link_to: "file" }), true);
+    assert.equal(shown(IMAGE_DEF, "open_lightbox", IMAGE_DEF.defaults), false);
+    assert.equal(shown(IMAGE_DEF, "object-fit", { height: 240 }), true);
+    assert.equal(shown(IMAGE_DEF, "object-fit", IMAGE_DEF.defaults), false);
+
+    // Divider: the tag and the text with Text, the icon with Icon.
+    assert.equal(shown(DIVIDER_DEF, "html_tag", { look: "line_text" }), true);
+    assert.equal(shown(DIVIDER_DEF, "html_tag", DIVIDER_DEF.defaults), false);
+    assert.equal(shown(DIVIDER_DEF, "icon", { look: "line_icon" }), true);
+    assert.equal(shown(DIVIDER_DEF, "icon", { look: "line_text" }), false);
+
+    // Button: both, and only both.
+    for (const key of ["icon_align", "icon_indent"]) {
+      assert.equal(shown(BUTTON_DEF, key, { text: "Go", selected_icon: "check" }), true);
+      assert.equal(shown(BUTTON_DEF, key, BUTTON_DEF.defaults), false);
+    }
+
+    // Icon: the Shape once there is one.
+    assert.equal(shown(ICON_DEF, "shape", { view: "stacked" }), true);
+    assert.equal(shown(ICON_DEF, "shape", ICON_DEF.defaults), false);
+  });
+});

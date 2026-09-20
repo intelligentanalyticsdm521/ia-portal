@@ -187,14 +187,22 @@ export const BUTTON_DEF: FamilyWidgetDef = {
       { value: "danger", label: "Danger" }] },
     { key: "text", label: "Text", type: "text", tab: "content", section: "Button" },
     { key: "link", label: "Link", type: "link", tab: "content", section: "Button" },
-    { key: "size", label: "Size", type: "select", tab: "content", section: "Button", options: [
-      { value: "xs", label: "Extra Small" }, { value: "sm", label: "Small" },
-      { value: "md", label: "Medium" }, { value: "lg", label: "Large" },
-      { value: "xl", label: "Extra Large" }] },
+    /* "Size" IS DELETED (2026-09-20, audit round 4 row 134). Driven on
+       2026-09-20: `button.size` carries `condition: { "size[value]!": "sm" }`
+       and its own default IS `sm`, so the condition never fires and the
+       control is NEVER on the reference's panel. The renderer still READS
+       `p.size`, so a button saved as Large is still Large; nothing new can
+       set one, and `SIZES` above is what reads it. */
     { key: "selected_icon", label: "Icon", type: "select", tab: "content", section: "Button", options: ICON_OPTIONS },
-    { key: "icon_align", label: "Icon Position", type: "select", tab: "content", section: "Button", options: [
+    /* ONLY ONCE THERE ARE WORDS **AND** AN ICON (2026-09-20, row 135). The
+       reference's own condition, driven: `{ "text!": "", "selected_icon[value]!":
+       "" }` on both. Which side of the words an icon sits on, and how far from
+       them, are questions that cannot be answered until both exist. */
+    { key: "icon_align", label: "Icon Position", type: "select", tab: "content", section: "Button",
+      condition: { "text!": "", "selected_icon!": "" }, options: [
       { value: "row", label: "Start" }, { value: "row-reverse", label: "End" }] },
-    { key: "icon_indent", label: "Icon Spacing", type: "number", tab: "content", section: "Button" },
+    { key: "icon_indent", label: "Icon Spacing", type: "number", tab: "content", section: "Button",
+      condition: { "text!": "", "selected_icon!": "" } },
     /* Elementor's eighth Content control is "Button ID". It is NOT offered:
        the engine's panel draws seven control types and `text` is not one of
        them — a text control is typed ON THE PAGE, and a CSS id has nothing on

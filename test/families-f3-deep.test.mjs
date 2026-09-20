@@ -94,7 +94,14 @@ const SWEEP = {
     button_type: ["danger", /#D9534F/],
     text: ["Press me now", /Press me now/],
     link: ["https://example.test/x", /href="https:\/\/example\.test\/x"/],
-    size: ["xl", /padding:20px 40px/],
+    /* `size` IS NOT SWEPT BECAUSE IT IS NOT A CONTROL ANY MORE (2026-09-20).
+       Driven out of a live Elementor: `button.size` carries
+       `condition: { "size[value]!": "sm" }` over its own default of `sm`, so
+       the reference never draws it. The sweep asks "does every control the
+       panel offers change the page"; a key nothing can set is not one. What
+       the renderer still does with a STORED size is proved below, in the
+       section for the things a sweep cannot judge — the proof MOVED, it was
+       not dropped. */
     selected_icon: [{ value: "fas fa-check", library: "fa-solid" }, /bx-btn-i/],
     icon_align: ["row-reverse", /flex-direction:row-reverse/],
     icon_indent: [21, /gap:21px/],
@@ -267,6 +274,20 @@ describe("every control of the eight changes what is drawn", () => {
    ═════════════════════════════════════════════════════════════════════════ */
 
 describe("the behaviours a single regular expression cannot see", () => {
+  test("a Button saved with a Size still draws at that size, though nothing can set one now", () => {
+    /* THE OTHER HALF OF DELETING A CONTROL (2026-09-20, settings audit row
+       134). The reference never draws Button ▸ Size, so ours does not either —
+       but every button stored before today carries one, and a widget that
+       changed shape the day the control went would be the worst kind of
+       tidy-up. The renderer still READS the key; this is the test that says
+       so, and it is here rather than in the sweep because the sweep's question
+       is "does every CONTROL do something". */
+    assert.match(draw("button", { ...BASE.button, size: "xl" }), /padding:20px 40px/);
+    assert.match(draw("button", { ...BASE.button, size: "lg" }), /padding:15px 30px/);
+    // …and the default is still Small, so a button with no size is unchanged.
+    assert.match(draw("button", BASE.button), /padding:9px 18px/);
+  });
+
   test("the Icon Box link wraps the WHOLE box, which the old renderer never did", () => {
     const html = draw("icon_box", { ...BASE.icon_box, link: "https://example.test/all" });
     assert.match(html, /^<a class="bx-iconbox-link" href="https:\/\/example\.test\/all"/);
