@@ -1166,3 +1166,107 @@ describe("SCREEN LAW 15b — no eyebrow on ANY builder door (D-172, round 2)", (
     }
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 16 — THE PANEL'S OWN CHROME, MEASURED (D-172, round 3)
+
+   DRIVEN in the real editor on 2026-09-19 with Playwright on the installed
+   Chrome — `elementor-reference/scripts/zz-fixer-r3-panel-ref{,-b,-c,-d}.js`,
+   captures `elementor-reference/widgets/zz-fixer-r3-panel-ref*.json`:
+
+     · `#elementor-panel-header-title` — `justify-content: center`, 15px,
+       weight 700, and the ink of "Edit Heading" measured x=107 w=86, centre
+       150 of a 300px panel. No `title`, no `aria-label`.
+     · each tab — 57px tall, 13px at weight 400, an eicons glyph on
+       `span::before` at 16px `display: block` ABOVE the word. `title`,
+       `aria-label` and `data-tooltip` all null on all three.
+     · a section — x=0, width 300, `background: transparent`, `border: 0
+       none`, `border-radius: 0`; heading 48px, `padding: 0 20px`, caret on the
+       LEFT, title 13.33px weight 700, no tooltip on heading or title; every
+       band AFTER the first carries `border-top: 2px solid rgb(230,232,234)`.
+     · `#elementor-controls` — x=0, width 300, `padding: 15px 0 0`.
+     · the accordion — on a Heading's Advanced tab, Layout starts open with
+       twelve controls laid out; clicking Motion Effects leaves Layout with
+       NONE and Motion Effects with five; clicking Transform empties Motion
+       Effects. One section open at a time.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 16 — the panel's own chrome (D-172, round 3)", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("a tab carries NO tooltip, and wears its glyph above the word", () => {
+    // ABSENT: the three tooltips that said the word under the cursor again.
+    assert.ok(!groups.includes("${tabLabel(t, first)} settings"),
+      "the tabs have their tooltips back");
+    assert.ok(!groups.includes("Nothing to set here for this"),
+      "the greyed tab's tooltip is back");
+    // PRESENT: the glyph over the word, and the reference's own tab height.
+    assert.match(groups, /const TAB_ICON: Record<InspectorTab, typeof Pencil>/);
+    assert.match(groups, /<Icon size=\{16\} aria-hidden \/>/);
+    assert.match(groups, /height: 57, display: "flex", flexDirection: "column"/);
+  });
+
+  test("a section header carries NO tooltip — the `hint` prop is GONE, not emptied", () => {
+    // ABSENT: the prop itself, its use as a title, and every call site's
+    // sentence. An emptied prop is how the sentence comes back.
+    assert.ok(!/hint\?: string;/.test(groups), "Group takes a hint again");
+    assert.ok(!/title=\{hint/.test(groups), "the section header is a tooltip again");
+    assert.ok(!/<Group[^>]*hint=/.test(groups), "a group in StyleGroups passes a hint again");
+    assert.ok(!/<Group[^>]*hint=/.test(inspector), "a group in the Inspector passes a hint again");
+    for (const gone of ["What this shows, and where it comes from",
+                        "Room inside and around this, and how it lines up",
+                        "How the words in this are set"]) {
+      assert.ok(!groups.includes(gone) && !inspector.includes(gone),
+        `the section header explains itself again: ${gone}`);
+    }
+    // PRESENT: the band, and the caret that says open or shut.
+    assert.match(groups, /className="bx-pband-head"/);
+    assert.match(groups, /aria-expanded=\{open\}/);
+  });
+
+  test("a section is a full-bleed BAND, not a card", () => {
+    // ABSENT: the card — a 1px edge, a 6px radius, a grey header fill.
+    assert.ok(!groups.includes('style={{ border: "1px solid #E2E8F0", borderRadius: 6, overflow: "hidden" }}'),
+      "a section is a rounded card again");
+    assert.ok(!/background: "#F8FAFC" \}\}>\s*<button/.test(groups),
+      "the section header has its grey fill back");
+    // PRESENT: the reference's own measurements.
+    assert.match(groups, /className="bx-pband"/);
+    assert.match(groups, /height: 48, padding: "0 20px"/);
+    assert.match(groups, /fontSize: 13, fontWeight: 700, color: "#0C0D0E"/);
+    // The separator sits on the BAND: a heading is a <button> and its inline
+    // `border: none` beats a stylesheet rule, which is how the first version
+    // of this drew no line at all on the screen.
+    assert.match(groups, /\.bx-pband \+ \.bx-pband \{ border-top: 2px solid #E6E8EA; \}/);
+    // …and a body with no side padding of its own, so a band can be 300 wide.
+    assert.ok(!inspector.includes('padding: "14px 16px"'), "the panel body pads its sides again");
+    assert.match(inspector, /padding: "15px 0 0", display: "flex"/);
+  });
+
+  test("ONE section open at a time", () => {
+    assert.match(groups, /export function Accordion/);
+    assert.match(groups, /const AccordionCtx = createContext/);
+    // The toggle: pressing the open one shuts it, pressing another moves the
+    // open one. `null` is "nobody has pressed anything yet", and the BAND says
+    // whether it is open — found by driving ours, where a press on the
+    // default-open band left it open because the provider could not tell
+    // "nothing pressed yet" from "this one is open".
+    assert.match(groups, /toggle: \(t, isOpen\) => setOpen\(isOpen \? "" : t\)/);
+    assert.match(groups, /acc\.toggle\(title, open\)/);
+    assert.match(groups, /const open = acc \? \(acc\.open === null \? defaultOpen : acc\.open === title\) : solo;/);
+    // …and the panel is wrapped in one, per tab, on both panels.
+    assert.match(inspector, /<Accordion key=\{shownTab\}>/);
+    assert.match(inspector, /<Accordion key=\{pageTab\}>/);
+  });
+
+  test("the panel's title is CENTRED, 15px, weight 700", () => {
+    // ABSENT: the left-aligned 14px/600 title.
+    assert.ok(!inspector.includes('style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title'),
+      "the panel title is left-aligned again");
+    // PRESENT: one constant, used by both panels.
+    assert.match(inspector, /const PANEL_TITLE: React\.CSSProperties = \{\s*display: "flex", justifyContent: "center", fontSize: 15, fontWeight: 700/);
+    assert.match(inspector, /<div style=\{PANEL_TITLE\} data-inspector-title>Edit \{name\}<\/div>/);
+    assert.match(inspector, /<div style=\{PANEL_TITLE\} data-inspector-title>Page settings<\/div>/);
+  });
+});

@@ -17,10 +17,10 @@
  * and the ratio presets all live in style.ts, pure, so `node --test` drives
  * them without a DOM.
  */
-import { useState, type ReactNode } from "react";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import {
-  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Link2,
-  Monitor, Smartphone, Tablet, Unlink,
+  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Contrast, Link2,
+  Monitor, Pencil, Settings2, Smartphone, Tablet, Unlink,
 } from "lucide-react";
 import {
   RATIO_PRESETS, normaliseRatios, setSide, sidesAreLinked,
@@ -81,6 +81,19 @@ export function tabLabel(tab: InspectorTab, first: "Content" | "Layout" | "Setti
   return tab === "content" ? first : tab === "style" ? "Style" : "Advanced";
 }
 
+/**
+ * THE GLYPH OVER EACH TAB (D-172, round 3).
+ *
+ * Driven in the reference on 2026-09-19: every tab is 57px tall and carries an
+ * eicons glyph on `span::before` — `display: block`, 16px — ABOVE the word,
+ * which is 13px at weight 400. Ours was the word alone on one line. The three
+ * glyphs are its own: a pencil over Content, a contrast circle over Style, a
+ * gear over Advanced.
+ */
+const TAB_ICON: Record<InspectorTab, typeof Pencil> = {
+  content: Pencil, style: Contrast, advanced: Settings2,
+};
+
 export function InspectorTabs({ tab, onTab, first, tabs }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
@@ -101,25 +114,30 @@ export function InspectorTabs({ tab, onTab, first, tabs }: {
     <div role="tablist" aria-label="Settings" data-inspector-tab={tab}
       style={{ display: "flex", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
       {shown.map((t) => {
-        const off = false;
         const on = tab === t;
+        const Icon = TAB_ICON[t];
         return (
+          /* NO TOOLTIP ON A TAB (D-172, round 3). Driven: `title`,
+             `aria-label` and `data-tooltip` are all null on all three of the
+             reference's tabs. Ours read "Content settings", "Style settings",
+             "Advanced settings" — the word under the cursor, said again. */
           <button
             key={t}
             type="button"
             role="tab"
             data-inspector-tabbtn={t}
             aria-selected={on}
-            disabled={off}
-            title={off ? `Nothing to set here for this` : `${tabLabel(t, first)} settings`}
             onClick={() => onTab(t)}
             style={{
               flex: 1, border: "none", borderBottom: `2px solid ${on ? "#0B1C24" : "transparent"}`,
-              background: "transparent", padding: "9px 6px", fontSize: 11.5,
-              fontWeight: on ? 700 : 600, color: off ? "#CBD5E1" : on ? "#0B1C24" : "#64748B",
-              cursor: off ? "default" : "pointer",
+              background: "transparent", height: 57, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 6, fontSize: 13,
+              fontWeight: on ? 700 : 400, color: on ? "#0B1C24" : "#64748B", cursor: "pointer",
             }}
-          >{tabLabel(t, first)}</button>
+          >
+            <Icon size={16} aria-hidden />
+            <span>{tabLabel(t, first)}</span>
+          </button>
         );
       })}
     </div>
@@ -130,47 +148,97 @@ export function InspectorTabs({ tab, onTab, first, tabs }: {
    A group
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* THE HINT SENTENCE UNDER A SECTION HEADER IS DELETED (D-172). No
-   descriptive paragraph appears anywhere in the reference's panel; `hint`
-   is the header's TOOLTIP, which is where a sentence belongs. */
+/**
+ * ONE SECTION OPEN AT A TIME (D-172, round 3).
+ *
+ * DRIVEN in the reference on 2026-09-19, on a Heading's Advanced tab: Layout
+ * starts open with twelve controls laid out; clicking Motion Effects leaves
+ * Layout with NONE and Motion Effects with five; clicking Transform empties
+ * Motion Effects in turn. A panel is an accordion there, and ours let every
+ * section stand open at once, so a 300px column became a scroll of everything.
+ *
+ * `null` means nobody has pressed anything yet, so the section that asked for
+ * `defaultOpen` is the open one; `""` means the author shut that one and wants
+ * none. A Group with no Accordion round it keeps its own open/shut, which is
+ * what a lone group outside the panel does.
+ */
+const AccordionCtx = createContext<{
+  open: string | null;
+  /** The band says whether IT is open — the provider cannot know which band
+   *  asked for `defaultOpen`, and a first press on the open one must SHUT it.
+   *  Found by driving our own panel: pressing the open Layout band left it
+   *  open, because "nothing pressed yet" and "Layout is open" were the same
+   *  state to the toggle. */
+  toggle: (title: string, isOpen: boolean) => void;
+} | null>(null);
+
+export function Accordion({ children }: { children: ReactNode }) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <AccordionCtx.Provider value={{ open, toggle: (t, isOpen) => setOpen(isOpen ? "" : t) }}>
+      {/* THE SEPARATOR, MEASURED: every band after the first carries
+          `border-top: 2px solid rgb(230, 232, 234)` on its heading. It is a
+          sibling rule, which an inline style cannot say, so it is said once
+          here rather than by handing every Group its own index. */}
+      {/* ON THE BAND, NOT ITS HEADING (found by driving ours): the heading is
+          a <button> whose inline `border: none` beats any stylesheet rule, so
+          the first version of this drew no line at all. The band sits directly
+          above its heading, so the line lands in the same place. */}
+      <style>{".bx-pband + .bx-pband { border-top: 2px solid #E6E8EA; }"}</style>
+      {children}
+    </AccordionCtx.Provider>
+  );
+}
+
+/* A SECTION IS A FULL-BLEED BAND, NOT A CARD (D-172, round 3).
+   Measured in the reference: the section box is x=0, width 300 — the whole
+   panel — `background: transparent`, `border: 0 none`, `border-radius: 0`, and
+   its heading is 48px tall with `padding: 0 20px` and the caret on the LEFT.
+   Ours was a rounded card with a 1px #E2E8F0 edge and a grey header fill,
+   inset 16px from the panel's edge, so the panel read as a stack of cards.
+
+   THE HEADER'S TOOLTIP IS DELETED with it. Driven: `title`, `aria-label` and
+   `data-tooltip` are null on every one of the reference's section headings.
+   Ours carried a sentence on each — "What this shows, and where it comes
+   from", "Room inside and around this, and how it lines up" — so the `hint`
+   prop is gone from the component and from all fourteen call sites. */
 export function Group({
-  title, hint, defaultOpen = false, onReset, resetTitle, children,
+  title, defaultOpen = false, onReset, resetTitle, children,
 }: {
   title: string;
-  hint?: string;
   defaultOpen?: boolean;
   onReset?: () => void;
   resetTitle?: string;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const acc = useContext(AccordionCtx);
+  const [solo, setSolo] = useState(defaultOpen);
+  const open = acc ? (acc.open === null ? defaultOpen : acc.open === title) : solo;
   return (
-    <div data-style-group={title} style={{ border: "1px solid #E2E8F0", borderRadius: 6, overflow: "hidden" }}>
-      <div style={{ display: "flex", alignItems: "center", background: "#F8FAFC" }}>
-        <button
-          type="button"
-          onClick={() => setOpen((o) => !o)}
-          title={hint || `Show or hide ${title.toLowerCase()}`}
-          aria-expanded={open}
-          style={{
-            flex: 1, display: "flex", alignItems: "center", gap: 6, border: "none", background: "transparent",
-            padding: "8px 10px", cursor: "pointer", textAlign: "left",
-          }}
-        >
-          {open ? <ChevronDown size={13} color="#5A7A8A" /> : <ChevronRight size={13} color="#5A7A8A" />}
-          {/* TITLE CASE (D-172): the reference's headings are "Container",
-              "Additional Options", measured `text-transform: none`. */}
-          <span style={{ fontSize: 12, fontWeight: 700, color: "#334155" }}>{title}</span>
-        </button>
-        {/* THE PER-SECTION ERASER IS DELETED (D-172). The reference has a reset
-            on a POPOVER control — Typography, Text Stroke, Text Shadow — and
-            nowhere else; ours put one titled "Put layout back to the default on
-            every screen size" in EVERY section header, which is a destructive
-            button on every row of the panel. `onReset` stays on the props
-            because the popover controls will want it; nothing draws it here. */}
-      </div>
+    <div className="bx-pband" data-style-group={title} style={{ background: "transparent" }}>
+      <button
+        type="button"
+        className="bx-pband-head"
+        onClick={() => (acc ? acc.toggle(title, open) : setSolo((o) => !o))}
+        aria-expanded={open}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", gap: 8, border: "none",
+          background: "transparent", height: 48, padding: "0 20px", cursor: "pointer", textAlign: "left",
+        }}
+      >
+        {open ? <ChevronDown size={13} color="#5A7A8A" /> : <ChevronRight size={13} color="#5A7A8A" />}
+        {/* TITLE CASE, 13px (D-172): measured 13.3333px, weight 700,
+            `letter-spacing: normal`, `text-transform: none`. */}
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#0C0D0E" }}>{title}</span>
+      </button>
+      {/* THE PER-SECTION ERASER IS DELETED (D-172). The reference has a reset
+          on a POPOVER control — Typography, Text Stroke, Text Shadow — and
+          nowhere else; ours put one titled "Put layout back to the default on
+          every screen size" in EVERY section header, which is a destructive
+          button on every row of the panel. `onReset` stays on the props
+          because the popover controls will want it; nothing draws it here. */}
       {open && (
-        <div style={{ padding: "10px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
+        <div style={{ padding: "0 20px 14px", display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
       )}
     </div>
   );
@@ -398,7 +466,7 @@ export function SpacingGroup({
   align?: boolean;
 }) {
   return (
-    <Group title="Layout" hint="Room inside and around this, and how it lines up" defaultOpen onReset={onReset}>
+    <Group title="Layout" defaultOpen onReset={onReset}>
       {/* MARGIN FIRST, THEN PADDING (D-172) — the reference's own order in
           Advanced > Layout. Ours was the other way round. */}
       <SidesPad
@@ -482,7 +550,7 @@ export function TypographyGroup({
   const set = (patch: Record<string, unknown>, key: string) =>
     onPatch({ typography: { ...t, ...patch } as any }, key);
   return (
-    <Group title="Typography" hint="How the words in this are set" onReset={onReset}>
+    <Group title="Typography" onReset={onReset}>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         <div style={FIELD}>
           <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -576,7 +644,7 @@ export function ResponsiveGroup({
        the reference names the BREAKPOINT, because "tablet" and "tablet
        portrait" are different widths and hiding on one is not hiding on the
        other. */
-    <Group title="Responsive" hint="Leaving this out on smaller screens" onReset={onReset}>
+    <Group title="Responsive" onReset={onReset}>
       {visibilityHeading && (
         <div data-control-subheading="Visibility" style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
           Visibility
@@ -648,7 +716,7 @@ export function AttributesGroup({
     ...INPUT, borderRadius: 6,
   };
   return (
-    <Group title="Attributes" hint="A name for this part, so a link or your own styling can find it" onReset={onReset}>
+    <Group title="Attributes" onReset={onReset}>
       <div style={ROW}>
         <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
         <input

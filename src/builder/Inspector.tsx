@@ -65,10 +65,34 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  AttributesGroup, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs, RatioPicker,
-  ResponsiveGroup, SpacingGroup, Switcher, TypographyGroup,
+  Accordion, AttributesGroup, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs,
+  RatioPicker, ResponsiveGroup, SpacingGroup, Switcher, TypographyGroup,
   FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
+
+/**
+ * THE PANEL'S TITLE IS CENTRED (D-172, round 3).
+ *
+ * Measured in the reference: `#elementor-panel-header-title` is
+ * `display: flex; justify-content: center`, 15px, weight 700, and the ink of
+ * "Edit Heading" sits at x=107 width 86 — centre 150 of a 300px panel. Ours
+ * was 14px at weight 600, starting 10px from the panel's left edge.
+ */
+const PANEL_TITLE: React.CSSProperties = {
+  display: "flex", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#0C0D0E",
+};
+
+/**
+ * THE PANEL'S BODY HAS NO SIDE PADDING (D-172, round 3).
+ *
+ * Measured: `#elementor-controls` is x=0, width 300, `padding: 15px 0 0`. The
+ * 20px inset belongs to each band, which is how a band can run the full width
+ * of the panel and still line its label up at x=20. Ours padded the body 16px
+ * and drew cards inside that, so nothing could ever be full-bleed.
+ */
+const PANEL_BODY: React.CSSProperties = {
+  padding: "15px 0 0", display: "flex", flexDirection: "column", gap: 0,
+};
 
 export interface InspectorSlots {
   /** Rendered inside the selected widget's panel, above the standard controls. */
@@ -198,11 +222,12 @@ export function Inspector(p: InspectorProps) {
     return (
       <div data-inspector="page" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
         <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
-          <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Page settings</div>
+          <div style={PANEL_TITLE} data-inspector-title>Page settings</div>
         </div>
         <InspectorTabs tab={pageTab} onTab={setTab} first="Settings" tabs={pageTabs} />
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
-          <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+          <Accordion key={pageTab}>
+          <div style={PANEL_BODY}>
             {pageTab === "content" && (
               /* GENERAL SETTINGS — the reference's own heading over the
                  document's own fields. The FIELDS are the adapter's: only it
@@ -211,7 +236,7 @@ export function Inspector(p: InspectorProps) {
                  always did. What is added is the section the reference puts
                  round them, so a page panel is a panel rather than one loose
                  line reading "No priced lines yet". */
-              <Group title="General Settings" hint="The facts about this document itself" defaultOpen>
+              <Group title="General Settings" defaultOpen>
                 {p.documentExtras}
               </Group>
             )}
@@ -220,7 +245,7 @@ export function Inspector(p: InspectorProps) {
                  now reachable from nowhere: `settings.style`, `accent`,
                  `headingFont` and `bodyFont` are read by the canvas, the PDF,
                  the mailbox and the publisher, and had no control anywhere. */
-              <Group title="Page Layout" hint="How the whole document is laid out and coloured" defaultOpen>
+              <Group title="Page Layout" defaultOpen>
                 <div style={ROW}>
                   <span style={L}>Page Layout</span>
                   <select style={INPUT} data-page-layout value={doc.settings.style || "plain"}
@@ -257,6 +282,7 @@ export function Inspector(p: InspectorProps) {
               </Group>
             )}
           </div>
+          </Accordion>
         </div>
         {/* THE COACHING SENTENCE IS DELETED (D-172). The reference panels
             carry no such line. */}
@@ -334,13 +360,14 @@ export function Inspector(p: InspectorProps) {
           three adapters each wrote `documentExtras={selection ? null : …}` and
           kept a copy of the selection to do it with: one rule, written four
           times. The rule lives here now, once. */}
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }} data-inspector-title>Edit {name}</div>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
+        <div style={PANEL_TITLE} data-inspector-title>Edit {name}</div>
       </div>
 
       <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} tabs={tabs} />
 
-      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
+      <Accordion key={shownTab}>
+      <div style={{ ...PANEL_BODY, overflowY: "auto" }}>
         {widget && (
           <>
             {/* A BOX (§11.12, D-156) — its LAYOUT tab.
@@ -354,7 +381,7 @@ export function Inspector(p: InspectorProps) {
                 widget and is written ONCE. Two padding controls for one padding
                 is exactly the drift this file exists to stop. */}
             {box && shownTab === "content" && (
-              <Group title="Container" hint="Which way what is inside this box runs, and how far apart" defaultOpen
+              <Group title="Container" defaultOpen
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
                 {/* THE BARE DEVICE ROW IS DELETED (D-172, round 2). The
@@ -493,7 +520,7 @@ export function Inspector(p: InspectorProps) {
                 our own control, with our own words, in the wrong section. Same
                 prop, same renderer, the reference's name and place. */}
             {box && shownTab === "content" && (
-              <Group title="Additional Options" hint="What this box is drawn as in the page's HTML">
+              <Group title="Additional Options">
                 <div style={ROW}>
                   <span style={L}>HTML Tag</span>
                   <select style={INPUT} data-box-html-tag
@@ -516,7 +543,7 @@ export function Inspector(p: InspectorProps) {
                 reading and writing the same keys through the same style.ts.
                 The reference calls this section Border and puts it on Style. */}
             {box && shownTab === "style" && (
-              <Group title="Border" hint="The edge round this box, and its corners" defaultOpen
+              <Group title="Border" defaultOpen
                 onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["border", "radius", "shadow"]))}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <div style={FIELD}>
@@ -547,8 +574,7 @@ export function Inspector(p: InspectorProps) {
                 first section by the widget's own name — Heading, Image, Button,
                 Divider, Spacer, Icon — not "Content"; "Content" is the TAB. */}
             {!box && shownTab === "content" && (
-            <Group title={def ? widgetLabel(def, p.adapter) : "Content"}
-              hint="What this shows, and where it comes from" defaultOpen>
+            <Group title={def ? widgetLabel(def, p.adapter) : "Content"} defaultOpen>
               {/* THE WIDGET'S DESCRIPTION IS NOT DRAWN HERE (D-172). No
                   descriptive paragraph appears anywhere in the reference's
                   panel; the sentence is the TILE'S TOOLTIP in the left panel,
@@ -756,7 +782,7 @@ export function Inspector(p: InspectorProps) {
                     "pageBreakBefore" and it is not copied here. A section that
                     is NOT a carrier still has its own panel, unchanged. */}
                 {carried && (
-                  <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
+                  <Group title="Page"
                     onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer", numbered: false })}
                     resetTitle="Back to: no page break, no number, and the customer sees it">
                     {p.pageBreakLabel !== "" && (
@@ -794,7 +820,7 @@ export function Inspector(p: InspectorProps) {
 
           {/* ── LAYOUT ────────────────────────────────────────────────── */}
           {shownTab === "content" && (
-          <Group title="Container" hint="How wide the content runs inside the page" defaultOpen
+          <Group title="Container" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["columnWidths", "gap"]))}>
             {/* LABEL, COLUMNS, SPLIT and GAP BETWEEN COLUMNS WERE HERE AND ARE
                 DELETED (D-172).
@@ -843,7 +869,7 @@ export function Inspector(p: InspectorProps) {
 
           {/* ── STYLE ─────────────────────────────────────────────────── */}
           {shownTab === "style" && (
-          <Group title="Background" hint="Background, edge, corners and shadow" defaultOpen
+          <Group title="Background" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["border", "radius", "shadow", "minHeight"]))}>
             <div style={FIELD}>
               <span style={L}>Background</span>
@@ -926,7 +952,7 @@ export function Inspector(p: InspectorProps) {
 
           {/* ── TYPOGRAPHY — the section's own heading font ────────────── */}
           {shownTab === "style" && p.fonts.length > 0 && (
-            <Group title="Typography" hint="The font the headings in this section are set in"
+            <Group title="Typography"
               onReset={() => p.onPatchSection(section.id, { headingFont: "" })}
               resetTitle="Back to the font the rest of the document uses">
               <div style={FIELD}>
@@ -950,7 +976,7 @@ export function Inspector(p: InspectorProps) {
               no confirmation is not how that should happen. Every group that
               owns STYLING resets; the one that owns content does not. */}
           {shownTab === "advanced" && (
-          <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
+          <Group title="Page"
             onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer" })}
             resetTitle="Back to: no page break, and the customer sees it">
             {/* Only where there ARE pages. An email and a web page have none,
@@ -975,6 +1001,7 @@ export function Inspector(p: InspectorProps) {
         </div>
         )}
       </div>
+      </Accordion>
 
       {/* THE FOOTER SENTENCE — "Changes show on the page as you make them."
           — IS DELETED (D-172). No footer sentence in the reference panel. */}
