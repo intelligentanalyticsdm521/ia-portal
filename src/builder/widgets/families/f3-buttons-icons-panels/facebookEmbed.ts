@@ -76,7 +76,12 @@ export const FACEBOOK_EMBED_DEF: FamilyWidgetDef = {
   },
   icon: "Facebook",
   picture: pictureFrom(box(8, 8, 48, 24) + bar(14, 14, 20, 4) + bar(14, 22, 34) + bar(14, 28, 26)),
-  category: "General",
+  /* ELEMENTOR PRO'S OWN GROUP (D-168 item 6, fixed in wave 2). This widget is
+     `pro-elements` in BUILDER_WIDGET_CATALOG_2026-09-17.pro.json. Wave one put
+     it in General, because at the time General was where every Pro widget sat;
+     the override seam gave Elementor Pro's six groups their real names and the
+     panel test caught it. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

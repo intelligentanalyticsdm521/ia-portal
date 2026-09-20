@@ -31,13 +31,39 @@ import { makeContext } from "../src/builder/render.ts";
 import { emptyDocument } from "../src/builder/model.ts";
 import { controlTab, controlSections } from "../src/builder/registry.ts";
 
-/** Elementor's own titles for the five, from the 2026-09-17 machine files. */
+/** Elementor's own titles, from the 2026-09-17 machine files. */
 const ELEMENTOR_TITLES = {
+  /* Wave one: the five Pro widgets F3 had nothing for. */
   share_buttons: "Share Buttons",
   call_to_action: "Call to Action",
   flip_box: "Flip Box",
   facebook_embed: "Facebook Embed",
   facebook_page: "Facebook Page",
+  /* Wave two: the eight everyday ones, deepened. The KIND is ours (documents
+     hold it) and the TITLE is Elementor's, which is what D-168 asks for and
+     what gives each tile Elementor's own position for nothing. */
+  button: "Button",
+  icon: "Icon",
+  icon_box: "Icon Box",
+  list: "Icon List",
+  social_links: "Social Icons",
+  alert: "Alert",
+  divider: "Divider",
+  spacer: "Spacer",
+};
+
+/** The eight this wave deepened, by the kind a stored document already holds. */
+const DEEPENED = ["button", "icon", "icon_box", "list", "social_links", "alert", "divider", "spacer"];
+
+/** The five that are Elementor PRO. Everything else here is free Elementor. */
+const PRO_KINDS = ["share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page"];
+
+/** Elementor's own group per widget — `categories` in the two machine files. */
+const ELEMENTOR_GROUPS = {
+  share_buttons: "Pro", call_to_action: "Pro", flip_box: "Pro",
+  facebook_embed: "Pro", facebook_page: "Pro",
+  button: "Basic", icon: "Basic", divider: "Basic", spacer: "Basic",
+  icon_box: "General", list: "General", social_links: "General", alert: "General",
 };
 
 /** Elementor's Content-tab section names, per widget, from the same files. */
@@ -47,6 +73,25 @@ const CONTENT_SECTIONS = {
   flip_box: ["Front", "Back", "Settings"],
   facebook_embed: ["Embed"],
   facebook_page: ["Page"],
+  button: ["Button"],
+  icon: ["Icon"],
+  icon_box: ["Icon Box"],
+  list: ["Icon List"],
+  social_links: ["Social Icons"],
+  alert: ["Alert"],
+  divider: ["Divider"],
+  spacer: ["Spacer"],
+};
+
+/** …and its Style-tab section names, in Elementor's own order. */
+const STYLE_SECTIONS = {
+  button: ["Button", "Hover"],
+  icon: ["Icon"],
+  icon_box: ["Box", "Icon", "Content"],
+  list: ["List", "Icon", "Text"],
+  social_links: ["Icon", "Icon Hover"],
+  alert: ["Alert", "Title", "Description", "Dismiss Icon"],
+  divider: ["Divider", "Text", "Icon"],
 };
 
 const DEF = Object.fromEntries(FAMILY.defs.map((d) => [d.kind, d]));
@@ -72,8 +117,18 @@ test("f3-buttons-icons-panels: every widget it declares keeps the contract", () 
    1. THE FIVE, AND NOTHING ELSE
    ═════════════════════════════════════════════════════════════════════════ */
 
-describe("the family is the five Elementor Pro widgets F3 had nothing for", () => {
-  test("exactly those five kinds, by Elementor's own title", () => {
+describe("the family is the five Pro widgets AND the eight everyday ones", () => {
+  /* CHANGED BY WAVE 2 (B-168, 2026-09-19). Wave one landed the five Elementor
+     Pro widgets F3 had nothing for and left the eight everyday ones where they
+     were, in `registry.ts`, `widgets/icons.ts` and `widgets/boxes.ts`, because
+     a copy would have been a SECOND definition of a live kind and
+     `builder-registry.test.mjs` fails the build on that ("kinds are unique").
+
+     The override seam settled it: `mergeWidgetDefs(FAMILY_WIDGET_DEFS,
+     LEGACY_WIDGETS)` de-duplicates by kind, the family winning, IN the legacy
+     one's place. So a family definition of the SAME kind id now REPLACES the
+     old one and no tile moves. Wave 2 writes those eight, deep. */
+  test("thirteen kinds, each by Elementor's own title", () => {
     assert.deepEqual(FAMILY.defs.map((d) => d.kind).sort(), Object.keys(ELEMENTOR_TITLES).sort());
     for (const d of FAMILY.defs) {
       assert.equal(d.label, ELEMENTOR_TITLES[d.kind],
@@ -81,24 +136,22 @@ describe("the family is the five Elementor Pro widgets F3 had nothing for", () =
     }
   });
 
-  test("the eight that already exist are NOT declared a second time here", () => {
-    /* `button`, `divider`, `spacer`, `list` (Icon List), `icon`, `icon_box`,
-       `social_icons` and `alert` are offered today, from registry.ts and
-       widgets/. A copy here would be a second definition of a live kind and
-       `builder-registry.test.mjs` fails the build on it ("kinds are unique").
-       The move, with the file and line of each old copy, is written up for the
-       lander. */
-    const live = ["button", "divider", "spacer", "list", "icon", "icon_box", "social_icons", "alert"];
-    for (const kind of live) {
-      assert.equal(DEF[kind], undefined,
-        `${kind} already has a definition outside this folder — two is one too many`);
+  test("the eight everyday ones REPLACE the legacy definition of the same kind", () => {
+    /* The point of reusing the kind id: a proposal saved in July holds
+       `{"kind":"button","props":{"label":"Accept"}}` and must still open. A
+       `button_v2` would have been a new tile and a dead document. */
+    for (const kind of DEEPENED) {
+      assert.ok(DEF[kind], `${kind} is not declared in this family`);
+      assert.equal(DEF[kind].kind, kind, "the kind id never changes");
     }
   });
 
-  test("all five are Pro, in Elementor's General group, and none carries a gate", () => {
+  test("the five Pro ones are Pro, the eight everyday ones are not, and none carries a gate", () => {
     for (const d of FAMILY.defs) {
-      assert.equal(d.tier, "pro", `${d.kind}: the machine file has it in \`pro-elements\``);
-      assert.equal(d.category, "General", d.kind);
+      const pro = PRO_KINDS.includes(d.kind);
+      assert.equal(d.tier, pro ? "pro" : undefined,
+        `${d.kind}: the machine file decides this, not us`);
+      assert.equal(d.category, ELEMENTOR_GROUPS[d.kind], d.kind);
       assert.equal(d.requires, undefined,
         `${d.kind}: Brandon decides the plans in October, and that must be DATA`);
     }

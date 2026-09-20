@@ -169,6 +169,7 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
   return groups.map((g) => g.group);
 }
 
+
 /**
  * Every widget the query matches, IN THE ORDER THE PANEL DRAWS THEM — which is
  * what Enter picks, and the point is that those are the same list.

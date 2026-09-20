@@ -43,6 +43,17 @@
  */
 import type { Family } from "../types";
 
+import { BUTTON_DEF, renderButton } from "./button";
+import { ICON_DEF, renderIcon } from "./icon";
+import { ICON_BOX_DEF, renderIconBox } from "./iconBox";
+import { ICON_LIST_DEF, renderIconList } from "./iconList";
+import { SOCIAL_ICONS_DEF, renderSocialIcons } from "./socialIcons";
+import { ALERT_DEF, renderAlert } from "./alert";
+import { DIVIDER_DEF, renderDivider } from "./divider";
+import { SPACER_DEF, renderSpacer } from "./spacer";
+import { EMAIL_RENDERERS } from "./email";
+import { STUDIO_INSERTS } from "./studio";
+
 import { SHARE_BUTTONS_DEF, renderShareButtons } from "./shareButtons";
 import { CALL_TO_ACTION_DEF, renderCallToAction } from "./callToAction";
 import { FLIP_BOX_DEF, renderFlipBox } from "./flipBox";
@@ -53,6 +64,20 @@ export const FAMILY: Family = {
   /* Elementor draws its Pro group after Basic and General, and these five are
      all Pro, so this order is the order the panel reads them in. */
   defs: [
+    /* THE EIGHT EVERYDAY WIDGETS, deepened (wave 2). Each REPLACES the legacy
+       definition of the same kind: `mergeWidgetDefs` drops the old one and
+       keeps this one IN ITS PLACE, so no tile moves and every stored document
+       still opens. Their labels are Elementor's, so `registry.panelAt` gets
+       their position off `elementorPanel.ts` for nothing. */
+    BUTTON_DEF,
+    ICON_DEF,
+    ICON_BOX_DEF,
+    ICON_LIST_DEF,
+    SOCIAL_ICONS_DEF,
+    ALERT_DEF,
+    DIVIDER_DEF,
+    SPACER_DEF,
+
     SHARE_BUTTONS_DEF,
     CALL_TO_ACTION_DEF,
     FLIP_BOX_DEF,
@@ -60,10 +85,31 @@ export const FAMILY: Family = {
     FACEBOOK_PAGE_DEF,
   ],
   renderers: {
+    [BUTTON_DEF.kind]: renderButton,
+    [ICON_DEF.kind]: renderIcon,
+    [ICON_BOX_DEF.kind]: renderIconBox,
+    [ICON_LIST_DEF.kind]: renderIconList,
+    [SOCIAL_ICONS_DEF.kind]: renderSocialIcons,
+    [ALERT_DEF.kind]: renderAlert,
+    [DIVIDER_DEF.kind]: renderDivider,
+    [SPACER_DEF.kind]: renderSpacer,
+
     [SHARE_BUTTONS_DEF.kind]: renderShareButtons,
     [CALL_TO_ACTION_DEF.kind]: renderCallToAction,
     [FLIP_BOX_DEF.kind]: renderFlipBox,
     [FACEBOOK_EMBED_DEF.kind]: renderFacebookEmbed,
     [FACEBOOK_PAGE_DEF.kind]: renderFacebookPage,
   },
+
+  /* THE MAILBOX HALF (D-168 item 5b). The offer file gives the newsletter all
+     eight of the everyday widgets, and `adapters/email/emailRender.ts` refuses
+     flex, grid and classes — so they are drawn again with tables in
+     `./email.ts`. The five Pro widgets above are NOT on the newsletter panel
+     and have no row here. */
+  emailRenderers: EMAIL_RENDERERS,
+  /* THE MY BRAND HALF. The offer file gives that canvas three of this family's
+     widgets — Button, Icon and Divider — and the studio places LAYERS, not
+     markup. See ./studio.ts, including the three shadowed cases in
+     `adapters/mybrand/insert.ts` the lander should delete. */
+  studioInserts: STUDIO_INSERTS,
 };

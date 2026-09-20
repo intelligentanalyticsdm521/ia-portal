@@ -42,6 +42,15 @@ import { isContainer, CONTAINER_KIND, MAX_DEPTH } from "./treeOps";
 import type { Container, Node } from "./model";
 import { sectionNumbers } from "./model";
 import { fill, type MergeContext } from "./merge";
+/* THE TEXT PIPELINE MOVED to `builder/runs.ts` (B-168 wave 2), for the reason
+   `esc` moved to `builder/esc.ts` at D-168 item 5 and one that only showed up
+   when a family test was RUN: `widgets/text.ts` imported this module, so a
+   family folder reached `render.ts` at run time, and `RENDERED_KINDS` below
+   reads `FAMILY_RENDERED_KINDS` — a const — out of a half-built
+   `widgets/families/index.ts`. Re-exported here, so every caller is unchanged
+   and there is still exactly one of each function. See runs.ts. */
+import { boldRuns, paras, t, tokenChips } from "./runs";
+export { boldRuns, paras, t };
 import { documentTotals, money, type DocumentTotals } from "./totals";
 import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 /* D-156 stream B — THE ATOMIC WIDGETS (widgets/). Each declares itself and
