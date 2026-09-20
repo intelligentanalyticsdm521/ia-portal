@@ -23,7 +23,7 @@ export const POST_NAVIGATION_DEF: FamilyWidgetDef = {
   icon: "ArrowLeftRight",
   picture: pictureFrom(bar(6, 13, 4, 4) + bar(14, 13, 18, 4) + bar(14, 22, 14, 4)
     + bar(58, 13, 4, 4) + bar(36, 13, 18, 4) + bar(40, 22, 14, 4)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

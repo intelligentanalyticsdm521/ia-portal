@@ -33,7 +33,7 @@ export const LOOP_GRID_DEF: FamilyWidgetDef = {
   icon: "Grid3x3",
   picture: pictureFrom(box(6, 6, 24, 12) + box(34, 6, 24, 12) + box(6, 22, 24, 12) + box(34, 22, 24, 12)
     + bar(10, 10, 16, 4) + bar(38, 10, 16, 4) + bar(10, 26, 16, 4) + bar(38, 26, 16, 4)),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

@@ -29,7 +29,7 @@ export const PORTFOLIO_DEF: FamilyWidgetDef = {
   icon: "LayoutGrid",
   picture: pictureFrom(solid(6, 6, 16, 16) + solid(26, 6, 16, 22) + solid(46, 6, 12, 14)
     + solid(6, 26, 16, 8) + solid(46, 24, 12, 10)),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

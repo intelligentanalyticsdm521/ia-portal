@@ -197,6 +197,7 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
       assert.deepEqual(groupFaults(widgetsFor(adapter), (w) => widgetLabel(w, adapter)), []);
     });
 
+
     test(`${adapter}: the tiles are in Elementor's own order`, () => {
       assert.deepEqual(panelOrderFaults(widgetsFor(adapter), (w) => widgetLabel(w, adapter)), []);
     });
@@ -206,6 +207,7 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
     for (const adapter of CONTRACT_ADAPTERS) {
       assert.equal(labels(adapter)[0], "Container", adapter);
     }
+
   });
 
   test("Product Cards is offered where its picker is, and nowhere else", () => {

@@ -27,7 +27,7 @@ export const ARCHIVE_POSTS_DEF: FamilyWidgetDef = {
   icon: "LibraryBig",
   picture: pictureFrom(solid(6, 8, 22, 10) + bar(6, 22, 22) + bar(6, 29, 14)
     + solid(36, 8, 22, 10) + bar(36, 22, 22) + bar(36, 29, 14)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

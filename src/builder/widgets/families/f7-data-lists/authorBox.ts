@@ -27,7 +27,7 @@ export const AUTHOR_BOX_DEF: FamilyWidgetDef = {
   icon: "UserCircle",
   picture: pictureFrom(`<circle cx="16" cy="20" r="9" fill="#94A3B8" stroke="none"/>`
     + bar(32, 12, 24, 5) + bar(32, 22, 26) + bar(32, 30, 16)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: {

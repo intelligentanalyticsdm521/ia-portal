@@ -32,7 +32,7 @@ export const TAXONOMY_FILTER_DEF: FamilyWidgetDef = {
     + `<rect x="26" y="10" width="14" height="9" rx="4" fill="#CBD5E1" stroke="none"/>`
     + `<rect x="44" y="10" width="14" height="9" rx="4" fill="#CBD5E1" stroke="none"/>`
     + bar(6, 26, 24) + bar(34, 26, 24)),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

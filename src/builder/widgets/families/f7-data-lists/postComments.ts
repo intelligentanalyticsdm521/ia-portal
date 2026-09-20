@@ -24,7 +24,7 @@ export const POST_COMMENTS_DEF: FamilyWidgetDef = {
   description: "The comments people have left, and the box for leaving another.",
   icon: "MessageSquare",
   picture: pictureFrom(box(6, 8, 34, 16) + bar(11, 13, 22, 4) + box(24, 20, 34, 14) + bar(29, 25, 22, 4)),
-  category: "General",
+  category: "Site",
   builders: ["website"],
   tier: "pro",
   defaults: { source_type: "current_post", source_custom: "" },
