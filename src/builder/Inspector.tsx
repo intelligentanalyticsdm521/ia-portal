@@ -1056,7 +1056,13 @@ export function Inspector(p: InspectorProps) {
                 {box && (
                   <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="motion" />
                 )}
+                {/* A CONTAINER'S Responsive BAND CARRIES "Visibility"
+                    (2026-09-20, audit round 4 row 66). The reference puts a
+                    `heading` control above the three Hide switches on a
+                    container and none on a widget; `ResponsiveGroup` has
+                    taken the flag since round 2 and nobody ever passed it. */}
                 <ResponsiveGroup
+                  visibilityHeading={box}
                   hiddenOn={{
                     desktop: !!widget.style?.hidden,
                     tablet: !!widget.style?.tablet?.hidden,

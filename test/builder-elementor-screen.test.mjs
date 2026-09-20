@@ -2025,3 +2025,52 @@ describe("SCREEN LAW 23 — the grid's own panel, and one linked Gaps", () => {
       "more than one band on the container's Style tab opens itself");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 24 — THREE SMALL ROWS THAT WERE ONE LINE EACH (2026-09-20)
+
+   Audit round 4 rows 9, 47 and 66. None of them needed new machinery, which is
+   why they are here and the rest of the round-4 backlog is not: a Border Type
+   list, the glyph over the first tab, and a sub-heading the component has taken
+   as a prop since round 2 and nobody ever passed.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 24 — Border Type, the Layout glyph, and Visibility", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("Border Type is the reference's SEVEN, and Default is not None", async () => {
+    const { readStyle, sectionBoxDeclarations } = await import("../src/builder/style.ts");
+    for (const v of ["none", "solid", "double", "dotted", "dashed", "groove"]) {
+      assert.equal(readStyle({ border: { style: v } })?.border?.style, v, `Border Type lost: ${v}`);
+    }
+    // …and a word this file does not know is still dropped.
+    assert.equal(readStyle({ border: { style: "wobbly" } })?.border?.style, undefined);
+    // The panel offers all seven, with the empty one called Default.
+    assert.match(groups, /\["", "Default"\], \["none", "None"\], \["solid", "Solid"\], \["double", "Double"\]/);
+    assert.ok(!groups.includes('options={[["", "None"], ["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"]]}'),
+      "the four-value Border Type is back, with Default unreachable");
+    // …and the new words reach the page.
+    assert.ok(sectionBoxDeclarations({ border: { style: "groove", width: 3 } })
+      .some((d) => d.includes("3px groove")));
+    assert.ok(sectionBoxDeclarations({ border: { style: "double", width: 4 } })
+      .some((d) => d.includes("4px double")));
+  });
+
+  test("the first tab wears the glyph its NAME asks for", () => {
+    assert.match(groups, /function tabIcon\(tab: InspectorTab, first: "Content" \| "Layout" \| "Settings"\)/);
+    assert.match(groups, /return first === "Layout" \? Columns2 : first === "Settings" \? FileText : Pencil;/);
+    assert.match(groups, /const Icon = tabIcon\(t, first\);/);
+    // ABSENT: the pencil over every first tab, whatever it is called.
+    assert.ok(!groups.includes("const Icon = TAB_ICON[t];"),
+      "a container's Layout tab wears the pencil again");
+    // …and the other two glyphs are untouched.
+    assert.match(groups, /content: Pencil, style: Contrast, advanced: Settings2,/);
+  });
+
+  test('a container\'s Responsive band says "Visibility"; a widget\'s does not', () => {
+    assert.match(inspector, /visibilityHeading=\{box\}/);
+    assert.match(groups, /\{visibilityHeading && \(/);
+    assert.match(groups, /data-control-subheading="Visibility"/);
+  });
+});

@@ -53,7 +53,16 @@ export interface BoxSides {
 export interface BorderSpec {
   width?: number;
   color?: string;
-  style?: "solid" | "dashed" | "dotted";
+  /**
+   * THE REFERENCE'S SEVEN (2026-09-20, audit round 4 row 47).
+   *
+   * Driven: its Border Type reads Default / None / Solid / Double / Dotted /
+   * Dashed / Groove, in that order. Ours offered four. `none` is a real CSS
+   * word and means "a border of no kind"; ABSENT is Default, which means
+   * "whatever the page already says", and the two are not the same thing —
+   * which is why the reference has both and why this union does.
+   */
+  style?: "none" | "solid" | "double" | "dotted" | "dashed" | "groove";
 }
 
 export type ShadowSpec = "none" | "soft" | "strong";
@@ -367,7 +376,8 @@ export interface ElementStyle extends StyleLayer {
    ══════════════════════════════════════════════════════════════════════════ */
 
 const SIDES = ["top", "right", "bottom", "left"] as const;
-const BORDER_STYLES: ReadonlyArray<NonNullable<BorderSpec["style"]>> = ["solid", "dashed", "dotted"];
+const BORDER_STYLES: ReadonlyArray<NonNullable<BorderSpec["style"]>> =
+  ["none", "solid", "double", "dotted", "dashed", "groove"];
 const SHADOWS: ReadonlyArray<ShadowSpec> = ["none", "soft", "strong"];
 const ALIGNS: ReadonlyArray<AlignSpec> = ["left", "center", "right"];
 const DIRECTIONS: ReadonlyArray<DirectionSpec> = ["row", "column", "row-reverse", "column-reverse", "grid"];

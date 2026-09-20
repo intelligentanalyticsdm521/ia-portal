@@ -19,12 +19,13 @@
  */
 import { createContext, useContext, useState, type ReactNode } from "react";
 import {
-  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Contrast, Link2,
+  AlignCenter, AlignLeft, AlignRight, ChevronDown, ChevronRight, Columns2, Contrast,
+  FileText, Link2,
   Monitor, Pencil, Settings2, Smartphone, Tablet, Unlink,
 } from "lucide-react";
 import {
   RATIO_PRESETS, SHAPE_DIVIDERS, normaliseRatios, setSide, sidesAreLinked, unitsOffered,
-  type BackgroundSpec, type BoxSides, type Device, type ElementStyle,
+  type BackgroundSpec, type BorderSpec, type BoxSides, type Device, type ElementStyle,
   type OverlaySpec, type ShapeDividerSpec, type SizeUnit, type StyleLayer, type UnitLabel,
 } from "./style";
 import { PREVIEW_DEVICES } from "./responsive";
@@ -98,6 +99,20 @@ const TAB_ICON: Record<InspectorTab, typeof Pencil> = {
   content: Pencil, style: Contrast, advanced: Settings2,
 };
 
+/**
+ * …AND THE FIRST TAB WEARS THE GLYPH ITS NAME ASKS FOR (2026-09-20, audit
+ * round 4 row 9).
+ *
+ * Driven: a container's first tab is called Layout and its icon is a
+ * two-column layout glyph, not the pencil a widget's Content tab wears. Ours
+ * drew the pencil over both, so the one tab whose NAME already says it is a
+ * different question looked like the same one.
+ */
+function tabIcon(tab: InspectorTab, first: "Content" | "Layout" | "Settings") {
+  if (tab !== "content") return TAB_ICON[tab];
+  return first === "Layout" ? Columns2 : first === "Settings" ? FileText : Pencil;
+}
+
 export function InspectorTabs({ tab, onTab, first, tabs }: {
   tab: InspectorTab;
   onTab: (t: InspectorTab) => void;
@@ -119,7 +134,7 @@ export function InspectorTabs({ tab, onTab, first, tabs }: {
       style={{ display: "flex", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
       {shown.map((t) => {
         const on = tab === t;
-        const Icon = TAB_ICON[t];
+        const Icon = tabIcon(t, first);
         return (
           /* NO TOOLTIP ON A TAB (D-172, round 3). Driven: `title`,
              `aria-label` and `data-tooltip` are all null on all three of the
@@ -1206,12 +1221,18 @@ export function ContainerStyleGroups({
       <Group title="Border"
         onReset={() => onReset(["border", "radius", "shadow"])}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {/* THE REFERENCE'S SEVEN, IN ITS ORDER (2026-09-20, audit round 4
+              row 47): Default / None / Solid / Double / Dotted / Dashed /
+              Groove. Ours offered four and called the empty one "None" —
+              which made Default unreachable, and the two are different: an
+              absent border type is "whatever the page already says" and
+              `none` is "a border of no kind". */}
           <SelectField
-            label="Border type" attr="border-style" value={layer.border?.style ?? ""}
-            
-            options={[["", "None"], ["solid", "Solid"], ["dashed", "Dashed"], ["dotted", "Dotted"]]}
+            label="Border Type" attr="border-style" value={layer.border?.style ?? ""}
+            options={[["", "Default"], ["none", "None"], ["solid", "Solid"], ["double", "Double"],
+              ["dotted", "Dotted"], ["dashed", "Dashed"], ["groove", "Groove"]]}
             onChange={(v) => onPatch({
-              border: v ? { ...(layer.border || {}), style: v as "solid" | "dashed" | "dotted" } : undefined,
+              border: v ? { ...(layer.border || {}), style: v as NonNullable<BorderSpec["style"]> } : undefined,
             }, "border")}
           />
           <NumberField
