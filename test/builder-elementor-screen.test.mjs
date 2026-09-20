@@ -36,7 +36,7 @@ import path from "node:path";
 import { addSection, emptyDocument, makeContainer, makeSection, resetIds } from "../src/builder/model.ts";
 import { insertSpotFor } from "../src/builder/insertPosition.ts";
 import { openGroups } from "../src/builder/widgetGroups.ts";
-import { menuFor } from "../src/builder/builderMenu.ts";
+import { documentMenu, menuFor } from "../src/builder/builderMenu.ts";
 
 const SRC = path.join(process.cwd(), "src");
 const BUILDER = path.join(SRC, "builder");
@@ -255,16 +255,50 @@ describe("SCREEN LAW 6 — a box is invisible until hovered or selected", () => 
     // outline-style none. Ours drew a 1px dashed hairline on EVERY box, so an
     // empty page of boxes read as graph paper.
     assert.ok(!/\.bxc-sec \.bx-box \{ outline:/.test(canvas), "the at-rest hairline is back on every box");
-    // PRESENT: one on hover, and the selection ring.
-    assert.match(canvas, /\.bxc-sec \.bx-box:hover \{ outline: 1px dashed/);
+    // ROUND 2: the hover line is SOLID. Driven in the reference on 2026-09-19
+    // — a dashed line on a canvas reads as "not real yet", which is the
+    // grammar the empty-container "+" already uses.
+    assert.ok(!/\.bx-box:hover \{ outline: 1px dashed/.test(canvas), "the hover line is dashed again");
+    assert.match(canvas, /\.bxc-sec \.bx-box:hover \{ outline: 1px solid #2D9CDB/);
   });
 
-  test("selection is a 1px SOLID line with no tint", () => {
+  test("a selected widget wears a 2px ring that HUGS it, and hover draws a 1px one", () => {
     assert.ok(!/\.bxc-sec\.bxc-sel \{ outline: 2px/.test(canvas), "the selected section is 2px again");
     assert.ok(!/bxc-sel \{ outline: [^}]*background: #FBFDFF/.test(canvas), "the selected section is tinted again");
     assert.match(canvas, /\.bxc-sec\.bxc-sel \{ outline: 1px solid #2D9CDB/);
+    // ROUND 2, measured in the reference: outline none, outline-offset 0, and
+    // `box-shadow: <accent> 0 0 0 2px`. Ours floated a 1px outline three
+    // pixels clear of the widget, so on two widgets side by side the line
+    // pointed at both.
     assert.ok(!/\.bxc-widget-sel \{ outline: 1px dashed/.test(canvas), "the selected widget is dashed again");
-    assert.match(canvas, /\.bxc-widget-sel \{ outline: 1px solid #2D9CDB/);
+    assert.ok(!/\.bxc-widget-sel \{ outline: 1px solid #2D9CDB; outline-offset: 3px/.test(canvas),
+      "the selection ring floats off the widget again");
+    assert.match(canvas, /\.bxc-widget-sel \{ box-shadow: 0 0 0 2px #2D9CDB/);
+    // PRESENT: a widget that is NOT selected gets a line under the pointer.
+    assert.match(canvas, /\[data-widget\]:not\(\.bxc-widget-sel\):hover \{ box-shadow: 0 0 0 1px #2D9CDB/);
+  });
+
+  test("nothing is painted behind a run of words, on hover or on focus", () => {
+    // Driven in the reference: hovering the heading's own text reports
+    // background-color rgba(0,0,0,0), outline none, box-shadow none.
+    assert.ok(!/\[data-bx-editable\]:hover/.test(canvas), "the hover tint is back on every editable run");
+    assert.ok(!/\[data-bx-editable\]:focus \{[^}]*background: #FFFFFF/.test(canvas),
+      "focus whites out the words again");
+    // PRESENT: the focus RING, which is the only thing that says where the caret is.
+    assert.match(canvas, /\[data-bx-editable\]:focus \{ outline: 2px solid #2D9CDB/);
+  });
+
+  test("the widget's pencil sits top-right INSIDE the widget, drawn bare", () => {
+    // Measured: handle right edge 664 against widget right edge 663; handle y
+    // 303 against widget y 304. Ours was top:-11px left:-9px — top-left and
+    // OUTSIDE, so a box's first child put its handle on the box's own.
+    assert.ok(!/\.bxc-wtools \{ position: absolute; top: -11px; left: -9px/.test(canvas),
+      "the widget handle is back outside its top-left corner");
+    assert.match(canvas, /\.bxc-wtools \{ position: absolute; top: 0; right: 0/);
+    // PRESENT: a container's tab is re-centred on the box's top edge, at every depth.
+    assert.match(canvas, /\.bxc-wtools-box \{ top: -22px; right: auto; left: 50%; transform: translateX\(-50%\)/);
+    // PRESENT: the pencil is an icon, not an 18px filled chip.
+    assert.match(canvas, /\.bxc-wtools:not\(\.bxc-wtools-box\) > \.bxc-grip \{ background: transparent/);
   });
 
   test("multi-select, the glow and the tooltip on every run of words are DELETED", () => {
@@ -284,14 +318,23 @@ describe("SCREEN LAW 6 — a container wears ONE handle, at every depth", () => 
   test("a nested container gets the same three-icon tab, not a corner grip", () => {
     // The reference's handle, read out of the live editor:
     //   Add Container / Edit Container / Delete Container, top centre.
-    assert.match(canvas, /add\.title = "Add Container"/);
     assert.match(canvas, /grip\.title = `Edit \$\{widgetName\}`/);
-    assert.match(canvas, /b\.title = "Delete Container"/);
+    // ROUND 2 — the handle NAMES the box the author picked. The reference
+    // writes Add/Edit/Delete Flexbox on a Flexbox and …Container on a
+    // Container; ours said Container on every box, so the panel said Grid and
+    // the handle said Container about the same thing.
+    assert.ok(!/add\.title = "Add Container"/.test(canvas), "every box is called Container again");
+    assert.ok(!/b\.title = "Delete Container"/.test(canvas), "every box is called Container again");
+    assert.match(canvas, /const boxName = el\.classList\.contains\("bx-box-grid"\) \? "Grid" : "Container"/);
+    assert.match(canvas, /b\.title = `Delete \$\{boxName\}`/);
     // ABSENT: the sentence that used to hang off the grip.
     assert.ok(!canvas.includes("Drag to move this anywhere on the page"),
       "the handle carries a sentence again");
     assert.ok(!canvas.includes("Drag to move this box, and everything in it"),
       "a box's handle carries a sentence again");
+    // ROUND 2 — the section grip's tooltip is "Edit Container", full stop.
+    assert.ok(!canvas.includes("Edit Container — drag to move it"),
+      "the grip explains the drag again");
     // ABSENT: the word the model still uses leaking into what a client reads.
     assert.ok(!canvas.includes('`Container: ${section.label'), 'the handle says "Container: Section" again');
     assert.match(canvas, /aria-label="Container"/);
@@ -337,11 +380,35 @@ describe("SCREEN LAW 6 — a panel is its controls, not a paragraph about them",
 describe("SCREEN LAW 6 — the left panel is the reference's Elements panel", () => {
   const pane = code(readSrc("builder/WidgetPane.tsx"));
 
-  test("the grid gap is no longer painted as a half-cell", () => {
+  test("the tiles are separate cards, not a sheet of cells", () => {
     // The odd last row of a group showed a shaded grey half-cell, because the
     // grid itself was the colour and the gap let it through.
     assert.ok(!/gap-px bg-slate-200/.test(pane), "the painted grid gap is back");
-    assert.match(pane, /border-b border-r border-slate-200/);
+    // ROUND 2, measured in the reference on 2026-09-19: grid-template-columns
+    // 130px 130px, gap 10px, a 15px gutter each side — 15+130+10+130+15 is the
+    // panel's own 300px — and a 1px border on ALL FOUR sides of every tile.
+    // Ours was edge to edge: bottom and right hairlines only, no gap, no
+    // gutter, so the panel read as a spreadsheet.
+    assert.ok(!/border-b border-r border-slate-200/.test(pane), "the tiles are hairline cells again");
+    assert.match(pane, /border border-\[#D5D8DC\]/);
+    assert.match(pane, /grid grid-cols-2 gap-\[10px\] px-\[15px\]/);
+    // Hover is #F1F2F3 and the cursor is `move`, both measured.
+    assert.match(pane, /hover:bg-\[#F1F2F3\]/);
+    assert.match(pane, /cursor-move/);
+  });
+
+  test("a tile carries NO tooltip, and an empty search shows NO sentence", () => {
+    // Driven: hovering Heading in the reference reports titleAttr null and no
+    // tooltip node anywhere. Ours put a full sentence on every single tile.
+    assert.ok(!/widgetTooltip/.test(pane), "every tile carries a sentence again");
+    // PRESENT: the name under the icon, which is the whole label — and the
+    // ONE tooltip the reference does have, on a tile you cannot press.
+    assert.match(pane, /\{label\}/);
+    assert.match(pane, /lock \? \{ title: lock\.sentence/);
+    // Driven: a search matching nothing leaves the grid empty and says nothing.
+    assert.ok(!pane.includes("Clear the search to see every widget"),
+      "the empty-search paragraph is back");
+    assert.ok(!/total === 0/.test(pane), "the empty-search branch is back");
   });
 
   test("a search is one flat grid, and a locked tile wears a padlock", () => {
@@ -351,6 +418,12 @@ describe("SCREEN LAW 6 — the left panel is the reference's Elements panel", ()
     // ABSENT: the uppercase group heading.
     assert.ok(!/font-bold uppercase tracking-wide text-slate-600/.test(pane),
       "the group headings are UPPERCASE again");
+    // ROUND 2: no grey band behind a heading, 13.3px weight 400, and the
+    // panel's own title 15px weight 400 — all three measured in the reference.
+    assert.ok(!/bg-slate-50 px-3 py-2 text-left text-\[11\.5px\] font-bold/.test(pane),
+      "the group heading is a grey band again");
+    assert.match(pane, /px-\[15px\] py-2 text-left text-\[13\.3px\] font-normal/);
+    assert.match(pane, /text-\[15px\] font-normal text-slate-700/);
   });
 
   test("the panel has the reference's own edge handle", () => {
@@ -538,14 +611,62 @@ describe("SCREEN LAW 8 — the right-click menu is the reference's", () => {
     assert.equal(byId.delete, "Delete");
   });
 
-  test("every row that has a chord prints it, right-aligned", () => {
+  test("every row that has a chord prints it in the reference's own glyphs", () => {
     const chords = Object.fromEntries(
       menuFor({ kind: "widget", canPaste: true }).filter((i) => i.shortcut).map((i) => [i.action, i.shortcut]));
+    // ROUND 2 — driven on 2026-09-19, read straight off
+    // `.elementor-context-menu-list__item__shortcut`. Ours spelled them out.
     assert.deepEqual(chords, {
-      duplicate: "Ctrl+D", copy: "Ctrl+C", paste: "Ctrl+V",
-      pasteStyle: "Ctrl+Shift+V", structure: "Ctrl+I", delete: "Del",
+      duplicate: "^+D", copy: "^+C", paste: "^+V",
+      pasteStyle: "^+⇧+V", structure: "^+I", delete: "⌦",
     });
+    const menu = code(readSrc("builder/builderMenu.ts"));
+    for (const spelled of ['"Ctrl+D"', '"Ctrl+C"', '"Ctrl+Shift+V"', '"Del"']) {
+      assert.ok(!menu.includes(spelled), `the menu spells a chord out again: ${spelled}`);
+    }
     assert.match(code(readSrc("builder/ContextMenu.tsx")), /data-menu-shortcut=\{item\.action\}/);
+  });
+
+  test("a CONTAINER gets the container menu, not the widget one (round 2)", () => {
+    // Driven on 2026-09-19: a container's menu is fourteen rows with
+    // "Add New Container" third and "Save as a template" badged New; it has NO
+    // "Save as a global" at all. Ours handed a container the widget menu.
+    const box = menuFor({ kind: "section", name: "Container", canPaste: true, canSaveBlock: true });
+    const ids = box.map((i) => i.action);
+    assert.ok(!ids.includes("saveGlobal"), "a container offers Save as a global again");
+    assert.ok(ids.includes("addContainer"), "a container has no Add New Container row");
+    assert.ok(ids.includes("saveTemplate"), "a container has no Save as a template row");
+    assert.equal(ids[2], "addContainer", "Add New Container is not the third row");
+    assert.equal(box.find((i) => i.action === "saveTemplate")?.badge, "New");
+    // A WIDGET keeps the reference's own twelve, Save as a global included.
+    const w = menuFor({ kind: "widget", name: "Heading", canPaste: true, canSaveBlock: true }).map((i) => i.action);
+    assert.ok(w.includes("saveGlobal"), "a widget lost Save as a global");
+    assert.ok(!w.includes("addContainer"), "a widget grew Add New Container");
+    assert.ok(!w.includes("saveTemplate"), "a widget grew Save as a template");
+  });
+
+  test("Paste from other site is pressable with an empty clipboard", () => {
+    // Driven: with nothing copied the reference greys Paste and Paste style
+    // and leaves this row pressable — it reads another business's clipboard,
+    // not ours. Ours greyed it with "Nothing has been copied yet."
+    const row = menuFor({ kind: "widget", name: "Heading", canPaste: false })
+      .find((i) => i.action === "pasteFromOtherSite");
+    assert.ok(row, "the row is gone");
+    assert.ok(!row.disabled, "Paste from other site is greyed again");
+    assert.ok(!row.reason, "Paste from other site carries a reason again");
+    // PRESENT: the two rows that DO read our clipboard are still greyed.
+    for (const id of ["paste", "pasteStyle"]) {
+      assert.ok(menuFor({ kind: "widget", canPaste: false }).find((i) => i.action === id).disabled,
+        `${id} is pressable with nothing copied`);
+    }
+  });
+
+  test("right-clicking the PAGE opens the reference's five-row document menu", () => {
+    // Driven on 2026-09-19: Paste, Paste from other site, Copy All Content,
+    // Delete All Content, Structure. Ours opened the browser's own menu.
+    assert.deepEqual(
+      documentMenu({ canPaste: true }).map((i) => i.label),
+      ["Paste", "Paste from other site", "Copy All Content", "Delete All Content", "Structure"]);
   });
 });
 
@@ -648,10 +769,31 @@ describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => 
     const m = groups.indexOf('label="Margin"');
     const pd = groups.indexOf('label="Padding"');
     assert.ok(m > 0 && pd > m, "Padding is back above Margin");
-    for (const label of ["Hide on Desktop", "Hide on Tablet", "Hide on Mobile"]) {
+    // ROUND 2 — the reference names the BREAKPOINT, not the shape of the
+    // device: "Hide On Tablet Portrait", not "Hide on Tablet". Portrait and
+    // landscape are different widths and hiding on one is not hiding on the
+    // other, so the clipped name told the author the wrong thing.
+    for (const clipped of ["Hide on Desktop", "Hide on Tablet", "Hide on Mobile"]) {
+      assert.ok(!groups.includes(clipped), `the clipped Responsive name is back: ${clipped}`);
+    }
+    for (const label of ["Hide On Desktop", "Hide On Tablet Portrait", "Hide On Mobile Portrait"]) {
       assert.ok(groups.includes(label), `Responsive lost: ${label}`);
     }
     assert.ok(!groups.includes("Hide on a tablet"), "our own Responsive wording is back");
+    // PRESENT: a container's Responsive section carries the reference's
+    // "Visibility" sub-heading above the three; a widget's does not.
+    assert.match(groups, /data-control-subheading="Visibility"/);
+  });
+
+  test("Attributes is two named fields and NO prose (round 2)", () => {
+    // Driven: the reference's Advanced tab has no explanation paragraph in it
+    // anywhere, and both fields are called by their real names.
+    for (const gone of ["A Menu Anchor and a link like", "Separate them with a space",
+                        ">\n        Its own name", "Styling names"]) {
+      assert.ok(!groups.includes(gone), `the Attributes prose is back: ${gone}`);
+    }
+    assert.match(groups, />CSS ID</);
+    assert.match(groups, />CSS Classes</);
   });
 
   test("a section is named after its element, and the invented controls are gone", () => {
@@ -675,7 +817,36 @@ describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => 
     // first section header of every widget's Content tab.
     assert.ok(!inspector.includes("widgetDescription(def, p.adapter)"),
       "the panel prints the widget's description again");
-    assert.match(code(readSrc("builder/WidgetPane.tsx")), /widgetTooltip\(w, adapter\)/);
+    // ROUND 2 — the sentence went from the TILE too. Round 1 moved the
+    // widget's one line out of the panel and into a tooltip on every tile;
+    // driven on 2026-09-19, the reference's tile has no title attribute and
+    // shows no tooltip node at all. So there is now nowhere on the screen
+    // that a paragraph about a widget is printed unasked.
+    assert.ok(!code(readSrc("builder/WidgetPane.tsx")).includes("widgetTooltip"),
+      "the sentence is back on every tile");
+    // ABSENT from the panel: the grey help line under a CONTROL.
+    assert.ok(!/\{c\.help\}/.test(inspector), "the grey sentence under a control is back");
+    assert.ok(!inspector.includes('{c.help || "On"}'), "a toggle's label is its help sentence again");
+    // PRESENT: the control itself, as a row, with a Switcher for on/off.
+    assert.match(inspector, /<div key=\{c\.key\} style=\{c\.type === "code" \? FIELD : ROW\}>/);
+    assert.match(inspector, /<Switcher\s+name=\{c\.label\}/);
+  });
+
+  test("the bare device row at the top of the Container section is DELETED", () => {
+    // It was three unlabelled glyphs attached to no control, above six
+    // settings only two of which are responsive. The reference has no such row
+    // anywhere; its switcher sits ON the label of the control being set.
+    assert.ok(!/defaultOpen\s+onReset=\{[^}]*\}>\s*<DeviceSegment/.test(inspector),
+      "the bare device row is back at the top of the Container section");
+    // PRESENT: the switcher ON the two controls that are responsive.
+    assert.match(inspector, /<span style=\{L\}>Gaps<\/span>\s*<DeviceSegment/);
+    assert.match(inspector, /<span style=\{L\}>Min Height<\/span>\s*<DeviceSegment/);
+  });
+
+  test("a control sub-heading is Title Case, not UPPERCASE with tracking", () => {
+    assert.ok(!/textTransform: "uppercase", letterSpacing: 0\.4/.test(inspector),
+      "a section sub-heading is shouting again");
+    assert.match(inspector, /data-control-subheading=\{grp\.section\}/);
   });
 
   test("a widget with no style controls has two tabs, not three", () => {

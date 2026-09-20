@@ -66,7 +66,7 @@ import {
 } from "./style";
 import {
   AttributesGroup, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs, RatioPicker,
-  ResponsiveGroup, SpacingGroup, TypographyGroup,
+  ResponsiveGroup, SpacingGroup, Switcher, TypographyGroup,
   FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
 
@@ -257,7 +257,13 @@ export function Inspector(p: InspectorProps) {
               <Group title="Container" hint="Which way what is inside this box runs, and how far apart" defaultOpen
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
-                <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                {/* THE BARE DEVICE ROW IS DELETED (D-172, round 2). The
+                    Container section's FIRST row was three unlabelled device
+                    glyphs attached to no control — a switcher floating above
+                    six settings, only two of which are responsive at all. The
+                    reference has no such row anywhere in its panel: the
+                    switcher belongs ON the label of the control being set,
+                    which is where Gaps and Min Height already carry it. */}
                 {/* DIRECTION — the reference's four icon buttons (D-172).
                     Ours was a select reading "Stacked, top to bottom" / "Side
                     by side" / "Even columns" under a label reading WHICH WAY
@@ -483,20 +489,43 @@ export function Inspector(p: InspectorProps) {
                 if (!shown.length) return null;
                 return (
                   <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
+                    {/* A SUB-HEADING IS TITLE CASE (D-172, round 2). The
+                        reference's in-section headings are a `heading` control
+                        reading "Items", "Visibility" — Title Case, no
+                        letter-spacing, no shouting. Ours were the label style
+                        with `textTransform: uppercase` and 0.4 of tracking, so
+                        a heading inside a section looked louder than the
+                        section's own name above it. */}
                     {grp.section && (
-                      <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+                      <div data-control-subheading={grp.section}
+                        style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
                         {grp.section}
                       </div>
                     )}
                     {shown.map((c) => (
-                <div key={c.key} style={FIELD}>
+                /* LABEL LEFT, CONTROL RIGHT (D-172, round 2). Measured in the
+                   reference: every control row is a flex row with the label at
+                   x=20 (width 54) and the input at x=172 (width 108). The
+                   container's own controls already used `ROW`; the
+                   registry-driven ones stacked the label ABOVE a full-width
+                   control, so one panel had two shapes of row and a widget's
+                   Content tab was twice the height of a box's. `code`, whose
+                   control is a textarea with a preview under it, keeps the
+                   stacked shape — the reference marks that kind
+                   `elementor-label-block` too. */
+                <div key={c.key} style={c.type === "code" ? FIELD : ROW}>
                   <span style={L}>{c.label}</span>
+                  {/* EVERY TOGGLE IS THE SWITCHER PILL (D-172, round 2). The
+                      reference has one on/off shape and this was the last
+                      native checkbox in the panel — and the only control whose
+                      label was its help sentence. */}
                   {c.type === "toggle" && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={isOn((widget.props as any)[c.key])}
-                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.checked })} />
-                      {c.help || "On"}
-                    </label>
+                    <Switcher
+                      name={c.label}
+                      testId={c.key}
+                      on={isOn((widget.props as any)[c.key])}
+                      onChange={(v) => p.onPatchWidget({ [c.key]: v })}
+                    />
                   )}
                   {c.type === "select" && (controlOptions(c).length ? (
                     <select style={INPUT} value={String((widget.props as any)[c.key] ?? "")}
@@ -538,7 +567,15 @@ export function Inspector(p: InspectorProps) {
                         dangerouslySetInnerHTML={{ __html: String((widget.props as any)[c.key] ?? "") }} />
                     </>
                   )}
-                  {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
+                  {/* THE GREY SENTENCE UNDER A CONTROL IS DELETED (D-172,
+                      round 2). "Adds 1., 2., 3. automatically down the page."
+                      under a Heading control, "Starts as your brand accent.
+                      Any colour you like." under a Button one. The reference
+                      puts no explanation under any control in its panel: a
+                      sentence about what a widget is belongs where the author
+                      chooses the widget, not beside the setting. `c.help` is
+                      still on the definition and still reaches the registry's
+                      own tooltip — what went is the paragraph in the panel. */}
                 </div>
                     ))}
                   </div>

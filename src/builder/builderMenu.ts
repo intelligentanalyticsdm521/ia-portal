@@ -69,7 +69,34 @@ export type MenuAction =
   | "saveDefault"
   /** Open the Structure window on this element. */
   | "structure"
+  /** The container menu's third row: put another box beside this one. */
+  | "addContainer"
+  /** The container menu's own "Save as a template", badged New. */
+  | "saveTemplate"
+  /** The DOCUMENT menu's rows — right-click the page, not a thing on it. */
+  | "copyAll"
+  | "deleteAll"
   | "delete";
+
+/**
+ * THE CHORDS, PRINTED THE REFERENCE'S OWN WAY (D-172, round 2).
+ *
+ * Driven on 2026-09-19 — read straight off
+ * `.elementor-context-menu-list__item__shortcut` — the reference prints `^+D`,
+ * `^+C`, `^+V`, `^+⇧+V`, `^+I` and the delete glyph `⌦`. Ours spelled out
+ * "Ctrl+D", "Ctrl+Shift+V", "Del". One object so the menu and its test read
+ * the same six strings, and so the SHORTCUTS PANEL can keep spelling them out
+ * in words — that panel is a list you read, this is a hint you glance at, and
+ * the reference makes the same distinction.
+ */
+export const CHORD = {
+  duplicate: "^+D",
+  copy: "^+C",
+  paste: "^+V",
+  pasteStyle: "^+⇧+V",
+  structure: "^+I",
+  delete: "⌦",
+} as const;
 
 export interface MenuItem {
   action: MenuAction;
@@ -89,6 +116,8 @@ export interface MenuItem {
   danger?: boolean;
   /** Draw a divider above this row. */
   separator?: boolean;
+  /** A small pill on the right of the row — the reference's "New" on Save as a template. */
+  badge?: string;
 }
 
 /** What the menu is being opened on. */
@@ -138,22 +167,30 @@ export function menuFor(f: MenuFacts): MenuItem[] {
   items.push({
     action: "duplicate",
     label: "Duplicate",
-    shortcut: "Ctrl+D",
+    shortcut: CHORD.duplicate,
     disabled: !!f.locked,
     ...(f.locked ? { reason: lockedReason } : {}),
   });
-  items.push({ action: "copy", label: "Copy", shortcut: "Ctrl+C" });
+  /* THE CONTAINER'S THIRD ROW (D-172, round 2). Driven on 2026-09-19: a
+     container's menu has "Add New Container" between Duplicate and Copy, and a
+     widget's does not. Ours gave a container the widget menu, so the one row
+     that says "put another box here" was missing from the one thing it
+     applies to. */
+  if (f.kind === "section") {
+    items.push({ action: "addContainer", label: "Add New Container" });
+  }
+  items.push({ action: "copy", label: "Copy", shortcut: CHORD.copy });
   items.push({
     action: "paste",
     label: "Paste",
-    shortcut: "Ctrl+V",
+    shortcut: CHORD.paste,
     disabled: !f.canPaste,
     ...(f.canPaste ? {} : { reason: nothingCopied }),
   });
   items.push({
     action: "pasteStyle",
     label: "Paste style",
-    shortcut: "Ctrl+Shift+V",
+    shortcut: CHORD.pasteStyle,
     disabled: !f.canPaste,
     ...(f.canPaste ? {} : { reason: nothingCopied }),
   });
@@ -167,20 +204,39 @@ export function menuFor(f: MenuFacts): MenuItem[] {
     disabled: true,
     reason: "Nothing on this page has a hover or click behaviour to copy yet.",
   });
-  items.push({
-    action: "pasteFromOtherSite",
-    label: "Paste from other site",
-    disabled: !f.canPaste,
-    ...(f.canPaste ? {} : { reason: nothingCopied }),
-  });
+  /* PRESSABLE, ALWAYS (D-172, round 2). Driven on 2026-09-19: with an empty
+     clipboard the reference greys Paste and Paste style and leaves THIS row
+     pressable, because it does not read our clipboard — it reads what was
+     copied in another business's builder. Ours greyed it with "Nothing has
+     been copied yet.", which is an answer to a different question. */
+  items.push({ action: "pasteFromOtherSite", label: "Paste from other site" });
 
   items.push({ action: "resetStyle", label: "Reset style", separator: true });
-  items.push({
-    action: "saveGlobal",
-    label: "Save as a global",
-    disabled: !f.canSaveGlobal,
-    ...(f.canSaveGlobal ? {} : { reason: "Saving something as a global is not on this plan." }),
-  });
+  /* "SAVE AS A GLOBAL" IS A WIDGET ROW ONLY (D-172, round 2).
+     Driven on 2026-09-19: right-click a container and the reference's
+     fourteen rows do not include it at all; right-click a widget and it is
+     there, greyed, as the Pro row. Ours handed a container the widget menu, so
+     a box offered a greyed row for a thing a box cannot be. */
+  if (f.kind !== "section") {
+    items.push({
+      action: "saveGlobal",
+      label: "Save as a global",
+      disabled: !f.canSaveGlobal,
+      ...(f.canSaveGlobal ? {} : { reason: "Saving something as a global is not on this plan." }),
+    });
+  }
+  /* "SAVE AS A TEMPLATE" IS A CONTAINER ROW (D-172, round 2). Driven on
+     2026-09-19: the container menu has it, with a "New" badge on the right,
+     between Reset style and Save as default; the widget menu does not. */
+  if (f.kind === "section") {
+    items.push({
+      action: "saveTemplate",
+      label: "Save as a template",
+      badge: "New",
+      disabled: !f.canSaveBlock,
+      ...(f.canSaveBlock ? {} : { reason: "This builder has nowhere to keep one." }),
+    });
+  }
   items.push({
     action: "saveDefault",
     label: "Save as default",
@@ -188,10 +244,10 @@ export function menuFor(f: MenuFacts): MenuItem[] {
     ...(f.canSaveBlock ? {} : { reason: "This builder has nowhere to keep one." }),
   });
 
-  items.push({ action: "structure", label: "Structure", shortcut: "Ctrl+I", separator: true });
+  items.push({ action: "structure", label: "Structure", shortcut: CHORD.structure, separator: true });
 
   items.push({
-    action: "delete", label: "Delete", shortcut: "Del", separator: true, danger: true,
+    action: "delete", label: "Delete", shortcut: CHORD.delete, separator: true, danger: true,
     disabled: !!f.locked,
     ...(f.locked ? { reason: lockedReason } : {}),
   });
@@ -199,4 +255,33 @@ export function menuFor(f: MenuFacts): MenuItem[] {
   return items;
 }
 
-export default { menuFor };
+/**
+ * THE DOCUMENT MENU — right-click the page itself (D-172, round 2).
+ *
+ * Driven on 2026-09-19: right-clicking the empty page, or the add area at the
+ * foot of it, opens a FIVE-row menu of its own — Paste, Paste from other site,
+ * Copy All Content, Delete All Content, Structure. Ours opened the browser's
+ * own menu, which is the one place in the editor where the page stopped being
+ * the editor.
+ */
+export function documentMenu(f: { canPaste?: boolean; empty?: boolean }): MenuItem[] {
+  const nothingCopied = "Nothing has been copied yet.";
+  return [
+    {
+      action: "paste", label: "Paste", shortcut: CHORD.paste,
+      disabled: !f.canPaste, ...(f.canPaste ? {} : { reason: nothingCopied }),
+    },
+    { action: "pasteFromOtherSite", label: "Paste from other site" },
+    {
+      action: "copyAll", label: "Copy All Content",
+      disabled: !!f.empty, ...(f.empty ? { reason: "There is nothing on the page yet." } : {}),
+    },
+    {
+      action: "deleteAll", label: "Delete All Content", danger: true,
+      disabled: !!f.empty, ...(f.empty ? { reason: "There is nothing on the page yet." } : {}),
+    },
+    { action: "structure", label: "Structure", shortcut: CHORD.structure, separator: true },
+  ];
+}
+
+export default { menuFor, documentMenu, CHORD };

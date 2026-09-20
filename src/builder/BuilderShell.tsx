@@ -45,6 +45,7 @@ import { FindBox } from "./FindBox";
 import { HistoryPanel } from "./HistoryPanel";
 import { NameBlockDialog } from "./NameBlockDialog";
 import { menuFor, type MenuAction } from "./builderMenu";
+import { openBuilder } from "./builderOpen";
 import { type FindAction, type FindResult } from "./find";
 import {
   addSection, addWidget, duplicateSection, duplicateWidget, makeSection, makeWidget, moveSection,
@@ -368,6 +369,19 @@ export function BuilderShell(p: BuilderShellProps) {
     select(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.resetKey]);
+
+  /**
+   * TELL THE REST OF THE APP A BUILDER OWNS THE SCREEN (D-172, round 2).
+   *
+   * The platform's floating Ask ARGUS pill used to sniff the DOM during its
+   * own render to decide whether to step aside, which never re-ran when a
+   * builder mounted, so the pill sat over the canvas the whole time. The shell
+   * publishes the fact instead; see `builderOpen.ts`.
+   */
+  useEffect(() => {
+    if (!p.open) return undefined;
+    return openBuilder();
+  }, [p.open]);
 
   /**
    * The three sentences, on EVERY open while this person wants the tips

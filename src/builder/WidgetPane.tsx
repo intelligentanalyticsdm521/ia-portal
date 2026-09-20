@@ -40,7 +40,9 @@
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronLeft, ChevronRight, Lock, Search } from "lucide-react";
 import * as Icons from "lucide-react";
-import { widgetTooltip, type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
+/* `widgetTooltip` WAS IMPORTED HERE and is gone with the tile's title
+   attribute (D-172, round 2) — the reference puts no tooltip on a tile. */
+import { type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
 import { openGroups, panelGroups, type PanelGroup } from "./widgetGroups";
 
@@ -108,9 +110,7 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
      add the group back when only a PRESET matched; the presets are gone from
      this panel, and with them the rule that existed for them. */
   const groups = useMemo(() => panelGroups(adapter, query), [adapter, query]);
-  const total = useMemo(
-    () => groups.reduce((n, g) => n + g.widgets.length, 0),
-    [groups]);
+  /* `total` WAS HERE and is deleted with the empty-search sentence it fed. */
 
   /**
    * WHICH ACCORDIONS ARE OPEN.
@@ -151,10 +151,18 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
           "data-widget-state": lock.reason,
           "data-widget-tier": lock.tier,
         } : { "data-widget-state": "offered" })}
-        /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. It is
-           where the widget's one line went. */
-        title={lock?.sentence || widgetTooltip(w, adapter)}
-        aria-label={lock?.sentence || widgetTooltip(w, adapter)}
+        /* NO TOOLTIP ON A TILE (D-172, round 2). Driven in the reference on
+           2026-09-19: hovering Heading gives cursor `move`, background
+           #F1F2F3, `titleAttr: null` and no tooltip node anywhere. Ours put a
+           full sentence on every single tile — "Container - A box you drop
+           things into. Set it to a row for columns, or a column for a stack."
+           — so the panel you are meant to SCAN answered every glance with a
+           paragraph. The name under the icon is the whole label.
+
+           A LOCKED tile keeps its sentence, and only a locked tile: the
+           reference's own locked tile is the one place the panel explains
+           itself, and "why can I not press this" has no other answer. */
+        {...(lock ? { title: lock.sentence, "aria-label": lock.sentence } : {})}
         data-widget-kind={w.kind}
         /* HTML5 drag, the events Canvas already uses to reorder.
            No library: a second drag mechanism is a second set of
@@ -168,15 +176,18 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
           onDragWidget?.(w);
         }}
         onDragEnd={() => onDragWidget?.(null)}
-        /* 85px tall and hairline-separated, the reference editor's own tile
-           (measured 2026-09-19). THE GREY HALF-CELL IS GONE: the grid used to
-           be `gap-px bg-slate-200`, so the gap itself was painted and an odd
-           last row showed a shaded half-cell where no widget was. Borders on
-           the tile draw the same lines and leave the empty half as panel. */
-        className={`relative flex h-[85px] flex-col items-center justify-center gap-1.5 border-b border-r border-slate-200 px-1 text-center transition-colors ${
+        /* SEPARATE CARDS, NOT A SHEET OF CELLS (D-172, round 2).
+           Driven in the reference on 2026-09-19: the tile is a 130x85 button
+           with `1px solid rgb(213,216,220)` on ALL FOUR sides, the grid is
+           `130px 130px` with a `10px` gap, and the panel has a 15px gutter
+           each side — 15+130+10+130+15 = the panel's own 300px, exactly.
+           Ours was edge to edge: bottom and right hairlines only, no gap, no
+           gutter, so the panel read as a spreadsheet rather than a tray of
+           cards. Hover is #F1F2F3 and the cursor is `move`, both measured. */
+        className={`relative flex h-[85px] flex-col items-center justify-center gap-1.5 rounded-[3px] border border-[#D5D8DC] px-1 text-center transition-colors ${
           lock
             ? "cursor-not-allowed bg-white opacity-60"
-            : "cursor-grab bg-white hover:bg-slate-50 active:cursor-grabbing"}`}
+            : "cursor-move bg-white hover:bg-[#F1F2F3]"}`}
       >
         {/* THE PADLOCK BADGE (D-172) — the reference draws one in a locked
             tile's top-right corner. Ours only greyed the tile, so "not on this
@@ -196,7 +207,12 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
 
   return (
     <div className="relative flex h-full flex-col" data-builder-pane={adapter}>
-      <div className="flex-shrink-0 border-b border-slate-200 px-3 py-2.5 text-center text-[12px] font-bold tracking-wide text-slate-700">
+      {/* 15px, weight 400, text-align start — the reference's own H2,
+          measured 2026-09-19 (`_zz_r2_panel_topbar_ref_b.json`: id
+          `elementor-panel-header-title`, `align: "start 15px none"`). Ours was
+          12px bold and centred, which read as a section label rather than the
+          panel's name. */}
+      <div className="flex-shrink-0 border-b border-slate-200 px-[15px] py-2.5 text-left text-[15px] font-normal text-slate-700">
         {PANE_TITLE}
       </div>
 
@@ -216,14 +232,16 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {total === 0 && (
-          <div className="m-3 rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            Nothing matches “{query}”. Clear the search to see every widget.
-          </div>
-        )}
-
+        {/* A SEARCH THAT MATCHES NOTHING SHOWS NOTHING (D-172, round 2).
+            Driven in the reference: type "zzzzqqq" and the whole panel reads
+            "Widgets Components Globals Search Widget: … Upgrade Now" — an
+            empty grid, and not one word about the search. Ours drew a dashed
+            box saying "Nothing matches […]. Clear the search to see every
+            widget.", which is a paragraph telling you what the empty grid
+            already told you. The box, its copy and its `total === 0` branch
+            are deleted, not hidden. */}
         {searching ? (
-          <div data-pane-flat="1" className="grid grid-cols-2 border-t border-slate-200">
+          <div data-pane-flat="1" className="grid grid-cols-2 gap-[10px] px-[15px] py-[10px]">
             {flat.map(tile)}
           </div>
         ) : groups.map((g) => {
@@ -238,8 +256,13 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
                 onClick={() => toggle(g.group)}
                 /* TITLE CASE, not UPPERCASE (D-172). The reference's headings
                    are "Atomic Elements", "Layout", "Basic", "General" —
-                   measured `text-transform: none` on every one of them. */
-                className="flex w-full items-center gap-1.5 border-b border-slate-100 bg-slate-50 px-3 py-2 text-left text-[11.5px] font-bold tracking-wide text-slate-600 hover:bg-slate-100"
+                   measured `text-transform: none` on every one of them.
+
+                   NO GREY BAND, 13.3px, weight 400 (D-172, round 2). Ours was
+                   11.5px weight 700 on a grey band the full width of the
+                   panel, so six headings read as six toolbars. The reference's
+                   heading is a line of plain text with a caret on its left. */
+                className="flex w-full items-center gap-1.5 px-[15px] py-2 text-left text-[13.3px] font-normal tracking-normal text-slate-700 hover:text-slate-900"
               >
                 {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
                 {g.group}
@@ -249,7 +272,7 @@ export function WidgetPane({ adapter, onInsert, onDragWidget, lockedKinds, onCol
                 /* TWO ACROSS, icon over name. Elementor's tile, and the reason
                    the picture and the sentence went: this panel is scanned, not
                    read. */
-                <div className="grid grid-cols-2">
+                <div className="grid grid-cols-2 gap-[10px] px-[15px] pb-[15px]">
                   {/* THE BOX PRESETS LIVED HERE and are GONE (integration,
                       2026-09-19). The Layout group held Box / Row / Grid as
                       presets AND Container / Grid as widgets, so "Grid" was

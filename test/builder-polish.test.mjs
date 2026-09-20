@@ -144,9 +144,18 @@ describe("M-8 · one menu, wherever it is opened from", () => {
     // Driven in a live Elementor on 2026-09-19: right-click a widget and read
     // `.elementor-context-menu-list__item`. The capture is in
     // overnight-report/elementor-reference/widgets/_zz_screen_round1.json.
-    const items = menuFor({ kind: "section", canPaste: true, canSaveBlock: true, name: "Container" });
-    assert.deepEqual(items.map((i) => i.action), ["edit", "duplicate", "copy", "paste", "pasteStyle", "pasteInteractions",
-      "pasteFromOtherSite", "resetStyle", "saveGlobal", "saveDefault", "structure", "delete"]);
+    // ROUND 2 re-drove it and found the list above was the WIDGET menu asked
+    // of a container. A container's own menu is fourteen rows: "Add New
+    // Container" third, "Save as a template" (badged New) instead of "Save as
+    // a global", which a container does not have at all.
+    const box = menuFor({ kind: "section", canPaste: true, canSaveBlock: true, name: "Container" });
+    assert.deepEqual(box.map((i) => i.action), ["edit", "duplicate", "addContainer", "copy", "paste",
+      "pasteStyle", "pasteInteractions", "pasteFromOtherSite", "resetStyle", "saveTemplate",
+      "saveDefault", "structure", "delete"]);
+    const widget = menuFor({ kind: "widget", canPaste: true, canSaveBlock: true, name: "Heading" });
+    assert.deepEqual(widget.map((i) => i.action), ["edit", "duplicate", "copy", "paste", "pasteStyle",
+      "pasteInteractions", "pasteFromOtherSite", "resetStyle", "saveGlobal", "saveDefault",
+      "structure", "delete"]);
   });
 
   test("the rows we invented are GONE from every kind of target", () => {
@@ -170,9 +179,10 @@ describe("M-8 · one menu, wherever it is opened from", () => {
   test("six rows print their chord, as the reference's do", () => {
     const items = menuFor({ kind: "widget", canPaste: true });
     const chords = Object.fromEntries(items.filter((i) => i.shortcut).map((i) => [i.action, i.shortcut]));
+    // ROUND 2: the reference's own glyphs, read off its menu on 2026-09-19.
     assert.deepEqual(chords, {
-      duplicate: "Ctrl+D", copy: "Ctrl+C", paste: "Ctrl+V",
-      pasteStyle: "Ctrl+Shift+V", structure: "Ctrl+I", delete: "Del",
+      duplicate: "^+D", copy: "^+C", paste: "^+V",
+      pasteStyle: "^+⇧+V", structure: "^+I", delete: "⌦",
     });
   });
 
@@ -357,11 +367,14 @@ describe("M-22 · one box: sections, then things to add, then what to do", () =>
       || kinds.indexOf("action") > kinds.indexOf("widget"));
   });
 
-  test("an empty box offers the ACTIONS, not a wall of everything", () => {
-    const rows = findResults("", input);
-    assert.ok(rows.length > 0);
-    assert.ok(rows.every((r) => r.kind === "action"));
-    assert.ok(rows.some((r) => r.actionId === "outline"));
+  test("an empty box shows NOTHING — the reference's finder is blank until you type", () => {
+    // ROUND 2, driven on 2026-09-19: `#elementor-finder__content` is empty
+    // until a character is typed. Ours opened onto a "DO THIS" list of nine
+    // rows, which is a menu wearing a search box.
+    assert.deepEqual(findResults("", input), []);
+    // PRESENT: the actions have not gone — they are found when they are asked for.
+    assert.ok(findResults("struct", input).some((r) => r.actionId === "outline"),
+      "Structure can no longer be found by typing it");
   });
 
   test("every word has to match, so two words narrow", () => {
@@ -392,9 +405,9 @@ describe("M-22 · one box: sections, then things to add, then what to do", () =>
     const offered = findResults("page", { ...input, actions: [creator] });
     assert.equal(offered.some((r) => r.actionId === "new-page"), false,
       "Find must never offer a row that makes a record (D-25)");
-    assert.equal(findResults("", { ...input, actions: [creator] })
+    assert.equal(findResults("page", { ...input, actions: [creator] })
       .some((r) => r.actionId === "new-page"), false,
-      "… including on the empty box, which lists the actions");
+      "… including when the author types its own name");
     for (const a of ALWAYS_ACTIONS) {
       assert.ok(!/^(new|create|add a page|make)/i.test(a.label),
         `Find offers "${a.label}", which makes a row from inside the editor — that is D-25`);

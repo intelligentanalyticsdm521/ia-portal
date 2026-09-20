@@ -557,19 +557,34 @@ export function TypographyGroup({
  * Layout group above, where the reference keeps it.
  */
 export function ResponsiveGroup({
-  hiddenOn, onHide, onReset,
+  hiddenOn, onHide, onReset, visibilityHeading,
 }: {
   hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
   onHide: (device: Device, hidden: boolean) => void;
   onReset: () => void;
+  /** A container's Responsive section carries a "Visibility" sub-heading; a
+   *  widget's does not. The reference's own split. */
+  visibilityHeading?: boolean;
 }) {
   return (
-    /* THREE SWITCHERS, IN THE REFERENCE'S WORDS (D-172): "Hide on Desktop",
-       "Hide on Tablet", "Hide on Mobile". Ours had two checkboxes with a
-       sentence for a label and no desktop, so the one width most of these
-       documents are read on could not be answered at all. */
+    /* THREE SWITCHERS, IN THE REFERENCE'S FULL NAMES (D-172, round 2):
+       "Hide On Desktop", "Hide On Tablet Portrait", "Hide On Mobile Portrait".
+       Round 1 got the three rows and clipped the breakpoint out of two of
+       them, which is the same defect as calling the device button "Phone":
+       the reference names the BREAKPOINT, because "tablet" and "tablet
+       portrait" are different widths and hiding on one is not hiding on the
+       other. */
     <Group title="Responsive" hint="Leaving this out on smaller screens" onReset={onReset}>
-      {([["desktop", "Hide on Desktop"], ["tablet", "Hide on Tablet"], ["phone", "Hide on Mobile"]] as const)
+      {visibilityHeading && (
+        <div data-control-subheading="Visibility" style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
+          Visibility
+        </div>
+      )}
+      {([
+        ["desktop", "Hide On Desktop"],
+        ["tablet", "Hide On Tablet Portrait"],
+        ["phone", "Hide On Mobile Portrait"],
+      ] as const)
         .map(([key, label]) => (
           <div key={key} style={ROW}>
             <span style={L}>{label}</span>
@@ -610,14 +625,30 @@ export function AttributesGroup({
   onPatch: (patch: { cssId?: string; cssClasses?: string }) => void;
   onReset: () => void;
 }) {
+  /* THE REFERENCE'S OWN TWO NAMES, IN LAYOUT (D-172, round 2).
+     Two things changed here and both were ours:
+
+       · THE TWO EXPLANATION PARAGRAPHS ARE DELETED. "A Menu Anchor and a link
+         like #prices jump to this name. Use it once on a page." and "Separate
+         them with a space. Your own stylesheet can then style every part with
+         the same name." The reference's Advanced tab has no prose in it at
+         all. What each field is for is in its tooltip.
+       · THE LABELS ARE "CSS ID" AND "CSS CLASSES". Ours read "Its own name"
+         and "Styling names", invented on the argument that a business owner
+         learns nothing from "CSS ID" — which is true, and is why the sentence
+         that explains it is the tooltip. A NAME that appears nowhere else in
+         the world is worse than a technical one: somebody who searches for how
+         to use it finds every answer written about CSS ID.
+
+     The group is rendered inside the Layout section now — the reference keeps
+     both of these there, not in an Attributes section of their own. */
   const field: React.CSSProperties = {
-    width: "100%", fontSize: 12, padding: "6px 8px",
-    border: "1px solid #CBD5E1", borderRadius: 6,
+    ...INPUT, borderRadius: 6,
   };
   return (
     <Group title="Attributes" hint="A name for this part, so a link or your own styling can find it" onReset={onReset}>
-      <label style={{ fontSize: 11, color: "#5A7A8A" }} title="Elementor calls this the CSS ID.">
-        Its own name
+      <div style={ROW}>
+        <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
         <input
           style={field}
           data-style-css-id
@@ -625,12 +656,9 @@ export function AttributesGroup({
           placeholder="e.g. prices"
           onChange={(e) => onPatch({ cssId: e.target.value })}
         />
-      </label>
-      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: -4 }}>
-        A Menu Anchor and a link like <code>#prices</code> jump to this name. Use it once on a page.
       </div>
-      <label style={{ fontSize: 11, color: "#5A7A8A" }} title="Elementor calls these the CSS Classes.">
-        Styling names
+      <div style={ROW}>
+        <span style={L} title="Class names on this element, separated by a space.">CSS Classes</span>
         <input
           style={field}
           data-style-css-classes
@@ -638,9 +666,6 @@ export function AttributesGroup({
           placeholder="e.g. tight two-up"
           onChange={(e) => onPatch({ cssClasses: e.target.value })}
         />
-      </label>
-      <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: -4 }}>
-        Separate them with a space. Your own stylesheet can then style every part with the same name.
       </div>
     </Group>
   );

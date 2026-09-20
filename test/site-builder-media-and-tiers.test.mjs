@@ -283,7 +283,10 @@ test('the phone can still add and reorder, where dragging does not fire', () => 
   const canvas = readSrc('src/builder/Canvas.tsx');
   // The section handle's grip drags AND selects, so a phone can still open a
   // container it cannot drag; the words are the reference editor's.
-  assert.match(canvas, /title="Edit Container — drag to move it"/);
+  // ROUND 2: "Edit Container", full stop — the reference's own tooltip, with
+  // no sentence about the drag glued onto it. The grip still drags AND selects.
+  assert.match(canvas, /title="Edit Container"/);
+  assert.match(canvas, /draggable[\s\S]{0,40}onDragStart=\{onDragStart\}/);
   assert.match(canvas, /title="Add Container" aria-label="Add Container"/);
   /* ABSENT: the "+ Add" pill that opened a pop-up list of widgets. Deleted
      2026-09-19 — adding is the add area's job, which is buttons all the way
