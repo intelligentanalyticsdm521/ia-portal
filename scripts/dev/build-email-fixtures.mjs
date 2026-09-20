@@ -165,6 +165,15 @@ const emailCases = [
   widgetCase("social links, from the business", "social_links", { links: [], align: "Centre" }),
   widgetCase("countdown shows the date", "countdown", { ends_at: "1 November 2026" }),
   widgetCase("review", "testimonial", { quote: "They were out before we opened.", attribution: "Hope Ministries", rating: 5 }),
+  /* B-168 F5 - IA Reviews in a mailbox: stacked, never a carousel, because a
+     mailbox cannot swipe. Both spellings of the list are read; this case uses
+     the page engine own key. */
+  widgetCase("the business reviews", "ia_reviews", {
+    slides: [
+      { content: "They were out before we opened.", name: "Hope Ministries", rating: 5 },
+      { content: "Same crew every time.", name: "Cedar Ridge HOA", rating: 4 },
+    ],
+  }),
   widgetCase("footer", "email_footer", {
     businessName: "Rolling In It", address: "1200 Prairie Ave, Marshalltown, IA 50158",
     note: "You are getting this because you asked us about winter services.",
@@ -560,6 +569,17 @@ const landingCases = [
   lpCase("small print", "footer_note", { text: "Prices exclude tax." }),
   lpCase("social links", "social_links", { links: [{ label: "Facebook", url: "https://facebook.com/x" }] }),
   lpCase("review", "testimonial", { quote: "Never had to call twice.", attribution: "Hope Ministries" }),
+  /* B-168 F5 - NO LANDING GOLDENS FOR THE SLIDERS, and the reason is a SEAM
+     gap rather than a gap in the family. A golden in this file is checked in
+     to BOTH repos and LUMEN-API runs ITS OWN copy of the landing renderer
+     against it (src/lib/landingRender.js, seams audit SEAM-6-A). That copy
+     has no door to the ten families: LUMEN has an emailFamilies folder and
+     nothing like it for landing pages, so a family widget on a HOSTED landing
+     page draws "needs a newer version of the builder" there, while drawing
+     correctly in the Portal and publishing correctly through arion. Pinning a
+     golden the server cannot produce would only turn both suites red. The gap
+     is item F5-S1 in D168_HANDOFF_2026-09-19.md, and it belongs to every page
+     family, not just this one. */
   lpCase("a widget from a newer build is inert", "hologram", {}),
 
   /* ── D-165 §11.13.3 — the standard set, and the page widgets with it ──────

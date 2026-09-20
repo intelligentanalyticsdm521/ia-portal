@@ -78,39 +78,15 @@ export const IA_POSTS_DEF: WidgetDef = {
   ],
 };
 
-export function renderReviews(w: Widget, ctx: RenderContext): string {
-  const p: any = w.props || {};
-  const items: any[] = Array.isArray(p.items) ? p.items : [];
-  if (!items.length) {
-    return ctx.mode === "edit"
-      ? `<div class="bx-imgdrop">Your reviews appear here once they are brought in.</div>` : "";
-  }
-  return `<div class="bx-reviews">${items.map((it, i) => `
-    <blockquote class="bx-quote">
-      ${editRun(`items.${i}.quote`, it?.quote, "bx-p", "What they said", ctx, "p")}
-      <span class="bx-stars" style="color:${esc(ctx.accent)};letter-spacing:2px">${
-    "★".repeat(Math.max(0, Math.min(5, Number(it?.rating) || 5)))}</span>
-      <footer class="bx-attrib">${esc(str(it?.author))}</footer>
-    </blockquote>`).join("")}</div>`;
-}
-
-export const REVIEWS_DEF: WidgetDef = {
-  kind: "reviews",
-  label: "Reviews",
-  description: "Real reviews of your business, with the stars and who left them.",
-  icon: "Stars",
-  picture: pictureFrom(box(5, 8, 26, 24) + box(34, 8, 25, 24) + bar(9, 13, 18, 3) + bar(9, 20, 13, 3)
-    + bar(38, 13, 17, 3) + bar(38, 20, 12, 3)),
-  category: "Intelligent Analytics",
-  /* NOT `email` yet: this surface has no table renderer for it, and a tile
-     that puts nothing in an inbox is worse than one that is not there. Item S2
-     in the handoff. */
-  adapters: ["website", "landing"],
-  defaults: { items: [] },
-  controls: [
-    { key: "items", label: "Reviews", type: "list", tab: "content", section: "Reviews" },
-  ],
-};
+/* `renderReviews` and `REVIEWS_DEF` LIVED HERE and are MOVED (B-168, F5).
+   The kind `reviews` keeps its id and its stored props, and now lives in
+   `widgets/families/f5-sliders-reviews/reviews.ts` beside the three sliders
+   that repeat a quote. It is ELEMENTOR's Reviews there, because `reviews` is
+   the page engine's own slug and arion has to publish that widgetType; the IA
+   twin the offer file calls **IA Reviews** is the new kind `ia_reviews`, same
+   panel, filled from the business's own reviews. The renderer still reads the
+   old `items` array, so a page already carrying reviews draws unchanged.
+   Replace means delete. */
 
 export function renderBookNow(w: Widget, ctx: RenderContext): string {
   const p: any = w.props || {};

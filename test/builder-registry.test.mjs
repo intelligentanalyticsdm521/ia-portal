@@ -214,10 +214,16 @@ describe("§3.2's union is registered", () => {
     "share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page",
     /* B-168 f4-moving: Elementor's Progress Tracker, Pro, in the website and landing offers. */
     "progress_tracker",
+    /* B-168 f5-sliders-reviews: Elementor's sliders and review widgets. ia_reviews is the database twin of Reviews. */
+    "media_carousel", "slides", "testimonial_carousel", "ia_reviews",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",
     "ia_posts", "reviews", "book_now",
+    /* B-168 F5 - the sliders family. Every one is in the offer file Brandon
+       approved on 2026-09-19 (D-168): Slides, Media Carousel and Testimonial
+       Carousel in the page builders' Pro column, IA Reviews in their IA one. */
+    "testimonial_carousel", "slides", "media_carousel", "ia_reviews",
     "ia_form", "newsletter_signup", "hours_location",
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
     // The studio's placed objects (§5 step 5). Not one of §11.13.3's four

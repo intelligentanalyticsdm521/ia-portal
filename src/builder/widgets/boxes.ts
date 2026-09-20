@@ -1,14 +1,15 @@
 /**
- * builder/widgets/boxes.ts — three standard widgets that are a PANEL with words
- * in it: **Image Box**, **Alert** and **Testimonial**.
+ * builder/widgets/boxes.ts — two standard widgets that are a PANEL with words
+ * in it: **Image Box** and **Alert**.
  *
  * D-165, scope §11.13.3. Names, groups and control sections from
  * `BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json`, confirmed against the live
  * Playground editor on 2026-09-19.
  *
- * `testimonial` KEEPS its kind id — it is on the line and in stored documents —
- * and moves here from the engine's switch so its definition and its renderer are
- * one file, which is the rule D-156 set and the reason the drift test exists.
+ * **Testimonial** was the third and has MOVED to
+ * `widgets/families/f5-sliders-reviews/`, where the three sliders that repeat
+ * a quote live (B-168). Its kind id and its stored props are unchanged; see the
+ * note where it used to be, at the foot of this file.
  *
  * `alert` is what `callout` becomes. Elementor has a name for a tinted panel
  * that must not be skimmed past and it is Alert, so the invented "Callout panel"
@@ -138,62 +139,10 @@ export const ALERT_DEF: WidgetDef = {
   ],
 };
 
-/* ══════════════════════════════════════════════════════════════════════════
-   Testimonial — Elementor `testimonial`, group General
-   ══════════════════════════════════════════════════════════════════════════ */
-
-export function renderTestimonial(w: Widget, ctx: RenderContext): string {
-  const p: any = w.props || {};
-  /* THE STORED FIELD NAMES DO NOT MOVE. `testimonial` is a kind that exists
-     today, and the shared vocabulary is explicit: an existing kind keeps its id
-     — and therefore its props, because three server mirrors and every stored
-     document read them — and what changes is the LABEL, the GROUP and the icon.
-     So this stays `quote` / `attribution` / `rating`, and Elementor's own
-     spellings are read as well, for a review that came back out of a published
-     page. */
-  const quote = str(p.quote || p.testimonial_content);
-  const name = str(p.attribution || p.testimonial_name);
-  const job = str(p.job || p.testimonial_job);
-  if (!quote.trim() && ctx.mode !== "edit") return "";
-  const image = str(p.image || p.testimonial_image);
-  const align = str(p.align || p.testimonial_alignment) || "left";
-  const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));
-  return `<blockquote class="bx-quote" style="text-align:${esc(align)}">
-    ${proseRun("quote", quote, "bx-quote-b", "What they said", ctx)}
-    ${stars ? `<div class="bx-stars" style="color:${esc(ctx.accent)}">${"★".repeat(stars)}</div>` : ""}
-    <footer class="bx-attrib" style="display:flex;gap:8px;align-items:center;justify-content:${align === "center" ? "center" : "flex-start"}">
-      ${image ? `<img src="${esc(image)}" alt="" style="width:36px;height:36px;border-radius:999px;object-fit:cover"/>` : ""}
-      <span>${editRun("attribution", name, "bx-attrib-n", "Who said it", ctx, "span")}${
-    job || ctx.mode === "edit" ? ` ${editRun("job", job, "bx-attrib-j", "Their job or company", ctx, "span")}` : ""}</span>
-    </footer>
-  </blockquote>`;
-}
-
-export const TESTIMONIAL_DEF: WidgetDef = {
-  kind: "testimonial",
-  label: "Testimonial",
-  description: "Something a customer said about you, with their name underneath.",
-  icon: "Quote",
-  picture: pictureFrom(`<path d="M12 14c0-3 3-4 5-4v4c-1 0-2 1-2 3h3v7h-6z" fill="#CBD5E1" stroke="none"/>`
-    + bar(22, 12, 34) + bar(22, 20, 26) + bar(22, 30, 16, 3)),
-  category: "General",
-  /* NOT `brand` (D-165). The Template Studio is an ABSOLUTE-PIXEL canvas: every
-     object carries its own x, y, w and h, and `adapters/mybrand`'s
-     `insertWidget` places one layer per kind. A widget whose shape is a flow —
-     an icon beside a title, a picture above a line of words — has nothing to
-     place there, and a tile whose button does nothing is the drift the studio's
-     own test exists to catch. A review is a quote and a name, which the studio
-     draws as two text layers the author places themselves. The ask for the rest is item S2 in
-     the handoff. */
-  adapters: ["proposal", "website", "email", "landing"],
-  defaults: { quote: "", attribution: "", job: "", image: "", rating: 0, align: "left" },
-  controls: [
-    { key: "quote", label: "Content", type: "textarea", tab: "content", section: "Testimonial" },
-    { key: "image", label: "Choose Image", type: "image", tab: "content", section: "Testimonial" },
-    { key: "attribution", label: "Name", type: "text", tab: "content", section: "Testimonial" },
-    { key: "job", label: "Title", type: "text", tab: "content", section: "Testimonial" },
-    { key: "rating", label: "Stars", type: "number", tab: "content", section: "Testimonial" },
-    { key: "align", label: "Alignment", type: "select", tab: "content", section: "Testimonial", options: [
-      { value: "left", label: "Left" }, { value: "center", label: "Centre" }, { value: "right", label: "Right" }] },
-  ],
-};
+/* renderTestimonial and TESTIMONIAL_DEF LIVED HERE and are MOVED (B-168, F5).
+   testimonial is the free half of the sliders family — Reviews, Testimonial
+   Carousel and Slides are the same quote repeated — so it now lives beside
+   them in widgets/families/f5-sliders-reviews/testimonial.ts, with its kind
+   id, its stored props and its documents unchanged. MOVED, not copied: two
+   definitions of one kind is what families/index.ts throws on and what the
+   registry test kinds are unique fails on. Replace means delete. */

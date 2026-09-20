@@ -650,7 +650,7 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        no other: Reviews and Book Now. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
       "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
-      "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
+      "heading", "ia_reviews", "icon", "icon_box", "image", "image_box", "list", "paragraph",
       "product_card", "social_links", "spacer", "star_rating", "testimonial",
     ].sort());
   });
