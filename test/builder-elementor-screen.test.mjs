@@ -1382,3 +1382,60 @@ describe("SCREEN LAW 17 — and the renderer can say all of it", () => {
     assert.equal(readStyle({ reverse: true, alignContent: "evenly", overflow: "auto" })?.overflow, "auto");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 18 — A SIZE IS A SLIDER WITH A UNIT (D-172, round 3)
+
+   Driven on 2026-09-19: Width, Min Height, Columns, Rows, Space, Size, Gap and
+   the rest are all a slider with a number box, label ABOVE, the device
+   switcher on the label row and a unit switcher on its right — Min Height
+   px/em/rem/vh, Gaps px/%/em/rem/vw. Ours had no `input type="range"` in the
+   whole panel and no unit switcher anywhere at all: every size was a bare
+   pixel number, so "as tall as the screen" could not be said.
+
+   The label row itself stays written in Inspector.tsx, where SCREEN LAW 10 and
+   11 pin it. The slider is built AROUND it (`head`), rather than swallowing
+   the one thing those laws are pinned on.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 18 — a size is a slider with a unit (round 3)", () => {
+  const groups = code(readSrc("builder/StyleGroups.tsx"));
+  const inspector = code(readSrc("builder/Inspector.tsx"));
+
+  test("the bare pixel boxes are GONE and a slider is in their place", () => {
+    // ABSENT: the two number-only inputs.
+    assert.ok(!inspector.includes('<input style={INPUT} type="number" min={0} data-box-gap'),
+      "Gaps is a bare pixel box again");
+    assert.ok(!inspector.includes('<input style={INPUT} type="number" min={0} data-box-minheight'),
+      "Min Height is a bare pixel box again");
+    // PRESENT: one Slider, used by both, with a range AND a number box.
+    assert.match(groups, /export function Slider/);
+    assert.match(groups, /type="range"/);
+    assert.match(groups, /\{\.\.\.\(testAttr \? \{ \[`\$\{testAttr\}-box`\]: "number" \} : \{\}\)\}/);
+    assert.match(inspector, /<Slider\s+label="Min Height"/);
+    assert.match(inspector, /<Slider\s+label="Gaps"/);
+  });
+
+  test("each size carries the reference's own units", () => {
+    assert.match(groups, /data-style-units=\{label\.toLowerCase\(\)\}/);
+    assert.match(inspector, /units=\{\["px", "em", "rem", "vh"\]\}/);
+    assert.match(inspector, /units=\{\["px", "%", "em", "rem", "vw"\]\}/);
+  });
+
+  test("the unit reaches the page, and an unset one still means px", async () => {
+    const { containerLayoutDeclarations, sectionBoxDeclarations, readStyle, sizeCss } =
+      await import("../src/builder/style.ts");
+    assert.equal(sizeCss(40, "vh"), "40vh");
+    assert.equal(sizeCss(40, undefined), "40px");
+    // …and a unit the file does not know is dropped rather than written out.
+    assert.equal(sizeCss(40, "furlongs"), "40px");
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 2, units: { gap: "rem" } })
+      .includes("gap:2rem"));
+    assert.ok(containerLayoutDeclarations({ direction: "row", gap: 16 }).includes("gap:16px"),
+      "a document with no unit stopped meaning pixels");
+    assert.ok(sectionBoxDeclarations({ minHeight: 100, units: { minHeight: "vh" } })
+      .includes("min-height:100vh"));
+    assert.equal(readStyle({ units: { gap: "parsecs" } })?.units, undefined);
+    assert.equal(readStyle({ units: { gap: "vw" } })?.units?.gap, "vw");
+  });
+});

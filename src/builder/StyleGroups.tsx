@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 import {
   RATIO_PRESETS, normaliseRatios, setSide, sidesAreLinked,
-  type BoxSides, type Device, type StyleLayer,
+  type BoxSides, type Device, type SizeUnit, type StyleLayer,
 } from "./style";
 import { PREVIEW_DEVICES } from "./responsive";
 
@@ -363,6 +363,100 @@ export function IconChoice<T extends string>({ value, options, onPick, name, tes
           >{o.icon}</button>
         );
       })}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   A SIZE — a slider, a number box and a unit switcher (D-172, round 3)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * THE SHAPE EVERY SIZE IN THE REFERENCE WEARS.
+ *
+ * Driven on 2026-09-19: Width, Min Height, Columns, Rows, Space, Size, Weight,
+ * Gap, Opacity, Rotate, Paragraph Spacing and Columns Gap are all a slider with
+ * a number box beside it, the label ABOVE (`elementor-label-block`), the device
+ * switcher on the label row, and a unit switcher on the right of it. Ours had
+ * no `input type="range"` anywhere in the panel and no unit switcher anywhere
+ * at all — every size was a bare pixel number, so "as tall as the screen" could
+ * not be said.
+ *
+ * The slider and the box are ONE value: dragging writes the same key typing
+ * does, and the box is there because a slider alone cannot be given 137.
+ */
+export function Slider({
+  label, head, value, unit, units, onChange, onUnit, testAttr, max, placeholder,
+}: {
+  label: string;
+  /**
+   * THE LABEL ROW ITSELF, handed in by the panel.
+   *
+   * The label and its device switcher stay written where THE SCREEN LAW pins
+   * them — in Inspector.tsx, beside the control they belong to — and the slider
+   * is built round them. A component that swallowed the label would have moved
+   * the one thing that file is pinned on, to add a slider under it.
+   */
+  head: ReactNode;
+  value: number | undefined;
+  unit: SizeUnit | undefined;
+  /** Which units this size may be in. The reference's list, per control. */
+  units: ReadonlyArray<SizeUnit>;
+  onChange: (v: number | undefined) => void;
+  onUnit: (u: SizeUnit | undefined) => void;
+  testAttr?: string;
+  /** The slider's far end. A number box may go past it; the slider may not. */
+  max?: number;
+  placeholder?: string;
+}) {
+  const shownUnit = unit ?? units[0] ?? "px";
+  const top = max ?? (shownUnit === "px" ? 800 : 100);
+  return (
+    <div style={FIELD}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        {head}
+        <span role="group" aria-label={`${label} unit`} data-style-units={label.toLowerCase()}
+          style={{ marginLeft: "auto", display: "inline-flex", gap: 2 }}>
+          {units.map((u) => {
+            const on = shownUnit === u;
+            return (
+              <button
+                key={u}
+                type="button"
+                aria-pressed={on}
+                title={u}
+                onClick={() => onUnit(u === (units[0] ?? "px") ? undefined : u)}
+                style={{
+                  border: "none", background: "transparent", cursor: "pointer", padding: "0 2px",
+                  fontSize: 10, fontWeight: on ? 700 : 400, color: on ? "#0C4A60" : "#BFC7CE",
+                }}
+              >{u}</button>
+            );
+          })}
+        </span>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 64px", gap: 8, alignItems: "center" }}>
+        <input
+          type="range"
+          min={0}
+          max={top}
+          aria-label={label}
+          {...(testAttr ? { [testAttr]: "range" } : {})}
+          value={value ?? 0}
+          onChange={(e) => onChange(Number(e.target.value))}
+          style={{ width: "100%" }}
+        />
+        <input
+          type="number"
+          min={0}
+          aria-label={`${label} value`}
+          {...(testAttr ? { [`${testAttr}-box`]: "number" } : {})}
+          value={value ?? ""}
+          placeholder={placeholder ?? "0"}
+          onChange={(e) => onChange(e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0))}
+          style={{ ...INPUT, padding: "4px 6px", textAlign: "center" }}
+        />
+      </div>
     </div>
   );
 }

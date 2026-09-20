@@ -100,6 +100,26 @@ export type ContentSpec = JustifySpec;
 /** What a box does with what will not fit. The reference's Overflow. */
 export type OverflowSpec = "hidden" | "auto";
 
+/**
+ * THE UNIT A SIZE IS IN (D-172, round 3).
+ *
+ * Driven in the reference: every size control carries a unit switcher — Min
+ * Height is px/em/rem/vh/custom, Gaps px/%/em/rem/vw/custom, font Size
+ * px/em/rem/vw/custom. Ours had none anywhere: every size in the panel was a
+ * bare pixel number, so "make this box as tall as the screen" could not be
+ * said at all.
+ *
+ * "custom" is not offered: it takes a CSS expression, and a box that can be
+ * given `calc(100% - 3rem)` is a box the PDF and the mailbox cannot promise.
+ */
+export type SizeUnit = "px" | "%" | "em" | "rem" | "vh" | "vw";
+
+/** Which sizes may carry a unit. One key per size the panel can set. */
+export interface UnitMap {
+  minHeight?: SizeUnit;
+  gap?: SizeUnit;
+}
+
 export interface TypographySpec {
   /** px. */
   size?: number;
@@ -152,6 +172,11 @@ export interface StyleLayer {
   overflow?: OverflowSpec;
   /** Grid only: how many even columns. */
   columns?: number;
+  /**
+   * WHAT UNIT EACH SIZE IS IN. Absent means px, which is what every stored
+   * document already means, so nothing has to be migrated.
+   */
+  units?: UnitMap;
 
   /* Widget only. */
   align?: AlignSpec;
@@ -186,6 +211,12 @@ const DIRECTIONS: ReadonlyArray<DirectionSpec> = ["row", "column", "grid"];
 const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "between", "around", "evenly"];
 const ITEMS: ReadonlyArray<ItemsSpec> = ["start", "center", "end", "stretch"];
 const OVERFLOWS: ReadonlyArray<OverflowSpec> = ["hidden", "auto"];
+export const SIZE_UNITS: ReadonlyArray<SizeUnit> = ["px", "%", "em", "rem", "vh", "vw"];
+
+/** A size with its unit, ready for CSS. Absent unit means px. */
+export function sizeCss(value: number, unit: SizeUnit | undefined): string {
+  return `${round(value)}${SIZE_UNITS.includes(unit as SizeUnit) ? unit : "px"}`;
+}
 
 function num(v: unknown): number | undefined {
   const n = Number(v);
@@ -258,6 +289,12 @@ function readLayer(v: unknown): StyleLayer | undefined {
   if (JUSTIFIES.includes(o.alignContent)) L.alignContent = o.alignContent;
   if (o.wrap === true) L.wrap = true;
   if (OVERFLOWS.includes(o.overflow)) L.overflow = o.overflow;
+  if (o.units && typeof o.units === "object") {
+    const u: UnitMap = {};
+    if (SIZE_UNITS.includes(o.units.minHeight)) u.minHeight = o.units.minHeight;
+    if (SIZE_UNITS.includes(o.units.gap)) u.gap = o.units.gap;
+    if (Object.keys(u).length) L.units = u;
+  }
   const columns = num(o.columns);
   if (columns !== undefined && columns >= 1) L.columns = Math.min(12, Math.round(columns));
   const typography = readTypography(o.typography); if (typography) L.typography = typography;
@@ -555,7 +592,7 @@ export function sectionBoxDeclarations(layer: StyleLayer): string[] {
   }
   if (layer.radius !== undefined) out.push(`border-radius:${round(layer.radius)}px`);
   if (layer.shadow) out.push(`box-shadow:${SHADOW_CSS[layer.shadow]}`);
-  if (layer.minHeight !== undefined) out.push(`min-height:${round(layer.minHeight)}px`);
+  if (layer.minHeight !== undefined) out.push(`min-height:${sizeCss(layer.minHeight, layer.units?.minHeight)}`);
   return out;
 }
 
@@ -604,7 +641,7 @@ export function containerLayoutDeclarations(layer: StyleLayer): string[] {
   /* ALIGN CONTENT only says anything once the lines wrap, which is the
      reference's own rule for offering it. */
   if (layer.alignContent) out.push(`align-content:${JUSTIFY_CSS[layer.alignContent]}`);
-  if (layer.gap !== undefined) out.push(`gap:${round(layer.gap)}px`);
+  if (layer.gap !== undefined) out.push(`gap:${sizeCss(layer.gap, layer.units?.gap)}`);
   if (layer.overflow) out.push(`overflow:${layer.overflow}`);
   return out;
 }

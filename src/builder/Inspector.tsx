@@ -68,7 +68,7 @@ import {
 } from "./style";
 import {
   Accordion, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs,
-  RatioPicker, ResponsiveGroup, SpacingGroup, Switcher, TypographyGroup,
+  RatioPicker, ResponsiveGroup, Slider, SpacingGroup, Switcher, TypographyGroup,
   FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
 
@@ -431,17 +431,24 @@ export function Inspector(p: InspectorProps) {
 
                 {/* MIN HEIGHT, ABOVE "Items" (D-172, round 3) — the
                     reference's own order: the box's own size comes before
-                    anything about what is inside it. */}
-                <div style={FIELD}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    anything about what is inside it. A SLIDER with a number box
+                    and a unit switcher, which is the shape it gives every size:
+                    px / em / rem / vh, measured. */}
+                <Slider
+                  label="Min Height"
+                  head={<>
                     <span style={L}>Min Height</span>
                     <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                  </span>
-                  <input style={INPUT} type="number" min={0} data-box-minheight
-                    value={widgetLayer.minHeight ?? ""} placeholder="auto"
-                    onChange={(e) => patchWidgetStyle(
-                      { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
-                </div>
+                  </>}
+                  testAttr="data-box-minheight"
+                  units={["px", "em", "rem", "vh"]}
+                  unit={widgetLayer.units?.minHeight}
+                  value={widgetLayer.minHeight}
+                  placeholder="auto"
+                  onChange={(v) => patchWidgetStyle({ minHeight: v }, "minHeight")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), minHeight: u } }, "minHeight:unit")}
+                />
 
                 {/* "Items" — the reference's own sub-heading, splitting the
                     box's own settings from its children's. */}
@@ -528,17 +535,24 @@ export function Inspector(p: InspectorProps) {
                   />
                 </div>
 
-                {/* GAPS — label ABOVE, the shape the reference gives it. */}
-                <div style={FIELD}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* GAPS — a slider with its own units, px / % / em / rem / vw,
+                    and the label above, which is the shape the reference gives
+                    it (`elementor-label-block`). */}
+                <Slider
+                  label="Gaps"
+                  head={<>
                     <span style={L}>Gaps</span>
                     <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                  </span>
-                  <input style={INPUT} type="number" min={0} data-box-gap
-                    value={widgetLayer.gap ?? ""} placeholder="0"
-                    onChange={(e) => patchWidgetStyle(
-                      { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
-                </div>
+                  </>}
+                  testAttr="data-box-gap"
+                  units={["px", "%", "em", "rem", "vw"]}
+                  unit={widgetLayer.units?.gap}
+                  value={widgetLayer.gap}
+                  max={120}
+                  onChange={(v) => patchWidgetStyle({ gap: v }, "gap")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), gap: u } }, "gap:unit")}
+                />
 
                 {/* WRAP — the reference's two icon buttons, not a checkbox with
                     a sentence for a label. */}
