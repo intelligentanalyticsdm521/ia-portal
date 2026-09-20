@@ -53,7 +53,7 @@ import { fill, type FillMode, type MergeContext } from "../../merge";
 // tables instead of flexbox, which is a difference in PAINT, never in model.
 import {
   MAX_CONTAINER_DEPTH, boldRuns, childrenOf, containerFlow, containerLayout, isContainer,
-  type LocationLite,
+  type LocationLite, type RenderContext,
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B), never a second
 // lite shape that resolves a price its own way.
@@ -63,7 +63,13 @@ import {
 } from "../../widgets";
 /* B-168 / D-168 item 5b — the families' MAILBOX half. One import, one call at
    the top of the switch below, and no family ever opens this file. */
-import { FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily } from "../../widgets/families";
+import {
+  FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily, renderFamily,
+} from "../../widgets/families";
+/* …and the PAGE renderer as the last resort in the default branch, for a
+   family that is offered in the newsletter and has not written its mailbox
+   half yet. Safe because `checkEmailSafe` runs over every golden case and
+   names the widget that puts flex, grid or a class in a mailbox. */
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -455,12 +461,30 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "star_rating": return emStarRating(p, c);
       case "alert": return emAlert(p, c);
       case "ia_reviews": return emIaReviews(p, c);
-      default:
+      default: {
+        /* B-168 §C.1 — THE TEN FAMILIES, asked before giving up.
+         *
+         * THE SAME ONE LINE `render.ts` ALREADY HAS, and the one the seams
+         * pass put in LUMEN's `builderEmailRender.js` and forgot here. Without
+         * it every family widget the offer file gives to the newsletter draws
+         * the "needs a newer version" note in the email builder, however well
+         * it is built — found by building f6-money's Price Table and Price
+         * List and watching the preview refuse them.
+         *
+         * A FAMILY RENDERER REACHING A MAILBOX MUST BE MAILBOX-SAFE: tables,
+         * inline styles, no flex, no grid, no class attribute. That is not a
+         * hope — `checkEmailSafe` runs over every golden case in
+         * test/email-builder.test.mjs and names the widget that breaks it.
+         * A family whose widgets are NOT offered in the newsletter never
+         * reaches this line at all, because the pane never puts them here. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
         return c.mode === "edit"
           ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:10px;color:#94A3B8;font-size:11px;font-family:${bodyStack(c)};">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
           : "";
+      }
     }
   })();
   if (!body && c.mode !== "edit") return "";
@@ -1531,6 +1555,15 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
           default: {
             const markup = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
             if (markup != null) for (const l of textFromMarkup(markup)) line(l);
+            /* …and the page renderer as the last resort, the same order the
+               HTML half uses. BOTH HALVES OR NEITHER: a widget drawn in the
+               HTML part and missing here is an email whose text/plain
+               alternative is a footer and nothing else, which is the bulk
+               shape `reference_acs_email_reality` says costs us the quota. */
+            else {
+              const fam = renderFamily(w, { ...c, mode: "view" } as unknown as RenderContext);
+              if (fam != null) for (const l of textFromMarkup(fam)) line(l);
+            }
             break;
           }
         }

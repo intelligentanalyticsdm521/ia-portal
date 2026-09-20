@@ -22,7 +22,8 @@
  * is every word the author wrote. No JavaScript is involved on our side at all.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import { type RenderContext } from "../../../render";
 import { pictureFrom, bar, box } from "../../../pictures";
 import { editRun, proseRun } from "../../text";
 import { DEFAULT_ICON, ICON_OPTIONS, glyphFor } from "../../glyph";

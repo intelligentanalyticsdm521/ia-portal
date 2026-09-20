@@ -62,7 +62,6 @@ import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker
    into its own graph and reads that index's tables while the family is still
    evaluating. See esc.ts's own header for the error and who found it. */
 export { esc } from "./esc";
-import { esc } from "./esc";
 import { childrenOf, walkTree } from "./walk";
 
 export interface LocationLite {

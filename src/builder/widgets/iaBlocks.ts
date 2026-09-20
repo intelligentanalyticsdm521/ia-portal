@@ -10,7 +10,8 @@
  * went and why.
  */
 import type { Widget } from "../model";
-import { esc, type RenderContext } from "../render";
+import { esc } from "../esc";
+import { type RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, box, pictureFrom, solid } from "../pictures";
 import { editRun } from "./text";

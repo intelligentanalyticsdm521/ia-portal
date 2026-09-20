@@ -58,15 +58,6 @@ import {
   FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
 } from "../../widgets/families";
 import { renderAtom } from "../../widgets";
-/* B-168 §C.1 — THE TEN FAMILIES, ON THIS SURFACE TOO.
-   The seams commit put one line in `render.ts`, one in arion’s
-   `elementorWidgets.js` and one in LUMEN’s `builderEmailRender.js`, and this
-   file was the fourth door and was missed: a landing page is real HTML with a
-   stylesheet, so everything the engine draws it can draw, and the default
-   branch below asked `renderAtom` and nothing else. A widget a family declares
-   and the panel offers would have been silently blank on a hosted page. One
-   line, next to the atoms’, same shape, same reason. */
-import { renderFamily, FAMILY_RENDERED_KINDS } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,

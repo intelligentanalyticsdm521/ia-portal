@@ -7,7 +7,7 @@
  * This file is the two functions that need the render pipeline's `esc`, and it
  * re-exports the rest so every existing caller is unchanged.
  */
-import { esc } from "../render";
+import { esc } from "../esc";
 import { tagOf } from "./ribbon";
 
 export * from "./ribbon";

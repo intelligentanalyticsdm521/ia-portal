@@ -216,6 +216,8 @@ describe("§3.2's union is registered", () => {
     "progress_tracker",
     /* B-168 f5-sliders-reviews: Elementor's sliders and review widgets. ia_reviews is the database twin of Reviews. */
     "media_carousel", "slides", "testimonial_carousel", "ia_reviews",
+    /* B-168 f6-money: Elementor's Price Table, Price List and the two payment buttons. */
+    "price_table", "price_list", "paypal_button", "stripe_button",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",

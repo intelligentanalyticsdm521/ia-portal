@@ -15,7 +15,8 @@
  * `shared.fallbackCard`.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import { type RenderContext } from "../../../render";
 import { pictureFrom, bar, box, solid } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 import { fallbackCard, str } from "./shared";

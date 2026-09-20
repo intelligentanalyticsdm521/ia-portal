@@ -25,6 +25,7 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { FAMILY_OF_KIND } from "../src/builder/widgets/families/index.ts";
 import path from "node:path";
 
 import {

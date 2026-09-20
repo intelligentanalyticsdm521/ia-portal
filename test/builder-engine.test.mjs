@@ -45,6 +45,7 @@ import {
 } from "../src/builder/templates.ts";
 import { upgradeV1, toWire, openProposalDocument, locationsUsedBy } from "../src/builder/proposalDoc.ts";
 import { WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 
 const FIXTURE = JSON.parse(
   readFileSync(path.join(process.cwd(), "test", "fixtures", "document-model-cases.json"), "utf8"),
@@ -524,6 +525,7 @@ describe("the ONE renderer", () => {
     // MUTATION: add a widget to the registry with the "proposal" adapter and
     // no renderer branch, and this names it.
     const missing = widgetsFor("proposal").map((w) => w.kind)
+
       .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k)
         && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);

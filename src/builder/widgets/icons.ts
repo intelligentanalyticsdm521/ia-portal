@@ -14,7 +14,8 @@
  * it has to hold.
  */
 import type { Widget } from "../model";
-import { esc, type RenderContext } from "../render";
+import { esc } from "../esc";
+import { type RenderContext } from "../render";
 import type { WidgetControl, WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import { editRun } from "./text";

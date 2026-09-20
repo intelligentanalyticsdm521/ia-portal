@@ -18,7 +18,8 @@
  *
  * Pure strings. No React, no DOM, so the tests call it directly.
  */
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import { type RenderContext } from "../../../render";
 
 /** A value as a string, with null and undefined as the empty string. */
 export const str = (v: unknown): string => (v == null ? "" : String(v));

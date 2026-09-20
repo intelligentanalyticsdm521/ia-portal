@@ -23,7 +23,8 @@
  * form.
  */
 import type { Widget } from "../model";
-import { esc, type LocationLite, type RenderContext } from "../render";
+import { esc } from "../esc";
+import { type LocationLite, type RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import { editRun } from "./text";

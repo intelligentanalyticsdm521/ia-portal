@@ -15,7 +15,7 @@
  * two friendlier names. This file only holds what neither of those has and what
  * only F3 needs.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 
 /** `null` and `undefined` become "", never the word "null" on a page. */
 export const str = (v: unknown): string => (v == null ? "" : String(v));

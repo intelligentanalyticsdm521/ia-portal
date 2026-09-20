@@ -48,9 +48,12 @@ import {
   ICON_BOX_DEF, ICON_DEF, SOCIAL_ICONS_DEF, STAR_RATING_DEF,
   renderIcon, renderIconBox, renderSocialIcons, renderStarRating,
 } from "./icons";
+/* `TESTIMONIAL_DEF` IS GONE FROM HERE (B-168, landing): family
+   f5-sliders-reviews declares Testimonial now, under the same kind, and a
+   shadowed legacy copy is a second answer to what a Testimonial is. */
 import {
-  ALERT_DEF, IMAGE_BOX_DEF, TESTIMONIAL_DEF,
-  renderAlert, renderImageBox, renderTestimonial,
+  ALERT_DEF, IMAGE_BOX_DEF,
+  renderAlert, renderImageBox,
 } from "./boxes";
 import {
   ACCORDION_DEF, BASIC_GALLERY_DEF, COUNTER_DEF, GOOGLE_MAPS_DEF, IMAGE_CAROUSEL_DEF,
@@ -60,10 +63,9 @@ import {
 } from "./pageOnly";
 import {
   BOOK_NOW_DEF, HOURS_LOCATION_DEF, IA_FORM_DEF, IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF,
-  IA_OLIVER_INVOICE_DEF, IA_POSTS_DEF, IA_SOCIAL_LINKS_DEF, NEWSLETTER_SIGNUP_DEF, REVIEWS_DEF,
+  IA_OLIVER_INVOICE_DEF, IA_POSTS_DEF, IA_SOCIAL_LINKS_DEF, NEWSLETTER_SIGNUP_DEF,
   renderBookNow, renderHoursLocation, renderIaForm, renderIaMegaMenu, renderIaMobileMenu,
   renderIaOliverInvoice, renderIaPosts, renderIaSocialLinks, renderNewsletterSignup,
-  renderReviews,
 } from "./iaBlocks";
 
 /** Every widget declared under this folder, in PANEL ORDER within its group. */
@@ -78,7 +80,7 @@ export const ATOM_WIDGET_DEFS: WidgetDef[] = [
      `list`], Counter, Progress Bar, Testimonial, Tabs, Accordion, Toggle,
      Social Icons, Alert, Shortcode, HTML, Menu Anchor. */
   IMAGE_BOX_DEF, ICON_BOX_DEF, STAR_RATING_DEF, IMAGE_CAROUSEL_DEF, BASIC_GALLERY_DEF,
-  COUNTER_DEF, PROGRESS_BAR_DEF, TESTIMONIAL_DEF, TABS_DEF, ACCORDION_DEF, TOGGLE_DEF,
+  COUNTER_DEF, PROGRESS_BAR_DEF, TABS_DEF, ACCORDION_DEF, TOGGLE_DEF,
   SOCIAL_ICONS_DEF, ALERT_DEF, SHORTCODE_DEF, HTML_DEF, MENU_ANCHOR_DEF,
 
   /* Intelligent Analytics — §11.13.3's own order, per builder. The proposal's
@@ -90,7 +92,7 @@ export const ATOM_WIDGET_DEFS: WidgetDef[] = [
      where the picker and the record book they need actually live, and
      `registry.ts` spreads them into the one vocabulary beside these. */
   TOTALS_DEF, CARD_DEF, CATALOG_CARD_DEF, PRICE_LINE_DEF,
-  IA_POSTS_DEF, REVIEWS_DEF, BOOK_NOW_DEF,
+  IA_POSTS_DEF, BOOK_NOW_DEF,
   IA_FORM_DEF, NEWSLETTER_SIGNUP_DEF, HOURS_LOCATION_DEF,
   IA_MEGA_MENU_DEF, IA_MOBILE_MENU_DEF, IA_OLIVER_INVOICE_DEF, IA_SOCIAL_LINKS_DEF,
 ];
@@ -113,7 +115,6 @@ const RENDERERS: Record<string, Renderer> = {
   icon: renderIcon,
   icon_box: renderIconBox,
   image_box: renderImageBox,
-  testimonial: renderTestimonial,
   star_rating: renderStarRating,
   alert: renderAlert,
   social_links: renderSocialIcons,
@@ -136,7 +137,6 @@ const RENDERERS: Record<string, Renderer> = {
      `product_cards` and `product_line_items` are panel TILES and are never
      on a page, so they are not here either. */
   ia_posts: renderIaPosts,
-  reviews: renderReviews,
   book_now: renderBookNow,
   ia_form: renderIaForm,
   newsletter_signup: renderNewsletterSignup,
