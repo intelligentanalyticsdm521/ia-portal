@@ -46,7 +46,7 @@ import { fill, tokensIn, unfilledTokens, lookup } from "../src/builder/merge.ts"
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, renderEmailWidget,
   makeEmailContext, checkEmailSafe, assertEmailSafe, altTextFor, contrastInk,
-  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
+  inlineSafe, hasFooter, EMAIL_DRAWN_KINDS, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
 } from "../src/builder/adapters/email/emailRender.ts";
 import {
   EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, emailTemplateByKey, startingEmail,
@@ -59,7 +59,7 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
+  LANDING_DRAWN_KINDS, LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
@@ -626,6 +626,11 @@ describe("the email builder never opens on a blank page", () => {
 
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
+    /* `EMAIL_DRAWN_KINDS`, not `EMAIL_RENDERED_KINDS`: the first is what THIS
+       FILE's switch draws and the second is that plus every kind a FAMILY
+       draws in a mailbox (b168/override item 5b). Reading the narrow one made
+       this go red on Blockquote and HTML, which the f1-words family draws
+       correctly — the list was stale, not the renderer. */
     const missing = widgetsFor("email").map((w) => w.kind)
       // B-168 C.1 — A FAMILY WIDGET IS DRAWN BY THE FAMILY, in BOTH halves.
       // emailRender.ts's default branch asks renderFamily before it gives up,
@@ -744,7 +749,7 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        widget is drawn on a hosted page; it is just not drawn by the switch
        `LANDING_RENDERED_KINDS` describes. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
+      .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
         && !LANDING_KIND_ALIASES[k]
         && !FAMILY_RENDERED_KINDS.includes(k));

@@ -30,6 +30,8 @@ import {
 import { RENDERED_KINDS, makeContext, renderDocument } from "../src/builder/render.ts";
 import { esc } from "../src/builder/esc.ts";
 import { EMAIL_DRAWN_KINDS } from "../src/builder/adapters/email/emailRender.ts";
+import { insertWidget } from "../src/builder/adapters/mybrand/insert.ts";
+import { emptyCanvas } from "../src/builder/adapters/mybrand/scene.ts";
 import { LANDING_DRAWN_KINDS } from "../src/builder/adapters/landing/landingRender.ts";
 import { groupLockedOnPlan } from "../src/builder/WidgetPane.tsx";
 import { upgradeDocument } from "../src/builder/upgrade.ts";
@@ -37,6 +39,15 @@ import { emptyDocument, makeSection, makeWidget } from "../src/builder/model.ts"
 import { GROUPS as MACHINE_GROUPS, PANEL as MACHINE_PANEL } from "./helpers/panelOrder.mjs";
 
 const readSrc = (rel) => readFileSync(path.join(process.cwd(), "src", rel), "utf8");
+
+/** A brand kit made of nothing a real business owns, for the studio's inserts. */
+const STUDIO_BRAND = {
+  colours: { primary: "#0A0B0C", secondary: "#141516", accent: "#1E1F20", text: "#282930", background: "#323340" },
+  fonts: { heading: "Testa, serif", body: "Testb, sans-serif" },
+  logoUrl: "https://example.test/logo.png",
+  businessName: "Rolling In It",
+  websiteUrl: "https://rollinginit.test",
+};
 
 /** A one-widget document, so a kind can be RENDERED rather than read about. */
 function docWith(kind, props) {
@@ -336,10 +347,46 @@ describe("5b. every surface a widget is offered on asks the families first", () 
   });
 
   test("PRESENCE: nothing is offered on a surface it cannot be drawn on", () => {
-    /* The guard the gaps above were: a tile on the newsletter panel whose
-       family wrote no mailbox renderer draws "this part needs a newer version
-       of the builder" in a real person's inbox. Empty, by name. */
-    assert.deepEqual(familySurfaceGaps(), []);
+    /* The guard the gaps above were: a tile on the newsletter panel that
+       nothing draws shows "this part needs a newer version of the builder" in
+       a real person's inbox.
+
+       WIDENED 2026-09-19 (D-168 wave 2). The guard asked "did the FAMILY write
+       a mailbox renderer", which named `heading` and `paragraph` the day the
+       f1-words family took over their DEFINITIONS - and both have been drawn
+       in a mailbox since the first newsletter. It asks the real question now,
+       and the caller hands in what each surface already draws. There is no
+       default: a guard that passes because its caller forgot is the failure
+       mode reference_absence_based_guards_fail_open names.
+
+       My Brand's list is EXECUTED, not typed: every kind the studio really
+       places is the kind `insertWidget` really puts layers on a canvas for. */
+    const canvas = emptyCanvas(1080, 1080);
+    const places = (kind) => {
+      try {
+        const out = insertWidget(kind, canvas, STUDIO_BRAND, { count: 3 });
+        return !!(out && Array.isArray(out.layers) && out.layers.length);
+      } catch { return false; }
+    };
+    const mybrand = widgetsFor("brand").map((w) => w.kind).filter(places);
+    assert.deepEqual(familySurfaceGaps({ newsletter: EMAIL_DRAWN_KINDS, mybrand }), []);
+  });
+
+  test("MUTATION: a surface that draws nothing is still named", () => {
+    /* Executed, not read: take the one widget the family draws in a mailbox
+       out of what the mailbox can draw, and the guard names it and its
+       builder. Without this, the widened guard above could pass by being
+       handed everything. */
+    const everything = EMAIL_DRAWN_KINDS.filter((k) => k !== "blockquote" && k !== "html");
+    const gaps = familySurfaceGaps({ newsletter: everything, mybrand: widgetsFor("brand").map((w) => w.kind) });
+    assert.deepEqual(gaps, [], "a family that draws it itself is never a gap");
+    const noFamily = familySurfaceGaps({ newsletter: [], mybrand: [] });
+    /* `heading` on MY BRAND: the f1-words family writes no studio insert for
+       it, because `adapters/mybrand/insert.ts` has placed a heading on that
+       canvas since the studio existed. Told that the studio places nothing,
+       the guard has to name it. */
+    assert.ok(noFamily.some((g) => g.kind === "heading" && g.builder === "mybrand"),
+      "a kind nothing places on the studio canvas has to be named");
   });
 
   test("the escaper is in a module that imports nothing", () => {

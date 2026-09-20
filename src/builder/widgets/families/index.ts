@@ -180,23 +180,47 @@ export function insertFamilyWidget(
 }
 
 /**
- * WHICH KINDS A FAMILY OFFERS TO A BUILDER AND CANNOT DRAW THERE.
+ * WHICH KINDS A FAMILY OFFERS TO A BUILDER AND NOTHING CAN DRAW THERE.
  *
- * The presence guard behind item 5b: a tile on the newsletter panel whose
- * family wrote no mailbox renderer is a widget that draws *"this part needs a
- * newer version of the builder"* in a real person's inbox. The list is empty
- * and `test/builder-override.test.mjs` says so by name.
+ * The presence guard behind item 5b: a tile on the newsletter panel that
+ * nothing draws is a widget that shows *"this part needs a newer version of
+ * the builder"* in a real person's inbox. The list is empty and
+ * `test/builder-override.test.mjs` says so by name.
+ *
+ * ── WHY IT TAKES AN ARGUMENT (D-168 wave 2) ───────────────────────────────
+ * It used to ask "did the FAMILY write a mailbox renderer", which is a
+ * different question and the wrong one. A family may declare a definition for
+ * a kind the platform has drawn since the beginning — `heading` and
+ * `paragraph` are exactly that: the family owns the PANEL and the PAGE, and
+ * the mailbox keeps the single renderer it already has, because a family copy
+ * of a widget the adapter already draws is a SECOND mailbox renderer for one
+ * widget. Asking the narrow question named those two as gaps when nothing was
+ * missing.
+ *
+ * So the caller hands in what each surface can already draw — the adapter's own
+ * exported list — and there is NO DEFAULT. A default here would be an
+ * absence-based guard that passes when the caller forgets, which is the failure
+ * mode `reference_absence_based_guards_fail_open` is about.
  */
-export function familySurfaceGaps(): Array<{ kind: string; builder: string }> {
+export interface SurfacesAlreadyDrawn {
+  /** Every kind the Portal's mailbox renderer draws: `EMAIL_DRAWN_KINDS`. */
+  newsletter: readonly string[];
+  /** Every kind the My Brand studio can place. Executed by its own test. */
+  mybrand: readonly string[];
+}
+
+export function familySurfaceGaps(drawn: SurfacesAlreadyDrawn): Array<{ kind: string; builder: string }> {
   const out: Array<{ kind: string; builder: string }> = [];
   for (const d of FAMILY_DEFS) {
-    if (d.builders.includes("newsletter") && !EMAIL_RENDERERS[d.kind]) {
+    if (d.builders.includes("newsletter")
+      && !EMAIL_RENDERERS[d.kind] && !drawn.newsletter.includes(d.kind)) {
       out.push({ kind: d.kind, builder: "newsletter" });
     }
     if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]) {
       out.push({ kind: d.kind, builder: "landing" });
     }
-    if (d.builders.includes("mybrand") && !STUDIO_INSERTS[d.kind]) {
+    if (d.builders.includes("mybrand")
+      && !STUDIO_INSERTS[d.kind] && !drawn.mybrand.includes(d.kind)) {
       out.push({ kind: d.kind, builder: "mybrand" });
     }
   }

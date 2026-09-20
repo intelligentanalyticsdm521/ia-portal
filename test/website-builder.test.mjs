@@ -158,10 +158,14 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  test("the pane opens with Elementor's groups, in Elementor's order", () => {
+    /* FIVE since `b168/override` item 6: Elementor Pro's own `Pro` group is a
+       real group on the panel now, so the four Pro word widgets stopped
+       sitting in General behind a padlock. `Site` is drawn only when a builder
+       offers one of the theme pieces, which the website does not yet. */
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
   });
 
