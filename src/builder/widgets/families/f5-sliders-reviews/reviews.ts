@@ -32,7 +32,7 @@ import { esc } from "../../../esc";
 import { type RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import { editRun } from "../../text";
-import type { FamilyWidgetDef } from "../types";
+import type { EmailRenderContext, FamilyWidgetDef } from "../types";
 import { emptyStrip, slideRows, starRow, str, strip, within } from "./carousel";
 
 /** Elementor's own repeater row, and the one this family's other slider shares. */
@@ -105,6 +105,53 @@ export function renderIaReviews(w: Widget, ctx: RenderContext): string {
   return drawReviews(w, ctx, "bx-reviews bx-ia-reviews", "Your reviews appear here once they are brought in.");
 }
 
+/**
+ * IA REVIEWS, IN A MAILBOX — stacked, not swiped (B-168, F5).
+ *
+ * MOVED from `adapters/email/emailRender.ts`, byte for byte, in the deep pass
+ * of 2026-09-19. It was a `case` in that switch, which meant the adapter owned
+ * half of a widget this family owns the rest of, and `familySurfaceGaps()` —
+ * the presence guard D-168 item 5b added — names a widget offered on a surface
+ * its family cannot draw on. One widget, one owner, on every surface.
+ *
+ * The page builders draw this as a strip the visitor scrolls. A mailbox has no
+ * scroll box and no script, so every review is drawn, one under the next, in
+ * its own table. That is the honest shape rather than a carousel that only ever
+ * shows its first slide.
+ *
+ * The slides are read with the page's own key (`slides`) and with `items`, the
+ * spelling a newsletter written before this family carries. Same reader, same
+ * bytes as LUMEN's copy in `src/lib/emailFamilies/f5-sliders-reviews.js`, which
+ * the shared golden fixture pins.
+ *
+ * `t`, `edit` and `bodyStack` come off the context: the adapter hands its own
+ * three over rather than a family folder keeping a second mailbox escaper.
+ */
+export function emailIaReviews(w: Widget, ctx: EmailRenderContext): string {
+  const p: any = w.props || {};
+  const c: any = ctx;
+  const t = c.t as (v: unknown, c: unknown) => string;
+  const edit = c.edit as (path: string, c: unknown, ph?: string) => string;
+  const font = (c.bodyStack as (c: unknown) => string)(c);
+  const raw = Array.isArray(p.slides) && p.slides.length ? p.slides
+    : (Array.isArray(p.items) ? p.items : []);
+  if (!raw.length) {
+    return c.mode === "edit"
+      ? `<div style="font-family:${font};font-size:12px;color:#94A3B8;padding:10px;">Your reviews appear here once they are brought in.</div>`
+      : "";
+  }
+  return raw.map((r: any, i: number) => {
+    const stars = Math.max(0, Math.min(5, Math.round(Number(r?.rating) || 0)));
+    const name = r?.name ?? r?.author;
+    return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 12px 0;"><tr>`
+      + `<td style="padding:12px 14px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
+      + (stars ? `<div style="font-family:${font};font-size:13px;letter-spacing:2px;color:${c.accent};">${"&#9733;".repeat(stars)}</div>` : "")
+      + `<div style="font-family:${font};font-size:15px;line-height:1.6;color:${c.ink};"${edit(`slides.${i}.content`, c, "What they said")}>${t(r?.content ?? r?.quote, c)}</div>`
+      + `<div style="font-family:${font};font-size:12px;color:#6B7280;margin-top:6px;"${edit(`slides.${i}.name`, c, "Who left it")}>${t(name, c)}</div>`
+      + `</td></tr></table>`;
+  }).join("");
+}
+
 /** Everything both tiles share: Elementor's Slides and Additional Options. */
 function reviewControls(): FamilyWidgetDef["controls"] {
   return [
@@ -150,7 +197,13 @@ export const REVIEWS_DEF: FamilyWidgetDef = {
   },
   icon: "Stars",
   picture: REVIEW_PICTURE,
-  category: "General",
+  /* THE GROUP IS **Pro**, not General. D-168 item 6 (b168/override) gave
+     Elementor's 37 pro-elements widgets a group of their own, read off
+     `elementor-panel.json`, because they sat in General behind a padlock
+     and that is a difference a person sees the second our panel is beside
+     the real editor. `panelAt` also refuses to place a tile whose group
+     disagrees with Elementor's, so General here meant "no place at all". */
+  category: "Pro",
   builders: ["website", "landing", "proposal"],
   tier: "pro",
   defaults: { ...REVIEW_DEFAULTS, slides: STARTER.map((s) => ({ ...s })) },
@@ -168,6 +221,13 @@ export const IA_REVIEWS_DEF: FamilyWidgetDef = {
   icon: "Stars",
   picture: REVIEW_PICTURE,
   category: "Intelligent Analytics",
+/* OUR OWN GROUP, so Elementor cannot say where it goes and the definition
+     has to (D-168 item 3). `0` puts it at the TOP of the Intelligent
+     Analytics group: it is the twin of the Reviews tile that just left
+     that group for Pro, so the place a person already looks for reviews
+     still has reviews in it. Without an `order` `panelAt` answers null and
+     `unorderedKinds()` names the tile, which is the guard working. */
+  order: 0,
   builders: ["website", "landing", "newsletter"],
   /* No `tier` and no `requires`. Reviews are the business's own, not a product
      they buy, and every gate ships unset today — Brandon decides the tiers in

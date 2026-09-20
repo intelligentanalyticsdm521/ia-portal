@@ -92,7 +92,13 @@ export const MEDIA_CAROUSEL_DEF: FamilyWidgetDef = {
   },
   icon: "GalleryHorizontal",
   picture: pictureFrom(solid(4, 10, 16, 20) + solid(24, 6, 16, 28) + solid(44, 10, 16, 20)),
-  category: "General",
+  /* THE GROUP IS **Pro**, not General. D-168 item 6 (b168/override) gave
+     Elementor's 37 pro-elements widgets a group of their own, read off
+     `elementor-panel.json`, because they sat in General behind a padlock
+     and that is a difference a person sees the second our panel is beside
+     the real editor. `panelAt` also refuses to place a tile whose group
+     disagrees with Elementor's, so General here meant "no place at all". */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

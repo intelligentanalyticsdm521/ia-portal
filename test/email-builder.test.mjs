@@ -758,6 +758,7 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        widget is drawn on a hosted page; it is just not drawn by the switch
        `LANDING_RENDERED_KINDS` describes. */
     const missing = widgetsFor("landing").map((w) => w.kind)
+
       .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
         && !LANDING_KIND_ALIASES[k]

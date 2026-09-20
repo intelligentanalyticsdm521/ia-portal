@@ -33,7 +33,6 @@ import {
   GRID_PRESET_KIND, controlTab, presetFor, unorderedKinds, widgetsFor, widgetLabel,
 } from "../src/builder/registry.ts";
 import { panelGroups, PANEL_GROUPS, unmappedKinds } from "../src/builder/widgetGroups.ts";
-import { FAMILY_OF_KIND } from "../src/builder/widgets/families/index.ts";
 import { ATOM_KINDS, atomKindsAgree } from "../src/builder/widgets/index.ts";
 import {
   isCatalogueTile, isPickerTile, nodesForPicks,
@@ -83,8 +82,10 @@ const IA_NAMES = new Set([
   // website and landing
   "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice", "IA Social Links",
   "IA Form", "Newsletter Signup", "Hours and Location",
-  /* B-168 F5 - the database twin of Elementor's Reviews. `ia_reviews` is in
-     the offer file's IA column for website, landing and newsletter. */
+  /* B-168 F5 — the database twin of Elementor's Reviews. `ia_reviews` is in
+     the offer file's IA column for website, landing and newsletter. Re-applied
+     when b168/override was merged: that branch rewrote this file to READ the
+     order instead of typing it, and the rewrite did not carry this line. */
   "IA Reviews",
 ]);
 
