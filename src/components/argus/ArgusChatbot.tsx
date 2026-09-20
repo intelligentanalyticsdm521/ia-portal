@@ -11,7 +11,7 @@
 // Phase 2 (not in this commit): if no intent matches above threshold, fall
 // back to a backend Claude call streaming the response. We leave a clear
 // hook for that — `tryServerFallback()`.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { MessageSquare, Send, X, ExternalLink, Play, Ticket, MousePointerClick } from "lucide-react";
 import { matchIntent, type ArgusIntent } from "./argusIntents";
@@ -20,6 +20,7 @@ import { useAppState } from "../../app/AppState";
 import { searchJourneySteps } from "../../journeys";
 import { launchJourneyStep } from "../walkthroughs/walkthroughLaunchBus";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { builderIsOpen, builderIsOpenOnServer, subscribeBuilderOpen } from "../../builder/builderOpen";
 
 type Sender = "user" | "argus";
 
@@ -280,21 +281,21 @@ export function ArgusChatbot() {
   };
 
   /**
-   * THE BUBBLE STEPS ASIDE WHILE A BUILDER IS OPEN (D-172).
+   * THE BUBBLE STEPS ASIDE WHILE A BUILDER IS OPEN (D-172, round 2).
    *
-   * The reference editor has ONE door to its AI, in the top bar. Ours had
-   * three, and the third was this — `fixed bottom-5 right-5 z-[9000]`, so it
-   * floated OVER the builder modal and nothing in the builder could lay itself
-   * out around it. The builder's own bar carries Ask ARGUS; a second launcher
-   * on top of it is the extra door.
+   * The reference editor has ONE door to its AI, in the top bar. Ours had two,
+   * and the second was this — `fixed bottom-5 right-5 z-[9000]`, so it floated
+   * OVER the builder modal for the whole time the builder was open.
    *
-   * Asked of the DOM rather than threaded through a context, because the
-   * builder is a modal any page can open and a prop for "is a modal open" is a
-   * prop that goes stale. Re-read on every render, which is what a `useState`
-   * seeded once would not do.
+   * Round 1 asked the DOM during THIS component's render. Nothing makes this
+   * component re-render when a builder mounts, so the query ran once on a page
+   * with no builder in it, answered `false`, and the pill stayed — a guard that
+   * failed open. The shell PUBLISHES the fact now (`builder/builderOpen.ts`)
+   * and this is a real subscription: `useSyncExternalStore` re-renders the
+   * moment the count changes, in either direction.
    */
-  const builderOpen = typeof document !== "undefined"
-    && !!document.querySelector("[data-builder-canvas], [data-builder-layout]");
+  const builderOpen = useSyncExternalStore(
+    subscribeBuilderOpen, builderIsOpen, builderIsOpenOnServer);
 
   return (
     <>

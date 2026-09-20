@@ -532,11 +532,19 @@ describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
     assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
   });
 
-  test("every widget button carries a tooltip AND an accessible name", () => {
-    // A LOCKED tile says the reason instead, which is the accessible name that
-    // matters when the button cannot be pressed (R-D1).
-    assert.match(pane, /title=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
-    assert.match(pane, /aria-label=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
+  test("ONLY a locked tile carries a tooltip (D-172, round 2)", () => {
+    // Driven in the reference on 2026-09-19: hovering a tile reports
+    // `titleAttr: null` and no tooltip node anywhere — the name under the icon
+    // is the whole label. Ours put a full sentence on every single tile, so a
+    // panel meant to be SCANNED answered every glance with a paragraph.
+    assert.ok(!/title=\{lock\?\.sentence \|\| widgetTooltip/.test(pane),
+      "the sentence is back on every tile");
+    assert.ok(!/import \{ widgetTooltip/.test(pane), "the pane imports widgetTooltip again");
+    // PRESENT: the accessible name a tile you CANNOT press still needs — the
+    // reason, which is the only place the reference's panel explains itself
+    // (R-D1, and its own locked tile does the same).
+    assert.match(pane, /lock \? \{ title: lock\.sentence, "aria-label": lock\.sentence \}/);
+    assert.match(pane, /\{label\}/);
   });
 
   test("a tile is an ICON OVER A NAME, two across — no picture, no paragraph", () => {

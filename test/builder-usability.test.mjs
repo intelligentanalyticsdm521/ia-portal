@@ -259,8 +259,15 @@ describe("the keyboard map (D-18)", () => {
 
   test("the help panel lists every shortcut the map answers", () => {
     const listed = SHORTCUT_HELP.map((r) => r.keys.toLowerCase().replace(/\s+/g, ""));
-    for (const need of ["ctrl+z", "ctrl+shift+z", "ctrl+s", "delete", "escape"]) {
+    for (const need of ["ctrl+z", "ctrl+shift+z", "ctrl+s", "delete", "escape",
+                        "ctrl+shift+y", "ctrl+shift+l", "shift+?"]) {
       assert.ok(listed.includes(need), `the panel never mentions ${need}`);
+    }
+    // ROUND 2 — the two rows that were OURS are gone. The reference has no
+    // slash command anywhere in its editor, and every row of its own table is
+    // a key chord, so "Right-click" was never one of them.
+    for (const gone of ["/", "right-click"]) {
+      assert.ok(!listed.includes(gone), `the invented shortcut row is back: ${gone}`);
     }
   });
 });
@@ -681,7 +688,11 @@ describe("the canvas carries the chrome the walk asked for", () => {
       "Settings for this section", "Light or dark text", "Mark as Recommended",
     ]) assert.ok(!canvas.includes(gone), `"${gone}" is back on the section handle`);
     // PRESENT: the three, in Elementor's own words, in order.
-    for (const title of ["Add Container", "Edit Container — drag to move it", "Delete Container"]) {
+    // ROUND 2: the grip's tooltip is "Edit Container", full stop — the
+    // reference's own, with no sentence about the drag glued onto it.
+    assert.ok(!canvas.includes("Edit Container — drag to move it"),
+      "the grip explains the drag again");
+    for (const title of ["Add Container", 'title="Edit Container"', "Delete Container"]) {
       assert.ok(canvas.includes(title), `the handle has no "${title}"`);
     }
     const bar = canvas.slice(canvas.indexOf('<div className="bxc-toolbar"'), canvas.indexOf('ref={hostRef}'));
@@ -704,7 +715,10 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /\[data-widget\]:hover > \.bxc-wtools/);
     assert.match(canvas, /grip\.className = "bxc-grip"/);
     assert.match(canvas, /if \(isBox && !locked\) \{/);
-    assert.match(canvas, /b\.title = "Delete Container"/);
+    // ROUND 2: the handle NAMES the box the author picked, so the title is
+    // built rather than hardcoded — a Grid box reads "Delete Grid".
+    assert.ok(!/b\.title = "Delete Container"/.test(canvas), "every box is called Container again");
+    assert.match(canvas, /b\.title = `Delete \$\{boxName\}`/);
     // §11.12 — ONE loop, so a box wears the same handle as everything else and
     // only the words differ.
     assert.match(canvas, /const isBox = el\.dataset\.kind === "container"/);
@@ -814,7 +828,11 @@ describe("the frame never closes silently, and Tab stays inside (D-02 / D-19)", 
     assert.match(frame, /data-mainmenu="walkthrough"/);
     assert.match(frame, /data-mainmenu="exit"/);
     assert.match(frame, /aria-label="Keyboard Shortcuts"/);
-    assert.match(frame, /SHORTCUT_HELP\.map/);
+    // ROUND 2: the table is split under the reference's own two headings,
+    // Actions and Panels, so it is read group by group rather than flat.
+    assert.ok(!/SHORTCUT_HELP\.map/.test(frame), "the shortcuts table is one flat list again");
+    assert.match(frame, /SHORTCUT_GROUPS\.map/);
+    assert.match(frame, /shortcutsIn\(group\)\.map/);
   });
 });
 

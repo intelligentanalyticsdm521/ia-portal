@@ -38,7 +38,7 @@ import {
   controlOptions, controlSections, controlTab, optionValue,
 } from "./registry";
 import type { PreviewKey } from "./responsive";
-import { FIELD, INPUT, L, Swatches } from "./StyleGroups";
+import { FIELD, INPUT, L, ROW, Swatches, Switcher } from "./StyleGroups";
 
 /**
  * The control types the PANEL draws.
@@ -105,22 +105,38 @@ export function DefinitionControls(p: DefinitionControlsProps) {
         if (!shown.length) return null;
         return (
           <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
+            {/* A SUB-HEADING IS TITLE CASE (D-172, round 2, from b168/demo).
+                The reference's in-section headings are a `heading` control
+                reading "Items", "Visibility" — Title Case, no letter-spacing,
+                no shouting. Ours was the label style with uppercase and 0.4 of
+                tracking, so a heading inside a section looked louder than the
+                section's own name above it. */}
             {grp.section && (
-              <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
+              <div data-control-subheading={grp.section}
+                style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
                 {grp.section}
               </div>
             )}
+            {/* LABEL LEFT, CONTROL RIGHT (D-172, round 2, from b168/demo).
+                Measured in the reference: every control row is a flex row with
+                the label at x=20 and the input at x=172. `code`, whose control
+                is a textarea with a preview under it, keeps the stacked shape —
+                the reference marks that kind `elementor-label-block` too. */}
             {shown.map((c) => (
-              <div key={c.key} style={FIELD} data-control={c.key}
+              <div key={c.key} style={c.type === "code" ? FIELD : ROW} data-control={c.key}
                 data-control-key={deviceKey(c, p.device)}
                 data-control-responsive={c.responsive ? "yes" : undefined}>
                 <span style={L}>{c.label}</span>
+                {/* EVERY TOGGLE IS THE SWITCHER PILL (D-172, round 2). The
+                    reference has one on/off shape, and a native checkbox whose
+                    label was its help sentence was the last one left. */}
                 {c.type === "toggle" && (
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                    <input type="checkbox" checked={isOn(valueOf(c))}
-                      onChange={(e) => patch(c, e.target.checked)} />
-                    {c.help || "On"}
-                  </label>
+                  <Switcher
+                    name={c.label}
+                    testId={deviceKey(c, p.device)}
+                    on={isOn(valueOf(c))}
+                    onChange={(v) => patch(c, v)}
+                  />
                 )}
                 {c.type === "select" && (controlOptions(c).length ? (
                   <select style={INPUT} value={String(valueOf(c) ?? "")}
@@ -162,7 +178,12 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                       dangerouslySetInnerHTML={{ __html: String(valueOf(c) ?? "") }} />
                   </>
                 )}
-                {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
+                {/* THE GREY SENTENCE UNDER A CONTROL IS DELETED (D-172, round
+                    2, from b168/demo). The reference puts no explanation under
+                    any control in its panel: a sentence about what a widget is
+                    belongs where the author CHOOSES the widget, not beside the
+                    setting. `c.help` is still on the definition and still
+                    reaches the registry's own tooltip. */}
               </div>
             ))}
           </div>

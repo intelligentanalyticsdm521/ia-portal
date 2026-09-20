@@ -145,8 +145,16 @@ describe("one breakpoint set, one preview-width state", () => {
     assert.equal(previewDevice("phone").width, 390);
     assert.equal(previewDevice("tablet").width, 768);
     assert.equal(previewDevice("desktop").width, null);
-    // Every button says what it does. SD-010.
-    for (const d of PREVIEW_DEVICES) assert.ok(d.title.length > 10, `${d.key} has no tooltip`);
+    // Every button says what it does. SD-010 — and, from D-172 round 2, it
+    // says the reference's own name with the breakpoint in it, because
+    // "tablet" is two widths and hiding on one is not hiding on the other.
+    for (const d of PREVIEW_DEVICES) assert.ok(d.title.length > 0, `${d.key} has no tooltip`);
+    assert.deepEqual(PREVIEW_DEVICES.map((d) => d.title),
+      ["Desktop", "Tablet Portrait (up to 1024px)", "Mobile Portrait (up to 767px)"]);
+    for (const clipped of ["Tablet", "Phone"]) {
+      assert.ok(!PREVIEW_DEVICES.some((d) => d.label === clipped),
+        `the clipped device name is back: ${clipped}`);
+    }
   });
 
   test("an unknown device is desktop, not a crash", () => {
@@ -175,7 +183,7 @@ describe("one breakpoint set, one preview-width state", () => {
   });
 
   test("the note above the page says which device and how wide", () => {
-    assert.equal(previewNote("phone", 780), "Phone · 390px");
+    assert.equal(previewNote("phone", 780), "Mobile Portrait · 390px");
     assert.equal(previewNote("desktop", 780), null, "desktop keeps the adapter's own note");
   });
 

@@ -53,7 +53,7 @@
  * find that out before sending it. The width itself is one function in
  * responsive.ts, so no adapter decides what "phone" means.
  */
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ChevronDown, Clock, Eye, Layers, Menu, Monitor, PanelLeft, Plus, Search, Settings2,
   SlidersHorizontal, Smartphone, Tablet, X,
@@ -61,7 +61,9 @@ import {
 import { IadmModal, IadmBuilderPanes, type IadmModalProduct } from "../components/IadmModal";
 import { NARROW_MEDIA_QUERY, PREVIEW_DEVICES, type PreviewKey } from "./responsive";
 import { focusablesIn, firstTabTarget, nextTrapIndex } from "./focusTrap";
-import { matchShortcut, preventsDefault, SHORTCUT_HELP, type BuilderAction } from "./shortcuts";
+import {
+  matchShortcut, preventsDefault, shortcutsIn, SHORTCUT_GROUPS, type BuilderAction,
+} from "./shortcuts";
 
 export interface BuilderFrameProps {
   open: boolean;
@@ -298,6 +300,13 @@ export function BuilderFrame(p: BuilderFrameProps) {
       const action = matchShortcut(e, e.target as unknown as { tagName?: string; isContentEditable?: boolean });
       if (!action) return;
       const consumed = p.onShortcut?.(action) === true;
+      /* SHIFT+? OPENS THE SHORTCUTS LIST (D-172 round 2). The reference lists
+         the chord in its own shortcuts panel and ours answered with nothing.
+         The FRAME answers it, because the frame is what owns that panel — the
+         same door the main menu opens, not a second one. */
+      if (action === "shortcuts" && !consumed) {
+        e.preventDefault(); e.stopPropagation(); setHelp(true); return;
+      }
       if (action === "escape") {
         // ALWAYS stopped: the modal's own listener would close the builder
         // without asking, which is the defect.
@@ -637,13 +646,25 @@ export function BuilderFrame(p: BuilderFrameProps) {
                 <X size={15} />
               </button>
             </div>
+            {/* TWO HEADINGS, Actions then Panels (D-172 round 2) — the
+                reference's own split, driven on 2026-09-19. One flat table of
+                sixteen rows was ours. */}
             <table style={{ width: "100%", marginTop: 14, fontSize: 12, borderCollapse: "collapse" }}>
               <tbody>
-                {SHORTCUT_HELP.map((row) => (
-                  <tr key={row.keys}>
-                    <td style={{ padding: "4px 10px 4px 0", whiteSpace: "nowrap", fontWeight: 700, color: "#0B1C24" }}>{row.keys}</td>
-                    <td style={{ padding: "4px 0", color: "#334155" }}>{row.what}</td>
-                  </tr>
+                {SHORTCUT_GROUPS.map((group) => (
+                  <Fragment key={group}>
+                    <tr data-shortcut-group={group}>
+                      <th colSpan={2} style={{ padding: "12px 0 4px", textAlign: "left", fontSize: 12.5, fontWeight: 700, color: "#0B1C24" }}>
+                        {group}
+                      </th>
+                    </tr>
+                    {shortcutsIn(group).map((row) => (
+                      <tr key={row.keys}>
+                        <td style={{ padding: "4px 0", color: "#334155" }}>{row.what}</td>
+                        <td style={{ padding: "4px 0 4px 10px", whiteSpace: "nowrap", textAlign: "right", fontWeight: 700, color: "#0B1C24" }}>{row.keys}</td>
+                      </tr>
+                    ))}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

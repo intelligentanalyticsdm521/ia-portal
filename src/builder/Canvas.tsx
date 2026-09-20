@@ -513,15 +513,24 @@ function SectionHost({
         const add = document.createElement("button");
         add.type = "button";
         add.className = "bxc-wtool";
-        add.title = "Add Container";
-        add.setAttribute("aria-label", "Add Container");
+        add.title = `Add ${el.classList.contains("bx-box-grid") ? "Grid" : "Container"}`;
+        add.setAttribute("aria-label", add.title);
         add.textContent = "+";
         add.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onAddAbove(); });
         tools.appendChild(add);
       }
 
+      /* THE HANDLE NAMES THE BOX THE AUTHOR PICKED (D-172, round 2).
+         The reference writes "Add Flexbox / Edit Flexbox / Delete Flexbox" on
+         a Flexbox and "…Container" on a Container — the element's own name,
+         never one word for both. Ours said Container on every box, including
+         one inserted from the Grid tile, so the panel said Grid and the handle
+         said Container about the same box. The flow class is what the
+         renderer already writes, so this asks the page rather than keeping a
+         second copy of the answer. */
+      const boxName = el.classList.contains("bx-box-grid") ? "Grid" : "Container";
       const widgetName = isBox
-        ? "Container"
+        ? boxName
         : (WIDGETS_BY_KIND[el.dataset.kind || ""]?.label || el.dataset.kind || "Widget");
       const grip = document.createElement("span");
       grip.className = "bxc-grip";
@@ -542,8 +551,8 @@ function SectionHost({
         const b = document.createElement("button");
         b.type = "button";
         b.className = "bxc-wtool";
-        b.title = "Delete Container";
-        b.setAttribute("aria-label", "Delete Container");
+        b.title = `Delete ${boxName}`;
+        b.setAttribute("aria-label", b.title);
         b.textContent = "\u2715";
         b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); if (path) onDeleteWidget?.(path); });
         tools.appendChild(b);
@@ -808,7 +817,11 @@ function SectionHost({
           onClick={(e) => { e.stopPropagation(); onAddAbove(); }}><Plus size={13} /></button>
         <span
           style={{ ...TOOL, cursor: "grab" }}
-          title="Edit Container — drag to move it"
+          /* "Edit Container", full stop (D-172, round 2). The reference's grip
+             reads exactly that; ours added "— drag to move it", so the one
+             tooltip that names the element also explained a gesture. */
+          title="Edit Container"
+          aria-label="Edit Container"
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
@@ -866,8 +879,20 @@ const CANVAS_CSS = `
 .bxc-toolbar > *:hover { background: rgba(255,255,255,.16); }
 .bxc-sec:hover > .bxc-toolbar, .bxc-sec.bxc-sel > .bxc-toolbar,
 .bxc-toolbar:focus-within { opacity: 1; pointer-events: auto; }
-/* SOLID, not dashed (D-172): a dashed ring reads as a placeholder. */
-.bxc-widget-sel { outline: 1px solid #2D9CDB; outline-offset: 3px; border-radius: 3px; }
+/* A RING THAT HUGS THE WIDGET (D-172, round 2).
+   Driven in the reference on 2026-09-19: a selected widget's computed style is
+   'outline: none', 'outline-offset: 0px' and 'box-shadow: <accent> 0 0 0 2px'
+   — a 2px ring drawn ON the widget's own edge. Ours was a 1px OUTLINE at
+   'outline-offset: 3px', so the line floated three pixels clear of the thing
+   it was pointing at and, on two widgets side by side, pointed at both.
+   A box-shadow also takes no space, which an outline with an offset does. */
+.bxc-widget-sel { box-shadow: 0 0 0 2px #2D9CDB; border-radius: 2px; }
+/* HOVER ON A WIDGET THAT IS NOT SELECTED (D-172, round 2) — the reference
+   draws a 1px ring the moment the pointer is over ANY element, widget or box.
+   Ours had a hover rule for '.bx-box' and nothing else, so a Heading or a
+   Button showed no line at all until it was clicked: the page gave no sign
+   that the words under the pointer were a thing you could select. */
+[data-widget]:not(.bxc-widget-sel):hover { box-shadow: 0 0 0 1px #2D9CDB; border-radius: 2px; }
 [data-widget] { position: relative; }
 /* THE WIDGET'S OWN HANDLE — on hover, at the corner, outside the words. */
 /* A HANDLE THAT CANNOT BE SEEN CANNOT BE PRESSED (landed 2026-09-17).
@@ -883,8 +908,20 @@ const CANVAS_CSS = `
    pointer-events travels with opacity in all three rules below, so
    "stepped back" means "not pressable" everywhere and there is one
    answer to "can this handle be pressed". */
-.bxc-wtools { position: absolute; top: -11px; left: -9px; z-index: 6; display: inline-flex; gap: 2px;
+/* WHERE THE HANDLE SITS (D-172, round 2), both measured in the reference on
+   2026-09-19 with Playwright inside '#elementor-preview-iframe':
+
+     · a WIDGET's pencil — handle right edge 664, widget right edge 663;
+       handle y 303, widget y 304. Top-RIGHT, INSIDE the widget. Ours was
+       'top:-11px; left:-9px' — top-left and nine pixels OUTSIDE, which on a
+       box's first child put the child's handle on top of the box's own.
+     · a CONTAINER's three-icon tab — handle x 645 w 75 inside a box x 360
+       w 645: dead centre of the box's top edge. Ours put a nested box's tab
+       top-left and outside, so the same kind of thing wore two placements
+       depending on depth. '.bxc-wtools-box' re-centres it below. */
+.bxc-wtools { position: absolute; top: 0; right: 0; z-index: 6; display: inline-flex; gap: 2px;
   opacity: 0; pointer-events: none; transition: opacity .1s; }
+.bxc-wtools-box { top: -22px; right: auto; left: 50%; transform: translateX(-50%); }
 [data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; pointer-events: auto; }
 /* THE "ALSO SELECTED" DOTTED RING IS DELETED (D-172) — there is no
    multi-select on the reference editor's canvas. */
@@ -897,6 +934,13 @@ const CANVAS_CSS = `
 .bxc-grip, .bxc-wtool { width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center;
   background: #2D9CDB; color: #fff; border: none; border-radius: 4px; font-size: 11px; line-height: 1;
   user-select: none; cursor: pointer; padding: 0; }
+/* A WIDGET'S PENCIL IS DRAWN BARE (D-172, round 2). The reference's is
+   '<i class="eicon-edit">' on a transparent '<li>' — an icon, no chip. Ours
+   was an 18px solid accent square with a rounded corner sitting on the
+   widget's top-left corner, which reads as a badge stuck to the content. The
+   three-icon tab on a CONTAINER keeps its filled ground, because the
+   reference's container tab has one too. */
+.bxc-wtools:not(.bxc-wtools-box) > .bxc-grip { background: transparent; color: #2D9CDB; border-radius: 0; font-size: 13px; }
 .bxc-grip { cursor: grab; letter-spacing: 1px; }
 .bxc-grip:active { cursor: grabbing; }
 .bxc-wtool-danger { background: #B91C1C; }
@@ -913,15 +957,26 @@ const CANVAS_CSS = `
    Measured in the reference on 2026-09-19: a container at rest has
    outline-style is none. Ours drew a permanent 1px dashed hairline on EVERY
    box, so an empty page of boxes looked like graph paper. */
-.bxc-sec .bx-box:hover { outline: 1px dashed rgba(12,74,96,.42); outline-offset: 2px; border-radius: 4px; }
-.bxc-sec .bx-box.bxc-widget-sel:hover { outline: 1px solid #2D9CDB; }
+/* SOLID, not dashed (D-172, round 2). The reference's hover line on a
+   container is a solid line in the accent colour; ours was
+   '1px dashed rgba(12,74,96,.42)', and a dashed line on a canvas reads as "not
+   real yet" — the same placeholder grammar the empty-container "+" uses. */
+.bxc-sec .bx-box:hover { outline: 1px solid #2D9CDB; outline-offset: 0; }
 /* WHERE IT WOULD LAND. */
 .bxc-dropline { position: absolute; z-index: 7; height: 3px; margin-top: -1px; border-radius: 2px;
   background: #2D9CDB; box-shadow: 0 0 0 1px rgba(45,156,219,.35); pointer-events: none; }
 .bxc-dropline::before { content: ""; position: absolute; left: -4px; top: -3px; width: 9px; height: 9px;
   border-radius: 50%; background: #2D9CDB; }
-[data-bx-editable]:focus { outline: 2px solid #2D9CDB; outline-offset: 2px; border-radius: 2px; background: #FFFFFF; }
-[data-bx-editable]:hover { background: rgba(45,156,219,.06); }
+/* NOTHING IS PAINTED BEHIND A RUN OF WORDS (D-172, round 2).
+   Driven in the reference on 2026-09-19: hover the heading's own text and its
+   computed style is 'background-color: rgba(0,0,0,0)', 'outline: none',
+   'box-shadow: none' — the editor paints nothing on the words themselves, ever.
+   DELETED here: the ':hover' tint 'rgba(45,156,219,.06)' over EVERY editable
+   run, so a page of text flickered pale blue as the pointer crossed it, and
+   the 'background:#FFFFFF' fill on ':focus', which whited out a heading the
+   moment you clicked into it and hid whatever colour the author had set.
+   The focus RING stays: it is the only thing that says where the caret is. */
+[data-bx-editable]:focus { outline: 2px solid #2D9CDB; outline-offset: 2px; border-radius: 2px; }
 .bxc-chrome { position: relative; opacity: .78; pointer-events: none; user-select: none; }
 .bxc-chrome::after { content: "from your theme — the same on every page"; position: absolute; top: 4px; right: 8px;
   font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #64748B; background: #F1F5F9;

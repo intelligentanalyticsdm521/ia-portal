@@ -70,10 +70,26 @@ export type PreviewKey = "desktop" | "tablet" | "phone";
  * 390 is the iPhone 14/15/16 CSS width and the narrowest screen worth
  * designing for; 768 is the iPad portrait width every tablet rounds to.
  */
+/*
+ * THE BUTTONS ARE NAMED AFTER THE BREAKPOINT (D-172, round 2).
+ *
+ * The reference's three device buttons carry, to the character: "Desktop",
+ * "Tablet Portrait (up to 1024px)", "Mobile Portrait (up to 767px)". Ours said
+ * Desktop / Tablet / Phone, which reads the same and is not: "tablet" is two
+ * different widths depending on which way it is held, and a client who styles
+ * something "for tablet" and then finds it wrong on a landscape iPad has been
+ * told the wrong thing by the button. The width is IN the name in the
+ * reference for that reason, so it is in ours.
+ *
+ * `label` is what the button says when there is room for words; `title` is the
+ * tooltip. Our own widths stay what they were — 768 and 390 are what the
+ * canvas and the stylesheet pass already key on, and changing a breakpoint is
+ * a change to every saved document's look, not a change to the screen.
+ */
 export const PREVIEW_DEVICES: readonly PreviewDevice[] = [
-  { key: "desktop", label: "Desktop", width: null, title: "Full width — how this looks on a computer" },
-  { key: "tablet", label: "Tablet", width: 768, title: "768px — how this looks on a tablet" },
-  { key: "phone", label: "Phone", width: 390, title: "390px — how this looks on a phone, which is where most customers open it" },
+  { key: "desktop", label: "Desktop", width: null, title: "Desktop" },
+  { key: "tablet", label: "Tablet Portrait", width: 768, title: "Tablet Portrait (up to 1024px)" },
+  { key: "phone", label: "Mobile Portrait", width: 390, title: "Mobile Portrait (up to 767px)" },
 ];
 
 /**

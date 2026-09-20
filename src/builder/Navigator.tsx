@@ -155,7 +155,12 @@ export function Navigator(p: NavigatorProps) {
             onClick={() => p.onSelect(isSection
               ? { kind: "section", sectionId: row.id }
               : { kind: "widget", ...(row as Extract<OutlineRow, { kind: "widget" }>).path })}
-            title={isSection ? "Jump to this section" : "Jump to this and edit it"}
+            /* NO TITLE ATTRIBUTE ON A ROW (D-172, round 2). Driven in the
+               reference on 2026-09-19: every `.elementor-navigator__element`
+               reports `hasTitleAttr: false`. Ours put "Jump to this section" /
+               "Jump to this and edit it" on every row of the window, so a
+               slow read down a twelve-row tree was twelve tooltips telling you
+               what clicking a row in a tree does. */
             style={{
               display: "flex", alignItems: "center", gap: 4, cursor: "pointer",
               /* THE NESTING, SHOWN (§11.12). One step of indent per level, from
@@ -172,11 +177,12 @@ export function Navigator(p: NavigatorProps) {
               color: hidden ? "#94A3B8" : "#0B1C24",
             }}
           >
-            {isSection && (
-              <span title="Drag to move this section" style={{ color: "#94A3B8", cursor: "grab", display: "inline-flex" }}>
-                <GripVertical size={12} />
-              </span>
-            )}
+            {/* THE DRAG GRIP IS DELETED (D-172, round 2). The reference draws
+                no grip on a navigator row: the ROW is the drag handle, which
+                is exactly what `draggable` on the row above already makes it.
+                A GripVertical on every section row was a second affordance for
+                a gesture that already worked, and one more icon in a window
+                whose whole job is to be scannable. */}
             {/* A TRIANGLE ON EVERY ROW THAT HAS CHILDREN (D-172) — the
                 reference puts one on containers too, so a container row can be
                 collapsed. A row with nothing under it keeps the same width of

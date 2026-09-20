@@ -69,7 +69,11 @@ export const ALWAYS_ACTIONS: FindAction[] = [
      list said Outline, so one window had two names. */
   { id: "outline", label: "Structure", hint: "Everything on the page, in order" },
   { id: "templates", label: "Template library", hint: "Start again from a ready-made one" },
-  { id: "history", label: "What you've changed", hint: "Every step, newest first" },
+  /* "History", not "What you've changed" (D-172, round 2). Round 1 fixed
+     Outline vs Structure and left the identical defect one row down: the top
+     bar and the panel both said History and this list called the same window
+     something else, so one window had two names again. */
+  { id: "history", label: "History", hint: "Every step, newest first" },
   { id: "shortcuts", label: "Keyboard shortcuts", hint: "The list of them" },
 ];
 
@@ -104,9 +108,16 @@ function score(label: string, q: string): number {
 /**
  * What the box shows for this query.
  *
- * An EMPTY query shows the actions only — the box has just been opened, the
- * author has typed nothing, and a list of every section and every widget the
- * moment `Ctrl+E` lands is a wall, not an answer.
+ * AN EMPTY QUERY SHOWS NOTHING (D-172, round 2). Driven in the reference on
+ * 2026-09-19: open the finder and `#elementor-finder__content` is empty —
+ * there is not one row in it until a character is typed. Ours opened onto a
+ * "DO THIS" list of nine: Preview, Structure, Template library, What you've
+ * changed, Keyboard shortcuts, Save draft, Send to customer, Save as template,
+ * Ask ARGUS. That is a menu wearing a search box, and it is the thing Brandon
+ * keeps finding: a list of ours where the reference has a blank.
+ *
+ * The actions have not gone — type "prev" and Preview is still the row you
+ * get. What went is showing them unasked.
  */
 export function findResults(query: string, input: FindInput): FindResult[] {
   const q = String(query || "").trim();
@@ -117,11 +128,7 @@ export function findResults(query: string, input: FindInput): FindResult[] {
   const actions = [...ALWAYS_ACTIONS, ...(input.actions || [])]
     .filter((a) => a.createsRecord !== true);
 
-  if (!q) {
-    return actions.slice(0, limit * 2).map((a) => ({
-      id: `action:${a.id}`, kind: "action" as const, label: a.label, hint: a.hint || "", actionId: a.id,
-    }));
-  }
+  if (!q) return [];
 
   const sections: FindResult[] = input.doc.sections
     .map((s, i) => ({ s, i }))
@@ -164,8 +171,15 @@ export const FIND_GROUP_LABEL: Record<FindKind, string> = {
   action: "Do this",
 };
 
-/** The box's own words. Written here so the test can read them. */
-export const FIND_PLACEHOLDER = "Find a section, something to add, or what to do next";
+/**
+ * The box's own words. Written here so the test can read them.
+ *
+ * SHORT (D-172, round 2). The reference's is "Type to find anything in
+ * Elementor" — five words and the product's name. Ours was a list of three
+ * things you might be looking for, which is a sentence of instructions in a
+ * box you are already typing in.
+ */
+export const FIND_PLACEHOLDER = "Type to find anything";
 
 /**
  * WHICH OF THESE ACTIONS WOULD MAKE A RECORD?

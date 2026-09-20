@@ -273,7 +273,13 @@ export function Inspector(p: InspectorProps) {
               <Group title="Container" hint="Which way what is inside this box runs, and how far apart" defaultOpen
                 onReset={() => p.onSetWidgetStyle(
                   resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
-                <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                {/* THE BARE DEVICE ROW IS DELETED (D-172, round 2). The
+                    Container section's FIRST row was three unlabelled device
+                    glyphs attached to no control — a switcher floating above
+                    six settings, only two of which are responsive at all. The
+                    reference has no such row anywhere in its panel: the
+                    switcher belongs ON the label of the control being set,
+                    which is where Gaps and Min Height already carry it. */}
                 {/* DIRECTION — the reference's four icon buttons (D-172).
                     Ours was a select reading "Stacked, top to bottom" / "Side
                     by side" / "Even columns" under a label reading WHICH WAY

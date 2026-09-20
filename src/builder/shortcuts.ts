@@ -52,7 +52,24 @@ export type BuilderAction =
   /** Show or hide the widgets panel, to give the page the width. */
   | "togglePanel"
   /** Desktop → tablet → phone → desktop. */
-  | "cycleDevice";
+  | "cycleDevice"
+  /* ── D-172 round 2: three chords the reference's OWN shortcuts panel lists
+     and ours answered with nothing. Driven on 2026-09-19 — the panel reads
+     "Page Settings Ctrl Shift Y", "Template Library Ctrl Shift L",
+     "Keyboard Shortcuts Shift ?" — and an advertised shortcut that does
+     nothing is D-18 wearing a different hat, which is why they are here and
+     not in a comment.
+
+     ITS "Site Settings Ctrl K" AND "User Preferences Ctrl Shift U" ARE NOT
+     HERE, deliberately: we have neither panel, and pointing a chord at a door
+     it does not open is the lie this file exists to prevent. Recorded as an
+     agreed omission in the handoff. */
+  /** Open the document's own settings — the reference's Page Settings. */
+  | "pageSettings"
+  /** Open the template library. */
+  | "templates"
+  /** Open the keyboard-shortcuts list itself. */
+  | "shortcuts";
 
 /** A keyboard event, reduced to what the map actually reads. */
 export interface KeyLike {
@@ -126,6 +143,11 @@ export function matchShortcut(e: KeyLike, target?: TargetLike | null): BuilderAc
    */
   if (key === "Escape") return "escape";
   if (key === "Delete" && !typingNow) return "delete";
+  /* SHIFT+? OPENS THE SHORTCUTS LIST (D-172 round 2, the reference's own row).
+     Not while the author is typing: "?" is a character. `key` is already "?"
+     on a shifted slash on every layout the browser reports, so the shift flag
+     is belt and braces rather than the test. */
+  if (key === "?" && !typingNow) return "shortcuts";
   return null;
 }
 
@@ -152,6 +174,9 @@ function modChord(lower: string, shift: boolean): BuilderAction | null {
   if (lower === "i") return "structure";
   if (lower === "p") return "togglePanel";
   if (lower === "m" && shift) return "cycleDevice";
+  /* D-172 round 2 — the reference's Panels group, driven 2026-09-19. */
+  if (lower === "y" && shift) return "pageSettings";
+  if (lower === "l" && shift) return "templates";
   return null;
 }
 
@@ -172,30 +197,65 @@ export function preventsDefault(action: BuilderAction): boolean {
  * here: an action nobody wrote down is one the author will never find, which
  * is D-18 with the arrow pointing the other way.
  */
-export const SHORTCUT_HELP: Array<{ keys: string; what: string; action?: BuilderAction }> = [
-  { keys: "Ctrl + Z", what: "Undo the last change", action: "undo" },
-  { keys: "Ctrl + Shift + Z", what: "Redo it", action: "redo" },
-  { keys: "Ctrl + S", what: "Save", action: "save" },
-  { keys: "Ctrl + C", what: "Copy what is selected", action: "copy" },
-  { keys: "Ctrl + V", what: "Paste it beside what is selected", action: "paste" },
-  { keys: "Ctrl + Shift + V", what: "Paste only the look of it", action: "pasteStyle" },
-  { keys: "Ctrl + D", what: "Make a copy of what is selected, in place", action: "duplicate" },
-  { keys: "Ctrl + I", what: "Show or hide the Structure window", action: "structure" },
-  { keys: "Ctrl + E", what: "Find a section, something to add, or what to do", action: "find" },
-  { keys: "Ctrl + P", what: "Show or hide the widgets panel", action: "togglePanel" },
-  { keys: "Ctrl + Shift + M", what: "Computer, tablet, phone — round again", action: "cycleDevice" },
-  { keys: "Ctrl + Shift + H", what: "What you've changed — and go back to any of it", action: "history" },
-  { keys: "Right-click", what: "Everything you can do to a section or a block" },
-  { keys: "Delete", what: "Remove what is selected", action: "delete" },
-  { keys: "Escape", what: "Deselect — press it again to close", action: "escape" },
-  { keys: "/", what: "On an empty line, choose something to add" },
+/**
+ * THE TWO HEADINGS ARE THE REFERENCE'S OWN (D-172, round 2).
+ *
+ * Driven on 2026-09-19 — `$e.run("shortcuts/open")`, read the modal — the
+ * reference's table is split under exactly two words: **Actions** (Undo, Redo,
+ * Copy, Paste, Paste Style, Delete, Duplicate, Save) and **Panels** (Finder,
+ * Show / Hide Panel, Site Settings, Structure, Page Settings, History, User
+ * Preferences, Go To Responsive Mode, Template Library, Keyboard Shortcuts,
+ * Quit). Ours was one flat table of sixteen rows.
+ */
+export type ShortcutGroup = "Actions" | "Panels";
+
+export const SHORTCUT_GROUPS: ShortcutGroup[] = ["Actions", "Panels"];
+
+export const SHORTCUT_HELP: Array<{
+  keys: string; what: string; group: ShortcutGroup; action?: BuilderAction;
+}> = [
+  /* ── Actions, in the reference's own order ──────────────────────────── */
+  { keys: "Ctrl + Z", what: "Undo", group: "Actions", action: "undo" },
+  { keys: "Ctrl + Shift + Z", what: "Redo", group: "Actions", action: "redo" },
+  { keys: "Ctrl + C", what: "Copy", group: "Actions", action: "copy" },
+  { keys: "Ctrl + V", what: "Paste", group: "Actions", action: "paste" },
+  { keys: "Ctrl + Shift + V", what: "Paste Style", group: "Actions", action: "pasteStyle" },
+  { keys: "Delete", what: "Delete", group: "Actions", action: "delete" },
+  { keys: "Ctrl + D", what: "Duplicate", group: "Actions", action: "duplicate" },
+  { keys: "Ctrl + S", what: "Save", group: "Actions", action: "save" },
+  /* ── Panels, in the reference's own order, minus the two panels we do not
+        have. Site Settings and User Preferences are an agreed omission. ── */
+  { keys: "Ctrl + E", what: "Finder", group: "Panels", action: "find" },
+  { keys: "Ctrl + P", what: "Show / Hide Panel", group: "Panels", action: "togglePanel" },
+  { keys: "Ctrl + I", what: "Structure", group: "Panels", action: "structure" },
+  { keys: "Ctrl + Shift + Y", what: "Page Settings", group: "Panels", action: "pageSettings" },
+  { keys: "Ctrl + Shift + H", what: "History", group: "Panels", action: "history" },
+  { keys: "Ctrl + Shift + M", what: "Go To Responsive Mode", group: "Panels", action: "cycleDevice" },
+  { keys: "Ctrl + Shift + L", what: "Template Library", group: "Panels", action: "templates" },
+  { keys: "Shift + ?", what: "Keyboard Shortcuts", group: "Panels", action: "shortcuts" },
+  { keys: "Escape", what: "Quit", group: "Panels", action: "escape" },
 ];
+
+/* TWO ROWS WERE HERE AND ARE DELETED (D-172, round 2), not restyled:
+     · "/  — On an empty line, choose something to add". THE SCREEN LAW item 1
+       forbids a slash command and the reference has none anywhere in its
+       editor; the row advertised a thing that does not exist.
+     · "Right-click — Everything you can do to a section or a block". Every
+       row in the reference's table is a key chord. Right-click still opens the
+       menu; it is not a keyboard shortcut and it is not in this list.
+   `matchShortcut` never answered either, so nothing loses a behaviour. */
 
 /** Every action the map can return. The help list is checked against this. */
 export const ALL_ACTIONS: BuilderAction[] = [
   "undo", "redo", "save", "find", "history", "delete", "escape",
   "copy", "paste", "pasteStyle", "duplicate", "structure", "togglePanel", "cycleDevice",
+  "pageSettings", "templates", "shortcuts",
 ];
+
+/** The rows of one heading, in order. The panel draws two of these. */
+export function shortcutsIn(group: ShortcutGroup): typeof SHORTCUT_HELP {
+  return SHORTCUT_HELP.filter((r) => r.group === group);
+}
 
 /** Actions with no row in SHORTCUT_HELP. Empty, or the help is a lie. */
 export function shortcutHelpGaps(): BuilderAction[] {
