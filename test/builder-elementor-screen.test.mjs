@@ -1802,3 +1802,130 @@ describe("SCREEN LAW 21 — the Button's Text and the Text Editor's box", () => 
       "the editor toolbar grew a mark the page cannot draw");
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 22 — ONE CONTROL LOOK, WHOEVER DRAWS IT (2026-09-20)
+
+   Round 4, rows 25, 36 and 38: "every widget size — Spacer Space, Divider
+   Width and Weight, Icon Size and Rotate, Columns Gap — is a plain number";
+   "every widget Alignment, Position and Add Element is a text select"; "a flat
+   list with plain sub-headings; nothing on a widget's Style tab is a band that
+   opens or shuts". The container had all three shapes already, so the panel
+   showed the SAME question in two looks depending on what was selected.
+
+   One mechanism each, and none of them asks a family for a new flag it could
+   forget: a `number` that says what it is measured in IS a slider; a `select`
+   whose OPTIONS are alignment words IS an icon row; a Style tab's sections ARE
+   bands.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 22 — a size, an alignment and a band look the same everywhere", () => {
+  test("a size is the container's own Slider, never a bare pixel box", async () => {
+    const panel = await import("../src/builder/definitionControls.tsx");
+    const reg = await import("../src/builder/registry.ts");
+    assert.equal(panel.isSizeControl({ type: "number", key: "x", label: "X", units: ["px"] }), true);
+    assert.equal(panel.isSizeControl({ type: "number", key: "x", label: "X" }), false);
+    assert.equal(panel.isSizeControl({ type: "number", key: "x", label: "X", units: [] }), false);
+    assert.equal(panel.isSizeControl({ type: "select", key: "x", label: "X", units: ["px"] }), false);
+
+    /* THE SIZES THE AUDIT NAMED, each one now a slider that states the unit its
+       OWN renderer writes — Divider Width is a per cent, Icon Rotate is
+       degrees, everything else is pixels. */
+    const want = {
+      spacer: { space: "px" },
+      divider: { width: "%", weight: "px", gap: "px", icon_size: "px" },
+      icon: { size: "px", rotate: "deg", icon_padding: "px" },
+      paragraph: { column_gap: "px", paragraph_spacing: "px" },
+      image: { width: "%", height: "px" },
+      button: { typography_font_size: "px", text_padding: "px" },
+    };
+    for (const [kind, sizes] of Object.entries(want)) {
+      for (const [key, unit] of Object.entries(sizes)) {
+        const c = reg.WIDGETS_BY_KIND[kind].controls.find((x) => x.key === key);
+        assert.ok(c, `${kind}.${key} is gone`);
+        assert.ok(panel.isSizeControl(c), `${kind}.${key} is a bare number again`);
+        assert.deepEqual(c.units, [unit], `${kind}.${key} says the wrong unit`);
+      }
+    }
+    // …and the panel draws it with the one component the container uses.
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    assert.match(controls, /if \(isSizeControl\(c\)\) \{/);
+    assert.match(controls, /<Slider/);
+    assert.match(controls, /testAttr=\{`data-size-\$\{c\.key\}`\}/);
+    // …and the row SCREEN LAW 10 pins is still written, for everything else.
+    assert.match(controls, /<div key=\{c\.key\} style=\{c\.type === "code" \? FIELD : ROW\}[^>]*>/);
+  });
+
+  test("THE UNIT A SLIDER STATES IS THE UNIT THE PAGE GETS", async () => {
+    /* The half that makes the unit honest rather than decorative: the number
+       comes out of the renderer wearing the word the panel promised. */
+    const { renderSpacer } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/spacer.ts");
+    const { renderDivider } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/divider.ts");
+    const { renderIcon } = await import("../src/builder/widgets/families/f3-buttons-icons-panels/icon.ts");
+    const ctx = { mode: "view", merge: {}, accent: "#0C4A60" };
+    assert.match(renderSpacer({ id: "s", kind: "spacer", props: { space: 123 } }, ctx), /height:123px/);
+    assert.match(renderDivider({ id: "d", kind: "divider", props: { width: 42 } }, ctx), /width:42%/);
+    assert.match(renderDivider({ id: "d", kind: "divider", props: { weight: 8 } }, ctx), /border-top:8px/);
+    assert.match(renderIcon({ id: "i", kind: "icon", props: { rotate: 90 } }, ctx), /rotate\(90deg\)/);
+    assert.match(renderIcon({ id: "i", kind: "icon", props: { size: 64 } }, ctx), /font-size:64px/);
+  });
+
+  test("an alignment is icon buttons, and only an alignment is", async () => {
+    const { alignmentChoice } = await import("../src/builder/definitionControls.tsx");
+    const reg = await import("../src/builder/registry.ts");
+    const at = (kind, key) => reg.WIDGETS_BY_KIND[kind].controls.find((c) => c.key === key);
+
+    // YES — the five the audit named (rows 106, 137, 144, 145, and the Image's).
+    for (const [kind, key] of [["heading", "align"], ["paragraph", "align"], ["image", "align"],
+                               ["image", "caption_align"], ["divider", "align"], ["divider", "text_align"],
+                               ["divider", "icon_align"], ["icon", "align"], ["button", "align"]]) {
+      const got = alignmentChoice(at(kind, key));
+      assert.ok(got && got.length >= 3, `${kind}.${key} is a text select again`);
+      for (const o of got) assert.ok(o.icon && o.title, `${kind}.${key} has a button with no glyph`);
+      // The "nothing" option is NOT a button — pressing the pressed one means it.
+      assert.ok(!got.some((o) => o.v === ""), `${kind}.${key} drew an empty icon button`);
+    }
+
+    // NO — the selects that merely happen to have three values.
+    for (const [kind, key] of [["divider", "look"], ["divider", "style"], ["icon", "view"],
+                               ["icon", "shape"], ["image", "object-fit"], ["image", "image_size"],
+                               ["image", "link_to"], ["button", "button_type"], ["heading", "header_size"]]) {
+      assert.equal(alignmentChoice(at(kind, key)), null, `${kind}.${key} was mistaken for an alignment`);
+    }
+
+    // …and a two-value one is not a chooser either.
+    assert.equal(alignmentChoice({ type: "select", key: "x", label: "X",
+      options: [{ value: "left", label: "Left" }, { value: "right", label: "Right" }] }), null);
+
+    /* EVERY value has to be an alignment word, not merely two of them. A
+       select that mixes them with anything else is some other question, and
+       drawing it as icons would put a button with no glyph on the panel. */
+    assert.equal(alignmentChoice({ type: "select", key: "x", label: "X",
+      options: [{ value: "left", label: "Left" }, { value: "center", label: "Center" },
+                { value: "banana", label: "Banana" }] }), null);
+
+    // …and the PANEL asks the question — the select branch waits on the answer.
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    assert.match(controls, /\{c\.type === "select" && alignmentChoice\(c\) && \(/);
+    assert.match(controls, /\{c\.type === "select" && !alignmentChoice\(c\) && \(controlOptions\(c\)\.length \? \(/);
+    assert.match(controls, /testAttr=\{`data-align-\$\{c\.key\}`\}/);
+  });
+
+  test("a widget's Style sections are bands, ONE open on arrival", () => {
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    const inspector = code(readSrc("builder/Inspector.tsx"));
+    assert.match(inspector, /asBands=\{shownTab === "style"\}/);
+    assert.match(controls, /const band = !!p\.asBands && !!grp\.section;/);
+    assert.match(controls, /<Group key=\{grp\.section\} title=\{grp\.section as string\} defaultOpen=\{at === 0\}>/);
+    /* FOUND BY DRIVING IT: `controlSections(onTab)` builds a NEW array each
+       call, so comparing `grp` to a separately-computed first section by
+       reference was never true and every band arrived shut. One list. */
+    assert.match(controls, /const sections = controlSections\(onTab\);/);
+    assert.ok(!controls.includes("const first = controlSections(onTab)[0];"),
+      "the band's first section is computed from a second list again");
+    assert.ok(!controls.includes("{controlSections(onTab).map(("),
+      "controlSections is called twice again");
+    // …and the band's name is not said twice inside it.
+    assert.match(controls, /grp\.section !== p\.bandTitle && !band && \(/);
+  });
+});

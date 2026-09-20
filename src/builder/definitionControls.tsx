@@ -38,7 +38,13 @@ import {
   controlOptions, controlSections, controlTab, optionValue,
 } from "./registry";
 import type { PreviewKey } from "./responsive";
-import { FIELD, INPUT, L, ROW, Swatches, Switcher } from "./StyleGroups";
+import {
+  AlignCenter, AlignJustify, AlignLeft, AlignRight, StretchHorizontal,
+} from "lucide-react";
+import {
+  DeviceSegment, FIELD, Group, IconChoice, INPUT, L, ROW, Slider, Swatches, Switcher,
+} from "./StyleGroups";
+import type { Device } from "./style";
 /* THE REPEATER'S ARITHMETIC (G-1). Every "what is a row" question is answered
    in one pure module the tests execute; this file only draws. */
 import {
@@ -95,6 +101,81 @@ export function isPanelEditor(c: WidgetControl): boolean {
 }
 
 /**
+ * IS THIS A SIZE? (2026-09-20, audit round 4 row 36.)
+ *
+ * A `number` control that has said what it is measured in. It is drawn as the
+ * same `Slider` the container's Width, Min Height and Gaps already use — one
+ * size control on the platform, not two — rather than the bare pixel box a
+ * widget size was: "Spacer Space, Divider Width and Weight, Icon Size and
+ * Rotate, Columns Gap … every widget size is a plain number."
+ */
+export function isSizeControl(c: WidgetControl): boolean {
+  return c.type === "number" && Array.isArray(c.units) && c.units.length > 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   AN ALIGNMENT IS ICON BUTTONS (2026-09-20, audit round 4 row 38)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Driven: every Alignment, Position and Justify in the reference is a `choose`
+   row of icon buttons. Ours drew text selects reading "The page's own / Left /
+   Center / Right", so the one control an author uses on nearly every widget
+   looked different from the identical control on a container.
+
+   A definition does NOT have to say so. The OPTIONS say so: a select whose
+   values are all alignment words, and at least two of them a real direction,
+   IS an alignment. That is one rule rather than a flag on eleven controls in
+   six family files, and a family that writes Elementor's own values gets the
+   reference's own shape for nothing — the same bargain `registry.panelAt`
+   already strikes over Elementor's labels.
+*/
+
+/** Every alignment word this platform stores, and the glyph each one wears. */
+const ALIGN_GLYPHS: Record<string, { title: string; icon: React.ReactNode }> = {
+  left: { title: "Left", icon: <AlignLeft size={13} /> },
+  start: { title: "Left", icon: <AlignLeft size={13} /> },
+  center: { title: "Center", icon: <AlignCenter size={13} /> },
+  centre: { title: "Center", icon: <AlignCenter size={13} /> },
+  middle: { title: "Center", icon: <AlignCenter size={13} /> },
+  right: { title: "Right", icon: <AlignRight size={13} /> },
+  end: { title: "Right", icon: <AlignRight size={13} /> },
+  justify: { title: "Justified", icon: <AlignJustify size={13} /> },
+  stretch: { title: "Stretch", icon: <StretchHorizontal size={13} /> },
+};
+
+/** The values a select may carry and still be an alignment: the words, or "nothing". */
+const ALIGN_EMPTY: ReadonlySet<string> = new Set(["", "default", "none", "inherit"]);
+
+/**
+ * The icon buttons for an alignment select, or `null` if it is not one.
+ *
+ * Pure, and exported so the tests execute it — including on the selects that
+ * must NOT be caught: a Divider's Add Element (None / Text / Icon), an Icon's
+ * View (Default / Stacked / Framed), an Image's Object Fit.
+ */
+export function alignmentChoice(
+  control: WidgetControl,
+): Array<{ v: string; title: string; icon: React.ReactNode }> | null {
+  if (control.type !== "select") return null;
+  const options = controlOptions(control);
+  if (options.length < 3) return null;
+  let directions = 0;
+  for (const o of options) {
+    const v = String(o.value).toLowerCase();
+    if (ALIGN_EMPTY.has(v)) continue;
+    if (!ALIGN_GLYPHS[v]) return null;
+    if (v !== "stretch") directions += 1;
+  }
+  if (directions < 2) return null;
+  /* The "nothing" option is not a button: the reference's chooser is pressed
+     OFF to mean "the page's own", which `IconChoice` already does — pressing
+     the pressed one writes `undefined`. */
+  return options
+    .filter((o) => !ALIGN_EMPTY.has(String(o.value).toLowerCase()))
+    .map((o) => ({ v: String(o.value), ...ALIGN_GLYPHS[String(o.value).toLowerCase()] }));
+}
+
+/**
  * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
  * writes a boolean. ONE reader, because "yes" is truthy and `false` is not,
  * and a control that reads only one of the two silently loses the other.
@@ -139,6 +220,28 @@ export interface DefinitionControlsProps {
    * Pricing / Features / Ribbon are the reference's own in-section headings.
    */
   bandTitle?: string;
+  /**
+   * SWITCH THE DEVICE FROM A CONTROL'S OWN LABEL ROW.
+   *
+   * Needed the moment a widget size became a `Slider`: the container's sizes
+   * carry the three glyphs on the label, and a widget's should too. Optional,
+   * so a caller that has no device state draws the slider without them rather
+   * than not at all.
+   */
+  onDevice?: (d: Device) => void;
+  /**
+   * DRAW EACH SECTION AS A BAND (2026-09-20, audit round 4 row 25).
+   *
+   * Driven: a widget's Style tab in the reference is real sections — "Image"
+   * and "Caption" are bands that open and shut. Ours was a flat list with
+   * plain sub-headings and nothing on it could be collapsed, so a Text
+   * Editor's Style tab was a scroll of twenty-nine rows in a 300px column.
+   *
+   * The Content tab does NOT ask for this: the Inspector already wraps it in
+   * one Group named after the widget, which is what the reference does there
+   * and what SCREEN LAW 10 pins.
+   */
+  asBands?: boolean;
   /** The brand kit's colours, for a colour control. */
   swatches?: string[];
   /** Write one property. The key is already resolved for the device. */
@@ -377,17 +480,32 @@ export function DefinitionControls(p: DefinitionControlsProps) {
   const onTab = (p.def?.controls || []).filter((c) => controlTab(c) === p.tab);
   const valueOf = (c: WidgetControl) => (props as any)[deviceKey(c, p.device)];
   const patch = (c: WidgetControl, v: unknown) => p.onPatch({ [deviceKey(c, p.device)]: v });
+  /* ONE BAND OPEN ON ARRIVAL, and it is the first — the reference's own
+     rule, measured in round 4 (row 19).
+
+     FOUND BY DRIVING IT (2026-09-20): this was `controlSections(onTab)[0]`
+     beside a SECOND `controlSections(onTab)` in the map below, and the
+     function builds a new array every call — so `grp === first` was never
+     true by reference and every band on a widget's Style tab arrived shut.
+     One call, one list, compared by index. */
+  const sections = controlSections(onTab);
 
   return (
     <>
-      {controlSections(onTab).map((grp) => {
+      {sections.map((grp, at) => {
         /* DRAWN, AND ITS CONDITION MET (2026-09-20). One filter, in the one
            place a definition's control becomes a row — so a family declares a
            condition and writes no code, and a control the reference hides
            cannot be on our screen by accident. */
         const shown = grp.controls.filter((c) => isDrawnInPanel(c) && controlIsShown(c, props));
         if (!shown.length) return null;
-        return (
+        /* A BAND, WHERE A BAND IS ASKED FOR (round 4 row 25). The section
+           name IS the band name, so the sub-heading below never draws —
+           the reference never says one name twice. One open at a time is
+           the panel's own `Accordion`, which the Inspector already wraps
+           this whole column in. */
+        const band = !!p.asBands && !!grp.section;
+        const body = (
           <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
             {/* A SUB-HEADING IS TITLE CASE (D-172, round 2, from b168/demo).
                 The reference's in-section headings are a `heading` control
@@ -398,7 +516,7 @@ export function DefinitionControls(p: DefinitionControlsProps) {
             {/* …AND NEVER THE BAND'S OWN NAME AGAIN (2026-09-20, round 4 row
                 24). Driven: the reference's first band on a Heading is called
                 "Heading" and nothing inside it repeats the word. */}
-            {grp.section && grp.section !== p.bandTitle && (
+            {grp.section && grp.section !== p.bandTitle && !band && (
               <div data-control-subheading={grp.section}
                 style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>
                 {grp.section}
@@ -427,7 +545,41 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                 <RepeaterControl control={c} controls={p.def?.controls || []} props={props} onPatch={p.onPatch} />
               </div>
             ))}
-            {shown.filter((c) => c.type !== "list" && !isPanelEditor(c)).map((c) => (
+            {shown.filter((c) => c.type !== "list" && !isPanelEditor(c)).map((c) => {
+              /* A SIZE IS A SLIDER (round 4 row 36). The same component the
+                 container's Width, Min Height and Gaps use — a range, a number
+                 box and the unit it is measured in, the label ABOVE, which is
+                 the shape the reference gives every size. It returns EARLY, so
+                 the label-left row below is untouched and stays where SCREEN
+                 LAW 10 pins it; the control keeps its place in the section
+                 because this is one pass over `shown`, not a second one. */
+              if (isSizeControl(c)) {
+                const n = Number(valueOf(c));
+                return (
+                  <div key={c.key} data-control={c.key} data-control-key={deviceKey(c, p.device)}
+                    data-control-responsive={c.responsive ? "yes" : undefined}>
+                    <Slider
+                      label={c.label}
+                      head={<>
+                        <span style={L}>{c.label}</span>
+                        {c.responsive && p.onDevice && (
+                          <DeviceSegment device={p.device as Device} onDevice={p.onDevice} />)}
+                      </>}
+                      testAttr={`data-size-${c.key}`}
+                      units={c.units || []}
+                      /* ONE UNIT, STATED. The renderer writes it after the bare
+                         number, so there is nothing to switch and nothing to
+                         store — see `units` in registry.ts. */
+                      unit={(c.units || [])[0]}
+                      max={c.max}
+                      value={Number.isFinite(n) && valueOf(c) !== "" && valueOf(c) != null ? n : undefined}
+                      onChange={(v) => patch(c, v)}
+                      onUnit={() => undefined}
+                    />
+                  </div>
+                );
+              }
+              return (
               <div key={c.key} style={c.type === "code" ? FIELD : ROW} data-control={c.key}
                 data-control-key={deviceKey(c, p.device)}
                 data-control-responsive={c.responsive ? "yes" : undefined}>
@@ -443,7 +595,21 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                     onChange={(v) => patch(c, v)}
                   />
                 )}
-                {c.type === "select" && (controlOptions(c).length ? (
+                {/* AN ALIGNMENT IS ICON BUTTONS (round 4 rows 38, 106, 137,
+                    144, 145). The OPTIONS say whether it is one; nothing in
+                    any family file had to change. Pressing the pressed one
+                    writes `undefined`, which is the reference's "the page's
+                    own" — the value the empty option used to carry. */}
+                {c.type === "select" && alignmentChoice(c) && (
+                  <IconChoice
+                    name={c.label}
+                    testAttr={`data-align-${c.key}`}
+                    value={String(valueOf(c) ?? "") || undefined}
+                    options={alignmentChoice(c) as Array<{ v: string; title: string; icon: React.ReactNode }>}
+                    onPick={(v) => patch(c, v ?? "")}
+                  />
+                )}
+                {c.type === "select" && !alignmentChoice(c) && (controlOptions(c).length ? (
                   <select style={INPUT} value={String(valueOf(c) ?? "")}
                     onChange={(e) => patch(c, optionValue(c, e.target.value))}>
                     {controlOptions(c).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -516,9 +682,13 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                     setting. `c.help` is still on the definition and still
                     reaches the registry's own tooltip. */}
               </div>
-            ))}
+              );
+            })}
           </div>
         );
+        return band
+          ? <Group key={grp.section} title={grp.section as string} defaultOpen={at === 0}>{body}</Group>
+          : body;
       })}
     </>
   );

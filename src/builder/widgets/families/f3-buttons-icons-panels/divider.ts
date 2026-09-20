@@ -125,7 +125,7 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
     { key: "style", label: "Style", type: "select", tab: "content", section: "Divider", options: [
       { value: "solid", label: "Solid" }, { value: "double", label: "Double" },
       { value: "dotted", label: "Dotted" }, { value: "dashed", label: "Dashed" }] },
-    { key: "width", label: "Width", type: "number", tab: "content", section: "Divider", responsive: RESPONSIVE,
+    { key: "width", label: "Width", type: "number", tab: "content", section: "Divider", responsive: RESPONSIVE, units: ["%"], max: 100,
       help: "Per cent of the space it sits in." },
     { key: "align", label: "Alignment", type: "select", tab: "content", section: "Divider", responsive: RESPONSIVE, options: LEFT_CENTER_RIGHT },
     { key: "look", label: "Add Element", type: "select", tab: "content", section: "Divider", options: [
@@ -145,8 +145,8 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
 
     /* ── Style ▸ Divider ──────────────────────────────────────────────── */
     { key: "color", label: "Color", type: "colour", tab: "style", section: "Divider" },
-    { key: "weight", label: "Weight", type: "number", tab: "style", section: "Divider" },
-    { key: "gap", label: "Gap", type: "number", tab: "style", section: "Divider", responsive: RESPONSIVE },
+    { key: "weight", label: "Weight", type: "number", tab: "style", section: "Divider", units: ["px"], max: 40 },
+    { key: "gap", label: "Gap", type: "number", tab: "style", section: "Divider", responsive: RESPONSIVE, units: ["px"], max: 120 },
 
     /* ── Style ▸ Text ─────────────────────────────────────────────────── */
     { key: "text_color", label: "Color", type: "colour", tab: "style", section: "Text" },
@@ -155,17 +155,17 @@ export const DIVIDER_DEF: FamilyWidgetDef = {
        not `text_typography_*`, which is what this said first and which
        WIDGET_SETTINGS_KEYS.json has no record of. An emitted key Elementor does
        not have is dropped silently on publish. */
-    { key: "typography_font_size", label: "Size", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE },
+    { key: "typography_font_size", label: "Size", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE, units: ["px"], max: 200 },
     { key: "typography_font_weight", label: "Weight", type: "select", tab: "style", section: "Text", options: FONT_WEIGHT_OPTIONS },
     { key: "text_align", label: "Position", type: "select", tab: "style", section: "Text", options: LEFT_CENTER_RIGHT },
-    { key: "text_spacing", label: "Spacing", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE },
+    { key: "text_spacing", label: "Spacing", type: "number", tab: "style", section: "Text", responsive: RESPONSIVE, units: ["px"], max: 80 },
 
     /* ── Style ▸ Icon ─────────────────────────────────────────────────── */
     { key: "icon_view", label: "View", type: "select", tab: "style", section: "Icon", options: VIEW_OPTIONS },
-    { key: "icon_size", label: "Size", type: "number", tab: "style", section: "Icon", responsive: RESPONSIVE },
+    { key: "icon_size", label: "Size", type: "number", tab: "style", section: "Icon", responsive: RESPONSIVE, units: ["px"], max: 200 },
     { key: "primary_color", label: "Primary Color", type: "colour", tab: "style", section: "Icon" },
     { key: "icon_align", label: "Position", type: "select", tab: "style", section: "Icon", options: LEFT_CENTER_RIGHT },
-    { key: "icon_spacing", label: "Spacing", type: "number", tab: "style", section: "Icon", responsive: RESPONSIVE },
+    { key: "icon_spacing", label: "Spacing", type: "number", tab: "style", section: "Icon", responsive: RESPONSIVE, units: ["px"], max: 80 },
   ],
 };
 

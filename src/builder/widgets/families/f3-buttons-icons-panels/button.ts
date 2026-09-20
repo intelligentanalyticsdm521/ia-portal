@@ -214,7 +214,7 @@ export const BUTTON_DEF: FamilyWidgetDef = {
       condition: { "text!": "", "selected_icon!": "" }, options: [
       { value: "row", label: "Start" }, { value: "row-reverse", label: "End" }] },
     { key: "icon_indent", label: "Icon Spacing", type: "number", tab: "content", section: "Button",
-      condition: { "text!": "", "selected_icon!": "" } },
+      condition: { "text!": "", "selected_icon!": "" }, units: ["px"], max: 80 },
     /* Elementor's eighth Content control is "Button ID". It is NOT offered:
        the engine's panel draws seven control types and `text` is not one of
        them — a text control is typed ON THE PAGE, and a CSS id has nothing on
@@ -226,16 +226,16 @@ export const BUTTON_DEF: FamilyWidgetDef = {
       { value: "", label: "Default" }, { value: "left", label: "Left" },
       { value: "center", label: "Center" }, { value: "right", label: "Right" },
       { value: "justify", label: "Stretch" }] },
-    { key: "typography_font_size", label: "Size", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE },
+    { key: "typography_font_size", label: "Size", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE, units: ["px"], max: 200 },
     { key: "typography_font_weight", label: "Weight", type: "select", tab: "style", section: "Button", options: FONT_WEIGHT_OPTIONS },
     { key: "typography_text_transform", label: "Transform", type: "select", tab: "style", section: "Button", options: TEXT_TRANSFORM_OPTIONS },
     { key: "button_text_color", label: "Text Color", type: "colour", tab: "style", section: "Button" },
     { key: "background_color", label: "Background Color", type: "colour", tab: "style", section: "Button" },
     { key: "border_border", label: "Border Type", type: "select", tab: "style", section: "Button", options: BORDER_TYPE_OPTIONS },
-    { key: "border_width", label: "Border Width", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE },
+    { key: "border_width", label: "Border Width", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE, units: ["px"], max: 40 },
     { key: "border_color", label: "Border Color", type: "colour", tab: "style", section: "Button" },
-    { key: "border_radius", label: "Border Radius", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE },
-    { key: "text_padding", label: "Padding", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE,
+    { key: "border_radius", label: "Border Radius", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE, units: ["px"], max: 200 },
+    { key: "text_padding", label: "Padding", type: "number", tab: "style", section: "Button", responsive: RESPONSIVE, units: ["px"], max: 100,
       help: "Space inside the button, top and bottom. The sides get twice it." },
 
     /* ── Style ▸ Hover ────────────────────────────────────────────────── */

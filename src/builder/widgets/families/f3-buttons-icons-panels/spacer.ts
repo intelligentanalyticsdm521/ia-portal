@@ -60,7 +60,7 @@ export const SPACER_DEF: FamilyWidgetDef = {
   builders: ["website", "landing", "newsletter", "proposal"],
   defaults: { space: 50 },
   controls: [
-    { key: "space", label: "Space", type: "number", tab: "content", section: "Spacer", responsive: RESPONSIVE },
+    { key: "space", label: "Space", type: "number", tab: "content", section: "Spacer", responsive: RESPONSIVE, units: ["px"], max: 500 },
   ],
 };
 

@@ -186,7 +186,7 @@ export const TEXT_EDITOR_DEF: FamilyWidgetDef = {
     { key: "drop_cap", label: "Drop Cap", type: "toggle", tab: "content", section: "Text Editor",
       help: "Make the first letter big, the way a magazine does." },
     { key: "text_columns", label: "Columns", type: "select", tab: "content", section: "Text Editor", options: TEXT_COLUMNS, responsive: true },
-    { key: "column_gap", label: "Columns Gap", type: "number", tab: "content", section: "Text Editor", responsive: true },
+    { key: "column_gap", label: "Columns Gap", type: "number", tab: "content", section: "Text Editor", responsive: true, units: ["px"], max: 120 },
 
     /* Style ▸ Text Editor */
     { key: "align", label: "Alignment", type: "select", tab: "style", section: "Text Editor", options: ALIGNMENTS, responsive: true },
@@ -199,7 +199,7 @@ export const TEXT_EDITOR_DEF: FamilyWidgetDef = {
     { key: "text_shadow_text_shadow_vertical", label: "Shadow Vertical", type: "number", tab: "style", section: "Text Editor" },
     { key: "text_shadow_text_shadow_blur", label: "Shadow Blur", type: "number", tab: "style", section: "Text Editor" },
     { key: "text_shadow_text_shadow_color", label: "Shadow Color", type: "colour", tab: "style", section: "Text Editor" },
-    { key: "paragraph_spacing", label: "Paragraph Spacing", type: "number", tab: "style", section: "Text Editor", responsive: true },
+    { key: "paragraph_spacing", label: "Paragraph Spacing", type: "number", tab: "style", section: "Text Editor", responsive: true, units: ["px"], max: 120 },
     { key: "link_color", label: "Link Color", type: "colour", tab: "style", section: "Text Editor" },
     { key: "link_hover_color", label: "Link Hover Color", type: "colour", tab: "style", section: "Text Editor" },
     { key: "link_hover_color_transition_duration", label: "Transition Duration", type: "number", tab: "style", section: "Text Editor",

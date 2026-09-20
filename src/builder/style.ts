@@ -357,6 +357,20 @@ const JUSTIFIES: ReadonlyArray<JustifySpec> = ["start", "center", "end", "betwee
 const ITEMS: ReadonlyArray<ItemsSpec> = ["start", "center", "end", "stretch"];
 export const SIZE_UNITS: ReadonlyArray<SizeUnit> = ["px", "%", "em", "rem", "vh", "vw"];
 
+/**
+ * A UNIT A CONTROL CAN SAY IT IS MEASURED IN (2026-09-20).
+ *
+ * `SizeUnit` is what the STYLE LAYER stores and `sizeCss` will emit. A widget
+ * size is not stored there — a Divider's Weight is a bare number its own
+ * renderer writes `px` after, an Icon's Rotate is a bare number it writes `deg`
+ * after — so the panel needs one more word than the layer does, and `deg` and
+ * `fr` are it. They are deliberately NOT in `SIZE_UNITS`: nothing may store
+ * them, `sizeCss` would drop them, and a slider that STATES its unit is doing
+ * what `unitsOffered`'s own note describes — "a control with a single unit is
+ * stating what it is measured in rather than offering a choice".
+ */
+export type UnitLabel = SizeUnit | "deg" | "fr";
+
 /** A size with its unit, ready for CSS. Absent unit means px. */
 export function sizeCss(value: number, unit: SizeUnit | undefined): string {
   return `${round(value)}${SIZE_UNITS.includes(unit as SizeUnit) ? unit : "px"}`;
@@ -386,9 +400,9 @@ export const PX_ONLY_BUILDERS: ReadonlyArray<string> = ["website", "landing"];
  * is measured in rather than offering a choice — Width says px or % because
  * Content Width already decided which, and the emitter carries that pair.
  */
-export function unitsOffered(
-  adapter: string | undefined, units: ReadonlyArray<SizeUnit>,
-): ReadonlyArray<SizeUnit> {
+export function unitsOffered<T extends string>(
+  adapter: string | undefined, units: ReadonlyArray<T>,
+): ReadonlyArray<T> {
   if (!adapter || units.length < 2 || !PX_ONLY_BUILDERS.includes(adapter)) return units;
   const kept = units.filter((u) => u === "px");
   return kept.length ? kept : units;

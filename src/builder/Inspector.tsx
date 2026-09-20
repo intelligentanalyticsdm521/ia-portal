@@ -833,7 +833,8 @@ export function Inspector(p: InspectorProps) {
                   cannot drift. */}
               <DefinitionControls def={def} tab="content" props={widget.props as any}
                 bandTitle={def ? widgetLabel(def, p.adapter) : "Content"}
-                device={p.device} swatches={p.swatches} onPatch={p.onPatchWidget} />
+                device={p.device} onDevice={p.onDevice}
+                swatches={p.swatches} onPatch={p.onPatchWidget} />
 
               {/* UP / DOWN / REMOVE WERE HERE AND ARE DELETED (D-172).
                   Nothing like that row is in the reference panel: order is a
@@ -853,9 +854,18 @@ export function Inspector(p: InspectorProps) {
                 The machine file says which tab every Elementor control is on,
                 a family copies that onto its def, and this draws it there. No
                 per-widget code, and nothing a family adds needs a line here. */}
+            {/* A WIDGET'S STYLE SECTIONS ARE BANDS (2026-09-20, round 4 row
+                25). Driven: "Image" and "Caption" are sections that open and
+                shut in the reference; ours was a flat list with plain
+                sub-headings, so a Text Editor's Style tab was twenty-nine rows
+                in a 300px column with nothing to collapse. The Advanced tab is
+                NOT banded here — its sections are `SpacingGroup` and
+                `ResponsiveGroup`, which are bands already. */}
             {!box && shownTab !== "content" && (
               <DefinitionControls def={def} tab={shownTab} props={widget.props as any}
-                device={p.device} swatches={p.swatches} onPatch={p.onPatchWidget} />
+                asBands={shownTab === "style"}
+                device={p.device} onDevice={p.onDevice}
+                swatches={p.swatches} onPatch={p.onPatchWidget} />
             )}
 
             {/* ── STYLE ▸ TYPOGRAPHY — only where there are words to set ── */}

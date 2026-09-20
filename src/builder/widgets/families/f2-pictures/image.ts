@@ -257,9 +257,9 @@ export const IMAGE_DEF: FamilyWidgetDef = {
       condition: { link_to: "file" }, options: LIGHTBOX },
     /* ── Style ▸ Image ───────────────────────────────────────────────── */
     { key: "align", label: "Alignment", type: "select", tab: "style", section: "Image", options: ALIGNMENTS, responsive: true },
-    { key: "width", label: "Width", type: "number", tab: "style", section: "Image", responsive: true,
+    { key: "width", label: "Width", type: "number", tab: "style", section: "Image", responsive: true, units: ["%"], max: 100,
       help: "A share of the space it sits in, from 1 to 100." },
-    { key: "height", label: "Height", type: "number", tab: "style", section: "Image", responsive: true },
+    { key: "height", label: "Height", type: "number", tab: "style", section: "Image", responsive: true, units: ["px"], max: 1000 },
     /* OBJECT FIT ONLY ONCE A HEIGHT IS SET (2026-09-20, audit round 4 row
        128). Driven: `{ "height[size]!": "" }`. It answers "what happens to the
        picture inside the box you have forced it into", and with no height
@@ -269,15 +269,15 @@ export const IMAGE_DEF: FamilyWidgetDef = {
       condition: { "height!": "" }, options: OBJECT_FITS, responsive: true },
     { key: "opacity", label: "Opacity", type: "number", tab: "style", section: "Image" },
     { key: "image_border_border", label: "Border Type", type: "select", tab: "style", section: "Image", options: BORDER_TYPES },
-    { key: "image_border_width", label: "Border Width", type: "number", tab: "style", section: "Image", responsive: true },
+    { key: "image_border_width", label: "Border Width", type: "number", tab: "style", section: "Image", responsive: true, units: ["px"], max: 40 },
     { key: "image_border_color", label: "Border Color", type: "colour", tab: "style", section: "Image" },
-    { key: "image_border_radius", label: "Border Radius", type: "number", tab: "style", section: "Image", responsive: true },
+    { key: "image_border_radius", label: "Border Radius", type: "number", tab: "style", section: "Image", responsive: true, units: ["px"], max: 200 },
     /* ── Style ▸ Caption ─────────────────────────────────────────────── */
     { key: "caption_align", label: "Alignment", type: "select", tab: "style", section: "Caption", options: ALIGNMENTS_4, responsive: true },
     { key: "text_color", label: "Text Color", type: "colour", tab: "style", section: "Caption" },
     { key: "caption_background_color", label: "Background Color", type: "colour", tab: "style", section: "Caption" },
-    { key: "caption_typography_font_size", label: "Size", type: "number", tab: "style", section: "Caption", responsive: true },
+    { key: "caption_typography_font_size", label: "Size", type: "number", tab: "style", section: "Caption", responsive: true, units: ["px"], max: 120 },
     { key: "caption_typography_font_weight", label: "Weight", type: "select", tab: "style", section: "Caption", options: FONT_WEIGHTS },
-    { key: "caption_space", label: "Spacing", type: "number", tab: "style", section: "Caption", responsive: true },
+    { key: "caption_space", label: "Spacing", type: "number", tab: "style", section: "Caption", responsive: true, units: ["px"], max: 100 },
   ],
 };

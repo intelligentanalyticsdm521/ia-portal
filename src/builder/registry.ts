@@ -139,6 +139,9 @@ export type ControlTab = "content" | "style" | "advanced";
    file types a condition without importing a second module. */
 export type { ControlCondition } from "./controlCondition";
 import type { ControlCondition } from "./controlCondition";
+/* …and what a SIZE control says it is measured in. Type-only, so this adds no
+   import at runtime and no cycle: `style.ts` is the one place a unit is named. */
+import type { UnitLabel } from "./style";
 
 export const CONTROL_TABS: ControlTab[] = ["content", "style", "advanced"];
 
@@ -215,6 +218,25 @@ export interface WidgetControl {
    * by key — is `controlCondition.ts`; declaring one here is all a family does.
    */
   condition?: ControlCondition;
+  /**
+   * A SIZE, AND WHAT IT IS MEASURED IN (2026-09-20, audit round 4 row 36).
+   *
+   * Driven: every size in the reference's panel — Space, Width, Weight, Gap,
+   * Size, Rotate, Paragraph Spacing, Columns Gap — is a slider with a number
+   * box and a unit beside it, and ours were bare pixel boxes. A `number`
+   * control that declares this is drawn as the SAME `Slider` the container
+   * already uses, so there is one size control on the platform and not two.
+   *
+   * ONE unit per control, on purpose. A widget size is a bare number its own
+   * renderer writes the unit after — a Divider's Weight is `border-top:Npx`, an
+   * Icon's Rotate is `rotate(Ndeg)` — so the list says what the page will get.
+   * Offering a second before the renderer, the mailbox, the PDF and arion can
+   * all carry it would be a control that changes nothing, which is the defect
+   * this whole pass is about.
+   */
+  units?: ReadonlyArray<UnitLabel>;
+  /** The far end of that slider. The number box may go past it; the slider may not. */
+  max?: number;
   /**
    * DRAW THIS ONE IN THE PANEL TOO (2026-09-20).
    *

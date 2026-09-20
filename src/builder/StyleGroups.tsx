@@ -25,7 +25,7 @@ import {
 import {
   RATIO_PRESETS, SHAPE_DIVIDERS, normaliseRatios, setSide, sidesAreLinked, unitsOffered,
   type BackgroundSpec, type BoxSides, type Device, type ElementStyle,
-  type OverlaySpec, type ShapeDividerSpec, type SizeUnit, type StyleLayer,
+  type OverlaySpec, type ShapeDividerSpec, type SizeUnit, type StyleLayer, type UnitLabel,
 } from "./style";
 import { PREVIEW_DEVICES } from "./responsive";
 import {
@@ -389,7 +389,10 @@ export function IconChoice<T extends string>({ value, options, onPick, name, tes
  * The slider and the box are ONE value: dragging writes the same key typing
  * does, and the box is there because a slider alone cannot be given 137.
  */
-export function Slider({
+/* GENERIC IN ITS UNIT so a caller keeps the narrow one it passed: the
+   container stores a `SizeUnit` on the style layer, while a widget size only
+   STATES its unit and may say `deg`. One component, two promises kept. */
+export function Slider<U extends UnitLabel = UnitLabel>({
   label, head, value, unit, units, onChange, onUnit, testAttr, max, placeholder, adapter,
 }: {
   label: string;
@@ -403,11 +406,11 @@ export function Slider({
    */
   head: ReactNode;
   value: number | undefined;
-  unit: SizeUnit | undefined;
+  unit: U | undefined;
   /** Which units this size may be in. The reference's list, per control. */
-  units: ReadonlyArray<SizeUnit>;
+  units: ReadonlyArray<U>;
   onChange: (v: number | undefined) => void;
-  onUnit: (u: SizeUnit | undefined) => void;
+  onUnit: (u: U | undefined) => void;
   testAttr?: string;
   /** The slider's far end. A number box may go past it; the slider may not. */
   max?: number;
