@@ -67,7 +67,7 @@ import {
   type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
 } from "./style";
 import {
-  Accordion, AttributesGroup, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs,
+  Accordion, DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs,
   RatioPicker, ResponsiveGroup, SpacingGroup, Switcher, TypographyGroup,
   FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
@@ -836,6 +836,11 @@ export function Inspector(p: InspectorProps) {
             {/* ── ADVANCED ▸ LAYOUT and RESPONSIVE ─────────────────────── */}
             {shownTab === "advanced" && (
               <>
+                {/* CSS ID AND CSS CLASSES ARE IN LAYOUT (D-172, round 3), where
+                    the reference keeps them — driven: its Layout section ends
+                    Z-Index, CSS ID, CSS Classes, Cache Settings. They are NOT
+                    per device, so they are written on the element's own style
+                    and never through `withLayer`. */}
                 <SpacingGroup
                   device={p.device}
                   onDevice={p.onDevice}
@@ -844,6 +849,9 @@ export function Inspector(p: InspectorProps) {
                   align={!box}
                   onPatch={patchWidgetStyle}
                   onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["padding", "margin", "align"]))}
+                  cssId={String(widget.style?.cssId ?? "")}
+                  cssClasses={String(widget.style?.cssClasses ?? "")}
+                  onPatchNames={(patch) => p.onSetWidgetStyle({ ...(widget.style || {}), ...patch })}
                 />
                 <ResponsiveGroup
                   hiddenOn={{
@@ -855,21 +863,9 @@ export function Inspector(p: InspectorProps) {
                     p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
                   onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["hidden"]))}
                 />
-                {/* §11.13.1's third Advanced section. NOT per device — an id is
-                    an id on every screen — so it is written on the element's own
-                    style and never through `withLayer`. */}
-                <AttributesGroup
-                  cssId={String(widget.style?.cssId ?? "")}
-                  cssClasses={String(widget.style?.cssClasses ?? "")}
-                  onPatch={(patch) => p.onSetWidgetStyle({ ...(widget.style || {}), ...patch })}
-                  onReset={() => {
-                    /* NOT `resetKeys`: that one clears a key on every DEVICE
-                       layer, and these two are not per device. Cleared where
-                       they actually live, on the element's own style. */
-                    const { cssId: _a, cssClasses: _b, ...rest } = widget.style || {};
-                    p.onSetWidgetStyle(Object.keys(rest).length ? rest : undefined);
-                  }}
-                />
+                {/* THE "ATTRIBUTES" SECTION IS DELETED (D-172, round 3): the
+                    reference has one by that name and it holds a Pro promo,
+                    not these two fields. They are in Layout above. */}
                 {/* WHAT ONLY A SECTION CAN HOLD, ON THE BOX THAT CARRIES IT
                     (D-172, round 2).
 

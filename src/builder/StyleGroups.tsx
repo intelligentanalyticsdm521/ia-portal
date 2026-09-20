@@ -454,6 +454,7 @@ function SidesPad({
  */
 export function SpacingGroup({
   device, onDevice, layer, seedPadding, onPatch, onReset, what, align,
+  cssId, cssClasses, onPatchNames,
 }: {
   device: Device;
   onDevice: (d: Device) => void;
@@ -464,6 +465,19 @@ export function SpacingGroup({
   what: "section" | "widget";
   /** Offer the align row. A section has nothing to align itself against. */
   align?: boolean;
+  /**
+   * CSS ID AND CSS CLASSES LIVE IN LAYOUT (D-172, round 3).
+   *
+   * Driven on a Heading's Advanced tab: the Layout section is Margin, Padding,
+   * Width, Align Self, Order, Size, Position, Z-Index, CSS ID, CSS Classes,
+   * Cache Settings. Ours kept the two in an "Attributes" section of their own,
+   * which is a section the reference does have — and it holds a Pro promo, not
+   * these. They are NOT per device, so they are written on the element's own
+   * style and never through `withLayer`.
+   */
+  cssId?: string;
+  cssClasses?: string;
+  onPatchNames?: (patch: { cssId?: string; cssClasses?: string }) => void;
 }) {
   return (
     <Group title="Layout" defaultOpen onReset={onReset}>
@@ -493,6 +507,30 @@ export function SpacingGroup({
           that has something to align. `align` stays on the props so the widget
           style sections can ask for it; Advanced no longer draws it. */}
       {void align}
+      {onPatchNames && (
+        <>
+          <div style={ROW}>
+            <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
+            <input
+              style={{ ...INPUT, borderRadius: 6 }}
+              data-style-css-id
+              value={cssId ?? ""}
+              placeholder="e.g. prices"
+              onChange={(e) => onPatchNames({ cssId: e.target.value })}
+            />
+          </div>
+          <div style={ROW}>
+            <span style={L} title="Class names on this element, separated by a space.">CSS Classes</span>
+            <input
+              style={{ ...INPUT, borderRadius: 6 }}
+              data-style-css-classes
+              value={cssClasses ?? ""}
+              placeholder="e.g. tight two-up"
+              onChange={(e) => onPatchNames({ cssClasses: e.target.value })}
+            />
+          </div>
+        </>
+      )}
     </Group>
   );
 }
@@ -671,75 +709,13 @@ export function ResponsiveGroup({
 }
 
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   Advanced ▸ Attributes — the CSS id and classes (§11.13.1)
-   ═══════════════════════════════════════════════════════════════════════════ */
+/* THE "ATTRIBUTES" SECTION IS DELETED (D-172, round 3).
 
-/**
- * The reference editor's Advanced tab ends with CSS ID and CSS Classes, and
- * they are the third of §11.13.1's three Advanced sections. The other two
- * shipped with the screen; this one waited for somewhere to PUT the values and
- * somebody to READ them — a control that writes a field nothing reads is worse
- * than a missing one. `ElementStyle` carries them now and all three renderers
- * emit them, so here it is.
- *
- * PLAIN WORDS on screen, not "CSS ID": the label says what it is FOR, and the
- * hint says what it does, because a business owner reading "CSS ID" learns
- * nothing. The catalogue's own name is in the tooltip for anybody who wants it.
- */
-export function AttributesGroup({
-  cssId, cssClasses, onPatch, onReset,
-}: {
-  cssId: string;
-  cssClasses: string;
-  onPatch: (patch: { cssId?: string; cssClasses?: string }) => void;
-  onReset: () => void;
-}) {
-  /* THE REFERENCE'S OWN TWO NAMES, IN LAYOUT (D-172, round 2).
-     Two things changed here and both were ours:
-
-       · THE TWO EXPLANATION PARAGRAPHS ARE DELETED. "A Menu Anchor and a link
-         like #prices jump to this name. Use it once on a page." and "Separate
-         them with a space. Your own stylesheet can then style every part with
-         the same name." The reference's Advanced tab has no prose in it at
-         all. What each field is for is in its tooltip.
-       · THE LABELS ARE "CSS ID" AND "CSS CLASSES". Ours read "Its own name"
-         and "Styling names", invented on the argument that a business owner
-         learns nothing from "CSS ID" — which is true, and is why the sentence
-         that explains it is the tooltip. A NAME that appears nowhere else in
-         the world is worse than a technical one: somebody who searches for how
-         to use it finds every answer written about CSS ID.
-
-     The group is rendered inside the Layout section now — the reference keeps
-     both of these there, not in an Attributes section of their own. */
-  const field: React.CSSProperties = {
-    ...INPUT, borderRadius: 6,
-  };
-  return (
-    <Group title="Attributes" onReset={onReset}>
-      <div style={ROW}>
-        <span style={L} title="The id attribute on this element, with no # in front of it.">CSS ID</span>
-        <input
-          style={field}
-          data-style-css-id
-          value={cssId}
-          placeholder="e.g. prices"
-          onChange={(e) => onPatch({ cssId: e.target.value })}
-        />
-      </div>
-      <div style={ROW}>
-        <span style={L} title="Class names on this element, separated by a space.">CSS Classes</span>
-        <input
-          style={field}
-          data-style-css-classes
-          value={cssClasses}
-          placeholder="e.g. tight two-up"
-          onChange={(e) => onPatch({ cssClasses: e.target.value })}
-        />
-      </div>
-    </Group>
-  );
-}
+   The reference DOES have a section by that name on the Advanced tab — and
+   what is in it is a Pro promo, not these two fields. CSS ID and CSS Classes
+   are inside LAYOUT there, which is where ours are now (see SpacingGroup).
+   The component is gone rather than emptied: an unused export is how a second
+   home for the same two fields comes back. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    A section's Layout — columns, the split, the gap
