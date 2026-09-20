@@ -706,7 +706,10 @@ describe("D-39 · the title band has a logo control", () => {
        with an **Image** in it, so the picture the author chose is the Image's
        own `src` and saves with the document exactly as before. `business_info`
        carries the other half of D-39: use the brand logo, or a different one. */
-    assert.ok("src" in WIDGETS_BY_KIND.image.defaults);
+    /* Elementor’s own key is `image`, which family f2-pictures’ Image writes
+       (wave 2). `src` was ours. A stored `src` still draws — the family’s
+       reader accepts both spellings — and the DEFAULT is Elementor’s. */
+    assert.ok("image" in WIDGETS_BY_KIND.image.defaults);
     /* D-167 — the other half of D-39 is a **Custom Field** pointed at
        `business_info.logo`. Left alone it draws the mark from Brand Identity;
        typed over, it is an override like any other retyped value, with

@@ -28,6 +28,11 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+/* THE THREE ADAPTERS' OWN HANDS. Imported, never re-typed: a list copied here
+   would be a second answer to "does that surface already draw this". */
+import { STUDIO_OWN_KINDS } from "../../src/builder/adapters/mybrand/insert.ts";
+import { EMAIL_RENDERED_KINDS as EMAIL_OWN_KINDS } from "../../src/builder/adapters/email/emailRender.ts";
+import { LANDING_RENDERED_KINDS as LANDING_OWN_KINDS } from "../../src/builder/adapters/landing/landingRender.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES = path.join(HERE, "..", "fixtures");
@@ -102,14 +107,27 @@ export function assertFamilyContract(name, family) {
    * half. This is STRICTER than the line it replaces, not weaker: a widget
    * offered on the newsletter used to pass with a page renderer alone.
    */
+  /* …AND THE ADAPTER'S OWN HAND IS AN ANSWER TOO (B-168, landing).
+     The mailbox asks the family's mailbox half, then its PAGE half, then
+     gives up — the same order the hosted landing page uses — so a page
+     renderer really does draw in a newsletter, and `checkEmailSafe` over the
+     goldens is what keeps it honest. The My Brand studio has drawn thirteen
+     kinds in its own look since before the families existed
+     (`STUDIO_OWN_KINDS`), and a family row beside one of those would be the
+     second mechanism, not the first. Same words as `familySurfaceGaps()`. */
   const surfaceOf = (d, b) => {
-    if (b === "newsletter") return [["emailRenderers", family.emailRenderers]];
+    if (b === "newsletter") {
+      return [["emailRenderers", family.emailRenderers], ["renderers", family.renderers]];
+    }
     if (b === "landing") return [["landingRenderers", family.landingRenderers], ["renderers", family.renderers]];
     if (b === "mybrand") return [["studioInserts", family.studioInserts]];
     return [["renderers", family.renderers]];
   };
   for (const d of family.defs) {
     for (const b of (d.builders || [])) {
+      if (b === "mybrand" && STUDIO_OWN_KINDS.includes(d.kind)) continue;
+      if (b === "newsletter" && EMAIL_OWN_KINDS.includes(d.kind)) continue;
+      if (b === "landing" && LANDING_OWN_KINDS.includes(d.kind)) continue;
       const doors = surfaceOf(d, b);
       assert.ok(doors.some(([, map]) => map && typeof map[d.kind] === "function"),
         `${name}/${d.kind}: offered on the ${b} panel and nothing draws it there — `

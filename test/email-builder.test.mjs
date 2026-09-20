@@ -673,9 +673,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        *"video shows as a clickable picture"* — and the tile was simply never
        turned on. The f2-pictures family draws it as a real picture that is a
        real link, which is the only thing a video can be in a mailbox. */
-      "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
-      "heading", "ia_reviews", "icon", "icon_box", "image", "image_box", "list", "paragraph",
-      "product_card", "social_links", "spacer", "star_rating", "testimonial",
+    /* ADDED AT LANDING (B-168): **Blockquote** and **HTML** (f1-words),
+       **Price Table** and **Price List** (f6-money) and **Book Now** (f8,
+       the IA twin of Button) — every one of them on the offer file’s
+       `newsletter` list, and every one with a mailbox renderer in its own
+       family folder and a golden case in this file’s fixture. */
+      "alert", "article_card", "blockquote", "book_now", "button", "container",
+      "divider", "email_footer", "grid", "heading", "html", "ia_reviews", "icon",
+      "icon_box", "image", "image_box", "list", "paragraph", "price_list",
+      "price_table", "product_card", "social_links", "spacer", "star_rating",
+      "testimonial", "video",
     ].sort());
   });
 
@@ -701,8 +708,12 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        rather than against it: the offer file gives the newsletter Video, and
        the family now draws it as a picture that is a link. No mail client
        plays a video and none is asked to. */
+    /* **Book Now** LEFT this list at landing: family f8 wrote its mailbox
+       renderer (`emailBookNow`), so the rule is satisfied by drawing it, the
+       way Icon and Alert were. Elementor’s own **Reviews** stays — the
+       newsletter is offered the IA twin `ia_reviews` instead. */
     for (const kind of ["form", "signature", "price_line", "data_table", "gallery",
-      "catalog_card", "reviews", "book_now"]) {
+      "catalog_card", "reviews"]) {
       const def = WIDGETS_BY_KIND[kind];
       if (!def) continue;
       assert.ok(!def.adapters.includes("email"), `${kind} is offered to the email builder`);
@@ -743,7 +754,16 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        not in here; what IS site-only stays site-only. B-168 f6-money added
        price_table, price_list, paypal_button and stripe_button to both lists,
        which is what the offer file says, so this comparison is unchanged. */
-    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
+    /* …and at landing the offer file’s `website` list is longer than its
+       `landing` list by the site and blog pieces (f7-data-lists) and by four
+       more: Login, WordPress Menu, Sidebar and Read More. A hosted landing
+       page has no accounts, no theme menu, no sidebar and no rest-of-the-post.
+       This list is read out of the offer file, not decided here. */
+    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice",
+      "login", "nav_menu", "sidebar", "read_more", "search", "sitemap",
+      "archive_posts", "author_box", "post_comments", "post_info", "post_navigation",
+      "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title",
+      "theme_post_excerpt", "theme_post_featured_image", "theme_archive_title"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
     /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of

@@ -236,8 +236,15 @@ export interface SurfacesAlreadyDrawn {
 export function familySurfaceGaps(drawn: SurfacesAlreadyDrawn): Array<{ kind: string; builder: string }> {
   const out: Array<{ kind: string; builder: string }> = [];
   for (const d of FAMILY_DEFS) {
+    /* THE PAGE RENDERER COUNTS IN A MAILBOX TOO, exactly as it counts on a
+       hosted page below: `adapters/email/emailRender.ts` asks the family's
+       mailbox half, then its page half, before it gives up. The question is
+       "can this tile show something there", and a page renderer that reaches a
+       mailbox is still checked by `checkEmailSafe` over every golden case, so
+       an unsafe one fails the build by name rather than passing here. */
     if (d.builders.includes("newsletter")
-      && !EMAIL_RENDERERS[d.kind] && !drawn.newsletter.includes(d.kind)) {
+      && !EMAIL_RENDERERS[d.kind] && !RENDERERS[d.kind]
+      && !drawn.newsletter.includes(d.kind)) {
       out.push({ kind: d.kind, builder: "newsletter" });
     }
     if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]

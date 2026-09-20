@@ -49,7 +49,7 @@ import {
 import * as widgetGroups from "../src/builder/widgetGroups.ts";
 import {
   LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor,
-  matchesWidgetQuery, openGroups, panelGroups, unmappedKinds,
+  matchesWidgetQuery, openGroups, panelGroups, rank, unmappedKinds,
 } from "../src/builder/widgetGroups.ts";
 import { STRUCTURE_PRESETS, structureSumsTo100 } from "../src/builder/AddSection.tsx";
 import {
@@ -432,17 +432,25 @@ describe("the widget picker groups the way the panel does (D-165)", () => {
     assert.equal(first.kind, flatPanelMatches("proposal", "pro")[0].kind);
   });
 
-  test("a NAME beats a mention — 'table' finds the Table widget first", () => {
-    /* The slash command's Enter takes the first of these, so the order is not
-       cosmetic: getting it wrong inserts the wrong thing without asking.
-       It was "customer" until D-167 deleted that widget; **Table** is the same
-       shape of question — a name that several other tiles merely mention. */
+  test("a NAME beats a mention — 'table' puts Table first in its own group", () => {
+    /* CHANGED AT LANDING (B-168), and the change is the panel, not the rule.
+       Elementor’s **Price Table** is on the proposal panel now, in the Pro
+       group, and the panel DRAWS Pro before Intelligent Analytics — so the
+       first tile a person sees for "table" is Price Table, and the flat list
+       says the same thing, because both read one order computed once
+       (`flatPanelMatches`). A flat list ranked a second time across groups is
+       the drift that function exists to stop.
+
+       The RULE is unchanged and still pinned, twice: the exact name outranks
+       a mention, and inside the group that holds it, Table is first. */
+    assert.ok(rank({ label: "Table", kind: "data_table" }, "table")
+      > rank({ label: "Price Table", kind: "price_table" }, "table"),
+      "an exact name no longer outranks a tile that merely contains the word");
+    const ia = panelGroups("proposal", "table")
+      .find((g) => g.group === "Intelligent Analytics");
+    assert.equal(ia.widgets[0].kind, "data_table");
     const hits = flatPanelMatches("proposal", "table");
-    assert.equal(hits[0].kind, "data_table");
-    /* Only one tile is called Table and nothing else mentions one, so this is
-       the weaker half of the old assertion: what matters is that the exact
-       NAME wins, which the line above pins. */
-    assert.ok(hits.length >= 1);
+    assert.ok(hits.some((h) => h.kind === "data_table"), "Table is not findable at all");
   });
 
   test("the empty page's three choices are DELETED; the add area is what an empty page shows", () => {

@@ -138,7 +138,7 @@ export const PAYPAL_BUTTON_DEF: FamilyWidgetDef = {
   description: "A Pay or Deposit button on the page. The money goes to your PayPal account.",
   icon: "Wallet",
   picture: PAY_PICTURE,
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {
@@ -207,7 +207,7 @@ export const STRIPE_BUTTON_DEF: FamilyWidgetDef = {
   description: "A Pay or Deposit button on the page. The money goes to your Stripe account.",
   icon: "CreditCard",
   picture: PAY_PICTURE,
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

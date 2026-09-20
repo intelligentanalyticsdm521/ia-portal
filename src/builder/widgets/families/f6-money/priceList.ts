@@ -147,7 +147,7 @@ export const PRICE_LIST_DEF: FamilyWidgetDef = {
     box(6, 6, 52, 28) + bar(11, 12, 22) + bar(45, 12, 8) + bar(11, 20, 26) + bar(45, 20, 8)
     + bar(11, 27, 18) + bar(45, 27, 8),
   ),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing", "newsletter", "proposal"],
   tier: "pro",
   defaults: {

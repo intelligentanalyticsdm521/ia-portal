@@ -33,7 +33,9 @@ export const ATOM_KINDS = [
   "icon",
   "icon_box",
   "image_box",
-  "testimonial",
+  /* `testimonial` and `reviews` LEFT THIS LIST (B-168, landing): family
+     f5-sliders-reviews declares and draws both, under the same kinds. An atom
+     name with no atom behind it is a name four tests read and nothing answers. */
   "star_rating",
   "alert",
   /* Elementor calls it Social Icons; the STORED id is `social_links`, which
@@ -63,7 +65,6 @@ export const ATOM_KINDS = [
      `product_cards` and `product_line_items` are not here either: they are
      panel TILES, never on a page and never drawn. */
   "ia_posts",
-  "reviews",
   "book_now",
   "ia_form",
   "newsletter_signup",

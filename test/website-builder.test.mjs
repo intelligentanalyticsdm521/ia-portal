@@ -159,16 +159,25 @@ describe("the seam — what the pane offers is what the website can build", () =
    * trips — and belong in the template library. The ask is in the handoff.
    */
   test("the pane opens with Elementor's groups, in Elementor's order", () => {
-    /* FIVE since `b168/override` item 6: Elementor Pro's own `Pro` group is a
-       real group on the panel now, so the four Pro word widgets stopped
-       sitting in General behind a padlock. `Site` is drawn only when a builder
-       offers one of the theme pieces, which the website does not yet. */
+    /* SIX since family f7-data-lists landed (B-168): `Site` is drawn when a
+       builder offers one of Elementor’s theme pieces, and the website now
+       offers Site Logo, Site Title, Page Title, Post Title, Post Excerpt,
+       Featured Image, Archive Title and Sitemap — the offer file’s own
+       `website.elementor_pro` list. Was five while that group was empty. */
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Site", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
-    assert.deepEqual(groups.find((g) => g.group === "Pro").widgets.map((w) => w.label),
-      ["Gallery", "Hotspot", "Lottie", "Video Playlist"]);
+    /* MEMBERSHIP IS `builder-offers.test.mjs`’s question and ORDER is
+       `builder-widget-set.test.mjs`’s; a hand-typed list of the Pro group here
+       was stale within the hour eight families landed into it. What this still
+       earns its keep for is that the group is REAL and full — the four Pro
+       word widgets are not sitting in General behind a padlock. */
+    const pro = groups.find((g) => g.group === "Pro").widgets.map((w) => w.label);
+    assert.ok(pro.length > 20, `the Pro group has only ${pro.length} tiles`);
+    for (const must of ["Gallery", "Hotspot", "Lottie", "Video Playlist", "Posts", "Form"]) {
+      assert.ok(pro.includes(must), `${must} is not in the Pro group`);
+    }
   });
 
   test("the twelve whole-page sections are understood and never offered", () => {

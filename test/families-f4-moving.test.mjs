@@ -102,9 +102,14 @@ test("a HOSTED PAGE draws it too, through the landing adapter", async () => {
   // 2026-09-19, then restored. The engine's own list is not enough: the landing
   // adapter has its own switch and had to be asked to ask the families.
   const { emptyDocument, makeSection, makeWidget } = await import("../src/builder/model.ts");
-  const { makeLandingContext, renderLandingSection, LANDING_RENDERED_KINDS } =
+  const { makeLandingContext, renderLandingSection, LANDING_DRAWN_KINDS } =
     await import("../src/builder/adapters/landing/landingRender.ts");
-  assert.ok(LANDING_RENDERED_KINDS.includes("progress_tracker"));
+  /* `LANDING_DRAWN_KINDS`, not `LANDING_RENDERED_KINDS`: the second is this
+     adapter’s own hand-kept switch and a family never edits that file. The
+     first is that list PLUS every kind a family draws, derived from the
+     folders — which is the question being asked, "does a hosted page draw
+     this". The render below is the proof; this is the list that follows it. */
+  assert.ok(LANDING_DRAWN_KINDS.includes("progress_tracker"));
   const doc = emptyDocument({ style: "landing", accent: "#0C4A60" });
   doc.sections = [makeSection({
     id: "s1", label: "Case", padding: 16, layout: 1,

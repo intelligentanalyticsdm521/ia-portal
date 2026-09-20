@@ -234,11 +234,16 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
        headings, the two theme-* pictures, Post Info, Post Navigation, Post
        Comments, Author Box and Archive Posts are website-only — the same reason
        the menus already were. */
+    /* …and four more at landing (B-168): Login, WordPress Menu, Sidebar and
+       Read More are in `website.elementor_*` and not in `landing`’s — a hosted
+       landing page has no accounts, no theme menu, no sidebar and no "rest of
+       the post" to go to. The offer file is the list; this reads it out. */
     const siteOnly = [
       "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice",
       "Archive Posts", "Search", "Sitemap", "Post Info", "Post Navigation",
       "Post Comments", "Author Box", "Site Logo", "Site Title", "Page Title",
       "Post Title", "Post Excerpt", "Featured Image", "Archive Title",
+      "Login", "WordPress Menu", "Sidebar", "Read More",
     ];
     assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });

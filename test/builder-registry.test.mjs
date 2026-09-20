@@ -221,7 +221,8 @@ describe("§3.2's union is registered", () => {
     /* B-168 f7-data-lists: the Elementor widgets that draw a list out of data, plus the theme pieces the offer file gives the website. */
     "archive_posts", "author_box", "loop_grid", "portfolio", "post_comments", "post_info",
     "post_navigation", "posts", "search", "sitemap", "taxonomy_filter", "template",
-    "theme_site_logo", "theme_post_featured_image", "theme_post_excerpt",
+    "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title",
+    "theme_archive_title", "theme_post_featured_image", "theme_post_excerpt",
     /* B-168 f8-contact-furniture: Elementor's Form, Login and Nav Menu. */
     "login", "nav_menu",
     // Intelligent Analytics

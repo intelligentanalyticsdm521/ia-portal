@@ -211,7 +211,7 @@ export const PRICE_TABLE_DEF: FamilyWidgetDef = {
   picture: pictureFrom(
     box(16, 4, 32, 32) + bar(22, 9, 20, 4) + bar(24, 16, 16, 6) + bar(22, 25, 20) + bar(22, 30, 14),
   ),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing", "newsletter", "proposal"],
   /* Elementor's own: `price-table` is in the `pro-elements` category, which is
      how the editor draws the PRO badge. WHETHER this business's site carries a

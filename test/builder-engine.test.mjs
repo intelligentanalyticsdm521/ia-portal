@@ -45,7 +45,6 @@ import {
 } from "../src/builder/templates.ts";
 import { upgradeV1, toWire, openProposalDocument, locationsUsedBy } from "../src/builder/proposalDoc.ts";
 import { WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
-import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 
 const FIXTURE = JSON.parse(
   readFileSync(path.join(process.cwd(), "test", "fixtures", "document-model-cases.json"), "utf8"),
