@@ -730,7 +730,17 @@ describe("SCREEN LAW 9 — the structure window is the reference's", () => {
 
 describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => {
   const groups = code(readSrc("builder/StyleGroups.tsx"));
-  const inspector = code(readSrc("builder/Inspector.tsx"));
+  // THE PANEL'S CONTROL-DRAWING CODE IS ONE MECHANISM, and this law is about
+  // the PANEL, not about a file. Before the B-168 landing that code was a block
+  // inside Inspector.tsx; the landing keeps it in definitionControls.tsx (plan
+  // section C.1 - the only place that knows a control's _tablet / _mobile
+  // twins). So the law reads BOTH: every "is ABSENT" below is now checked in
+  // both files, and every "is PRESENT" is satisfied by whichever one draws it.
+  const controlsFile = path.join(BUILDER, "definitionControls.tsx");
+  const inspector = [
+    code(readSrc("builder/Inspector.tsx")),
+    existsSync(controlsFile) ? code(readFileSync(controlsFile, "utf8")) : "",
+  ].join(" ");
 
   test("300px, measured", () => {
     assert.match(readSrc("components/iadmModalSizes.ts"),
@@ -828,7 +838,9 @@ describe("SCREEN LAW 10 — the settings panel is the reference's panel", () => 
     assert.ok(!/\{c\.help\}/.test(inspector), "the grey sentence under a control is back");
     assert.ok(!inspector.includes('{c.help || "On"}'), "a toggle's label is its help sentence again");
     // PRESENT: the control itself, as a row, with a Switcher for on/off.
-    assert.match(inspector, /<div key=\{c\.key\} style=\{c\.type === "code" \? FIELD : ROW\}>/);
+    // (The landed mechanism also stamps data-control on the row, so the tag may
+    // carry more attributes before it closes; the law is the ROW, not the ">".)
+    assert.match(inspector, /<div key=\{c\.key\} style=\{c\.type === "code" \? FIELD : ROW\}[^>]*>/);
     assert.match(inspector, /<Switcher\s+name=\{c\.label\}/);
   });
 
