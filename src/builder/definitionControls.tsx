@@ -66,7 +66,12 @@ export const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
  * typed on the page, which is what every family's own contract test asks of it.
  */
 export function isDrawnInPanel(c: WidgetControl): boolean {
-  return PANEL_CONTROL_TYPES.has(c.type) || (c.type === "list" && isRepeater(c));
+  return PANEL_CONTROL_TYPES.has(c.type)
+    || (c.type === "list" && isRepeater(c))
+    /* A control that has ASKED for a box (2026-09-20) — see `panel` in
+       registry.ts. One widget declares it today, the Heading's Title, because
+       that is the one the reference puts at the top of a Content tab. */
+    || (c.panel === true && (c.type === "text" || c.type === "textarea"));
 }
 
 /**
@@ -300,6 +305,19 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                     under it is the same markup the page will carry, drawn
                     here so the author sees what they pasted before anybody
                     else does. */}
+                {/* THE WORDS, IN THE PANEL AS WELL AS ON THE PAGE
+                    (2026-09-20). Only for a control that asked — `panel` in
+                    registry.ts — and it writes the SAME stored key the canvas
+                    writes, so the two boxes are one value. A textarea because
+                    Elementor's Title is one and a heading can be two lines. */}
+                {c.panel === true && (c.type === "text" || c.type === "textarea") && (
+                  <textarea
+                    style={{ ...INPUT, minHeight: 52, resize: "vertical" }}
+                    data-panel-text={c.key}
+                    rows={2}
+                    value={String(valueOf(c) ?? "")}
+                    onChange={(e) => patch(c, e.target.value)} />
+                )}
                 {c.type === "code" && (
                   <>
                     <textarea

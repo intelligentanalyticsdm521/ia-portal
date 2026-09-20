@@ -197,6 +197,24 @@ export interface WidgetControl {
   row?: unknown;
   /** A `list` whose rows are lines of cells, one per entry of this control. */
   cellsFrom?: string;
+  /**
+   * DRAW THIS ONE IN THE PANEL TOO (2026-09-20).
+   *
+   * Words are typed ON THE PAGE here — D-01, the platform's one editing
+   * mechanism — so a `text` or `textarea` control is declared (the emitter and
+   * the tests read it) and the panel draws nothing for it. That is right for
+   * the words INSIDE a widget, and wrong for the one control the reference
+   * puts at the top of a Heading's Content tab: an author who lands on an
+   * empty page and presses Heading sees a blank line, and the panel that is
+   * supposed to say what a Heading has says nothing about its words.
+   *
+   * A presence test on the CONTROL, exactly like `row` above, and for the same
+   * reason: the widget that wants a box says so, rather than every `textarea`
+   * on the estate growing one because a type was added to a set. It is the
+   * SAME stored key the canvas writes, so there is one place the words live
+   * and two doors to it — which is what the reference does.
+   */
+  panel?: boolean;
 }
 
 /**

@@ -141,13 +141,28 @@ export const HEADING_DEF: FamilyWidgetDef = {
   category: "Basic",
   builders: ["website", "landing", "newsletter", "proposal", "mybrand"],
   tier: "free",
-  defaults: { text: "", level: 2, header_size: "h2", size: "default", link: "" },
+  /* IT ARRIVES WITH WORDS ON IT (2026-09-20). This shipped `text: ""`, so
+     pressing Heading on an empty page put an EMPTY `<h2>` on the sheet: nothing
+     to see, nothing to click, and the only sign anything had happened was a
+     hover outline. The reference's Heading arrives reading "Add Your Heading
+     Text Here" and so does ours, in Elementor's own words.
+
+     SAID OUT LOUD, because it bends a rule this family wrote: f1 and f6 start
+     every widget's WORDS empty so that nothing false can print on a document a
+     customer signs (`priceTable.ts`, "This is text element on a signed
+     agreement"). A heading is the one place that rule costs more than it saves
+     — it is the first thing an author types into, an empty one is invisible,
+     and a heading still reading the starting words is the most obvious thing
+     on the page. The other widgets keep the rule. */
+  defaults: { text: "Add Your Heading Text Here", level: 2, header_size: "h2", size: "default", link: "" },
   controls: [
-    /* Content — Elementor's section is called "Heading". `title` is a textarea
-       in Elementor and is typed ON THE PAGE here, which is the platform's one
-       editing mechanism (D-01); it is declared so the section can be read as a
-       whole and so the emitter and the tests can see it. */
-    { key: "text", label: "Title", type: "textarea", tab: "content", section: "Heading" },
+    /* Content — Elementor's section is called "Heading", and Title is the FIRST
+       control in it. `panel: true` (2026-09-20) draws it here as well as on the
+       page: it is the SAME stored key `data-edit="text"` writes, so there is
+       one place the words live and two doors to it, which is what the reference
+       does. Typing on the page stays the platform's own mechanism (D-01) and
+       every other `textarea` on the estate is unchanged — the control asks. */
+    { key: "text", label: "Title", type: "textarea", tab: "content", section: "Heading", panel: true },
     { key: "link", label: "Link", type: "link", tab: "content", section: "Heading" },
     { key: "size", label: "Size", type: "select", tab: "content", section: "Heading", options: HEADING_SIZES },
     { key: "header_size", label: "HTML Tag", type: "select", tab: "content", section: "Heading", options: HTML_TAGS },

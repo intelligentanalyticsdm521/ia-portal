@@ -395,3 +395,63 @@ describe("R2-11 — the Icon List reads ONE list, so it can have a repeater", ()
       "the typed path is not the one list");
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════
+   THE HEADING — it arrives with words on it, and its Title is in the panel.
+   ════════════════════════════════════════════════════════════════════════ */
+describe("the Heading's Title, the first control on its Content tab", () => {
+  const load = async () => {
+    const [reg, panel, model, render] = await Promise.all([
+      import("../src/builder/registry.ts"),
+      import("../src/builder/definitionControls.tsx"),
+      import("../src/builder/model.ts"),
+      import("../src/builder/render.ts"),
+    ]);
+    return { ...reg, ...panel, ...model, ...render };
+  };
+
+  test("THE DEFECT: a new Heading arrives with Elementor's own starting words", async () => {
+    const m = await load();
+    assert.equal(m.WIDGETS_BY_KIND.heading.defaults.text, "Add Your Heading Text Here",
+      "a new Heading lands as an empty <h2>: nothing to see and nothing to click");
+  });
+
+  test("Title is the FIRST control on the Content tab, and the panel draws it", async () => {
+    const m = await load();
+    const content = m.WIDGETS_BY_KIND.heading.controls.filter((c) => (c.tab ?? "content") === "content");
+    assert.equal(content[0].key, "text");
+    assert.equal(content[0].label, "Title");
+    assert.ok(m.isDrawnInPanel(content[0]), "the Content tab still has no Title box");
+  });
+
+  test("it asks — every other textarea on the estate is unchanged", async () => {
+    const m = await load();
+    const asked = [];
+    for (const def of Object.values(m.WIDGETS_BY_KIND)) {
+      for (const c of def.controls || []) {
+        if ((c.type === "text" || c.type === "textarea") && m.isDrawnInPanel(c)) asked.push(`${def.kind}.${c.key}`);
+      }
+    }
+    assert.deepEqual(asked, ["heading.text"],
+      "a type was added to a set and every textarea grew a box; the control has to ask");
+    // MUTATION, executed: take the flag off and the box goes.
+    const bare = { ...m.WIDGETS_BY_KIND.heading.controls[0], panel: undefined };
+    assert.equal(m.isDrawnInPanel(bare), false);
+  });
+
+  test("ONE STORED KEY: the box and the canvas write the same words", async () => {
+    const m = await load();
+    m.resetIds();
+    const w = m.makeWidget("heading", { ...m.WIDGETS_BY_KIND.heading.defaults });
+    const sec = m.makeSection({ label: "S" });
+    sec.columns[0].widgets = [w];
+    let doc = m.addSection(m.emptyDocument(), sec);
+    assert.ok(m.renderSection(doc.sections[0], m.makeContext(doc, { mode: "view" }))
+      .includes("Add Your Heading Text Here"), "the starting words are not on the page");
+    // The panel writes `text`; so does the canvas (`data-edit="text"`).
+    doc = m.editWidgetText(doc, w.id, "text", "Seasonal snow & ice");
+    const html = m.renderSection(doc.sections[0], m.makeContext(doc, { mode: "view" }));
+    assert.ok(html.includes("Seasonal snow &amp; ice"));
+    assert.ok(html.includes('data-edit="text"'), "the canvas writes a different key from the panel");
+  });
+});
