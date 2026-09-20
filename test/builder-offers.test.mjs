@@ -35,14 +35,59 @@ import { BUILDER_OF } from "../src/builder/widgets/families/types.ts";
 import { BUILDER_NAMES, OFFERS, SETTINGS_KEYS, norm, offeredNames } from "./helpers/familyContract.mjs";
 
 /**
- * THE LANDER'S ONE LINE.
+ * THE LANDER'S ONE LINE — FLIPPED TO `true` ON 2026-09-19.
  *
- * `false` today: the panel is still missing most of the offer, because the ten
- * families have not been built yet, and a red suite on day one tells nobody
- * anything. The agent who lands the last family flips this to `true` and the
- * missing list becomes a failure.
+ * It was `false` while the ten families were being built, because a red suite
+ * on day one tells nobody anything. The families have landed, so a widget the
+ * offer file promises and the panel does not draw is now a FAILURE, named
+ * builder by builder, and it stays red until somebody either builds it or
+ * takes it out of the offer file.
+ *
+ * WHAT IS RED THE HOUR THIS FLIPPED, and why each one is not a line of code
+ * the lander could have written (the full reasoning is in
+ * `overnight-report/D168_HANDOFF_2026-09-19.md` under the family that found
+ * it, and in the lander's own section):
+ *
+ *   website   mega-menu, breadcrumbs   no panel exists to copy. The free
+ *                                      scrape's entry is Elementor's own
+ *                                      advert widget with zero controls, and
+ *                                      the Pro scrape does not carry either.
+ *                                      One fresh scrape settles both.
+ *             nested-carousel,         v4 NESTED elements: their content is
+ *             off-canvas               child containers, and a FamilyWidgetDef
+ *                                      is flat. A tile that can never hold
+ *                                      anything does nothing.
+ *             loop-carousel            every slide is a saved loop template
+ *                                      over a post query. Needs the template
+ *                                      picker, which lives in the shell.
+ *             countdown                the offer calls it a Pro widget on a
+ *                                      PAGE; our only renderer is the
+ *                                      mailbox's, and the offer file says the
+ *                                      newsletter must not have it. Offering
+ *                                      it here today draws "needs a newer
+ *                                      version" on a live page.
+ *   landing   login                    a hosted SPARK page has no accounts and
+ *                                      no WordPress behind it: three fields
+ *                                      and a button that cannot do anything.
+ *   newsletter call-to-action          `emailRender.ts` is a hand-written
+ *                                      table renderer with a pinned kind list
+ *                                      and a default branch that deliberately
+ *                                      does not fall through to the engine.
+ *   all five  custom_field             it reads a record. Only the proposal
+ *                                      builder has a customer picked, so a
+ *                                      placed one on the other four draws an
+ *                                      empty run nobody can fill (ask R-D4).
+ *             product_cards,           IA twins of a proposal's catalogue.
+ *             product_line_items       There is no catalogue on a website
+ *                                      page, a hosted landing page or the My
+ *                                      Brand canvas.
+ *   mybrand   testimonial, rating,     `adapters/mybrand/insert.ts` places one
+ *             social-icons, line,      LAYER per kind from a hand-written
+ *             frame, photo_grid,       switch on an absolute-pixel canvas. A
+ *             product_card, ia_review  quote with a photo and two lines under
+ *                                      it is a FLOW with nothing to place.
  */
-const STRICT_MISSING = false;
+const STRICT_MISSING = true;
 
 /** The adapter a builder's panel is drawn for. One table, in families/types. */
 const ADAPTER_OF = Object.fromEntries(
