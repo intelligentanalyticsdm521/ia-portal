@@ -39,6 +39,12 @@ import type { FamilyWidgetDef } from "../types";
 const str = (v: unknown): string => (v == null ? "" : String(v));
 
 /** Elementor's own Input Size list, `xs … xl`, with its own words for them. */
+/* WAVE 2. Elementor's own button padding per Size. The Size select was on the
+   panel and drew nothing: the button took one padding whatever it said. */
+const BUTTON_PAD: Record<string, string> = {
+  xs: "6px 12px", sm: "9px 16px", md: "11px 20px", lg: "13px 26px", xl: "16px 34px",
+};
+
 const SIZES = [
   { value: "xs", label: "Extra Small" },
   { value: "sm", label: "Small" },
@@ -134,7 +140,8 @@ export function renderForm(w: Widget, ctx: RenderContext): string {
     <span class="bx-form-actions" style="display:block;width:${esc(buttonWidth)}%">
       ${editRun("button_text", p.button_text ?? "Send", "bx-button", "Send", ctx, "span")}
     </span>
-    <style>.bx-form .bx-button{background:${esc(buttonBg)};color:${esc(buttonText)};display:inline-block;width:100%;text-align:center}</style>
+    <style>.bx-form .bx-button{background:${esc(buttonBg)};color:${esc(buttonText)};padding:${
+    esc(BUTTON_PAD[str(p.button_size) || "sm"] ?? BUTTON_PAD.sm)};display:inline-block;width:100%;text-align:center}</style>
   </form>`;
 }
 
@@ -149,7 +156,7 @@ export const FORM_DEF: FamilyWidgetDef = {
   icon: "ClipboardList",
   picture: pictureFrom(box(8, 5, 48, 9) + box(8, 17, 48, 9)
     + `<rect x="8" y="29" width="20" height="7" rx="3" fill="#94A3B8" stroke="none"/>`),
-  category: "General",
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {
