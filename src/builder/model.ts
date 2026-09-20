@@ -532,6 +532,80 @@ export function findSection(doc: BuilderDocument, sectionId: string): Section | 
   return doc.sections.find((s) => s.id === sectionId) || null;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE CARRIER PAIR — the second layer, collapsed on the SCREEN (D-172, r2)
+   ══════════════════════════════════════════════════════════════════════════
+
+   The reference editor has ONE kind of box, a Container, and a container holds
+   containers. Ours stores Section → column → nodes, and three audits in a row
+   counted the same four extras: two rows in Structure for one visible box, two
+   selectable levels both titled "Edit Container", a `.bx-col` drop host nobody
+   can see, and a wrapper that is a fourth level of nesting.
+
+   THE STORED MODEL DOES NOT CHANGE. Saved proposals, the PDF, the email and
+   the WordPress publisher all read Section → column → nodes, and a migration
+   tonight would rewrite documents four other programs are reading. What
+   changes is what is CREATED from here on, and how the screen PRESENTS a pair
+   that has this shape:
+
+       Section ── its ONE column ── ONE node, and that node is a Container
+
+   That pair is called a CARRIER PAIR, and everywhere the author can see it —
+   the outline it is drawn with, its handle, its row in Structure, what a click
+   selects, what right-click offers, what Delete removes — it is ONE thing: the
+   container. The section is the carrier, and a carrier is not something a
+   client reads.
+
+   A section that is NOT a carrier pair (several widgets straight in a column,
+   several columns, an empty section) is drawn exactly as it is today and keeps
+   its own row. Old documents are left alone: this is a question asked of the
+   shape, never a flag written into one.  */
+
+/**
+ * The container a section is merely carrying, or null when it carries none.
+ *
+ * ONE question, asked of the shape, so "is this a pair?" and "which container
+ * is it?" can never disagree — every caller that needs the id takes it from
+ * here rather than reaching for `columns[0].widgets[0]` itself.
+ */
+export function carrierContainer(section: Section): Container | null {
+  if (section.columns.length !== 1) return null;
+  const only = section.columns[0]?.widgets;
+  if (!only || only.length !== 1) return null;
+  const node = only[0];
+  return isContainer(node) ? node : null;
+}
+
+/** Is this section nothing but a carrier for one container? */
+export function isCarrierPair(section: Section): boolean {
+  return carrierContainer(section) !== null;
+}
+
+/**
+ * The path of a carrier's container — the address a click on either level
+ * resolves to. Null when the section is not a pair.
+ */
+export function carrierPath(section: Section): WidgetPath | null {
+  const box = carrierContainer(section);
+  return box ? { sectionId: section.id, columnIndex: 0, widgetIndex: 0, id: box.id } : null;
+}
+
+/**
+ * WHAT A SELECTION REALLY MEANS, once the pair is one thing.
+ *
+ * Selecting a carrier SECTION means selecting its container: the panel that
+ * opens is the container's, the ring drawn is the container's, and the menu
+ * offered is the container's. Applied in ONE place — the shell's `select` —
+ * so there is no second idea of "what is selected" for the panel and the
+ * canvas to disagree about.
+ */
+export function resolveSelection(doc: BuilderDocument, sel: Selection): Selection {
+  if (!sel || sel.kind !== "section") return sel;
+  const section = findSection(doc, sel.sectionId);
+  const path = section ? carrierPath(section) : null;
+  return path ? { kind: "widget", ...path } : sel;
+}
+
 /**
  * The node a legacy path points at, at ANY depth.
  *

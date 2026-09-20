@@ -454,12 +454,59 @@ describe("the outline shows the nesting", () => {
     const card = makeWidget("card", { heading: "Standard" });
     const row = makeContainer({ direction: "row" }, [card]);
     const box = makeContainer(undefined, [makeWidget("heading", { text: "Choose" }), row]);
-    const { doc } = docWith([box]);
+    // A SECOND THING IN THE COLUMN, so this section is NOT a carrier pair and
+    // the depth ladder below is the plain one. The carrier case has its own
+    // test underneath — collapsing a pair and counting depth are two rules and
+    // one fixture cannot ask both.
+    const { doc } = docWith([box, makeWidget("heading", { text: "After" })]);
 
     const rows = outline(doc).filter((r) => r.kind === "widget");
-    assert.deepEqual(rows.map((r) => r.depth), [0, 1, 1, 2]);
+    assert.deepEqual(rows.map((r) => r.depth), [0, 1, 1, 2, 0]);
     assert.equal(rows[0].container, true, "the box does not read as a box");
     assert.equal(rows[3].container, false, "the card reads as a box");
+  });
+
+  test("a carrier pair is ONE row, and what is in it comes up a level (D-172 r2)", () => {
+    /* THE SECOND LAYER, OFF THE SCREEN.
+       The reference's 50-50 structure is FIVE rows for a parent, two children
+       and two widgets. Ours was six: the Section got one and the container
+       filling it got another, both reading "Container", for one box on the
+       page. A section whose single column holds exactly one container is a
+       CARRIER PAIR — one box, so one row.
+
+       ABSENT: the carrier container's own row.
+       PRESENT: the section's row standing for it (it carries `containerId`),
+       and everything that was inside the container one level shallower. */
+    const heading = makeWidget("heading", { text: "Choose" });
+    const button = makeWidget("button", { text: "Buy" });
+    const left = makeContainer(undefined, [heading]);
+    const right = makeContainer(undefined, [button]);
+    const carrier = makeContainer({ direction: "row" }, [left, right]);
+    const { doc } = docWith([carrier]);
+
+    const rows = outline(doc);
+    assert.equal(rows.length, 5, "one page, five rows — as the reference draws it");
+    assert.ok(!rows.some((r) => r.id === carrier.id), "the carrier's own row is still drawn");
+    assert.equal(rows[0].kind, "section");
+    assert.equal(rows[0].containerId, carrier.id, "the section row does not stand for its container");
+    // The two cells are now top-level rows, and their widgets sit one in.
+    assert.deepEqual(
+      rows.slice(1).map((r) => [r.id, r.depth]),
+      [[left.id, 0], [heading.id, 1], [right.id, 0], [button.id, 1]],
+    );
+    // A drop on the carrier's row goes INSIDE the container, never beside it
+    // in the column nobody can see.
+    assert.equal(rows[0].hostId, carrier.id);
+  });
+
+  test("a section that is NOT a carrier keeps its own rows (old documents)", () => {
+    const a = makeWidget("heading", { text: "One" });
+    const b = makeWidget("heading", { text: "Two" });
+    const { doc, column } = docWith([a, b]);
+    const rows = outline(doc);
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].containerId, undefined, "a plain section pretends to carry a container");
+    assert.equal(rows[0].hostId, column.id);
   });
 
   test("a row is the element's NAME and nothing else (D-172)", () => {

@@ -58,6 +58,7 @@ import {
   isContainer, directionOf, hostDepth, subtreeHeight, MAX_DEPTH, nodeIdAt,
   editWidgetText, widgetById, pathOfNode,
   setWidgetLocked, cloneSection,
+  carrierContainer, carrierPath, findSection, isCarrierPair, resolveSelection,
   type BuilderDocument, type Section, type Selection, type Widget, type WidgetPath,
 } from "./model";
 import { layerFor, withLayer, type ElementStyle } from "./style";
@@ -368,11 +369,25 @@ export function BuilderShell(p: BuilderShellProps) {
    */
   const [panel, setPanel] = useState(true);
   const doc = p.doc;
+  /* The document as it is RIGHT NOW, for the callbacks that must not change
+     identity when it changes — `select` is one, and a `select` that was a new
+     function on every keystroke would restart every effect that holds one. */
+  const docRef = useRef(doc);
+  docRef.current = doc;
   const copy = useMemo(() => resolveCopy(p.copy), [p.copy]);
 
   const select = useCallback((s: Selection) => {
-    setSelection(s);
-    p.onSelectionChange?.(s);
+    /* ONE SELECTABLE BOX PER BOX ON THE PAGE (D-172, round 2).
+       A carrier section and the container it carries were two selectable
+       levels for one visible box, and the panel titled BOTH of them "Edit
+       Container" — so clicking the same box twice in slightly different
+       places gave two different panels with the same heading. `select` is the
+       one door into the selection, so the collapse is applied here and
+       nowhere else: everything downstream (the panel, the ring, the menu, the
+       Structure row) reads `selection` and therefore agrees by construction. */
+    const resolved = resolveSelection(docRef.current, s);
+    setSelection(resolved);
+    p.onSelectionChange?.(resolved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.onSelectionChange]);
 
@@ -663,8 +678,19 @@ export function BuilderShell(p: BuilderShellProps) {
     setDrag(null);
     if (!payload) return;
     if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    /* THE SAME ONE SHAPE (D-172, round 2) — Section → its column → ONE
+       container, with the dropped thing INSIDE the container. This used to
+       make a bare section and put the widget straight in the column, so a
+       widget dragged onto "Drag widget here" produced a different structure
+       from the identical widget dragged into a container made by the "+"
+       beside it. One shape from the add area, both ways in. */
     const sec = makeSection({ label: "Container" });
+    const box = makeContainer();
+    sec.columns[0].widgets = [box];
     const next = addSection(doc, sec, at);
+    /* Asked for, never built by hand: `firstSpotIn` is carrier-aware, so "the
+       first place in this section" is INSIDE the container and there is one
+       module that knows it. */
     const spot = firstSpotIn(next, sec.id);
     if (!spot) return;
     if (payload.kind === "move") {
@@ -672,7 +698,7 @@ export function BuilderShell(p: BuilderShellProps) {
       if (!id) return;
       const after = moveNode(next, id, spot.hostId, 0);
       if (after === next) return;
-      apply(after, null, "Moved it into a new section");
+      apply(after, null, "Moved it into a new container");
       select({ kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id });
       return;
     }
@@ -720,23 +746,35 @@ export function BuilderShell(p: BuilderShellProps) {
    */
   const addStructure = useCallback((at: number, layout: SectionLayout, preset: StructurePreset) => {
     if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    /* ONE SHAPE FROM THE ADD AREA (D-172, round 2).
+       EVERY preset now makes a CARRIER PAIR — Section → its one column → ONE
+       container — including the one-column preset, which used to make a
+       section with an empty column and nothing else. That was the whole
+       inconsistency: a two-column structure gave the author a Container to
+       select and a one-column structure gave them a Section, and the two were
+       titled the same thing in the panel. The Section is a plain carrier: no
+       padding, no background, no label of its own. See `isCarrierPair` in
+       model.ts for what the screen does with the pair. */
     const sec = makeSection({ label: "Container" });
-    if (preset.cells.length > 1) {
-      const cells = preset.cells.map(() => makeContainer());
-      const row = makeContainer(
-        withLayer(
+    const cells = preset.cells.length > 1 ? preset.cells.map(() => makeContainer()) : [];
+    const box = makeContainer(
+      preset.cells.length > 1
+        ? withLayer(
           layout === "grid"
             ? { direction: "grid", columns: preset.cells.length, gap: 16 }
             : { direction: "row", gap: 16 },
           "desktop",
           { columnWidths: preset.cells.map((n) => n / 100) },
-        ),
-        cells,
-      );
-      sec.columns[0].widgets = [row];
-    }
-    apply(addSection(doc, sec, at), null, `Added a section — ${preset.label.toLowerCase()}`);
-    select({ kind: "section", sectionId: sec.id });
+        )
+        : (layout === "grid" ? { direction: "grid", columns: 1, gap: 16 } : undefined),
+      cells,
+    );
+    sec.columns[0].widgets = [box];
+    apply(addSection(doc, sec, at), null, `Added a container — ${preset.label.toLowerCase()}`);
+    /* The pair is ONE thing, so what gets selected is the CONTAINER. `select`
+       resolves a carrier section to it anyway; naming it here keeps the two
+       from having to agree by accident. */
+    select({ kind: "widget", sectionId: sec.id, columnIndex: 0, widgetIndex: 0, id: box.id });
   }, [apply, doc, p, select]);
 
   const placeSection = useCallback((premade: PremadeSection, at: number) => {
@@ -822,9 +860,23 @@ export function BuilderShell(p: BuilderShellProps) {
       refuse("This part has to stay on the page: it carries your unsubscribe link and postal address. You can change the wording.");
       return;
     }
+    /* DELETING A CARRIER'S CONTAINER DELETES THE PAIR (D-172, round 2).
+       The pair is one box on the screen, so "Delete Container" has to remove
+       one box — not leave the carrier behind as an empty section with no
+       handle, no outline and a row in Structure that the author cannot
+       explain. `deleteSection` carries the law's refusal, so this is the same
+       one answer to "may this go?". */
+    const sec = findSection(doc, path.sectionId);
+    if (sec && carrierContainer(sec)?.id === nodeIdAt(doc, path)) {
+      deleteSectionRef.current?.(sec.id);
+      return;
+    }
     apply(removeWidget(doc, path), null, "Deleted a block");
     select({ kind: "section", sectionId: path.sectionId });
   }, [apply, doc, refuse, select]);
+
+  /** So `deleteWidget` can hand a carrier pair to the section's own delete. */
+  const deleteSectionRef = useRef<((id: string) => void) | null>(null);
 
   const deleteSection = useCallback((id: string) => {
     const s = doc.sections.find((x) => x.id === id);
@@ -835,6 +887,7 @@ export function BuilderShell(p: BuilderShellProps) {
     apply(removeSection(doc, id), null, `Deleted ${named(s?.label)}`);
     select(null);
   }, [apply, doc, refuse, select]);
+  deleteSectionRef.current = deleteSection;
 
   /* ═══════════════════════════════════════════════════════════════════
      M-8 / M-21 / M-23 — ONE set of verbs, three ways in
