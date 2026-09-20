@@ -69,6 +69,11 @@ import type { WidgetLock } from "./tier";
 import type { RenderContext } from "./render";
 import type { PremadeSection } from "./templates";
 import { FLASH_MS, insertSpotFor, firstSpotIn, type InsertSpot } from "./insertPosition";
+/* ONE ANSWER TO "WHAT IS A BLANK ROW" (G-1, 2026-09-19). `blankRepeat` lived
+   here and only the INSERT could reach it, so the panel's new repeater control
+   would have needed a second copy — and a second copy is how a table whose rows
+   are lines of cells gains a row that is a bare string. Replace means delete. */
+import { blankRow } from "./repeater";
 // `patchNode` is the ONE writer of a widget's props, at any depth, and it
 // carries the model's own rules (at most one Recommended in a row) with it.
 import { patchNode, type ContainerPreset } from "./treeOps";
@@ -104,18 +109,12 @@ export function repeatKeyFor(kind: string): string | null {
   }
 }
 
-/** One empty repeat, shaped for the widget it belongs to. */
-function blankRepeat(kind: string): unknown {
-  switch (kind) {
-    case "key_value_table": case "property_plan": return { label: "", value: "" };
-    case "pricing_table": return { name: "", basis: "", rate: "" };
-    case "clauses": return { title: "", body: "" };
-    case "callout": return { title: "", tone: "accent", body: "" };
-    case "article_card": return { title: "", excerpt: "", image: "", alt: "", url: "", linkLabel: "Read it" };
-    case "product_card": return { name: "", blurb: "", price: "", cadence: "", image: "", alt: "", url: "", ctaLabel: "" };
-    default: return "";
-  }
-}
+/* `blankRepeat` LIVED HERE and is DELETED (G-1, 2026-09-19).
+   It was a switch on the widget's KIND, reachable only from the insert, and it
+   held the row shapes four of whose widgets D-165 had already deleted. The shape
+   of one row is the CONTROL's own fact, so it is declared on the control (`row`
+   / `cellsFrom` in registry.ts) and read by `repeater.ts blankRow` — which the
+   insert below and the panel's repeater both call. One answer, one place. */
 
 export interface BuilderShellProps extends InspectorSlots {
   open: boolean;
@@ -536,7 +535,10 @@ export function BuilderShell(p: BuilderShellProps) {
     if (repeatKey && def.count) {
       const n = def.count.default;
       const existing = Array.isArray(props[repeatKey]) ? (props[repeatKey] as unknown[]) : [];
-      props[repeatKey] = Array.from({ length: n }, (_, i) => existing[i] ?? blankRepeat(def.kind));
+      // The CONTROL says what a row is; a key with no control of its own is a
+      // list of plain words, which is what `blankRow` answers for one.
+      const control = (def.controls || []).find((c) => c.key === repeatKey) ?? {};
+      props[repeatKey] = Array.from({ length: n }, (_, i) => existing[i] ?? blankRow(control, props, repeatKey));
     }
     return makeWidget(def.kind, props);
   }, []);

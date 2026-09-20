@@ -187,6 +187,16 @@ export interface WidgetControl {
   options?: string[] | WidgetOption[];
   /** Which named group of the panel it is drawn in. See ControlSection. */
   section?: ControlSection;
+  /**
+   * ONE BLANK ROW of a `list` control — Elementor's `repeater_fields`, said as
+   * a value. Declaring it is what turns the control into a REPEATER in the
+   * panel, with Elementor's add, duplicate and delete (`repeater.ts`). A `list`
+   * that declares neither this nor `cellsFrom` is typed on the page, exactly as
+   * it is today.
+   */
+  row?: unknown;
+  /** A `list` whose rows are lines of cells, one per entry of this control. */
+  cellsFrom?: string;
 }
 
 /**
@@ -765,10 +775,19 @@ const LEGACY_WIDGETS: WidgetDef[] = [
        cannot add a second of. */
     category: "Intelligent Analytics",
     adapters: SMALL_TABLES,
-    defaults: { columns: [], rows: [] },
+    /* A TABLE ARRIVES AS A TABLE (G-1, 2026-09-19). It used to arrive with
+       three header cells and an empty body, which is not a table and could not
+       become one. `count` fills the three headings; these three blank lines are
+       the body, and the Rows repeater adds, copies, moves and deletes them. */
+    defaults: { columns: [], rows: [["", "", ""], ["", "", ""], ["", "", ""]] },
+    /* THE TWO REPEATERS THAT MAKE A TABLE A TABLE (G-1, 2026-09-19).
+       `row: ""` says a column heading is one string; `cellsFrom: "columns"`
+       says a row is a line of cells, one per heading. Without them the Content
+       tab was empty and the body could never gain a line — the single biggest
+       loss in the round-1 replication score, hit by all six targets. */
     controls: [
-      { key: "columns", label: "Columns", type: "list" },
-      { key: "rows", label: "Rows", type: "list" },
+      { key: "columns", label: "Columns", type: "list", row: "" },
+      { key: "rows", label: "Rows", type: "list", cellsFrom: "columns" },
     ],
     count: { min: 2, max: 8, label: "How many columns?", default: 3 },
   },
@@ -848,7 +867,7 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     defaults: { heading: "", items: [] },
     controls: [
       { key: "heading", label: "Heading", type: "text" },
-      { key: "items", label: "Clauses", type: "list", help: "Pick from your clause library, or write one and save it back." },
+      { key: "items", label: "Clauses", type: "list", row: { title: "", body: "" }, help: "Pick from your clause library, or write one and save it back." },
     ],
     count: { min: 1, max: 20, label: "How many clauses?", default: 4 },
   },
@@ -1177,7 +1196,8 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     adapters: SENDS,
     defaults: { items: [] },
     controls: [
-      { key: "items", label: "Articles", type: "list", help: "Type them here, or bring them in from your website with “From the website”." },
+      { key: "items", label: "Articles", type: "list", help: "Type them here, or bring them in from your website with “From the website”.",
+        row: { title: "", excerpt: "", image: "", alt: "", url: "", linkLabel: "Read it" } },
       { key: "layout", label: "Shape", type: "select", options: ["Picture beside the words", "Picture above the words"] },
     ],
     count: { min: 1, max: 8, label: "How many articles?", default: 3 },
@@ -1194,7 +1214,8 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     adapters: SENDS,
     defaults: { items: [], layout: "cards" },
     controls: [
-      { key: "items", label: "What is on offer", type: "list", help: "Pick from Products & Services and the price and cadence come with it." },
+      { key: "items", label: "What is on offer", type: "list", help: "Pick from Products & Services and the price and cadence come with it.",
+        row: { name: "", blurb: "", price: "", cadence: "", image: "", alt: "", url: "", ctaLabel: "" } },
       { key: "layout", label: "Shape", type: "select", options: ["Cards side by side", "One under the other"] },
     ],
     count: { min: 1, max: 4, label: "How many products?", default: 2 },
