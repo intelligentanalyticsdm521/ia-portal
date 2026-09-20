@@ -132,13 +132,20 @@ export function IadmModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.5)", ...(z === undefined ? null : { zIndex: z }) }}
+      /* A FULL-BLEED SURFACE HAS NO BACKDROP (D-172, round 2) — there is
+         nothing behind it to dim, and a scrim over a window-filling editor is
+         a grey wash over the author's own colours. */
+      style={{
+        ...(dims.fullBleed ? null : { background: "rgba(0,0,0,0.5)" }),
+        ...(z === undefined ? null : { zIndex: z }),
+      }}
       onMouseDown={onBackdropDown}
       onMouseUp={onBackdropUp}
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        data-iadm-modal-full={dims.fullBleed ? "1" : undefined}
+        className={`flex flex-col overflow-hidden bg-white${dims.fullBleed ? "" : " rounded-xl shadow-2xl"}`}
         style={{
           width,
           // "auto" height (confirm only) lets the modal size to its content
