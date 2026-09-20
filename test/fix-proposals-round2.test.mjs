@@ -315,3 +315,83 @@ describe("R2-4 — the rows follow the header", () => {
       "the panel stopped asking the model");
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════
+   R2-11 — AN ICON LIST TAKES A FIFTH POINT.
+   ════════════════════════════════════════════════════════════════════════ */
+describe("R2-11 — the Icon List reads ONE list, so it can have a repeater", () => {
+  const load = async () => {
+    const [reg, rep, fam, up, model] = await Promise.all([
+      import("../src/builder/registry.ts"),
+      import("../src/builder/repeater.ts"),
+      import("../src/builder/widgets/families/f3-buttons-icons-panels/iconList.ts"),
+      import("../src/builder/upgrade.ts"),
+      import("../src/builder/model.ts"),
+    ]);
+    return { ...reg, ...rep, fam, ...up, ...model };
+  };
+
+  test("THE DEFECT: the Items control is a repeater the panel draws", async () => {
+    const m = await load();
+    const def = m.WIDGETS_BY_KIND.list;
+    assert.equal(def.label, "Icon List");
+    const items = def.controls.find((c) => c.key === "items");
+    assert.ok(items, "the Icon List has no Items control at all");
+    assert.ok(m.isRepeater(items), "the Icon List still refuses a fifth point");
+    assert.equal(m.blankRow(items, { items: ["a", "b"] }, "items"), "",
+      "a new point is not one blank string");
+    assert.ok(!def.controls.some((c) => c.key === "icon_list"),
+      "both spellings are on the panel again — that is the trap, drawn twice");
+  });
+
+  test("ONE READER: the widget reads `items` and nothing else", async () => {
+    const { fam } = await load();
+    assert.deepEqual(fam.rows({ items: ["One", "Two"] }).map((r) => r.text), ["One", "Two"]);
+    assert.deepEqual(fam.rows({ icon_list: [{ text: "Repeater" }], items: ["Plain"] }).map((r) => r.text),
+      ["Plain"], "the reader switched lists again, which is how Add Item empties the page");
+  });
+
+  test("a stored `icon_list` still opens, converted on the way in", async () => {
+    const m = await load();
+    const wire = {
+      v: 2,
+      settings: { style: "plain" },
+      sections: [{
+        id: "s1", label: "", layout: 1, columns: [{
+          id: "c1", widgets: [{ id: "w1", kind: "list", props: { icon_list: [{ text: "Salting" }, { text: "Ploughing" }] } }],
+        }],
+      }],
+    };
+    const doc = m.deserialise(JSON.stringify(wire));
+    const w = doc.sections[0].columns[0].widgets[0];
+    assert.deepEqual(w.props.items, ["Salting", "Ploughing"], "a stored Icon List lost its points");
+    assert.ok(!("icon_list" in w.props), "both spellings survived, so the trap survived");
+  });
+
+  test("a widget that never held the other spelling comes back as the SAME object", async () => {
+    const m = await load();
+    const w = { id: "w1", kind: "list", props: { items: ["One"] } };
+    const doc = {
+      v: 2, settings: { style: "plain" },
+      sections: [{ id: "s1", label: "", layout: 1, columns: [{ id: "c1", widgets: [w] }] }],
+    };
+    const out = m.upgradeDocument(doc);
+    assert.equal(out, doc, "the upgrade rebuilt a document it had nothing to do to");
+  });
+
+  test("the points reach the page, the mailbox and the paper from the one list", async () => {
+    const m = await load();
+    const [{ renderSection, makeContext }] = await Promise.all([import("../src/builder/render.ts")]);
+    m.resetIds();
+    const w = m.makeWidget("list", { items: ["Salting included", "24-hour response", "", "", "A fifth point"] });
+    const sec = m.makeSection({ label: "S" });
+    sec.columns[0].widgets = [w];
+    const doc = m.addSection(m.emptyDocument(), sec);
+    const html = renderSection(sec, makeContext(doc, { mode: "view" }));
+    for (const point of ["Salting included", "24-hour response", "A fifth point"]) {
+      assert.ok(html.includes(point), `the page lost "${point}"`);
+    }
+    assert.ok(html.includes('data-edit="items.0"') || html.includes("items.0"),
+      "the typed path is not the one list");
+  });
+});

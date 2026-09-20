@@ -472,6 +472,36 @@ function asWidget(w: Widget, kind: string, props: Record<string, unknown>): Widg
   return { ...w, kind, props };
 }
 
+/**
+ * `icon_list: [{ text: "Mowing" }]` → `items: ["Mowing"]`.
+ *
+ * THE SAME OBJECT BACK when there is nothing to do, which is the promise the
+ * whole module rests on: a document that never held the other spelling must
+ * serialise byte for byte as it arrived.
+ *
+ * A row's `selected_icon` and `link` are NOT carried across, and that is a
+ * decision rather than an oversight: nothing on this platform can set either —
+ * there is no icon picker inside a panel row and no link field — so no stored
+ * document has them, and inventing a place to keep a value nobody can write is
+ * the second spelling all over again. If an Elementor import ever brings them,
+ * that import is the thing that has to decide where they live.
+ */
+function fromIconListRepeater(w: Widget): Widget {
+  const p = (w.props || {}) as Record<string, unknown>;
+  const rows = Array.isArray(p.icon_list) ? p.icon_list : null;
+  if (!rows) return w;
+  const existing = Array.isArray(p.items) ? (p.items as unknown[]) : [];
+  const fromRows = rows.map((r) => (r && typeof r === "object"
+    ? str((r as Record<string, unknown>).text) : str(r)));
+  const next: Record<string, unknown> = { ...p };
+  delete next.icon_list;
+  // The repeater wins when it has rows: it is the newer of the two, and a
+  // document holding both was written by an editor that had already moved on.
+  if (fromRows.length) next.items = fromRows;
+  else if (!existing.length) next.items = existing;
+  return { ...w, props: next };
+}
+
 /** A label and its value as one run of text. */
 function labelledText(w: Widget, label: string, value: string): Widget {
   const l = str(label).trim();
@@ -686,6 +716,17 @@ function upgradeNode(n: Node): Node {
       return asWidget(n, "social_links", { ...p, social_icon_list: rows });
     }
     case "map": return asWidget(n, "google_maps", { address: str((n.props as any)?.address), zoom: 10, height: 300 });
+    /* R2-11 — THE ICON LIST HAS ONE LIST.
+       It read two: Elementor's `icon_list` repeater first, and the plain
+       `items` array behind it. That is why its control could not be a repeater
+       — pressing Add Item on the first spelling emptied the list the author
+       could see (`families/f3-…/iconList.ts rows()` has the whole reasoning,
+       including why `items` is the key that survives). Anything stored in the
+       other spelling is converted here, on the one door every reader comes
+       through, so a document written either way opens with its points intact.
+       Idempotent: a widget already holding only `items` has no `icon_list` to
+       match, and comes back as the same object. */
+    case "list": return fromIconListRepeater(n);
     /* `columns` was never a thing on the page — it SET a section's column count
        and the toolbar owned it from then on, and §11.13.1 takes it off the
        panel. One that reached a document is a box. */

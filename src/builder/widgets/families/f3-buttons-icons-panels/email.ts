@@ -270,7 +270,6 @@ export function emailIconList(w: Widget, c: Ctx): string {
     : all.filter((r) => r.text.trim());
   if (!shown.length) return "";
 
-  const fromRepeater = Array.isArray(p.icon_list) && p.icon_list.length > 0;
   const iconColour = colour(p.icon_color, accentOf(c));
   const iconSize = num(p.icon_size, 14, 6, 120);
   const textColour = colour(p.text_color, inkOf(c));
@@ -287,7 +286,8 @@ export function emailIconList(w: Widget, c: Ctx): string {
   const inline = str(p.view) === "inline";
   const cell = (r: { text: string; icon: unknown; link: string }, i: number) => {
     const mark = `<span style="color:${esc(iconColour)};font-size:${iconSize}px;line-height:1;">${esc(glyphFor(r.icon ?? DEFAULT_ICON))}</span>`;
-    const path = fromRepeater ? `icon_list.${i}.text` : `items.${i}`;
+    /* ONE LIST, ONE PATH (R2-11) — see `iconList.ts rows()`. */
+    const path = `items.${i}`;
     const words = `<span${edit(path, c, "add a point…")}>${t(r.text, c)}</span>`;
     const body = r.link.trim()
       ? `<a href="${esc(r.link)}" style="color:inherit;text-decoration:none;">${mark}&nbsp;&nbsp;${words}</a>`

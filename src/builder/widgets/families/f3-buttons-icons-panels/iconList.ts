@@ -43,23 +43,39 @@ export interface IconListRow {
 }
 
 /**
- * BOTH SPELLINGS OF THE ONE LIST.
+ * ONE LIST (R2-11, 2026-09-20).
  *
- * `icon_list` is Elementor's own repeater — `{ text, selected_icon, link }` per
- * row — and what a document written from today holds. `items` is a plain array
- * of strings and is what every document written before today holds. One reader,
- * so a July proposal opens with its points intact.
+ * This read TWO — Elementor's `icon_list` repeater first and the plain `items`
+ * array behind it — and that is exactly why the round-1 fixer could not give
+ * this control the panel repeater the Table got: pressing Add Item on
+ * `icon_list` would have put one blank row in it, this reader would have
+ * switched to it, and every point the author could see would have vanished.
+ * The scorer measured the cost as "an Icon List took 4 points and refused a
+ * 5th".
+ *
+ * `items` IS THE LIST, and `upgrade.ts` (case "list") converts a stored
+ * `icon_list` into it on the way in, so a document written either way opens
+ * with its points intact and there is one list to add to.
+ *
+ * WHY `items` AND NOT ELEMENTOR'S OWN NAME, said out loud: `icon_list` is the
+ * name and one day it should be the key. Today NOTHING on this platform can
+ * write one — there is no icon picker inside a panel row and no link field, so
+ * every stored Icon List in every repo is an `items` array — while three
+ * renderers that are NOT this repo's read `items` and only `items`: LUMEN's
+ * plain-TEXT email part (`builderEmailRender.js`, the part whose absence is
+ * what `reference_acs_email_reality` counts against the quota) and both
+ * hosted-landing renderers. Moving the key would have blanked an Icon List on a
+ * hosted landing page and dropped its points out of every newsletter's text
+ * part, to rename a field no author can reach. When those readers ask this
+ * question too, the key moves; the handoff says so.
  */
 export function rows(p: Record<string, unknown>): IconListRow[] {
-  const own = Array.isArray(p.icon_list) ? p.icon_list : [];
-  if (own.length) {
-    return own.map((r) => {
-      const row = (r || {}) as Record<string, unknown>;
-      return { text: str(row.text), icon: row.selected_icon, link: str(row.link) };
-    });
-  }
   const plain = Array.isArray(p.items) ? p.items : [];
-  return plain.map((t) => ({ text: str(t), icon: undefined, link: "" }));
+  return plain.map((t) => (t && typeof t === "object"
+    /* An Elementor-shaped row that reached a renderer without `deserialise` —
+       oliver and LUMEN read raw props. Read, never written. */
+    ? { text: str((t as Record<string, unknown>).text), icon: (t as Record<string, unknown>).selected_icon, link: str((t as Record<string, unknown>).link) }
+    : { text: str(t), icon: undefined, link: "" }));
 }
 
 export function renderIconList(w: Widget, ctx: RenderContext): string {
@@ -82,11 +98,9 @@ export function renderIconList(w: Widget, ctx: RenderContext): string {
     ? `${num(p.divider_weight, 1, 0, 20)}px ${dividerStyle} ${colour(p.divider_color, "#ddd")}`
     : "";
 
-  /* The path a typed row writes back to. A row that came from the plain
-     `items` array keeps writing to `items.N`; a row from the repeater writes to
-     `icon_list.N.text`. The author types in the same place either way. */
-  const fromRepeater = Array.isArray(p.icon_list) && p.icon_list.length > 0;
-  const pathOf = (i: number) => (fromRepeater ? `icon_list.${i}.text` : `items.${i}`);
+  /* ONE LIST, ONE PATH (R2-11). This asked which of two spellings the widget
+     was reading and wrote back to that one; there is one now. */
+  const pathOf = (i: number) => `items.${i}`;
 
   const shown = ctx.mode === "edit"
     ? [...all, { text: "", icon: undefined, link: "" }]   // one blank, so it can grow by typing
@@ -136,7 +150,7 @@ export const ICON_LIST_DEF: FamilyWidgetDef = {
      a picture and a line of type, not a bulleted list. */
   builders: ["website", "landing", "newsletter", "proposal"],
   defaults: {
-    view: "traditional", icon_list: [], items: ["", "", ""], link_click: "full_width",
+    view: "traditional", items: ["", "", ""], link_click: "full_width",
     space_between: 6, icon_align: "", divider: false, divider_style: "solid",
     divider_weight: 1, divider_color: "#ddd",
     icon_color: "", icon_size: 14, text_indent: 8, text_color: "",
@@ -145,8 +159,16 @@ export const ICON_LIST_DEF: FamilyWidgetDef = {
     /* ── Content ▸ Icon List ──────────────────────────────────────────── */
     { key: "view", label: "Layout", type: "select", tab: "content", section: "Icon List", options: [
       { value: "traditional", label: "Default" }, { value: "inline", label: "Inline" }] },
-    { key: "icon_list", label: "Items", type: "list", tab: "content", section: "Icon List",
-      help: "Type the points straight onto the page. Press Enter for the next one." },
+    /* ELEMENTOR'S OWN REPEATER (R2-11, 2026-09-20). The machine catalogue
+       spells it out: `icon-list` -> `{"type":"repeater","label":"Items",
+       "repeater_fields":{"text":"text - Text", ...}}`. `row: ""` says a point
+       is one string, which is what this widget's rows are — see `rows()` above
+       for why the key is `items` and not Elementor's own name. The scorer's
+       "an Icon List took 4 points and refused a 5th" is this control having had
+       no Add Item. */
+    { key: "items", label: "Items", type: "list", tab: "content", section: "Icon List",
+      row: "",
+      help: "Type the points straight onto the page, or add them here." },
     /* NO "default icon" CONTROL. Elementor's Icon List has no such thing — the
        icon belongs to the ROW, in the Items repeater. Adding one would be an
        invented control on an Elementor widget, which D-168 forbids outright. A

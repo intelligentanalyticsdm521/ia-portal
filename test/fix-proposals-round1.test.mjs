@@ -72,13 +72,23 @@ describe("G-1 · the Table has a body, and every repeater can grow", () => {
        rows and the older `items` when it does not. Adding a blank row to the
        first spelling of such a pair empties the list the author can see. So a
        control is a repeater only when its own definition declares the row. */
-    const iconList = WIDGETS_BY_KIND["list"];
-    assert.equal(iconList.label, "Icon List");
-    const points = controlOf(iconList, "icon_list");
+    /* THE EXAMPLE MOVED (R2-11, 2026-09-20). This used the Icon List, which
+       has since been made to read ONE list and has the repeater. The Basic
+       Gallery is the pair that is still open — `wp_gallery`, `images` and
+       `items`, scanned in order — so it is the one that must still be left
+       alone, and the guard is the same guard. */
+    const gallery = WIDGETS_BY_KIND["basic_gallery"];
+    const points = controlOf(gallery, "wp_gallery");
     assert.equal(points.type, "list");
     assert.equal(isRepeater(points), false,
       "a list with no declared row shape became a repeater — the two-spelling trap");
     assert.equal(isDrawnInPanel(points), false);
+    // AND THE ICON LIST HAS OPTED IN, which is what R2-11 changed.
+    const iconList = WIDGETS_BY_KIND["list"];
+    assert.equal(iconList.label, "Icon List");
+    const icons = controlOf(iconList, "items");
+    assert.ok(isRepeater(icons), "the Icon List still refuses a fifth point");
+    assert.ok(isDrawnInPanel(icons), "the Icon List's Items draws nothing in the panel");
     // MUTATION, executed: declare a row and it becomes one. Restored below.
     const declared = { ...points, row: "" };
     assert.ok(isRepeater(declared), "declaring `row` does not turn the control into a repeater");

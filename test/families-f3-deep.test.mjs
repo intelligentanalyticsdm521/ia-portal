@@ -150,9 +150,14 @@ const SWEEP = {
   },
   list: {
     view: ["inline", /flex-direction:row/],
-    icon_list: [[{ text: "From the repeater", selected_icon: { value: "fas fa-star" }, link: "" }], /From the repeater/],
+    /* R2-11 — THE CONTROL'S KEY IS `items`. The Icon List read two spellings of
+       one list and could not be given an Add Item because of it; it reads one
+       now (`iconList.ts rows()` says which and why). The rich row shape is
+       still READ — an Elementor-shaped row that reached a renderer raw — which
+       is what the link case below hands in. */
+    items: [["From the list"], /From the list/],
     link_click: ["inline", /<a href="https:\/\/example\.test\/r"[^>]*>\s*<span class="bx-iconlist-t/,
-      { icon_list: [{ text: "Row", link: "https://example.test/r" }] }],
+      { items: [{ text: "Row", link: "https://example.test/r" }] }],
     space_between: [17, /gap:17px/],
     icon_align: ["center", /justify-content:center/],
     divider: [true, /border-bottom:1px solid/],
