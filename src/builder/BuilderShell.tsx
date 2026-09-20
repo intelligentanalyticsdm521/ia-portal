@@ -1355,6 +1355,23 @@ export function BuilderShell(p: BuilderShellProps) {
                   && sec.columns.some((c) => c.widgets.length > 0);
               }}
               onRowMenu={(target, at) => setMenu({ target, x: at.x, y: at.y })}
+              {...(p.onAskArgus ? { onAskArgus: p.onAskArgus } : {})}
+              /* RENAME A ROW (D-172, round 2) — written to the element's own
+                 label, through the same two writers everything else uses. A
+                 CARRIER row is its container, so the name goes on the
+                 container and not on the carrier nobody can see. */
+              onRename={(row, name) => {
+                const step = name ? `Renamed it “${name}”` : "Cleared a name";
+                /* A SECTION ROW — carrier or not — writes the section's own
+                   `label`, the field the tree already reads. A deeper row
+                   writes `_label` on the node's props: additive, ignored by
+                   every renderer, and read back by `rowLabel`. */
+                if (row.kind === "section") {
+                  apply(patchSection(doc, row.id, { label: name } as Partial<Section>), null, step);
+                  return;
+                }
+                apply(patchNode(doc, row.id, { _label: name || undefined }), null, step);
+              }}
               /* MOVE BETWEEN LEVELS (§11.12). The nesting is on screen here and
                  the target is a whole row rather than a few pixels of gap, so
                  this is the easy way OUT of a deep box — through the same

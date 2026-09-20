@@ -23,6 +23,8 @@ export type OutlineRow =
     kind: "section";
     id: string;
     label: string;
+    /** Its element TYPE, as a lucide name — see `rowIcon`. */
+    icon: string;
     /** Its position in the document, for the drag and for "3 of 12". */
     index: number;
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
@@ -48,6 +50,8 @@ export type OutlineRow =
     kind: "widget";
     id: string;
     label: string;
+    /** Its element TYPE, as a lucide name — see `rowIcon`. */
+    icon: string;
     path: WidgetPath;
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
     locked: boolean;
@@ -88,6 +92,12 @@ export type OutlineRow =
  * arithmetic over the tree, which is why it lives here with a test on it.
  */
 export function rowLabel(w: Node): string {
+  /* THE AUTHOR'S OWN NAME WINS (D-172, round 2). Double-clicking a row in the
+     reference renames the element and the tree shows the rename; `_label` is
+     where that name is kept — on the node's own props, additive, and read by
+     nothing that draws the page. */
+  const own = (w.props as Record<string, unknown> | undefined)?._label;
+  if (typeof own === "string" && own.trim()) return own.trim();
   /* THE ELEMENT'S NAME, AND NOTHING ELSE (D-172).
      The reference's rows read "Container", "Flexbox", "Heading". Ours read
      "Container · 2 things", "Container · 1 thing", "Heading · ZZ audit
@@ -100,6 +110,24 @@ export function rowLabel(w: Node): string {
   }
   const def = WIDGETS_BY_KIND[w.kind];
   return def?.label || w.kind;
+}
+
+/**
+ * THE ROW'S ICON — its element TYPE, as a lucide name (D-172, round 2).
+ *
+ * Driven in the reference on 2026-09-19: every `.elementor-navigator__element`
+ * carries one — `eicon-container` on a container, `eicon-text` on a Text
+ * Editor, `eicon-flexbox` on a flexbox. Ours drew a generic box glyph on
+ * container rows only, so a Heading row and a Button row were two identical
+ * lines of text and the tree could not be scanned at all.
+ *
+ * The NAME, not a component, because this module is pure and the Navigator is
+ * what maps a name to a glyph — the same arrangement the widget panel already
+ * uses for the tiles.
+ */
+export function rowIcon(w: Node): string {
+  if (isContainer(w)) return directionOf(w) === "grid" ? "Grid3x3" : "Square";
+  return WIDGETS_BY_KIND[w.kind]?.icon || "Square";
 }
 
 /**
@@ -198,6 +226,7 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
         widgetIndex: hit.index,
         id: hit.node.id,
       },
+      icon: rowIcon(hit.node),
       hiddenOn: hiddenOf(hit.node.style),
       locked: !!(hit.node as Widget).locked,
       required: isRequired(hit.node as Widget),
@@ -224,6 +253,9 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
          top-level box a Container whichever way it runs — in its own editor a
          GRID IS A CONTAINER, with the grid-ness set inside the panel. */
       label: s.label || "Container",
+      /* A carrier row is its container, so it wears the container's own
+         glyph; a plain section is a Container too. */
+      icon: carried ? rowIcon(carrierOf(s)!) : "Square",
       index,
       hiddenOn: hiddenOf(s.style),
       required: sectionRequired(s),

@@ -21,9 +21,17 @@
  * behaviour it offers already existed somewhere and is reached, not copied.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, ChevronDown, ChevronRight, ChevronsDownUp, Eye, EyeOff, GripVertical, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronsDownUp, Eye, EyeOff, Sparkles, X } from "lucide-react";
+import * as Icons from "lucide-react";
 import type { BuilderDocument, Selection, WidgetPath } from "./model";
 import { dropTargetFor, outline, sectionDropIndex, type OutlineDrop, type OutlineRow } from "./navigatorModel";
+
+/** A lucide icon by NAME, so `navigatorModel` stays pure and importable. */
+function RowIcon({ name }: { name: string }) {
+  const map = Icons as unknown as Record<string, React.ComponentType<{ size?: number }>>;
+  const Cmp = map[name] || Icons.Square;
+  return <Cmp size={12} />;
+}
 import type { Device } from "./style";
 
 export interface NavigatorProps {
@@ -60,6 +68,20 @@ export interface NavigatorProps {
     target: { kind: "section"; sectionId: string } | { kind: "widget"; path: WidgetPath },
     at: { x: number; y: number },
   ) => void;
+  /**
+   * RENAME A ROW (D-172, round 2). Double-clicking a row's name in the
+   * reference makes it editable; this is what the new name is written with.
+   * Optional — a window with no rename simply does not offer one.
+   */
+  onRename?: (row: OutlineRow, name: string) => void;
+  /**
+   * ASK ARGUS, from the Structure window's title bar (D-172, round 2).
+   *
+   * The reference's navigator has a SECOND title-bar icon beside collapse-all,
+   * `#elementor-navigator__ai-titles` — driven 2026-09-19. Ask ARGUS is our
+   * counterpart of Elementor AI (agreed difference (e)), so it goes there.
+   */
+  onAskArgus?: () => void;
   /** What the thing being built is called, from the adapter's copy. */
   heading?: string;
   /** Bumped by the window's collapse-all button. Every bump shuts every row. */
@@ -91,6 +113,8 @@ export function Navigator(p: NavigatorProps) {
    */
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
+  /** The row being renamed, if any — see the double-click handler below. */
+  const [renaming, setRenaming] = useState<string | null>(null);
 
   /* THE ID THE SELECTION CARRIES, when it carries one (§11.12). The index
      lookup underneath only ever reaches the top of a column, so a card three
@@ -166,6 +190,22 @@ export function Navigator(p: NavigatorProps) {
               else if (from) p.onMoveNode?.(dragId, dropTargetFor(rows, i));
               setDragId(null); setOverIndex(null);
             }}
+            /* RIGHT-CLICK INSIDE THE WINDOW (D-172, round 2) — the reference
+               opens that element's own menu here, the same one the page gives.
+               Ours opened the browser's. `onRowMenu` was already wired from
+               the shell and had no caller since the per-row "..." was deleted;
+               this is the caller, so there is one menu with one set of rows. */
+            onContextMenu={(e) => {
+              if (!p.onRowMenu) return;
+              e.preventDefault();
+              e.stopPropagation();
+              const target = isSection && !carriedId
+                ? { kind: "section" as const, sectionId: row.id }
+                : isSection
+                  ? { kind: "widget" as const, path: { sectionId: row.id, columnIndex: 0, widgetIndex: 0, id: carriedId! } }
+                  : { kind: "widget" as const, path: (row as Extract<OutlineRow, { kind: "widget" }>).path };
+              p.onRowMenu(target, { x: e.clientX, y: e.clientY });
+            }}
             onClick={() => p.onSelect(isSection
               ? (carriedId
                 ? { kind: "widget", sectionId: row.id, columnIndex: 0, widgetIndex: 0, id: carriedId }
@@ -212,18 +252,46 @@ export function Navigator(p: NavigatorProps) {
                 {collapsed[row.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
               </button>
             ) : <span style={{ width: 12, flex: "0 0 auto" }} />}
-            {!isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container && (
-              <span
-                data-nav-box
-                title="A box. What is under it, indented, is what is inside it."
-                style={{ color: "#64748B", display: "inline-flex" }}
-              ><Box size={12} /></span>
+            {/* THE ELEMENT'S TYPE, ON EVERY ROW (D-172, round 2).
+                Driven in the reference on 2026-09-19: every row carries one —
+                `eicon-container`, `eicon-text`, `eicon-flexbox` — and none of
+                them carries a title attribute. Ours drew a generic box glyph
+                on CONTAINER rows only, with the sentence "A box. What is under
+                it, indented, is what is inside it." hanging off it, so a
+                Heading row and a Button row were two identical lines of text
+                and the one icon in the window explained itself at length.
+                DELETED: the sentence. PRESENT: the widget's own icon, from the
+                registry, on every row including the section's. */}
+            <span data-nav-icon={row.icon} style={{ color: "#64748B", display: "inline-flex", flex: "0 0 auto" }}>
+              <RowIcon name={row.icon} />
+            </span>
+            {renaming === row.id ? (
+              /* RENAME BY DOUBLE-CLICK (D-172, round 2). The reference sets
+                 `contenteditable` on the row's own title and focuses it; ours
+                 did nothing at all, and the active element stayed BODY. The
+                 name is written to the element's own label through the same
+                 handler the panel would use, so there is one writer. */
+              <input
+                data-nav-rename={row.id}
+                autoFocus
+                defaultValue={row.label}
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => { p.onRename?.(row, e.currentTarget.value.trim()); setRenaming(null); }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { p.onRename?.(row, e.currentTarget.value.trim()); setRenaming(null); }
+                  if (e.key === "Escape") { e.stopPropagation(); setRenaming(null); }
+                }}
+                style={{ flex: 1, minWidth: 0, font: "inherit", border: "1px solid #2D9CDB", borderRadius: 3, padding: "0 3px" }}
+              />
+            ) : (
+            <span
+              onDoubleClick={(e) => { if (p.onRename) { e.stopPropagation(); setRenaming(row.id); } }}
+              style={{
+                flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                textDecoration: hidden ? "line-through" : "none",
+                fontWeight: !isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container ? 600 : undefined,
+              }}>{row.label}</span>
             )}
-            <span style={{
-              flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-              textDecoration: hidden ? "line-through" : "none",
-              fontWeight: !isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container ? 600 : undefined,
-            }}>{row.label}</span>
 
             {/* THE PER-ROW PADLOCK IS DELETED (D-172). There is no lock
                 control in the reference's tree. A part the LAW locks is still
@@ -365,6 +433,20 @@ export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
           title="Collapse all elements"
           style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 2 }}
         ><ChevronsDownUp size={13} /></button>
+        {/* THE SECOND TITLE-BAR ICON (D-172, round 2) — the reference's
+            `#elementor-navigator__ai-titles`, which ours is Ask ARGUS. Drawn
+            only where a builder hands one in: a button that opens nothing is
+            worse than none. */}
+        {nav.onAskArgus && (
+          <button
+            type="button"
+            data-structure-argus
+            onClick={(e) => { e.stopPropagation(); nav.onAskArgus!(); }}
+            aria-label="Ask ARGUS"
+            title="Ask ARGUS"
+            style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 2 }}
+          ><Sparkles size={13} /></button>
+        )}
         {/* CENTRED, as the reference's is. */}
         <strong style={{ flex: 1, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#0B1C24" }}>Structure</strong>
         <button

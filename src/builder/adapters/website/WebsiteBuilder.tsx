@@ -856,6 +856,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         widgetExtras={widgetExtras}
         /* OUR ANGIE, and the reference's eye — both in the bar's own
            positions (D-172), not stacked in with the verbs. */
+        onAskArgus={() => setAskOpen(true)}
         askArgus={
           <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
             title="Ask ARGUS" aria-label="Ask ARGUS"

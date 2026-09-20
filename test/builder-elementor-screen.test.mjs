@@ -1010,3 +1010,90 @@ describe("SCREEN LAW 13 — a carrier pair is ONE box on the screen", () => {
     assert.match(shell, /if \(sec && carrierContainer\(sec\)\?\.id === nodeIdAt\(doc, path\)\) \{/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 14 — the Structure window, the add area's third button, and the
+   eye in the bar (D-172, round 2)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Every row below was checked by DRIVING the reference on 2026-09-19 with
+   Playwright on the installed Chrome, not read off a sheet — the capture is
+   `elementor-reference/widgets/_zz_fixer_r2b.json` and the script is
+   `elementor-reference/scripts/zz-fixer-r2b-ref.js`.  */
+
+describe("SCREEN LAW 14 — what the reference has here, and what it does not", () => {
+  const nav = readSrc("builder/Navigator.tsx");
+  const navModel = readSrc("builder/navigatorModel.ts");
+  const addSection = readSrc("builder/AddSection.tsx");
+  const pb = readSrc("builder/proposal/ProposalBuilder.tsx");
+
+  test("every Structure row carries its element's own icon, and no tooltip", () => {
+    // Driven: rows read { icon: "eicon-container" }, { icon: "eicon-text" },
+    // hasTitleAttr false on every one, and no grip.
+    // ABSENT: the generic box glyph on container rows only, and the sentence
+    // that hung off it.
+    assert.ok(!nav.includes("A box. What is under it, indented, is what is inside it."),
+      "the box icon explains itself again");
+    assert.ok(!nav.includes("data-nav-box"), "the container-only glyph is back");
+    // PRESENT: the widget's own icon, from the registry, on EVERY row.
+    assert.match(navModel, /export function rowIcon\(w: Node\): string \{/);
+    assert.match(navModel, /return WIDGETS_BY_KIND\[w\.kind\]\?\.icon \|\| "Square";/);
+    assert.match(nav, /<RowIcon name=\{row\.icon\} \/>/);
+  });
+
+  test("the Structure window renames on double-click and right-clicks to the menu", () => {
+    // Driven in the reference: double-click sets contenteditable on the row's
+    // title; right-click inside the window opens that element's own menu.
+    assert.match(nav, /onDoubleClick=\{\(e\) => \{ if \(p\.onRename\)/);
+    assert.match(nav, /data-nav-rename=\{row\.id\}/);
+    assert.match(nav, /onContextMenu=\{\(e\) => \{\s*\n\s*if \(!p\.onRowMenu\) return;/);
+    // …and its title bar has the reference's SECOND icon, which ours is ARGUS.
+    assert.match(nav, /data-structure-argus/);
+  });
+
+  test("the add area has THREE round buttons, as the reference's does", () => {
+    // Driven: `.elementor-add-section-button` (Add New Container),
+    // `.elementor-add-template-button` (Add Template), `.e-ai-layout-button`
+    // (Build with AI) — in that order.
+    assert.match(addSection, /data-builder-add="ai"/);
+    assert.match(addSection, /title="Build with ARGUS"/);
+    // Wired from a builder that HAS an ARGUS door, or not drawn at all.
+    assert.match(pb, /onAskArgus=\{\(\) => setAskOpen\(true\)\}/);
+  });
+
+  test("the bar has the eye, and the Save Options rows are Title Case", () => {
+    // Driven: the reference's bar carries "Preview Changes" at x1482; ours had
+    // no such button at all — Preview existed only as a row inside Find.
+    assert.match(pb, /onPreviewDoc=\{\(\) => setPreviewing\(true\)\}/);
+    assert.match(pb, /data-proposal-preview/);
+    // It is the ONE renderer in `view` mode, so a preview cannot drift from
+    // what gets sent.
+    assert.match(pb, /renderDocument\(doc, \{ \.\.\.ctx, mode: "view" \}\)/);
+    // PRESENT: the reference's own third row, in both menus.
+    assert.equal((pb.match(/data-view-page="1"/g) || []).length, 2);
+  });
+
+  test("no eyebrow on the door the author opens first", () => {
+    // ABSENT: "OLIVER · Document builder" over the start gallery. The frame
+    // already passed an empty eyebrow; the gallery that opens BEFORE it did
+    // not, so the first thing on screen was the one line the reference has
+    // nowhere in its chrome.
+    assert.ok(!pb.includes('eyebrow="OLIVER · Document builder"'),
+      "the start gallery has its eyebrow back");
+    assert.match(pb, /eyebrow=""\s*\n\s*open\s*\n\s*onClose=\{onClose\}/);
+  });
+
+  test("a tooltip in the bar is one or two words", () => {
+    // Driven: every tooltip in the reference's bar — Add Element, Angie, Page
+    // Settings, History, Design System, Desktop, Finder, Structure, Preview
+    // Changes, Save Options. Ours explained two of them in a sentence.
+    for (const sentence of [
+      "Choose the customer once. Every merge field on the page fills from this.",
+      "The document's title. The customer sees it in their email and at the top of the page.",
+    ]) {
+      assert.ok(!pb.includes(sentence), `a bar tooltip is a sentence again: ${sentence}`);
+    }
+    assert.match(pb, /title="Choose Customer"/);
+    assert.match(pb, /title="Document Name"/);
+  });
+});

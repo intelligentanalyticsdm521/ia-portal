@@ -37,6 +37,7 @@ import {
 
 
 const BUILDER = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+const FRAME = readFileSync(new URL("../src/builder/BuilderFrame.tsx", import.meta.url), "utf8");
 const LIST = readFileSync(new URL("../src/pages/oliver/OliverQuotesProposalsPage.tsx", import.meta.url), "utf8");
 const RECORD = readFileSync(new URL("../src/pages/oliver/OliverProposalsPage.tsx", import.meta.url), "utf8");
 
@@ -320,6 +321,7 @@ describe("N-1 \u00b7 D-20 in the proposal builder: the refusal is AT the button"
     assert.equal(count("send"), 2, "a Send button has no anchor — its refusal has nowhere to point");
     assert.equal(count("save"), 2, "a Save draft button has no anchor");
     assert.equal(count("save-close"), 2, "a Save and close button has no anchor");
+    assert.equal(count("preview"), 2, "a View Page row has no anchor");
   });
 
   test("the refusal is reported through the engine, not printed in the far-left pane", () => {
@@ -386,11 +388,30 @@ describe("D-04 · a saved draft opens in the builder from the row", () => {
 });
 
 describe("D-36 · Save draft stays in the builder, Save and close is its own button", () => {
-  test("both buttons exist and only one of them closes", () => {
+  test("both rows exist, only one closes, and the rows are Title Case (D-172 r2)", () => {
     assert.ok(BUILDER.includes('data-save-draft="1"'));
     assert.ok(BUILDER.includes('data-save-close="1"'));
     assert.ok(BUILDER.includes("onClick={() => save(false, false)}"), "Save draft still closes the builder");
     assert.ok(BUILDER.includes("onClick={() => save(false, true)}"));
+    /* D-172 round 2 — the reference writes its menu rows in Title Case and
+       its third row is View Page, which shows the document as its reader
+       gets it. Ours were sentence case and there was no View Page at all.
+       ABSENT: the sentence-case rows.
+       PRESENT: Title Case, View Page in BOTH menus, and an Exit on the
+       frame — the reference closes an editor from its main menu. */
+    for (const sentenceCase of [
+      'title="Save and go back to the list. You can open it again from the row."',
+      'title="Save your work and carry on. The builder stays open."',
+      'title="Save this revision and carry on."',
+      'title="Save and go back to the document."',
+    ]) {
+      assert.ok(!BUILDER.includes(sentenceCase), `a menu row explains itself in a sentence again: ${sentenceCase}`);
+    }
+    assert.ok((BUILDER.match(/Save and Close/g) || []).length >= 2, 'a Save and Close row is missing');
+    assert.ok((BUILDER.match(/Save as Template/g) || []).length >= 1, 'Save as Template is sentence case again');
+    assert.equal((BUILDER.match(/data-view-page="1"/g) || []).length, 2,
+      "View Page is missing from one of the two Save Options menus");
+    assert.ok(FRAME.includes("Exit"), "nothing closes the builder at all now");
   });
 
   test("staying open SAYS so — a tick, not silence", () => {
