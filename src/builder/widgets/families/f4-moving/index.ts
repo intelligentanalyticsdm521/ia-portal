@@ -1,67 +1,100 @@
 /**
- * families/f4-moving/index.ts - THINGS THAT MOVE ON THE PAGE.
+ * families/f4-moving/index.ts — THINGS THAT MOVE ON THE PAGE.
  *
- * nested-tabs, nested-accordion, off-canvas, progress-tracker, counter,
- * progress, countdown, rating. All need the published page's JavaScript and a
- * no-JS fallback: one JS bundle, one test harness.
+ * BUILDER_FULL_WIDGET_PLAN_2026-09-19 section C.1: one widget, one file in this
+ * folder; this index is the only thing that knows them as a SET. Nothing in
+ * here ever opens registry.ts, render.ts or another family's folder, which is
+ * what makes ten agents on ten families safe.
  *
- * BUILDER_FULL_WIDGET_PLAN_2026-09-19 section C.1: one widget, one file in
- * this folder; this index is the only thing that knows them as a SET. Nothing
- * in here ever opens registry.ts, render.ts or another family's folder, which
- * is what makes ten agents on ten families safe.
+ * ── WHAT IS HERE, 2026-09-19 (wave 2) ─────────────────────────────────────
+ * SIX widgets, all six Elementor's own, by Elementor's own titles:
  *
- * -- WHAT IS HERE, AND WHAT IS NOT, 2026-09-19 ------------------------------
- * ONE widget: **Progress Tracker**. The other seven are accounted for, each
- * for a reason that is a fact about the code and not a preference:
+ *   Counter          counter            website · landing · proposal
+ *   Progress Bar     progress_bar       website · landing · proposal
+ *   Rating           star_rating        website · landing · newsletter · proposal
+ *   Tabs             tabs               website · landing
+ *   Accordion        accordion          website · landing
+ *   Progress Tracker progress_tracker   website · landing            (Pro)
  *
- *   counter, progress (Progress Bar), rating, Tabs, Accordion
- *       ALREADY BUILT, by their Elementor names, with their Elementor
- *       controls — `widgets/pageOnly.ts` (counter, progress_bar, tabs,
- *       accordion) and `widgets/icons.ts` (star_rating, labelled "Rating").
- *       The plan says move them into this folder. They are NOT moved, because
- *       `render.ts`'s `RENDERED_KINDS` is `[...engine switch, ...ATOM_KINDS,
- *       container, the three records]` and does NOT spread
- *       `FAMILY_RENDERED_KINDS`. Take `counter` out of `ATOM_KINDS` and it
- *       leaves `RENDERED_KINDS`, and `test/builder-engine.test.mjs` goes red
- *       with "offered but not rendered" — and `render.ts` is the one file this
- *       family may not open. One line there fixes it for all ten families; it
- *       is written up in D168_HANDOFF_2026-09-19.md under "Land: do this".
+ * Wave 1 added Progress Tracker and left the other five where they were, thin,
+ * in `widgets/pageOnly.ts` and `widgets/icons.ts`, because taking a kind out of
+ * `ATOM_KINDS` dropped it out of `RENDERED_KINDS` and a shared file was the
+ * only way to fix that. Both blockers are gone: `render.ts` spreads
+ * `FAMILY_RENDERED_KINDS` (wave 1) and `mergeWidgetDefs` lets a FAMILY
+ * definition REPLACE a legacy one of the same kind, in the legacy one's own
+ * place on the panel (b168/override). So wave 2 declares all five here, with
+ * Elementor's Content AND Style panels, and the legacy definitions and
+ * renderers are shadowed — dead code the lander deletes mechanically
+ * (`shadowedLegacyKinds()`), never a second answer at run time.
  *
- *   off-canvas, and Elementor's REAL nested-tabs / nested-accordion
- *       CANNOT BE DECLARED HERE AT ALL. All three are Elementor v4 *nested*
- *       elements: their content is child containers, carried in the node's
- *       `elements`. A `FamilyWidgetDef` declares a flat widget with controls;
- *       `model.ts` gives children to `container` and to nothing else
- *       (`isContainer` checks `kind === CONTAINER_KIND && Array.isArray(
- *       children)`). A tile that can never hold anything is a tile that does
- *       nothing, so it is not offered. Also in the handoff.
+ * EVERY STORED PROP IS STILL READ. Not one kind id changed, and each file says
+ * which old spellings it reads and why.
  *
- *   countdown
- *       The kind already exists — `registry.ts`, `hidden: true`, email only —
- *       and the offer file puts Countdown on the website and landing panels
- *       and explicitly NOT in the newsletter. Correcting that is a change to
- *       that def in `registry.ts`, which this family may not open. Handoff.
+ * ── WHAT IS STILL NOT HERE, AND WHY ───────────────────────────────────────
+ *   off-canvas   A v4 NESTED element whose content is child containers, and a
+ *                drawer that slides over the page has nothing to do on a
+ *                canvas the author is editing. Not offered.
+ *   countdown    The kind exists in `registry.ts` (`hidden`, email only) and
+ *                the offer file puts Countdown on website and landing and NOT
+ *                in the newsletter. Correcting it is a change to THAT def, in
+ *                a file this family may not open. Still the handoff's item.
  *
- * -- WHAT MAY BE ADDED HERE ------------------------------------------------
+ * ── WHAT MAY BE ADDED HERE ────────────────────────────────────────────────
  * An ELEMENTOR widget, by Elementor's own name, group, icon, panel sections,
- * control labels and defaults - or an IA widget named in
- * test/fixtures/BUILDER_OFFERS_2026-09-19.json. Nothing else, ever. If you
+ * control labels and defaults — or an IA widget named in
+ * `test/fixtures/BUILDER_OFFERS_2026-09-19.json`. Nothing else, ever. If you
  * think something is missing, write it in the handoff; do not build it.
- * test/builder-offers.test.mjs fails the build on an extra tile.
- *
- * -- HOW TO ADD ONE --------------------------------------------------------
- *   1. f4-moving/<widget>.ts exports <WIDGET>_DEF: FamilyWidgetDef and
- *      render<Widget>(w, ctx): string.
- *   2. import both here; the def goes in `defs`, the renderer in `renderers`
- *      under the def's own `kind`.
- *   3. npm test -- test/families-f4-moving.test.mjs
+ * `test/builder-offers.test.mjs` fails the build on an extra tile.
  */
 import type { Family } from "../types";
+import { ACCORDION_DEF, renderAccordion } from "./accordion";
+import { COUNTER_DEF, renderCounter } from "./counter";
+import { PROGRESS_BAR_DEF, renderProgressBar } from "./progressBar";
 import { PROGRESS_TRACKER_DEF, renderProgressTracker } from "./progressTracker";
+import { RATING_DEF, emailRating, renderRating } from "./rating";
+import { TABS_DEF, renderTabs } from "./tabs";
 
 export const FAMILY: Family = {
-  defs: [PROGRESS_TRACKER_DEF],
-  renderers: { [PROGRESS_TRACKER_DEF.kind]: renderProgressTracker },
+  defs: [
+    COUNTER_DEF,
+    PROGRESS_BAR_DEF,
+    RATING_DEF,
+    TABS_DEF,
+    ACCORDION_DEF,
+    PROGRESS_TRACKER_DEF,
+  ],
+  renderers: {
+    [COUNTER_DEF.kind]: renderCounter,
+    [PROGRESS_BAR_DEF.kind]: renderProgressBar,
+    [RATING_DEF.kind]: renderRating,
+    [TABS_DEF.kind]: renderTabs,
+    [ACCORDION_DEF.kind]: renderAccordion,
+    [PROGRESS_TRACKER_DEF.kind]: renderProgressTracker,
+  },
+  /* THE MAILBOX HALF, for the ONE widget of this family a newsletter offers.
+     The offer file gives the newsletter `rating` and explicitly withholds
+     counter, progress, nested-tabs and nested-accordion, "because email cannot
+     run them". A renderer for a widget no mailbox panel offers would be code
+     nothing can reach. */
+  emailRenderers: {
+    [RATING_DEF.kind]: emailRating,
+  },
 };
 
-export { PROGRESS_TRACKER_DEF, renderProgressTracker, showsPercentage, TRACKER_TYPES } from "./progressTracker";
+export {
+  ACCORDION_DEF, DEFAULT_STATES, openPanels, renderAccordion,
+} from "./accordion";
+export {
+  COUNTER_DEF, SEPARATOR_CHARS, counterNote, counterNumber, renderCounter,
+} from "./counter";
+export {
+  PROGRESS_BAR_DEF, PROGRESS_TYPES, PROGRESS_TYPE_OPTIONS, progressPercent, renderProgressBar,
+} from "./progressBar";
+export {
+  PROGRESS_TRACKER_DEF, TRACKER_TYPES, renderProgressTracker, showsPercentage,
+} from "./progressTracker";
+export {
+  RATING_DEF, RATING_ICONS, emailRating, ratingLabel, ratingMarks, ratingOf, renderRating,
+} from "./rating";
+export { TABS_DEF, TAB_DIRECTIONS, renderTabs, tabsFlow, tabsSideways } from "./tabs";
+export { panelRows, type PanelRow } from "./parts";

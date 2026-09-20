@@ -89,11 +89,15 @@ export const PROGRESS_TRACKER_DEF: FamilyWidgetDef = {
   picture: pictureFrom(box(6, 6, 52, 6)
     + `<rect x="6" y="6" width="22" height="6" rx="3" fill="#94A3B8" stroke="none"/>`
     + bar(10, 20, 44) + bar(10, 27, 34)),
-  /* Elementor puts it in its own **Pro** group. Our four groups are Layout /
-     Basic / General / Intelligent Analytics (§11.13.1), and a fifth invented
-     here would be a second answer to "what groups does the panel have", so it
-     sits in General and `tier: "pro"` is what draws the padlock. */
-  category: "General",
+  /* ELEMENTOR'S OWN GROUP, which is **Pro**.
+     Wave 1 of this family wrote `General` and said why: the panel had four
+     groups and a fifth invented here would have been a second answer to "what
+     groups does the panel have". b168/override then gave the panel Elementor
+     Pro's own six — Layout, Basic, Pro, General, Site, Intelligent Analytics —
+     so the true group now exists and the reason for the compromise is gone.
+     `test/builder-widget-set.test.mjs` names the difference out loud:
+     "Progress Tracker is in General; Elementor draws it in Pro." */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

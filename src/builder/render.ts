@@ -61,7 +61,6 @@ import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 import { renderAtom } from "./widgets";
 import { FAMILY_RENDERED_KINDS, renderFamily } from "./widgets/families";
 import { ATOM_KINDS } from "./widgets/kinds";
-import { esc } from "./esc";
 import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker";
 
 /* ── One escaper. The inventory found three. ─────────────────────────────── */
