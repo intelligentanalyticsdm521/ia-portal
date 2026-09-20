@@ -789,7 +789,12 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
 
   if (loading) {
     return (
-      <IadmModal open onClose={onClose} product="arion" eyebrow="ARION · Website" title="Opening the page…" size="builder">
+      <IadmModal open onClose={onClose} product="arion" /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow="" title="Opening the page…" size="builder">
         <div style={{ padding: 40, textAlign: "center", color: "#5A7A8A" }}>Reading the page from your website…</div>
       </IadmModal>
     );

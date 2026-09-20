@@ -1142,3 +1142,27 @@ describe("SCREEN LAW 15 — page settings, and Ctrl+Shift+Y", () => {
       /kind: t\.kind === "section" \|\| box \? "section" : "widget",/);
   });
 });
+
+describe("SCREEN LAW 15b — no eyebrow on ANY builder door (D-172, round 2)", () => {
+  test("every gallery a builder opens through passes an empty eyebrow", () => {
+    /* The frame has passed an empty eyebrow since round 1, but the gallery
+       that opens BEFORE the editor did not — so on four of the five builders
+       the first thing on screen was a small-caps line the reference has
+       nowhere in its chrome.
+       ABSENT: the product eyebrow on a builder door.
+       PRESENT: an empty one, so the component keeps working for the callers
+       that are not builders. */
+    const doors = [
+      ["builder/proposal/ProposalBuilder.tsx", "OLIVER · Document builder"],
+      ["builder/adapters/email/EmailBuilder.tsx", "SPARK · Email builder"],
+      ["builder/adapters/landing/LandingBuilder.tsx", "SPARK · Landing page"],
+      ["builder/adapters/website/WebsiteBuilder.tsx", "ARION · Website"],
+      ["builder/adapters/mybrand/TemplateGallery.tsx", "MY BRAND · DESIGN STUDIO"],
+    ];
+    for (const [file, gone] of doors) {
+      const src = readSrc(file);
+      assert.ok(!src.includes('eyebrow="' + gone + '"'), file + " has its eyebrow back");
+      assert.match(src, /eyebrow=""/, file + " no longer passes an eyebrow at all");
+    }
+  });
+});
