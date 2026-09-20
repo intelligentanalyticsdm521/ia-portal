@@ -206,6 +206,8 @@ describe("§3.2's union is registered", () => {
        carried that label; the one that survives keeps the id the shipped
        templates place and both goldens hold. See `SOCIAL_ICONS_DEF`. */
     "social_links", "alert", "shortcode", "html", "menu_anchor",
+    /* B-168 f2-pictures: five of Elementor's own, all five in the offer file. The kind is pro_gallery because gallery is the hidden legacy Photo gallery below. */
+    "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",

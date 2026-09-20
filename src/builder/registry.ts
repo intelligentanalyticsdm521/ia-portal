@@ -1365,6 +1365,14 @@ export const PANEL_ORDER: string[] = [
   "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
   "social_icons", "social_links", "alert", "shortcode", "html", "menu_anchor",
   "colour_block", "background", "qr_code", "social_handle",
+  /* B-168 f2-pictures — the five picture widgets the panel did not have. THE
+     ONE LINE A FAMILY CANNOT AVOID IN THIS FILE: `unorderedKinds()` above is
+     asserted EMPTY by test/builder-widget-set.test.mjs, so a new tile with no
+     place here fails the suite, and PANEL_ORDER is the only place a place can
+     be given. Flagged for the lander in D168_HANDOFF_2026-09-19.md: every one
+     of the ten families needs a line like this one, and the tidy end of it is
+     for a def to declare its own position so nobody opens this file at all. */
+  "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
   // Intelligent Analytics — §11.13.3's own order, proposals first
   "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
   "custom_field", "data_table", "clauses", "signature", "page_break",

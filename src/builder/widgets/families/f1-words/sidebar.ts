@@ -26,7 +26,8 @@
  * No JavaScript. The published page draws the sidebar server-side.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { FamilyWidgetDef } from "../types";
 

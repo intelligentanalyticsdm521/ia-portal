@@ -62,6 +62,7 @@ import type { CatalogOffering } from "../components/oliver/ProposalCatalogPicker
    evaluating. See esc.ts's own header for the error and who found it. */
 export { esc } from "./esc";
 import { esc } from "./esc";
+import { childrenOf, walkTree } from "./walk";
 
 export interface LocationLite {
   location_id: string;
@@ -161,77 +162,12 @@ export function makeContext(
   };
 }
 
-/** Merge-fill, then escape. Never the other way round. */
-export function t(text: unknown, ctx: RenderContext): string {
-  return tokenChips(esc(fill(String(text ?? ""), ctx.merge, ctx.mode)), ctx);
-}
-
-/**
- * AN UNFILLED MERGE FIELD IS A SLOT, NOT A WORD (D-03, §11.10).
- *
- * §9 of the 2026-09-16 walk: "The only way through is to work out for yourself
- * that you must click the sentence on the page, select the whole paragraph, and
- * retype it with your numbers in place of the braces. I did that four times."
- * Four merge fields destroyed, because {{contract.start_date}} looked exactly
- * like the words around it.
- *
- * EDIT MODE ONLY, and AFTER escaping — `esc` does not touch braces, so the
- * pattern is still there to find and nothing already escaped can be undone. A
- * customer's copy, a PDF and every stored golden are byte-identical to before,
- * which is why this is safe to put in the one renderer.
- *
- * The chip is a <span> inside a contentEditable run, so `innerText` reads back
- * {{contract.start_date}} exactly as it was: the model cannot tell the
- * difference, and the author can.
- */
-function tokenChips(escaped: string, ctx: RenderContext): string {
-  if (ctx.mode !== "edit" || escaped.indexOf("{{") < 0) return escaped;
-  return escaped.replace(/\{\{\s*([a-zA-Z0-9_. ]+?)\s*\}\}/g, (whole, token) =>
-    `<span class="bx-tok" data-token="${esc(String(token))}" title="Filled in for you when the document is sent. Click to say what goes here.">${whole}</span>`);
-}
-
-/**
- * `**LABEL**` → **LABEL** (D-165).
- *
- * The shared vocabulary says a key fact becomes *"Text Editor (label bold +
- * value)"*, and this is the whole of what makes that true. Two asterisks is the
- * one piece of mark-up the Text Editor understands, because a short answer —
- * "**Service term** 1 November – 30 April" — is a label and a value on one
- * line, and it reads as one line on every surface: a page, a mailbox and a
- * printed PDF.
- *
- * ── AFTER ESCAPING, ALWAYS ────────────────────────────────────────────────
- * `esc` has already turned `<` into `&lt;`, so the only thing left that can
- * match is a pair of asterisks the author typed. The rule can therefore emit
- * `<strong>` without any chance of an author's text becoming markup — the same
- * discipline `tokenChips` runs on, for the same reason.
- *
- * An unpaired `**` is left exactly as typed. Somebody writing "2 ** 3" gets
- * "2 ** 3", because guessing at half a pair is how a document grows a word
- * nobody wrote.
- */
-export function boldRuns(escaped: string): string {
-  return escaped.indexOf("**") < 0
-    ? escaped
-    : escaped.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-}
-
-/** Plain text with blank lines between paragraphs → <p> runs. */
-export function paras(text: unknown, ctx: RenderContext, editPath?: string): string {
-  const filled = fill(String(text ?? ""), ctx.merge, ctx.mode);
-  const attr = editPath ? ` data-edit="${esc(editPath)}"` : "";
-  if (!filled.trim()) {
-    return ctx.mode === "edit"
-      ? `<p class="bx-p bx-empty"${attr} data-placeholder="Type here…"></p>`
-      : "";
-  }
-  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(tokenChips(esc(p.trim()), ctx)).replace(/\n/g, "<br/>"));
-  // In edit mode the whole run is ONE editable element — splitting it into
-  // several <p data-edit> would make the author's second paragraph overwrite
-  // the first when it is read back.
-  if (ctx.mode === "edit") return `<div class="bx-prose"${attr}>${blocks.map((b) => `<p class="bx-p">${b}</p>`).join("")}</div>`;
-  return blocks.map((b) => `<p class="bx-p">${b}</p>`).join("");
-}
+/* MOVED TO `prose.ts` (B-168, landing) and re-exported here: `t`, `paras`
+   and `boldRuns` are what `widgets/text.ts` draws with, and a family that
+   reaches this module for them closes the families cycle. One filler, one
+   chip, one paragraph rule — in a module that imports no family. */
+export { t, paras, boldRuns } from "./prose";
+import { t, paras, boldRuns } from "./prose";
 
 /* ══════════════════════════════════════════════════════════════════════════
    Widgets
@@ -398,19 +334,10 @@ export const MAX_CONTAINER_DEPTH = MAX_DEPTH;
    every renderer in the platform reads its tree through this module. */
 export { isContainer, CONTAINER_KIND };
 
-/**
- * The children of a container, tolerantly.
- *
- * Anything that is not a widget-shaped object is dropped rather than drawn,
- * for the same reason `deserialise` drops junk: a customer's page must not be
- * an exception because somebody hand-edited a row.
- */
-export function childrenOf(w: Widget | null | undefined): Widget[] {
-  if (!isContainer(w as Node)) return [];
-  const raw = (w as any)?.children;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((c: any) => c && typeof c === "object" && typeof c.kind === "string") as Widget[];
-}
+/* MOVED TO `walk.ts` (B-168, landing) and re-exported here, so a family
+   folder can read the tree without importing this module and closing the
+   families cycle. One walk, one `childrenOf`, one depth limit. */
+export { childrenOf, walkTree, walkDocumentTree } from "./walk";
 
 /** One of a list, or undefined. Junk never reaches the page. */
 function oneOf(v: unknown, allowed: readonly string[]): string | undefined {
@@ -487,23 +414,6 @@ export function containerLayoutCss(l: ContainerLayout): string {
  * the author put it — two places that each used to flatten `columns` by hand
  * and would each have missed everything nested.
  */
-export function walkTree(widgets: Widget[], depth = 0): Array<{ widget: Widget; depth: number }> {
-  if (depth > MAX_CONTAINER_DEPTH) return [];
-  const out: Array<{ widget: Widget; depth: number }> = [];
-  for (const w of widgets || []) {
-    out.push({ widget: w, depth });
-    if (isContainer(w as Node)) out.push(...walkTree(childrenOf(w), depth + 1));
-  }
-  return out;
-}
-
-/** Every widget in the document, containers included, in reading order. */
-export function walkDocumentTree(doc: BuilderDocument): Widget[] {
-  return doc.sections
-    .flatMap((s) => s.columns.flatMap((c) => walkTree(c.widgets as Widget[])))
-    .map((x) => x.widget);
-}
-
 export function renderWidget(w: Widget, ctx: RenderContext, depth = 0): string {
   // A BOX IS DRAWN BEFORE ANYTHING ASKS WHAT KIND IT IS (§11.12, D-156).
   //

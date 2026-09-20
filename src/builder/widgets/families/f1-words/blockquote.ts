@@ -33,7 +33,8 @@
  * No JavaScript, anywhere.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import { editRun } from "../../text";

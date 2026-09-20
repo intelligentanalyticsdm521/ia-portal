@@ -218,6 +218,12 @@ export const LANDING_RENDERED_KINDS = [
      LANDING_KIND_ALIASES above, and a slug that is both an alias and a kind is
      two answers for one widget. A test says so. */
   "shortcode",
+  /* B-168 f2-pictures — Gallery, Video Playlist, SoundCloud, Lottie and
+     Hotspot, all drawn by the family through the `default` branch above. None
+     of the five needs JavaScript to be readable: the playlist is a list of
+     links, the Lottie is its still frame with the caption, and the hotspot
+     prints every label under the picture. */
+  "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
   "service_location", "customer",
   "product_cards", "ia_posts", "reviews", "book_now",
   "ia_form", "newsletter_signup", "hours_location", "ia_oliver_invoice", "ia_social_links",
@@ -321,12 +327,6 @@ export function renderLandingWidget(w: Widget, c: LandingContext, depth = 0): st
         if (fam != null) return fam;
         const famPage = renderFamily(w, c as unknown as RenderContext);
         if (famPage != null) return famPage;
-        /* ASK THE ENGINE BEFORE GIVING UP (D-165). §11.13.3 gives a landing
-           page the website's whole list, and this file has a hand-written
-           renderer for what a hosted page draws best; the engine draws the
-           rest — a landing page is real HTML with a stylesheet, so the
-           engine's CSS is honest here in a way it is not in a mailbox.
-           Nothing the panel offers is silently blank. */
         const engine = renderAtom(w, c as unknown as RenderContext);
         if (engine != null) return engine;
         return c.mode === "edit"

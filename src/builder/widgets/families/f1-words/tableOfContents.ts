@@ -33,7 +33,9 @@
  * `oliver-api/lib/pdfFamilies/f1-words.js`.
  */
 import type { BuilderDocument, Widget } from "../../../model";
-import { esc, walkDocumentTree, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import { walkDocumentTree } from "../../../walk";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import type { FamilyWidgetDef } from "../types";

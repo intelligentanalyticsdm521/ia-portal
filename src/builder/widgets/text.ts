@@ -14,7 +14,9 @@
  * only drawn once it has words is unreachable (D-01, the worst moment of the
  * 2026-09-16 walk), and each new widget would have re-invented the fix.
  */
-import { esc, paras as enginePara, t as engineFill, type RenderContext } from "../render";
+import { esc } from "../esc";
+import { paras as enginePara, t as engineFill } from "../prose";
+import type { RenderContext } from "../render";
 
 /** Merge-fill, then escape. Never the other way round. */
 export function fillText(value: unknown, ctx: RenderContext): string {

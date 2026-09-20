@@ -28,7 +28,8 @@
  * `landing.elementor_pro`, and nowhere else.
  */
 import type { Widget } from "../../../model";
-import { esc, type RenderContext } from "../../../render";
+import { esc } from "../../../esc";
+import type { RenderContext } from "../../../render";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { WidgetOption } from "../../../registry";
 import type { FamilyWidgetDef } from "../types";
