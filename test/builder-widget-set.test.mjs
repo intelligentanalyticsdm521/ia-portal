@@ -248,7 +248,19 @@ describe("each builder's panel, in order (membership: builder-offers.test.mjs)",
     /* D-168 widened this by one: the offer file lists IA OLIVER Invoice under
        `website.ia` only. A hosted landing page has no signed-in customer to
        show an invoice to, which is the same reason the menus are not there. */
-    const siteOnly = ["IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice"];
+    /* WIDENED BY f7-data-lists (2026-09-19), and by the offer file, not by us:
+       `website.elementor_pro` carries nineteen list-and-site widgets and
+       `landing.elementor_pro` carries five of them. A landing page has no blog,
+       no archive and no site furniture, so Search, Sitemap, the four theme-*
+       headings, the two theme-* pictures, Post Info, Post Navigation, Post
+       Comments, Author Box and Archive Posts are website-only — the same reason
+       the menus already were. */
+    const siteOnly = [
+      "IA Mega Menu", "IA Mobile Menu", "IA OLIVER Invoice",
+      "Archive Posts", "Search", "Sitemap", "Post Info", "Post Navigation",
+      "Post Comments", "Author Box", "Site Logo", "Site Title", "Page Title",
+      "Post Title", "Post Excerpt", "Featured Image", "Archive Title",
+    ];
     assert.deepEqual(landing, site.filter((l) => !siteOnly.includes(l)));
   });
 

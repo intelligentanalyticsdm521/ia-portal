@@ -218,6 +218,8 @@ describe("§3.2's union is registered", () => {
     "media_carousel", "slides", "testimonial_carousel", "ia_reviews",
     /* B-168 f6-money: Elementor's Price Table, Price List and the two payment buttons. */
     "price_table", "price_list", "paypal_button", "stripe_button",
+    /* B-168 f7-data-lists: the Elementor widgets that draw a list out of data, plus the theme pieces the offer file gives the website. */
+    "archive_posts", "author_box", "loop_grid", "portfolio", "post_comments", "post_info", "post_navigation", "posts", "search", "sitemap", "taxonomy_filter", "template", "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title", "theme_post_featured_image", "theme_post_excerpt", "theme_archive_title",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
     "custom_field", "data_table", "clauses", "signature", "page_break",

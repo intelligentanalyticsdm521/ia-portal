@@ -58,6 +58,12 @@ import {
   FAMILY_LANDING_RENDERED_KINDS, FAMILY_RENDERED_KINDS, renderFamily, renderLandingFamily,
 } from "../../widgets/families";
 import { renderAtom } from "../../widgets";
+/* B-168 §C.1 — THE TEN FAMILIES, asked in the same `default` branch and before
+   the atoms, exactly as `render.ts` asks them. One line, and no family agent
+   ever opens this file again. Without it a family's widget is offered on a
+   landing page and draws "needs a newer version of the builder", which is the
+   silent blank the seams were built to make impossible. */
+import { FAMILY_RENDERED_KINDS, renderFamily } from "../../widgets/families";
 // ONE catalogue and ONE resolver: the widget's own (stream B).
 import {
   addressFields, cardFields, currencyGlyph, htmlBody, priceWithoutSymbol, resolveCatalogCard,
