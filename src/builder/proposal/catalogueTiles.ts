@@ -190,31 +190,26 @@ export function nodesForClauses(list: ReadonlyArray<ClauseLike>): Node[] {
   return list.flatMap(nodesForClause);
 }
 
-export const TERMS_DEF: WidgetDef = {
-  kind: TERMS_TILE_KIND,
-  /* D-168 — NOT IN THE OFFER. D-167 listed Terms in the short IA group; the
-     offer file Brandon approved at 12:58 the same day does not, and where the
-     two disagree the offer file wins. Terms belong in the "Terms and
-     conditions" SECTION TEMPLATE, made of a Heading and a Text Editor, which
-     is the whole point of a section template. The kind stays in the vocabulary
-     so a proposal already carrying it still draws. */
-  hidden: true,
-  label: "Terms",
-  description: "Drop in the terms you have already written. They land as ordinary text you can edit.",  icon: "ScrollText",
-  picture: pictureFrom(bar(3, 6, 22) + bar(3, 13, 26) + bar(3, 20, 26) + bar(3, 27, 14)),
-  category: "Intelligent Analytics",
-  adapters: ["proposal"],
-  defaults: {},
-  controls: [],
-};
+/* `TERMS_DEF` LIVED HERE and is DELETED (D-168, b168/demo).
+   The approved offer file (`BUILDER_OFFERS_2026-09-19.json`) lists the
+   proposal's IA widgets as Custom Field, Product Cards, Product Line Items,
+   Table, Totals, Signature and Page Break — and says in as many words that
+   "a widget not listed for a builder is NOT offered there". Terms is not on
+   it, so the TILE is gone. The clause PICKER is not: it belongs to the **Terms
+   and conditions** section template now, which is where D-167 put "anything
+   that used to be a special widget". `nodesForClauses` above is unchanged and
+   is what that template calls, so a saved clause still lands as plain Heading +
+   Text Editor with no live link back to the library — a term somebody signed
+   must not change because the library did. */
+
 
 /** Every tile the proposal pane offers that opens a picker instead of
  *  inserting itself. One list, so `onInsertWidget` has one thing to ask. */
-export const CATALOGUE_TILE_DEFS: WidgetDef[] = [PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF, TERMS_DEF];
+export const CATALOGUE_TILE_DEFS: WidgetDef[] = [PRODUCT_CARDS_DEF, PRODUCT_LINE_ITEMS_DEF];
 
 /** Is this kind a tile — i.e. does pressing it open a picker? */
 export function isPickerTile(kind: unknown): boolean {
-  return isCatalogueTile(kind) || String(kind ?? "") === TERMS_TILE_KIND;
+  return isCatalogueTile(kind);
 }
 
 export default {

@@ -469,20 +469,33 @@ describe("B · the builder itself on a narrow screen", () => {
     assert.match(frame, /\{drawer === "pane" \? p\.pane : p\.inspector\}/);
   });
 
-  test("the bottom bar carries Widgets, Settings, Undo, Redo and the adapter's own buttons", () => {
+  test("the bottom bar carries Widgets, Settings, History and the adapter's own buttons", () => {
     assert.match(frame, /data-builder-slot="bottombar"/);
     assert.match(frame, />\s*Widgets\s*</);
     assert.match(frame, />\s*Settings\s*</);
-    assert.match(frame, /\{undoRedo\("bar"\)\}/);
+    // ABSENT: the Undo / Redo pair. The reference editor's bar has neither
+    // (driven 2026-09-19) — undo is Ctrl+Z and the History panel (D-172).
+    // PRESENT: History, because a drawer layout still needs a thumb-sized way
+    // in to the thing that replaced them.
+    assert.doesNotMatch(frame, /\{undoRedo\("bar"\)\}/, "the undo/redo pair is back in the bottom bar");
+    assert.match(frame, /\{barHistory\(\)\}/);
     assert.match(frame, /\{p\.headerActions\}<\/div>/, "Save and Send have to be reachable by a thumb");
   });
 
-  test("the undo control is DEFINED once and shown in exactly one place", () => {
-    // SD-010's rule, kept while the control moves: one definition, one
-    // rendering — the header when there are panes, the bar when there are not.
-    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
-    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
-    assert.match(frame, /narrow \? null : undoRedo\("header"\)/);
+  test("Undo and Redo are the KEYBOARD, not two buttons in the bar", () => {
+    // ABSENT everywhere in the frame: the reference has no undo control at all.
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 0,
+      "the Undo button is back in the top bar");
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 0,
+      "the Redo button is back in the top bar");
+    assert.doesNotMatch(frame, /<Undo2\b/, "the undo glyph is back");
+    assert.doesNotMatch(frame, /<Redo2\b/, "the redo glyph is back");
+    // PRESENT: the chords still reach the stack, which is the whole point —
+    // an advertised shortcut that does nothing is the D-18 defect.
+    const map = read("builder/shortcuts.ts");
+    assert.match(map, /"undo"/);
+    assert.match(map, /"redo"/);
+    assert.match(frame, /p\.onShortcut\?\.\(action\)/);
   });
 
   test("every control in the bar is at least 40px — a thumb, not a mouse", () => {

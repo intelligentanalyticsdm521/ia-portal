@@ -62,7 +62,10 @@ export const BUILDER_MIN_VIEWPORT_FRACTION = 0.8;
 export const BUILDER_PANE_WIDTH = 320;
 
 /** Right inspector width, in px. Optional — a builder may render no inspector. */
-export const BUILDER_INSPECTOR_WIDTH = 320;
+/* 300px, MEASURED IN THE REFERENCE EDITOR (D-172, 2026-09-19): its panel
+   reports exactly 300 whether it is showing Elements or Edit Container.
+   Ours was 320, which is 20px of canvas gone on every builder. */
+export const BUILDER_INSPECTOR_WIDTH = 300;
 
 export const MODAL_SIZES: Record<IadmModalSize, ModalDims> = {
   nav: { width: "min(560px, 94vw)", height: "50vh" },

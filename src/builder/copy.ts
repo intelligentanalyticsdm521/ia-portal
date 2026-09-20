@@ -36,8 +36,6 @@ export interface BuilderCopy {
   defaultFontLabel: string;
   /** The Page group's page-break line. Empty hides the control entirely. */
   pageBreakLabel: string;
-  /** The line above the canvas: what clicking does here. */
-  canvasHint: string;
   /** What the empty-page screen offers to start with. */
   emptyHeading: string;
   emptyHint: string;
@@ -69,7 +67,6 @@ export const DEFAULT_COPY: BuilderCopy = {
   outlineHeading: "Outline",
   defaultFontLabel: "The page's own font",
   pageBreakLabel: "Start a new page here",
-  canvasHint: "Click anything on the page to edit it. This is exactly what your reader sees.",
   emptyHeading: "What goes on this page?",
   emptyHint: "Pick one to start. You can add the rest after.",
   lockedReason: "This part has to stay. You can change the wording inside it, but it cannot be removed.",

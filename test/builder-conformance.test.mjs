@@ -302,9 +302,9 @@ describe("point 4 · the Binding section is on EVERY catalogue-bound widget", ()
     // MUTATION: remove `...BINDING_CONTROLS` from PRICE_LINE_DEF → red here.
     const shared = BINDING_CONTROLS.map((c) => c.key);
     assert.deepEqual(shared, ["_ia_source", "_ia_selection", "refresh", "on_empty", "overrides"]);
-    /* D-165 — `address_block` is `service_location` (or `customer`, by its
-       binding), and `customer` is a fifth bound kind. */
-    for (const kind of ["catalog_card", "price_line", "service_location", "customer", "totals"]) {
+    /* D-167 — the three record blocks are deleted and a database field is a
+       **Custom Field**, which carries the same Binding section. */
+    for (const kind of ["catalog_card", "price_line", "custom_field", "totals"]) {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
       const keys = def.controls.map((c) => c.key);
@@ -769,8 +769,15 @@ describe("point 7 · three widget states, each with its own sentence", () => {
     }
   });
 
-  test("the three surfaces a client reads all carry WHICH state it is", () => {
-    for (const file of ["WidgetPane.tsx", "WidgetPicker.tsx", "SectionGallery.tsx"]) {
+  test("the TWO surfaces a client reads carry WHICH state it is — and the third is deleted", () => {
+    /* WAS "the three surfaces": the panel, the widget pop-up and the gallery.
+       `WidgetPicker.tsx` is deleted (2026-09-19) — widgets live in the left
+       panel and nowhere else — so a state it could disagree about is one fewer
+       place to keep in step. */
+    assert.throws(
+      () => readFileSync(new URL("../src/builder/WidgetPicker.tsx", import.meta.url), "utf8"),
+      /ENOENT/, "the widget pop-up is back, and with it a third copy of the three states");
+    for (const file of ["WidgetPane.tsx", "SectionGallery.tsx"]) {
       const src = readFileSync(new URL(`../src/builder/${file}`, import.meta.url), "utf8");
       assert.ok(src.includes('"data-widget-state"'), `${file} still has one bucket for two refusals`);
       assert.ok(src.includes('"data-widget-state": "offered"'), `${file} never says a row IS offered`);
@@ -834,7 +841,24 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
         },
       },
       { id: "w5", kind: "price_line", props: { name: "Salting", quantity: 2, unit_price: 85 } },
-      { id: "w6", kind: "service_location", props: { locationId: "loc-3", heading: "Site" } },
+      /* D-167 — a site block is a Container of **Custom Fields** now, and this
+         golden is the document AFTER that, because its whole job is "a document
+         already in the new names is not rebuilt". The old spelling is pinned by
+         the conversion test below it. */
+      {
+        id: "w6", kind: "container", props: {}, style: { direction: "column", gap: 6 },
+        children: [
+          { id: "w15", kind: "heading", props: { text: "Site", level: 3 } },
+          {
+            id: "w16", kind: "custom_field",
+            props: {
+              _ia_source: "lumen:customer", _ia_selection: null, refresh: "live",
+              on_empty: "hide", overrides: {}, _ia_snapshot: null,
+              field: "service_location.address", show_label: true, locationId: "loc-3",
+            },
+          },
+        ],
+      },
       { id: "w7", kind: "totals", props: { heading: "Your total" } },
       { id: "w8", kind: "html", props: { html: "<p>Book now</p>" } },
     ];
@@ -920,11 +944,20 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
   });
 
   test("an address block keeps `locationId` — it is another repo's key too", () => {
+    /* D-167 — the block unpacks into a Container of Custom Fields, and EVERY
+       one of them carries the location id. oliver-api reads that key off the
+       stored document to open a job per site, so a field that dropped it is a
+       job opening with no address. */
     const d = deserialise(stored([
       { id: "w1", kind: "service_location", props: { locationId: "LOC-4" } },
     ]));
-    const p = d.sections[0].columns[0].widgets[0].props;
-    assert.equal(p.locationId, "LOC-4", "the location id moved and a job would open with no address");
+    const box = d.sections[0].columns[0].widgets[0];
+    assert.equal(box.kind, "container", "the block did not unpack");
+    assert.ok(box.children.length, "the block unpacked into nothing");
+    for (const k of box.children) {
+      assert.equal(k.kind, "custom_field");
+      assert.equal(k.props.locationId, "loc-4", "the location id moved and a job would open with no address");
+    }
   });
 });
 

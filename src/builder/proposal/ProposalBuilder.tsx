@@ -17,8 +17,8 @@
  * OliverProposalsPage.tsx in the same pass. Same route, same list, same
  * buttons — a different editor behind them. "Replace means delete."
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
 import { IadmModal } from "../../components/IadmModal";
 import { useBrandKit } from "../../brand/BrandKitProvider";
 import { useLumenApi } from "../../hooks/useLumenApi";
@@ -40,10 +40,18 @@ import {
 /* 11.13.2 — the three widgets that fill themselves from the database. They
    are what the DELETED Details group is replaced by, so the adapter draws
    them (`ctx.extra`) and keeps their live values in one place. */
+import { type RecordBook } from "./recordWidgets";
+/* D-167 — ONE widget shows ONE database field. The three block widgets it
+   replaced are deleted; a stored one unpacks into a Container of these on
+   open. The family folder is where the lander expects a widget to live. */
 import {
-  RECORD_WIDGET_DEFS, fieldsOf, isRecordKind, overriddenOn, putFieldBackProps, renderRecordBlock,
-  type RecordBook,
-} from "./recordWidgets";
+  CUSTOM_FIELD_KIND, choiceOf, isRetyped, putCustomFieldBackProps, renderCustomFieldWith,
+} from "../widgets/families/ia/customField";
+/* D-168 — the offer file's nine section templates, each a Container tree of
+   normal widgets the author can pull apart. */
+import {
+  CLAUSE_TEMPLATE_KEY, PROPOSAL_SECTION_TEMPLATES, SECTION_TEMPLATE_TAGS,
+} from "./sectionTemplates";
 /* THE SECOND UPGRADE TABLE IS DELETED (integration, 2026-09-19).
    `upgradeProposal.ts` converted six kinds on open; `src/builder/upgrade.ts`
    converts eleven INSIDE `deserialise`, which is the one door a stored
@@ -52,7 +60,7 @@ import {
    widgets never read. There is one now, and `openProposalDocument` /
    `deserialise` already run it. */
 import {
-  TERMS_TILE_KIND, isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
+  isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
   type CatalogueTileKind,
 } from "./catalogueTiles";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
@@ -106,6 +114,7 @@ export interface ProposalBuilderProps {
   onSaved: (message: string) => void;
 }
 
+
 /** The customer's words, one line at a time, with a tick beside each. */
 interface RequestItem { text: string; done: boolean }
 
@@ -126,6 +135,62 @@ interface ContactRow {
 interface LocationRow extends LocationLite { is_default?: boolean }
 
 const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+
+/**
+ * SAVE OPTIONS — the reference editor's chevron beside the verb (D-172).
+ *
+ * One button, one menu. It exists because the bar had three flat save buttons
+ * in it and the reference has none: Publish, then a chevron holding Save
+ * Draft, Save as Template and View Page. The rows are handed in, so the
+ * revision bar and the draft bar are the same control with different verbs and
+ * there is no second copy of the popover.
+ */
+function SaveOptions({ busy, children }: { busy: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        data-save-options={open ? "open" : "closed"}
+        aria-label="Save Options"
+        aria-expanded={open}
+        title="Save Options"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 26, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+          background: "transparent", color: "#fff", cursor: busy ? "default" : "pointer",
+          opacity: busy ? 0.35 : 1,
+        }}
+      >
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <>
+          <div onMouseDown={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9490 }} />
+          <div role="menu" data-save-options-menu="open"
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute", top: 32, right: 0, zIndex: 9500, width: 210,
+              background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8,
+              boxShadow: "0 18px 44px rgba(11,28,36,0.24)", padding: "5px 0",
+              display: "flex", flexDirection: "column",
+            }}>
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One row inside the Save Options menu. */
+const saveRow: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left", border: "none",
+  background: "transparent", padding: "7px 12px", fontSize: 12.5,
+  color: "#0B1C24", cursor: "pointer",
+};
 
 export function ProposalBuilder({ api, proposalId = null, revision = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
@@ -676,11 +741,13 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
-      /* 11.13.2 — the three record widgets, drawn by the adapter because only
-         the adapter has the customer, the site and the business in its hand.
-         `extra` is the engine's own hook for exactly this (render.ts), so
-         render.ts gains no `case` and there is no second renderer table. */
-      extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, recordBook) : null),
+      /* THE CUSTOM FIELD, drawn by the adapter because only the adapter has the
+         customer, the site and the business in its hand. `extra` is the
+         engine's own hook for exactly this (render.ts), so render.ts gains no
+         `case` and there is no second renderer table. Everywhere else — the
+         customer's own copy, the sent wire, a template preview — the family's
+         own renderer builds the book out of the context instead. */
+      extra: (w, c) => (w.kind === CUSTOM_FIELD_KIND ? renderCustomFieldWith(w, c, recordBook) : null),
       totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
@@ -1003,10 +1070,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
   if (picking) {
     return (
       <TemplateLibrary
+        eyebrow="OLIVER · Document builder"
         open
         onClose={onClose}
         product="oliver"
-        eyebrow="OLIVER · Document builder"
         title="Start your document"
         subtitle="Every one of these opens in your colours with your details already on it. Pick the one closest to the job, change anything, and save it as your own."
         entries={libraryEntries}
@@ -1036,15 +1103,24 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           outlineHeading: "This document, top to bottom",
           defaultFontLabel: "This document's own font",
           pageBreakLabel: "Start a new page here",
-          canvasHint: "Click anything to edit it. This is exactly what the customer sees.",
           emptyHeading: "What goes in this document?",
           emptyHint: "Pick one to start. You can add the rest after.",
           lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
         }}
         resetKey={resetKey}
-        eyebrow={revision
-          ? `OLIVER · Revision v${revMeta?.document_version ?? 2}${revMeta?.requested_by === "customer" ? " · asked for by the customer" : ""}`
-          : "OLIVER · Document builder"}
+        /* OUR ANGIE: one door to the AI, in the bar (D-172). */
+        askArgus={
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS"
+            aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#FEC82C", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
+          </button>
+        }
         title={
           <input
             value={title}
@@ -1055,14 +1131,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
               color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 420, padding: "0 0 2px",
             }}
-          />
-        }
-        subtitle={
-          <CustomerBar
-            search={contactSearch} onSearch={setContactSearch}
-            contact={contact} contacts={contacts}
-            onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
-            locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
           />
         }
         doc={doc}
@@ -1084,9 +1152,21 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
            of inserting a widget. `false` is the engine's own "I handled it". */
         onInsertWidget={(def) => {
           if (!isPickerTile(def.kind)) return true;
-          if (def.kind === TERMS_TILE_KIND) { setPickingTerms(true); return false; }
           setPickingCatalogue(def.kind as CatalogueTileKind);
           return false;
+        }}
+        /* THE NINE SECTION TEMPLATES (D-168). Add section — Template shows
+           exactly the offer file's list, and every one of them is a Container
+           tree of normal widgets the author can take apart. */
+        premade={PROPOSAL_SECTION_TEMPLATES}
+        premadeTags={SECTION_TEMPLATE_TAGS}
+        /* ...and placing **Terms and conditions** opens the clause picker, which
+           is where the deleted Terms TILE went. What it drops is still plain
+           Heading + Text Editor, with no live link back to the library: a term
+           somebody signed must not change because the library did. */
+        onPlaceSection={(t) => {
+          if (t.key === CLAUSE_TEMPLATE_KEY) setPickingTerms(true);
+          return true;
         }}
         onSelectionChange={(s) => setSelectedSectionId(s?.sectionId ?? null)}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
@@ -1140,14 +1220,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           if (id === "ask-argus") setAskOpen(true);
         }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
-        nextUp={null}
-        askArgus={
-          <button type="button" onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write, rewrite or build a section. Uses AI credits."
-            style={goldBtn}>
-            <Sparkles size={12} /> Ask ARGUS
-          </button>
-        }
         widgetExtras={(w, sectionId) => (
           <WidgetExtras
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
@@ -1195,20 +1267,35 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
           />
         )}
         headerActions={
-          revision ? (
+          <>
+            {/* THE CUSTOMER PICKER — one of the agreed differences from the
+                reference (D-165 (c)): the reference editor has no customer to
+                choose. It used to ride in the modal's `subtitle`, which the
+                reference bar has no room for, so it is a control in the bar. */}
+            <CustomerBar
+              search={contactSearch} onSearch={setContactSearch}
+              contact={contact} contacts={contacts}
+              onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
+              locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
+            />
+            {revision ? (
             <>
               <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
-                title="Save your changes without sending. The builder stays open and the customer still sees the version they were sent.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => { void saveRevision(false).then(() => onClose()); }}
-                disabled={busy} style={ghostBtn} title="Save and go back to the document.">
-                Save and close
-              </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => { void saveRevision(false); }} disabled={busy}
+                  title="Save this revision and carry on.">
+                  {busy ? "Working…" : "Save draft"}
+                </button>
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => { void saveRevision(false).then(() => onClose()); }} disabled={busy}
+                  title="Save and go back to the document.">
+                  Save and close
+                </button>
+              </SaveOptions>
               <button type="button" data-builder-anchor="send" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
                 title={diff.identical
                   ? "Nothing has changed yet — edit the document first"
@@ -1220,29 +1307,38 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
-                title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
-                <Sparkles size={13} /> Ask ARGUS
-              </button>
-              <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate}
-                onClick={() => setNamingTemplate(true)} disabled={busy} style={ghostBtn}
-                title="Save this document's sections as a template you can start from next time">
-                Save as template
-              </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
-                title="Save your work and carry on. The builder stays open.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
-                title="Save and go back to the list. You can open it again from the row.">
-                Save and close
-              </button>
+              {/* THE VERB, AND ONE CHEVRON BESIDE IT (D-172).
+                  The reference editor's bar ends with Publish and a "Save
+                  Options" chevron holding Save Draft, Save as Template and
+                  View Page. Ours had three flat buttons in the strip —
+                  "Save as template", "Save draft", "Save and close" — which is
+                  three of the four widest things in the bar. Ask ARGUS moved
+                  to the bar's own AI position, where the reference keeps
+                  Angie. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
                 title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Email the customer a link to this document"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => save(false, false)} disabled={busy}
+                  title="Save your work and carry on. The builder stays open.">
+                  {busy ? "Working…" : "Save draft"}
+                </button>
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => save(false, true)} disabled={busy}
+                  title="Save and go back to the list. You can open it again from the row.">
+                  Save and close
+                </button>
+                <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate} style={saveRow}
+                  onClick={() => setNamingTemplate(true)} disabled={busy}
+                  title="Save this document's sections as a template you can start from next time">
+                  Save as template
+                </button>
+              </SaveOptions>
             </>
-          )
+            )}
+          </>
         }
         /* PAGE SETTINGS (§11.13.1 item 2). The left panel is the widgets panel
            and nothing else, so what is true of the DOCUMENT — what it totals,
@@ -1530,6 +1626,26 @@ function CustomerBar({
   const label = (c: ContactRow) =>
     c.company_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "";
 
+  /* FOUND BY DRIVING IT (D-172, 2026-09-19, :5189 at 1600x1000): with no
+     customer chosen this drew the search box AND all twenty-five matches, open,
+     in the top bar — because the list rendered on `contacts.length > 0` and
+     nothing else. It used to sit in the modal's subtitle, which had a row to
+     itself; the reference bar has one row. It is a PILL until it is pressed. */
+  if (!contact && !open) {
+    return (
+      <button type="button" data-customer-pill onClick={() => setOpen(true)}
+        title="Choose the customer once. Every merge field on the page fills from this."
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto",
+          background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px",
+          fontSize: 11, cursor: "pointer",
+        }}>
+        <UserRound size={12} /> Choose customer
+      </button>
+    );
+  }
+
   if (contact && !open) {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1573,7 +1689,8 @@ function CustomerBar({
       <UserRound size={12} />
       <input
         value={search}
-        autoFocus={open}
+        autoFocus
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
         onChange={(e) => onSearch(e.target.value)}
         placeholder="Type a customer's name…"
         title="Choose the customer once. Every merge field on the page fills from this."
@@ -1583,7 +1700,8 @@ function CustomerBar({
           border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px", fontSize: 11, width: 240, outline: "none",
         }}
       />
-      {contacts.length > 0 && (
+      {/* The matches drop only while the box is being used. */}
+      {open && contacts.length > 0 && (
         <span style={{
           position: "absolute", top: "100%", left: 20, zIndex: 20, marginTop: 4, background: "#fff",
           border: "1px solid #CBD5E1", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,.18)",
@@ -1722,16 +1840,16 @@ function WidgetExtras({
 
   /* ── 11.13.2 — the three record-bound widgets ────────────────────────── */
 
-  if (isRecordKind(widget.kind)) {
-    const retyped = overriddenOn(widget.kind, p);
+  if (widget.kind === CUSTOM_FIELD_KIND) {
+    const choice = choiceOf(p);
+    const retyped = isRetyped(p) && choice ? [choice.field] : [];
     return (
-      <div data-record-panel={widget.kind} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {/* The ONE location control, shared with every other site widget. */}
-        {locationPicker}
-        {/* `locationPicker` above is null for Customer and Business Info: the
-            document has ONE customer and ONE business, chosen in the top bar,
-            and a picker for either would be asking a question that is already
-            answered. Only Service Location has a choice to make. */}
+      <div data-record-panel={choice ? choice.record : ""} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* The ONE location control, shared with every other site widget. It is
+            null unless this field comes out of a SERVICE LOCATION: the document
+            has one customer and one business, chosen in the top bar, and a
+            picker for either would ask a question already answered. */}
+        {choice && choice.record === "service_location" ? locationPicker : null}
         {/* PUT IT BACK, per field. F.2's own words and F.2's own writer, so a
             field retyped on a Customer block is undone exactly the way a price
             retyped on a product card is. */}
@@ -1743,16 +1861,17 @@ function WidgetExtras({
             </div>
             {retyped.map((key) => (
               <button key={key} type="button" style={miniBtn} data-put-back={key}
-                title={`${PUT_IT_BACK} — this field follows the customer's record again`}
-                onClick={() => patch(putFieldBackProps(p, key))}>
-                {PUT_IT_BACK}: {recordFieldLabel(widget.kind, key)}
+                title={`${PUT_IT_BACK} — this field follows your own record again`}
+                onClick={() => patch(putCustomFieldBackProps(p))}>
+                {PUT_IT_BACK}: {choice ? choice.label : key}
               </button>
             ))}
           </div>
         ) : (
           <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
-            Every field here comes straight from your own records. Type over one on the
-            page and it stops following — you can put it back from here.
+            This comes straight from your own records and changes when the customer
+            does. Type over it on the page and it stops following — you can put it
+            back from here.
           </div>
         )}
       </div>
@@ -2092,9 +2211,9 @@ function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<
  * here. The widget's own field list already holds the words, so there is one
  * place they are written and the panel and the page cannot disagree.
  */
-function recordFieldLabel(kind: string, key: string): string {
-  return fieldsOf(kind).find((f) => f.key === key)?.label || key;
-}
+/* `recordFieldLabel` LIVED HERE and is DELETED (D-167). A Custom Field knows
+   its own field, so the panel reads the choice's label and there is nothing
+   to look up. */
 
 function plainFieldName(key: string): string {
   const NAMES: Record<string, string> = {

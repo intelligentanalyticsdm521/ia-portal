@@ -108,9 +108,12 @@ describe("the three-pane slots are part of the SHELL", () => {
     assert.deepEqual(withPanes, ["builder"]);
   });
 
-  test("the pane is 320px and the inspector is 320px", () => {
+  test("the inspector is 300px, the width the reference's panel measures (D-172)", () => {
     assert.equal(BUILDER_PANE_WIDTH, 320);
-    assert.equal(BUILDER_INSPECTOR_WIDTH, 320);
+    // Measured in the live editor on 2026-09-19: its panel reports exactly 300
+    // whether it is showing Elements or Edit Container. 320 was ours, and it
+    // is 20px of canvas on every builder.
+    assert.equal(BUILDER_INSPECTOR_WIDTH, 300);
   });
 
   const shell = read("components/IadmModal.tsx");
@@ -159,9 +162,14 @@ describe("every builder opens through ONE frame", () => {
     }
   });
 
-  test("the frame carries exactly ONE undo and ONE redo control", () => {
-    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
-    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
+  test("the frame carries NO undo control — the reference editor has none (D-172)", () => {
+    // SD-010 said "exactly one undo control". Driven in the real editor on
+    // 2026-09-19, the answer is none: undo is the chord and the History panel.
+    // ABSENT, so a second one cannot arrive by being "the only one".
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 0);
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 0);
+    // PRESENT: the one door that replaced them.
+    assert.match(frame, /title="History" aria-label="History"/);
   });
 
   test("both engines open it", () => {

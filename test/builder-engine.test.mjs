@@ -582,8 +582,12 @@ describe("templates and pre-made sections (§7)", () => {
        are unchanged — `test/builder-widget-set.test.mjs` pins all three. */
     // `walkWidgets` skips containers by design; the box itself is pinned in
     // `test/builder-widget-set.test.mjs`.
+    /* D-167 — the address on section 10 is a **Custom Field** pointed at
+       `service_location.address`, not a block widget. The template still
+       spells the old kind and `upgradeDocument` unpacks it on `build()`,
+       which is exactly what a stored document from yesterday gets. */
     for (const k of ["image", "heading", "paragraph", "data_table",
-      "price_line", "alert", "signature", "service_location"]) {
+      "price_line", "alert", "signature", "custom_field"]) {
       assert.ok(kinds.includes(k), `the agreement template has no ${k}`);
     }
     assert.ok(!kinds.includes("clauses"),

@@ -38,19 +38,20 @@
  * carrying both was two answers to "where do I change the background?".
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Copy, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
+import { GripVertical, Plus, X } from "lucide-react";
 import type { BuilderDocument, Section, Selection, WidgetPath } from "./model";
 import { findNode, isContainer, nodeIdAt } from "./treeOps";
-import { extendSelection } from "./model";
+import { WIDGETS_BY_KIND } from "./registry";
 import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
 import { readEditedText } from "./editedText";
 import { AddBar, ADDBAR_CSS } from "./AddBar";
+import { AddSection, ADDSECTION_CSS, type SectionLayout, type StructurePreset } from "./AddSection";
 import {
-  FLASH_MS, sectionAtViewport, boxPlusPlacement, BOX_PLUS_SIZE,
+  FLASH_MS, sectionAtViewport,
   type InsertSpot, type SectionBox,
 } from "./insertPosition";
-import { DEFAULT_COPY, type BuilderCopy } from "./copy";
+import type { BuilderCopy } from "./copy";
 
 /**
  * WHERE A DROP WOULD LAND — the indicator line's own coordinates (§11.8).
@@ -95,24 +96,6 @@ export type CanvasDrag =
   | { kind: "move"; path: WidgetPath }
   | null;
 
-/** Where a "+" would put whatever the picker offers. */
-export type PickerTarget =
-  /** A new section at this index, holding the chosen widget. */
-  | { kind: "newSection"; index: number }
-  /** An exact place inside an existing column. */
-  | { kind: "spot"; spot: InsertSpot };
-
-/** The slash command, mid-flight. See `onSlash` below. */
-export interface SlashState {
-  sectionId: string;
-  widgetId: string;
-  path: string;
-  /** What has been typed after the "/". */
-  query: string;
-  /** Where the caret is, so the picker can appear beside it. */
-  rect: { top: number; left: number };
-}
-
 export interface CanvasProps {
   doc: BuilderDocument;
   ctx: RenderContext;
@@ -125,34 +108,22 @@ export interface CanvasProps {
   onDeleteSection: (sectionId: string) => void;
   onMoveSection: (sectionId: string, toIndex: number) => void;
   /**
-   * ADD A SECTION (§11.13.1 item 5, D-165).
+   * THE ADD AREA (Elementor's, copied 2026-09-19). See AddSection.tsx.
    *
-   * ONE button, and it opens the pop-up that asks Blank or Template. The two
-   * separate "Blank section" and "Ready-made section…" buttons this
-   * replaced made the choice before the author had been asked, and put a third
-   * and fourth control on a strip that already had a "+".
-   *
-   * The rectangle is where the button was, so the pop-up appears on it.
+   * "+" -> Flexbox or Grid -> a structure: `onAddBlank`. The folder: the
+   * template library, `onAddTemplate`. Both say WHERE — the index the new
+   * section goes in at. There is no list of widgets on the page; widgets are in
+   * the left panel and nowhere else.
    */
-  onAddSection: (atIndex: number, at: DOMRect) => void;
-  /** A widget's own hover handle (D-12). */
-  onDuplicateWidget?: (path: WidgetPath) => void;
-  onDeleteWidget?: (path: WidgetPath) => void;
+  onAddBlank: (atIndex: number, layout: SectionLayout, preset: StructurePreset) => void;
+  onAddTemplate: (atIndex: number) => void;
   /**
-   * LOCK AND HIDE, VISIBLY (M-21).
-   *
-   * Both were reachable — lock by construction only, hide from the Outline's
-   * eye — and neither said anything ON THE PAGE, so a section somebody had
-   * hidden on phones looked exactly like one they had not. The widget's own
-   * handle now carries a padlock and an eye that SHOW the state, and pressing
-   * either changes it. Absent, the handle draws what it always drew.
+   * "DRAG WIDGET HERE". Whatever is in the air (`drag`) was let go on the add
+   * area: it lands in a NEW section at this index. The shell owns the payload.
    */
-  onLockWidget?: (path: WidgetPath, locked: boolean) => void;
-  onHideWidget?: (path: WidgetPath, hidden: boolean) => void;
-  /** Which width the eye is talking about — "on phones", "on tablets", "". */
-  hideDeviceWord?: string;
-  /** Is this widget hidden at the width being previewed? */
-  isWidgetHidden?: (path: WidgetPath) => boolean;
+  onDropOnAddArea?: (atIndex: number) => void;
+  /** A widget's own hover handle (D-12). */
+  onDeleteWidget?: (path: WidgetPath) => void;
   /**
    * RIGHT-CLICK ANYTHING (M-8).
    *
@@ -166,18 +137,13 @@ export interface CanvasProps {
     at: { x: number; y: number },
   ) => void;
   /**
-   * A "+" was pressed, or an empty column's "Add here".
-   *
-   * The canvas says WHERE; the shell opens the one picker and does the insert,
-   * so a widget added from a "+" and one added from the pane go through the
-   * same code and get the same defaults.
-   */
-  onOpenPicker?: (target: PickerTarget, rect: DOMRect) => void;
-  /**
-   * The widget that just landed. Scrolled to, and glowing for two seconds.
+   * The widget that just landed — SCROLLED TO, and nothing else (D-172).
    *
    * D-11's other half: landing in the right place is no use if the author is
-   * looking at a different part of the document when it happens.
+   * looking at a different part of the document when it happens. THE GLOW IS
+   * GONE: the reference editor does nothing after an insert beyond the widget
+   * appearing, and an orange outline plus a fading tint for two seconds is our
+   * own invention on top of it.
    */
   flashWidgetId?: string | null;
   /**
@@ -188,14 +154,6 @@ export interface CanvasProps {
    * `insertPosition.ts` decides what to do with it.
    */
   onVisibleSection?: (sectionId: string | null) => void;
-  /** Typing "/" on an empty line. Reported as it is typed; null when it ends. */
-  slash?: SlashState | null;
-  onSlash?: (s: SlashState | null) => void;
-  onSlashCommit?: () => void;
-  /** The three choices an empty page offers (D-148). The adapter supplies them. */
-  emptyChoices?: Array<{ key: string; title: string; hint: string; onPick: () => void }>;
-  /** Something was refused — a locked widget, usually. Shown by the frame. */
-  onRefuse?: (message: string) => void;
   /**
    * A MERGE FIELD WAS CLICKED (D-03, handoff B-A-5).
    *
@@ -222,8 +180,9 @@ export interface CanvasProps {
   drag?: CanvasDrag;
   onDragWidget?: (drag: CanvasDrag) => void;
   onDropWidget?: (spot: InsertSpot) => void;
-  /** Shown under the page: what the template puts next. */
-  nextUp?: string | null;
+  /* `nextUp` — "Next up in this template: …" printed under the add area — is
+     DELETED (D-172). The reference has nothing under those buttons but the
+     words "Drag widget here". */
   /**
    * How a section becomes HTML.
    *
@@ -250,10 +209,12 @@ export interface CanvasProps {
   canvasCss?: string;
   /** The adapter's own stylesheet, appended after the engine's. */
   extraCss?: string;
-  /** The sentence above the page on the LEFT: what clicking does here. */
-  canvasHint?: string;
-  /** The unit above the page on the RIGHT. "Letter", "600px wide", a URL. */
-  paperNote?: string;
+  /* NOTHING SITS BETWEEN THE TOP BAR AND THE PAGE (D-172).
+     `canvasHint` ("Click anything to edit it…") and `paperNote`
+     ("0 sections · Tablet · 768px") were a strip of our own above every page.
+     Driven in the reference on 2026-09-19: there is no hint, no counter and no
+     strip — the page starts straight under the bar. Both props are DELETED, so
+     no adapter can put the strip back by passing one. */
   /**
    * The site's own header and footer, drawn as HTML above and below the page
    * and NOT part of the document. They come from the theme, they are the same
@@ -267,8 +228,8 @@ export interface CanvasProps {
 }
 
 const TOOL: React.CSSProperties = {
-  width: 24, height: 24, display: "inline-flex", alignItems: "center", justifyContent: "center",
-  borderRadius: 4, color: "#334155", border: "none", background: "transparent", cursor: "pointer",
+  width: 24, height: 22, display: "inline-flex", alignItems: "center", justifyContent: "center",
+  color: "#fff", border: "none", background: "transparent", cursor: "pointer", padding: 0,
 };
 
 export function Canvas(props: CanvasProps) {
@@ -276,8 +237,23 @@ export function Canvas(props: CanvasProps) {
   const [dragId, setDragId] = useState<string | null>(null);
   /** Which "+" strip a section drag is hovering. The strip IS the drop line. */
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  /** The add area a container's "+" opened, ABOVE the section at this index. */
+  const [addAreaAt, setAddAreaAt] = useState<number | null>(null);
+  /** Which add area a dragged widget is over: a section index, or null. */
+  const [areaDrop, setAreaDrop] = useState<number | null>(null);
+  const widgetInAir = !!props.drag && !dragId;
+  const areaDropProps = (at: number) => (props.onDropOnAddArea ? {
+    dropActive: widgetInAir && areaDrop === at,
+    onDragOver: (e: React.DragEvent) => { if (widgetInAir) { e.preventDefault(); setAreaDrop(at); } },
+    onDragLeave: () => setAreaDrop(null),
+    onDrop: (e: React.DragEvent) => {
+      if (!widgetInAir) return;
+      e.preventDefault();
+      setAreaDrop(null);
+      props.onDropOnAddArea?.(at);
+    },
+  } : {});
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const copy = props.copy ?? DEFAULT_COPY;
   // `maxWidth: "100%"` on the fixed case as well as the full one: a 780px
   // sheet inside a 374px canvas used to hang off BOTH edges, so the author on
   // a phone saw the middle of a document with no way to see either margin.
@@ -325,9 +301,6 @@ export function Canvas(props: CanvasProps) {
     return () => target.removeEventListener("scroll", onScroll);
   }, [onVisible, doc.sections.length]);
 
-  /** Nothing on the page at all — the three choices, not a blank sheet. */
-  const isEmpty = doc.sections.every((s) => s.columns.every((c) => !c.widgets.length));
-
   return (
     <div ref={rootRef}
       /* M-24 — the one marker the open-time measurement reads. It carries how
@@ -336,14 +309,10 @@ export function Canvas(props: CanvasProps) {
          builder cannot report a fast open by showing an empty grey sheet. */
       data-builder-canvas={doc.sections.length}
       style={{ background: "#E6ECF1", minHeight: "100%", padding: "20px 24px 40px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
-      <style>{props.canvasCss ?? DOCUMENT_CSS}{CANVAS_CSS}{ADDBAR_CSS}{props.extraCss || ""}</style>
+      <style>{props.canvasCss ?? DOCUMENT_CSS}{CANVAS_CSS}{ADDBAR_CSS}{ADDSECTION_CSS}{props.extraCss || ""}</style>
 
-      <div style={{ ...paper, display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 11, color: "#5A7A8A", gap: 12 }}>
-        <span>{props.canvasHint ?? copy.canvasHint}</span>
-        <span style={{ whiteSpace: "nowrap" }}>
-          {doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}{props.paperNote ? ` · ${props.paperNote}` : " · Letter"}
-        </span>
-      </div>
+      {/* THE HINT STRIP AND THE COUNTER WERE HERE AND ARE DELETED (D-172).
+          Nothing sits between the top bar and the page in the reference. */}
 
       <div
         style={{ ...paper, background: props.paper ?? "#FFFFFF", boxShadow: "0 1px 2px rgba(0,0,0,0.06), 0 8px 24px rgba(0,0,0,0.08)" }}
@@ -354,35 +323,22 @@ export function Canvas(props: CanvasProps) {
             dangerouslySetInnerHTML={{ __html: props.chromeTop }} />
         )}
 
-        {/* D-148. A blank sheet is the one screen nobody knows what to do with. */}
-        {isEmpty && props.emptyChoices?.length ? (
-          <div className="bxc-empty" data-builder-empty={String(props.emptyChoices.length)}>
-            <div className="bxc-empty-head">{copy.emptyHeading}</div>
-            <div className="bxc-empty-hint">{copy.emptyHint}</div>
-            <div className="bxc-empty-grid">
-              {props.emptyChoices.map((c) => (
-                <button key={c.key} type="button" className="bxc-empty-card" title={c.hint}
-                  onClick={(e) => { e.stopPropagation(); c.onPick(); }}>
-                  <span className="bxc-empty-plus"><Plus size={16} /></span>
-                  <span className="bxc-empty-title">{c.title}</span>
-                  <span className="bxc-empty-sub">{c.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
-
         {doc.sections.map((s, i) => (
           <div key={s.id}>
-            {/* The strip ABOVE the first section as well, so there is a place
-                to add something before a title band. */}
+            {/* The "+" on this section's handle opens an add area ABOVE it. */}
+            {addAreaAt === i && (
+              <AddSection
+                onClose={() => setAddAreaAt(null)}
+                onBlank={(layout, preset) => { setAddAreaAt(null); props.onAddBlank(i, layout, preset); }}
+                onTemplate={() => { setAddAreaAt(null); props.onAddTemplate(i); }}
+                {...areaDropProps(i)}
+              />
+            )}
             {i === 0 && (
               <AddBar
-                label={`Add something at the top of this ${copy.noun}`}
                 dropActive={!!dragId && dropIndex === 0}
                 onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropIndex(0); } }}
                 onDrop={(e) => { if (!dragId) return; e.preventDefault(); props.onMoveSection(dragId, 0); setDragId(null); setDropIndex(null); }}
-                onAdd={(rect) => props.onOpenPicker?.({ kind: "newSection", index: 0 }, rect)}
               />
             )}
             <SectionHost
@@ -391,16 +347,14 @@ export function Canvas(props: CanvasProps) {
               total={doc.sections.length}
               selected={selection?.kind === "section" && selection.sectionId === s.id}
               selectedWidgetId={selection?.kind === "widget" ? nodeIdAt(doc, selection) : null}
-              alsoSelectedIds={selection?.kind === "widget" ? (selection.also || []) : []}
               dragging={dragId === s.id}
               onDragStart={() => setDragId(s.id)}
               onDragEnd={() => { setDragId(null); setDropIndex(null); }}
+              onAddAbove={() => setAddAreaAt(i)}
               {...props}
               ctx={ctx}
             />
             <AddBar
-              always={i === doc.sections.length - 1}
-              label={`Add something here in this ${copy.noun}`}
               dropActive={!!dragId && dropIndex === i + 1}
               onDragOver={(e) => { if (dragId) { e.preventDefault(); setDropIndex(i + 1); } }}
               onDrop={(e) => {
@@ -414,33 +368,17 @@ export function Canvas(props: CanvasProps) {
                 props.onMoveSection(dragId, from <= i ? i : i + 1);
                 setDragId(null); setDropIndex(null);
               }}
-              onAdd={(rect) => props.onOpenPicker?.({ kind: "newSection", index: i + 1 }, rect)}
-              note={i === doc.sections.length - 1 && props.nextUp
-                ? <span style={{ fontSize: 10, color: "#5A7A8A", flex: "0 0 auto" }}>Next up in this template: {props.nextUp}</span>
-                : null}
-            >
-              {i === doc.sections.length - 1 && (
-                <button type="button" className="bxc-tiny" data-builder-addsection-btn
-                  title="Add a section here — blank, or from a template"
-                  onClick={(e) => { e.stopPropagation(); props.onAddSection(i + 1, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}>
-                  Add section
-                </button>
-              )}
-            </AddBar>
+            />
           </div>
         ))}
 
-        {/* No sections at all: one strip is the whole page. */}
-        {!doc.sections.length && (
-          <AddBar always label={`Add the first thing to this ${copy.noun}`}
-            onAdd={(rect) => props.onOpenPicker?.({ kind: "newSection", index: 0 }, rect)}>
-            <button type="button" className="bxc-tiny" data-builder-addsection-btn
-              title="Add a section here — blank, or from a template"
-              onClick={(e) => { e.stopPropagation(); props.onAddSection(0, (e.currentTarget as HTMLElement).getBoundingClientRect()); }}>
-              Add section
-            </button>
-          </AddBar>
-        )}
+        {/* THE ADD AREA AT THE BOTTOM OF THE PAGE — always there, as in the
+            reference. On an empty page it is the whole page. */}
+        <AddSection
+          onBlank={(layout, preset) => props.onAddBlank(doc.sections.length, layout, preset)}
+          onTemplate={() => props.onAddTemplate(doc.sections.length)}
+          {...areaDropProps(doc.sections.length)}
+        />
 
         {props.chromeBottom && (
           <div className="bxc-chrome" title={props.chromeNote || "From your website's theme"}
@@ -465,16 +403,17 @@ function oneSection(section: Section): BuilderDocument {
 }
 
 function SectionHost({
-  section, index, total, ctx, selected, selectedWidgetId, alsoSelectedIds, selection, dragging,
+  section, index, total, ctx, selected, selectedWidgetId, selection, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onMoveSection, onDragStart, onDragEnd, renderSection: renderOne,
-  drag, onDragWidget, onDropWidget, onOpenPicker, onDuplicateWidget, onDeleteWidget,
-  onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy,
-  flashWidgetId, slash, onSlash, onSlashCommit, onRefuse, onTokenClick,
+  drag, onDragWidget, onDropWidget, onDeleteWidget, onAddAbove,
+  onContextMenu,
+  flashWidgetId, onTokenClick,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
-  alsoSelectedIds: string[];
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
+  /** The "+" on this section's handle: open an add area above it. */
+  onAddAbove: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -484,8 +423,10 @@ function SectionHost({
   /** True when this section holds a part the law puts there. See model.ts. */
   const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
   const flashedRef = useRef<string | null>(null);
-  /** The shift-clicked ids as ONE string, so an effect can depend on them. */
-  const alsoKey = alsoSelectedIds.join(",");
+  /* MULTI-SELECT IS DELETED (D-172). The reference editor has no multi-select
+     on the canvas: shift-clicking a second widget selected it as well, marked
+     it with a dotted ring and fed a "Put these in a box" row in the menu, all
+     of which was ours. One click, one selection. */
 
   /**
    * WHERE A THING ON THE PAGE LIVES, read off the DOM it was painted into.
@@ -510,8 +451,7 @@ function SectionHost({
   // inside this section", and a widget's own handle is inside it — so pressing
   // the padlock focused the button, the repaint was skipped, and the handle
   // went on showing an open padlock over a widget the model had just locked.
-  // The page said one thing and the document said another, which is the exact
-  // failure the slash command hit in §11.10.
+  // The page said one thing and the document said another.
   //
   // The rule protects the CARET, so it asks about the caret: an editable run,
   // not any descendant. A button is not somewhere text is being typed.
@@ -525,7 +465,9 @@ function SectionHost({
       el.contentEditable = "true";
       el.spellcheck = true;
       el.dataset.bxEditable = "1";
-      el.title = "Click and type. This is exactly what the customer reads.";
+      /* NO TOOLTIP ON A RUN OF WORDS (D-172). "Click and type. This is exactly
+         what the customer reads." hung off EVERY editable run; text on the page
+         carries no tooltip in the reference. */
     }
 
     /* ── EVERY WIDGET GETS A HANDLE ON HOVER (D-12) ────────────────────────
@@ -537,39 +479,56 @@ function SectionHost({
        selecting a word in it stay two different gestures. */
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-widget]"))) {
       const id = el.dataset.widget || "";
-      const isSel = id === selectedWidgetId;
-      el.classList.toggle("bxc-widget-sel", isSel);
-      // SHIFT-CLICKED AS WELL (§11.12). A second mark rather than the same one,
-      // because "the one the inspector is bound to" and "also going into the
-      // box" are two different facts and the author has to be able to see which
-      // is which.
-      el.classList.toggle("bxc-widget-also", !isSel && alsoSelectedIds.includes(id));
-
-      const tools = document.createElement("span");
-      tools.className = "bxc-wtools";
-      tools.setAttribute("contenteditable", "false");
+      el.classList.toggle("bxc-widget-sel", id === selectedWidgetId);
 
       const path = pathOf(el);
       const locked = path
         ? !!section.columns[path.columnIndex]?.widgets[path.widgetIndex]?.locked
         : false;
 
-      /* A BOX WEARS THE SAME HANDLE AS EVERYTHING ELSE (§11.12).
-         "Every element behaves like every other element" is the whole rule, so
-         there is no second loop and no second set of buttons here — a container
-         carries `data-widget` in edit mode exactly as a widget does, and this
-         loop finds it. Only the WORDS change, because "another column, another
-         section" is not what a box does. */
+      /* THE HANDLE IS THE REFERENCE EDITOR'S, AT EVERY DEPTH (D-172).
+         Read out of a live Elementor on 2026-09-19 (the capture is
+         `elementor-reference/widgets/_zz_screen_round1b.json`):
+
+           <ul class="elementor-editor-element-settings">
+             <li title="Add Container">    eicon-plus
+             <li title="Edit Container">   eicon-handle  (also the drag handle)
+             <li title="Delete Container"> eicon-close
+
+         — the same three-icon tab, top CENTRE, on a container at ANY depth.
+         Ours gave a NESTED container a two-item grip-and-x pinned to its
+         top-LEFT, so the same kind of thing wore two different handles. A
+         WIDGET shows one control, the pencil, which is also how it is dragged.
+
+         THE TOOLTIPS ARE SHORT, as the reference's are: "Edit Container",
+         "Edit Heading". The sentence that used to hang here — "Drag to move
+         this anywhere on the page - another box, another column, another
+         section" - is gone. */
       const isBox = el.dataset.kind === "container";
-      const noun = isBox ? "box" : "block";
+      const tools = document.createElement("span");
+      tools.className = isBox ? "bxc-wtools bxc-wtools-box" : "bxc-wtools";
+      tools.setAttribute("contenteditable", "false");
+
+      if (isBox) {
+        const add = document.createElement("button");
+        add.type = "button";
+        add.className = "bxc-wtool";
+        add.title = "Add Container";
+        add.setAttribute("aria-label", "Add Container");
+        add.textContent = "+";
+        add.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onAddAbove(); });
+        tools.appendChild(add);
+      }
+
+      const widgetName = isBox
+        ? "Container"
+        : (WIDGETS_BY_KIND[el.dataset.kind || ""]?.label || el.dataset.kind || "Widget");
       const grip = document.createElement("span");
       grip.className = "bxc-grip";
       grip.setAttribute("draggable", "true");
-      grip.title = isBox
-        ? "Drag to move this box, and everything in it, anywhere on the page"
-        : "Drag to move this anywhere on the page — another box, another column, another section";
-      grip.setAttribute("aria-label", "Drag to move");
-      grip.textContent = "∷";
+      grip.title = `Edit ${widgetName}`;
+      grip.setAttribute("aria-label", `Edit ${widgetName}`);
+      grip.textContent = isBox ? "\u2237" : "\u270E";
       grip.addEventListener("dragstart", (e) => {
         const ev = e as DragEvent;
         ev.dataTransfer?.setData("text/plain", "widget");
@@ -579,202 +538,71 @@ function SectionHost({
       grip.addEventListener("dragend", () => onDragWidget?.(null));
       tools.appendChild(grip);
 
-      const button = (glyph: string, title: string, run: () => void, danger = false) => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = `bxc-wtool${danger ? " bxc-wtool-danger" : ""}`;
-        b.title = title;
-        b.setAttribute("aria-label", title);
-        b.textContent = glyph;
-        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); run(); });
-        tools.appendChild(b);
-      };
-      if (!locked) {
-        button("⧉", `Make a copy of this ${noun}, right underneath`,
-          () => { if (path) onDuplicateWidget?.(path); });
-        button("✕", isBox ? "Remove this box and everything in it" : "Remove this from the page",
-          () => { if (path) onDeleteWidget?.(path); }, true);
-      } else {
-        button("\u{1F512}", "This has to stay on the page — you can change the wording, not remove it",
-          () => onRefuse?.("This part has to stay: it carries your unsubscribe link and postal address. You can change the wording."));
-      }
-
-      /* M-21 — LOCK AND HIDE, AND THEY SAY WHICH THEY ARE.
-         The eye is filled when the thing is hidden and open when it is not, and
-         the padlock is only offered where the author is allowed to change it:
-         the email footer is locked by construction and the button above already
-         says why, so offering an unlock beside it would be a control that lies. */
-      const device = hideDeviceWord ? ` ${hideDeviceWord}` : "";
-      const hidden = path ? !!isWidgetHidden?.(path) : false;
-      if (onHideWidget && path) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = `bxc-wtool${hidden ? " bxc-wtool-on" : ""}`;
-        b.setAttribute("data-widget-hidden", hidden ? "1" : "0");
-        b.title = hidden
-          ? `Hidden${device}. Press to show it again.`
-          : `Hide this${device}. It stays in the ${copy?.noun || "page"}.`;
-        b.setAttribute("aria-label", b.title);
-        b.textContent = hidden ? "\u{1F648}" : "\u{1F441}";
-        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onHideWidget(path, !hidden); });
-        tools.appendChild(b);
-      }
-      if (onLockWidget && path && !locked) {
+      if (isBox && !locked) {
         const b = document.createElement("button");
         b.type = "button";
         b.className = "bxc-wtool";
-        b.setAttribute("data-widget-locked", "0");
-        b.title = "Lock so it can't be deleted. You can still change the words in it.";
-        b.setAttribute("aria-label", b.title);
-        b.textContent = "\u{1F513}";
-        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onLockWidget(path, true); });
-        tools.appendChild(b);
-      }
-      if (onLockWidget && path && locked) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "bxc-wtool bxc-wtool-on";
-        b.setAttribute("data-widget-locked", "1");
-        b.title = "Locked, so it cannot be deleted by accident. Press to unlock it.";
-        b.setAttribute("aria-label", b.title);
-        b.textContent = "\u{1F512}";
-        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); onLockWidget(path, false); });
-        tools.appendChild(b);
-      }
-      if (onContextMenu && path) {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "bxc-wtool";
-        b.setAttribute("data-widget-more", "1");
-        b.title = "Everything you can do with this — the same as right-clicking it";
-        b.setAttribute("aria-label", b.title);
-        b.textContent = "⋯";
-        b.addEventListener("click", (e) => {
-          e.stopPropagation(); e.preventDefault();
-          const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-          onContextMenu({ kind: "widget", path }, { x: r.left, y: r.bottom + 4 });
-        });
+        b.title = "Delete Container";
+        b.setAttribute("aria-label", "Delete Container");
+        b.textContent = "\u2715";
+        b.addEventListener("click", (e) => { e.stopPropagation(); e.preventDefault(); if (path) onDeleteWidget?.(path); });
         tools.appendChild(b);
       }
       el.appendChild(tools);
     }
 
-    /* ── AN EMPTY COLUMN SAYS SO, AND OFFERS THE "+" ───────────────────────
-       An empty column used to render as nothing at all: two columns looked
-       like one, and there was no way to put anything in the second. §11.12
-       makes it EVERY box: a box the author has just dropped is empty by
-       definition, and an empty box you cannot put anything into is the same
-       defect one level down. A column IS a box, so this is one loop and not
-       two, and the wording is the only thing that differs. */
+    /* ── AN EMPTY CONTAINER SHOWS A "+" IN THE MIDDLE (Elementor's) ────────
+       Pressing it does what the reference does: it SELECTS this container, and
+       the left panel is where the widgets are. A tile pressed with a container
+       selected lands INSIDE it (insertPosition.ts), and a tile dragged lands
+       where it is dropped. No list of widgets opens on the page. */
     for (const box of Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"))) {
       if (box.querySelector("[data-widget]")) continue;
       const columnIndex = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
       const hostId = box.dataset.bxHost || "";
-      const inBox = !box.hasAttribute("data-col");
       const b = document.createElement("button");
       b.type = "button";
       b.className = "bxc-addhere";
       b.setAttribute("data-builder-addhere", String(columnIndex));
       b.setAttribute("data-addhere-host", hostId);
-      b.title = inBox ? "Add something in this box" : "Add something in this column";
-      b.textContent = "+ Add here";
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        onOpenPicker?.(
-          { kind: "spot", spot: { hostId, sectionId: section.id, columnIndex, index: 0 } },
-          (e.currentTarget as HTMLElement).getBoundingClientRect(),
-        );
-      });
-      box.appendChild(b);
-    }
-
-    /* ── AND A BOX WITH THINGS IN IT IS NOT A DEAD END ──────────────────
-       Brandon's sentence ends "then a text field under it" — UNDER something
-       already in the box. A "+" only on the EMPTY ones would mean the only way
-       to add the second thing is a drag, and the whole of D-11 is that a
-       gesture you have to guess is a gesture nobody makes. A thin strip at the
-       end of each box, quiet until the pointer is near it. */
-    for (const box of Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"))) {
-      if (box.hasAttribute("data-col")) continue;
-      const kids = Array.from(box.children).filter((el) =>
-        el instanceof HTMLElement && el.hasAttribute("data-widget"));
-      if (!kids.length) continue;
-      const hostId = box.dataset.bxHost || "";
-      const columnIndex = Number(box.closest<HTMLElement>("[data-col]")?.dataset.col ?? 0);
-      /**
-       * EVERY BOX'S "+" IS ITS OWN (V-3).
-       *
-       * FOUND BY DRIVING IT (verifier, 2026-09-17): this button used to take
-       * its position from the stylesheet — the same `right:-11px; bottom:-11px;
-       * z-index:6` for every box at every depth. A row that is the last child
-       * of a box shares its parent's bottom-right corner, so the two buttons
-       * sat on the identical pixel and the PARENT's won (it is appended after
-       * the nested box). Pressing "+ inside this row" added to the box around
-       * it, silently, from the second level down.
-       *
-       * ONE placement rule, `boxPlusPlacement`, keyed on how many boxes this
-       * box is inside: pulled in one step per level and stacked above its
-       * parent's, so no two buttons in an ancestor chain can overlap. The
-       * depth is counted off the DOM the renderer just wrote, which is the
-       * same tree the model has.
-       */
-      let level = 0;
-      for (let up = box.parentElement; up && up !== host; up = up.parentElement) {
-        if (up.hasAttribute("data-bx-host") && !up.hasAttribute("data-col")) level += 1;
-      }
-      const place = boxPlusPlacement(level);
-      const what = box.classList.contains("bx-box-row") ? "row"
-        : box.classList.contains("bx-box-grid") ? "grid" : "box";
-      const words = level
-        ? `Add something inside this ${what} (level ${level + 1})`
-        : `Add something inside this ${what}`;
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "bxc-addin";
-      b.setAttribute("data-builder-addin", hostId);
-      b.setAttribute("data-addin-level", String(level));
-      b.style.right = `${place.right}px`;
-      b.style.bottom = `${place.bottom}px`;
-      b.style.zIndex = String(place.zIndex);
-      b.title = words;
-      b.setAttribute("aria-label", words);
+      /* NO INSTRUCTION SENTENCE (D-172). The reference's empty container is
+         a "+" and nothing else; "Drag a widget here, or press and then choose
+         one on the left" was ours. The accessible name stays, short. */
+      b.setAttribute("aria-label", "Add Widget");
       b.textContent = "+";
       b.addEventListener("click", (e) => {
         e.stopPropagation();
-        onOpenPicker?.(
-          { kind: "spot", spot: { hostId, sectionId: section.id, columnIndex, index: kids.length } },
-          (e.currentTarget as HTMLElement).getBoundingClientRect(),
-        );
+        const owner = box.closest<HTMLElement>("[data-widget]");
+        const path = owner && owner.dataset.widget === hostId ? pathOf(owner) : null;
+        if (path) onSelect({ kind: "widget", ...path });
+        // An empty COLUMN is not a node; name the column, and the insert rule
+        // keeps the new thing in it (insertPosition: "the column it named").
+        else onSelect({ kind: "widget", sectionId: section.id, columnIndex, widgetIndex: -1 });
+        document.querySelector<HTMLInputElement>('[data-builder-slot="pane"] input')?.focus();
       });
       box.appendChild(b);
     }
-  }, [html, selectedWidgetId, alsoSelectedIds, onDragWidget, onDuplicateWidget, onDeleteWidget, onOpenPicker,
-      onRefuse, onLockWidget, onHideWidget, hideDeviceWord, isWidgetHidden, onContextMenu, copy, pathOf, section]);
+  }, [html, selectedWidgetId, onAddAbove, onDragWidget, onDeleteWidget, onSelect, pathOf, section]);
 
   /**
    * THE SELECTION MARKS, WITHOUT A REPAINT.
    *
-   * FOUND BY DRIVING IT (2026-09-17, D-156). Shift-clicking a second widget
-   * changed the document and changed nothing on the page: the paint above is
-   * deliberately SKIPPED while the caret is inside a run of text, and on this
-   * canvas clicking any words puts the caret inside a run of text. So the
-   * marks could never be drawn by the gesture that sets them, and "select two
-   * things and put them in a box" had no way to show you what was selected.
+   * FOUND BY DRIVING IT (2026-09-17, D-156). The paint above is deliberately
+   * SKIPPED while the caret is inside a run of text, and on this canvas
+   * clicking any words puts the caret inside a run of text — so the mark could
+   * never be drawn by the gesture that sets it.
    *
    * The guard exists to stop React rewriting the HTML under the cursor. This
-   * writes no HTML: it toggles two classes on wrappers the paint already made.
+   * writes no HTML: it toggles one class on wrappers the paint already made.
    * That is why it is a second effect rather than a hole in the first one.
    */
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     for (const el of Array.from(host.querySelectorAll<HTMLElement>("[data-widget]"))) {
-      const id = el.dataset.widget || "";
-      const isSel = id === selectedWidgetId;
-      el.classList.toggle("bxc-widget-sel", isSel);
-      el.classList.toggle("bxc-widget-also", !isSel && alsoKey.split(",").includes(id));
+      el.classList.toggle("bxc-widget-sel", (el.dataset.widget || "") === selectedWidgetId);
     }
-  }, [selectedWidgetId, alsoKey, html]);
+  }, [selectedWidgetId, html]);
 
   /**
    * THE NEW THING IS BROUGHT TO THE AUTHOR, not the other way round.
@@ -789,13 +617,14 @@ function SectionHost({
     if (!host || !flashWidgetId) return;
     const el = host.querySelector<HTMLElement>(`[data-widget="${flashWidgetId}"]`);
     if (!el) return;
-    el.classList.add("bxc-flash");
+    /* NO GLOW (D-172). The orange outline and the fading tint were ours; the
+       reference does nothing after an insert beyond the widget appearing. What
+       stays is the SCROLL, which is not chrome — it is the difference between
+       a widget that landed and a widget the author cannot find. */
     if (flashedRef.current !== flashWidgetId) {
       flashedRef.current = flashWidgetId;
       el.scrollIntoView({ block: "center", behavior: "smooth" });
     }
-    const t = setTimeout(() => el.classList.remove("bxc-flash"), FLASH_MS);
-    return () => clearTimeout(t);
   }, [flashWidgetId, html]);
 
   /**
@@ -901,30 +730,6 @@ function SectionHost({
     onEditText(section.id, widgetEl.dataset.widget, path, text, `${widgetEl.dataset.widget}:${path}`);
   }, [onEditText, section.id]);
 
-  /**
-   * THE SLASH COMMAND.
-   *
-   * On an EMPTY run of text, "/" opens the same picker, filtered as you type.
-   * Only on an empty one: "and/or" in the middle of a paragraph must not open
-   * a menu. The canvas reports what has been typed; the shell owns the picker,
-   * because the shell is what does the insert.
-   */
-  const watchSlash = useCallback((el: HTMLElement) => {
-    if (!onSlash) return;
-    const text = readEditedText(el).replace(/ /g, " ");
-    const widgetEl = el.closest<HTMLElement>("[data-widget]");
-    if (!widgetEl?.dataset.widget || !el.dataset.edit) return;
-    if (!text.startsWith("/")) { if (slash) onSlash(null); return; }
-    const r = el.getBoundingClientRect();
-    onSlash({
-      sectionId: section.id,
-      widgetId: widgetEl.dataset.widget,
-      path: el.dataset.edit,
-      query: text.slice(1).trim(),
-      rect: { top: r.bottom + 6, left: r.left },
-    });
-  }, [onSlash, slash, section.id]);
-
   return (
     <div
       ref={wrapRef}
@@ -963,15 +768,7 @@ function SectionHost({
         const el = (e.target as HTMLElement).closest<HTMLElement>("[data-widget]");
         const path = el && hostRef.current?.contains(el) ? pathOf(el) : null;
         if (path) {
-          /* A RIGHT-CLICK ON SOMETHING ALREADY SELECTED KEEPS THE SELECTION.
-             FOUND BY DRIVING IT (D-156): shift-clicking two widgets and then
-             right-clicking one of them re-selected THAT one on the way to the
-             menu, so "Put these in a box" was greyed out with "hold Shift and
-             click a second thing" beside it — while two things were selected.
-             The gesture that opens the menu cannot be the gesture that undoes
-             what the menu is for. */
-          const already = alsoKey.split(",").includes(path.id || "") || path.id === selectedWidgetId;
-          if (!already) onSelect({ kind: "widget", ...path });
+          if (path.id !== selectedWidgetId) onSelect({ kind: "widget", ...path });
           onContextMenu({ kind: "widget", path }, { x: e.clientX, y: e.clientY });
           return;
         }
@@ -992,63 +789,35 @@ function SectionHost({
         if (widgetEl && hostRef.current?.contains(widgetEl)) {
           const path = pathOf(widgetEl);
           if (path) {
-            // SHIFT ADDS TO THE SELECTION (§11.12), which is what "select two
-            // cards and put them in a box" is made of. The rule is in the model
-            // so it is a test rather than three lines in a click handler.
-            onSelect(e.shiftKey ? extendSelection(selection, path) : { kind: "widget", ...path });
+            // ONE CLICK, ONE SELECTION (D-172). Shift used to add to it; the
+            // reference editor has no multi-select on the canvas.
+            onSelect({ kind: "widget", ...path });
             return;
           }
         }
         onSelect({ kind: "section", sectionId: section.id });
       }}
     >
-      {/* THE SLIM TOOLBAR (D-12). Shown on HOVER as well as when selected, so
-          a section says what can be done to it before it is clicked. Nine
-          settings buttons used to live here; every one of them is in the
-          inspector, and two homes for one setting is one too many. */}
-      <div className="bxc-toolbar" role="toolbar" aria-label={`Section: ${section.label || "untitled"}`}>
+      {/* THE HANDLE — Elementor's three, top centre: "+" opens an add area
+          above this, the grip drags it (and a press selects it), "x" deletes
+          it. Everything else is on right-click and in the panel on the right. */}
+      <div className="bxc-toolbar" role="toolbar" /* "Container", not "Container: Section" (D-172) — the deleted word was
+            leaking into the label. */
+        aria-label="Container">
+        <button type="button" style={TOOL} title="Add Container" aria-label="Add Container"
+          onClick={(e) => { e.stopPropagation(); onAddAbove(); }}><Plus size={13} /></button>
         <span
           style={{ ...TOOL, cursor: "grab" }}
-          title="Drag to move this section"
+          title="Edit Container — drag to move it"
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-        ><GripVertical size={14} /></span>
-        {/* THE NAME, typed here. The outline reads off it (Navigator), and a
-            document of twelve sections all called "Section" is an outline
-            nobody can use. One writer: `changeSection` in the shell. */}
-        <input
-          className="bxc-secname"
-          value={section.label || ""}
-          placeholder="Name this section"
-          aria-label="Section name"
-          title="What this section is called. It shows in the outline, and on the page when the section is numbered."
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => onPatchSection(section.id, { label: e.target.value })}
-        />
-        <span className="bxc-div" />
-        <button type="button" style={{ ...TOOL, opacity: index === 0 ? 0.35 : 1 }} disabled={index === 0}
-          title="Move this section up" aria-label="Move this section up"
-          onClick={(e) => { e.stopPropagation(); onMoveSection(section.id, index - 1); }}><ArrowUp size={14} /></button>
-        <button type="button" style={{ ...TOOL, opacity: index === total - 1 ? 0.35 : 1 }} disabled={index === total - 1}
-          title="Move this section down" aria-label="Move this section down"
-          onClick={(e) => { e.stopPropagation(); onMoveSection(section.id, index + 1); }}><ArrowDown size={14} /></button>
-        <span className="bxc-div" />
-        {/* A section holding a required part is not the author's to copy or
-            delete — the model refuses either way (model.removeSection), and a
-            button that silently does nothing is worse than one that says why. */}
+          onClick={(e) => { e.stopPropagation(); onSelect({ kind: "section", sectionId: section.id }); }}
+        ><GripVertical size={13} /></span>
         <button type="button" style={{ ...TOOL, opacity: required ? 0.35 : 1 }} disabled={required}
-          title={required ? "This part has to appear exactly once, so it cannot be copied" : "Duplicate this section"}
-          onClick={(e) => { e.stopPropagation(); onDuplicateSection(section.id); }}><Copy size={14} /></button>
-        <button type="button" style={{ ...TOOL, color: "#B91C1C", opacity: required ? 0.35 : 1 }} disabled={required}
-          title={required ? "The footer carries your unsubscribe link and address — the law asks for both, so it stays" : "Delete this section"}
-          onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}><Trash2 size={14} /></button>
-        <span className="bxc-div" />
-        <button type="button" style={TOOL} title="Settings for this section — columns, colours, spacing"
-          aria-label="Settings for this section"
-          onClick={(e) => { e.stopPropagation(); onSelect({ kind: "section", sectionId: section.id }); }}>
-          <Settings2 size={14} />
-        </button>
+          title={required ? "The footer carries your unsubscribe link and address — the law asks for both, so it stays" : "Delete Container"}
+          aria-label="Delete Container"
+          onClick={(e) => { e.stopPropagation(); onDeleteSection(section.id); }}><X size={13} /></button>
       </div>
 
       <div
@@ -1059,12 +828,6 @@ function SectionHost({
           const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]");
           if (!el) return;
           commit(el);
-          watchSlash(el);
-        }}
-        onKeyDown={(e) => {
-          if (!slash) return;
-          if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); onSlashCommit?.(); return; }
-          if (e.key === "Escape") { e.stopPropagation(); onSlash?.(null); }
         }}
         onBlur={(e) => {
           const el = (e.target as HTMLElement).closest<HTMLElement>("[data-edit]");
@@ -1091,23 +854,20 @@ function SectionHost({
 
 const CANVAS_CSS = `
 .bxc-sec { position: relative; }
-.bxc-sec.bxc-sel { outline: 2px solid #2D9CDB; outline-offset: -2px; background: #FBFDFF; }
+/* SELECTED: a 1px SOLID line and no change to the fill (D-172). Ours was a
+   2px line plus a pale tint across the whole section, which reads as a
+   highlight rather than a selection. */
+.bxc-sec.bxc-sel { outline: 1px solid #2D9CDB; outline-offset: -1px; }
 .bxc-sec.bxc-dragging { opacity: .45; }
-/* THE SLIM TOOLBAR, on hover as well as on selection (D-12). */
-.bxc-toolbar { position: absolute; top: -17px; left: 24px; z-index: 5; display: flex; align-items: center; gap: 2px;
-  background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 6px; padding: 3px 6px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.08); font-size: 11px; color: #334155;
+/* THE HANDLE — a small tab, top centre, as in the reference. */
+.bxc-toolbar { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; align-items: center; background: #0C4A60; border-radius: 5px 5px 0 0; padding: 0 2px;
   opacity: 0; pointer-events: none; transition: opacity .1s; }
+.bxc-toolbar > *:hover { background: rgba(255,255,255,.16); }
 .bxc-sec:hover > .bxc-toolbar, .bxc-sec.bxc-sel > .bxc-toolbar,
 .bxc-toolbar:focus-within { opacity: 1; pointer-events: auto; }
-.bxc-div { width: 1px; height: 18px; background: #E2E8F0; }
-.bxc-secname { border: none; outline: none; background: transparent; font-size: 11px; font-weight: 600;
-  color: #334155; width: 120px; padding: 0 4px; }
-.bxc-secname:focus { background: #F1F5F9; border-radius: 3px; }
-.bxc-tiny { border: 1px dashed #CBD5E1; background: #fff; color: #0C4A60; border-radius: 999px; padding: 3px 10px;
-  font-size: 10px; font-weight: 600; cursor: pointer; flex: 0 0 auto; }
-.bxc-tiny:hover { border-color: #0C4A60; }
-.bxc-widget-sel { outline: 1px dashed #2D9CDB; outline-offset: 3px; border-radius: 3px; }
+/* SOLID, not dashed (D-172): a dashed ring reads as a placeholder. */
+.bxc-widget-sel { outline: 1px solid #2D9CDB; outline-offset: 3px; border-radius: 3px; }
 [data-widget] { position: relative; }
 /* THE WIDGET'S OWN HANDLE — on hover, at the corner, outside the words. */
 /* A HANDLE THAT CANNOT BE SEEN CANNOT BE PRESSED (landed 2026-09-17).
@@ -1126,10 +886,8 @@ const CANVAS_CSS = `
 .bxc-wtools { position: absolute; top: -11px; left: -9px; z-index: 6; display: inline-flex; gap: 2px;
   opacity: 0; pointer-events: none; transition: opacity .1s; }
 [data-widget]:hover > .bxc-wtools, .bxc-widget-sel > .bxc-wtools { opacity: 1; pointer-events: auto; }
-/* ALSO SELECTED (§11.12) — shift-clicked, going into the box with the other
-   one. A dotted ring rather than the solid selection ring, because the author
-   has to be able to tell which one the inspector on the right is about. */
-.bxc-widget-also { outline: 2px dotted #2D9CDB; outline-offset: 2px; border-radius: 3px; }
+/* THE "ALSO SELECTED" DOTTED RING IS DELETED (D-172) — there is no
+   multi-select on the reference editor's canvas. */
 /* A BOX'S OWN HANDLE STEPS BACK while the pointer is on something INSIDE it.
    Without this, hovering a card in a row in a box shows three handles stacked
    in the same corner and the author cannot tell which one they are about to
@@ -1142,41 +900,21 @@ const CANVAS_CSS = `
 .bxc-grip { cursor: grab; letter-spacing: 1px; }
 .bxc-grip:active { cursor: grabbing; }
 .bxc-wtool-danger { background: #B91C1C; }
-/* THE NEW THING, for two seconds. */
-.bxc-flash { outline: 2px solid #EF6C33; outline-offset: 4px; border-radius: 3px;
-  animation: bxc-flash-fade 2s ease-out; }
-@keyframes bxc-flash-fade { 0% { background: rgba(239,108,51,.22); } 100% { background: transparent; } }
-/* AN EMPTY COLUMN SAYS SO. */
-.bxc-addhere { display: block; width: 100%; border: 1px dashed #A8CDD8; background: #F8FBFD; color: #0C4A60;
-  border-radius: 6px; padding: 14px 8px; font-size: 11px; font-weight: 600; cursor: pointer; }
-.bxc-addhere:hover { border-color: #0C4A60; background: #EEF6FA; }
-/* THE "+" INSIDE A BOX THAT ALREADY HAS THINGS IN IT. Quiet until the pointer
-   is near, like the strip between sections — a page with a dashed box round
-   every level is a page you cannot read.
-
-   OUT OF FLOW, pinned to the box's bottom-right corner, and that is not a
-   decoration: an in-flow button is a CHILD, so in a row it would sit between
-   the cards and take a share of the width, and in a grid it would take a whole
-   cell. Found by driving it: the first version was align-self:center, in
-   flow, it ended up under the last thing in the box, and clicking where it
-   looked selected the paragraph above it instead. */
-/* Position and z-index are NOT here: they come from boxPlusPlacement (one
-   rule keyed on the box's depth, written onto the element itself), and the
-   SIZE is the same constant the step is measured against. A second answer in
-   this stylesheet is how the parent's "+" ended up on top of its child's. */
-.bxc-addin { position: absolute;
-  opacity: 0; transition: opacity .12s;
-  display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #0C4A60; background: #0C4A60; color: #fff; border-radius: 999px;
-  width: ${BOX_PLUS_SIZE}px; height: ${BOX_PLUS_SIZE}px;
-  line-height: 1; font-size: 14px; font-weight: 700; cursor: pointer; }
-.bx-box:hover > .bxc-addin, .bxc-addin:focus { opacity: 1; }
-.bxc-addin:hover { background: #12607c; }
-/* A BOX ON THE PAGE, in the editor only: a hairline so the author can see the
-   thing they are dropping into. Never in the customer's copy — this class is
-   on the canvas wrapper, not in DOCUMENT_CSS. */
-.bxc-sec .bx-box { outline: 1px dashed rgba(12,74,96,.16); outline-offset: 2px; border-radius: 4px; }
-.bxc-sec .bx-box:hover { outline-color: rgba(12,74,96,.42); }
+/* THE TWO-SECOND GLOW ON A NEW WIDGET IS DELETED (D-172). */
+/* AN EMPTY CONTAINER: a "+" in the middle of a dashed box, as in the reference. */
+.bxc-addhere { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 84px;
+  border: 1px dashed #D5D8DC; background: transparent; color: #9DA5AE; border-radius: 3px;
+  font-size: 22px; font-weight: 300; line-height: 1; cursor: pointer; }
+.bxc-addhere:hover { color: #515962; border-color: #9DA5AE; }
+/* A container that is the ONLY thing in its section wears the section's handle,
+   not a second one of its own — one container, one handle. */
+[data-col] > .bx-box:only-child > .bxc-wtools-box { display: none; }
+/* A BOX IS INVISIBLE UNTIL HOVERED OR SELECTED (D-172).
+   Measured in the reference on 2026-09-19: a container at rest has
+   outline-style is none. Ours drew a permanent 1px dashed hairline on EVERY
+   box, so an empty page of boxes looked like graph paper. */
+.bxc-sec .bx-box:hover { outline: 1px dashed rgba(12,74,96,.42); outline-offset: 2px; border-radius: 4px; }
+.bxc-sec .bx-box.bxc-widget-sel:hover { outline: 1px solid #2D9CDB; }
 /* WHERE IT WOULD LAND. */
 .bxc-dropline { position: absolute; z-index: 7; height: 3px; margin-top: -1px; border-radius: 2px;
   background: #2D9CDB; box-shadow: 0 0 0 1px rgba(45,156,219,.35); pointer-events: none; }
@@ -1188,21 +926,6 @@ const CANVAS_CSS = `
 .bxc-chrome::after { content: "from your theme — the same on every page"; position: absolute; top: 4px; right: 8px;
   font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #64748B; background: #F1F5F9;
   border-radius: 999px; padding: 1px 8px; }
-/* THE EMPTY PAGE (D-148) — three things to start with, not a blank sheet. */
-.bxc-empty { padding: 36px 28px; text-align: center; }
-.bxc-empty-head { font-size: 17px; font-weight: 700; color: #0B1C24; }
-.bxc-empty-hint { font-size: 12px; color: #5A7A8A; margin-top: 4px; }
-/* auto-fit rather than a breakpoint: the empty page is drawn on the PAPER,
-   which is 780px on a desktop and 390 in the phone preview, and a third
-   number would be the drift responsive.ts exists to end. */
-.bxc-empty-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }
-.bxc-empty-card { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-  border: 1px solid #A8CDD8; background: #F8FBFD; border-radius: 10px; padding: 18px 12px; cursor: pointer; }
-.bxc-empty-card:hover { border-color: #0C4A60; background: #EEF6FA; }
-.bxc-empty-plus { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
-  border-radius: 999px; background: #0C4A60; color: #fff; }
-.bxc-empty-title { font-size: 13px; font-weight: 700; color: #0B1C24; }
-.bxc-empty-sub { font-size: 11px; line-height: 1.35; color: #5A7A8A; }
 `;
 
 export default Canvas;

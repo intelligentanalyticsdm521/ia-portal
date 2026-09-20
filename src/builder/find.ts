@@ -32,7 +32,7 @@ export interface FindResult {
   hint: string;
   /** Set on a section row: which section to select and scroll to. */
   sectionId?: string;
-  /** Set on a widget row: what to insert, where the picker would have put it. */
+  /** Set on a widget row: what to insert, where a pressed tile would put it. */
   widget?: WidgetDef;
   /** Set on an action row: the caller's own id for it. */
   actionId?: string;
@@ -65,7 +65,9 @@ export interface FindAction {
  */
 export const ALWAYS_ACTIONS: FindAction[] = [
   { id: "preview", label: "Preview", hint: "See it as the reader will" },
-  { id: "outline", label: "Outline", hint: "Everything on the page, in order" },
+  /* "Structure", not "Outline" (D-172). The top bar said Structure and this
+     list said Outline, so one window had two names. */
+  { id: "outline", label: "Structure", hint: "Everything on the page, in order" },
   { id: "templates", label: "Template library", hint: "Start again from a ready-made one" },
   { id: "history", label: "What you've changed", hint: "Every step, newest first" },
   { id: "shortcuts", label: "Keyboard shortcuts", hint: "The list of them" },

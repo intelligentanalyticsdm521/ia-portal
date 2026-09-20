@@ -7,6 +7,8 @@
  * as far as the eye can tell, nothing happened.
  *
  * ── THE RULE, IN ONE PLACE ────────────────────────────────────────────────
+ *   0. a CONTAINER is selected → INSIDE it, at the end (the reference editor's
+ *      rule: select a container, press a widget in the panel, it goes in)
  *   1. a WIDGET is selected  → insert directly AFTER it, IN ITS OWN BOX
  *   2. a SECTION is selected → append into that section's first column
  *   3. nothing selected      → the section the author is LOOKING AT
@@ -26,7 +28,7 @@
  * Pure: no React, no DOM. The canvas measures; this decides.
  */
 import type { BuilderDocument, Selection } from "./model";
-import { findNode, hostChildren, nodeIdAt } from "./treeOps";
+import { findNode, hostChildren, isContainer, nodeIdAt } from "./treeOps";
 
 /**
  * WHERE AN INSERT GOES: a box, and an index in it.
@@ -90,6 +92,14 @@ export function insertSpotFor(
   if (selection?.kind === "widget") {
     const id = nodeIdAt(doc, selection);
     const hit = id ? findNode(doc, id) : null;
+    if (hit && isContainer(hit.node)) {
+      return {
+        hostId: hit.node.id,
+        sectionId: hit.sectionId,
+        columnIndex: hit.columnIndex,
+        index: hit.node.children.length,
+      };
+    }
     if (hit) {
       const siblings = hostChildren(doc, hit.parentId) ?? [];
       // AFTER the selected thing, among its OWN siblings — which is inside the
@@ -168,61 +178,9 @@ export function firstSpotIn(doc: BuilderDocument, sectionId: string): InsertSpot
  */
 export const FLASH_MS = 2000;
 
-/* ══════════════════════════════════════════════════════════════════════════
-   WHERE A BOX'S OWN "+" SITS (V-3)
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** The "+" button's side, in px. The step below must clear it. */
-export const BOX_PLUS_SIZE = 22;
-
-/**
- * How far each level of box pulls its "+" in from the level outside it.
- *
- * Bigger than the button, so two buttons can never share a pixel — which is
- * the entire defect. 26 is 22 plus a 4px gap, the same gap the hover toolbar
- * leaves between its own buttons.
- */
-export const BOX_PLUS_STEP = 26;
-
-/**
- * WHERE ONE BOX'S "+" GOES — the one placement rule, at every depth.
- *
- * FOUND BY DRIVING IT (verifier, 2026-09-17, on `d156/integration`): a
- * non-empty box painted its "+" pinned to its own bottom-right corner at
- * `right:-11px; bottom:-11px; z-index:6`. A row that is the LAST child of a box
- * has the same bottom-right corner as its parent, so the two 22×22 buttons
- * landed on the identical pixel with the identical z — and the parent's, being
- * appended after the nested box in the DOM, painted on top. From the second
- * level down, "press + inside this box" silently added one level OUT: exactly
- * the gesture Brandon's sentence is made of ("then a text field under it"),
- * landing in the wrong host every time.
- *
- * The rule: the "+" hangs on ITS OWN box's bottom-right corner, pulled in by
- * one step per level of nesting, and stacked one above its parent's. Two boxes
- * in an ancestor chain therefore differ in BOTH position and z, so the click
- * reaches the box the author pointed at. Depth 0 — a box sitting directly in a
- * column — keeps the placement it has today, so the common case looks
- * unchanged.
- *
- * Pure arithmetic on a number, so the invariant that makes it correct (the
- * offsets are strictly increasing and never closer together than the button is
- * wide) is a `node --test` rather than something you check by squinting at two
- * overlapping circles.
- */
-export interface BoxPlusPlacement {
-  /** Distance from the box's right edge, px. Negative hangs outside it. */
-  right: number;
-  /** Distance from the box's bottom edge, px. */
-  bottom: number;
-  /** Above the parent box's own "+", always. */
-  zIndex: number;
-}
-
-export function boxPlusPlacement(depth: number): BoxPlusPlacement {
-  const level = Math.max(0, Math.floor(depth) || 0);
-  return {
-    right: -11 + level * BOX_PLUS_STEP,
-    bottom: -11,
-    zIndex: 6 + level,
-  };
-}
+/* A BOX'S OWN "+" IS GONE (2026-09-19). `boxPlusPlacement`, `BOX_PLUS_SIZE`
+   and `BOX_PLUS_STEP` placed a "+" on the corner of every box that already had
+   something in it (V-3). The reference editor has no such button: an EMPTY
+   container shows a "+" in its middle, drawn by the canvas (`bxc-addhere`), and
+   a full one is added to by dragging from the left panel or by selecting it and
+   pressing a tile. Nothing needs a placement rule, so there is not one. */

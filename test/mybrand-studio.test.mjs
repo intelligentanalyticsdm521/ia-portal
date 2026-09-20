@@ -734,10 +734,16 @@ describe("every button in the studio carries a tooltip — SD-010", () => {
     assert.match(read("components/IadmModal.tsx"), /title\?: string;/);
   });
 
-  test("the shared frame's undo and redo say what they do and how", () => {
+  test("the shared frame's bar is the reference editor's, with no undo pair (D-172)", () => {
     const frame = read("builder/BuilderFrame.tsx");
-    assert.match(frame, /title="Undo \(Ctrl\+Z\)"/);
-    assert.match(frame, /title="Redo \(Ctrl\+Shift\+Z\)"/);
+    // ABSENT: the two arrow buttons. PRESENT: every top-bar control the
+    // reference has, each with the reference's own short tooltip.
+    assert.doesNotMatch(frame, /title="Undo \(Ctrl\+Z\)"/);
+    assert.doesNotMatch(frame, /title="Redo \(Ctrl\+Shift\+Z\)"/);
+    for (const label of ["Menu", "Add Element", "Page Settings", "History",
+                         "Finder", "Structure", "Preview Changes"]) {
+      assert.ok(frame.includes(`title="${label}"`), `the top bar lost: ${label}`);
+    }
   });
 
   test("the inspector's swatches name the colour they are", () => {

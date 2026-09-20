@@ -38,6 +38,7 @@ import { makeContext, renderDocument, renderSection } from "../src/builder/rende
 import { containerLayoutDeclarations } from "../src/builder/style.ts";
 import { outline, dropTargetFor, rowLabel } from "../src/builder/navigatorModel.ts";
 import { menuFor } from "../src/builder/builderMenu.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
 
 const SRC = path.join(process.cwd(), "src");
 const readSrc = (p) => readFileSync(path.join(SRC, p), "utf8");
@@ -461,13 +462,23 @@ describe("the outline shows the nesting", () => {
     assert.equal(rows[3].container, false, "the card reads as a box");
   });
 
-  test("a box is named for what it does and how much is in it", () => {
-    assert.equal(rowLabel(makeContainer()), "Box · empty");
-    assert.equal(rowLabel(makeContainer({ direction: "row" }, [makeWidget("card", {})])), "Row · 1 thing");
+  test("a row is the element's NAME and nothing else (D-172)", () => {
+    /* The reference's rows read "Container", "Flexbox", "Heading". Ours read
+       "Container · 2 things" / "Heading · ZZ audit headi…" — a count and a
+       snippet of the words glued on, which is the row saying three things
+       where the reference says one. ABSENT: the count. PRESENT: the name, and
+       it is still the SAME name the settings panel puts at its top. */
+    assert.equal(rowLabel(makeContainer()), "Container");
+    assert.equal(rowLabel(makeContainer({ direction: "row" }, [makeWidget("card", {})])), "Container");
     assert.equal(
       rowLabel(makeContainer({ direction: "grid" }, [makeWidget("card", {}), makeWidget("card", {})])),
-      "Grid · 2 things",
+      "Grid",
     );
+    for (const gone of ["thing", "things", "empty"]) {
+      assert.ok(!rowLabel(makeContainer()).includes(gone), `the count is back: ${gone}`);
+    }
+    assert.match(readSrc("builder/navigatorModel.ts"), /directionOf\(w\) === "grid" \? "Grid" : "Container";/);
+    assert.match(readSrc("builder/Inspector.tsx"), /return d === "grid" \? "Grid" : "Container";/);
   });
 
   test("a drop on a row means 'into ITS box, before it' — which is how you get out of one", () => {
@@ -492,46 +503,32 @@ describe("the outline shows the nesting", () => {
    8. THE MENU
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("the menu offers the box verbs, and says why when it cannot", () => {
-  const ids = (items) => items.map((i) => i.action);
+describe("the box verbs are NOT menu rows — they are settings (D-172)", () => {
+  const ids = (facts) => menuFor(facts).map((i) => i.action);
 
-  test("two things selected can be put in a box; one cannot, and it says so", () => {
-    const one = menuFor({ kind: "widget", selectedCount: 1 }).find((i) => i.action === "group");
-    assert.equal(one.disabled, true);
-    assert.match(one.reason, /Shift/);
-
-    const two = menuFor({ kind: "widget", selectedCount: 2 }).find((i) => i.action === "group");
-    assert.ok(!two.disabled);
-    assert.match(two.label, /Put these in a box/);
-  });
-
-  test("only a BOX is offered ungroup and the three directions", () => {
-    assert.ok(!ids(menuFor({ kind: "widget" })).includes("ungroup"));
-    const box = ids(menuFor({ kind: "widget", container: true, direction: "column" }));
-    assert.ok(box.includes("ungroup"));
-    assert.ok(box.includes("toRow"));
-    assert.ok(box.includes("toGrid"));
-    // The way it ALREADY runs is not offered again — a menu row that does
-    // nothing is a menu row somebody presses twice.
-    assert.ok(!box.includes("toColumn"));
-  });
-
-  test("a section is never offered any of them", () => {
-    const section = ids(menuFor({ kind: "section", index: 0, total: 3 }));
-    for (const verb of ["group", "ungroup", "toRow", "toColumn", "toGrid"]) {
-      assert.ok(!section.includes(verb), `a section was offered ${verb}`);
+  test("group, ungroup and the three directions are gone from every menu", () => {
+    // The reference's right-click menu has none of them: direction is a
+    // control in the panel (Direction, four icon buttons) and there is no
+    // multi-select on its canvas to group with. Driven 2026-09-19.
+    for (const facts of [{ kind: "widget" }, { kind: "widget", container: true },
+                         { kind: "section" }]) {
+      for (const verb of ["group", "ungroup", "toRow", "toColumn", "toGrid"]) {
+        assert.ok(!ids(facts).includes(verb), `a ${facts.kind} was offered ${verb}`);
+      }
     }
   });
 
-  test("too deep is greyed with a reason rather than refusing after the press", () => {
-    const row = menuFor({ kind: "widget", selectedCount: 2, tooDeep: true }).find((i) => i.action === "group");
-    assert.equal(row.disabled, true);
-    assert.match(row.reason, /as deep as boxes go/);
+  test("PRESENT INSTEAD: direction is a control on the container's own panel", () => {
+    const inspector = readSrc("builder/Inspector.tsx");
+    assert.match(inspector, /data-box-direction/, "a container cannot be laid out at all now");
   });
 
-  test("Delete on a box says box, not block", () => {
-    assert.match(menuFor({ kind: "widget", container: true }).find((i) => i.action === "delete").label,
-      /Delete this box/);
+  test("Delete is one word, as the reference writes it", () => {
+    // "Delete this box" / "Delete this block" / "Delete this section" were
+    // ours, and "box" is not one of the reference's words.
+    for (const facts of [{ kind: "widget" }, { kind: "widget", container: true }, { kind: "section" }]) {
+      assert.equal(menuFor(facts).find((i) => i.action === "delete").label, "Delete");
+    }
   });
 });
 
@@ -667,7 +664,7 @@ describe("composites become trees, and everything else is left exactly alone", (
 
 describe("the surfaces carry the tree, and carry it once", () => {
   const canvas = readSrc("builder/Canvas.tsx");
-  const picker = readSrc("builder/WidgetPicker.tsx");
+  const pane = readSrc("builder/WidgetPane.tsx");
   const shell = readSrc("builder/BuilderShell.tsx");
   const model = readSrc("builder/model.ts");
   const nav = readSrc("builder/Navigator.tsx");
@@ -684,12 +681,19 @@ describe("the surfaces carry the tree, and carry it once", () => {
     assert.match(canvas, /across \? clientX < r\.left \+ r\.width \/ 2 : clientY < r\.top \+ r\.height \/ 2/);
   });
 
-  test("the picker's Layout group offers the boxes, and they are not fake widgets", () => {
-    assert.match(picker, /CONTAINER_PRESETS/);
-    assert.match(picker, /g\.group === "Layout" && p\.onPickBox/);
-    assert.match(picker, /data-picker-box=/);
-    // A container has no registry entry and must not pretend to.
-    assert.doesNotMatch(picker, /WIDGETS_BY_KIND\["container"\]/);
+  test("the Layout group offers boxes from ONE panel, and they are still not fake widgets", () => {
+    /* WAS "the picker's Layout group offers the boxes". The pop-up that drew
+       the box PRESETS as pressable tiles is deleted (2026-09-19), and so is
+       the second Grid tile it put beside the real one. */
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "the widget pop-up is back");
+    assert.ok(!/CONTAINER_PRESETS|data-picker-box/.test(pane), "the box presets are tiles in the panel again");
+    // PRESENT: the Layout group is Container and Grid, and the Grid TILE makes
+    // a real container through the registry — a container still has no
+    // registry entry of its own and must not pretend to.
+    const layout = panelGroups("proposal").find((g) => g.group === "Layout");
+    assert.deepEqual(layout.widgets.map((w) => w.kind).sort(), ["container", "grid"]);
+    assert.match(shell, /const preset = presetFor\(def\.kind\);/);
+    assert.match(shell, /makeContainer\(preset\.style as ElementStyle, \[\]\)/);
   });
 
   test("the outline can move something between levels, through the same moveNode", () => {
@@ -729,7 +733,7 @@ describe("the surfaces carry the tree, and carry it once", () => {
      Neither was reachable from a model test, because both are about what the
      canvas does with a click. */
 
-  test("the selection marks do NOT need a repaint (found by driving it)", () => {
+  test("the selection mark does NOT need a repaint (found by driving it)", () => {
     // The paint is deliberately skipped while the caret is inside a run of
     // text, and on this canvas clicking any words puts the caret inside one.
     // So shift-click set the model and drew nothing at all, and "select two
@@ -742,8 +746,13 @@ describe("the surfaces carry the tree, and carry it once", () => {
     // and its own dependency array.
     const from = canvas.indexOf("THE SELECTION MARKS, WITHOUT A REPAINT");
     assert.ok(from > 0, "the marks effect is gone");
-    const body = canvas.slice(from, canvas.indexOf("}, [selectedWidgetId, alsoKey, html]);", from));
-    assert.match(body, /classList\.toggle\("bxc-widget-also"/, "the marks effect draws no mark");
+    const body = canvas.slice(from, canvas.indexOf("}, [selectedWidgetId, html]);", from));
+    // ABSENT: the dotted "also selected" ring. There is no multi-select on the
+    // reference editor's canvas (D-172), so the second mark, the gesture that
+    // set it and the menu row it fed are all deleted.
+    assert.ok(!canvas.includes("bxc-widget-also"), "the also-selected ring is back on the canvas");
+    assert.ok(!canvas.includes("extendSelection"), "shift-click extends the selection again");
+    // PRESENT: the one mark, still drawn without a repaint.
     assert.match(body, /classList\.toggle\("bxc-widget-sel"/, "the marks effect draws no selection");
     // …and it is NOT behind the caret guard, and writes no HTML.
     assert.doesNotMatch(body, /data-bx-editable/, "the marks effect is behind the caret guard");
@@ -756,12 +765,14 @@ describe("the surfaces carry the tree, and carry it once", () => {
     // "hold Shift and click a second thing" beside it while two things were
     // selected. The gesture that opens the menu cannot undo what the menu is
     // for.
-    assert.match(canvas, /const already = alsoKey\.split\(","\)\.includes\(path\.id \|\| ""\) \|\| path\.id === selectedWidgetId;/);
-    assert.match(canvas, /if \(!already\) onSelect\(\{ kind: "widget", \.\.\.path \}\);/);
+    // With multi-select deleted (D-172) the rule is the simpler one it always
+    // meant: the gesture that opens the menu does not move the selection when
+    // the menu is already about the thing under the pointer.
+    assert.match(canvas, /if \(path\.id !== selectedWidgetId\) onSelect\(\{ kind: "widget", \.\.\.path \}\);/);
   });
 
   test("no vendor names anywhere the author can read them", () => {
-    for (const [name, src] of [["picker", picker], ["canvas", canvas], ["navigator", nav]]) {
+    for (const [name, src] of [["pane", pane], ["canvas", canvas], ["navigator", nav]]) {
       const strings = [...src.matchAll(/(?:title|label|aria-label|description)[=:]\s*"([^"]+)"/g)].map((m) => m[1]);
       for (const s of strings) {
         assert.doesNotMatch(s, /Elementor|Gutenberg|Wix|WordPress/i, `${name}: "${s}"`);
@@ -776,23 +787,22 @@ describe("the surfaces carry the tree, and carry it once", () => {
 
 describe("replace means delete", () => {
   const pane = readSrc("builder/WidgetPane.tsx");
-  const picker = readSrc("builder/WidgetPicker.tsx");
   const shell = readSrc("builder/BuilderShell.tsx");
+  const canvas = readSrc("builder/Canvas.tsx");
   const inspector = readSrc("builder/Inspector.tsx");
 
   test("the 'how many?' control is gone from all three places it lived", () => {
     // THREE, and the third was found by DRIVING the builder rather than by
-    // reading it: the pane and the picker asked BEFORE the insert, and the
+    // reading it: the pane and the pop-up asked BEFORE the insert, and the
     // INSPECTOR asked again afterwards, as a row of numbered buttons. A
-    // deletion that misses one of three homes is not a deletion.
+    // deletion that misses one of three homes is not a deletion. (The pop-up
+    // is itself deleted now — see below — so two homes are left to check.)
     assert.doesNotMatch(inspector, /def\?\.count &&/, "inspector: still asks how many");
     assert.doesNotMatch(inspector, /function countOf/, "inspector: the counter is still there");
     assert.doesNotMatch(inspector, /onSetCount/, "inspector: the handler is still wired");
     assert.doesNotMatch(shell, /const setCount = useCallback/, "shell: setCount survived");
-    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
-      assert.doesNotMatch(src, /setAsking/, `${name}: the question's state is still there`);
-      assert.doesNotMatch(src, /count\.label/, `${name}: the question is still asked`);
-    }
+    assert.doesNotMatch(pane, /setAsking/, "pane: the question's state is still there");
+    assert.doesNotMatch(pane, /count\.label/, "pane: the question is still asked");
     // The shell still READS `def.count.default` — that is now "how many blank
     // rows it starts with", which is a default and not a control. What is gone
     // is the clamp round an answer nobody is asked for any more.
@@ -800,8 +810,28 @@ describe("replace means delete", () => {
     assert.match(shell, /const n = def\.count\.default/);
   });
 
-  test("the count is no longer threaded through the pick handlers", () => {
-    assert.match(picker, /onPick: \(widget: WidgetDef\) => void/);
-    assert.doesNotMatch(picker, /onPick\(w, /);
+  test("the widget pop-up, the slash command and the six-button handle are DELETED, not hidden", () => {
+    /* WAS "the count is no longer threaded through the pick handlers", read
+       out of `WidgetPicker.tsx`. That file is gone (2026-09-19), and with it
+       the two other things Brandon called confusing. Three absences, and the
+       three things that replaced them. */
+    // 1 — the pop-up list of widgets. One list, in the left panel.
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "WidgetPicker.tsx is back");
+    assert.ok(!/WidgetPicker/.test(shell), "the shell mounts the pop-up again");
+    assert.match(shell, /<WidgetPane/);
+    assert.match(pane, /data-widget-kind=\{w\.kind\}/);
+    // 2 — the slash command. The panel's search box is how a widget is found
+    // by typing.
+    assert.ok(!/slash/i.test(shell), "the shell still has a slash command");
+    assert.ok(!/slash/i.test(canvas), "the canvas still watches for a slash");
+    assert.match(pane, /data-pane-search/);
+    // 3 — the six buttons on every handle. A container gets the grip and an
+    // "x"; a widget gets the grip; the rest is on right-click.
+    for (const gone of ["data-widget-more", "data-widget-hidden", "data-widget-locked"]) {
+      assert.ok(!canvas.includes(gone), `${gone} is back on the widget handle`);
+    }
+    assert.match(canvas, /grip\.className = "bxc-grip"/);
+    assert.match(canvas, /if \(isBox && !locked\) \{/);
+    assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/);
   });
 });

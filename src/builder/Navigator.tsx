@@ -21,7 +21,7 @@
  * behaviour it offers already existed somewhere and is reached, not copied.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, ChevronDown, ChevronRight, Eye, EyeOff, GripVertical, Lock, LockOpen, X } from "lucide-react";
+import { Box, ChevronDown, ChevronRight, ChevronsDownUp, Eye, EyeOff, GripVertical, X } from "lucide-react";
 import type { BuilderDocument, Selection, WidgetPath } from "./model";
 import { dropTargetFor, outline, sectionDropIndex, type OutlineDrop, type OutlineRow } from "./navigatorModel";
 import type { Device } from "./style";
@@ -62,6 +62,8 @@ export interface NavigatorProps {
   ) => void;
   /** What the thing being built is called, from the adapter's copy. */
   heading?: string;
+  /** Bumped by the window's collapse-all button. Every bump shuts every row. */
+  collapseAll?: number;
 }
 
 const DEVICE_WORD: Record<Device, string> = {
@@ -73,7 +75,21 @@ const DEVICE_WORD: Record<Device, string> = {
 export function Navigator(p: NavigatorProps) {
   const rows = useMemo(() => outline(p.doc), [p.doc]);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const bump = p.collapseAll ?? 0;
+  useEffect(() => {
+    if (!bump) return;
+    setCollapsed(Object.fromEntries(rows.map((r) => [r.id, true])));
+  }, [bump]);
   const [dragId, setDragId] = useState<string | null>(null);
+  /**
+   * WHICH ROW THE POINTER IS ON (D-172).
+   *
+   * The reference shows a row's eye on hover; ours drew one on every row all
+   * the time, beside a padlock and a "...", which is three icons of noise per
+   * row. State rather than CSS because the rows are inline-styled and a
+   * stylesheet for one rule is a second place to look.
+   */
+  const [hoverId, setHoverId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
 
   const selectedWidgetId = p.selection?.kind === "widget"
@@ -101,11 +117,8 @@ export function Navigator(p: NavigatorProps) {
 
   return (
     <div data-builder-navigator style={{ padding: "10px 8px", fontSize: 12 }}>
-      <div style={{ padding: "0 4px 8px", fontSize: 10, color: "#94A3B8", lineHeight: 1.4 }}>
-        {p.heading || "Everything on this page, in order."} Click to jump to it.
-        Drag a section to move it, or drag anything else onto a row to put it there — including
-        into a box.
-      </div>
+      {/* THE THREE LINES OF INSTRUCTIONS WERE HERE AND ARE DELETED (D-172).
+          The reference's window is its title bar and then the rows. */}
 
       {rows.map((row, i) => {
         if (!visible(row, i)) return null;
@@ -121,6 +134,8 @@ export function Navigator(p: NavigatorProps) {
             data-nav-row={row.kind}
             data-nav-id={row.id}
             draggable
+            onMouseEnter={() => setHoverId(row.id)}
+            onMouseLeave={() => setHoverId((x) => (x === row.id ? null : x))}
             onDragStart={() => setDragId(row.id)}
             onDragEnd={() => { setDragId(null); setOverIndex(null); }}
             onDragOver={(e) => { if (!dragId) return; e.preventDefault(); setOverIndex(i); }}
@@ -158,18 +173,23 @@ export function Navigator(p: NavigatorProps) {
             }}
           >
             {isSection && (
-              <>
-                <span title="Drag to move this section" style={{ color: "#94A3B8", cursor: "grab", display: "inline-flex" }}>
-                  <GripVertical size={12} />
-                </span>
-                <button type="button" aria-label={collapsed[row.id] ? "Show what is in it" : "Hide what is in it"}
-                  title={collapsed[row.id] ? "Show what is in it" : "Hide what is in it"}
-                  onClick={(e) => { e.stopPropagation(); setCollapsed((c) => ({ ...c, [row.id]: !c[row.id] })); }}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 0 }}>
-                  {collapsed[row.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                </button>
-              </>
+              <span title="Drag to move this section" style={{ color: "#94A3B8", cursor: "grab", display: "inline-flex" }}>
+                <GripVertical size={12} />
+              </span>
             )}
+            {/* A TRIANGLE ON EVERY ROW THAT HAS CHILDREN (D-172) — the
+                reference puts one on containers too, so a container row can be
+                collapsed. A row with nothing under it keeps the same width of
+                space, or the names jump left and right down the list. */}
+            {(isSection || (row as Extract<OutlineRow, { kind: "widget" }>).hasChildren) ? (
+              <button type="button" data-nav-toggle={row.id}
+                aria-label={collapsed[row.id] ? "Show what is in it" : "Hide what is in it"}
+                title={collapsed[row.id] ? "Show what is in it" : "Hide what is in it"}
+                onClick={(e) => { e.stopPropagation(); setCollapsed((c) => ({ ...c, [row.id]: !c[row.id] })); }}
+                style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 0 }}>
+                {collapsed[row.id] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              </button>
+            ) : <span style={{ width: 12, flex: "0 0 auto" }} />}
             {!isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container && (
               <span
                 data-nav-box
@@ -183,88 +203,32 @@ export function Navigator(p: NavigatorProps) {
               fontWeight: !isSection && (row as Extract<OutlineRow, { kind: "widget" }>).container ? 600 : undefined,
             }}>{row.label}</span>
 
-            {/* M-21 — the padlock SHOWS the state and CHANGES it. A widget the
-                law locked (an email footer) keeps the marker and refuses to be
-                unlocked here, because unlocking it is not a thing the author is
-                allowed to do — and a control that pretends otherwise is worse
-                than one that is not there. */}
-            {(() => {
-              const rowLocked = row.kind === "widget"
-                ? !!row.locked
-                : !!p.isSectionLocked?.(row.id);
-              const required = row.kind === "widget" && !!row.required;
-              const can = row.kind === "widget" ? !!p.onLockWidget : !!p.onLockSection;
-              if (!can) {
-                return rowLocked ? (
-                  <span title="This has to stay on the page — you can change the wording, not remove it"
-                    style={{ color: "#B45309", display: "inline-flex" }}><Lock size={11} /></span>
-                ) : null;
-              }
-              if (required) {
-                return (
-                  <span data-nav-locked="required"
-                    title="This has to stay on the page — you can change the wording, not remove it"
-                    style={{ color: "#B45309", display: "inline-flex" }}><Lock size={11} /></span>
-                );
-              }
-              return (
-                <button
-                  type="button"
-                  data-nav-locked={rowLocked ? "1" : "0"}
-                  aria-label={rowLocked ? "Let it be deleted again" : "Lock so it can't be deleted"}
-                  title={rowLocked
-                    ? "Locked, so it cannot be deleted by accident. Press to unlock it."
-                    : "Lock so it can't be deleted. You can still change the words in it."}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (row.kind === "section") p.onLockSection?.(row.id, !rowLocked);
-                    else p.onLockWidget?.(row.path, !rowLocked);
-                  }}
-                  style={{ border: "none", background: "transparent", cursor: "pointer", color: rowLocked ? "#B45309" : "#CBD5E1", display: "inline-flex", padding: 0 }}
-                >
-                  {rowLocked ? <Lock size={11} /> : <LockOpen size={11} />}
-                </button>
-              );
-            })()}
+            {/* THE PER-ROW PADLOCK IS DELETED (D-172). There is no lock
+                control in the reference's tree. A part the LAW locks is still
+                refused by the model and still says why in the menu; what went
+                is the author's own switch, on every row, all the time. */}
 
+            {(hoverId === row.id || hidden) ? (
             <button
-              type="button"
-              aria-label={hidden ? `Show it ${DEVICE_WORD[p.device]}` : `Hide it ${DEVICE_WORD[p.device]}`}
-              title={hidden
-                ? `Show this again ${DEVICE_WORD[p.device]}`
-                : `Hide this ${DEVICE_WORD[p.device]}. It stays in the document — it just is not shown.`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (row.kind === "section") p.onHideSection(row.id, !hidden);
-                else p.onHideWidget(row.path, !hidden);
-              }}
-              style={{ border: "none", background: "transparent", cursor: "pointer", color: hidden ? "#B45309" : "#CBD5E1", display: "inline-flex", padding: 0 }}
-            >
-              {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
-            </button>
-
-            {/* M-8 — the same menu, from the outline. */}
-            {p.onRowMenu && (
-              <button
                 type="button"
-                data-nav-more="1"
-                aria-label="Everything you can do with this"
-                title="Everything you can do with this — the same as right-clicking it on the page"
+                aria-label={hidden ? `Show it ${DEVICE_WORD[p.device]}` : `Hide it ${DEVICE_WORD[p.device]}`}
+                title={hidden
+                  ? `Show this again ${DEVICE_WORD[p.device]}`
+                  : `Hide this ${DEVICE_WORD[p.device]}. It stays in the document — it just is not shown.`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                  p.onRowMenu!(
-                    row.kind === "section"
-                      ? { kind: "section", sectionId: row.id }
-                      : { kind: "widget", path: row.path },
-                    { x: r.left, y: r.bottom + 4 },
-                  );
+                  if (row.kind === "section") p.onHideSection(row.id, !hidden);
+                  else p.onHideWidget(row.path, !hidden);
                 }}
-                style={{ border: "none", background: "transparent", cursor: "pointer", color: "#CBD5E1", display: "inline-flex", padding: 0, fontSize: 13, lineHeight: 1 }}
+                style={{ border: "none", background: "transparent", cursor: "pointer", color: hidden ? "#B45309" : "#CBD5E1", display: "inline-flex", padding: 0 }}
               >
-                ⋯
+                {hidden ? <EyeOff size={12} /> : <Eye size={12} />}
               </button>
-            )}
+            ) : <span style={{ width: 12, flex: "0 0 auto" }} />}
+
+            {/* THE PER-ROW "..." IS DELETED (D-172). The reference puts no
+                menu button on a row: right-click is the one way in, and it is
+                the one way in on the page too. */}
           </div>
         );
       })}
@@ -310,19 +274,35 @@ export interface StructureWindowProps extends NavigatorProps {
   onClose: () => void;
 }
 
+/** How small the window may be dragged. Below this the rows have no room. */
+const STRUCTURE_MIN = { width: 200, height: 220 } as const;
+
 export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
   const [at, setAt] = useState(() => defaultStructureAt(
     typeof window === "undefined" ? { width: 1440, height: 900 } : { width: window.innerWidth, height: window.innerHeight }));
   /** Where in the title bar the pointer took hold. null = not dragging. */
   const grab = useRef<{ dx: number; dy: number } | null>(null);
+  /** THE WINDOW'S OWN SIZE (D-172): the reference's has a resize grip. */
+  const [size, setSize] = useState<{ width: number; height: number }>({ ...STRUCTURE_SIZE });
+  const resize = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  /** COLLAPSE ALL — the reference's first title-bar icon. */
+  const [collapseAll, setCollapseAll] = useState(0);
 
   const onMove = useCallback((e: PointerEvent) => {
+    const r = resize.current;
+    if (r) {
+      setSize({
+        width: Math.max(STRUCTURE_MIN.width, r.w + (e.clientX - r.x)),
+        height: Math.max(STRUCTURE_MIN.height, r.h + (e.clientY - r.y)),
+      });
+      return;
+    }
     const g = grab.current;
     if (!g) return;
     setAt(clampToViewport({ x: e.clientX - g.dx, y: e.clientY - g.dy },
       { width: window.innerWidth, height: window.innerHeight }));
   }, []);
-  const onUp = useCallback(() => { grab.current = null; }, []);
+  const onUp = useCallback(() => { grab.current = null; resize.current = null; }, []);
 
   useEffect(() => {
     window.addEventListener("pointermove", onMove);
@@ -337,7 +317,7 @@ export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
       data-builder-structure="open"
       style={{
         position: "fixed", left: at.x, top: at.y, zIndex: 9400,
-        width: STRUCTURE_SIZE.width, maxHeight: STRUCTURE_SIZE.height,
+        width: size.width, height: size.height,
         display: "flex", flexDirection: "column",
         background: "#FFFFFF", border: "1px solid #CBD5E1", borderRadius: 8,
         boxShadow: "0 18px 48px rgba(11,28,36,0.24)", overflow: "hidden",
@@ -354,7 +334,17 @@ export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
           padding: "7px 8px 7px 10px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC",
         }}
       >
-        <strong style={{ flex: 1, fontSize: 11.5, fontWeight: 700, color: "#0B1C24" }}>Structure</strong>
+        {/* COLLAPSE ALL — the reference's own first icon, left of the title. */}
+        <button
+          type="button"
+          data-structure-collapse
+          onClick={(e) => { e.stopPropagation(); setCollapseAll((n) => n + 1); }}
+          aria-label="Collapse all elements"
+          title="Collapse all elements"
+          style={{ border: "none", background: "transparent", cursor: "pointer", color: "#64748B", display: "inline-flex", padding: 2 }}
+        ><ChevronsDownUp size={13} /></button>
+        {/* CENTRED, as the reference's is. */}
+        <strong style={{ flex: 1, textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#0B1C24" }}>Structure</strong>
         <button
           type="button"
           data-structure-close
@@ -365,8 +355,20 @@ export function StructureWindow({ onClose, ...nav }: StructureWindowProps) {
         ><X size={14} /></button>
       </div>
       <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
-        <Navigator {...nav} />
+        <Navigator {...nav} collapseAll={collapseAll} />
       </div>
+      {/* THE RESIZE GRIP — the reference's "..." under the footer. */}
+      <div
+        data-structure-resize
+        onPointerDown={(e) => { resize.current = { x: e.clientX, y: e.clientY, w: size.width, h: size.height }; }}
+        title="Drag to resize"
+        style={{
+          flex: "0 0 auto", height: 12, cursor: "nwse-resize", userSelect: "none",
+          borderTop: "1px solid #E2E8F0", background: "#F8FAFC",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, lineHeight: 1, color: "#94A3B8",
+        }}
+      >\u22EF</div>
     </div>
   );
 }

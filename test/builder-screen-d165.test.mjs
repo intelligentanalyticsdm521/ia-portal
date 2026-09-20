@@ -19,8 +19,8 @@
 // ── THE SIX MUTATIONS (run 2026-09-19, each restored) ───────────────────────
 //  1 GROUP_BY_KIND: drop `heading` → "unmappedKinds names every kind" RED.
 //  2 PANEL_GROUPS: put "General" before "Basic" → the order test RED.
-//  3 openGroups: return every group always → "a search opens what matched, an
-//    empty box opens only the first" RED.
+//  3 openGroups: open only the first group again → "EVERY accordion starts
+//    open, searched or not" RED. (Was the other way round until 2026-09-19.)
 //  4 matchShortcut: answer "paste" before "pasteStyle" → Ctrl+Shift+V RED.
 //  5 matchShortcut: drop the TYPING_PASSES_THROUGH check → "Ctrl+C in a text
 //    field is the browser's" RED.
@@ -126,20 +126,22 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
     }
   });
 
-  test("every group starts open, with or without a search", () => {
-    /* CHANGED (D-172, kept by D-168 item 6). This asserted that an empty search
-       opens the FIRST accordion only, on the belief that the reference editor
-       does. It does not — open Elementor and every category is expanded — and
-       with six groups now, opening one left five headings shut, so the panel
-       read as empty and the author went looking for the pop-up list D-172
-       deleted. The rule is the same with a search running and always was. */
+  test("EVERY accordion starts open, searched or not", () => {
+    /* WAS "a search opens what matched; an empty box opens only the first".
+       Brandon opened the panel on 2026-09-19 and saw two tiles and three shut
+       headings; the reference editor's panel shows them all. The widgets ARE
+       the panel, so hiding them behind headings is hiding the panel. */
     const all = panelGroups("proposal");
+    assert.ok(all.length > 1, "there is only one group, so this proves nothing");
     assert.deepEqual(openGroups(all, ""), all.map((g) => g.group),
-      "every accordion starts open, as the reference editor's do");
+      "an empty search shuts an accordion again");
     const hits = panelGroups("proposal", "heading");
     assert.ok(hits.length > 0, "this test's premise is gone — nothing matches 'heading'");
     assert.deepEqual(openGroups(hits, "heading"), hits.map((g) => g.group));
     assert.deepEqual(openGroups([], ""), []);
+    // And the rule is in ONE place: the panel asks for the default rather than
+    // deciding for itself which heading is open.
+    assert.match(pane, /openGroups\(groups, query\)/);
   });
 
   test("the search still narrows, and Enter's pick is the first tile drawn", () => {
@@ -151,7 +153,9 @@ describe("§11.13.1 item 1 — the left panel holds widgets and nothing else", (
 
   test("the panel is a title, a search box and the groups — no injection slot", () => {
     assert.match(pane, /PANE_TITLE/);
-    assert.match(pane, /aria-label="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /aria-label="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /aria-label=\{PANE_SEARCH_PLACEHOLDER\}/);
     assert.match(pane, /data-pane-group-toggle=\{g\.group\}/);
     for (const gone of [/<Navigator/, /data-builder-problems/, /header\?:/, /hint\?:/]) {
       assert.doesNotMatch(pane, gone, `the left panel grew something again: ${gone}`);
@@ -193,11 +197,17 @@ describe("§11.13.1 item 2 — Content / Style / Advanced, on the right", () => 
     assert.match(inspector, /Page settings/);
   });
 
-  test("a tab with nothing behind it is GREYED, never removed", () => {
-    // A row that changes width as the selection moves is a row nobody can aim
-    // at. The disabled list is computed, so the tab bar is always three wide.
-    assert.match(inspector, /const disabled: InspectorTab\[\] = hasStyle \? \[\] : \["style"\]/);
-    assert.match(inspector, /const shownTab: InspectorTab = disabled\.includes\(tab\) \? "content" : tab/);
+  test("a widget with no style controls has TWO tabs, not three with one greyed", () => {
+    /* WAS "a tab with nothing behind it is GREYED, never removed". Driving it
+       showed the worse half of that: pressing the greyed Style tab on a Spacer
+       re-rendered the CONTENT section under a Style heading — the same header,
+       the same fields. The reference's Spacer has Content and Advanced and
+       nothing between them (D-172), so the tab is not drawn at all. */
+    assert.ok(!inspector.includes('disabled: InspectorTab[] = hasStyle'),
+      "the greyed third tab is back");
+    assert.match(inspector, /const tabs: InspectorTab\[\] = hasStyle \? INSPECTOR_TABS : \["content", "advanced"\]/);
+    assert.match(inspector, /const shownTab: InspectorTab = tabs\.includes\(tab\) \? tab : "content"/);
+    assert.match(readSrc("builder/StyleGroups.tsx"), /const shown = tabs \?\? INSPECTOR_TABS;/);
   });
 });
 
@@ -216,7 +226,10 @@ describe("§11.13.1 item 3 — Structure is a window, not a tab", () => {
     assert.match(nav, /data-structure-grip/);
     assert.match(nav, /data-structure-close/);
     // The SAME Navigator, not a second tree.
-    assert.match(nav, /<Navigator \{\.\.\.nav\} \/>/);
+    assert.match(nav, /<Navigator \{\.\.\.nav\} collapseAll=\{collapseAll\} \/>/);
+    // …and the two things the reference's title bar and footer carry.
+    assert.match(nav, /data-structure-collapse/);
+    assert.match(nav, /data-structure-resize/);
     assert.equal((shell.match(/<Navigator[ \n]/g) || []).length, 0,
       "the shell renders a second copy of the tree");
   });
@@ -225,7 +238,8 @@ describe("§11.13.1 item 3 — Structure is a window, not a tab", () => {
     assert.match(frame, /data-builder-structurebtn=/);
     assert.match(shell, /onStructure=\{\(\) => setStructure\(\(v\) => !v\)\}/);
     assert.match(shell, /case "structure": setStructure\(\(v\) => !v\); return true;/);
-    assert.match(shell, /case "showInOutline":[\s\S]{0,200}setStructure\(true\)/);
+    // The menu's own row is called Structure now, as the reference's is.
+    assert.match(shell, /case "structure":[\s\S]{0,260}setStructure\(true\)/);
     assert.equal((shell.match(/useState\(false\);\s*\n\s*\/\*\*\s*\n\s*\* IS THE WIDGETS PANEL/g) || []).length, 1,
       "the structure window grew a second piece of state");
   });
@@ -266,16 +280,33 @@ describe("§11.13.1 items 4 and 5 — the top bar, and adding a section", () => 
     assert.match(frame, /data-builder-findbtn/);
   });
 
-  test("ONE add button, and it asks Blank or Template first", () => {
-    assert.match(canvas, /data-builder-addsection-btn/);
-    assert.doesNotMatch(canvas, /"blank" \| "premade"/, "the two-button shortcut is back");
-    assert.match(add, /data-addsection-choice=\{data\}/);
-    assert.match(add, /data="blank"/);
-    assert.match(add, /data="template"/);
+  test("the add area is IN THE PAGE, and its two round buttons ARE the Blank-or-Template question", () => {
+    /* WAS "ONE add button, and it asks Blank or Template first" — a "+ Add"
+       pill that opened a pop-up whose first step was a Blank | Template
+       choice. Rebuilt on 2026-09-19 as the reference editor's own add area: a
+       dashed area in the page with three views, and no pop-up step, because
+       the round "+" and the round folder ARE that choice. */
+    assert.doesNotMatch(add, /"blank" \| "premade"/, "the two-button shortcut is back");
+    assert.doesNotMatch(add, /anchor/, "the add area went back to being a pop-up anchored to a button");
+    assert.doesNotMatch(canvas, /data-builder-addsection-btn/, "the + Add pill is back on the page");
+    // PRESENT — view 1: the two round buttons, and the words under them.
+    assert.match(add, /data-builder-add="container"/);
+    assert.match(add, /title="Add New Container"/);
+    assert.match(add, /data-builder-add="template"/);
+    assert.match(add, /title="Add Template"/);
+    assert.match(add, /Drag widget here/);
+    // View 2 and view 3, and the "‹" that goes back between them.
     assert.match(add, /Which layout would you like to use\?/);
+    assert.match(add, /data-addsection-choice="flex"/);
+    assert.match(add, /data-addsection-choice="grid"/);
     assert.match(add, /Select your structure/);
-    assert.match(add, /data="flex"/);
-    assert.match(add, /data="grid"/);
+    assert.match(add, /data-structure-preset=\{preset\.key\}/);
+    assert.match(add, /data-addsection-back/);
+    // The three views are ONE piece of state, named on the area itself.
+    assert.match(add, /type View = "buttons" \| "layout" \| "structure"/);
+    assert.match(add, /data-builder-addsection=\{view\}/);
+    // And the canvas always draws one at the bottom of the page.
+    assert.match(canvas, /<AddSection\s+onBlank=\{\(layout, preset\) => props\.onAddBlank\(doc\.sections\.length, layout, preset\)\}/);
   });
 
   test("the structure presets are real shapes: every one adds to 100", () => {
@@ -293,8 +324,11 @@ describe("§11.13.1 items 4 and 5 — the top bar, and adding a section", () => 
   });
 
   test("Template hands over to the template library, Blank builds the tree", () => {
-    assert.match(shell, /onTemplate=\{\(\) => \{ const at = addAt\.index; setAddAt\(null\); setGallery\(\{ at \}\); \}\}/);
-    assert.match(shell, /addStructure\(at, layout, preset\)/);
+    // Both doors say WHERE — the index the new section goes in at — and the
+    // canvas is the only thing that knows which add area was pressed.
+    assert.match(shell, /onAddTemplate=\{\(at: number\) => setGallery\(\{ at \}\)\}/);
+    assert.match(shell, /onAddBlank=\{\(at: number, layout: SectionLayout, preset: StructurePreset\) => addStructure\(at, layout, preset\)\}/);
+    assert.match(canvas, /onTemplate=\{\(\) => \{ setAddAreaAt\(null\); props\.onAddTemplate\(i\); \}\}/);
     // One cell is a plain section: a box holding one box is a level the author
     // has to get out of for no reason.
     assert.match(shell, /if \(preset\.cells\.length > 1\)/);
@@ -392,7 +426,10 @@ describe("§11.13.1 item 6 — keyboard parity with the reference editor", () =>
        again and the count below goes to two. */
     const menu = readSrc("builder/builderMenu.ts");
     assert.match(menu, /action: "pasteStyle"/, "the right-click menu has no Paste-style row");
-    assert.match(menu, /label: "Paste only the look"/);
+    // The reference's own wording, to the character: "Paste style" (D-172).
+    // "Paste only the look" was ours.
+    assert.ok(!menu.includes("Paste only the look"), "the row is in our words again");
+    assert.match(menu, /label: "Paste style"/);
     assert.equal((shell.match(/Pasted the look/g) || []).length, 1,
       "there are two handlers for pasting a look");
   });
@@ -490,9 +527,21 @@ describe("the Layout group offers two tiles, and the Grid tile inserts a box", (
     assert.match(shell, /makeContainer\(preset\.style as ElementStyle, \[\]\)/);
   });
 
-  test("the picker keeps the presets, because typing '/row' has to reach one", () => {
-    const picker = readSrc("builder/WidgetPicker.tsx");
-    assert.match(picker, /g\.group === "Layout" && p\.onPickBox/);
-    assert.match(shell, /onPickBox=\{slashCommitBox\}/);
+  test("the presets are gone from every SURFACE, and 'row' still finds a tile", () => {
+    /* WAS "the picker keeps the presets, because typing '/row' has to reach
+       one". Both the pop-up and the slash command that needed it are deleted
+       (2026-09-19); the presets are a MODEL fact (`treeOps.CONTAINER_PRESETS`)
+       that the ready-made sections build with, not a second list of things to
+       press. */
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "the widget pop-up is back");
+    for (const rel of ["builder/BuilderShell.tsx", "builder/WidgetPane.tsx", "builder/Canvas.tsx"]) {
+      assert.ok(!/onPickBox|boxMatches/.test(readSrc(rel)), `${rel} offers the box presets as tiles again`);
+    }
+    // PRESENT: typing "row" in the one panel reaches the Layout group, because
+    // the Container tile's own sentence is about rows.
+    const hits = panelGroups("proposal", "row");
+    assert.ok(hits.some((g) => g.group === "Layout"), "typing 'row' no longer reaches the Layout group");
+    assert.ok(hits.flatMap((g) => g.widgets).some((w) => w.kind === "container"),
+      "typing 'row' no longer reaches the Container tile");
   });
 });

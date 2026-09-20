@@ -28,6 +28,9 @@ import {
 import { isContainer } from "./treeOps";
 import { PRICED_KINDS } from "./totals";
 import { upgradeDocument } from "./upgrade";
+/* D-167 — the shipped templates place the fields themselves, not a block
+   widget the upgrade would unpack a line later. */
+import { customFields } from "./proposal/upgradeRecordBlocks";
 import { snowAgreementDocument } from "./snowAgreement";
 import type { WidgetLock } from "./tier";
 import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument } from "./render";
@@ -134,7 +137,8 @@ const PREMADE_RAW: PremadeSection[] = [
           makeWidget("paragraph", { text: "Service term {{contract.start_date}} – {{contract.end_date}}" }),
         ]),
       ]),
-      makeWidget("customer", { heading: "Prepared for" }),
+      makeWidget("heading", { text: "Prepared for", level: 3 }),
+      ...customFields("customer"),
       makeContainer({ direction: "row", gap: 16 }, [
         
         makeWidget("paragraph", { text: "**Property** {{property.name}}" }),
@@ -255,7 +259,7 @@ const PREMADE_RAW: PremadeSection[] = [
          + Text Editor rows)". The location fills itself in from the customer's
          record; the six rows are the crew's own sheet, each a line to type. */
       makeWidget("heading", { text: "Property service plan", level: 2 }),
-      makeWidget("service_location", { heading: "", locationId: "" }),
+      ...customFields("service_location"),
       makeWidget("paragraph", { text: "**Areas we plow** " }),
       makeWidget("paragraph", { text: "**Where the snow goes** " }),
       makeWidget("paragraph", { text: "**Sidewalks and entries** " }),
@@ -294,8 +298,8 @@ const PREMADE_RAW: PremadeSection[] = [
    D-156's ready-made sections — container trees, not composite widgets
    ══════════════════════════════════════════════════════════════════════════
 
-   §11.12: *"The picker's Ready-made section tab and the + strip offer
-   CONTAINER TREES, not widgets"*. Each of these is the pattern a composite
+   §11.12: *"the Ready-made section tab offers CONTAINER TREES, not
+   widgets"*. Each of these is the pattern a composite
    widget used to be, built out of atomic widgets that can each be selected,
    dragged, tagged and deleted:
 
@@ -324,7 +328,8 @@ function propertyBox(
 ) {
   return makeContainer(undefined, [
     makeWidget("heading", { text: heading, level: 3 }),
-    makeWidget("service_location", { heading: "Service address", locationId: "" }),
+    makeWidget("heading", { text: "Service address", level: 3 }),
+    ...customFields("service_location"),
     ...items.map((it) => makeWidget("price_line", {
       name: it.description, quantity: it.quantity, unit_price: it.unit_price,
       description: "", bullets: [], cadence: null,
@@ -361,7 +366,8 @@ export function propertySections(): Section[] {
   return [
     sec([
       makeWidget("heading", { text: "This property", level: "Section title" }),
-      makeWidget("service_location", { heading: "Service address", locationId: "" }),
+      makeWidget("heading", { text: "Service address", level: 3 }),
+      ...customFields("service_location"),
       /* WAS a `pricing_table` — a rate card, which never fed a total. D-165
          replaces it with the priced lines the Product Line Items tile drops, so
          what is on the page and what is in the total are the same list. The

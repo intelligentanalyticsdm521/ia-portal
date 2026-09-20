@@ -2199,68 +2199,6 @@
       "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><style>.bx-sy-b1{display:flex;flex-direction:column;gap:12px}</style><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-w bx-sy-b1\"><div class=\"lp-box lp-box-column bx-sy-b1\" data-box=\"b1\"><div class=\"lp-line\">\n    <div class=\"lp-line-head\">\n      <span class=\"lp-line-name\">Snow &amp; ice — seasonal</span>\n      <span class=\"lp-line-amt\">$2,400.00 <span class=\"lp-per\">per season</span></span>\n    </div>\n    <p>The whole winter, one figure.</p>\n  </div><div class=\"lp-totals\">\n    <h2 class=\"lp-h\">What it comes to</h2>\n    <div class=\"lp-total-row\"><span>Marshalltown depot</span><span>$2,400.00</span></div>\n    <div class=\"lp-total-row\"><span>Subtotal</span><span>$2,400.00</span></div>\n    <div class=\"lp-total-row\"><span>Tax</span><span>$168.00</span></div>\n    <div class=\"lp-total-row\"><span>Discount</span><span>−$100.00</span></div>\n    <div class=\"lp-total-row lp-total-grand\"><span>Total</span><span>$2,468.00</span></div>\n  </div></div></div></div></div></section>"
     },
     {
-      "name": "tree · an address block bound to a location",
-      "kind": "tree",
-      "doc": {
-        "v": 2,
-        "settings": {
-          "style": "newsletter",
-          "accent": "#0C4A60"
-        },
-        "sections": [
-          {
-            "id": "s1",
-            "label": "Case",
-            "numbered": false,
-            "layout": 1,
-            "width": "contained",
-            "background": "",
-            "headingFont": "",
-            "padding": 16,
-            "theme": "light",
-            "recommended": false,
-            "pageBreakBefore": false,
-            "visibility": "customer",
-            "columns": [
-              {
-                "id": "c1",
-                "widgets": [
-                  {
-                    "id": "b1",
-                    "kind": "container",
-                    "props": {},
-                    "style": {
-                      "direction": "row",
-                      "gap": 24
-                    },
-                    "children": [
-                      {
-                        "id": "w1",
-                        "kind": "address_block",
-                        "props": {
-                          "locationId": "loc-1"
-                        }
-                      },
-                      {
-                        "id": "w2",
-                        "kind": "address_block",
-                        "props": {
-                          "name": "The other yard",
-                          "address": "88 Second St, Ames, IA 50010",
-                          "contact": "Sam Okafor"
-                        }
-                      }
-                    ]
-                  }
-                ]
-              }
-            ]
-          }
-        ]
-      },
-      "html": "<section class=\"lp-sec lp-w-contained lp-cols-1\" style=\"padding:16px 20px\"><style>.bx-sy-b1{display:flex;flex-direction:row;gap:24px}</style><div class=\"lp-grid\"><div class=\"lp-col\"><div class=\"lp-w bx-sy-b1\"><div class=\"lp-box lp-box-row bx-sy-b1\" data-box=\"b1\"><div class=\"lp-addr\">\n    <div class=\"lp-addr-name\">Marshalltown depot</div>\n    <div class=\"lp-addr-line\">1200 Prairie Ave, Unit 4, Marshalltown, IA, 50158</div>\n    <div class=\"lp-addr-meta\"><span class=\"lp-addr-l\">Site contact</span><span>Dana Reyes, 555-0142</span></div>\n    <div class=\"lp-addr-meta\"><span class=\"lp-addr-l\">Access</span><span>Gate code at the north entrance.</span></div>\n  </div><div class=\"lp-addr\">\n    <div class=\"lp-addr-name\">The other yard</div>\n    <div class=\"lp-addr-line\">88 Second St, Ames, IA 50010</div>\n    <div class=\"lp-addr-meta\"><span class=\"lp-addr-l\">Site contact</span><span>Sam Okafor</span></div>\n    \n  </div></div></div></div></div></section>"
-    },
-    {
       "name": "tree · key facts as four widgets in a row",
       "kind": "tree",
       "doc": {

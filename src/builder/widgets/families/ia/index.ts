@@ -1,40 +1,63 @@
 /**
- * families/ia/index.ts - INTELLIGENT ANALYTICS.
+ * builder/widgets/families/ia/index.ts — THE IA FAMILY.
  *
- * OUR widgets, and every one of them is either the DATABASE TWIN of an
- * Elementor widget (same look and settings, filled from our data) or a job no
- * normal widget can do: Custom Field, Totals, Signature, Page Break,
- * Unsubscribe Footer.
+ * The shape BUILDER_FULL_WIDGET_PLAN_2026-09-19.md section C.1 draws:
  *
- * BUILDER_FULL_WIDGET_PLAN_2026-09-19 section C.1: one widget, one file in
- * this folder; this index is the only thing that knows them as a SET. Nothing
- * in here ever opens registry.ts, render.ts or another family's folder, which
- * is what makes ten agents on ten families safe.
+ *   families/
+ *     <family>/
+ *       <widget>.ts   definition + renderer, one file per widget
+ *       index.ts      export const FAMILY = { defs: [...], renderers: { kind: fn } }
+ *     index.ts        THE one index, which imports the family indexes
  *
- * -- THIS FOLDER IS NOT YOURS ---------------------------------------------
- * The b168/demo agent owns `families/ia`. It runs in parallel from the same
- * base and wires its own widgets in through two lines marked TEMP in
- * registry.ts and render.ts. This placeholder exists ONLY so families/index.ts
- * compiles before that agent lands: it declares no widget, and overwriting it
- * whole is the expected thing to do.
+ * The master `families/index.ts` does not exist on this branch — it is the
+ * lander's, and the SEAMS agent ships an EMPTY placeholder for this folder on
+ * its own branch. At landing THIS file replaces that placeholder whole, and the
+ * two lines marked `b168/demo TEMP` in `registry.ts` and `render.ts` go.
  *
- * -- WHAT MAY BE ADDED HERE ------------------------------------------------
- * An ELEMENTOR widget, by Elementor's own name, group, icon, panel sections,
- * control labels and defaults - or an IA widget named in
- * test/fixtures/BUILDER_OFFERS_2026-09-19.json. Nothing else, ever. If you
- * think something is missing, write it in the handoff; do not build it.
- * test/builder-offers.test.mjs fails the build on an extra tile.
+ * A family folder holds nothing but widgets. The record BOOK these widgets read
+ * stays in `proposal/recordWidgets.ts`, where the proposal adapter fills it.
  *
- * -- HOW TO ADD ONE --------------------------------------------------------
- *   1. ia/<widget>.ts exports <WIDGET>_DEF: FamilyWidgetDef and
- *      render<Widget>(w, ctx): string.
- *   2. import both here; the def goes in `defs`, the renderer in `renderers`
- *      under the def's own `kind`.
- *   3. npm test -- test/families-ia.test.mjs
+ * ── WHY `defs` AND `renderers` ARE GETTERS ────────────────────────────────
+ * This module is reached from `registry.ts` AND from `render.ts`, and the
+ * widget file it collects imports `esc` from `render.ts`. That is a cycle — the
+ * same one `widgets/index.ts` documents — and the rule on it is the same:
+ * **only hoisted function declarations may cross it**, because a `const` read
+ * while the other side is still evaluating throws
+ * `Cannot access '…' before initialization`. It did, the first time this file
+ * was written with plain properties. A getter moves the read to CALL time,
+ * which is after every module in the cycle has finished, and `renderFamily`
+ * below is a function declaration for the same reason.
  */
-import { EMPTY_FAMILY, type Family } from "../types";
+import type { Widget } from "../../../model";
+import type { RenderContext } from "../../../render";
+import type { Family, FamilyRenderer, FamilyWidgetDef } from "../types";
+import { CUSTOM_FIELD_DEF, CUSTOM_FIELD_KIND, renderCustomField } from "./customField";
 
+export type { FamilyRenderer };
+
+/* B-168 LANDED: this family now speaks the ONE family contract
+   (`families/types.ts`) like the other nine — `builders`, not `adapters`,
+   and the master index turns one into the other. The getters stay: the
+   cycle they were written for is still there. */
 export const FAMILY: Family = {
-  defs: [...EMPTY_FAMILY.defs],
-  renderers: { ...EMPTY_FAMILY.renderers },
+  get defs(): FamilyWidgetDef[] {
+    return [CUSTOM_FIELD_DEF];
+  },
+  get renderers(): Record<string, FamilyRenderer> {
+    return { [CUSTOM_FIELD_KIND]: renderCustomField };
+  },
 };
+
+/** Every kind this family draws. A FUNCTION, for the reason in the header. */
+export function familyKinds(): string[] {
+  return Object.keys(FAMILY.renderers);
+}
+
+/** Draw one, or null when it is not this family's and the engine should try. */
+export function renderFamily(w: Widget, ctx: RenderContext): string | null {
+  const fn = FAMILY.renderers[w.kind];
+  return fn ? fn(w, ctx) : null;
+}
+
+export * from "./customField";
+export default FAMILY;

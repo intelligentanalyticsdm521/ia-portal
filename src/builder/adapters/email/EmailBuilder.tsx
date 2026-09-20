@@ -142,8 +142,8 @@ export function EmailBuilder(p: EmailBuilderProps) {
    * The unsubscribe footer is the last thing in an email and holds nothing
    * else. The walk added two product cards with nothing selected and they
    * landed BELOW it. One rule on the way in beats a guard on each of the seven
-   * ways a widget can arrive — the pane, a "+", a drag, the slash command, a
-   * pre-made section, a duplicate and an undo.
+   * ways a widget can arrive — a tile pressed in the pane, a tile dragged, the
+   * add area, a pre-made section, a duplicate and an undo.
    */
   const applyDoc = useCallback((next: BuilderDocument) => setDoc(settleFooter(next)), []);
   const [resetKey, setResetKey] = useState(0);
@@ -376,7 +376,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
           open
           onClose={() => setPending(null)}
           product="spark"
-          eyebrow="SPARK · Email builder"
           title={`How many, for “${pendingTemplate.name}”?`}
           subtitle="Answered once, before the page is built. You can add or remove one at any time afterwards."
           size="info"
@@ -423,7 +422,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
       onClose={p.onClose}
       adapter="email"
       resetKey={resetKey}
-      eyebrow={p.eyebrow}
       doc={doc}
       onChange={applyDoc}
       ctx={shellCtx}
@@ -446,14 +444,11 @@ export function EmailBuilder(p: EmailBuilderProps) {
         outlineHeading: "This email, top to bottom",
         defaultFontLabel: "This email's own font",
         pageBreakLabel: "",
-        canvasHint: "Click anything to edit it. This is exactly what lands in the inbox.",
         emptyHeading: "What goes in this email?",
         emptyHint: "Pick one to start. You can add the rest after.",
         lockedReason: "The footer carries your unsubscribe link and your postal address \u2014 the law asks for both on every email you send \u2014 so it stays. You can change the wording in it.",
       }}
       onSave={() => void save()}
-      canvasHint="Click anything to edit it. This is exactly what lands in the inbox."
-      paperNote={`${EMAIL_WIDTH}px wide`}
       premade={EMAIL_PREMADE_SECTIONS}
       premadeTags={EMAIL_PREMADE_TAGS}
       swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}

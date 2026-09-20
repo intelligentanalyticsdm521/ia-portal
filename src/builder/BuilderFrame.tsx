@@ -54,7 +54,10 @@
  * responsive.ts, so no adapter decides what "phone" means.
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { Clock, HelpCircle, Layers, PanelLeft, Redo2, Search, SlidersHorizontal, Undo2, X } from "lucide-react";
+import {
+  ChevronDown, Clock, Eye, Layers, Menu, Monitor, PanelLeft, Plus, Search, Settings2,
+  SlidersHorizontal, Smartphone, Tablet, X,
+} from "lucide-react";
 import { IadmModal, IadmBuilderPanes, type IadmModalProduct } from "../components/IadmModal";
 import { NARROW_MEDIA_QUERY, PREVIEW_DEVICES, type PreviewKey } from "./responsive";
 import { focusablesIn, firstTabTarget, nextTrapIndex } from "./focusTrap";
@@ -63,11 +66,13 @@ import { matchShortcut, preventsDefault, SHORTCUT_HELP, type BuilderAction } fro
 export interface BuilderFrameProps {
   open: boolean;
   onClose: () => void;
-  /** Which product owns the modal chrome — drives the eyebrow and accent. */
+  /** Which product owns the modal chrome — drives the accent. */
   product: IadmModalProduct;
-  eyebrow: string;
+  /* THE EYEBROW IS DELETED (D-172). "OLIVER · DOCUMENT BUILDER" sat above
+     the document's name; the reference editor's bar has no such line, and a
+     bar whose page name is centred has nowhere to put one. `subtitle` went
+     with it for the same reason. */
   title: ReactNode;
-  subtitle?: ReactNode;
   /** Buttons on the right of the header, AFTER undo/redo. */
   headerActions?: ReactNode;
   footer?: ReactNode;
@@ -140,8 +145,27 @@ export interface BuilderFrameProps {
    * nothing to let go of", and only then does the frame offer to close.
    */
   onShortcut?: (action: BuilderAction) => boolean | void;
-  /** The "?" in the header plays the three-step walk-through again. */
+  /** The main menu's "Show me the walk-through again". */
   onReplayHelp?: () => void;
+  /**
+   * PAGE SETTINGS (D-172) — the reference's own top-bar button, left of
+   * centre, and the chevron beside the page's name. Both do the same thing:
+   * deselect, so the panel on the right is the document's own settings.
+   */
+  onPageSettings?: () => void;
+  /**
+   * PREVIEW CHANGES (D-172) — the eye in the right-hand group, beside the
+   * verb. Optional: a builder with nothing to preview does not draw one.
+   */
+  onPreviewDoc?: () => void;
+  /**
+   * OUR COUNTERPART OF Angie, in the bar and NOWHERE ELSE (D-172).
+   *
+   * Three doors to the AI on one screen — the bar, a gold button in the
+   * settings panel's header and a floating bubble over the canvas — is two
+   * more than the reference has. This is the one that stays.
+   */
+  askArgus?: ReactNode;
 }
 
 /**
@@ -194,6 +218,8 @@ export function BuilderFrame(p: BuilderFrameProps) {
   /** "Close and discard the changes?" — D-02. Never closes silently. */
   const [confirmClose, setConfirmClose] = useState(false);
   const [help, setHelp] = useState(false);
+  /** The main menu at the far left — where Exit and the shortcuts live. */
+  const [menu, setMenu] = useState(false);
   /**
    * A node INSIDE the modal, so the frame can find the dialog it is in.
    *
@@ -263,6 +289,7 @@ export function BuilderFrame(p: BuilderFrameProps) {
       // anything else can: the first reflex for "get this off my screen" must
       // never be "lose your work".
       if (e.key === "Escape") {
+        if (menu) { e.stopPropagation(); setMenu(false); return; }
         if (help) { e.stopPropagation(); setHelp(false); return; }
         if (confirmClose) { e.stopPropagation(); setConfirmClose(false); return; }
         if (drawer) { e.stopPropagation(); setDrawer(null); return; }
@@ -282,7 +309,7 @@ export function BuilderFrame(p: BuilderFrameProps) {
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [confirmClose, dialogRoot, drawer, help, p, requestClose]);
+  }, [confirmClose, dialogRoot, drawer, help, menu, p, requestClose]);
 
   /**
    * THE undo control. Defined once and rendered in exactly one place at a
@@ -290,58 +317,61 @@ export function BuilderFrame(p: BuilderFrameProps) {
    * are drawers. SD-010's rule is "exactly one undo control", and two copies
    * of this markup is how a second one arrives.
    */
-  const undoRedo = (where: "header" | "bar") => {
-    const style = where === "header" ? ghost : barIcon;
-    const size = where === "header" ? 14 : 15;
-    return (
-      <>
-        <button type="button" title="Undo (Ctrl+Z)" aria-label="Undo (Ctrl+Z)" disabled={!p.canUndo} onClick={p.onUndo} style={style(p.canUndo)}>
-          <Undo2 size={size} />
-        </button>
-        <button type="button" title="Redo (Ctrl+Shift+Z)" aria-label="Redo (Ctrl+Shift+Z)" disabled={!p.canRedo} onClick={p.onRedo} style={style(p.canRedo)}>
-          <Redo2 size={size} />
-        </button>
-        {p.onHistory && (
-          <button type="button" data-builder-historybtn
-            title="What you've changed (Ctrl+Shift+H) — every step, and you can go back to any of them"
-            aria-label="What you've changed" onClick={p.onHistory} style={style(true)}>
-            <Clock size={size} />
-          </button>
-        )}
-        {p.onFind && (
-          <button type="button" data-builder-findbtn
-            title="Find (Ctrl+E) — a section, something to add, or what to do next"
-            aria-label="Find" onClick={p.onFind} style={style(true)}>
-            <Search size={size} />
-          </button>
-        )}
-      </>
-    );
-  };
+  /**
+   * UNDO AND REDO ARE NOT BUTTONS (D-172).
+   *
+   * The reference editor's top bar has neither: undo is Ctrl+Z and the History
+   * panel, which is exactly what `shortcuts.ts` and `HistoryPanel.tsx` already
+   * give us. Two arrow buttons in the bar were ours. `canUndo` / `canRedo` /
+   * `onUndo` / `onRedo` stay on the props because the KEYBOARD needs them and
+   * `dirty` is computed from them — what went is the chrome.
+   *
+   * What the narrow bar keeps is History, because a drawer layout still needs
+   * a way to reach it with a thumb.
+   */
+  const barHistory = () => (p.onHistory ? (
+    <button type="button" data-builder-historybtn title="History" aria-label="History"
+      onClick={p.onHistory} style={barIcon(true)}>
+      <Clock size={15} />
+    </button>
+  ) : null);
 
+  /**
+   * THE DEVICE SWITCHER — three ICONS, centred, the active one UNDERLINED.
+   *
+   * The reference's are icons with aria-labels "Desktop", "Tablet Portrait (up
+   * to 1024px)" and "Mobile Portrait (up to 767px)", read out of the live
+   * editor. Ours were three text buttons in a white pill, left of centre.
+   */
   const previewToggle = p.preview && p.onPreview ? (
     <div
       role="group"
       aria-label="Preview width"
       data-builder-preview={p.preview}
-      style={{ display: "flex", alignItems: "center", gap: 2, borderRadius: 5, padding: 2, background: "rgba(255,255,255,0.10)" }}
+      style={{ display: "flex", alignItems: "center", gap: 2 }}
     >
-      {PREVIEW_DEVICES.map((d) => (
-        <button
-          key={d.key}
-          type="button"
-          title={d.title}
-          aria-pressed={p.preview === d.key}
-          onClick={() => p.onPreview?.(d.key)}
-          style={{
-            border: "none", borderRadius: 4, padding: "3px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer",
-            background: p.preview === d.key ? "#FFFFFF" : "transparent",
-            color: p.preview === d.key ? "#0B1C24" : "rgba(255,255,255,0.75)",
-          }}
-        >
-          {d.label}
-        </button>
-      ))}
+      {PREVIEW_DEVICES.map((d) => {
+        const Icon = d.key === "desktop" ? Monitor : d.key === "tablet" ? Tablet : Smartphone;
+        const on = p.preview === d.key;
+        return (
+          <button
+            key={d.key}
+            type="button"
+            title={d.label}
+            aria-label={d.label}
+            aria-pressed={on}
+            onClick={() => p.onPreview?.(d.key)}
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 30, height: 26, border: "none", background: "transparent", cursor: "pointer",
+              color: on ? "#FFFFFF" : "rgba(255,255,255,0.65)",
+              borderBottom: `2px solid ${on ? "#FFFFFF" : "transparent"}`,
+            }}
+          >
+            <Icon size={15} />
+          </button>
+        );
+      })}
     </div>
   ) : null;
 
@@ -353,47 +383,123 @@ export function BuilderFrame(p: BuilderFrameProps) {
            backdrop as well as Escape (D-02). */
         onClose={requestClose}
         product={p.product}
-        eyebrow={p.eyebrow}
-        title={p.title}
-        subtitle={p.subtitle}
+        title=""
         /* SD-010 addendum: every builder opens as the largest surface we have. */
         size="builder"
-        headerActions={
-          /* THE TOP BAR, IN THE REFERENCE EDITOR'S ORDER (§11.13.1 item 4,
-             D-165). Looked at on 2026-09-19: panel toggle, page settings and
-             history on the left of the middle; the DEVICE SWITCHER centred;
-             then finder, structure, preview and the builder's own verb. Ours
-             reads the same way left to right — the modal owns the far left,
-             so the panel toggle starts this group. */
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {p.onTogglePanel && !narrow && (
-              <button type="button" data-builder-panelbtn={p.panelOpen === false ? "off" : "on"}
-                title="Show or hide the widgets panel (Ctrl+P)"
-                aria-label="Show or hide the widgets panel" aria-pressed={p.panelOpen !== false}
-                onClick={p.onTogglePanel} style={ghost(true)}>
-                <PanelLeft size={14} />
+        /* THE TOP BAR IS ONE STRIP, AND THE FRAME OWNS IT (D-172).
+           An eyebrow, a title, a row of actions and a close X cannot be made
+           to read like the reference editor's bar: its page name is CENTRED
+           with a chevron, its device switcher is centred beside it, and the
+           way out is the menu's Exit rather than an X on the end. So the
+           modal takes the whole strip through `chrome`. */
+        chrome={
+          <div style={{ display: "flex", alignItems: "center", gap: 6, width: "100%", minWidth: 0 }}>
+            {/* ── LEFT: the menu, then the reference's four ─────────────── */}
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, flex: "0 0 auto" }}>
+              <button type="button" data-builder-menubtn={menu ? "open" : "closed"}
+                title="Menu" aria-label="Menu" aria-expanded={menu}
+                onClick={() => setMenu((v) => !v)} style={ghost(true)}>
+                <Menu size={15} />
               </button>
-            )}
-            {/* The three sentences again, plus the keyboard list. Shown once
-                on the first open; this is how it comes back. */}
-            <button type="button" data-builder-help title="How this works, and the keyboard shortcuts"
-              aria-label="How this works, and the keyboard shortcuts"
-              onClick={() => setHelp((v) => !v)} style={ghost(true)}>
-              <HelpCircle size={14} />
-            </button>
-            {previewToggle}
-            {/* Narrow: undo/redo and the adapter's own buttons move to the
-                bottom bar, where a thumb can reach them. Never both places. */}
-            {narrow ? null : undoRedo("header")}
-            {p.onStructure && (
-              <button type="button" data-builder-structurebtn={p.structureOpen ? "open" : "closed"}
-                title="Structure (Ctrl+I) — everything on the page, in order, in a window you can move"
-                aria-label="Structure" aria-pressed={!!p.structureOpen}
-                onClick={p.onStructure} style={ghost(true)}>
-                <Layers size={14} />
-              </button>
-            )}
-            {narrow ? null : p.headerActions}
+              {menu && (
+                <>
+                  <div onMouseDown={() => setMenu(false)}
+                    style={{ position: "fixed", inset: 0, zIndex: 9490 }} />
+                  <div role="menu" data-builder-mainmenu="open"
+                    style={{
+                      position: "absolute", top: 34, left: 0, zIndex: 9500, width: 220,
+                      background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8,
+                      boxShadow: "0 18px 44px rgba(11,28,36,0.24)", padding: "5px 0",
+                    }}>
+                    <button type="button" role="menuitem" data-mainmenu="shortcuts"
+                      onClick={() => { setMenu(false); setHelp(true); }} style={menuRow}>
+                      Keyboard Shortcuts
+                    </button>
+                    {p.onReplayHelp && (
+                      <button type="button" role="menuitem" data-mainmenu="walkthrough"
+                        onClick={() => { setMenu(false); p.onReplayHelp?.(); }} style={menuRow}>
+                        Show me the walk-through again
+                      </button>
+                    )}
+                    <div style={{ height: 1, background: "#EEF2F6", margin: "4px 0" }} />
+                    <button type="button" role="menuitem" data-mainmenu="exit"
+                      onClick={() => { setMenu(false); requestClose(); }} style={menuRow}>
+                      Exit
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {p.onTogglePanel && !narrow && (
+                <button type="button" data-builder-panelbtn={p.panelOpen === false ? "off" : "on"}
+                  title="Add Element" aria-label="Add Element" aria-pressed={p.panelOpen !== false}
+                  onClick={p.onTogglePanel} style={ghost(true)}>
+                  <Plus size={15} />
+                </button>
+              )}
+              {/* Our counterpart of Angie, in the bar and nowhere else. */}
+              {!narrow && p.askArgus}
+              {p.onPageSettings && !narrow && (
+                <button type="button" data-builder-pagesettingsbtn
+                  title="Page Settings" aria-label="Page Settings"
+                  onClick={p.onPageSettings} style={ghost(true)}>
+                  <Settings2 size={14} />
+                </button>
+              )}
+              {p.onHistory && !narrow && (
+                <button type="button" data-builder-historybtn
+                  title="History" aria-label="History"
+                  onClick={p.onHistory} style={ghost(true)}>
+                  <Clock size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* ── CENTRE: the page's name, then the device switcher ─────── */}
+            <div style={{
+              flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center",
+              justifyContent: "center", gap: 10,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, maxWidth: 420 }}>
+                <div style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }} data-builder-doctitle>
+                  {p.title}
+                </div>
+                {p.onPageSettings && (
+                  <button type="button" data-builder-titlechevron
+                    title="Page Settings" aria-label="Page Settings"
+                    onClick={p.onPageSettings}
+                    style={{ border: "none", background: "transparent", color: "rgba(255,255,255,0.7)", cursor: "pointer", display: "inline-flex", padding: 2 }}>
+                    <ChevronDown size={13} />
+                  </button>
+                )}
+              </div>
+              {!narrow && previewToggle}
+            </div>
+
+            {/* ── RIGHT: Finder, Structure, Preview, then the verb ──────── */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, flex: "0 0 auto" }}>
+              {p.onFind && !narrow && (
+                <button type="button" data-builder-findbtn
+                  title="Finder" aria-label="Finder" onClick={p.onFind} style={ghost(true)}>
+                  <Search size={14} />
+                </button>
+              )}
+              {p.onStructure && (
+                <button type="button" data-builder-structurebtn={p.structureOpen ? "open" : "closed"}
+                  title="Structure" aria-label="Structure" aria-pressed={!!p.structureOpen}
+                  onClick={p.onStructure} style={ghost(true)}>
+                  <Layers size={14} />
+                </button>
+              )}
+              {p.onPreviewDoc && !narrow && (
+                <button type="button" data-builder-previewbtn
+                  title="Preview Changes" aria-label="Preview Changes"
+                  onClick={p.onPreviewDoc} style={ghost(true)}>
+                  <Eye size={14} />
+                </button>
+              )}
+              {narrow ? null : p.headerActions}
+            </div>
           </div>
         }
         footer={p.footer}
@@ -440,7 +546,7 @@ export function BuilderFrame(p: BuilderFrameProps) {
                 <SlidersHorizontal size={14} /> Settings
               </button>
               <span style={{ width: 1, height: 20, background: "rgba(255,255,255,0.2)", flex: "0 0 auto" }} />
-              {undoRedo("bar")}
+              {barHistory()}
               {/* The adapter's own Save / Send / Preview, exactly as handed
                   in — the frame never re-implements an adapter's buttons. The
                   one thing it imposes is the 40px thumb target, because those
@@ -513,30 +619,24 @@ export function BuilderFrame(p: BuilderFrameProps) {
         </div>
       )}
 
+      {/* KEYBOARD SHORTCUTS, and nothing else (D-172). The heading was "How
+          this works", with a three-sentence paragraph and a "Show me the
+          walk-through again" button above the table; the reference's shortcuts
+          panel is a shortcuts panel. The walk-through moved into the main
+          menu, where the reference keeps that kind of thing. */}
       {help && (
-        <div data-builder-shortcuts role="dialog" aria-label="How this works"
+        <div data-builder-shortcuts role="dialog" aria-label="Keyboard Shortcuts"
           style={{ position: "fixed", inset: 0, zIndex: 9550, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(11,28,36,0.5)" }}
           onClick={() => setHelp(false)}>
           <div onClick={(e) => e.stopPropagation()}
             style={{ width: "min(420px, calc(100vw - 32px))", background: "#fff", borderRadius: 10, padding: 20, boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}>
             <div style={{ display: "flex", alignItems: "center" }}>
-              <strong style={{ fontSize: 15, color: "#0B1C24" }}>How this works</strong>
+              <strong style={{ fontSize: 15, color: "#0B1C24" }}>Keyboard Shortcuts</strong>
               <button type="button" onClick={() => setHelp(false)} aria-label="Close" title="Close"
                 style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", color: "#64748B" }}>
                 <X size={15} />
               </button>
             </div>
-            <p style={{ fontSize: 12.5, lineHeight: 1.55, color: "#334155", marginTop: 8 }}>
-              Press <strong>+</strong> anywhere on the page to add something there. Click any words and type —
-              what you see is what the reader gets. Settings for whatever you clicked are on the right.
-            </p>
-            {p.onReplayHelp && (
-              <button type="button" title="Play the three-step walk-through again"
-                onClick={() => { setHelp(false); p.onReplayHelp?.(); }}
-                style={{ marginTop: 6, border: "1px solid #0C4A60", background: "#fff", color: "#0C4A60", borderRadius: 5, padding: "6px 11px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
-                Show me the walk-through again
-              </button>
-            )}
             <table style={{ width: "100%", marginTop: 14, fontSize: 12, borderCollapse: "collapse" }}>
               <tbody>
                 {SHORTCUT_HELP.map((row) => (
@@ -555,6 +655,13 @@ export function BuilderFrame(p: BuilderFrameProps) {
     </>
   );
 }
+
+/** One row of the main menu. */
+const menuRow: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left", border: "none",
+  background: "transparent", padding: "7px 12px", fontSize: 12.5,
+  color: "#0B1C24", cursor: "pointer",
+};
 
 function ghost(enabled: boolean): React.CSSProperties {
   return {

@@ -373,7 +373,9 @@ export function presetFor(kind: string): { kind: string; style: Record<string, u
   return LAYOUT_PRESETS[kind] ?? null;
 }
 /* 11.13.2 (stream 3). See the spread in WIDGETS below for why this is here. */
-import { RECORD_WIDGET_DEFS } from "./proposal/recordWidgets";
+/* B-168 LANDED: the two lines marked `b168/demo TEMP` are DELETED.
+   The IA family is reached through the ONE family index, like every
+   other family. */
 import { CATALOGUE_TILE_DEFS } from "./proposal/catalogueTiles";
 
 
@@ -515,13 +517,13 @@ const LEGACY_WIDGETS: WidgetDef[] = [
      draws it, and the list is spread in here so there is still exactly ONE
      vocabulary. See widgets/index.ts. */
   ...ATOM_WIDGET_DEFS,
-  /* 11.13.2 (stream 3) — THE THREE RECORD-BOUND WIDGETS: Customer, Service
-     Location, Business Info. They declare themselves in
-     `proposal/recordWidgets.ts` and the proposal adapter draws them through
-     `ctx.extra`, so render.ts gains no case. These two lines are the whole of
-     stream 3's footprint in this shared file; the note is in
-     D165_HANDOFF_2026-09-19.md so an integration keeps them. */
-  ...RECORD_WIDGET_DEFS,
+
+  /* THE THREE RECORD WIDGETS LIVED HERE and are DELETED (D-167, b168/demo).
+     Customer, Service Location and Business Info were blocks of facts - one
+     special-purpose widget each - and one fact is a **Custom Field**, which
+     the IA family spreads in on the next line. A stored block unpacks into a
+     Container of Custom Fields on open (`upgrade.ts`, mirrored by oliver-api
+     `lib/deletedKinds.js` on the server door). */
   /* …and the two TILES that load products. Neither is ever on a page: the
      adapter's `onInsertWidget` opens the one catalogue picker and drops
      `catalog_card` / `price_line` per pick (proposal/catalogueTiles.ts). */
@@ -712,8 +714,13 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     description: "A plain table with a header row. Nothing is added up — it is a table, not a bill.",
     icon: "Table2",
     picture: pictureFrom(`<rect x="6" y="8" width="52" height="8" rx="2" fill="#CBD5E1" stroke="none"/>` + box(6, 8, 52, 26) + `<path d="M6 24h52M24 16v18M41 16v18" stroke="#CBD5E1"/>`),
-    category: "General",
-    hidden: true,
+    /* AN IA WIDGET, AND THE OFFER FILE SAYS SO (b168/demo). Elementor has no
+       table widget, free or Pro - the only matches in both machine catalogues
+       are `price-table` and `table-of-contents` - so this one is ours, it sits
+       in our own group, and the proposal panel offers it. It was `hidden` and
+       reachable only from a shipped template, which is a widget an author
+       cannot add a second of. */
+    category: "Intelligent Analytics",
     adapters: SMALL_TABLES,
     defaults: { columns: [], rows: [] },
     controls: [
@@ -1313,7 +1320,7 @@ export const PANEL_ORDER: string[] = [
   "colour_block", "background", "qr_code", "social_handle",
   // Intelligent Analytics — §11.13.3's own order, proposals first
   "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
-  "customer", "service_location", "business_info", "terms", "clauses", "signature", "page_break",
+  "custom_field", "data_table", "clauses", "signature", "page_break",
   /* The email's three, by the ids the mailbox already draws. They sit where
      §11.13.3 puts them in the email's own IA column. */
   "product_card", "article_card", "email_footer",

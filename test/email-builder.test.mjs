@@ -65,6 +65,7 @@ import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
 } from "../src/builder/adapters/landing/landingTemplates.ts";
 import { widgetsFor, widgetDescription, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
+import { isDeletedKind } from "../src/builder/upgrade.ts";
 import { repeatKeyFor } from "../src/builder/BuilderShell.tsx";
 
 const FIX = (name) => JSON.parse(readFileSync(path.join(process.cwd(), "test", "fixtures", name), "utf8"));
@@ -738,16 +739,25 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        its numbering — but its TILE is hidden, because §11.13.3 names ONE Terms
        door and that is the `terms` picker. Two tiles reading "Terms" in one
        panel is what the section exists to stop. */
-    /* D-168 (2026-09-19) took three more TILES off this panel and left all
-       three KINDS drawable: `terms` (a section template now, not a widget) and
-       `customer` / `service_location` (replaced by the ONE Custom Field widget
-       D-167 asked for). Same rule as `clauses` above, same reason. */
-    for (const k of ["totals", "signature", "product_line_items"]) {
+    /* D-168 — the Terms tile and the three record blocks are deleted; the
+       proposal shows a database fact with **Custom Field** and drops saved
+       clauses from the Terms and conditions section template. */
+    for (const k of ["totals", "signature", "custom_field", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
     for (const k of ["terms", "customer", "service_location"]) {
       assert.equal(kinds.includes(k), false, `${k} is not in the offer, so it is not a tile`);
-      assert.ok(WIDGETS_BY_KIND[k], `the ${k} KIND was deleted, so stored documents stop drawing`);
+    }
+    /* B-168 LANDED — WHAT KEEPS A STORED ONE DRAWING IS THE UPGRADE, NOT A
+       HIDDEN REGISTRY ROW. The two record blocks are converted on the way in
+       (`upgrade.ts` DELETED_KINDS → a Container of Custom Fields), so the
+       registry is right to have no row for them. `terms` was never a stored
+       kind at all — the tile was an ACTION that dropped a Heading and a Text
+       Editor, and that action is the Terms and conditions section template
+       now. This asserts the door that really exists. */
+    for (const k of ["customer", "service_location"]) {
+      assert.ok(isDeletedKind({ id: "x", kind: k, props: {} }),
+        `a stored ${k} is not converted on open, so it stops drawing`);
     }
     assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
     assert.ok(WIDGETS_BY_KIND.clauses, "the clauses KIND was deleted, so stored agreements stop drawing");

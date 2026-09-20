@@ -25,20 +25,18 @@ export function HistoryPanel(p: HistoryPanelProps) {
       <div
         data-builder-history="1"
         role="dialog"
-        aria-label="What you've changed"
+        aria-label="History"
         style={{ width: "min(320px, 100vw)", background: "#fff", boxShadow: "-16px 0 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid #EEF2F6" }}>
-          <strong style={{ fontSize: 13.5, color: "#0B1C24" }}>What you&rsquo;ve changed</strong>
+          <strong style={{ fontSize: 13.5, color: "#0B1C24" }}>History</strong>
           <button type="button" onClick={p.onClose} aria-label="Close" title="Close"
             style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", color: "#64748B" }}>
             <X size={14} />
           </button>
         </div>
-        <p style={{ fontSize: 11.5, color: "#5A7A8A", lineHeight: 1.5, padding: "9px 14px 4px", margin: 0 }}>
-          Every step you have taken, newest first. Press one to go back to how the page looked then &mdash; nothing is
-          thrown away until you edit again.
-        </p>
+        {/* THE COACHING PARAGRAPH IS DELETED (D-172). No reference panel
+            carries one; the list explains itself. */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 10px" }}>
           {p.steps.map((s) => (
             <button

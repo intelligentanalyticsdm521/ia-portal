@@ -355,9 +355,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     const kind = arionKindOf(def.kind);
     /* THE PLAN, BEFORE ANYTHING IS BUILT (D-157).
      *
-     * The picker greys the row and says why, and this is the second end of the
-     * same guard: a keyboard shortcut, a slash command and a drag all arrive
-     * here, and only one of them goes through the picker. The server refuses
+     * The panel greys the tile and says why, and this is the second end of the
+     * same guard: a keyboard shortcut, a pressed tile and a drag all arrive
+     * here, and only one of them goes through the panel. The server refuses
      * the build as well — three ends, on purpose, because the one a client
      * finds is never the one you thought of. */
     const locked = lockFor(plan, kind);
@@ -811,30 +811,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         }}
         adapter="website"
         resetKey={resetKey}
-        eyebrow="ARION · Website builder"
         title={detail?.title || "Page"}
-        subtitle={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {/* D-05: a live page with work saved says BOTH, because both are
-                true. "Draft" on its own is what the walk read as "my website is
-                down", and it was right to. */}
-            <span data-site-status
-              title={isLive && heldDraft
-                ? "Your website still shows the published version. Your saved changes are held here until you publish them."
-                : undefined}
-              style={{ background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "2px 9px" }}>
-              {isLive
-                ? (heldDraft ? "Live · draft saved, not published" : "Live")
-                : detail?.status === "draft" ? "Draft" : detail?.status || "Draft"}
-            </span>
-            {detail?.permalink && <span style={{ opacity: 0.8 }}>{String(detail.permalink).replace(/^https?:\/\//, "")}</span>}
-          </span>
-        }
         doc={doc}
         onChange={change}
         ctx={ctx}
         paperWidth="full"
-        paperNote={detail?.permalink ? String(detail.permalink).replace(/^https?:\/\//, "") : "your website"}
         extraCss={SITE_CSS}
         /* D-30. The engine was written for a proposal, so without this a
            website inspector offers "Start a new page here (when printed or
@@ -850,12 +831,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           outlineHeading: "This page, top to bottom",
           defaultFontLabel: "Your website's own font",
           pageBreakLabel: "",
-          canvasHint: "Click anything on the page to edit it. Everything here is what a visitor sees.",
           emptyHeading: "What goes on this page?",
           emptyHint: "Pick one to start. You can add the rest after.",
         }}
         onSave={saveNow}
-        canvasHint="Click anything on the page to edit it. Everything here is what a visitor sees."
         chromeTop={renderHeaderChrome({ businessName: chrome.businessName, logoUrl: chrome.logoUrl, menu: chrome.menu })}
         chromeBottom={renderFooterChrome({ businessName: chrome.businessName, menu: chrome.menu, contactLine: chrome.contactLine })}
         chromeNote="Your website's header and footer. They are the same on every page — change them under Website → Menus."
@@ -866,32 +845,31 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         premadeTags={SITE_PREMADE_TAGS}
         onSelectionChange={setSelection}
         onInsertWidget={insertWidget}
-        /* R-D1 — the PANE and the PICKER say so before the press. `insertWidget`
-           above is the seam a shortcut, a slash command and a drag all reach,
-           and it refuses; this is the same answer, shown as a greyed row with
+        /* R-D1 — the PANEL says so before the press. `insertWidget`
+           above is the seam a shortcut, a pressed tile and a drag all reach,
+           and it refuses; this is the same answer, shown as a greyed tile with
            the reason as its line, so "not on your plan" never arrives looking
            like a bug. ONE source: the plan the server sent. */
         lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
         onAddBlank={(at) => { void addFromServer("content", at); return false; }}
-        nextUp={null}
+        widgetExtras={widgetExtras}
+        /* OUR ANGIE, and the reference's eye — both in the bar's own
+           positions (D-172), not stacked in with the verbs. */
         askArgus={
-          <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write or rewrite this page. Uses AI credits, and you see what it suggests before anything changes.">
-            <Sparkles size={12} /> Ask ARGUS
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS" aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#38BDF8", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
           </button>
         }
-        widgetExtras={widgetExtras}
+        onPreviewDoc={() => { if (!busy) void runPreview(); }}
         headerActions={
           <>
-            <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-              title="Ask ARGUS to write or rewrite this page. Uses AI credits.">
-              <Sparkles size={13} /> Ask ARGUS
-            </button>
-            <button type="button" style={GHOST} disabled={!!busy} onClick={runPreview}
-              title="See the page on your own website, rendered by your own theme. Nothing is published.">
-              {busy === "preview" ? "Working…" : "Preview"}
-            </button>
             {/* D-05. On a LIVE page this holds the work beside the published
                 version; it does not touch the website and it does not send
                 `status: draft`, which is the same wire as Unpublish. */}
@@ -1268,7 +1246,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                   onDuplicateSection={() => undefined}
                   onDeleteSection={() => undefined}
                   onMoveSection={() => undefined}
-                  onAddSection={() => undefined}
+                  onAddBlank={() => undefined}
+                  onAddTemplate={() => undefined}
                 />
               </div>
             </div>

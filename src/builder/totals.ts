@@ -162,6 +162,13 @@ function widgetLines(widget: Widget): LineTotal[] {
  */
 interface SiteBox { boxId: string; locationId: string; name: string; order: number }
 
+/** The child that says "this box is about a site", in any of its spellings. */
+function siteMarker(kids: readonly Node[]): Node | undefined {
+  return kids.find((k) => k.kind === "service_location" || k.kind === "address_block"
+    || (k.kind === "custom_field"
+      && String((k.props as any)?.field ?? "").startsWith("service_location.")));
+}
+
 function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: SiteBox[] } {
   const boxes: SiteBox[] = [];
   const of = new Map<string, SiteBox>();
@@ -181,8 +188,17 @@ function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: S
        claiming the lines under it would put a site's money on the payer.
 
        Mirrored in oliver-api's lib/documentModel.js `sitesInTree`. */
-    const address = box.children.find(
-      (k) => k.kind === "service_location" || k.kind === "address_block");
+    /* D-167 ADDED THE THIRD SPELLING, and it is the one every new document
+       uses: a site fact is a **Custom Field** whose chosen field starts
+       `service_location.`, and the upgrade puts those Custom Fields in a box
+       of their own inside the property box. So the marker is looked for among
+       the box's own children AND one level in — and no further, because a
+       property inside a property is a property, and the outermost wins.
+       A `customer.*` field is NOT a marker, for the reason above: it is who
+       the document is FOR, and claiming the lines under it would put a site's
+       money on the payer. */
+    const address = siteMarker(box.children) 
+      || box.children.filter(isContainer).map((k) => siteMarker((k as Container).children)).find(Boolean);
     if (!address) return;
     const ap: any = address.props || {};
     const headingChild: Node | undefined = box.children.find((k) => k.kind === "heading");

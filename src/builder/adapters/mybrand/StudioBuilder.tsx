@@ -640,13 +640,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
         open={p.open}
         onClose={p.onClose}
         product="spark"
-        eyebrow="MY BRAND · DESIGN STUDIO"
         /* The walk: *"The modal title says 'New design' while the name field
            beside it says 'Spring cleanup promo'."* A design that came from a
            template is not new and is not untitled — the title says what is
            actually open. */
         title={designName?.trim() || (currentDesignId ? "Edit design" : "New design")}
-        subtitle={`${doc.width} × ${doc.height}`}
         canUndo={canUndo(history)}
         canRedo={canRedo(history)}
         onUndo={doUndo}

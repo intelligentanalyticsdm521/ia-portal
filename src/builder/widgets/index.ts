@@ -34,9 +34,10 @@ import type { Widget } from "../model";
 import type { RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { ATOM_KINDS as NAMES } from "./kinds";
-/* The three record widgets live under `proposal/` with the record book they
-   read; this module holds the one map every surface renders through. */
-import { RECORD_WIDGET_DEFS, recordBookFromContext, renderRecordBlock } from "../proposal/recordWidgets";
+/* THE THREE RECORD WIDGETS ARE DELETED (D-167, b168/demo). Customer, Service
+   Location and Business Info were blocks of facts; one fact is a **Custom
+   Field**, which declares itself in `widgets/families/ia/` and is collected
+   there. Nothing about them is left in this module. */
 
 import { CARD_DEF, renderCard } from "./card";
 import { CATALOG_CARD_DEF, renderCatalogCard } from "./productCard";
@@ -129,17 +130,11 @@ const RENDERERS: Record<string, Renderer> = {
   shortcode: renderShortcode,
   menu_anchor: renderMenuAnchor,
 
-  /* THE THREE RECORD WIDGETS, drawn by the ONE renderer that draws them on the
-     builder's own canvas. `render.ts` asks `ctx.extra` first, so the proposal
-     adapter's richer book wins there; everywhere else — the customer's copy,
-     the sent wire, a template preview — the book is derived from the
-     RenderContext. Before this they were not in this map at all and a signed
-     agreement reached the customer with no customer block on it.
-     `product_cards`, `product_line_items` and `terms` are panel TILES and are
-     never on a page, so they are not here. */
-  customer: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
-  service_location: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
-  business_info: (w, ctx) => renderRecordBlock(w, ctx, recordBookFromContext(ctx)),
+  /* THE THREE RECORD WIDGETS LIVED HERE and are DELETED (D-167). What drew
+     them now draws ONE field at a time, from the IA family folder, reached
+     through the family index. See the header.
+     `product_cards` and `product_line_items` are panel TILES and are never
+     on a page, so they are not here either. */
   ia_posts: renderIaPosts,
   reviews: renderReviews,
   book_now: renderBookNow,
@@ -173,9 +168,7 @@ export function atomKindsAgree(): { onlyNamed: string[]; onlyRendered: string[];
   const named = new Set<string>(NAMES);
   // `priced_line` is understood but never offered — see the map.
   const rendered = new Set(Object.keys(RENDERERS).filter((k) => k !== "priced_line"));
-  /* The three record widgets are DEFINED under `proposal/` beside the book
-     they read, and drawn through this map; both lists have to know it. */
-  const defined = new Set([...ATOM_WIDGET_DEFS, ...RECORD_WIDGET_DEFS].map((d) => d.kind));
+  const defined = new Set(ATOM_WIDGET_DEFS.map((d) => d.kind));
   return {
     onlyNamed: [...named].filter((k) => !rendered.has(k) || !defined.has(k)),
     onlyRendered: [...rendered].filter((k) => !named.has(k)),

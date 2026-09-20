@@ -279,10 +279,27 @@ export function ArgusChatbot() {
     setTimeout(() => launchJourneyStep(stepId, mode), 250);
   };
 
+  /**
+   * THE BUBBLE STEPS ASIDE WHILE A BUILDER IS OPEN (D-172).
+   *
+   * The reference editor has ONE door to its AI, in the top bar. Ours had
+   * three, and the third was this — `fixed bottom-5 right-5 z-[9000]`, so it
+   * floated OVER the builder modal and nothing in the builder could lay itself
+   * out around it. The builder's own bar carries Ask ARGUS; a second launcher
+   * on top of it is the extra door.
+   *
+   * Asked of the DOM rather than threaded through a context, because the
+   * builder is a modal any page can open and a prop for "is a modal open" is a
+   * prop that goes stale. Re-read on every render, which is what a `useState`
+   * seeded once would not do.
+   */
+  const builderOpen = typeof document !== "undefined"
+    && !!document.querySelector("[data-builder-canvas], [data-builder-layout]");
+
   return (
     <>
-      {/* Floating launch button (always visible) */}
-      {!open && (
+      {/* Floating launch button — not while a builder owns the screen. */}
+      {!open && !builderOpen && (
         <button
           type="button"
           onClick={() => setOpen(true)}

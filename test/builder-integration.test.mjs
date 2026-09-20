@@ -139,9 +139,10 @@ describe("the upgrade on open is switched on (A-B-1)", () => {
 
 describe("the upgraded widgets are the widgets the registry has (A-B-2)", () => {
   test("every kind the upgrade can produce is a kind the engine draws", () => {
-    /* D-165 — `address_block` and `key_fact` are deleted; the upgrade produces
-       `service_location` (or `customer`) and a Text Editor instead. */
-    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "service_location", "totals"]) {
+    /* D-167 — `address_block`, `key_fact` and then the three record blocks
+       are deleted; the upgrade produces a Container of **Custom Fields** and a
+       Text Editor instead. */
+    for (const kind of ["heading", "paragraph", "card", "catalog_card", "price_line", "custom_field", "totals"]) {
       assert.ok(RENDERED_KINDS.includes(kind), `the upgrade produces ${kind} and nothing draws it`);
     }
   });
@@ -227,7 +228,7 @@ describe("a ready-made pattern is ONE section with a box in it (A-B-4)", () => {
 
   test("This property is the four widgets a property block held", () => {
     assert.deepEqual(propertySections()[0].columns[0].widgets.map((w) => w.kind),
-      ["heading", "service_location", "price_line", "totals"]);
+      ["heading", "heading", "custom_field", "custom_field", "custom_field", "custom_field", "price_line", "totals"]);
   });
 
   test("no pattern needs a second way to be placed", () => {
@@ -389,7 +390,6 @@ describe("product_card and catalog_card are TWO kinds (B→C-1)", () => {
 
 describe("a locked widget or section says so before the press (R-D1, R-D2)", () => {
   const pane = readFileSync(new URL("../src/builder/WidgetPane.tsx", import.meta.url), "utf8");
-  const picker = readFileSync(new URL("../src/builder/WidgetPicker.tsx", import.meta.url), "utf8");
   const gallery = readFileSync(new URL("../src/builder/SectionGallery.tsx", import.meta.url), "utf8");
   const shell = readFileSync(new URL("../src/builder/BuilderShell.tsx", import.meta.url), "utf8");
   const site = readFileSync(new URL("../src/builder/adapters/website/WebsiteBuilder.tsx", import.meta.url), "utf8");
@@ -405,11 +405,18 @@ describe("a locked widget or section says so before the press (R-D1, R-D2)", () 
     assert.match(pane, /if \(lock\) \{ e\.preventDefault\(\); return; \}/);
   });
 
-  test("the picker greys it too, on both of its doors", () => {
-    assert.match(picker, /data-picker-locked/);
-    assert.match(picker, /onClick=\{\(\) => \{ if \(!lock\) choose\(w\); \}\}/);
-    assert.equal((shell.match(/lockedKinds=\{p\.lockedKinds\}/g) || []).length, 2,
-      "the slash-command picker or the + picker was left out");
+  test("there is no SECOND door to grey — the widget pop-up is deleted", () => {
+    /* WAS "the picker greys it too, on both of its doors" — the "+" pop-up and
+       the slash-command pop-up, both `WidgetPicker.tsx`. Deleted 2026-09-19.
+       Two doors meant two places to forget the lock; there is one now. */
+    assert.throws(
+      () => readFileSync(new URL("../src/builder/WidgetPicker.tsx", import.meta.url), "utf8"),
+      /ENOENT/, "WidgetPicker.tsx is back, and with it a second door to grey");
+    assert.ok(!/WidgetPicker|data-picker-locked/.test(shell), "the shell mounts the pop-up again");
+    // PRESENT: the plan reaches the one surface that lists widgets, once.
+    assert.equal((shell.match(/lockedKinds: p\.lockedKinds/g) || []).length, 1,
+      "the panel was left out of the lock, or a second list is being handed it");
+    assert.match(shell, /<WidgetPane/);
   });
 
   test("a locked ready-made section cannot be placed", () => {
@@ -424,7 +431,7 @@ describe("a locked widget or section says so before the press (R-D1, R-D2)", () 
     // behind it has no server row, and its own `tier` says which of the three
     // gates applies (catalogue G.4, conformance 2026-09-17).
     assert.match(site, /pickerLock\(plan, arionKindOf, w\)/);
-    for (const text of [pane, picker, gallery, shell]) {
+    for (const text of [pane, gallery, shell]) {
       assert.ok(!/arion_tier|\bLite\b|\bStandard\b/.test(text),
         "an engine file names a plan, so there are two places the tier is decided");
     }

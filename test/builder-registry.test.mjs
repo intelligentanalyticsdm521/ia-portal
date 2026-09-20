@@ -197,7 +197,7 @@ describe("§3.2's union is registered", () => {
     "social_links", "alert", "shortcode", "html", "menu_anchor",
     // Intelligent Analytics
     "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
-    "customer", "service_location", "business_info", "clauses", "signature", "page_break",
+    "custom_field", "data_table", "clauses", "signature", "page_break",
     "ia_posts", "reviews", "book_now",
     "ia_form", "newsletter_signup", "hours_location",
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
@@ -205,18 +205,18 @@ describe("§3.2's union is registered", () => {
     // builders, so they keep their own words.
     "brand_logo", "shape", "colour_block", "background", "qr_code", "social_handle",
     // Understood, never offered. Each one's reason is in registry.ts.
-    "data_table", "site_custom",
+    // `data_table` is OFFERED now (the offer file's proposal list), so it
+    // moved up into the Intelligent Analytics block above.
+    "site_custom",
     "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
     "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
-    "form", "gallery", "countdown", "logo_strip",
-    /* 11.13.3's Terms: saved clauses in, plain Heading + Text Editor out. A
-       PANEL TILE, declared in src/builder/proposal/catalogueTiles.ts.
-       `clauses` is the widget it replaces on the panel — its kind stays (the
-       snow agreement places it and D-164 pins its numbering) and its TILE is
-       hidden, so there is one Terms door. */
-    "terms",
+    "form", "gallery", "social_links", "countdown", "logo_strip",
+    /* `terms` WAS HERE and the TILE is DELETED (D-168): the approved offer
+       file does not list it, and the clause picker belongs to the **Terms and
+       conditions** section template now. `clauses` stays a KIND, because the
+       snow agreement places one and D-164 pins its numbering. */
   ];
 
   for (const kind of REQUIRED) {
@@ -363,9 +363,12 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
        are DELETED; the first became Customer or Service Location by its
        binding, and those two are the proposal's. */
     assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.customer.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.service_location.adapters].sort(), ["proposal"]);
-    for (const gone of ["address_block", "key_fact", "pricing_table", "callout"]) {
+    /* D-167 — and the three that replaced the address block are themselves
+       gone. ONE widget shows one database field, and it is the proposal's
+       until an email or a page has a customer picked for it to read. */
+    assert.deepEqual([...WIDGETS_BY_KIND.custom_field.adapters].sort(), ["proposal"]);
+    for (const gone of ["address_block", "key_fact", "pricing_table", "callout",
+      "customer", "service_location", "business_info", "terms"]) {
       assert.equal(WIDGETS_BY_KIND[gone], undefined, `${gone} must be gone, not hidden`);
     }
   });
@@ -482,14 +485,14 @@ describe("the pane groups them", () => {
 
 describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
-  const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
     // §11.13.1: the grouping moved to widgetGroups.ts, which groups the
     // registry's own widgets the way the reference editor groups them —
-    // Layout / Basic / General / Intelligent Analytics — and the PICKER
-    // calls the same function, so the panel and the "+" can never offer two
-    // vocabularies. The rule is unchanged: no list of widgets in this file.
+    // Layout / Basic / General / Intelligent Analytics. There is one caller
+    // now: the pop-up that used to make the same call is deleted, so the
+    // panel has nothing to disagree with. The rule is unchanged: no list of
+    // widgets in this file.
     assert.match(pane, /from "\.\/registry"/);
     assert.match(pane, /panelGroups\(adapter, query\)/);
     assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
@@ -522,7 +525,9 @@ describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
 
   test("it has a title and a search box, and NOTHING else", () => {
     assert.match(pane, /type="search"/);
-    assert.match(pane, /aria-label="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /aria-label="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /aria-label=\{PANE_SEARCH_PLACEHOLDER\}/);
     assert.match(pane, /PANE_TITLE/);
     // §11.13.1: no outline, no totals, no customer box, no templates list,
     // no "still to fill in" counter, and no slot to inject one through.
@@ -538,10 +543,16 @@ describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
      now — a card is a widget with the same duplicate and delete as
      everything else. The assertion is inverted rather than removed, because
      "the question is gone" is the thing that has to stay true. */
-  test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
-    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
-      assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);
-      assert.doesNotMatch(src, /setAsking/, `${name}: still holds the question's state`);
-    }
+  test("the 'how many?' question is gone, and so is the second surface that asked it (D-156)", () => {
+    /* WAS "gone from BOTH surfaces" — the panel and the widget pop-up. The
+       pop-up itself is deleted (2026-09-19), so the pair below is the absence
+       of the file and the absence of the question in the one panel left. */
+    assert.throws(
+      () => readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8"),
+      /ENOENT/, "WidgetPicker.tsx is back, and it is the surface that used to ask");
+    assert.doesNotMatch(pane, /w\.count\.label/, "the pane still asks how many");
+    assert.doesNotMatch(pane, /setAsking/, "the pane still holds the question's state");
+    // PRESENT: pressing a tile inserts, with no question in between.
+    assert.match(pane, /onClick=\{\(\) => \{ if \(!lock\) onInsert\(w\); \}\}/);
   });
 });

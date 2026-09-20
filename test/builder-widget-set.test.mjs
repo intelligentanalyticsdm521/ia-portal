@@ -44,11 +44,14 @@ import { makeContainer } from "../src/builder/treeOps.ts";
 import { documentTotals } from "../src/builder/totals.ts";
 import { PREMADE_SECTIONS, SHIPPED_TEMPLATES, documentHeaderSections } from "../src/builder/templates.ts";
 import { snowAgreementDocument } from "../src/builder/snowAgreement.ts";
-import { isRecordKind, renderRecordBlock } from "../src/builder/proposal/recordWidgets.ts";
 /* D-168 item 7 — THE ORDER IS READ, not typed. See the helper's own header. */
 import {
   GROUPS as PANEL_GROUPS_EXPECTED, groupFaults, panelOrderFaults,
 } from "./helpers/panelOrder.mjs";
+import { CUSTOM_FIELD_CHOICES, customFieldProps, renderCustomFieldWith }
+  from "../src/builder/widgets/families/ia/customField.ts";
+import { PROPOSAL_SECTION_TEMPLATES, SECTION_TEMPLATE_NAMES }
+  from "../src/builder/proposal/sectionTemplates.ts";
 
 const NAMES = JSON.parse(readFileSync(
   path.join(process.cwd(), "test/fixtures/elementor-widget-names.json"), "utf8"));
@@ -65,9 +68,12 @@ const ELEMENTOR_TITLES = new Set(NAMES.all_titles);
  * said. This is the scope document, retyped.
  */
 const IA_NAMES = new Set([
-  // proposals
-  "Product Cards", "Product Line Items", "Totals", "Customer", "Service Location",
-  "Business Info", "Terms", "Signature", "Page Break",
+  /* proposals — the offer file's own `builders.proposal.ia`, retyped.
+     Customer, Service Location, Business Info and Terms are NOT on it: the
+     three blocks are one **Custom Field** (D-167) and the Terms tile is the
+     Terms and conditions section template (D-168). */
+  "Custom Field", "Product Cards", "Product Line Items", "Table", "Totals",
+  "Signature", "Page Break",
   // the shared vocabulary's own three
   "Card", "Product Card", "Product Line Item",
   // email
@@ -327,8 +333,9 @@ describe("Product Cards and Product Line Items are pickers", () => {
   test("the atoms are not tiles — the picker is the only door", () => {
     assert.ok(isCatalogueTile("product_cards") && isCatalogueTile("product_line_items"));
     assert.equal(isCatalogueTile("catalog_card"), false);
-    // Terms is the third tile: a picker, not a widget with a stored form.
-    assert.ok(isPickerTile("terms"));
+    /* THE TERMS TILE IS DELETED (D-168): the offer file does not list it, and
+       the clause picker belongs to the Terms and conditions section template. */
+    assert.equal(isPickerTile("terms"), false);
     assert.equal(WIDGETS_BY_KIND.catalog_card.hidden, true);
     assert.equal(WIDGETS_BY_KIND.price_line.hidden, true);
   });
@@ -390,7 +397,10 @@ describe("the deleted kinds are gone and convert on open", () => {
     for (const kind of DELETED_KINDS) assert.equal(kinds.includes(kind), false, `${kind} survived`);
     for (const kind of COMPOSITE_KINDS) assert.equal(kinds.includes(kind), false, `${kind} survived`);
     // ASSERT PRESENCE: the parts it became are actually there.
-    for (const wanted of ["image", "heading", "paragraph", "alert", "price_line", "service_location", "customer", "google_maps"]) {
+    /* D-167 — an address block and a plan become a Container of **Custom
+       Fields**, not a block widget. The fields themselves are asserted by the
+       dynamic-fields suite; here the question is only that nothing vanished. */
+    for (const wanted of ["image", "heading", "paragraph", "alert", "price_line", "custom_field", "google_maps"]) {
       assert.ok(kinds.includes(wanted), `nothing became ${wanted}`);
     }
     assert.equal(needsUpgrade(after), false, "the pass is not idempotent");
@@ -505,7 +515,7 @@ describe("the Commercial snow & ice agreement, rebuilt (D-164 unchanged)", () =>
   test("it is built from the new set, and the old kinds are nowhere in it", () => {
     const kinds = new Set(kindsIn(doc));
     for (const gone of DELETED_KINDS) assert.equal(kinds.has(gone), false, gone);
-    for (const wanted of ["image", "heading", "paragraph", "data_table", "alert", "price_line", "service_location", "signature"]) {
+    for (const wanted of ["image", "heading", "paragraph", "data_table", "alert", "price_line", "custom_field", "signature"]) {
       assert.ok(kinds.has(wanted), `the agreement lost its ${wanted}`);
     }
   });
@@ -593,32 +603,72 @@ describe("every widget the panel offers draws something", () => {
    * engine's map. Rendering them with no book and asserting a wrapper would be
    * asserting the wrong thing about the wrong renderer.
    */
-  for (const [kind, book] of [
-    ["customer", { customer: { name: "Fixture Grounds Co", email: "hello@example.test" } }],
-    ["service_location", { service_location: { name: "North lot", address: "1 Fixture Way" } }],
-    ["business_info", { business_info: { name: "Fixture Landscaping", phone: "555-0100" } }],
-  ]) {
-    test(`${kind} puts something on the page, through the adapter's record book`, () => {
-      const doc = docOf([makeWidget(kind, {})]);
+  const BOOK = {
+    customer: { name: "Fixture Grounds Co", email: "hello@example.test" },
+    service_location: { name: "North lot", address: "1 Fixture Way" },
+    business_info: { name: "Fixture Landscaping", phone: "555-0100" },
+  };
+
+  for (const field of ["customer.name", "service_location.address", "business_info.phone"]) {
+    test(`a Custom Field on ${field} puts its value on the page`, () => {
+      const doc = docOf([makeWidget("custom_field", customFieldProps(field))]);
       const base = ctx(doc);
       const html = renderDocument(doc, {
         ...base,
-        extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, book) : null),
+        extra: (w, c) => (w.kind === "custom_field" ? renderCustomFieldWith(w, c, BOOK) : null),
       });
-      assert.ok(html.includes(`bx-w-${kind}`), `${kind} drew no wrapper`);
-      assert.ok(html.replace(/<[^>]*>/g, "").trim().length > 0, `${kind} drew nothing`);
+      assert.ok(html.includes("bx-w-custom_field"), `${field} drew no wrapper`);
+      const [record, key] = field.split(".");
+      assert.ok(html.includes(BOOK[record][key]), `${field} drew nothing the record says`);
     });
   }
 
-  test("the three are reachable in edit mode even with an empty record", () => {
-    for (const kind of ["customer", "service_location", "business_info"]) {
-      const doc = docOf([makeWidget(kind, {})]);
+  test("EVERY field on the list draws, and is clickable with an empty record", () => {
+    // ASSERT PRESENCE on all fifteen, not on a sample: a field that silently
+    // draws nothing is a line an author puts on a contract and never sees.
+    for (const c of CUSTOM_FIELD_CHOICES) {
+      const doc = docOf([makeWidget("custom_field", customFieldProps(c.key))]);
       const base = makeContext(doc, { mode: "edit", business: { name: "Fixture" } });
       const html = renderDocument(doc, {
         ...base,
-        extra: (w, c) => (isRecordKind(w.kind) ? renderRecordBlock(w, c, {}) : null),
+        extra: (w, cc) => (w.kind === "custom_field" ? renderCustomFieldWith(w, cc, {}) : null),
       });
-      assert.ok(/data-edit=|data-placeholder=/.test(html), `${kind} has nothing to click`);
+      assert.ok(/data-edit=|data-placeholder=/.test(html), `${c.key} has nothing to click`);
+      if (!c.picture) assert.ok(html.includes(c.label), `${c.key} does not say what it is`);
+    }
+  });
+
+  test("THE NINE SECTION TEMPLATES ARE THE OFFER FILE'S NINE, by name and in order", () => {
+    assert.deepEqual([...SECTION_TEMPLATE_NAMES], [
+      "Title page", "Customer details", "Service address", "About us", "Scope of work",
+      "Pricing options", "Line items with totals", "Terms and conditions", "Acceptance",
+    ]);
+  });
+
+  test("…and every widget inside one is a widget the proposal panel offers", () => {
+    /* A template that dropped something an author cannot then add a second of
+       is a back door into the panel — which is exactly how the invented
+       widgets kept coming back. */
+    const offered = new Set(widgetsFor("proposal").map((w) => w.kind));
+    // The two atoms the catalogue tiles drop are not tiles themselves.
+    offered.add("catalog_card");
+    offered.add("price_line");
+    offered.add("container");
+    const seen = new Set();
+    const walk = (nodes) => {
+      for (const n of nodes || []) {
+        seen.add(n.kind);
+        assert.ok(offered.has(n.kind), `a section template drops ${n.kind}, which no panel offers`);
+        if (Array.isArray(n.children)) walk(n.children);
+      }
+    };
+    for (const t of PROPOSAL_SECTION_TEMPLATES) {
+      for (const col of t.build().columns) walk(col.widgets);
+    }
+    // ASSERT PRESENCE: the nine really do place the parts they promise.
+    for (const k of ["container", "heading", "paragraph", "image", "list",
+      "custom_field", "catalog_card", "price_line", "totals", "signature", "divider"]) {
+      assert.ok(seen.has(k), `no section template ever places a ${k}`);
     }
   });
 

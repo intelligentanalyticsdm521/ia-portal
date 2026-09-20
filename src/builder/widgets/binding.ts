@@ -298,12 +298,13 @@ export const BOUND_KINDS: Readonly<Record<string, IaSource>> = {
   catalog_card: "oliver:catalogue",
   price_line: "oliver:catalogue",
   priced_line: "oliver:catalogue",
-  /* D-165 — `address_block` was BOTH the customer's address and the site's, and
-     one widget that was quietly both is how a bill goes to a site office. It is
-     deleted; these two are what it became, and `upgrade.ts` picks between them
-     by the stored binding. */
-  service_location: "lumen:locations",
-  customer: "lumen:customer",
+  /* D-167 — `address_block` was BOTH the customer's address and the site's,
+     and one widget that was quietly both is how a bill goes to a site office.
+     It became Customer and Service Location for one morning and then became
+     **Custom Field**: ONE widget showing ONE field, which says on its own
+     control which record it reads. The source below is the one the field's
+     defaults carry; `customFieldProps` writes it per field. */
+  custom_field: "lumen:customer",
   totals: "document",
 };
 

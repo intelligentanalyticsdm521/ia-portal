@@ -55,15 +55,13 @@ export const ATOM_KINDS = [
   "menu_anchor",
 
   /* ── The Intelligent Analytics group. ───────────────────────────────── */
-  /* The three RECORD widgets. Their definitions and their renderer live under
-     `src/builder/proposal/`, beside the record book they read, and both are
-     spread into this folder's one map and the registry's one list — so they
-     are named here like everything else that draws.
-     `product_cards`, `product_line_items` and `terms` are NOT here: they are
+  /* THE THREE RECORD WIDGETS WERE HERE and are DELETED (D-167). Customer,
+     Service Location and Business Info were blocks of facts; one fact is a
+     **Custom Field**, which lives in `widgets/families/ia/` and is named by
+     that family rather than by this list — the families are the shape the
+     widget plan (section C.1) gives every widget from here on.
+     `product_cards` and `product_line_items` are not here either: they are
      panel TILES, never on a page and never drawn. */
-  "customer",
-  "service_location",
-  "business_info",
   "ia_posts",
   "reviews",
   "book_now",

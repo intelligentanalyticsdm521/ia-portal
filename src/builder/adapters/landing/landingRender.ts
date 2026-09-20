@@ -1032,7 +1032,7 @@ export function upgradeLandingBlocks(blocks: unknown, accent?: string): BuilderD
           ...(b.messagePlaceholder ? { label_message: String(b.messagePlaceholder) } : {}),
         })], { label: "Contact form", padding: 16 });
       default:
-        return one([], { label: "Section", padding: 8 });
+        return one([], { label: "Container", padding: 8 });
     }
   }).filter((s) => s.columns[0].widgets.length);
   return doc;

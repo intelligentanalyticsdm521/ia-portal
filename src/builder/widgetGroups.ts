@@ -9,14 +9,15 @@
  * ── ONE GROUPING, AND IT IS THE REGISTRY'S OWN FIELD ──────────────────────
  * A widget's group is its `category`, declared ONCE on its registry entry
  * beside its name and its picture. This file keeps no second table of
- * kind → group: a table beside the declaration is how the pane and the picker
- * came to show two different lists, which is what §11.13.1 exists to stop.
+ * kind → group: a table beside the declaration is how the pane and the old
+ * widget pop-up came to show two different lists, which is what §11.13.1
+ * exists to stop. (There is one list now — the pop-up is deleted.)
  * `PANEL_GROUPS` is `WIDGET_CATEGORIES`, so nothing here can invent a group the
  * registry cannot spell.
  *
  * ── WHAT THIS FILE REPLACED (integration, 2026-09-19) ─────────────────────
  * `widgetTasks.ts` held `TASK_GROUPS`, `taskFor`, `groupByTask`, `flatMatches`,
- * `EMPTY_PAGE_CHOICES` and the search; this file held `PANEL_GROUPS`,
+ * the empty page's three cards and the search; this file held `PANEL_GROUPS`,
  * `GROUP_BY_KIND`, `groupFor`, `panelGroups` and `flatPanelMatches`. Two
  * streams each wrote an answer to "which group is this widget in", and after
  * the merge the tree had both, computing the same four groups two ways. One
@@ -81,7 +82,7 @@ export function unmappedKinds(): string[] {
 }
 
 /**
- * THE search. One rule for the pane, the picker and the slash command.
+ * THE search. One rule, for the one panel there is.
  *
  * Matches the label, the sentence under it, the kind and the GROUP NAME. Every
  * word in the query has to match something, so "snow price" narrows rather than
@@ -105,9 +106,8 @@ export function matchesWidgetQuery(
  * How well a widget answers what was typed.
  *
  * A NAME beats a mention. Somebody who types "icon" means the Icon widget, not
- * the alert whose sentence happens to contain the word — and the slash
- * command's Enter takes the first of these, so getting the order wrong inserts
- * the wrong thing without asking.
+ * the alert whose sentence happens to contain the word, so the tile they reach
+ * for first has to be the one they meant.
  */
 export function rank(w: WidgetDef, query: string, adapter?: BuilderAdapter): number {
   const q = String(query || "").trim().toLowerCase();
@@ -140,10 +140,9 @@ export function panelGroups(adapter: BuilderAdapter, query = ""): PanelGroupList
 /**
  * Best first WITHIN a group, and PANEL order when nothing was typed.
  *
- * FOUND BY DRIVING IT (2026-09-17): the slash command's Enter took the top of
- * the flat list, which was ranked, while the picker DREW the group in registry
- * order — so the first card and the thing Enter inserted were two different
- * widgets. One order, computed once, used by both.
+ * FOUND BY DRIVING IT (2026-09-17): the flat list was ranked while the panel
+ * DREW each group in registry order, so "the first match" and "the first tile"
+ * were two different widgets. One order, computed once, used by both.
  */
 function byRelevance(list: WidgetDef[], query: string, adapter?: BuilderAdapter): WidgetDef[] {
   if (!String(query || "").trim()) return list;
@@ -174,32 +173,3 @@ export function openGroups(groups: PanelGroupList[], _query: string): PanelGroup
 export function flatPanelMatches(adapter: BuilderAdapter, query = ""): WidgetDef[] {
   return byRelevance(panelGroups(adapter, query).flatMap((g) => g.widgets), query, adapter);
 }
-
-/**
- * The three big choices an empty page offers, in the client's words.
- *
- * D-148: "Start from an empty page" used to show a blank sheet, which is the
- * one screen nobody knows what to do with. Each choice opens the picker already
- * filtered to a GROUP — which is now the only filter there is, so the three
- * name the panel's own groups rather than three jobs that existed nowhere else.
- */
-export const EMPTY_PAGE_CHOICES: Array<{ key: string; title: string; hint: string; group: PanelGroup }> = [
-  {
-    key: "layout",
-    title: "Start with a box",
-    hint: "A container to drop things into — set it to a row for columns.",
-    group: "Layout",
-  },
-  {
-    key: "basic",
-    title: "Add words and pictures",
-    hint: "A heading, some text, an image — start writing and see it on the page.",
-    group: "Basic",
-  },
-  {
-    key: "ia",
-    title: "Add your own data",
-    hint: "Your customer, your products and your prices, straight from your records.",
-    group: "Intelligent Analytics",
-  },
-];
