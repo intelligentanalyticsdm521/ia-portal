@@ -125,6 +125,31 @@ export const WEIGHT_OPTIONS = [
 export interface PanelRow { tab_title: string; tab_content: string }
 
 /**
+ * HOW MANY PANELS A NEW ONE ARRIVES WITH, and why it is three.
+ *
+ * Elementor's own default, read off the live capture on 2026-09-19
+ * (`_g4_nested_tree.json`): a new nested Tabs is Tab #1, #2, #3 and a new
+ * nested Accordion is Item #1, #2, #3.
+ *
+ * It matters more here than it does there. `BuilderShell`'s `repeatKeyFor` has
+ * no case for `tabs` or `accordion`, so nothing on our screen can ADD a row to
+ * either one; a widget that arrived empty could never be filled in at all, and
+ * the canvas would say "add your first tab in the panel on the right" about a
+ * panel that has no such control. Arriving with three rows the author types
+ * straight onto the page is what makes the widget usable today. Adding a
+ * FOURTH still cannot be done, and that is the shell's gap, written up in the
+ * handoff rather than worked around here.
+ *
+ * The titles are EMPTY, not "Tab #1": Elementor's demo words on a client's
+ * page are somebody else's words, and the canvas shows a placeholder instead.
+ */
+export const STARTING_PANELS: PanelRow[] = [
+  { tab_title: "", tab_content: "" },
+  { tab_title: "", tab_content: "" },
+  { tab_title: "", tab_content: "" },
+];
+
+/**
  * THE MAILBOX FONT STACK — and a SEAM GAP, said out loud.
  *
  * A mailbox table with no `font-family` is rendered in Times by Outlook, so

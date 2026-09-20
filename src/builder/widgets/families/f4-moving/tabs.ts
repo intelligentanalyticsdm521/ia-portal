@@ -46,7 +46,7 @@ import { bar, box, pictureFrom } from "../../../pictures";
 import { proseRun } from "../../text";
 import type { FamilyWidgetDef } from "../types";
 import {
-  FLEX_OF, TEXT_OF, WEIGHT_OPTIONS, colour, decl, panelRows, px, startEnd, str,
+  FLEX_OF, STARTING_PANELS, TEXT_OF, WEIGHT_OPTIONS, colour, decl, panelRows, px, startEnd, str,
 } from "./parts";
 
 /**
@@ -121,7 +121,13 @@ export function renderTabs(w: Widget, ctx: RenderContext): string {
       active ? "font-weight:700;" : "",
       decl("text-align", TEXT_OF[titleAlign]),
     ].join("");
-    return `<span class="bx-tab-h${active ? " bx-tab-on" : ""}" style="${style}" data-edit="tabs.${i}.tab_title">${
+    /* An empty title is still something to CLICK while editing: a tab whose
+       words nobody has typed must not be a zero-width gap the author cannot
+       find. Same rule `editRun` applies to every other run of text. */
+    const empty = !it.tab_title.trim();
+    const slot = empty && ctx.mode === "edit" ? " bx-slot" : "";
+    if (empty && ctx.mode !== "edit") return "";
+    return `<span class="bx-tab-h${active ? " bx-tab-on" : ""}${slot}" style="${style}" data-edit="tabs.${i}.tab_title" data-placeholder="What this tab is called">${
       esc(it.tab_title)}</span>`;
   }).join("");
 
@@ -158,7 +164,9 @@ export const TABS_DEF: FamilyWidgetDef = {
   category: "General",
   builders: ["website", "landing"],
   defaults: {
-    tabs: [],
+    /* THREE, which is what Elementor's own new Tabs arrives with, and what
+       makes ours usable at all — see STARTING_PANELS in parts.ts. */
+    tabs: STARTING_PANELS,
     tabs_direction: "block-start",
     tabs_justify_horizontal: "start",
     title_alignment: "",

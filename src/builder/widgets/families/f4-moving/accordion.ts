@@ -35,7 +35,8 @@ import { bar, box, pictureFrom } from "../../../pictures";
 import { proseRun } from "../../text";
 import type { FamilyWidgetDef } from "../types";
 import {
-  FLEX_OF, TITLE_TAG_OPTIONS, WEIGHT_OPTIONS, colour, decl, on, panelRows, px, startEnd, str, tag,
+  FLEX_OF, STARTING_PANELS, TITLE_TAG_OPTIONS, WEIGHT_OPTIONS, colour, decl, on, panelRows,
+  px, startEnd, str, tag,
 } from "./parts";
 
 /** Elementor's two opening states, in its own words and its own values. */
@@ -94,8 +95,16 @@ export function renderAccordion(w: Widget, ctx: RenderContext): string {
   const rows = items.map((it, i) => {
     const open = isOpen(i);
     const mark = `<span aria-hidden="true" style="${decl("color", iconInk)}">${open ? "–" : "+"}</span>`;
-    const words = `<span>${esc(it.tab_title)}</span>`;
-    const head = `<${titleTag} class="bx-acc-h" data-edit="tabs.${i}.tab_title" style="padding:10px 12px;display:flex;${
+    /* THE QUESTION IS THE EDITABLE RUN, not the whole header.
+       `data-edit` and `data-placeholder` go on the SAME element — that is what
+       `bx-slot:empty::before` needs and what the canvas's editor writes back
+       into. Putting `data-edit` on the header instead let the author type over
+       the + and left one of three placeholders blank, which the drive showed
+       on 2026-09-19 before this was moved. */
+    const empty = !it.tab_title.trim();
+    const slot = empty && ctx.mode === "edit" ? " bx-slot" : "";
+    const words = `<span class="bx-acc-q${slot}" data-edit="tabs.${i}.tab_title" data-placeholder="What somebody would ask">${esc(it.tab_title)}</span>`;
+    const head = `<${titleTag} class="bx-acc-h" style="padding:10px 12px;display:flex;${
       decl("gap", iconGap)}align-items:center;justify-content:${FLEX_OF[across] === "center" ? "center" : "space-between"};${
       decl("color", open ? activeInk : titleInk)}${titleType}">${
       iconEnd ? words + mark : mark + words}</${titleTag}>`;
@@ -125,7 +134,9 @@ export const ACCORDION_DEF: FamilyWidgetDef = {
   category: "General",
   builders: ["website", "landing"],
   defaults: {
-    tabs: [],
+    /* THREE, which is what Elementor's own new Accordion arrives with — see
+       STARTING_PANELS in parts.ts for why it matters more here than there. */
+    tabs: STARTING_PANELS,
     accordion_item_title_position_horizontal: "",
     accordion_item_title_icon_position: "start",
     title_tag: "div",
