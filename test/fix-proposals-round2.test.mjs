@@ -429,10 +429,19 @@ describe("the Heading's Title, the first control on its Content tab", () => {
     const asked = [];
     for (const def of Object.values(m.WIDGETS_BY_KIND)) {
       for (const c of def.controls || []) {
-        if ((c.type === "text" || c.type === "textarea") && m.isDrawnInPanel(c)) asked.push(`${def.kind}.${c.key}`);
+        if ((c.type === "text" || c.type === "textarea" || c.type === "richtext") && m.isDrawnInPanel(c)) {
+          asked.push(`${def.kind}.${c.key}`);
+        }
       }
     }
-    assert.deepEqual(asked, ["heading.text"],
+    /* THREE ASK, AND THE LIST IS THE LAW (2026-09-20, settings audit rows 111
+       and 130). The Heading's Title landed first; the Button's Text and the
+       Text Editor's words are the other two the reference draws a box for at
+       the top of a Content tab. `richtext` joined the question on the same day
+       the Text Editor's box was built — a control type that could ask and was
+       not being counted would be a census with a hole in it. Everything else
+       on the estate is still typed on the page and has no panel field. */
+    assert.deepEqual(asked.sort(), ["button.text", "heading.text", "paragraph.text"],
       "a type was added to a set and every textarea grew a box; the control has to ask");
     // MUTATION, executed: take the flag off and the box goes.
     const bare = { ...m.WIDGETS_BY_KIND.heading.controls[0], panel: undefined };

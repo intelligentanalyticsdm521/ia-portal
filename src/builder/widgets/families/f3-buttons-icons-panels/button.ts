@@ -185,7 +185,19 @@ export const BUTTON_DEF: FamilyWidgetDef = {
       { value: "", label: "Default" }, { value: "info", label: "Info" },
       { value: "success", label: "Success" }, { value: "warning", label: "Warning" },
       { value: "danger", label: "Danger" }] },
-    { key: "text", label: "Text", type: "text", tab: "content", section: "Button" },
+    /* THE WORDS, IN THE PANEL AS WELL AS ON THE PAGE (2026-09-20, audit round
+       4 row 130). The reference draws a Text field here — second, after Type —
+       and ours had none at all: the words were typed on the page only, so a
+       Button dropped onto an empty sheet showed a panel that said nothing
+       about the one thing a Button is for. `panel: true` is the same flag the
+       Heading's Title uses and it writes the SAME stored key `data-edit="text"`
+       writes, so the two doors are one value.
+
+       SECOND, NOT FIRST. The brief said "the first Content control"; driving
+       the reference on 2026-09-20 says Type comes first and Text second, and
+       with `size` deleted above this list is now Elementor's Content tab
+       exactly, minus Button ID. Recorded in the handoff. */
+    { key: "text", label: "Text", type: "text", tab: "content", section: "Button", panel: true },
     { key: "link", label: "Link", type: "link", tab: "content", section: "Button" },
     /* "Size" IS DELETED (2026-09-20, audit round 4 row 134). Driven on
        2026-09-20: `button.size` carries `condition: { "size[value]!": "sm" }`

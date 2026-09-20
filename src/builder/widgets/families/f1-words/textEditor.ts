@@ -166,7 +166,23 @@ export const TEXT_EDITOR_DEF: FamilyWidgetDef = {
     /* Content — Elementor's section is "Text Editor". The words themselves are
        typed on the page (the platform's one editing mechanism); the control is
        declared so the section reads whole and the emitter can see it. */
-    { key: "text", label: "Text Editor", type: "richtext", tab: "content", section: "Text Editor" },
+    /* THE EDITOR BOX, IN THE PANEL (2026-09-20, audit round 4 row 111). The
+       reference's Text Editor opens on a WYSIWYG box — the only UNLABELLED
+       control on any of its panels — and ours opened on Drop Cap, so the panel
+       of a widget whose whole job is words said nothing about the words.
+       `panel: true` draws it, unlabelled, as a block (`PanelEditor`), writing
+       the SAME stored key `data-edit="text"` writes from the page.
+
+       ITS TOOLBAR IS BOLD AND A PARAGRAPH BREAK, and that is the whole of it.
+       What is stored here is PLAIN TEXT, not HTML — `Canvas.commit` writes
+       `readEditedText`, which is `innerText` — and the one mark the text
+       language has is `**bold**` (`runs.ts boldRuns`, read by the page, the
+       PDF, the mailbox and arion alike). An Italic button would write
+       asterisks onto a signed proposal. Underline, link and the two list
+       kinds are the same story, and giving them meaning is a change to
+       `runs.ts` and three server mirrors — a pass of its own, named in the
+       handoff, not five controls that lie tonight. */
+    { key: "text", label: "Text Editor", type: "richtext", tab: "content", section: "Text Editor", panel: true },
     { key: "drop_cap", label: "Drop Cap", type: "toggle", tab: "content", section: "Text Editor",
       help: "Make the first letter big, the way a magazine does." },
     { key: "text_columns", label: "Columns", type: "select", tab: "content", section: "Text Editor", options: TEXT_COLUMNS, responsive: true },

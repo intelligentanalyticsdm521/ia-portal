@@ -1697,3 +1697,108 @@ describe("SCREEN LAW 20 — Elementor's `condition`, executed", () => {
     assert.equal(shown(ICON_DEF, "shape", ICON_DEF.defaults), false);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 21 — WHAT AN AUTHOR REACHES FOR FIRST (2026-09-20)
+
+   Round 4, rows 111 and 130: the reference draws a Text field on a Button's
+   Content tab and a WYSIWYG box on a Text Editor's — *"the only unlabelled
+   control"* — and ours drew neither. A Button dropped on an empty sheet showed
+   a panel that said nothing about the one thing a Button is for.
+
+   BOTH WRITE THE STORED KEY THE CANVAS WRITES. One value, two doors, which is
+   what the reference does and what makes the box safe: nothing is duplicated,
+   so nothing can disagree.
+
+   THE TOOLBAR IS BOLD AND A PARAGRAPH BREAK, on purpose. A Text Editor's
+   stored value is PLAIN TEXT (`Canvas.commit` → `readEditedText` →
+   `innerText`), and `runs.ts boldRuns` is the whole of its mark-up language.
+   An Italic button would write asterisks onto a signed proposal.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("SCREEN LAW 21 — the Button's Text and the Text Editor's box", () => {
+  test("three controls ask for a box, and they are the reference's three", async () => {
+    const reg = await import("../src/builder/registry.ts");
+    const panel = await import("../src/builder/definitionControls.tsx");
+    const asked = [];
+    for (const def of Object.values(reg.WIDGETS_BY_KIND)) {
+      for (const c of def.controls || []) {
+        if (c.panel === true) asked.push(`${def.kind}.${c.key}`);
+      }
+    }
+    assert.deepEqual(asked.sort(), ["button.text", "heading.text", "paragraph.text"]);
+    // MUTATION, executed: take the flag off and the box goes.
+    for (const kind of ["button", "paragraph"]) {
+      const c = reg.WIDGETS_BY_KIND[kind].controls.find((x) => x.key === "text");
+      assert.equal(panel.isDrawnInPanel(c), true, `${kind}.text has no box`);
+      assert.equal(panel.isDrawnInPanel({ ...c, panel: undefined }), false);
+    }
+  });
+
+  test("the editor box is the UNLABELLED one, drawn as a block before the rows", () => {
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    // PRESENT: its own predicate, its own block, and no label beside it.
+    assert.match(controls, /export function isPanelEditor/);
+    assert.match(controls, /\{shown\.filter\(isPanelEditor\)\.map\(\(c\) => \(/);
+    assert.match(controls, /data-panel-editor=\{control\.key\}/);
+    // ABSENT from the row map, so the shape SCREEN LAW 10 pins is untouched.
+    assert.match(controls, /shown\.filter\(\(c\) => c\.type !== "list" && !isPanelEditor\(c\)\)/);
+    assert.match(controls, /<div key=\{c\.key\} style=\{c\.type === "code" \? FIELD : ROW\}[^>]*>/);
+  });
+
+  test("a Button's Text is one line and a Heading's Title is two", () => {
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    assert.match(controls, /c\.panel === true && c\.type === "textarea" && \(/);
+    assert.match(controls, /c\.panel === true && c\.type === "text" && \(/);
+    // ABSENT: the single branch that gave a one-line field a textarea.
+    assert.ok(!controls.includes('c.panel === true && (c.type === "text" || c.type === "textarea") && ('),
+      "a Button's Text is a two-line textarea again");
+  });
+
+  test("Bold writes the ONE mark the page reads, and toggles off again", async () => {
+    const { toggleBold, newParagraph } = await import("../src/builder/definitionControls.tsx");
+
+    // Wrap a selection.
+    let r = toggleBold("call us today", 5, 7);
+    assert.equal(r.text, "call **us** today");
+    assert.equal(r.text.slice(r.start, r.end), "us", "the caret lost the words it was on");
+
+    // …and unwrap it, from inside the marks and from outside them.
+    assert.equal(toggleBold("call **us** today", 5, 11).text, "call us today");
+    assert.equal(toggleBold("call **us** today", 7, 9).text, "call us today");
+
+    // Nothing selected: an empty pair with the caret between them.
+    r = toggleBold("", 0, 0);
+    assert.equal(r.text, "****");
+    assert.equal(r.start, 2);
+    assert.equal(r.end, 2);
+
+    // A blank line, which is what `paras` splits a paragraph on.
+    r = newParagraph("one", 3);
+    assert.equal(r.text, "one\n\n");
+    assert.equal(r.start, 5);
+
+    // AND THE PAGE READS IT. This is the half that makes the button honest:
+    // the mark the toolbar writes comes out as <strong> in the markup.
+    const { renderTextEditor } = await import("../src/builder/widgets/families/f1-words/textEditor.ts");
+    const ctx = { mode: "view", merge: {}, accent: "#0C4A60" };
+    const html = renderTextEditor(
+      { id: "p1", kind: "paragraph", props: { text: toggleBold("call us today", 5, 7).text } }, ctx);
+    assert.match(html, /<strong>us<\/strong>/);
+    // …and two paragraphs come out as two.
+    const two = renderTextEditor(
+      { id: "p1", kind: "paragraph", props: { text: newParagraph("one", 3).text + "two" } }, ctx);
+    assert.equal((two.match(/<p class="bx-p">/g) || []).length, 2);
+  });
+
+  test("the toolbar offers NOTHING the renderer cannot draw", () => {
+    /* The other half of the same question, and the reason this law is short.
+       Italic, underline, link and the two list kinds are not on the toolbar
+       because the stored text language has no mark for any of them; a button
+       that wrote one would print the characters on the page. */
+    const controls = code(readSrc("builder/definitionControls.tsx"));
+    const marks = [...controls.matchAll(/data-editor-mark="([a-z-]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(marks, ["bold", "paragraph"],
+      "the editor toolbar grew a mark the page cannot draw");
+  });
+});

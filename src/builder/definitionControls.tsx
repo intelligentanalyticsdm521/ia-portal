@@ -73,9 +73,25 @@ export function isDrawnInPanel(c: WidgetControl): boolean {
   return PANEL_CONTROL_TYPES.has(c.type)
     || (c.type === "list" && isRepeater(c))
     /* A control that has ASKED for a box (2026-09-20) — see `panel` in
-       registry.ts. One widget declares it today, the Heading's Title, because
-       that is the one the reference puts at the top of a Content tab. */
-    || (c.panel === true && (c.type === "text" || c.type === "textarea"));
+       registry.ts. THREE declare it: the Heading's Title, the Button's Text
+       and the Text Editor's words, which are the three the reference puts a
+       box for at the top of a Content tab. Every other run of words on the
+       estate is still typed on the page and has no panel field at all. */
+    || (c.panel === true && (c.type === "text" || c.type === "textarea" || c.type === "richtext"));
+}
+
+/**
+ * IS THIS THE UNLABELLED EDITOR BOX? (2026-09-20, audit round 4 row 111.)
+ *
+ * Driven: the reference's Text Editor opens on a WYSIWYG box which is *"the
+ * only unlabelled control"* on any of its panels. So it is drawn as a BLOCK
+ * before the row map and returns early — exactly the way `RepeaterControl`
+ * is, and for the same reason: the label-left row below is the shape THE
+ * SCREEN LAW (law 10) pins by name, and a two-line editor does not go in the
+ * right-hand 1.25fr of a 300px panel.
+ */
+export function isPanelEditor(c: WidgetControl): boolean {
+  return c.panel === true && c.type === "richtext";
 }
 
 /**
@@ -239,6 +255,122 @@ export function RepeaterControl({ control, controls, props, onPatch }: RepeaterC
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE EDITOR BOX — the words, in the panel as well as on the page
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHAT MARK-UP THE PLATFORM ACTUALLY UNDERSTANDS, said out loud.
+ *
+ * The audit asked for a box with bold, italic, underline, link, bulleted and
+ * numbered list. FIVE of those six do not exist on this platform, and this is
+ * the honest note about why they are not on the toolbar:
+ *
+ * The stored value of a Text Editor is PLAIN TEXT, not HTML — `Canvas.commit`
+ * writes `readEditedText(el)`, which is `innerText`. The one thing the text
+ * language has is `**bold**`, and `runs.ts boldRuns` is the one reader of it,
+ * shared by the page, the printed PDF, the mailbox (`emailTextEditor`) and
+ * arion's publisher. A toolbar button for italic would write `*like this*` and
+ * the page would print the asterisks — a control that changes nothing on the
+ * canvas is a defect, and one that writes junk onto a document a customer
+ * signs is worse. Giving the other five meaning is a change to `runs.ts` and to
+ * three server mirrors, which is a pass of its own and is recorded in the
+ * handoff.
+ *
+ * So the toolbar is Bold and a paragraph break: the two marks the renderer
+ * reads. Both write the SAME stored key the canvas writes, in the same
+ * language, so the two doors are one value and either can be used at any time.
+ */
+const EDITOR_MARKS = "**bold**";
+
+/** Wrap (or unwrap) the selection in `**`, and say where the caret lands. */
+export function toggleBold(text: string, start: number, end: number): { text: string; start: number; end: number } {
+  const t = String(text ?? "");
+  const a = Math.max(0, Math.min(t.length, start));
+  const b = Math.max(a, Math.min(t.length, end));
+  if (a === b) {
+    /* Nothing selected: drop an empty pair in and put the caret between them,
+       which is what an author pressing B before typing means. */
+    return { text: `${t.slice(0, a)}****${t.slice(a)}`, start: a + 2, end: a + 2 };
+  }
+  const inner = t.slice(a, b);
+  if (inner.startsWith("**") && inner.endsWith("**") && inner.length >= 4) {
+    const bare = inner.slice(2, -2);
+    return { text: t.slice(0, a) + bare + t.slice(b), start: a, end: a + bare.length };
+  }
+  if (t.slice(Math.max(0, a - 2), a) === "**" && t.slice(b, b + 2) === "**") {
+    return { text: t.slice(0, a - 2) + inner + t.slice(b + 2), start: a - 2, end: a - 2 + inner.length };
+  }
+  return { text: `${t.slice(0, a)}**${inner}**${t.slice(b)}`, start: a + 2, end: b + 2 };
+}
+
+/** A blank line, which is what `paras` splits a new paragraph on. */
+export function newParagraph(text: string, at: number): { text: string; start: number; end: number } {
+  const t = String(text ?? "");
+  const a = Math.max(0, Math.min(t.length, at));
+  return { text: `${t.slice(0, a)}\n\n${t.slice(a)}`, start: a + 2, end: a + 2 };
+}
+
+const EDITOR_BTN: React.CSSProperties = {
+  border: "1px solid #D5D8DC", background: "#fff", borderRadius: 3, minWidth: 26, height: 22,
+  padding: "0 6px", cursor: "pointer", color: "#515962", fontSize: 12, lineHeight: "20px",
+};
+
+/**
+ * The Text Editor's own box — unlabelled, as the reference's is.
+ *
+ * Both directions are live because there is only one value: the box shows the
+ * stored prop, and typing in it writes the same key `data-edit="text"` writes
+ * from the page, so a word typed on the canvas appears here and a word typed
+ * here appears on the canvas.
+ */
+export function PanelEditor({ control, value, onChange }: {
+  control: WidgetControl;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const ref = React.useRef<HTMLTextAreaElement | null>(null);
+  const apply = (next: { text: string; start: number; end: number }) => {
+    onChange(next.text);
+    /* Put the caret back where the author expects it. After React has redrawn
+       the box, or the browser drops it at the end of the words. */
+    requestAnimationFrame(() => {
+      const el = ref.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(next.start, next.end);
+    });
+  };
+  const sel = () => {
+    const el = ref.current;
+    return { a: el?.selectionStart ?? value.length, b: el?.selectionEnd ?? value.length };
+  };
+  return (
+    <div style={FIELD} data-panel-editor={control.key}>
+      <div style={{ display: "flex", gap: 4 }} role="group" aria-label="Formatting">
+        <button type="button" data-editor-mark="bold" title="Bold" aria-label="Bold"
+          style={{ ...EDITOR_BTN, fontWeight: 700 }}
+          onClick={() => { const { a, b } = sel(); apply(toggleBold(value, a, b)); }}>B</button>
+        <button type="button" data-editor-mark="paragraph" title="New paragraph" aria-label="New paragraph"
+          style={EDITOR_BTN}
+          onClick={() => { const { a } = sel(); apply(newParagraph(value, a)); }}>¶</button>
+      </div>
+      <textarea
+        ref={ref}
+        data-panel-text={control.key}
+        style={{ ...INPUT, minHeight: 120, resize: "vertical", lineHeight: 1.5 }}
+        placeholder="Type here…"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {/* NOT A GREY EXPLANATION (round 4 row 23): the two marks the page reads,
+          named on the two buttons that write them. The panel says nothing a
+          button does not already say. */}
+      {void EDITOR_MARKS}
+    </div>
+  );
+}
+
 /** Every control of `def` that belongs on `tab`, in its own panel sections. */
 export function DefinitionControls(p: DefinitionControlsProps) {
   const props = p.props || {};
@@ -281,13 +413,21 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                 its rows and its Add Item button under the control's name, full
                 width. Drawn before the row map and returning early, so the row
                 below stays the one shape SCREEN LAW 10 pins. */}
+            {/* THE EDITOR BOX IS A BLOCK TOO, and it comes FIRST — the
+                reference's Text Editor opens on it. Unlabelled, which is what
+                that one control is there. */}
+            {shown.filter(isPanelEditor).map((c) => (
+              <PanelEditor key={c.key} control={c}
+                value={String(valueOf(c) ?? "")}
+                onChange={(v) => patch(c, v)} />
+            ))}
             {shown.filter((c) => c.type === "list").map((c) => (
               <div key={c.key} style={FIELD} data-control={c.key} data-control-key={c.key}>
                 <span style={L}>{c.label}</span>
                 <RepeaterControl control={c} controls={p.def?.controls || []} props={props} onPatch={p.onPatch} />
               </div>
             ))}
-            {shown.filter((c) => c.type !== "list").map((c) => (
+            {shown.filter((c) => c.type !== "list" && !isPanelEditor(c)).map((c) => (
               <div key={c.key} style={c.type === "code" ? FIELD : ROW} data-control={c.key}
                 data-control-key={deviceKey(c, p.device)}
                 data-control-responsive={c.responsive ? "yes" : undefined}>
@@ -332,11 +472,24 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                     registry.ts — and it writes the SAME stored key the canvas
                     writes, so the two boxes are one value. A textarea because
                     Elementor's Title is one and a heading can be two lines. */}
-                {c.panel === true && (c.type === "text" || c.type === "textarea") && (
+                {/* A `textarea` GETS A TEXTAREA AND A `text` GETS A LINE
+                    (2026-09-20). The reference's Heading Title is a textarea —
+                    a heading can be two lines — and its Button Text is a
+                    single-line text field. One row shape, two boxes, chosen by
+                    the control's own declared type rather than by a second
+                    flag beside it. */}
+                {c.panel === true && c.type === "textarea" && (
                   <textarea
                     style={{ ...INPUT, minHeight: 52, resize: "vertical" }}
                     data-panel-text={c.key}
                     rows={2}
+                    value={String(valueOf(c) ?? "")}
+                    onChange={(e) => patch(c, e.target.value)} />
+                )}
+                {c.panel === true && c.type === "text" && (
+                  <input
+                    style={INPUT}
+                    data-panel-text={c.key}
                     value={String(valueOf(c) ?? "")}
                     onChange={(e) => patch(c, e.target.value)} />
                 )}
