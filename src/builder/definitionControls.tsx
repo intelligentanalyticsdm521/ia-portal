@@ -42,8 +42,8 @@ import { FIELD, INPUT, L, ROW, Swatches, Switcher } from "./StyleGroups";
 /* THE REPEATER'S ARITHMETIC (G-1). Every "what is a row" question is answered
    in one pure module the tests execute; this file only draws. */
 import {
-  addRow, blankRow, cellCount, duplicateRow, isRepeater, moveRow, removeRow,
-  rowFields, rowsOf, rowTitle, setRowField, type RepeaterRow,
+  cellCount, isRepeater, repeaterOp, rowFields, rowsOf, rowTitle, setRowField,
+  type RepeaterOp, type RepeaterRow,
 } from "./repeater";
 
 /**
@@ -122,6 +122,15 @@ const ROW_BTN: React.CSSProperties = {
 
 export interface RepeaterControlProps {
   control: WidgetControl;
+  /**
+   * EVERY control of this widget, not just this one (R2-4).
+   *
+   * A Table's `rows` are a line of cells per entry of its `columns`, so adding
+   * or deleting a column has to change every line — and only the whole list
+   * knows which controls follow which. `repeaterOp` answers it; this hands it
+   * the question.
+   */
+  controls: readonly WidgetControl[];
   /** The widget's whole props: a table's rows are as wide as its columns. */
   props: Record<string, unknown>;
   onPatch: (patch: Record<string, unknown>) => void;
@@ -136,7 +145,7 @@ export interface RepeaterControlProps {
  * Elementor's drag handle — a row has to be movable, and a drag inside a panel
  * that already drags widgets onto a page is a second meaning for one gesture.
  */
-export function RepeaterControl({ control, props, onPatch }: RepeaterControlProps) {
+export function RepeaterControl({ control, controls, props, onPatch }: RepeaterControlProps) {
   const [open, setOpen] = React.useState<number | null>(null);
   const rows = rowsOf(props, control.key);
   const headings = control.cellsFrom
@@ -144,6 +153,15 @@ export function RepeaterControl({ control, props, onPatch }: RepeaterControlProp
     : undefined;
   const width = control.cellsFrom ? cellCount(control, props) : undefined;
   const write = (next: RepeaterRow[]) => onPatch({ [control.key]: next });
+  /* THE PANEL SAYS WHAT WAS PRESSED; THE MODEL SAYS WHAT CHANGES (R2-4).
+     A row added to the Columns list is a column added to the TABLE, and every
+     line has to gain a cell in the same place. That is one rule in
+     `repeater.ts`, not four repairs here. An empty patch means the press
+     changed nothing — the first row's "up", say — and writes nothing. */
+  const press = (op: RepeaterOp) => {
+    const patch = repeaterOp(controls, props, control.key, op);
+    if (Object.keys(patch).length) onPatch(patch);
+  };
 
   return (
     <div data-repeater={control.key}>
@@ -162,16 +180,16 @@ export function RepeaterControl({ control, props, onPatch }: RepeaterControlProp
               </button>
               <button type="button" title="Move up" aria-label={`Move item ${i + 1} up`}
                 data-repeater-up={i} style={ROW_BTN}
-                onClick={() => write(moveRow(rows, i, i - 1))}>↑</button>
+                onClick={() => press({ kind: "move", from: i, to: i - 1 })}>↑</button>
               <button type="button" title="Move down" aria-label={`Move item ${i + 1} down`}
                 data-repeater-down={i} style={ROW_BTN}
-                onClick={() => write(moveRow(rows, i, i + 1))}>↓</button>
+                onClick={() => press({ kind: "move", from: i, to: i + 1 })}>↓</button>
               <button type="button" title="Duplicate" aria-label={`Duplicate item ${i + 1}`}
                 data-repeater-duplicate={i} style={ROW_BTN}
-                onClick={() => write(duplicateRow(rows, i))}>⧉</button>
+                onClick={() => press({ kind: "duplicate", at: i })}>⧉</button>
               <button type="button" title="Delete" aria-label={`Delete item ${i + 1}`}
                 data-repeater-remove={i} style={ROW_BTN}
-                onClick={() => { write(removeRow(rows, i)); setOpen(null); }}>×</button>
+                onClick={() => { press({ kind: "remove", at: i }); setOpen(null); }}>×</button>
             </div>
             {open === i && (
               <div style={{ padding: "0 6px 6px 6px", display: "grid", gap: 4 }}>
@@ -192,7 +210,7 @@ export function RepeaterControl({ control, props, onPatch }: RepeaterControlProp
         );
       })}
       <button type="button" data-repeater-add={control.key}
-        onClick={() => { write(addRow(rows, blankRow(control, props, control.key))); setOpen(rows.length); }}
+        onClick={() => { press({ kind: "add" }); setOpen(rows.length); }}
         style={{ width: "100%", padding: "6px 8px", border: "1px dashed #B9CBD6", borderRadius: 4,
           background: "#F6FAFC", cursor: "pointer", font: "inherit", fontSize: 12, color: "#0C4A60" }}>
         Add Item
@@ -239,7 +257,7 @@ export function DefinitionControls(p: DefinitionControlsProps) {
             {shown.filter((c) => c.type === "list").map((c) => (
               <div key={c.key} style={FIELD} data-control={c.key} data-control-key={c.key}>
                 <span style={L}>{c.label}</span>
-                <RepeaterControl control={c} props={props} onPatch={p.onPatch} />
+                <RepeaterControl control={c} controls={p.def?.controls || []} props={props} onPatch={p.onPatch} />
               </div>
             ))}
             {shown.filter((c) => c.type !== "list").map((c) => (

@@ -52,6 +52,7 @@ import { fill, type MergeContext } from "./merge";
 import { boldRuns, paras, t, tokenChips } from "./runs";
 export { boldRuns, paras, t };
 import { documentTotals, money, type DocumentTotals } from "./totals";
+import { squareCells } from "./repeater";
 import { CONTAINER_ROOT_CSS, STACK_QUERY } from "./responsive";
 /* D-156 stream B — THE ATOMIC WIDGETS (widgets/). Each declares itself and
    draws itself in one file; the engine asks them before its own switch,
@@ -572,7 +573,16 @@ function dataTable(p: any, ctx: RenderContext): string {
      them so the author has somewhere to type; the customer's copy and the PDF
      print what was typed and nothing else — the same rule `list` has always
      had, and the reason an empty table can be shipped as a default at all. */
-  const cellsIn = (r: any): string[] => (Array.isArray(r) ? r : Array.isArray(r?.cells) ? r.cells : []);
+  /* A LINE IS AS WIDE AS THE HEADER (R2-4, 2026-09-20). The model keeps a
+     table square from the moment a column is added or taken away
+     (`repeater.repeaterOp`); a document stored BEFORE that rule can still hold
+     a short row or an orphan cell, and the canvas, the customer's copy and the
+     signed PDF have to say the same thing about it. `squareCells` is the one
+     answer all three ask — see `lib/pdfFamilies/ia.js` for the paper's half. */
+  const cellsIn = (r: any): string[] => {
+    const raw = Array.isArray(r) ? r : Array.isArray(r?.cells) ? r.cells : [];
+    return cols.length ? squareCells(raw, cols.length) : raw.map((c: unknown) => String(c ?? ""));
+  };
   const printed = (r: any) => ctx.mode === "edit" || cellsIn(r).some((c) => String(c ?? "").trim());
   const rs: any[] = all.filter(printed);
   if (!cols.length && !rs.length) return "";

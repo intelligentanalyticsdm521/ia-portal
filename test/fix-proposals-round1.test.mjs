@@ -102,10 +102,18 @@ describe("G-1 · the Table has a body, and every repeater can grow", () => {
     assert.equal(cellCount(rows, props), 4);
     assert.deepEqual(blankRow(rows, props, "rows"), ["", "", "", ""],
       "a new row is not one cell per column");
-    // A LIST THAT ALREADY HAS ROWS GROWS IN ITS OWN SHAPE, whatever the columns
-    // say — the author who added a fifth cell by hand keeps five.
+    // CORRECTED BY R2-4 (2026-09-20). This used to read "a list that already
+    // has rows grows in its own shape, whatever the columns say", and the
+    // round-2 scorer measured what that costs: add a fourth column and the
+    // next line is still three cells wide, because it copies the line above
+    // rather than the header. A table row is a line of cells, ONE PER
+    // HEADING — there is nothing else it could be — and `repeaterOp` keeps
+    // every stored line that wide from the moment a column is added or taken
+    // away. The "own shape" rule stays for every OTHER repeater, where a row
+    // carries settings worth keeping; it is the branch under this one.
     const wider = { ...props, rows: [["a", "b", "c", "d", "e"]] };
-    assert.deepEqual(blankRow(rows, wider, "rows"), ["", "", "", "", ""]);
+    assert.deepEqual(blankRow(rows, wider, "rows"), ["", "", "", ""],
+      "a new line is as wide as the header, not as wide as the line above it");
     // A heading is one word, because that control declares `row: ""`.
     assert.equal(blankRow(controlOf(TABLE, "columns"), props, "columns"), "");
   });

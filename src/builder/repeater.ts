@@ -100,21 +100,27 @@ function emptied(value: RepeaterRow): RepeaterRow {
 /**
  * THE BLANK ROW, in the shape this control's rows already have.
  *
- *   1. the list has rows  → the LAST one, emptied. A repeater grows in the
- *      shape it is already in, so a table whose rows gained a fourth cell when
- *      a column was added keeps four.
- *   2. a table            → a line of blank cells, one per column.
+ *   1. a table            → a line of blank cells, ONE PER COLUMN.
+ *   2. the list has rows  → the LAST one, emptied. A repeater grows in the
+ *      shape it is already in, which is what keeps a Call to Action row's
+ *      `tone` and a Price List row's fields.
  *   3. `row` declared     → a copy of it.
  *   4. otherwise          → "".
+ *
+ * THE TABLE COMES FIRST (R2-4, 2026-09-20). It used to copy the last row
+ * whatever the control was, so a row added to a three-cell table whose header
+ * had just gained a fourth column came out three cells wide and the canvas had
+ * no cell to aim at. A table row is a line of cells, one per heading — there is
+ * nothing else it could be, so it is not guessed from the row above.
  */
 export function blankRow(
   spec: RepeaterSpec,
   props: Record<string, unknown> | null | undefined,
   key: string,
 ): RepeaterRow {
+  if (spec.cellsFrom) return Array.from({ length: cellCount(spec, props) }, () => "");
   const rows = rowsOf(props, key);
   if (rows.length) return emptied(rows[rows.length - 1]);
-  if (spec.cellsFrom) return Array.from({ length: cellCount(spec, props) }, () => "");
   if (spec.row !== undefined) return emptied(structuredCloneish(spec.row));
   return "";
 }
@@ -250,7 +256,99 @@ export function rowTitle(row: RepeaterRow, i: number, headings?: string[]): stri
   return words || `Item #${i + 1}`;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE BODY FOLLOWS THE HEADER (R2-4, 2026-09-20)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHY THE FOUR OPERATIONS ABOVE ARE NOT ENOUGH ON THEIR OWN.
+ *
+ * Measured by the round-2 scorer: add a fourth column to a Table and every
+ * existing line stays three cells wide; delete a column and every line keeps an
+ * orphan cell under nothing. The panel drew the extra box (it takes the width
+ * from the headings) so typing healed ONE line at a time, and the customer's
+ * copy and the signed PDF were left disagreeing with the header.
+ *
+ * A table's rows are `cellsFrom: "columns"` — each row is a line of cells, one
+ * per heading. That is a fact about the MODEL, so this is where it is kept: a
+ * column list and its body change TOGETHER, in one patch, by one rule, and
+ * whatever was done to the header is done to every line.
+ *
+ * Not squared by width afterwards, because a width is not enough to know WHICH
+ * cell went: deleting the FIRST of three columns and trimming each row to two
+ * cells would leave every line's third value in its second column. The
+ * operation is applied, not its arithmetic guessed at.
+ */
+export type RepeaterOp =
+  | { kind: "add" }
+  | { kind: "duplicate"; at: number }
+  | { kind: "remove"; at: number }
+  | { kind: "move"; from: number; to: number };
+
+/** A control, as this module needs to see one: a key and what a row is. */
+export interface RepeaterControlLike extends RepeaterSpec { key: string }
+
+/** One operation, applied to a list of rows. The one place the four live. */
+function applyOp(rows: RepeaterRow[], op: RepeaterOp, blank: RepeaterRow): RepeaterRow[] {
+  switch (op.kind) {
+    case "add": return addRow(rows, blank);
+    case "duplicate": return duplicateRow(rows, op.at);
+    case "remove": return removeRow(rows, op.at);
+    case "move": return moveRow(rows, op.from, op.to);
+  }
+}
+
+/**
+ * The WHOLE patch an operation on one repeating control makes.
+ *
+ * `{ columns: [...] }` on its own when nothing follows this control, and
+ * `{ columns: [...], rows: [...] }` when something does. The caller writes what
+ * comes back and asks no further questions.
+ */
+export function repeaterOp(
+  controls: readonly RepeaterControlLike[],
+  props: Record<string, unknown> | null | undefined,
+  key: string,
+  op: RepeaterOp,
+): Record<string, unknown> {
+  const spec = controls.find((c) => c.key === key) ?? { key };
+  const rows = rowsOf(props, key);
+  const next = applyOp(rows, op, blankRow(spec, props, key));
+  if (next === rows) return {};
+  const patch: Record<string, unknown> = { [key]: next };
+
+  for (const dependent of controls) {
+    if (dependent.key === key || dependent.cellsFrom !== key) continue;
+    const body = rowsOf(props, dependent.key);
+    if (!body.length) continue;
+    /* EVERY LINE, THE SAME CHANGE. A cell is blank when a column is added,
+       because a heading has no value to bring with it — `""` and not the
+       heading's own words, which would print the column name in every row. */
+    patch[dependent.key] = body.map((row) => {
+      const cells = Array.isArray(row) ? row : [];
+      const moved = applyOp(cells, op, "");
+      return moved === cells ? cells.slice() : moved;
+    });
+  }
+  return patch;
+}
+
+/**
+ * A LINE OF CELLS AS WIDE AS THE HEADER, for a document written before that
+ * rule existed (R2-4).
+ *
+ * The rule above keeps a table square from the moment a column is added or
+ * taken away. A document stored before it can still hold a short row or an
+ * orphan cell, and the screen, the customer's copy and the PDF must all say the
+ * same thing about it — so every reader squares what it is about to draw. Pure,
+ * and it changes nothing that is already the right width.
+ */
+export function squareCells(row: RepeaterRow, width: number): string[] {
+  const cells = Array.isArray(row) ? row : [];
+  return Array.from({ length: Math.max(0, width) }, (_, i) => String(cells[i] ?? ""));
+}
+
 export default {
   isRepeater, rowsOf, cellCount, blankRow, addRow, duplicateRow, removeRow, moveRow,
-  rowFields, setRowField, rowTitle, fieldLabel,
+  rowFields, setRowField, rowTitle, fieldLabel, repeaterOp, squareCells,
 };

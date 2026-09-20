@@ -216,3 +216,102 @@ describe("R2-3 — the caret follows a catalogue pick", () => {
       "the engine finishes an adapter's insert some other way than `landed`");
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════
+   R2-4 — A TABLE'S BODY FOLLOWS ITS COLUMNS.
+   ════════════════════════════════════════════════════════════════════════ */
+describe("R2-4 — the rows follow the header", () => {
+  const load = async () => import("../src/builder/repeater.ts");
+  const TABLE = [
+    { key: "columns", label: "Columns", type: "list", row: "" },
+    { key: "rows", label: "Rows", type: "list", cellsFrom: "columns" },
+  ];
+  const props = () => ({
+    columns: ["Service", "Basic", "Premium"],
+    rows: [["Mowing", "Yes", "Yes"], ["Snow", "No", "Per event"]],
+  });
+
+  test("THE DEFECT: a fourth column reaches every line, not just the header", async () => {
+    const { repeaterOp } = await load();
+    const patch = repeaterOp(TABLE, props(), "columns", { kind: "add" });
+    assert.equal(patch.columns.length, 4);
+    assert.deepEqual(patch.rows, [["Mowing", "Yes", "Yes", ""], ["Snow", "No", "Per event", ""]],
+      "the lines stayed three cells wide, so the canvas has no cell to aim at");
+  });
+
+  test("deleting a column takes ITS cell, not the last one", async () => {
+    const { repeaterOp } = await load();
+    const patch = repeaterOp(TABLE, props(), "columns", { kind: "remove", at: 1 });
+    assert.deepEqual(patch.columns, ["Service", "Premium"]);
+    assert.deepEqual(patch.rows, [["Mowing", "Yes"], ["Snow", "Per event"]],
+      "squaring by width would have left every line's third value in its second column");
+  });
+
+  test("moving a column moves every line's cell with it", async () => {
+    const { repeaterOp } = await load();
+    const patch = repeaterOp(TABLE, props(), "columns", { kind: "move", from: 2, to: 0 });
+    assert.deepEqual(patch.columns, ["Premium", "Service", "Basic"]);
+    assert.deepEqual(patch.rows, [["Yes", "Mowing", "Yes"], ["Per event", "Snow", "No"]]);
+  });
+
+  test("duplicating a column duplicates every line's cell", async () => {
+    const { repeaterOp } = await load();
+    const patch = repeaterOp(TABLE, props(), "columns", { kind: "duplicate", at: 0 });
+    assert.deepEqual(patch.columns, ["Service", "Service", "Basic", "Premium"]);
+    assert.deepEqual(patch.rows[0], ["Mowing", "Mowing", "Yes", "Yes"]);
+  });
+
+  test("a row added to the BODY is as wide as the header, not as the row above", async () => {
+    const { repeaterOp, blankRow } = await load();
+    // A legacy document: the header has four and the lines still have three.
+    const stale = { columns: ["A", "B", "C", "D"], rows: [["1", "2", "3"]] };
+    assert.deepEqual(blankRow({ cellsFrom: "columns" }, stale, "rows"), ["", "", "", ""],
+      "the new line copied the short one above it");
+    const patch = repeaterOp(TABLE, stale, "rows", { kind: "add" });
+    assert.equal(patch.rows.length, 2);
+    assert.equal(patch.rows[1].length, 4);
+  });
+
+  test("a press that changes nothing writes nothing", async () => {
+    const { repeaterOp } = await load();
+    assert.deepEqual(repeaterOp(TABLE, props(), "columns", { kind: "move", from: 0, to: -1 }), {},
+      "pressing up on the first row marked the document changed");
+  });
+
+  test("a repeater with nothing following it patches only itself", async () => {
+    const { repeaterOp } = await load();
+    const ICONS = [{ key: "icon_list", label: "Items", type: "list", row: { text: "", link: "" } }];
+    const patch = repeaterOp(ICONS, { icon_list: [{ text: "One", link: "" }] }, "icon_list", { kind: "add" });
+    assert.deepEqual(Object.keys(patch), ["icon_list"]);
+    assert.deepEqual(patch.icon_list[1], { text: "", link: "" });
+  });
+
+  test("the canvas draws a legacy line as wide as the header, exactly as the PDF does", async () => {
+    const [{ renderSection, makeContext }, model] = await Promise.all([
+      import("../src/builder/render.ts"),
+      import("../src/builder/model.ts"),
+    ]);
+    model.resetIds();
+    const w = model.makeWidget("data_table", {
+      columns: ["A", "B", "C"],
+      rows: [["one"], ["1", "2", "3", "ORPHAN"]],
+    });
+    const sec = model.makeSection({ label: "S" });
+    sec.columns[0].widgets = [w];
+    const doc = model.addSection(model.emptyDocument(), sec);
+    const html = renderSection(sec, makeContext(doc, { mode: "view" }));
+    assert.equal((html.match(/<td/g) || []).length, 6, "a short line and an orphan cell drew as they were stored");
+    assert.ok(!html.includes("ORPHAN"), "the canvas printed a cell under no heading; the PDF does not");
+  });
+
+  test("the panel says what was pressed and the model says what changes", () => {
+    const panel = readSrc("builder/definitionControls.tsx");
+    for (const gone of ["addRow(", "moveRow(", "removeRow(", "duplicateRow("]) {
+      assert.ok(!panel.includes(gone), `${gone} is back in the panel; the rule lives in repeater.ts`);
+    }
+    assert.equal((panel.match(/press\(\{ kind: "/g) || []).length, 5,
+      "the five presses do not all go through the one rule");
+    assert.ok(panel.includes("repeaterOp(controls, props, control.key, op)"),
+      "the panel stopped asking the model");
+  });
+});
