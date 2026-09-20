@@ -53,7 +53,7 @@ import {
   ArrowRight, LayoutGrid, MoveHorizontal, Sparkles, StretchHorizontal, WrapText,
 } from "lucide-react";
 import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
-import { widgetAt } from "./model";
+import { carrierContainer, widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
 import {
   WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
@@ -177,6 +177,11 @@ export function Inspector(p: InspectorProps) {
   // a column, which is where every selection used to be.
   const widget = selection.kind === "widget" ? widgetAt(doc, selection) : null;
   const box = isContainer(widget);
+  /* IS THIS BOX THE ONE ITS SECTION IS MERELY CARRYING (D-172, round 2)?
+     A carrier pair is one box on the screen and therefore one panel; the
+     section's own settings are reached from THIS panel's Advanced tab, which
+     is the only place left that can reach them. See `carrierContainer`. */
+  const carried = !!widget && box && carrierContainer(section)?.id === widget.id;
   const def = widget && !box ? WIDGETS_BY_KIND[widget.kind] : null;
   const isEmail = p.adapter === "email";
 
@@ -645,6 +650,39 @@ export function Inspector(p: InspectorProps) {
                     p.onSetWidgetStyle(Object.keys(rest).length ? rest : undefined);
                   }}
                 />
+                {/* WHAT ONLY A SECTION CAN HOLD, ON THE BOX THAT CARRIES IT
+                    (D-172, round 2).
+
+                    A carrier pair is ONE box on the screen, so there is no
+                    second panel to put these in — and a page break the author
+                    cannot reach is worse than one in the wrong tab. They are
+                    written through `onPatchSection`, the SAME handler the
+                    section panel below uses, so there is one writer of
+                    "pageBreakBefore" and it is not copied here. A section that
+                    is NOT a carrier still has its own panel, unchanged. */}
+                {carried && (
+                  <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
+                    onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer", numbered: false })}
+                    resetTitle="Back to: no page break, no number, and the customer sees it">
+                    {p.pageBreakLabel !== "" && (
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                        <input type="checkbox" data-carrier-pagebreak checked={!!section.pageBreakBefore}
+                          onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
+                        {p.pageBreakLabel || "Start a new page here"}
+                      </label>
+                    )}
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                      <input type="checkbox" data-carrier-numbered checked={!!section.numbered}
+                        onChange={(e) => p.onPatchSection(section.id, { numbered: e.target.checked })} />
+                      Number this section (01, 02, 03…)
+                    </label>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
+                      <input type="checkbox" data-carrier-internal checked={section.visibility === "internal"}
+                        onChange={(e) => p.onPatchSection(section.id, { visibility: e.target.checked ? "internal" : "customer" })} />
+                      Internal note only
+                    </label>
+                  </Group>
+                )}
               </>
             )}
           </>

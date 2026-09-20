@@ -39,8 +39,8 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { GripVertical, Plus, X } from "lucide-react";
-import type { BuilderDocument, Section, Selection, WidgetPath } from "./model";
-import { findNode, isContainer, nodeIdAt } from "./treeOps";
+import { carrierContainer, type BuilderDocument, type Section, type Selection, type WidgetPath } from "./model";
+import { directionOf, findNode, isContainer, nodeIdAt } from "./treeOps";
 import { WIDGETS_BY_KIND } from "./registry";
 import type { ContainerPreset } from "./treeOps";
 import { renderSection, type RenderContext, DOCUMENT_CSS } from "./render";
@@ -76,6 +76,18 @@ export interface DropSpot {
   columnIndex: number;
   /** Where among that box's children the drop inserts. */
   index: number;
+  /**
+   * NOT INTO A BOX AT ALL — into a NEW one, at this index in the page
+   * (D-172, round 2).
+   *
+   * A carrier pair's column is a level the author cannot see: it is the strip
+   * between the section's edge and the container filling it, and a drop there
+   * used to land in that invisible column BESIDE the container, which put a
+   * widget at a level with no handle, no outline and no row in Structure. The
+   * reference has no such place, so a drop there means what the same drop
+   * means at page level: a new container, before or after this one.
+   */
+  newSectionAt?: number;
   /** Relative to the section host, for the line. */
   top: number;
   left: number;
@@ -372,7 +384,16 @@ export function Canvas(props: CanvasProps) {
               section={s}
               index={i}
               total={doc.sections.length}
-              selected={selection?.kind === "section" && selection.sectionId === s.id}
+              selected={(selection?.kind === "section" && selection.sectionId === s.id)
+                /* A carrier's handle belongs to the container: it stays out
+                   while that container is the selected thing. */
+                || (!!carrierContainer(s) && selection?.kind === "widget"
+                  && nodeIdAt(doc, selection) === carrierContainer(s)!.id)}
+              /* THE CARRIER PAIR IS ONE BOX (D-172, round 2) — see
+                 `isCarrierPair` in model.ts. The section hands its container's
+                 id down so the host can draw ONE outline and ONE handle for
+                 the two of them. */
+              carrierId={carrierContainer(s)?.id ?? null}
               selectedWidgetId={selection?.kind === "widget" ? nodeIdAt(doc, selection) : null}
               dragging={dragId === s.id}
               onDragStart={() => setDragId(s.id)}
@@ -431,14 +452,16 @@ function oneSection(section: Section): BuilderDocument {
 }
 
 function SectionHost({
-  section, index, total, ctx, selected, selectedWidgetId, selection, dragging,
+  section, index, total, ctx, selected, carrierId, selectedWidgetId, selection, dragging,
   onSelect, onEditText, onPatchSection, onDuplicateSection, onDeleteSection,
   onMoveSection, onDragStart, onDragEnd, renderSection: renderOne,
-  drag, onDragWidget, onDropWidget, onDeleteWidget, onAddAbove,
+  drag, onDragWidget, onDropWidget, onDeleteWidget, onAddAbove, onDropOnAddArea,
   onContextMenu,
   flashWidgetId, onTokenClick,
 }: CanvasProps & {
   section: Section; index: number; total: number; selected: boolean; selectedWidgetId: string | null;
+  /** The container this section is merely carrying, if it is (D-172, round 2). */
+  carrierId: string | null;
   dragging: boolean; onDragStart: () => void; onDragEnd: () => void;
   /** The "+" on this section's handle: open an add area above it. */
   onAddAbove: () => void;
@@ -450,6 +473,14 @@ function SectionHost({
   const html = (renderOne || renderSection)(section, ctx);
   /** True when this section holds a part the law puts there. See model.ts. */
   const required = section.columns.some((c) => c.widgets.some((w) => w.locked));
+  /* THE CARRIER'S HANDLE IS THE CONTAINER'S (D-172, round 2), and it says
+     "Container" whichever way that container runs — because in the reference a
+     GRID IS A CONTAINER: its panel header over a grid reads "Edit Container"
+     and the grid-ness is the Container Layout select inside it. The handle on
+     a NESTED box still names what the author picked (`boxName` below), which
+     is the reference's Flexbox/Container distinction; this one is the
+     top-level box, and the top-level box is a Container. */
+  const carrier = carrierContainer(section);
   const flashedRef = useRef<string | null>(null);
   /* MULTI-SELECT IS DELETED (D-172). The reference editor has no multi-select
      on the canvas: shift-clicking a second widget selected it as well, marked
@@ -673,6 +704,7 @@ function SectionHost({
    * line is drawn across the top of it, which is the only way an empty column
    * can say "you can put something here".
    */
+  const sectionIndex = index;
   const findSpot = useCallback((clientX: number, clientY: number): DropSpot | null => {
     const host = hostRef.current;
     const wrap = wrapRef.current;
@@ -681,13 +713,42 @@ function SectionHost({
     // EVERY BOX, at every depth, columns included — they are boxes too. This is
     // the one line that makes the rule the same all the way down: the candidate
     // list is "things you can drop into", not "columns".
-    const boxes = Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"));
-    if (!boxes.length) return null;
+    const all = Array.from(host.querySelectorAll<HTMLElement>("[data-bx-host]"));
+    if (!all.length) return null;
 
     const covers = (el: HTMLElement) => {
       const r = el.getBoundingClientRect();
       return clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom;
     };
+
+    /* NO INVISIBLE DROP HOST (D-172, round 2). A carrier's column is taken
+       out of the candidate list entirely, so nothing can be dropped beside
+       the container in a level that is not on the screen. Pointing at that
+       strip means the page, not the column — the same as pointing at the gap
+       between two containers. */
+    const carrierCol = carrierId
+      ? all.find((b) => b.hasAttribute("data-col")
+        && b.querySelector<HTMLElement>("[data-widget]")?.dataset.widget === carrierId) || null
+      : null;
+    const boxes = carrierCol ? all.filter((b) => b !== carrierCol) : all;
+    if (!boxes.length) return null;
+    if (carrierCol && covers(carrierCol) && !boxes.some(covers)) {
+      const r = host.querySelector<HTMLElement>(`[data-widget="${carrierId}"]`)?.getBoundingClientRect();
+      const wr = wrap.getBoundingClientRect();
+      const below = !r || clientY > r.top + r.height / 2;
+      const cr = carrierCol.getBoundingClientRect();
+      return {
+        hostId: "", sectionId: section.id, columnIndex: 0, index: 0,
+        newSectionAt: below ? sectionIndex + 1 : sectionIndex,
+        // The line goes ACROSS the whole box, above it or below it — the same
+        // line the strips between two containers draw, because it means the
+        // same thing.
+        top: (below ? cr.bottom : cr.top) - wr.top,
+        left: cr.left - wr.left,
+        width: cr.width,
+        height: 3,
+      };
+    }
     // THE DEEPEST ONE THE POINTER IS ACTUALLY IN.
     //
     // A box inside a column is inside the column's rectangle too, so "the first
@@ -746,7 +807,7 @@ function SectionHost({
       width: across ? 3 : boxRect.width,
       height: across ? boxRect.height : 3,
     };
-  }, [section.id]);
+  }, [section.id, carrierId, sectionIndex]);
 
   const draggingWidget = drag?.kind === "new" || drag?.kind === "move";
 
@@ -770,8 +831,16 @@ function SectionHost({
   return (
     <div
       ref={wrapRef}
-      className={`bxc-sec${selected ? " bxc-sel" : ""}${dragging ? " bxc-dragging" : ""}`}
+      /* ONE OUTLINE FOR A CARRIER PAIR (D-172, round 2).
+         `bxc-sel` draws the section's own ring AND shows its handle. On a
+         carrier pair the ring belongs to the CONTAINER — it is the box the
+         author can see — so the pair gets `bxc-carrier-sel` instead, which
+         shows the handle and draws nothing. Two rings around one box was the
+         visible half of the second layer. */
+      className={`bxc-sec${selected ? (carrierId ? " bxc-carrier-sel" : " bxc-sel") : ""}`
+        + `${carrierId ? " bxc-carrier" : ""}${dragging ? " bxc-dragging" : ""}`}
       data-section-host={section.id}
+      data-section-carrier={carrierId || undefined}
       onDragOver={(e) => {
         e.preventDefault();
         // A WIDGET drag draws the line; a SECTION drag lands on the "+" strips
@@ -788,11 +857,14 @@ function SectionHost({
         e.preventDefault();
         const at = spot ?? findSpot(e.clientX, e.clientY);
         setSpot(null);
-        if (at) {
-          onDropWidget?.({
-            hostId: at.hostId, sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index,
-          });
-        }
+        if (!at) return;
+        /* A drop in the carrier's invisible column is a drop at PAGE level —
+           it makes a new container there, which is what the reference does
+           with the same gesture (D-172, round 2). */
+        if (at.newSectionAt !== undefined) { onDropOnAddArea?.(at.newSectionAt); return; }
+        onDropWidget?.({
+          hostId: at.hostId, sectionId: at.sectionId, columnIndex: at.columnIndex, index: at.index,
+        });
       }}
       /* M-8 — right-click is the same menu as the ⋯ on the handle and the ⋯ in
          the Outline. It asks the WIDGET first and falls back to the section, in
@@ -807,6 +879,18 @@ function SectionHost({
         if (path) {
           if (path.id !== selectedWidgetId) onSelect({ kind: "widget", ...path });
           onContextMenu({ kind: "widget", path }, { x: e.clientX, y: e.clientY });
+          return;
+        }
+        /* A CARRIER'S BLANK EDGE IS THE CONTAINER (D-172, round 2). The
+           column between the section's edge and its container was a level the
+           author could right-click and get a DIFFERENT menu from the box they
+           were pointing at. */
+        const carried = carrierId
+          ? { kind: "widget" as const, path: { sectionId: section.id, columnIndex: 0, widgetIndex: 0, id: carrierId } }
+          : null;
+        if (carried) {
+          onSelect({ kind: "widget", ...carried.path });
+          onContextMenu(carried, { x: e.clientX, y: e.clientY });
           return;
         }
         onSelect({ kind: "section", sectionId: section.id });
@@ -831,6 +915,12 @@ function SectionHost({
             onSelect({ kind: "widget", ...path });
             return;
           }
+        }
+        /* Same rule for a plain click: one box on the page, one thing it
+           selects, whichever pixel of it was pressed. */
+        if (carrierId) {
+          onSelect({ kind: "widget", sectionId: section.id, columnIndex: 0, widgetIndex: 0, id: carrierId });
+          return;
         }
         onSelect({ kind: "section", sectionId: section.id });
       }}
@@ -906,7 +996,12 @@ const CANVAS_CSS = `
   opacity: 0; pointer-events: none; transition: opacity .1s; }
 .bxc-toolbar > *:hover { background: rgba(255,255,255,.16); }
 .bxc-sec:hover > .bxc-toolbar, .bxc-sec.bxc-sel > .bxc-toolbar,
+.bxc-sec.bxc-carrier-sel > .bxc-toolbar,
 .bxc-toolbar:focus-within { opacity: 1; pointer-events: auto; }
+/* A CARRIER PAIR DRAWS NO RING OF ITS OWN (D-172, round 2) — the ring belongs
+   to the container filling it, which is the box the author can see. The class
+   exists so the HANDLE still comes out while that container is selected. */
+.bxc-sec.bxc-carrier-sel { outline: none; }
 /* A RING THAT HUGS THE WIDGET (D-172, round 2).
    Driven in the reference on 2026-09-19: a selected widget's computed style is
    'outline: none', 'outline-offset: 0px' and 'box-shadow: <accent> 0 0 0 2px'

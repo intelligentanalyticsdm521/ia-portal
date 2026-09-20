@@ -312,9 +312,20 @@ describe("§11.13.1 items 4 and 5 — the top bar, and adding a section", () => 
     assert.match(shell, /onAddTemplate=\{\(at: number\) => setGallery\(\{ at \}\)\}/);
     assert.match(shell, /onAddBlank=\{\(at: number, layout: SectionLayout, preset: StructurePreset\) => addStructure\(at, layout, preset\)\}/);
     assert.match(canvas, /onTemplate=\{\(\) => \{ setAddAreaAt\(null\); props\.onAddTemplate\(i\); \}\}/);
-    // One cell is a plain section: a box holding one box is a level the author
-    // has to get out of for no reason.
-    assert.match(shell, /if \(preset\.cells\.length > 1\)/);
+    // ONE SHAPE FROM THE ADD AREA (D-172, round 2).
+    //
+    // ABSENT: the branch that made a ONE-column structure differently from
+    // every other one — `if (preset.cells.length > 1)` wrapped the whole tree
+    // build, so one column gave a bare section with an empty column and two
+    // columns gave a section carrying a container. The author got a different
+    // thing to select depending on which tile they pressed, and both panels
+    // were titled "Edit Container".
+    // PRESENT: every preset makes the same carrier pair — Section, its one
+    // column, ONE container — and the cells go INSIDE that container.
+    assert.ok(!/if \(preset\.cells\.length > 1\) \{/.test(shell),
+      "the one-column structure is special-cased again");
+    assert.match(shell, /sec\.columns\[0\]\.widgets = \[box\];/);
+    assert.match(shell, /const box = makeContainer\(/);
     // The percentages ride on the SAME key the section ratio picker writes.
     assert.match(shell, /columnWidths: preset\.cells\.map\(\(n\) => n \/ 100\)/);
     // The adapter's veto still runs.

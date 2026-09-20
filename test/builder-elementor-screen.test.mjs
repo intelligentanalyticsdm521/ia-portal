@@ -932,3 +932,81 @@ describe("SCREEN LAW 12 — the word Section is not on the screen (D-172)", () =
     assert.match(c, /aria-label="Container"/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   SCREEN LAW 13 — THE SECOND LAYER (D-172, round 2)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Three audits in a row counted the same four extras, and they are one thing:
+   a Section wrapper and its column around every container. Two rows in
+   Structure for one visible box, two selectable levels both titled "Edit
+   Container", and a `.bx-col` drop host with no handle, no outline and no row.
+   Round 1 renamed the wrapper and stopped.
+
+   THE STORED MODEL IS UNTOUCHED — Section → column → nodes, which the PDF, the
+   email, the publisher and every saved proposal read. What is collapsed is the
+   SCREEN. A section whose one column holds exactly one container is a CARRIER
+   PAIR, and a carrier pair is ONE thing everywhere the author can see it.  */
+
+describe("SCREEN LAW 13 — a carrier pair is ONE box on the screen", () => {
+  const canvas = readSrc("builder/Canvas.tsx");
+  const shell = readSrc("builder/BuilderShell.tsx");
+  const navModel = readSrc("builder/navigatorModel.ts");
+  const nav = readSrc("builder/Navigator.tsx");
+  const inspector = readSrc("builder/Inspector.tsx");
+
+  test("the add area makes ONE shape, every preset", () => {
+    // ABSENT: the branch that gave a one-column structure a different tree
+    // from every other structure.
+    assert.ok(!/if \(preset\.cells\.length > 1\) \{/.test(shell),
+      "the one-column structure is special-cased again — one shape, every preset");
+    // PRESENT: a container in the column, always, and the cells inside IT.
+    assert.match(shell, /sec\.columns\[0\]\.widgets = \[box\];/);
+  });
+
+  test("ONE row in Structure, and what is inside comes up a level", () => {
+    // PRESENT: the pair is asked about by SHAPE, in one place.
+    assert.match(readSrc("builder/model.ts"), /export function carrierContainer\(section: Section\)/);
+    assert.match(navModel, /if \(carriers\.get\(hit\.sectionId\) === hit\.node\.id\) return;/);
+    assert.match(navModel, /depth: Math\.max\(0, hit\.depth - lifted\)/);
+    // The row that stands for it says so, and the Structure window reads that
+    // rather than keeping its own idea of what a pair is.
+    assert.match(navModel, /containerId\?: string;/);
+    assert.match(nav, /carriedId === selectedWidgetId/);
+  });
+
+  test("ONE selectable level: a carrier section resolves to its container", () => {
+    assert.match(readSrc("builder/model.ts"), /export function resolveSelection\(/);
+    // Applied at the ONE door into the selection, so the panel, the ring, the
+    // menu and the Structure row cannot disagree.
+    assert.match(shell, /const resolved = resolveSelection\(docRef\.current, s\);/);
+    // …and the settings panel knows it is editing a pair, so the section's own
+    // settings are reachable from it.
+    assert.match(inspector, /const carried = !!widget && box && carrierContainer\(section\)\?\.id === widget\.id;/);
+    assert.match(inspector, /data-carrier-pagebreak/);
+  });
+
+  test("ONE outline and ONE handle — never two rings round one box", () => {
+    // ABSENT: the section's own ring on a pair.
+    assert.match(canvas, /\.bxc-sec\.bxc-carrier-sel \{ outline: none; \}/);
+    // PRESENT: the handle still comes out while the container is selected.
+    assert.match(canvas, /\.bxc-sec\.bxc-carrier-sel > \.bxc-toolbar/);
+    // PRESENT: the inner container's own tab stays hidden on a pair.
+    assert.match(canvas, /\[data-col\] > \.bx-box:only-child > \.bxc-wtools-box \{ display: none; \}/);
+  });
+
+  test("NO INVISIBLE DROP HOST — the carrier's column is not a place", () => {
+    // ABSENT: the column as a drop candidate.
+    assert.match(canvas, /const boxes = carrierCol \? all\.filter\(\(b\) => b !== carrierCol\) : all;/);
+    // PRESENT: a drop there means a NEW container at page level.
+    assert.match(canvas, /newSectionAt: below \? sectionIndex \+ 1 : sectionIndex,/);
+    assert.match(canvas, /if \(at\.newSectionAt !== undefined\) \{ onDropOnAddArea\?\.\(at\.newSectionAt\); return; \}/);
+    // …and "the first place in this section" is INSIDE the container, asked
+    // of the one module that knows where an insert goes.
+    assert.match(readSrc("builder/insertPosition.ts"), /if \(carried\) return \{ hostId: carried\.id,/);
+  });
+
+  test("deleting the container deletes the pair, never an empty carrier", () => {
+    assert.match(shell, /if \(sec && carrierContainer\(sec\)\?\.id === nodeIdAt\(doc, path\)\) \{/);
+  });
+});

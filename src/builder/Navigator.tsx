@@ -92,9 +92,14 @@ export function Navigator(p: NavigatorProps) {
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [overIndex, setOverIndex] = useState<number | null>(null);
 
+  /* THE ID THE SELECTION CARRIES, when it carries one (§11.12). The index
+     lookup underneath only ever reaches the top of a column, so a card three
+     boxes deep — or a carrier's container, selected by id — was never marked
+     in the tree. `path.id` is the address the engine hands out; it wins. */
   const selectedWidgetId = p.selection?.kind === "widget"
-    ? p.doc.sections.find((s) => s.id === p.selection!.sectionId)
-      ?.columns[p.selection.columnIndex]?.widgets[p.selection.widgetIndex]?.id ?? null
+    ? p.selection.id
+      ?? p.doc.sections.find((s) => s.id === p.selection!.sectionId)
+        ?.columns[p.selection.columnIndex]?.widgets[p.selection.widgetIndex]?.id ?? null
     : null;
 
   /** A widget row is drawn only when its section is open. */
@@ -123,8 +128,17 @@ export function Navigator(p: NavigatorProps) {
       {rows.map((row, i) => {
         if (!visible(row, i)) return null;
         const isSection = row.kind === "section";
+        /* A CARRIER ROW IS ITS CONTAINER (D-172, round 2). The row stands for
+           the container the section carries, so it lights up when that
+           container is selected — which is what selecting it does, and what
+           clicking the same box on the page does. */
+        const carriedId = isSection
+          ? (row as Extract<OutlineRow, { kind: "section" }>).containerId
+          : undefined;
         const selected = isSection
-          ? p.selection?.kind === "section" && p.selection.sectionId === row.id
+          ? (carriedId
+            ? carriedId === selectedWidgetId
+            : p.selection?.kind === "section" && p.selection.sectionId === row.id)
           : row.id === selectedWidgetId;
         const hidden = row.hiddenOn[p.device];
 
@@ -153,7 +167,9 @@ export function Navigator(p: NavigatorProps) {
               setDragId(null); setOverIndex(null);
             }}
             onClick={() => p.onSelect(isSection
-              ? { kind: "section", sectionId: row.id }
+              ? (carriedId
+                ? { kind: "widget", sectionId: row.id, columnIndex: 0, widgetIndex: 0, id: carriedId }
+                : { kind: "section", sectionId: row.id })
               : { kind: "widget", ...(row as Extract<OutlineRow, { kind: "widget" }>).path })}
             /* NO TITLE ATTRIBUTE ON A ROW (D-172, round 2). Driven in the
                reference on 2026-09-19: every `.elementor-navigator__element`

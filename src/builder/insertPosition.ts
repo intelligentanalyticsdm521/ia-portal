@@ -27,6 +27,7 @@
  *
  * Pure: no React, no DOM. The canvas measures; this decides.
  */
+import { carrierContainer } from "./model";
 import type { BuilderDocument, Selection } from "./model";
 import { findNode, hostChildren, isContainer, nodeIdAt } from "./treeOps";
 
@@ -167,6 +168,14 @@ export function firstSpotIn(doc: BuilderDocument, sectionId: string): InsertSpot
   const section = doc.sections.find((s) => s.id === sectionId);
   const column = section?.columns[0];
   if (!section || !column) return null;
+  /* INTO THE CONTAINER, NEVER BESIDE IT (D-172, round 2).
+     When the section is a CARRIER PAIR — its one column holding one container
+     and nothing else — the column is a level the author cannot see: it has no
+     handle, no outline and no row in Structure. Landing something there put it
+     at a level nobody could then select. The container is what the author sees
+     as the box, so it is what "the first place in this section" means. */
+  const carried = carrierContainer(section);
+  if (carried) return { hostId: carried.id, sectionId, columnIndex: 0, index: carried.children.length };
   return { hostId: column.id, sectionId, columnIndex: 0, index: column.widgets.length };
 }
 
