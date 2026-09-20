@@ -16,7 +16,7 @@
  * twenty dots, a visitor whose browser runs nothing reads all of them, and a
  * printed page still carries the content. One markup, three jobs.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { Widget } from "../../../model";
 import type { RenderContext } from "../../../render";
@@ -84,7 +84,10 @@ export const HOTSPOT_DEF: FamilyWidgetDef = {
   picture: pictureFrom(box(6, 6, 52, 26)
     + `<circle cx="20" cy="15" r="4" fill="#94A3B8" stroke="none"/>`
     + `<circle cx="40" cy="24" r="4" fill="#94A3B8" stroke="none"/>` + bar(6, 36, 24, 2)),
-  category: "General",
+  /* Elementor draws its Pro widgets in their own PRO group, and D-168 item 6
+     gave our panel the same six groups. A Pro widget sitting in General is a
+     difference a person sees the moment our panel is beside the real one. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

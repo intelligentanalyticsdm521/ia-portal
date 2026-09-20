@@ -694,7 +694,13 @@ describe("D-39 · the title band has a logo control", () => {
        with an **Image** in it, so the picture the author chose is the Image's
        own `src` and saves with the document exactly as before. `business_info`
        carries the other half of D-39: use the brand logo, or a different one. */
-    assert.ok("src" in WIDGETS_BY_KIND.image.defaults);
+    /* B-168 wave 2 — the key is Elementor's own now. Image carries the picture
+       under `image`, which is what `image-box`, `hotspot` and every other
+       Elementor media control is called, and `pictureOf()` in
+       `families/f2-pictures/image.ts` still reads a document that holds `src`
+       or `url`. What D-39 asks of this test is unchanged: the picture the
+       author chose is the widget's OWN property and saves with the document. */
+    assert.ok("image" in WIDGETS_BY_KIND.image.defaults);
     // "A different logo" is stored under the FIELD's own key, so it is an
     // override like any other retyped value and *Put it back* returns to the
     // mark in Brand Identity. "None" is the Show-logo toggle.

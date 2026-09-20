@@ -158,11 +158,21 @@ describe("the seam — what the pane offers is what the website can build", () =
    * `hidden` in the registry — still a kind, so a stored page draws and round
    * trips — and belong in the template library. The ask is in the handoff.
    */
-  test("the pane opens with Elementor's four groups, in Elementor's order", () => {
+  test("the pane opens with Elementor's own groups, in Elementor's order", () => {
+    /* FIVE now, not four. D-168 item 6 gave the panel Elementor Pro's own six
+       groups — Layout, Basic, Pro, General, Site, Intelligent Analytics — and
+       a group with nothing offered for THIS builder is not drawn, which is why
+       Site is absent until a site piece is offered here. B-168 wave 2 put this
+       family's four paid widgets where Elementor draws them: Gallery, Video
+       Playlist, Lottie and Hotspot were sitting in General behind a padlock,
+       which is a difference a person sees the moment our panel is beside the
+       real one. */
     const groups = panelGroups("website", "");
     assert.deepEqual(groups.map((g) => g.group),
-      ["Layout", "Basic", "General", "Intelligent Analytics"]);
+      ["Layout", "Basic", "Pro", "General", "Intelligent Analytics"]);
     assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
+    assert.deepEqual(groups.find((g) => g.group === "Pro").widgets.map((w) => w.label),
+      ["Gallery", "Hotspot", "Lottie", "Video Playlist"]);
   });
 
   test("the twelve whole-page sections are understood and never offered", () => {

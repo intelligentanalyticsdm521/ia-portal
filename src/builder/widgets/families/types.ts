@@ -113,6 +113,8 @@ export type FamilyRenderer = (w: Widget, ctx: RenderContext) => string;
  * crosses between a family folder and an adapter.
  */
 export type FamilyEmailRenderer = (w: Widget, ctx: EmailRenderContext) => string;
+/** The plain-text twin of a mailbox renderer. `null` means "nothing to say". */
+export type FamilyEmailText = (props: Record<string, unknown>, ctx: EmailRenderContext) => string | null;
 export type FamilyLandingRenderer = (w: Widget, ctx: LandingRenderContext) => string;
 
 /**
@@ -178,6 +180,23 @@ export interface Family {
    * refuses. That check is not weakened for families.
    */
   emailRenderers?: Record<string, FamilyEmailRenderer>;
+  /**
+   * THE PLAIN-TEXT TWIN, beside the mailbox one. Optional.
+   *
+   * The words are read back out of the mailbox markup by default
+   * (`textFromMarkup`), which is right for a widget whose markup IS its words —
+   * a heading, a paragraph, an alert. It is wrong for one whose markup is a
+   * PICTURE: a Video's mailbox half is a still and a play mark, so reading it
+   * back gives "▶ Watch the video" and a text part with no address in it, which
+   * is a link a reader cannot follow.
+   *
+   * LUMEN's `emailFamilies` has had both halves from the first commit and its
+   * family test refuses an `html` with no `text`. This is the Portal's side of
+   * the same pair, so the preview and the send say the same sentence — the
+   * golden cases are checked into both repos byte-identical and catch it when
+   * they do not. Return `null` for "nothing to say".
+   */
+  emailTexts?: Record<string, FamilyEmailText>;
   /** The hosted landing page's half. Same rule, same reason. */
   landingRenderers?: Record<string, FamilyLandingRenderer>;
   /** The My Brand studio's half: a kind becomes canvas layers. */

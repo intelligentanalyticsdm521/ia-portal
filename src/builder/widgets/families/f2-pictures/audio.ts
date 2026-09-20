@@ -26,7 +26,7 @@
  * stop. The player's one colour is Controls Color, on the Content tab, where
  * Elementor puts it.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { Widget } from "../../../model";
 import type { RenderContext } from "../../../render";

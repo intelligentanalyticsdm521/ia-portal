@@ -17,7 +17,7 @@
  * still open any video. Nothing here needs a script to be visible, which is
  * also what makes the widget editable in place.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 import { bar, box, pictureFrom, solid } from "../../../pictures";
 import type { Widget } from "../../../model";
 import type { RenderContext } from "../../../render";
@@ -94,7 +94,10 @@ export const VIDEO_PLAYLIST_DEF: FamilyWidgetDef = {
   icon: "ListVideo",
   picture: pictureFrom(solid(6, 8, 32, 22) + box(42, 8, 16, 6) + box(42, 16, 16, 6) + box(42, 24, 16, 6)
     + `<path d="M19 15l7 4-7 4z" fill="#FFFFFF" stroke="none"/>` + bar(6, 34, 20, 2)),
-  category: "General",
+  /* Elementor draws its Pro widgets in their own PRO group, and D-168 item 6
+     gave our panel the same six groups. A Pro widget sitting in General is a
+     difference a person sees the moment our panel is beside the real one. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

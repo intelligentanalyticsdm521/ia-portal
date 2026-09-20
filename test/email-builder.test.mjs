@@ -46,7 +46,7 @@ import { fill, tokensIn, unfilledTokens, lookup } from "../src/builder/merge.ts"
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, renderEmailWidget,
   makeEmailContext, checkEmailSafe, assertEmailSafe, altTextFor, contrastInk,
-  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
+  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_DRAWN_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
 } from "../src/builder/adapters/email/emailRender.ts";
 import {
   EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, emailTemplateByKey, startingEmail,
@@ -59,7 +59,7 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
+  LANDING_RENDERED_KINDS, LANDING_DRAWN_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
@@ -623,8 +623,14 @@ describe("the email builder never opens on a blank page", () => {
 
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
+    /* `EMAIL_DRAWN_KINDS`, not `EMAIL_RENDERED_KINDS`: since B-168 a widget may
+       be drawn in a mailbox by its FAMILY instead of by this file's own switch,
+       and the merged list is the honest answer to "does the newsletter draw
+       this". Video is the first one — the switch never had a case for it, so a
+       video in a newsletter drew "this part needs a newer version of the
+       builder" right up until the family wrote its half. */
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !EMAIL_DRAWN_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -648,9 +654,14 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        the thing they were waiting on. HELD BACK still, for the same reason and
        no other: Reviews and Book Now. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
+    /* ADDED BY B-168 WAVE 2: **Video**. It was in the offer file Brandon
+       approved all along — `newsletter.elementor` lists `video`, with the note
+       *"video shows as a clickable picture"* — and the tile was simply never
+       turned on. The f2-pictures family draws it as a real picture that is a
+       real link, which is the only thing a video can be in a mailbox. */
       "alert", "article_card", "button", "container", "divider", "email_footer", "grid",
       "heading", "icon", "icon_box", "image", "image_box", "list", "paragraph",
-      "product_card", "social_links", "spacer", "star_rating", "testimonial",
+      "product_card", "social_links", "spacer", "star_rating", "testimonial", "video",
     ].sort());
   });
 
@@ -672,7 +683,11 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
        with its own golden case, so the rule "nothing a mailbox cannot draw" is
        satisfied by drawing them rather than by hiding them. Reviews and Book
        Now stay on it until they have one too. */
-    for (const kind of ["form", "signature", "price_line", "data_table", "gallery", "video",
+    /* `video` LEFT this list in B-168 wave 2, and for the rule's own reason
+       rather than against it: the offer file gives the newsletter Video, and
+       the family now draws it as a picture that is a link. No mail client
+       plays a video and none is asked to. */
+    for (const kind of ["form", "signature", "price_line", "data_table", "gallery",
       "catalog_card", "reviews", "book_now"]) {
       const def = WIDGETS_BY_KIND[kind];
       if (!def) continue;
@@ -713,14 +728,22 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice"];
     assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
       site.filter((k) => !siteOnly.includes(k)));
-    /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
-       `social_links` and `gallery`: `LANDING_KIND_ALIASES` resolves them
-       before the switch, and the alias table is tested for exactly that in
-       builder-surfaces-d165. A slug cannot be both an alias and a rendered
-       kind, so the alias table is the third place a kind can be accounted
-       for. */
+    /* `social_icons` is Elementor's SPELLING of `social_links`:
+       `LANDING_KIND_ALIASES` resolves it before the switch, and the alias table
+       is tested for exactly that in builder-surfaces-d165. A slug cannot be
+       both an alias and a rendered kind, so the alias table is the third place
+       a kind can be accounted for.
+
+       `basic_gallery` WAS on that list and is not any more (B-168 wave 2). The
+       alias sent it to `gallery`, the hidden legacy Photo gallery, whose
+       renderer reads `p.items` — and Basic Gallery has stored its pictures
+       under `wp_gallery` since D-165, so it drew an empty band on every hosted
+       landing page. The f2-pictures family owns the kind and draws it.
+
+       `LANDING_DRAWN_KINDS`, not `LANDING_RENDERED_KINDS`, for the same reason
+       the mailbox above reads the merged list. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k)
+      .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
         && !LANDING_UNRENDERED_KINDS.includes(k)
         && !LANDING_KIND_ALIASES[k]);
     assert.deepEqual(missing, []);

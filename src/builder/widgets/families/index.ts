@@ -32,7 +32,8 @@ import type { Widget } from "../../model";
 import type { RenderContext } from "../../render";
 import type { WidgetDef } from "../../registry";
 import {
-  type EmailRenderContext, type Family, type FamilyEmailRenderer, type FamilyLandingRenderer,
+  type EmailRenderContext, type Family, type FamilyEmailRenderer, type FamilyEmailText,
+  type FamilyLandingRenderer,
   type FamilyRenderer, type FamilyStudioInsert, type FamilyWidgetDef, type LandingRenderContext,
   type StudioBrandLite, type StudioCanvasDoc, type StudioInsertOptions, type StudioInsertResult,
   toWidgetDef,
@@ -144,6 +145,7 @@ function mergeHalf<T>(
 }
 
 const EMAIL_RENDERERS = mergeHalf<FamilyEmailRenderer>((f) => f.emailRenderers, "in a mailbox");
+const EMAIL_TEXTS = mergeHalf<FamilyEmailText>((f) => f.emailTexts, "in a plain-text email");
 const LANDING_RENDERERS = mergeHalf<FamilyLandingRenderer>((f) => f.landingRenderers, "on a landing page");
 
 /** Every kind a family can draw IN A MAILBOX. */
@@ -155,6 +157,18 @@ export const FAMILY_LANDING_RENDERED_KINDS: readonly string[] = Object.keys(LAND
 export function renderEmailFamily(w: Widget, ctx: EmailRenderContext): string | null {
   const fn = EMAIL_RENDERERS[w.kind];
   return fn ? fn(w, ctx) : null;
+}
+
+/**
+ * THE PLAIN-TEXT TWIN, or `null` — then the caller reads the words back out of
+ * the mailbox markup, which is the right answer for a widget whose markup IS
+ * its words and the wrong one for a widget whose markup is a picture.
+ */
+export function textEmailFamily(w: Widget, ctx: EmailRenderContext): string | null {
+  const fn = EMAIL_TEXTS[w.kind];
+  if (!fn) return null;
+  const out = fn((w.props || {}) as Record<string, unknown>, ctx);
+  return out == null ? null : String(out);
 }
 
 /** Draw one on a hosted landing page, or `null`. */
@@ -187,16 +201,45 @@ export function insertFamilyWidget(
  * newer version of the builder"* in a real person's inbox. The list is empty
  * and `test/builder-override.test.mjs` says so by name.
  */
-export function familySurfaceGaps(): Array<{ kind: string; builder: string }> {
+export interface DrawnElsewhere {
+  /** `EMAIL_DRAWN_KINDS`-style list: kinds `adapters/email` draws itself. */
+  newsletter?: readonly string[];
+  /** …the same for `adapters/landing`. */
+  landing?: readonly string[];
+  /** `STUDIO_OWN_KINDS` from `adapters/mybrand/insert.ts`. */
+  mybrand?: readonly string[];
+}
+
+export function familySurfaceGaps(
+  /**
+   * WHAT THE ADAPTER ALREADY DRAWS ITSELF, handed in rather than imported,
+   * because nothing in a family folder may reach into an adapter.
+   *
+   * The question this guard asks is "can this tile show something on that
+   * surface" — NOT "did a family write the code that shows it". An adapter that
+   * has drawn a kind since before the families existed, in its own look, with
+   * its own golden cases, is a perfectly good answer: B-168 wave 2 left Image
+   * and Image Box in the mailbox's own hands on purpose and fixed the property
+   * names those renderers read instead, so that forty stored newsletters did
+   * not quietly change shape. A family row would have been the second
+   * mechanism, not the first.
+   *
+   * Every field defaults to empty, which is the strict reading, and the one
+   * caller passes each adapter's own exported list.
+   */
+  drawnElsewhere: DrawnElsewhere = {},
+): Array<{ kind: string; builder: string }> {
+  const also = (b: keyof DrawnElsewhere, kind: string) => (drawnElsewhere[b] || []).includes(kind);
   const out: Array<{ kind: string; builder: string }> = [];
   for (const d of FAMILY_DEFS) {
-    if (d.builders.includes("newsletter") && !EMAIL_RENDERERS[d.kind]) {
+    if (d.builders.includes("newsletter") && !EMAIL_RENDERERS[d.kind] && !also("newsletter", d.kind)) {
       out.push({ kind: d.kind, builder: "newsletter" });
     }
-    if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]) {
+    if (d.builders.includes("landing") && !LANDING_RENDERERS[d.kind] && !RENDERERS[d.kind]
+      && !also("landing", d.kind)) {
       out.push({ kind: d.kind, builder: "landing" });
     }
-    if (d.builders.includes("mybrand") && !STUDIO_INSERTS[d.kind]) {
+    if (d.builders.includes("mybrand") && !STUDIO_INSERTS[d.kind] && !also("mybrand", d.kind)) {
       out.push({ kind: d.kind, builder: "mybrand" });
     }
   }

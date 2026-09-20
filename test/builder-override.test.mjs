@@ -32,6 +32,7 @@ import { esc } from "../src/builder/esc.ts";
 import { EMAIL_DRAWN_KINDS } from "../src/builder/adapters/email/emailRender.ts";
 import { LANDING_DRAWN_KINDS } from "../src/builder/adapters/landing/landingRender.ts";
 import { groupLockedOnPlan } from "../src/builder/WidgetPane.tsx";
+import { STUDIO_OWN_KINDS } from "../src/builder/adapters/mybrand/insert.ts";
 import { upgradeDocument } from "../src/builder/upgrade.ts";
 import { emptyDocument, makeSection, makeWidget } from "../src/builder/model.ts";
 import { GROUPS as MACHINE_GROUPS, PANEL as MACHINE_PANEL } from "./helpers/panelOrder.mjs";
@@ -318,15 +319,34 @@ describe("5b. every surface a widget is offered on asks the families first", () 
     assert.match(email, /const markup = renderEmailFamily\(/, "the plain-text half does not ask");
   });
 
-  test("the hosted landing page asks, before the atoms", () => {
-    const fam = landing.indexOf("const fam = renderLandingFamily(w, c as never);");
+  test("the hosted landing page asks, before its own switch and before the atoms", () => {
+    /* MOVED TO THE TOP by B-168 wave 2 (f2-pictures), and the reason is the
+       whole point of the override pattern. In the `default` branch this ask was
+       enough for a family's NEW kind and not enough for one that REPLACES an
+       existing one: `image`, `image_box`, `image_carousel` and `video` each
+       have a hand-written `case` in this file reading the OLD property
+       spellings, so a family taking those kinds over drew correctly on the
+       canvas, published correctly through arion, and still drew the old widget
+       on a hosted landing page. Same position on all three surfaces now. */
+    const fam = landing.indexOf("const famLanding = renderLandingFamily(");
+    const sw = landing.indexOf("switch (LANDING_KIND_ALIASES[w.kind] || w.kind) {");
     const atom = landing.indexOf("const engine = renderAtom(");
     assert.notEqual(fam, -1, "the landing surface does not ask the families");
+    assert.ok(fam < sw, "it asks after its own switch, so a replaced kind never reaches it");
     assert.ok(fam < atom, "it asks the atoms first, so a family widget is a blank band");
   });
 
   test("the My Brand studio asks, instead of silently placing nothing", () => {
     assert.match(studio, /const fam = insertFamilyWidget\(kind, /);
+  });
+
+  test("every kind the studio names as its own really has a case in that switch", () => {
+    /* `STUDIO_OWN_KINDS` is what the presence guard trusts when it says a My
+       Brand tile can place something. A name on that list with no `case` under
+       it would turn the guard into a rubber stamp. Checked against the file. */
+    for (const kind of STUDIO_OWN_KINDS) {
+      assert.ok(studio.includes(`case "${kind}":`), `${kind} is named as the studio's own and has no case`);
+    }
   });
 
   test("the two derived lists follow the families and are never typed", () => {
@@ -339,7 +359,9 @@ describe("5b. every surface a widget is offered on asks the families first", () 
     /* The guard the gaps above were: a tile on the newsletter panel whose
        family wrote no mailbox renderer draws "this part needs a newer version
        of the builder" in a real person's inbox. Empty, by name. */
-    assert.deepEqual(familySurfaceGaps(), []);
+    assert.deepEqual(familySurfaceGaps({
+      newsletter: EMAIL_DRAWN_KINDS, landing: LANDING_DRAWN_KINDS, mybrand: STUDIO_OWN_KINDS,
+    }), []);
   });
 
   test("the escaper is in a module that imports nothing", () => {

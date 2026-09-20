@@ -132,6 +132,24 @@ const emailCases = [
   widgetCase("image with alt", "image", { src: "https://cdn.example.test/lot.jpg", alt: "A cleared car park at dawn", caption: "Tuesday, 5am", width: 400, align: "Centre" }),
   widgetCase("image with no alt falls back to the caption", "image", { src: "https://cdn.example.test/lot.jpg", caption: "Tuesday, 5am" }),
   widgetCase("image with no alt and no caption falls back to the file name", "image", { src: "https://cdn.example.test/snow-plough_at-work.jpg" }),
+  /* B-168 wave 2 — THE SAME PICTURE, STORED THE WAY THE PANEL WRITES IT NOW.
+     Image carries Elementor's own `image` key and its caption is behind
+     `caption_source`. Without this case nothing would catch the mailbox going
+     back to reading `src` alone, which would blank every picture put in a
+     newsletter from today on. */
+  widgetCase("image stored the way the deepened panel writes it", "image", {
+    image: { url: "https://cdn.example.test/lot.jpg", id: "17" },
+    alt: "A cleared car park at dawn", caption_source: "custom", caption: "Tuesday, 5am",
+    width: 400, align: "Centre",
+  }),
+  /* …and the same for an Image Box, whose words are `title_text` and
+     `description_text`. The mailbox read `title` and `description`, so a box
+     built in the newsletter builder arrived with a picture and no words. */
+  widgetCase("image box stored the way the deepened panel writes it", "image_box", {
+    image: "https://cdn.example.test/crew.jpg", image_alt: "Two crew loading salt",
+    title_text: "The crew", description_text: "The same people, every visit.",
+    link: "https://example.test/crew", position: "left",
+  }),
   widgetCase("solid button", "button", { label: "Book a walk-through", url: "https://example.test/book", style: "Solid", align: "Centre" }),
   widgetCase("outline button, full width, own colour", "button", { label: "See the rates", url: "https://example.test/rates", style: "Outline", align: "Left", colour: "#FEC82C", width: "full", radius: 0 }),
   widgetCase("plain link button", "button", { label: "Skip for now", url: "https://example.test/skip", style: "Plain link" }),
@@ -199,6 +217,16 @@ const emailCases = [
   widgetCase("image box, picture beside the words", "image_box", {
     src: "https://cdn.example.test/crew.jpg", alt: "Two crew loading salt", position: "left",
     title: "The crew", description: "The same people, every visit.", url: "https://example.test/crew",
+  }),
+  /* B-168 wave 2 — VIDEO reaches a mailbox, as a picture that is a link. The
+     offer file gave the newsletter `video` all along; no mail client plays one,
+     so the family draws the poster the author chose with the words under it. */
+  widgetCase("video is a picture that is a link, because no mailbox plays one", "video", {
+    video_type: "youtube", youtube_url: "https://www.youtube.com/watch?v=abc123xyz",
+    image_overlay: "https://cdn.example.test/still.jpg",
+  }),
+  widgetCase("video with no picture is a plain, obvious link", "video", {
+    video_type: "youtube", youtube_url: "https://www.youtube.com/watch?v=abc123xyz",
   }),
   widgetCase("star rating", "star_rating", { rating: 4.5, scale: 5, title: "Our reviews", align: "Left" }),
   widgetCase("star rating out of ten", "star_rating", { rating: 8, scale: 10, align: "Centre" }),
@@ -518,6 +546,17 @@ const landingCases = [
   lpCase("accordion", "accordion", { items: [{ title: "When do you come out?", body: "At a two-inch trigger." }, { title: "Do you salt?", body: "Yes, on every visit." }] }),
   lpCase("a toggle opens nothing until it is pressed", "toggle", { items: [{ title: "The small print", body: "Prices exclude tax." }] }),
   lpCase("image carousel", "image_carousel", { images: ["https://cdn.example.test/1.jpg", { src: "https://cdn.example.test/2.jpg", alt: "After" }] }),
+  /* B-168 wave 2 — the carousel's OWN key. `LANDING_KIND_ALIASES` used to send
+     `basic_gallery` to the legacy Photo gallery and this surface read `images`
+     for a carousel that stores `carousel`, so both drew an empty band on a
+     hosted page. Two cases, one for each. */
+  lpCase("image carousel, stored the way the panel writes it", "image_carousel", {
+    carousel: [{ url: "https://cdn.example.test/1.jpg", title: "Before" }, { url: "https://cdn.example.test/2.jpg", title: "After" }],
+  }),
+  lpCase("basic gallery", "basic_gallery", {
+    wp_gallery: [{ url: "https://cdn.example.test/a.jpg", caption: "Before" }, { url: "https://cdn.example.test/b.jpg", caption: "After" }],
+    gallery_columns: "2",
+  }),
   lpCase("a place on the page to jump to", "menu_anchor", { anchor: "prices" }),
   lpCase("a map is the address and a link, never an embed", "google_maps", { address: "1200 Prairie Ave, Marshalltown, IA" }),
   lpCase("the Elementor spelling reaches the kind we store", "text_editor", { text: "Same widget, Elementor's name." }),

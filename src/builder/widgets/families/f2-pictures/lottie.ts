@@ -16,7 +16,7 @@
  * is the editor's picture of the page AND the fallback a visitor with no
  * JavaScript sees, so the page keeps its shape and its words either way.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 import { bar, box, pictureFrom } from "../../../pictures";
 import type { Widget } from "../../../model";
 import type { RenderContext } from "../../../render";
@@ -80,7 +80,10 @@ export const LOTTIE_DEF: FamilyWidgetDef = {
   icon: "Sparkles",
   picture: pictureFrom(box(14, 6, 36, 24) + `<path d="M22 24c4-14 12-14 16 0" stroke="#94A3B8"/>`
     + `<circle cx="22" cy="24" r="2.5" fill="#94A3B8" stroke="none"/>` + bar(20, 34, 24, 2)),
-  category: "General",
+  /* Elementor draws its Pro widgets in their own PRO group, and D-168 item 6
+     gave our panel the same six groups. A Pro widget sitting in General is a
+     difference a person sees the moment our panel is beside the real one. */
+  category: "Pro",
   builders: ["website", "landing"],
   tier: "pro",
   defaults: {

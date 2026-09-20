@@ -11,7 +11,7 @@
  * Nothing in here knows a widget's name, and nothing outside this family
  * imports it.
  */
-import { esc } from "../../../render";
+import { esc } from "../../../esc";
 
 /** Anything → a string, with null and undefined as "". */
 export const str = (v: unknown): string => (v == null ? "" : String(v));
