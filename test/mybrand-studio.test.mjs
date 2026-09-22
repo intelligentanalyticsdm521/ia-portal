@@ -512,14 +512,34 @@ describe("the PDF export", () => {
   test("the inches and the pixels describe the SAME rectangle", () => {
     // PRINT_INCHES is keyed by preset key, so the two facts live apart. If a
     // preset's pixels are ever re-cut without its inches, this is what says so.
+    //
+    // WHY THIS IS A TOLERANCE AND NOT AN EQUALITY (changed 2026-09-19, G-11).
+    // It used to demand that width/inches and height/inches came out at the
+    // SAME whole number of dpi. That is only possible for a paper whose sides
+    // are a whole number of inches — Letter and a business card are, and A4 is
+    // 210 × 297 MILLIMETRES, which is 8.2677 × 11.6929 in. At 150 dpi that is
+    // 1240.16 × 1753.93 pixels, and a canvas cannot be a sixth of a pixel
+    // wide. So the claim is the honest one: rounding to whole pixels is the
+    // ONLY difference allowed between the two sides, which is still tight
+    // enough that re-cutting a preset's pixels without its inches fails here.
     for (const [key, physical] of Object.entries(PRINT_INCHES)) {
       const preset = SIZE_PRESETS.find((p) => p.key === key);
       assert.ok(preset, `PRINT_INCHES names ${key}, which is not a size preset`);
       const [inW, inH] = physical.inches;
       const dpiW = preset.w / inW;
       const dpiH = preset.h / inH;
-      assert.equal(dpiW, dpiH, `${key} is ${dpiW} dpi across and ${dpiH} dpi down — one of the two is wrong`);
-      assert.ok(Number.isInteger(dpiW) && dpiW >= 150, `${key} would print at ${dpiW} dpi`);
+      // The two dpi may differ only by what one rounded pixel is worth.
+      const slackW = 0.5 / inW;
+      const slackH = 0.5 / inH;
+      assert.ok(
+        Math.abs(dpiW - dpiH) <= slackW + slackH,
+        `${key} is ${dpiW} dpi across and ${dpiH} dpi down — one of the two is wrong`,
+      );
+      const nominal = Math.round(dpiW);
+      assert.ok(nominal >= 150, `${key} would print at ${dpiW} dpi`);
+      // And the pixels really are the inches at that nominal dpi, rounded.
+      assert.equal(preset.w, Math.round(inW * nominal), `${key} width is not ${nominal} dpi of ${inW} in`);
+      assert.equal(preset.h, Math.round(inH * nominal), `${key} height is not ${nominal} dpi of ${inH} in`);
     }
   });
 
@@ -599,7 +619,7 @@ describe("the PDF export", () => {
     );
     await assert.rejects(
       () => buildImagePdf({ rgb: swatch(2, 2), pixelWidth: 2, pixelHeight: 2, pageWidthPt: 0, pageHeightPt: 72 }),
-      /no size/,
+      /no size|no page size/,
     );
   });
 
@@ -759,5 +779,234 @@ describe("every button in the studio carries a tooltip — SD-010", () => {
   test("a custom hex is typeable, not just pickable", () => {
     // Acceptance row (c) types a hex rather than driving an OS colour dialog.
     assert.match(read("builder/adapters/mybrand/LayerInspector.tsx"), /data-colour-hex/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. THE LEFT PANEL IS THE ELEMENTS PANEL — nothing else is in it
+   ══════════════════════════════════════════════════════════════════════════
+
+   D-165 item 1, D-172 law 1, and the thing every My Brand parity round from 1
+   to 5 recorded as unfixed: *"What else is in the left panel that is not a
+   widget at all: a Start from a template button, an Upload · Library · Chart
+   row, an ASK FOR IT box …"*.
+
+   This is an ABSENCE guard, which is the weakest kind, so it is written as a
+   pair: each thing that must be GONE is asserted absent, and the place its job
+   MOVED TO is asserted present. An absence on its own would pass if somebody
+   deleted the feature instead of moving it (feedback_assert_presence_not_just_
+   absence).
+
+   MUTATIONS RUN, 2026-09-22, each watched go red and then restored:
+     · put `<StudioPaneHeader … />` back into the `pane` slot  → red (1)
+     · put the `<SmallTool … label="Chart" …>` row back        → red (1)
+     · drop `data-studio-templates` from the bar               → red (2)
+     · drop the `askArgus={` prop from the frame call          → red (3)
+     · make the chooser strip unconditional again              → red (4)
+   ════════════════════════════════════════════════════════════════════════ */
+
+describe("6. the studio's left panel is the shared Elements panel and nothing else", () => {
+  const shell = read("builder/adapters/mybrand/StudioBuilder.tsx");
+
+  test("(1) the studio's own pane furniture is GONE, every piece of it", () => {
+    /* Read the CODE, not the file: the note that records what was deleted and
+       where each piece went names all five, and a rule about the screen must
+       not be broken by the prose describing the screen. */
+    const code = codeOf(shell);
+    const still = [
+      "StudioPaneHeader",       // the component itself
+      "Start from a template",  // the template button
+      "SmallTool",              // the Upload · Library · Chart row
+      "Ask for it",             // the AI box's heading, in the pane
+      "chartLayer(",            // the Chart button's only caller
+    ].filter((gone) => code.includes(gone));
+    assert.deepEqual(still, [],
+      `these are still in the left panel: ${still.join(", ")}. The panel is the `
+      + `Elements panel — the offer file's tiles and nothing else (D-165 item 1, D-172).`);
+  });
+
+  test("(2) …and Start from a template became the bar's Add Template folder", () => {
+    assert.match(codeOf(shell), /data-studio-templates/);
+    assert.match(codeOf(shell), /title="Add Template"/);
+    assert.match(codeOf(shell), /onClick=\{\(\) => setGalleryOpen\(true\)\}/);
+  });
+
+  test("(3) …and Ask for it became the bar's one Ask ARGUS door", () => {
+    const code = codeOf(shell);
+    assert.match(code, /askArgus=\{/, "the frame is not given a bar button");
+    assert.match(code, /data-builder-argus/);
+    assert.match(code, /data-studio-ask/, "the dialog the bar button opens is missing");
+    // The two actions and their prices survived the move, word for word.
+    assert.ok(code.includes("Write copy · 1cr"), "Write copy is gone, not moved");
+    assert.ok(code.includes("Make image · 8cr"), "Make image is gone, not moved");
+  });
+
+  test("(4) …and Upload / Library became the Picture's own Content controls", () => {
+    const inspector = codeOf(read("builder/adapters/mybrand/LayerInspector.tsx"));
+    assert.match(inspector, /Put a picture in this slot/);
+    assert.match(inspector, /onUploadToSlot/);
+    // The tile asks NOTHING before it lands — Elementor does not.
+    assert.ok(!codeOf(shell).includes('title: "Where is the picture?"'),
+      "the Picture tile still asks where the picture is before it lands");
+  });
+
+  test("(5) the only thing that may sit over the tiles is a question being asked", () => {
+    const code = codeOf(shell);
+    /* The strip is inside `{chooser && (`, so an author who is not mid-insert
+       sees the panel with nothing above it. */
+    assert.match(code, /pane=\{\s*<>\s*\{chooser && \(/);
+    assert.match(code, /<WidgetPane adapter="brand"/);
+  });
+});
+
+/** A file's CODE, with its comments taken out — a rule about the screen must
+    not be satisfied or broken by prose describing the screen. */
+function codeOf(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   7. THE NINE THE OFFER PROMISED AND THE PANEL DID NOT HAVE
+   ══════════════════════════════════════════════════════════════════════════
+
+   `test/builder-offers.test.mjs` named them, builder by builder, and stayed
+   red for My Brand from the hour STRICT_MISSING was flipped:
+
+     testimonial, rating, social-icons, line, frame, photo_grid,
+     custom_field, product_card, ia_review
+
+   That test asks whether a TILE exists. This one asks the question behind it —
+   *does pressing it put the right thing on the canvas* — because a tile whose
+   button does nothing is exactly the drift D-168 item 4 recorded, and a green
+   offer test with nine dead tiles would be worse than the red one.
+
+   MUTATIONS RUN, 2026-09-22, each watched go red and then restored:
+     · `case "star_rating"` returns four stars instead of five      → red
+     · `case "social_links"` drops the mark and keeps the disc      → red
+     · `case "custom_field"` reads `brand.businessName` always      → red
+     · `case "product_card"` drops `opts.product.price`             → red
+     · `case "ia_review"` ignores `opts.review.rating`              → red
+     · `case "frame"` places an image with no `mask`                → red
+   ════════════════════════════════════════════════════════════════════════ */
+
+describe("7. the nine offered tiles place what they say they place", () => {
+  const CANVAS = emptyCanvas(1080, 1080);
+  const WITH_RECORD = {
+    ...SENTINEL,
+    record: { name: "Summit Lawn", phone: "(555) 010-2244", email: "hi@summit.test", licence: "", logo: "" },
+  };
+
+  test("every one of the nineteen offered tiles places at least one layer", () => {
+    /* The PRESENCE half. `builder-offers` says the tile is there; this says
+       the press does something, for every tile on the panel and not just the
+       nine, so the next tile anybody adds is covered by the same line. */
+    const silent = [];
+    for (const w of widgetsFor("brand")) {
+      const opts = {};
+      if (w.kind === "icon" || w.kind === "shape") opts.option = w.kind === "icon" ? "star" : "rect";
+      if (w.kind === "qr_code") opts.imageSrc = "data:image/svg+xml;base64,AAAA";
+      if (!insertWidget(w.kind, CANVAS, WITH_RECORD, opts).layers.length) silent.push(w.kind);
+    }
+    assert.deepEqual(silent, [], `these tiles are on the panel and place nothing: ${silent.join(", ")}`);
+  });
+
+  test("Line is a line, and Shape no longer offers one", () => {
+    const [l] = insertWidget("line", CANVAS, WITH_RECORD).layers;
+    assert.equal(l.kind, "shape");
+    assert.equal(l.shape, "line");
+    assert.equal(l.h, 0, "a line with a height is a rectangle");
+    assert.ok(l.strokeWidth > 0, "a line with no stroke is invisible");
+    /* Two doors to one widget is the thing D-172 is about. */
+    const shell = read("builder/adapters/mybrand/StudioBuilder.tsx");
+    assert.ok(!shell.includes('{ value: "line", label: "Line", hint: "A rule under a title" }'),
+      "Shape still offers Line as well as the Line tile");
+  });
+
+  test("Frame is an EMPTY picture cut to a shape, with its ring on", () => {
+    const [f] = insertWidget("frame", CANVAS, WITH_RECORD).layers;
+    assert.equal(f.kind, "image");
+    assert.equal(f.src, null, "a frame arrives empty — the Picture controls fill it");
+    assert.ok(f.mask, "no mask means it is a plain rectangle, not a frame");
+    assert.ok(f.frameStroke && f.frameStrokeWidth > 0, "the ring is what makes it read as a frame");
+    assert.ok(f.frameFill, "an empty frame with no fill is an invisible hole");
+  });
+
+  test("Testimonial is the quote, the name and the job, as one group", () => {
+    const out = insertWidget("testimonial", CANVAS, WITH_RECORD);
+    const texts = out.layers.filter((l) => l.kind === "text");
+    assert.equal(texts.length, 3, "a testimonial is three runs of words");
+    assert.ok(texts[0].size > texts[1].size && texts[1].size > texts[2].size,
+      "the quote, the name and the job are not at three sizes");
+    const groups = new Set(out.layers.map((l) => l.groupId));
+    assert.equal(groups.size, 1, "the three come apart on the first drag");
+    assert.ok([...groups][0], "they are not grouped at all");
+  });
+
+  test("Rating is FIVE star shapes, with the score in the fill", () => {
+    const out = insertWidget("star_rating", CANVAS, WITH_RECORD, { count: 4 });
+    assert.equal(out.layers.length, 5, "a rating out of five draws five");
+    for (const l of out.layers) {
+      assert.equal(l.kind, "shape");
+      assert.equal(l.icon, "star", "a star drawn as a GLYPH exports as a box — it must be a path");
+    }
+    const lit = out.layers.filter((l) => l.fill === SENTINEL.colours.primary).length;
+    assert.equal(lit, 4, "four out of five did not read as four out of five");
+  });
+
+  test("Social Icons is a ROW of marks, not one handle", () => {
+    const out = insertWidget("social_links", CANVAS, WITH_RECORD);
+    const discs = out.layers.filter((l) => l.shape === "ellipse");
+    const marks = out.layers.filter((l) => l.shape === "icon");
+    assert.equal(discs.length, 3);
+    assert.equal(marks.length, 3, "a disc with no mark on it is a dot");
+    assert.equal(out.layers.filter((l) => l.kind === "text").length, 0,
+      "this is the row of icons, not the older Social handle with its @name");
+  });
+
+  test("Custom Field reads the BUSINESS record, and says so when it is blank", () => {
+    const filled = insertWidget("custom_field", CANVAS, WITH_RECORD, { option: "phone" });
+    assert.equal(filled.layers[0].content, "(555) 010-2244");
+    /* A blank field places its own placeholder rather than nothing: a tile
+       that places nothing because a field happens to be empty is the silent
+       button insert.ts's header is about. */
+    const blank = insertWidget("custom_field", CANVAS, { ...WITH_RECORD, record: {} }, { option: "phone" });
+    assert.equal(blank.layers.length, 1);
+    assert.ok(blank.layers[0].content.length > 0);
+    assert.notEqual(blank.layers[0].content, "(555) 010-2244");
+  });
+
+  test("Product card carries the PICKED product's own name and price", () => {
+    const out = insertWidget("product_card", CANVAS, WITH_RECORD,
+      { product: { name: "Spring cleanup", price: "$249", blurb: "One visit, the whole yard." } });
+    const words = out.layers.filter((l) => l.kind === "text").map((l) => l.content);
+    assert.ok(words.includes("Spring cleanup"), "the product's real name is not on the card");
+    assert.ok(words.includes("$249"), "the product's real price is not on the card");
+    assert.ok(words.includes("One visit, the whole yard."));
+    assert.equal(out.layers.filter((l) => l.kind === "shape").length, 1, "the card has no panel behind it");
+  });
+
+  test("IA Review carries the PICKED review's stars, words and author", () => {
+    const out = insertWidget("ia_review", CANVAS, WITH_RECORD,
+      { review: { quote: "Best crew in town.", author: "Dana R.", rating: 4 } });
+    const stars = out.layers.filter((l) => l.icon === "star");
+    assert.equal(stars.length, 5);
+    assert.equal(stars.filter((l) => l.fill === SENTINEL.colours.primary).length, 4,
+      "a four-star review drew five lit stars");
+    const words = out.layers.filter((l) => l.kind === "text").map((l) => l.content).join(" | ");
+    assert.ok(words.includes("Best crew in town."));
+    assert.ok(words.includes("Dana R."));
+  });
+
+  test("Photo gallery is the offer's `photo_grid`, and `gallery` is gone from the studio", () => {
+    const out = insertWidget("photo_grid", CANVAS, WITH_RECORD, { count: 4, gutter: 40, radius: 24 });
+    assert.equal(out.layers.length, 4);
+    for (const l of out.layers) assert.equal(l.radius, 24);
+    assert.equal(insertWidget("gallery", CANVAS, WITH_RECORD, { count: 4 }).layers.length, 0,
+      "the old unreachable `gallery` case came back");
+    assert.ok(!WIDGETS_BY_KIND.gallery.adapters.includes("brand"),
+      "the hidden `gallery` def still claims the studio can place one");
   });
 });

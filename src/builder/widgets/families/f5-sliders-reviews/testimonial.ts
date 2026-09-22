@@ -324,14 +324,14 @@ export const TESTIMONIAL_DEF: FamilyWidgetDef = {
   picture: pictureFrom(`<path d="M12 14c0-3 3-4 5-4v4c-1 0-2 1-2 3h3v7h-6z" fill="#CBD5E1" stroke="none"/>`
     + bar(22, 12, 34) + bar(22, 20, 26) + bar(22, 30, 16, 3)),
   category: "General",
-  /* NOT `mybrand`, although the offer file lists it there. The Template Studio
-     is an ABSOLUTE-PIXEL canvas — every object carries its own x, y, w and h,
-     and `adapters/mybrand`'s `insertWidget` places one layer per kind. A widget
-     whose shape is a FLOW has nothing to place, and a tile whose button does
-     nothing is the drift the studio's own test exists to catch. Placing it is a
-     change to the studio, which this family does not own; it is written up in
-     the handoff instead of half-built here. */
-  builders: ["website", "landing", "newsletter", "proposal"],
+  /* `mybrand` WAS MISSING and the reason was written here: *"A widget whose
+     shape is a FLOW has nothing to place."* True of the widget, not of the
+     thing — a quote, a name and a job title are three runs of words at three
+     sizes, and a canvas places runs of words. `adapters/mybrand/insert.ts`
+     has the case (2026-09-22) and `STUDIO_OWN_KINDS` names it, which is how
+     `assertFamilyContract` knows this claim is honest. The def's own `brand`
+     description was written for this and had nowhere to be read. */
+  builders: ["website", "landing", "newsletter", "proposal", "mybrand"],
   tier: "free",
   defaults: {
     quote: "", attribution: "", job: "", image: "", link: "",

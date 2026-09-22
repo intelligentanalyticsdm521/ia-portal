@@ -237,7 +237,8 @@ describe("§3.2's union is registered", () => {
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
     // The studio's placed objects (§5 step 5). Not one of §11.13.3's four
     // builders, so they keep their own words.
-    "brand_logo", "shape", "colour_block", "background", "qr_code", "social_handle",
+    "brand_logo", "shape", "photo_grid", "line", "frame", "ia_review",
+    "colour_block", "background", "qr_code", "social_handle",
     // Understood, never offered. Each one's reason is in registry.ts.
     // `data_table` is OFFERED now (the offer file's proposal list), so it
     // moved up into the Intelligent Analytics block above.
@@ -398,9 +399,17 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
        binding, and those two are the proposal's. */
     assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(), ["proposal"]);
     /* D-167 — and the three that replaced the address block are themselves
-       gone. ONE widget shows one database field, and it is the proposal's
-       until an email or a page has a customer picked for it to read. */
-    assert.deepEqual([...WIDGETS_BY_KIND.custom_field.adapters].sort(), ["proposal"]);
+       gone. ONE widget shows one database field.
+
+       THE PROPOSAL AND MY BRAND (2026-09-22), and no more than those two. The
+       rule has not moved: a Custom Field must have a record to read. The
+       proposal has a CUSTOMER picked; the studio has the BUSINESS, and only
+       the business — `StudioBrand.record` from `GET /account/profile`, with
+       the chooser offering that group and saying so. A website page, a hosted
+       landing page and a send still have neither, which is still ask R-D4, and
+       this list is what would go red if somebody gave one of them the tile
+       without giving it a record. */
+    assert.deepEqual([...WIDGETS_BY_KIND.custom_field.adapters].sort(), ["brand", "proposal"]);
     for (const gone of ["address_block", "key_fact", "pricing_table", "callout",
       "customer", "service_location", "business_info", "terms"]) {
       assert.equal(WIDGETS_BY_KIND[gone], undefined, `${gone} must be gone, not hidden`);

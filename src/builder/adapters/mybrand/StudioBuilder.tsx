@@ -33,8 +33,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Download, FileImage, FileText, Layers, Loader2, Palette, Save, Scaling,
-  Send, Sparkles, Upload, BarChart3, Image as ImageIcon, LayoutTemplate,
+  AlertTriangle, Copy, Download, FileImage, FileText, FolderOpen, Layers, Loader2,
+  Palette, Plus, Save, Scaling, Send, Sparkles, Trash2,
 } from "lucide-react";
 import { ARGUS_BUBBLE_CLEARANCE, BuilderFrame } from "../../BuilderFrame";
 import { WidgetPane } from "../../WidgetPane";
@@ -45,23 +45,41 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { fontStack } from "../../../lib/brandKit";
 import { useAppState } from "../../../app/AppState";
 import { useLumenApi } from "../../../hooks/useLumenApi";
+/* THE OLIVER CATALOGUE and THE SPARK REVIEWS HUB — the two real lists the
+   Product card and IA Review tiles read. The same endpoints the proposal
+   builder and the Reviews page read; no second catalogue, no second review
+   store. */
+import { useOliverApi } from "../../../hooks/useOliverApi";
+import { useSparkApi } from "../../../hooks/useSparkApi";
 import { useProductTier } from "../../../hooks/useProductTier";
 import { tierMeets } from "../../../lib/tierRank";
 import { PixelCanvas, type PixelCanvasHandle } from "./PixelCanvas";
 import { LayerInspector } from "./LayerInspector";
 import { TemplateGallery, type SavedTemplate } from "./TemplateGallery";
 import { insertWidget, chartLayer, brandSwatches, type StudioBrand } from "./insert";
+/* ONE LIST OF WHAT A BUSINESS RECORD HOLDS (D-167). The chooser reads the same
+   array `insert.ts` reads its placeholders from, so a field added there shows
+   up here without anybody remembering to. `logo` is left out: it is a picture,
+   and the picture tile for it is Your logo. */
+import { RECORD_FIELDS } from "../../proposal/recordWidgets";
 import { buildPremade, PREMADE_BY_KEY } from "./templates";
 import {
-  addLayers, addLayersBehind, alignLayer, brandSync, duplicateLayer, emptyCanvas,
-  exportFilename, fixTextContrast, patchLayer, removeLayer, reorderLayer,
-  setBackgroundColor, smartResize, toggleLayerVisibility, uid, SIZE_PRESETS,
-  resolveBrandTokens,
+  addLayers, addLayersBehind, alignLayers, brandSync, clampCanvasSide, copyStyleOf,
+  distributeLayers, duplicateLayer, emptyCanvas, expandSelection, exportFilename,
+  fixTextContrast, groupLayers, moveLayersToEdge, moveLayerToIndex, nudgeLayers,
+  pasteStyle, patchLayer, removeLayer, reorderLayer, setBackgroundColor, smartResize,
+  tidyUp, toggleLayerVisibility, uid, ungroupLayers, MAX_CANVAS_SIDE, MIN_CANVAS_SIDE,
+  SIZE_PRESETS, resolveBrandTokens,
+  addPage, docForPage, duplicatePage, emptySlotMessage, movePage, pageCount,
+  removePage, setPage, MAX_PAGES,
+  fillPictureSlot, isEmptySlot, setSelectionBox, turnSelection,
   ICON_PATHS as ICON_PATHS_LIST,
-  type CanvasDoc, type DesignDto, type ExportResult, type ImageLayer, type Layer,
-  type TemplateDto,
+  type CanvasDoc, type CopiedStyle, type DesignDto, type ExportResult, type ImageLayer,
+  type Layer, type TemplateDto,
 } from "./scene";
-import { imagePdfFromPngDataUrl, pdfPageSize, PDF_MIME } from "./pdf";
+import { StructureWindow } from "./StructureWindow";
+import { setAssetBytesResolver, taintMessage, taintedIn } from "./fabricBridge";
+import { imagePdfFromPngDataUrls, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
 // model stays importable by `node --test` (scripts/test-ts-loader: only pure
@@ -79,6 +97,10 @@ import "@fontsource/lora/700.css";
 import "@fontsource/oswald/400.css";
 import "@fontsource/oswald/700.css";
 
+/** What the Ask ARGUS box suggests you type. One sentence, in plain words. */
+const PROMPT_PLACEHOLDER =
+  'Describe it — "punchy headline for our spring special" or "a golden retriever in a hard hat"';
+
 export interface StudioBuilderProps {
   open: boolean;
   onClose: () => void;
@@ -92,6 +114,20 @@ export interface StudioBuilderProps {
   onChanged?: () => void;
 }
 
+/** The business facts a Custom Field may show here — everything but the logo. */
+const BUSINESS_FIELDS = RECORD_FIELDS.business_info.filter((f) => !f.picture);
+
+/**
+ * The shared tenant profile, as `GET /account/profile` returns it. Only the
+ * four fields the studio reads; the route returns the whole address too.
+ */
+interface BusinessProfile {
+  businessName?: string | null;
+  primaryContactEmail?: string | null;
+  primaryContactPhone?: string | null;
+  websiteUrl?: string | null;
+}
+
 /** One small question asked before a widget lands, the way the pane asks "how many?". */
 interface Chooser {
   kind: string;
@@ -103,6 +139,8 @@ interface Chooser {
 
 export function StudioBuilder(p: StudioBuilderProps) {
   const { get, post, put, ready } = useLumenApi();
+  const oliver = useOliverApi();
+  const spark = useSparkApi();
   const navigate = useNavigate();
   const { kit } = useBrandKit();
   const { active } = useAppState();
@@ -110,18 +148,84 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const hasProTools = tierMeets(tier, "pro");
 
   /* ── The business, as the studio needs it ────────────────────────────── */
-  const brand: StudioBrand = useMemo(() => ({
-    colours: kit.colours,
-    fonts: { heading: fontStack(kit, "heading"), body: fontStack(kit, "body") },
-    logoUrl: kit.logo_url,
-    businessName: active?.tenant?.tenantFullName || active?.tenant?.tenantName || "Your business",
-    websiteUrl: null,
-  }), [kit, active]);
+  /**
+   * THE BUSINESS RECORD, read ONCE — the Custom Field tile's whole source.
+   *
+   * `GET /account/profile` is the SHARED tenant profile (LUMEN
+   * `routes/accountProfile.js`, over `core.tenants`), which is what the SPARK
+   * Account page writes and what the QR page already reads. Not a second home
+   * for the business's phone number, and not the CRM's `lumen.account` row,
+   * which that route's own header says is a different thing.
+   *
+   * Read once per open, beside the catalogue and the templates, and never
+   * blocking: a profile that fails to load leaves every field on its
+   * placeholder, which is exactly what a field with no value shows anyway.
+   */
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
+  useEffect(() => {
+    if (!p.open || !ready) return;
+    let cancelled = false;
+    void get<{ data?: BusinessProfile } | BusinessProfile>("/api/v1/account/profile")
+      .then((r) => {
+        if (cancelled) return;
+        const row = (r as { data?: BusinessProfile })?.data ?? (r as BusinessProfile);
+        setProfile(row && typeof row === "object" ? row : null);
+      })
+      .catch(() => { /* placeholders, not a blocked studio */ });
+    return () => { cancelled = true; };
+  }, [p.open, ready, get]);
+
+  const brand: StudioBrand = useMemo(() => {
+    const name = profile?.businessName
+      || active?.tenant?.tenantFullName || active?.tenant?.tenantName || "Your business";
+    return {
+      colours: kit.colours,
+      fonts: { heading: fontStack(kit, "heading"), body: fontStack(kit, "body") },
+      logoUrl: kit.logo_url,
+      businessName: name,
+      /* The QR code's default used to be `null` and therefore "https://". The
+         profile carries the real one, so the code a business scans off its own
+         poster goes to its own site. */
+      websiteUrl: profile?.websiteUrl || null,
+      /* Keys are `RECORD_FIELDS.business_info`'s, which is the one list. */
+      record: {
+        name,
+        phone: profile?.primaryContactPhone || "",
+        email: profile?.primaryContactEmail || "",
+        licence: "",
+        logo: kit.logo_url || "",
+      },
+    };
+  }, [kit, active, profile]);
 
   /* ── The scene, and ONE history over it ──────────────────────────────── */
-  const [doc, setDoc] = useState<CanvasDoc>(() => emptyCanvas());
+  /**
+   * `design` IS THE WHOLE THING; `doc` IS THE SIDE BEING EDITED (G-09).
+   *
+   * Round 1 had to hand in design 05 as two files "because a design has
+   * exactly one artboard". A business card has two sides.
+   *
+   * The whole editor below — sixty-odd call sites, the canvas, the inspector,
+   * the Structure window, every operation in `scene.ts` — works on ONE
+   * artboard, and it should: a page is an artboard. So the multi-page-ness is
+   * confined to exactly two lines. `doc` is the active side as a plain
+   * one-page document, and `apply` writes it back into the side it came from.
+   * Nothing downstream of these two lines knows pages exist, which is why
+   * adding them did not touch the canvas or the inspector at all.
+   */
+  const [design, setDesign] = useState<CanvasDoc>(() => emptyCanvas());
+  const [pageIndex, setPageIndex] = useState(0);
   const [history, setHistory] = useState<History<CanvasDoc>>(() => initHistory(emptyCanvas()));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const doc = useMemo(() => docForPage(design, pageIndex), [design, pageIndex]);
+  const pages = pageCount(design);
+  /**
+   * THE SELECTION IS A LIST (G-01), and it lives here rather than in the
+   * canvas: the Structure window, the inspector and Fabric all have to agree
+   * on it, and the only way three surfaces agree is if none of them owns it.
+   */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const selectOne = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
 
   /**
    * THE HISTORY, in a ref as well as in state — D-18 and D-40, one cause.
@@ -144,29 +248,65 @@ export function StudioBuilder(p: StudioBuilderProps) {
    */
   const historyRef = useRef<History<CanvasDoc>>(initHistory(emptyCanvas()));
   const setHist = useCallback((h: History<CanvasDoc>) => { historyRef.current = h; setHistory(h); }, []);
-
-  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+  /**
+   * The history is over the WHOLE DESIGN, not over the visible side.
+   *
+   * One stack per page would mean Ctrl+Z on the back of a card undoing
+   * something on the front the moment you flipped it — undo has to be the
+   * order things happened, and things happen on every side.
+   */
+  const applyDesign = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
     setHist(push(historyRef.current, next, mergeKey));
-    setDoc(next);
+    setDesign(next);
   }, [setHist]);
+
+  /**
+   * Every existing caller hands in a one-page document; this puts it back on
+   * the side it came from.
+   *
+   * A CHANGE OF SIZE IS THE ONE THING THAT IS NOT PER-PAGE. Smart Resize hands
+   * back a document with new width and height, and a design whose front is
+   * 1050 × 600 and whose back is 1275 × 1650 is not a design. So a width or
+   * height that moved is written to the design AND the other sides are
+   * re-anchored through the same `smartResize` this one went through — rather
+   * than left at the old coordinates, which is the silent version of the same
+   * bug.
+   */
+  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+    const resized = next.width !== design.width || next.height !== design.height;
+    let base = design;
+    if (resized) {
+      base = { ...smartResize(design, next.width, next.height), width: next.width, height: next.height };
+    }
+    applyDesign(setPage(base, pageIndex, {
+      background_color: next.background_color,
+      background_gradient: next.background_gradient,
+      layers: next.layers,
+    }), mergeKey);
+  }, [applyDesign, design, pageIndex]);
 
   /** A whole new scene — a template opened, a design loaded. The stack restarts
    *  so undo can never walk backwards into a different design. */
   const replaceScene = useCallback((next: CanvasDoc, select: string | null = null) => {
     setHist(initHistory(next));
-    setDoc(next);
-    setSelectedId(select);
-  }, [setHist]);
+    setDesign(next);
+    setPageIndex(0);
+    selectOne(select);
+  }, [setHist, selectOne]);
 
   const doUndo = useCallback(() => {
     const n = undo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    // A step that removed the side you were looking at must not leave the
+    // editor pointing past the end of the design.
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
   const doRedo = useCallback(() => {
     const n = redo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
 
   /* ── Record state ────────────────────────────────────────────────────── */
@@ -244,7 +384,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     const result = insertWidget(kind, doc, brand, opts);
     if (!result.layers.length) return;
     apply(result.behind ? addLayersBehind(doc, result.layers) : addLayers(doc, result.layers));
-    setSelectedId(result.selectId);
+    selectOne(result.selectId);
   }, [apply, brand, doc]);
 
   const onInsert = useCallback((def: WidgetDef, count?: number) => {
@@ -253,13 +393,36 @@ export function StudioBuilder(p: StudioBuilderProps) {
         setChooser({ kind: "icon", title: "Which symbol?", options: null, placeholder: "icon" });
         return;
       case "shape":
+        /* TWO OPTIONS, not three. Line is its own tile now (the offer file
+           lists `shape` and `line` side by side in `canvas_pieces`), so
+           offering it here as well would be two doors to one widget. */
         setChooser({
           kind: "shape", title: "Which shape?", options: [
             { value: "rect", label: "Rectangle", hint: "A block for a headline to sit on" },
             { value: "ellipse", label: "Circle", hint: "A badge, a photo frame, a dot" },
-            { value: "line", label: "Line", hint: "A rule under a title" },
           ],
         });
+        return;
+      /* ── The three tiles that read the business's own data ───────────── */
+      case "custom_field":
+        /* THE BUSINESS GROUP AND ONLY IT, and the title says so out loud. The
+           offer file's Custom Field reads Customer / Service location /
+           Business; a design is made once and shown to everybody, so there is
+           no customer here to read (ask R-D4). */
+        setChooser({
+          kind: "custom_field", title: "Which fact about your business?",
+          options: BUSINESS_FIELDS.map((f) => ({
+            value: f.key,
+            label: f.label,
+            hint: brand.record[f.key] || `Not set yet — it will say "${f.placeholder || f.label}"`,
+          })),
+        });
+        return;
+      case "product_card":
+        setPickingProduct(true);
+        return;
+      case "ia_review":
+        setPickingReview(true);
         return;
       case "colour_block":
         setChooser({
@@ -291,28 +454,54 @@ export function StudioBuilder(p: StudioBuilderProps) {
         setChooserText(brand.websiteUrl || "https://");
         setChooser({ kind: "qr_code", title: "What should the code open?", options: null, placeholder: "https://yourbusiness.com/book" });
         return;
-      case "image":
-        setChooser({
-          kind: "image", title: "Where is the picture?", options: [
-            { value: "library", label: "From your Media Library", hint: "Pictures you have uploaded or generated" },
-            { value: "upload", label: "Upload one from this computer" },
-            { value: "placeholder", label: "Leave an empty slot for now" },
-          ],
-        });
-        return;
-      case "brand_logo":
-        if (brand.logoUrl) { place("brand_logo"); return; }
-        setChooser({
-          kind: "brand_logo", title: "You have not added a logo yet", options: [
-            { value: "upload", label: "Upload your logo now" },
-            { value: "placeholder", label: "Leave a space for it" },
-          ],
-        });
-        return;
+      /* `image` AND `brand_logo` ASKED "Where is the picture?" BEFORE THEY
+         LANDED, and they no longer do (2026-09-22). Elementor asks nothing
+         before an insert: an Image tile drops an Image, and *Choose Image* is
+         a control on the Content tab of the panel on the right. Ours is the
+         same — the tile drops an empty slot (or, for Your logo, the brand
+         kit's logo when there is one), and `ImageContent` in `LayerInspector`
+         offers "Put a picture in this slot" and "Upload", which is where the
+         deleted Upload / Library row's job went. */
       default:
         place(def.kind, { count });
     }
   }, [brand, place]);
+
+  /* THE TWO PICKERS. Each one reads the platform's own list — the OLIVER
+     catalogue and the SPARK Reviews hub — and hands ONE row to `insertWidget`
+     as plain words. Same shape as the QR code's round trip above: the adapter
+     talks to the API, the pure module places the layers. */
+  const [pickingProduct, setPickingProduct] = useState(false);
+  const [pickingReview, setPickingReview] = useState(false);
+
+  /**
+   * THE TWO LISTS, read when their picker opens and not before.
+   *
+   * On open and not on mount: a poster with no product card on it should not
+   * cost a catalogue call, and a business with no OLIVER should not have a
+   * failed request in its console for a tile it may never press. Both failures
+   * are silent and leave an empty list, which the picker says out loud.
+   */
+  const [catalogue, setCatalogue] = useState<CatalogueRow[] | null>(null);
+  const [reviews, setReviews] = useState<ReviewRow[] | null>(null);
+
+  useEffect(() => {
+    if (!pickingProduct || catalogue) return;
+    let cancelled = false;
+    void oliver.get<unknown>("/catalog/offerings?include_prices=1")
+      .then((r) => { if (!cancelled) setCatalogue(rowsOf<CatalogueRow>(r)); })
+      .catch(() => { if (!cancelled) setCatalogue([]); });
+    return () => { cancelled = true; };
+  }, [pickingProduct, catalogue, oliver]);
+
+  useEffect(() => {
+    if (!pickingReview || reviews) return;
+    let cancelled = false;
+    void spark.get<unknown>("/api/v1/reviews")
+      .then((r) => { if (!cancelled) setReviews(rowsOf<ReviewRow>(r)); })
+      .catch(() => { if (!cancelled) setReviews([]); });
+    return () => { cancelled = true; };
+  }, [pickingReview, reviews, spark]);
 
   const [qrBusy, setQrBusy] = useState(false);
   const answerChooser = useCallback(async (value: string) => {
@@ -330,12 +519,6 @@ export function StudioBuilder(p: StudioBuilderProps) {
       } finally {
         setQrBusy(false);
       }
-      return;
-    }
-    if (kind === "image" || kind === "brand_logo") {
-      if (value === "library") { setLibraryOpen(true); return; }
-      if (value === "upload") { fileInputRef.current?.click(); return; }
-      place(kind);
       return;
     }
     place(kind, { option: value });
@@ -356,19 +539,146 @@ export function StudioBuilder(p: StudioBuilderProps) {
     apply(patchLayer(doc, id, patch));
   }, [apply, doc]);
 
-  const deleteLayer = useCallback((id: string) => {
-    apply(removeLayer(doc, id));
-    if (selectedId === id) setSelectedId(null);
-  }, [apply, doc, selectedId]);
-
   const duplicate = useCallback((id: string) => {
     const r = duplicateLayer(doc, id);
     apply(r.doc);
-    if (r.id) setSelectedId(r.id);
+    if (r.id) selectOne(r.id);
+  }, [apply, doc, selectOne]);
+
+  /* ── Selecting more than one thing (G-01) ────────────────────────────── */
+
+  /**
+   * THE ONE PLACE A SELECTION IS DECIDED.
+   *
+   * Every surface that can change it — the canvas, the Structure window, a
+   * keyboard shortcut — comes through here, and here is where a group becomes
+   * the whole group. Doing that in the canvas would leave the Structure window
+   * showing half a group selected; doing it in both would be two rules to keep
+   * in step.
+   */
+  const changeSelection = useCallback((ids: string[]) => {
+    setSelectedIds(expandSelection(doc, ids));
+  }, [doc]);
+
+  /** A row in the Structure window: plain click, Ctrl-click, Shift-click. */
+  const selectFromStructure = useCallback((id: string, mode: "replace" | "additive" | "range") => {
+    if (mode === "replace") { changeSelection([id]); return; }
+    if (mode === "additive") {
+      const next = selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
+      changeSelection(next);
+      return;
+    }
+    // Range: everything between the last thing picked and this one, in stack
+    // order — which is what a person means by Shift-click in a list.
+    const order = doc.layers.map((l) => l.id);
+    const anchor = selectedIds.length ? order.indexOf(selectedIds[selectedIds.length - 1]) : -1;
+    const here = order.indexOf(id);
+    if (anchor < 0 || here < 0) { changeSelection([id]); return; }
+    const [lo, hi] = anchor <= here ? [anchor, here] : [here, anchor];
+    changeSelection(order.slice(lo, hi + 1));
+  }, [changeSelection, doc.layers, selectedIds]);
+
+  const selectedLayers = useMemo(
+    () => doc.layers.filter((l) => selectedIds.includes(l.id)),
+    [doc.layers, selectedIds],
+  );
+
+  /** Several boxes moved as one drag — ONE undo step, not one per member. */
+  const onManyGeometry = useCallback((patches: Array<{ id: string; patch: Partial<Layer> }>) => {
+    let next = doc;
+    for (const { id, patch } of patches) next = patchLayer(next, id, patch);
+    apply(next);
   }, [apply, doc]);
 
+  const deleteLayers = useCallback((ids: string[]) => {
+    let next = doc;
+    for (const id of ids) next = removeLayer(next, id);
+    apply(next);
+    setSelectedIds((cur) => cur.filter((id) => !ids.includes(id)));
+  }, [apply, doc]);
+
+  const doGroup = useCallback((ids: string[]) => {
+    const r = groupLayers(doc, ids);
+    if (!r.groupId) return;
+    apply(r.doc);
+  }, [apply, doc]);
+
+  /* ── Copy the look (G-13) ────────────────────────────────────────────── */
+  const [copiedStyle, setCopiedStyle] = useState<CopiedStyle | null>(null);
+  const copyStyle = useCallback((id: string) => {
+    setCopiedStyle(copyStyleOf(doc.layers.find((l) => l.id === id) || null));
+  }, [doc.layers]);
+  const applyCopiedStyle = useCallback((ids: string[]) => {
+    if (!copiedStyle) return;
+    apply(pasteStyle(doc, ids, copiedStyle));
+  }, [apply, copiedStyle, doc]);
+
+  /* ── The floating Structure window (G-19, §11.13.1) ──────────────────── */
+  const [structureOpen, setStructureOpen] = useState(false);
+
   /* ── Pictures ────────────────────────────────────────────────────────── */
+  /**
+   * WHICH SLOT A PICTURE IS FOR (R2-C).
+   *
+   * Null means "no slot in particular" and a picture lands as a new centred
+   * layer, exactly as it always did. An id means the author pressed "Put a
+   * picture in this slot" on a cell of a photo grid, and what comes back fills
+   * THAT cell — keeping its box, its corners, its crop shape and its border,
+   * because those are the layout and the picture is only its contents.
+   */
+  /**
+   * WHERE THE CANVAS GETS A LIBRARY PICTURE FROM (R2-A).
+   *
+   * `fabricBridge` must not know about tenants or auth, and the blob host will
+   * not answer a CORS request — so the bridge asks THIS for the bytes, and it
+   * asks LUMEN, with the same headers every other call carries. Registered here
+   * because this is where the API client lives, and asserted to be registered
+   * by the suite, because a seam that silently falls back hides the defect it
+   * was built for.
+   */
+  useEffect(() => {
+    setAssetBytesResolver(async (assetId: string) => {
+      const r = await get<{ dataUrl?: string }>(`/api/v1/my-brand/assets/${assetId}/bytes`);
+      return r?.dataUrl || null;
+    });
+    return () => setAssetBytesResolver(null);
+  }, [get]);
+
+  const [slotTarget, setSlotTarget] = useState<string | null>(null);
+  const openSlotPicker = useCallback((id: string) => {
+    setSlotTarget(id);
+    setLibraryOpen(true);
+  }, []);
+
+  /** The same slot, from a file on this machine — the library may be empty. */
+  const uploadToSlot = useCallback((id: string) => {
+    setSlotTarget(id);
+    fileInputRef.current?.click();
+  }, []);
+
   const placeAsset = useCallback((asset: PickerAsset) => {
+    /**
+     * A SLOT IS FILLED, NOT COVERED.
+     *
+     * The target is the slot the author asked to fill; failing that, the
+     * EMPTY picture layer they have selected — because clicking a grid cell
+     * and then picking a picture can only mean one thing, and round 2 answered
+     * it by dropping a second picture in the middle of the design instead.
+     */
+    const target = slotTarget
+      ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+      : isEmptySlot(selected) ? selected : null;
+    if (target && asset.url) {
+      apply(fillPictureSlot(doc, target.id, {
+        src: asset.url,
+        asset_id: asset.asset_id,
+        blob_ref: asset.blob_ref,
+      }));
+      selectOne(target.id);
+      setSlotTarget(null);
+      setLibraryOpen(false);
+      return;
+    }
     const maxSide = Math.min(doc.width, doc.height) * 0.6;
     const aw = asset.width_px || 800;
     const ah = asset.height_px || 800;
@@ -382,9 +692,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
       rotation: 0, visible: true,
     };
     apply(addLayers(doc, [layer]));
-    setSelectedId(layer.id);
+    selectOne(layer.id);
     setLibraryOpen(false);
-  }, [apply, doc]);
+  }, [apply, doc, selected, slotTarget]);
 
   const onUploadImage = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -401,11 +711,22 @@ export function StudioBuilder(p: StudioBuilderProps) {
           return;
         }
       } catch { /* fall through to a local-only layer */ }
+      // The upload did not reach the library, but the author still asked for a
+      // picture IN A SLOT — so it goes in the slot, as the bytes they chose.
+      const target = slotTarget
+        ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+        : isEmptySlot(selected) ? selected : null;
+      if (target) {
+        apply(fillPictureSlot(doc, target.id, { src: dataUrl }));
+        selectOne(target.id);
+        setSlotTarget(null);
+        return;
+      }
       place("image", { imageSrc: dataUrl });
     };
     reader.readAsDataURL(file);
     e.target.value = "";
-  }, [place, placeAsset, post]);
+  }, [apply, doc, place, placeAsset, post, selected, slotTarget]);
 
   const [bgRemoveBusy, setBgRemoveBusy] = useState(false);
   const [bgRemoveError, setBgRemoveError] = useState<string | null>(null);
@@ -428,6 +749,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
   }, [apply, doc, post]);
 
   /* ── Ask for words / a picture ───────────────────────────────────────── */
+  /* ONE DOOR, IN THE BAR (D-172). This used to be a box living in the left
+     panel; the panel is the Elements panel now, so the same two actions sit
+     behind the bar's Ask ARGUS button, in a dialog over the canvas. */
+  const [askOpen, setAskOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState<"write" | "image" | null>(null);
   const [aiOptions, setAiOptions] = useState<string[]>([]);
@@ -454,7 +779,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       const r = insertWidget("heading", doc, brand);
       const layers = r.layers.map((l) => (l.kind === "text" ? { ...l, content: textValue } : l));
       apply(addLayers(doc, layers as Layer[]));
-      setSelectedId(r.selectId);
+      selectOne(r.selectId);
     }
     setAiOptions([]); setAiPrompt("");
   }, [apply, brand, doc, selected]);
@@ -480,7 +805,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
     if (!ready) return null;
     setSaving(true); setSaveError(null);
     try {
-      const body = { canvas: doc, name: designName };
+      // The WHOLE design is saved, every side of it — `doc` is only the side
+      // on screen, and saving that would quietly throw the back of the card away.
+      const body = { canvas: design, name: designName };
       const saved = currentDesignId
         ? await put<DesignDto>(`/api/v1/my-brand/designs/${currentDesignId}`, body)
         : await post<DesignDto>("/api/v1/my-brand/designs", body);
@@ -497,7 +824,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     } finally {
       setSaving(false);
     }
-  }, [currentDesignId, designName, doc, p, post, put, ready]);
+  }, [currentDesignId, design, designName, p, post, put, ready]);
 
   /** §7: open one, adjust it, SAVE AS A NEW TEMPLATE. */
   const [templateName, setTemplateName] = useState("");
@@ -508,7 +835,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     setTemplateBusy(true); setTemplateError(null);
     try {
       const created = await post<TemplateDto>("/api/v1/my-brand/templates", {
-        name, kind: kindForSize(doc), canvas: doc,
+        name, kind: kindForSize(doc), canvas: design,
       });
       if (!created?.template_id) throw new Error("the template was not saved");
       setSaveTemplateOpen(false);
@@ -538,17 +865,62 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const exportLocal = useCallback(async (format: "png" | "jpg" | "svg" | "pdf") => {
     setExporting(format); setExportError(null);
     try {
+      /**
+       * A DOWNLOAD REFUSES RATHER THAN DROPPING A SLOT (parity D-6).
+       *
+       * Round 1: *"'Leave an empty slot for now' draws a grey slot with
+       * instructions on the canvas and writes no ink into the PNG."* The
+       * author does not find out until the file is at the printer.
+       *
+       * The two honest answers were export the slot or refuse; exporting it
+       * ships a grey instruction box in a customer's flyer, so it refuses, by
+       * name, in the same sentence LUMEN's own export refuses with
+       * (`scene.emptySlotMessage` and `templateStudio.emptySlotMessage`
+       * produce the same words).
+       *
+       * Checked against the WHOLE design, not the visible side: page two's
+       * empty slot is just as missing.
+       */
+      const blocked = emptySlotMessage(design);
+      if (blocked) throw new Error(blocked);
+      /**
+       * A PHOTOGRAPH THAT POISONED THE WHOLE DOWNLOAD (round-3 R2-A).
+       *
+       * Six of the ten reference designs could not be downloaded at all: PNG,
+       * JPG and PDF each died with the browser's own "Tainted canvases may not
+       * be exported", which tells an author nothing and offers them nothing.
+       *
+       * `fabricBridge` now asks every picture's host for permission, so the
+       * ordinary case simply works. This is the case where a host refuses:
+       * rather than let the browser throw, the design says which pictures and
+       * where to go instead. An SVG carries the picture by reference and never
+       * reads the canvas back, so it is not refused.
+       */
+      if (format !== "svg") {
+        const dirty = taintedIn(design.layers.concat(...(design.pages || []).map((pg) => pg.layers)));
+        if (dirty.length) throw new Error(taintMessage(dirty.length));
+      }
       if (format === "svg") {
         const svg = canvasRef.current?.toSVG();
         if (!svg) throw new Error("the design could not be drawn");
         const href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         download(href, exportFilename(designName, "svg"));
       } else if (format === "pdf") {
-        // One page, the artboard's real size, the SAME picture the PNG download
-        // gets — see pdf.ts. No library, no server round trip.
-        const url = canvasRef.current?.toDataURL("png");
-        if (!url) throw new Error("the design could not be drawn");
-        const bytes = await imagePdfFromPngDataUrl(url, pageSize, designName);
+        // EVERY side, each at the artboard's real size, the SAME picture the
+        // PNG download gets — see pdf.ts. No library, no server round trip.
+        //
+        // The side on screen is captured from the live canvas, exactly as it
+        // always was; the others are drawn off screen. A one-page design
+        // therefore takes the identical path it took before pages existed.
+        const urls: string[] = [];
+        for (let i = 0; i < pages; i++) {
+          const url = i === pageIndex
+            ? canvasRef.current?.toDataURL("png")
+            : await canvasRef.current?.renderPage(docForPage(design, i));
+          if (!url) throw new Error(`page ${i + 1} could not be drawn`);
+          urls.push(url);
+        }
+        const bytes = await imagePdfFromPngDataUrls(urls, pageSize, designName);
         const href = URL.createObjectURL(new Blob([bytes], { type: PDF_MIME }));
         download(href, exportFilename(designName, "pdf"));
         // Freed on a timer, not immediately: revoking before the anchor's click
@@ -565,7 +937,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       setExporting(null);
       setExportOpen(false);
     }
-  }, [designName, download, pageSize]);
+  }, [design, designName, download, pageIndex, pages, pageSize]);
 
   /** Render server-side into the Media Library, and go and look at it. */
   const exportToLibrary = useCallback(async () => {
@@ -620,14 +992,57 @@ export function StudioBuilder(p: StudioBuilderProps) {
         duplicate(selectedId);
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedId) {
+      /**
+       * Ctrl+I opens Structure — §11.13.1 names that key for every builder.
+       *
+       * IT WORKS WITH THE CARET IN A FIELD (parity D-7). Round 1: *"After
+       * typing an X into Advanced, the shortcut is swallowed by the typing
+       * guard. The toolbar button works; the shortcut card promises the key."*
+       *
+       * The typing guard is right for Ctrl+Z, Ctrl+D and Delete, because each
+       * of those means something ELSE inside a text field — undo the typing,
+       * delete the character. Opening a window means the same thing wherever
+       * the caret is, and Ctrl+I is not a field shortcut in any browser (the
+       * one page context that claims it, rich-text italic, is not a thing this
+       * inspector has). So the guard does not apply to it.
+       *
+       * The field is blurred first: leaving the caret in a number box while a
+       * floating window takes focus is how a half-typed X gets abandoned.
+       */
+      if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
-        deleteLayer(selectedId);
+        if (typing && t) t.blur();
+        setStructureOpen((v) => !v);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "g") {
+        if (typing || !selectedIds.length) return;
+        e.preventDefault();
+        if (e.shiftKey) apply(ungroupLayers(doc, selectedIds));
+        else doGroup(selectedIds);
+        return;
+      }
+      // Arrow-key nudge: one pixel, ten with Shift, the same as every design
+      // tool. Not wired before, and it is what "move it two pixels left"
+      // actually needs — a drag cannot do two pixels.
+      if (!typing && !mod && selectedIds.length &&
+          (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        // One undo step per burst of taps on the same arrow, not one per tap.
+        apply(nudgeLayers(doc, selectedIds, dx, dy), `nudge:${selectedIds.join(",")}`);
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedIds.length) {
+        e.preventDefault();
+        deleteLayers(selectedIds);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayer, selectedId]);
+  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayers, doGroup, apply, doc, selectedId, selectedIds]);
 
   const errorMessage = saveError ? `Could not save: ${saveError}`
     : exportError ? `Could not export: ${exportError}`
@@ -649,8 +1064,42 @@ export function StudioBuilder(p: StudioBuilderProps) {
         canRedo={canRedo(history)}
         onUndo={doUndo}
         onRedo={doRedo}
+        /* OUR ANGIE, IN THE BAR AND NOWHERE ELSE (D-172). The studio's own AI
+           — three written options for the words, or a generated picture — is
+           what the panel's "Ask for it" box did; this is the same two actions
+           behind the same one door every other builder's AI is behind. */
+        askArgus={
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS"
+            aria-label="Ask ARGUS"
+            /* ARGUS's own gold as a Tailwind arbitrary class, never as a style
+               VALUE: `test/brand-kit.test.mjs`'s grep draws exactly that line —
+               our control chrome may carry our colour, a business's brand may
+               only come out of the kit — and the studio is a brand consumer. */
+            className="text-[#FEC82C]"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
+          </button>
+        }
         headerActions={
           <>
+            {/* ADD TEMPLATE — the reference's folder, and the studio's own
+                counterpart of the proposal builder's add-area folder button.
+                The studio's canvas is absolute pixels and has no add area, so
+                the folder lives in the bar; it opens the SAME gallery the
+                studio opens on when there is nothing on the page yet
+                (§7, "never a blank page"). */}
+            <button type="button" data-studio-templates
+              title="Add Template" aria-label="Add Template"
+              onClick={() => setGalleryOpen(true)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/20 bg-transparent text-white hover:bg-white/10"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
             {saving ? (
               <span className="text-[11px] text-white/60">Saving…</span>
             ) : lastSavedAt && !saveError ? (
@@ -699,14 +1148,22 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </IadmButton>
           </div>
         }
-        /* THE PANE'S `header` SLOT IS GONE (§11.13.1, D-165, stream 1): the
-           left panel is the widgets panel and nothing else. These are the
-           studio's own insert tools — the shape chooser, the chart, the AI
-           box — so they sit ABOVE the widget list rather than inside its
-           component. Whether they belong here at all is this adapter's own
-           call; the request is in D165_HANDOFF_2026-09-19.md. */
+        /* THE LEFT PANEL IS THE ELEMENTS PANEL (D-165 item 1, D-172 law 1).
+           The shared `WidgetPane` over the registry, `adapter="brand"`,
+           exactly as the other four builders draw it, showing the tiles
+           `BUILDER_OFFERS_2026-09-19.json` gives `builders.mybrand` and
+           nothing else. The studio's own furniture that used to sit above it
+           is DELETED — see the note where `StudioPaneHeader` was.
+
+           The ONE thing that may still appear over the tiles is a question
+           being asked THIS SECOND (Which shape? What should the code open?),
+           and only while it is being asked: the strip is not drawn at all
+           otherwise, so an author who is not mid-insert sees the panel and
+           nothing above it. The reference does the same when it replaces the
+           panel with "Select your structure". */
         pane={
           <>
+            {chooser && (
             <div style={{ borderBottom: "1px solid #E2E8F0", padding: 12 }}>
               <>
               {/* D-36: "Which shape?" opened a SECOND full-screen modal over
@@ -748,18 +1205,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   </div>
                 </div>
               )}
-              <StudioPaneHeader
-                onOpenGallery={() => setGalleryOpen(true)}
-                onUpload={() => fileInputRef.current?.click()}
-                onLibrary={() => setLibraryOpen(true)}
-                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); setSelectedId(l.id); }}
-                ai={{
-                  prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
-                  setPrompt: setAiPrompt, write: () => void aiWrite(), generate: () => void aiGenerate(), apply: aiApply,
-                }}
-              />
               </>
             </div>
+            )}
             <div style={{ minHeight: 0, flex: 1 }}>
               <WidgetPane adapter="brand" onInsert={onInsert} />
             </div>
@@ -770,13 +1218,25 @@ export function StudioBuilder(p: StudioBuilderProps) {
             doc={doc}
             brand={brand}
             selected={selected}
-            onSelect={setSelectedId}
+            selectedLayers={selectedLayers}
             onUpdate={updateLayer}
-            onDelete={deleteLayer}
+            onDelete={deleteLayers}
             onDuplicate={duplicate}
             onReorder={(id, d) => apply(reorderLayer(doc, id, d))}
+            onToEdge={(ids, edge) => apply(moveLayersToEdge(doc, ids, edge))}
             onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
-            onAlign={(id, which) => apply(alignLayer(doc, id, which))}
+            onAlign={(ids, which) => apply(alignLayers(doc, ids, which))}
+            onDistribute={(ids, axis) => apply(distributeLayers(doc, ids, axis))}
+            onTidy={(ids) => apply(tidyUp(doc, ids))}
+            onGroup={doGroup}
+            onUngroup={(ids) => apply(ungroupLayers(doc, ids))}
+            onCopyStyle={copyStyle}
+            onPasteStyle={applyCopiedStyle}
+            onSelectionBox={(ids, box) => apply(setSelectionBox(doc, ids, box))}
+            onTurnSelection={(ids, to, from) => apply(turnSelection(doc, ids, to, from))}
+            onFillSlot={openSlotPicker}
+            onUploadToSlot={uploadToSlot}
+            copiedStyleKind={copiedStyle?.kind ?? null}
             onFixContrast={(id) => apply(fixTextContrast(doc, id))}
             onSetBackground={(c) => apply(setBackgroundColor(doc, c))}
             onBrandSync={() => apply(brandSync(doc, brandSwatches(brand).map((s) => s.colour)))}
@@ -799,22 +1259,130 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={onUploadImage} className="hidden" />
+          {/*
+            THE PAGE STRIP (G-09).
+            It is drawn only once there is more than one side, or once somebody
+            has hovered the Add-a-side button into existence — a single-page
+            poster should not carry a page rail it will never use. Canva puts
+            the same strip under the canvas and so does this.
+          */}
+          <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5 text-[10px]">
+            {Array.from({ length: pages }, (_, i) => (
+              <div key={i} className="group flex items-center">
+                <button
+                  type="button"
+                  data-page-tab={i}
+                  onClick={() => { setPageIndex(i); selectOne(null); }}
+                  title={pages === 2 ? (i === 0 ? "The front" : "The back") : `Side ${i + 1} of ${pages}`}
+                  className={"rounded-l border px-2 py-1 font-semibold " + (i === pageIndex
+                    ? "border-slate-800 bg-slate-800 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}
+                >
+                  {pages === 2 ? (i === 0 ? "Front" : "Back") : `Side ${i + 1}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const out = duplicatePage(design, i);
+                    applyDesign(out.doc);
+                    setPageIndex(out.index);
+                    selectOne(null);
+                  }}
+                  disabled={pages >= MAX_PAGES}
+                  title="Make a copy of this side"
+                  className="border-y border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700 disabled:text-slate-200"
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyDesign(removePage(design, i));
+                    setPageIndex((cur) => Math.min(cur, pages - 2));
+                    selectOne(null);
+                  }}
+                  disabled={pages <= 1}
+                  title={pages <= 1 ? "A design has to have one side" : "Delete this side"}
+                  className="rounded-r border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-red-600 disabled:text-slate-200"
+                >
+                  <Trash2 className="h-2.5 w-2.5" />
+                </button>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { applyDesign(movePage(design, i, i - 1)); setPageIndex(i - 1); }}
+                    title="Move this side earlier"
+                    className="ml-0.5 rounded border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700"
+                  >
+                    ←
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              data-add-page
+              onClick={() => {
+                const out = addPage(design);
+                applyDesign(out.doc);
+                setPageIndex(out.index);
+                selectOne(null);
+              }}
+              disabled={pages >= MAX_PAGES}
+              title={pages >= MAX_PAGES
+                ? `A design can have up to ${MAX_PAGES} sides`
+                : "Add another side — the back of a card, the second page of a flyer. Every side is the same size, and the PDF download carries them all."}
+              className="ml-1 inline-flex items-center gap-1 rounded border border-dashed border-slate-300 px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 disabled:text-slate-300"
+            >
+              <Plus className="h-2.5 w-2.5" /> Add a side
+            </button>
+          </div>
           <div className="min-h-0 flex-1">
             <PixelCanvas
               ref={canvasRef}
               doc={doc}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedIds={selectedIds}
+              onSelect={changeSelection}
               onLayerGeometry={onGeometry}
+              onManyGeometry={onManyGeometry}
+              overlay={
+                <StructureWindow
+                  open={structureOpen}
+                  onClose={() => setStructureOpen(false)}
+                  layers={doc.layers}
+                  selectedIds={selectedIds}
+                  onSelect={selectFromStructure}
+                  onMove={(id, toIndex) => apply(moveLayerToIndex(doc, id, toIndex))}
+                  onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
+                  onToggleLock={(id) => {
+                    const l = doc.layers.find((x) => x.id === id);
+                    if (l) apply(patchLayer(doc, id, { locked: l.locked !== true }));
+                  }}
+                />
+              }
               toolbar={
                 <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 shadow-sm">
                   <button
                     type="button"
-                    onClick={() => setResizeOpen(true)}
-                    title="Resize this design for another platform — everything re-anchors itself"
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                    data-structure-toggle
+                    onClick={() => setStructureOpen((v) => !v)}
+                    title="Structure — the list of everything on this design, as a window you can drag out of the way (⌘/Ctrl+I)"
+                    className={"inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold hover:bg-slate-100 " +
+                      (structureOpen ? "bg-slate-100 text-slate-900" : "text-slate-700")}
                   >
-                    <Scaling className="h-3 w-3" /> Resize
+                    <Layers className="h-3 w-3" /> Structure
+                  </button>
+                  <div className="h-4 w-px bg-slate-200" />
+                  <button
+                    type="button"
+                    onClick={hasProTools ? () => setResizeOpen(true) : undefined}
+                    disabled={!hasProTools}
+                    title={hasProTools
+                      ? "Resize this design for another platform, or a size of your own — everything re-anchors itself"
+                      : "Resizing a finished design is a Pro feature"}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    <Scaling className="h-3 w-3" /> Resize{!hasProTools && " · Pro+"}
                   </button>
                   <div className="h-4 w-px bg-slate-200" />
                   <button
@@ -903,23 +1471,130 @@ export function StudioBuilder(p: StudioBuilderProps) {
         </IadmModal>
       )}
 
-      {libraryOpen && <AssetPickerModal onClose={() => setLibraryOpen(false)} onPick={placeAsset} />}
+      {/* PRODUCT CARD — one real offering from the OLIVER catalogue. */}
+      {pickingProduct && (
+        <IadmModal open size="info" product="oliver"
+          eyebrow="OLIVER · Products & services"
+          title="Which product?"
+          onClose={() => setPickingProduct(false)}>
+          <div style={{ padding: 16 }} data-studio-productpicker>
+            {catalogue === null && <div className="text-xs text-slate-500">Reading your catalogue…</div>}
+            {catalogue?.length === 0 && (
+              <div className="text-xs text-slate-600">
+                Nothing in your catalogue yet. Add a product or service in OLIVER and it will be here.
+              </div>
+            )}
+            <div className="space-y-1">
+              {(catalogue || []).map((o) => (
+                <button key={o.offering_id} type="button"
+                  data-studio-product={o.offering_id}
+                  title={`Put ${o.name} on the design`}
+                  onClick={() => {
+                    setPickingProduct(false);
+                    place("product_card", { product: productWords(o) });
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-[#EF6C33]">
+                  <span className="font-semibold text-slate-800">{o.name}</span>
+                  <span className="tabular-nums text-slate-500">{productWords(o).price}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </IadmModal>
+      )}
+
+      {/* IA REVIEW — one real review from the SPARK Reviews hub. */}
+      {pickingReview && (
+        <IadmModal open size="info" product="spark"
+          eyebrow="SPARK · Reviews"
+          title="Which review?"
+          onClose={() => setPickingReview(false)}>
+          <div style={{ padding: 16 }} data-studio-reviewpicker>
+            {reviews === null && <div className="text-xs text-slate-500">Reading your reviews…</div>}
+            {reviews?.length === 0 && (
+              <div className="text-xs text-slate-600">
+                No reviews have come in yet. Connect Google in SPARK and they will be here.
+              </div>
+            )}
+            <div className="space-y-1">
+              {(reviews || []).filter((r) => (r.body || "").trim()).slice(0, 40).map((r) => (
+                <button key={r.id} type="button"
+                  data-studio-review={r.id}
+                  title="Put this review on the design"
+                  onClick={() => {
+                    setPickingReview(false);
+                    place("ia_review", { review: reviewWords(r) });
+                  }}
+                  className="block w-full rounded border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-[#EF6C33]">
+                  <span className="block font-semibold text-slate-800">
+                    {"\u2605".repeat(Math.max(0, Math.min(5, Math.round(r.rating || 0))))} {r.reviewer_name || "Anonymous"}
+                  </span>
+                  <span className="block truncate text-slate-500">{r.body}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </IadmModal>
+      )}
+
+      {libraryOpen && <AssetPickerModal onClose={() => { setLibraryOpen(false); setSlotTarget(null); }} onPick={placeAsset} />}
+
+      {/* ASK ARGUS — what the panel's "Ask for it" box did, behind the bar's
+          one door. The same two calls, the same credits, the same words. */}
+      {askOpen && (
+        <IadmModal
+          open size="info" product="spark"
+          title="Ask ARGUS"
+          onClose={() => { setAskOpen(false); setAiError(null); }}
+        >
+          <div style={{ padding: 16 }} data-studio-ask>
+            <textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder={PROMPT_PLACEHOLDER}
+              title="Describe what you want in plain words"
+              aria-label="Describe what you want"
+              rows={3}
+              className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-xs focus:border-[#EF6C33] focus:outline-none"
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <IadmButton variant="ghost" disabled={!aiPrompt.trim() || !!aiBusy}
+                title="Write three options for the words — costs 1 credit"
+                onClick={() => void aiWrite()}>
+                {aiBusy === "write" ? "Writing…" : "Write copy · 1cr"}
+              </IadmButton>
+              <IadmButton variant="accent" product="spark" disabled={!aiPrompt.trim() || !!aiBusy}
+                title="Make a picture from your description — costs 8 credits"
+                onClick={() => void aiGenerate()}>
+                {aiBusy === "image" ? "Making…" : "Make image · 8cr"}
+              </IadmButton>
+            </div>
+            {aiError && <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{aiError}</div>}
+            {aiOptions.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {aiOptions.map((o, i) => (
+                  <button
+                    key={i} type="button" onClick={() => { aiApply(o); setAskOpen(false); }} title="Use these words"
+                    className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-xs text-slate-700 hover:border-[#EF6C33]"
+                  >
+                    {o}
+                  </button>
+                ))}
+                <div className="text-[10px] text-slate-400">Click one — it replaces the selected words, or drops in fresh.</div>
+              </div>
+            )}
+          </div>
+        </IadmModal>
+      )}
 
       {resizeOpen && (
         <IadmModal
           open onClose={() => setResizeOpen(false)} product="spark"
           eyebrow="MY BRAND · DESIGN STUDIO" title="Resize this design"
-          subtitle={hasProTools
-            ? "Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
-            : "Resizing a finished design is a Pro feature."}
+          subtitle="Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
           size="nav"
         >
-          <div className="p-5">
-            {!hasProTools && (
-              <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
-                Upgrade to Pro to resize one design for every platform in a click.
-              </div>
-            )}
+          <div className="max-h-[60vh] overflow-y-auto p-5">
             <div className="grid grid-cols-2 gap-2">
               {SIZE_PRESETS.map((s) => {
                 const activeSize = doc.width === s.w && doc.height === s.h;
@@ -927,13 +1602,12 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   <button
                     key={s.key}
                     type="button"
-                    disabled={!hasProTools || activeSize}
+                    disabled={activeSize}
                     title={activeSize ? "This is the size you are on" : `Resize to ${s.label}, ${s.w}×${s.h}`}
                     onClick={() => { apply(smartResize(doc, s.w, s.h)); setResizeOpen(false); }}
                     className={`flex items-center justify-between rounded-lg border-2 px-3 py-2 text-left text-xs transition-colors ${
                       activeSize ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
-                        : hasProTools ? "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-                          : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
                     }`}
                   >
                     <span className="font-semibold">{s.label}</span>
@@ -942,6 +1616,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 );
               })}
             </div>
+            <CustomSize
+              width={doc.width}
+              height={doc.height}
+              onApply={(w, h) => { apply(smartResize(doc, w, h)); setResizeOpen(false); }}
+            />
           </div>
         </IadmModal>
       )}
@@ -1014,99 +1693,177 @@ export function StudioBuilder(p: StudioBuilderProps) {
    Pane header — the things that are not "add a widget"
    ══════════════════════════════════════════════════════════════════════════ */
 
-interface AiPaneState {
-  prompt: string;
-  busy: "write" | "image" | null;
-  options: string[];
-  error: string | null;
-  setPrompt: (v: string) => void;
-  write: () => void;
-  generate: () => void;
-  apply: (text: string) => void;
-}
+/* `AiPaneState` AND `StudioPaneHeader` LIVED HERE and are DELETED
+   (2026-09-22, D-165 item 1 / D-172 law 1). They drew the studio's OWN
+   furniture at the top of the left panel - a *Start from a template* button,
+   an Upload / Library / Chart row and an **Ask for it** box with *Write copy
+   1cr* and *Make image 8cr*. The left panel is the Elements panel: the tiles
+   the offer file gives My Brand, in Elementor's groups, and nothing else.
+   Where each piece went is written beside its new home:
 
-function StudioPaneHeader({ onOpenGallery, onUpload, onLibrary, onChart, ai }: {
-  onOpenGallery: () => void;
-  onUpload: () => void;
-  onLibrary: () => void;
-  onChart: () => void;
-  ai: AiPaneState;
+     Start from a template  -> the bar's folder button, titled Add Template,
+                               which is where the reference puts it, and the
+                               studio's counterpart of the proposal builder's
+                               add-area folder. It opens the same gallery.
+     Upload / Library       -> the Picture's own Content controls on the RIGHT
+                               (`ImageContent` in LayerInspector: "Put a
+                               picture in this slot" and "Upload"), which
+                               already existed, so the row was a second door
+                               to a job already done once.
+     Chart                  -> DELETED, and nothing replaces it. The offer
+                               file gives My Brand nineteen things and a chart
+                               is not one of them; Elementor has no chart
+                               widget either, and THE SCREEN LAW's rule is
+                               that what the reference does not have is not on
+                               our screen. The chart LAYER keeps its renderer,
+                               its inspector and its exporters, so a design
+                               already carrying one still opens and draws. A
+                               chart tile is an IA-twin question for Brandon
+                               and is written up in the handoff.
+     Ask for it             -> the bar's Ask ARGUS (D-172: one door to the AI,
+                               in the bar and nowhere else). The same two
+                               actions and the same credits, in the dialog
+                               that button opens. */
+
+/**
+ * A size of your own (G-11).
+ *
+ * The ratio lock is the whole reason this is not two boxes: the common job is
+ * "the same poster, but A3", and typing one number and having the other follow
+ * is what keeps a design from being squashed by a typo. The sides are clamped
+ * to what the SERVER will render — an export refuses over 6000 px a side, and
+ * a design authored at 8000 would be a design that can never be downloaded.
+ */
+function CustomSize({ width, height, onApply }: {
+  width: number; height: number; onApply: (w: number, h: number) => void;
 }) {
+  const [w, setW] = useState(String(width));
+  const [h, setH] = useState(String(height));
+  const [lock, setLock] = useState(false);
+  const ratio = height > 0 ? width / height : 1;
+  const cw = clampCanvasSide(w);
+  const ch = clampCanvasSide(h);
+  const unchanged = cw === width && ch === height;
   return (
-    <div className="space-y-2">
-      <button
-        type="button"
-        onClick={onOpenGallery}
-        title="Start from a template — every one opens already in your brand"
-        className="flex w-full items-center justify-center gap-1.5 rounded bg-slate-800 px-2 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
-      >
-        <LayoutTemplate className="h-3.5 w-3.5" /> Start from a template
-      </button>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        <SmallTool icon={<Upload className="h-3.5 w-3.5" />} label="Upload" title="Put a picture from this computer on the design" onClick={onUpload} />
-        <SmallTool icon={<ImageIcon className="h-3.5 w-3.5" />} label="Library" title="Place a picture you already have in your Media Library" onClick={onLibrary} />
-        <SmallTool icon={<BarChart3 className="h-3.5 w-3.5" />} label="Chart" title="Type numbers and get a chart in your brand colours" onClick={onChart} />
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">A size of your own</div>
+      <div className="flex items-end gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Wide
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={w}
+            title={`How wide, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom width in pixels"
+            data-custom-width
+            onChange={(e) => {
+              setW(e.target.value);
+              if (lock) setH(String(clampCanvasSide(Number(e.target.value) / (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Tall
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={h}
+            title={`How tall, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom height in pixels"
+            data-custom-height
+            onChange={(e) => {
+              setH(e.target.value);
+              if (lock) setW(String(clampCanvasSide(Number(e.target.value) * (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+          title="Keep the same shape — change one side and the other follows"
+        >
+          <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
+          Keep the shape
+        </label>
+        <button
+          type="button"
+          disabled={unchanged}
+          onClick={() => onApply(cw, ch)}
+          title={unchanged ? "That is the size you are already on" : `Resize to ${cw}×${ch}`}
+          className="ml-auto rounded bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          Resize
+        </button>
       </div>
-
-      <div className="rounded border border-slate-200 bg-slate-50 p-2">
-        <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-          <Sparkles className="h-3 w-3 text-[#EF6C33]" /> Ask for it
+      {(cw !== Number(w) || ch !== Number(h)) && (
+        <div className="mt-1.5 text-[10px] text-amber-700">
+          Sides are kept between {MIN_CANVAS_SIDE} and {MAX_CANVAS_SIDE} pixels — that is the biggest picture we can render for you.
         </div>
-        <textarea
-          value={ai.prompt}
-          onChange={(e) => ai.setPrompt(e.target.value)}
-          placeholder='Describe it — "punchy headline for our spring special" or "a golden retriever in a hard hat"'
-          title="Describe what you want in plain words"
-          aria-label="Describe what you want"
-          rows={3}
-          className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-[11px] focus:border-[#EF6C33] focus:outline-none"
-        />
-        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-          <button
-            type="button" onClick={ai.write} disabled={!ai.prompt.trim() || !!ai.busy}
-            title="Write three options for the words — costs 1 credit"
-            className="rounded bg-slate-800 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-slate-700 disabled:opacity-40"
-          >
-            {ai.busy === "write" ? "Writing…" : "Write copy · 1cr"}
-          </button>
-          <button
-            type="button" onClick={ai.generate} disabled={!ai.prompt.trim() || !!ai.busy}
-            title="Make a picture from your description — costs 8 credits"
-            className="rounded bg-[#EF6C33] px-2 py-1.5 text-[10px] font-bold text-white hover:bg-[#d75a25] disabled:opacity-40"
-          >
-            {ai.busy === "image" ? "Making…" : "Make image · 8cr"}
-          </button>
-        </div>
-        {ai.error && <div className="mt-1.5 rounded border border-red-200 bg-red-50 p-1.5 text-[10px] text-red-700">{ai.error}</div>}
-        {ai.options.length > 0 && (
-          <div className="mt-1.5 space-y-1">
-            {ai.options.map((o, i) => (
-              <button
-                key={i} type="button" onClick={() => ai.apply(o)} title="Use these words"
-                className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 hover:border-[#EF6C33]"
-              >
-                {o}
-              </button>
-            ))}
-            <div className="text-[9px] text-slate-400">Click one — it replaces the selected words, or drops in fresh.</div>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-function SmallTool({ icon, label, title, onClick }: { icon: React.ReactNode; label: string; title: string; onClick: () => void }) {
-  return (
-    <button
-      type="button" onClick={onClick} title={title} aria-label={title}
-      className="flex flex-col items-center justify-center gap-1 rounded border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold text-slate-700 hover:border-slate-800 hover:bg-slate-50"
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
+/* The tile renderer of the Upload / Library / Chart row went with the row. */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The two real lists, and the three strings each row becomes
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** One catalogue offering, as `/catalog/offerings?include_prices=1` returns it. */
+interface CatalogueRow {
+  offering_id: string;
+  name: string;
+  description?: string | null;
+  prices?: Array<{ unit_amount?: number; currency?: string; is_default?: boolean; label?: string | null }>;
+}
+
+/** One review, as SPARK's `/api/v1/reviews` returns it. */
+interface ReviewRow {
+  id: number;
+  reviewer_name?: string | null;
+  rating?: number | null;
+  body?: string | null;
+}
+
+/**
+ * A list out of a response that may or may not be wrapped.
+ *
+ * oliver's hook unwraps `{ data: … }` already and SPARK's does not, and a
+ * route that returns a bare array is a third shape. One reader rather than a
+ * guess per call site.
+ */
+function rowsOf<T>(r: unknown): T[] {
+  if (Array.isArray(r)) return r as T[];
+  const d = (r as { data?: unknown })?.data;
+  return Array.isArray(d) ? (d as T[]) : [];
+}
+
+/** An offering, as the three strings a card shows. */
+function productWords(o: CatalogueRow): { name: string; price: string; blurb: string } {
+  const price = (o.prices || []).find((x) => x.is_default) || (o.prices || [])[0];
+  const amount = typeof price?.unit_amount === "number" ? price.unit_amount : null;
+  return {
+    name: o.name || "",
+    /* The catalogue stores CENTS (oliver `catalog_price.unit_amount`), which is
+       why this divides: a card reading "$12900" is the bug that division
+       stops. A priceless offering shows nothing rather than "$0.00". */
+    price: amount === null ? "" : `$${(amount / 100).toFixed(2).replace(/\.00$/, "")}`,
+    blurb: (o.description || "").trim(),
+  };
+}
+
+/** A review, as the three things a graphic shows. */
+function reviewWords(r: ReviewRow): { quote: string; author: string; rating: number } {
+  const body = (r.body || "").trim();
+  return {
+    /* Long reviews are cut at a sentence boundary rather than mid-word: a
+       poster carries a line, not a paragraph, and "…the crew was extreme" is
+       worse than no quote at all. */
+    quote: body.length > 180 ? `${body.slice(0, 177).replace(/\s+\S*$/, "")}…` : body,
+    author: (r.reviewer_name || "").trim(),
+    rating: Math.max(0, Math.min(5, Math.round(r.rating || 5))),
+  };
 }
 
 function ExportOption({ icon, title, blurb, onClick, disabled, accent }: {
@@ -1192,7 +1949,7 @@ function AssetPickerModal({ onClose, onPick }: { onClose: () => void; onPick: (a
         ) : assets.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">
             <Layers className="mx-auto mb-2 h-5 w-5 text-slate-300" />
-            No pictures yet — upload one, or make one with “Ask for it”.
+            No pictures yet — upload one, or make one with Ask ARGUS.
           </div>
         ) : (
           <div className="grid grid-cols-4 gap-2">

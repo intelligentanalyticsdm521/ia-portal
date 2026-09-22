@@ -118,11 +118,12 @@ export const SOCIAL_ICONS_DEF: FamilyWidgetDef = {
   icon: "Share2",
   picture: pictureFrom(`<circle cx="18" cy="20" r="6" fill="#94A3B8" stroke="none"/><circle cx="32" cy="20" r="6" fill="#94A3B8" stroke="none"/><circle cx="46" cy="20" r="6" fill="#94A3B8" stroke="none"/>`),
   category: "General",
-  /* NOT `mybrand`: the studio places LAYERS and `adapters/mybrand/insert.ts`
-     has nothing for this kind, so the tile's press would put nothing on the
-     canvas. The offer guard reports it as missing for My Brand, which is true
-     (D-168 item 4). */
-  builders: ["website", "landing", "newsletter", "proposal"],
+  /* `mybrand` ADDED 2026-09-22. It said: *"the studio places LAYERS and
+     `adapters/mybrand/insert.ts` has nothing for this kind"* — it has one now,
+     a row of discs with each platform's mark knocked out of it, grouped. The
+     studio's older `social_handle` (one mark and the @name) is not in the offer
+     and is not a tile. */
+  builders: ["website", "landing", "newsletter", "proposal", "mybrand"],
   defaults: {
     social_icon_list: [], shape: "rounded", columns: 0, align: "left",
     icon_color: "default", icon_primary_color: "", icon_secondary_color: "",
