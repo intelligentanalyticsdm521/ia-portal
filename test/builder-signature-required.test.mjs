@@ -30,6 +30,7 @@ import { deserialise } from "../src/builder/model.ts";
 import { DOCUMENT_CSS, makeContext, renderDocument } from "../src/builder/render.ts";
 
 const PAGE = readFileSync(new URL("../src/pages/public/PublicProposalPage.tsx", import.meta.url), "utf8");
+const CONTROLS = readFileSync(new URL("../src/builder/definitionControls.tsx", import.meta.url), "utf8");
 
 const docWith = (props) => deserialise({
   v: 2,
@@ -78,6 +79,15 @@ describe("Required to accept — the switch that was already in the defaults", (
     assert.equal(isOn(defaultOf({ defaults: { flag: false } }, off, "desktop")), false);
     assert.equal(isOn(defaultOf({ defaults: {} }, off, "desktop")), false);
     assert.equal(defaultOf(undefined, off, "desktop"), undefined);
+  });
+
+  test("…and the Switcher in the panel is the thing that reads it", () => {
+    // `defaultOf` being right proves nothing if the panel does not ask it.
+    // There is ONE Switcher in the panel and this is the line that draws it.
+    assert.ok(CONTROLS.includes("on={isOn(valueOf(c) ?? defaultOf(p.def, c, p.device))}"),
+      "the panel's Switcher does not fall back to the widget's default");
+    assert.equal((CONTROLS.match(/on=\{isOn\(/g) || []).length, 1,
+      "there is a second on/off shape in the panel with rules of its own");
   });
 
   test("a phone or tablet twin falls back to its own device, not to a default", () => {
