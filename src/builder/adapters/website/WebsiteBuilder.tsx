@@ -30,9 +30,11 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { BuilderShell } from "../../BuilderShell";
 import { Canvas } from "../../Canvas";
 import {
-  addSection, makeSection, makeWidget, patchNode,
+  addSection, makeContainer, makeSection, makeWidget, patchNode,
   type BuilderDocument, type Selection, type Widget,
 } from "../../model";
+import { withLayer } from "../../style";
+import type { SectionLayout, StructurePreset } from "../../AddSection";
 import { makeContext, type RenderContext } from "../../render";
 import { arionKindOf, widgetsFor, type WidgetDef } from "../../registry";
 import type { PremadeSection } from "../../templates";
@@ -283,7 +285,46 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
 
   /* ── adding a section: the SERVER builds it ──────────────────────────── */
 
-  const addFromServer = useCallback(async (kind: string, at: number, count?: number, blueprintId?: string) => {
+  /**
+   * THE STRUCTURE THE AUTHOR PICKED (B-168 W-3, 2026-09-22).
+   *
+   * The add area hands back `(layout, preset)` — one column, 50/50, 33/33/33,
+   * 25/25/25/25, 33/66 — and this adapter took neither, so every section the
+   * author added was built by the server as one column at 100% however many
+   * they picked. A read-only scorer dropped an Icon Box into each of three
+   * columns and watched all three publish in one; the canvas itself only ever
+   * drew one `[data-col]`.
+   *
+   * It is built the way `BuilderShell.addStructure` builds it for every other
+   * builder — a row Container holding one Container per cell, with the cells'
+   * widths on the row's desktop layer — because that is the one shape this
+   * platform has for "columns" and the one arion-api's `buildContentBox`
+   * publishes. The shell cannot do it here: a website section has to carry the
+   * Elementor NODE the server built for it, and a section with no node is
+   * dropped by `toPayload` rather than invented.
+   */
+  const structureFor = useCallback((layout: SectionLayout, preset: StructurePreset): Widget | null => {
+    if (!preset || !Array.isArray(preset.cells) || preset.cells.length === 0) return null;
+    const many = preset.cells.length > 1;
+    const cells = many ? preset.cells.map(() => makeContainer()) : [];
+    return makeContainer(
+      many
+        ? withLayer(
+          layout === "grid"
+            ? { direction: "grid", columns: preset.cells.length, gap: 16 }
+            : { direction: "row", gap: 16 },
+          "desktop",
+          { columnWidths: preset.cells.map((n) => n / 100) },
+        )
+        : (layout === "grid" ? { direction: "grid", columns: 1, gap: 16 } : undefined),
+      cells,
+    );
+  }, []);
+
+  const addFromServer = useCallback(async (
+    kind: string, at: number, count?: number, blueprintId?: string,
+    structure?: { layout: SectionLayout; preset: StructurePreset } | null,
+  ) => {
     setBusy("add"); setErr(null);
     try {
       const built: any = await api.buildSection(kind, blueprintId);
@@ -305,6 +346,17 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           };
         }
       }
+      /* The author's structure, onto the section the server just built. The
+         node rides on the section's `meta`, so replacing the column's widgets
+         leaves it exactly where `toPayload` looks for it. */
+      const box = structure ? structureFor(structure.layout, structure.preset) : null;
+      if (box) {
+        section = {
+          ...section,
+          label: "Container",
+          columns: section.columns.map((c, i) => (i === 0 ? { ...c, widgets: [box] } : c)),
+        };
+      }
       change(addSection(doc, section, at));
       setSelection(null);
     } catch (e: any) {
@@ -312,7 +364,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     } finally {
       setBusy(null);
     }
-  }, [api, change, doc]);
+  }, [api, change, doc, structureFor]);
 
   /* ── placing a pre-made section from the gallery ─────────────────────── */
 
@@ -805,7 +857,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
            like a bug. ONE source: the plan the server sent. */
         lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
-        onAddBlank={(at) => { void addFromServer("content", at); return false; }}
+        onAddBlank={(at: number, layout: SectionLayout, preset: StructurePreset) => {
+          void addFromServer("content", at, undefined, undefined, { layout, preset });
+          return false;
+        }}
         widgetExtras={widgetExtras}
         /* OUR ANGIE, and the reference's eye — both in the bar's own
            positions (D-172), not stacked in with the verbs. */

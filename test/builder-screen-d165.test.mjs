@@ -345,8 +345,12 @@ describe("§11.13.1 items 4 and 5 — the top bar, and adding a section", () => 
     assert.match(shell, /const box = makeContainer\(/);
     // The percentages ride on the SAME key the section ratio picker writes.
     assert.match(shell, /columnWidths: preset\.cells\.map\(\(n\) => n \/ 100\)/);
-    // The adapter's veto still runs.
-    assert.match(shell, /if \(p\.onAddBlank && p\.onAddBlank\(at\) === false\) return;/);
+    /* The adapter's veto still runs, and the STRUCTURE the author picked now
+       travels with the index (B-168 W-3, 2026-09-22) - so an adapter that
+       builds its own section, which the website's does because a page section
+       has to carry a real Elementor node, can build the columns they asked
+       for instead of always one. */
+    assert.match(shell, /if \(p\.onAddBlank && p\.onAddBlank\(at, layout, preset\) === false\) return;/);
   });
 });
 
