@@ -57,6 +57,23 @@ export interface RepeaterSpec {
    * panel with no widget's name in it.
    */
   cellsFrom?: string;
+  /**
+   * THE OTHER SPELLING OF THIS SAME LIST (B-168, 2026-09-22).
+   *
+   * Several widgets read TWO keys for one list: Social Icons draws
+   * `social_icon_list` when it has rows and `links` when it does not, because
+   * the newsletter and landing templates have stored `links` since D-165.
+   * Adding a blank row to the first spelling would have silently emptied the
+   * list the author can see — which is exactly why the header above says a
+   * control that has not declared its row is not guessed at, and why Social
+   * Icons had no Add Item and published an empty bar.
+   *
+   * Naming the other key answers it: `rowsFor` reads whichever spelling holds
+   * the rows, so the first press adds to the list the author is looking at and
+   * writes the whole thing to THIS control's key. One list from then on, and
+   * nothing anybody could see is lost on the way.
+   */
+  from?: string;
 }
 
 /** Is this control drawn as a repeater? A presence test, never a name. */
@@ -68,6 +85,20 @@ export function isRepeater(spec: RepeaterSpec | null | undefined): boolean {
 export function rowsOf(props: Record<string, unknown> | null | undefined, key: string): RepeaterRow[] {
   const raw = (props || {})[key];
   return Array.isArray(raw) ? raw.slice() : [];
+}
+
+/**
+ * The rows THIS CONTROL is editing — its own key, or the other spelling of the
+ * same list when its own is empty. See `from` above.
+ */
+export function rowsFor(
+  spec: RepeaterSpec | null | undefined,
+  props: Record<string, unknown> | null | undefined,
+  key: string,
+): RepeaterRow[] {
+  const own = rowsOf(props, key);
+  if (own.length || !spec?.from) return own;
+  return rowsOf(props, spec.from);
 }
 
 /** How many cells a table row has: its own, or the sibling control's count. */
@@ -312,7 +343,7 @@ export function repeaterOp(
   op: RepeaterOp,
 ): Record<string, unknown> {
   const spec = controls.find((c) => c.key === key) ?? { key };
-  const rows = rowsOf(props, key);
+  const rows = rowsFor(spec, props, key);
   const next = applyOp(rows, op, blankRow(spec, props, key));
   if (next === rows) return {};
   const patch: Record<string, unknown> = { [key]: next };
@@ -349,6 +380,6 @@ export function squareCells(row: RepeaterRow, width: number): string[] {
 }
 
 export default {
-  isRepeater, rowsOf, cellCount, blankRow, addRow, duplicateRow, removeRow, moveRow,
+  isRepeater, rowsOf, rowsFor, cellCount, blankRow, addRow, duplicateRow, removeRow, moveRow,
   rowFields, setRowField, rowTitle, fieldLabel, repeaterOp, squareCells,
 };

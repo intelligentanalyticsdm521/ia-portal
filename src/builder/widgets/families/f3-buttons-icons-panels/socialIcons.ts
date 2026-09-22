@@ -134,6 +134,19 @@ export const SOCIAL_ICONS_DEF: FamilyWidgetDef = {
     /* ── Content ▸ Social Icons ───────────────────────────────────────── */
     {
       key: "social_icon_list", label: "Social Icons", type: "list", tab: "content", section: "Social Icons",
+      /* ELEMENTOR'S OWN REPEATER, with a way to ADD one (B-168 M-1,
+         2026-09-22). The parity scorer: "Social Icons publishes a bar with no
+         icons in it — there is NO control to add an account." There was a
+         control and no Add Item, because declaring a row on a list that has
+         TWO stored spellings would have emptied whichever one the author could
+         see. `from` names the other one, so the first press adds to the list
+         on screen and writes the whole thing to Elementor's own key.
+
+         A row is the platform and the address — the two things every reader of
+         this list takes (`socialRows` here, `deep.js`'s `brandIcon(l.social ||
+         l.network || l.label)` in arion). */
+      row: { social: "", link: "" },
+      from: "links",
       // Not "we use the accounts connected in My Brand": those are OAuth
       // identities, not public addresses, and a row of dead links in a client's
       // own email is worse than no row. The author gives the addresses.

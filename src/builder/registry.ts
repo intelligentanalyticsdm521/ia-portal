@@ -208,6 +208,18 @@ export interface WidgetControl {
   /** A `list` whose rows are lines of cells, one per entry of this control. */
   cellsFrom?: string;
   /**
+   * THE OTHER SPELLING OF THIS SAME LIST (B-168, 2026-09-22).
+   *
+   * Social Icons draws `social_icon_list` when it has rows and `links` when it
+   * does not, because the newsletter and landing templates have stored `links`
+   * since D-165. A repeater that added to the first spelling would silently
+   * empty the list the author can see — which is why this control had no Add
+   * Item at all and every Social Icons widget published an empty bar. Naming
+   * the other key lets the first press add to the list ON SCREEN and write the
+   * whole thing to this control's key. See `repeater.ts` `rowsFor`.
+   */
+  from?: string;
+  /**
    * DRAWN ONLY WHEN ANOTHER CONTROL SAYS SO — Elementor's `condition`
    * (2026-09-20, the settings audit's round 4).
    *
