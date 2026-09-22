@@ -43,6 +43,9 @@ import { makeContext } from "../src/builder/render.ts";
 import { FAMILIES, renderFamily } from "../src/builder/widgets/families/index.ts";
 import { emptyDocument, makeWidget } from "../src/builder/model.ts";
 import { assertFamilyContract, SETTINGS_KEYS } from "./helpers/familyContract.mjs";
+/* The list the studio answers "can I place that kind" with. Imported and
+   never re-typed: it is the same list `familyContract.mjs` reads. */
+import { STUDIO_OWN_KINDS } from "../src/builder/adapters/mybrand/insert.ts";
 /* The deep pass (2026-09-19) asks two things of the PANEL as well as of the
    renderer: that a control is a type the Inspector draws, and that a
    responsive one is stored under the spelling the panel really uses. Both
@@ -538,7 +541,7 @@ describe("the offer file is what says where a widget is offered", () => {
     // MUTATION: add "proposal" to SLIDES_DEF.builders → this names it, and so
     // does test/builder-offers.test.mjs.
     const want = {
-      testimonial: ["website", "landing", "newsletter", "proposal"],
+      testimonial: ["website", "landing", "newsletter", "proposal", "mybrand"],
       reviews: ["website", "landing", "proposal"],
       testimonial_carousel: ["website", "landing"],
       slides: ["website", "landing"],
@@ -550,14 +553,19 @@ describe("the offer file is what says where a widget is offered", () => {
     }
   });
 
-  test("Testimonial is short of My Brand, which the offer does list", () => {
-    /* Said out loud rather than quietly skipped. The offer file gives
-       Testimonial to My Brand; the Template Studio places ONE LAYER PER KIND at
-       an absolute x and y (`adapters/mybrand/insert.ts`), and a quote with a
-       photo and two lines under it is a flow with nothing to place. Claiming
-       the panel without that work would be a tile whose button does nothing.
-       It is item F5-1 in D168_HANDOFF_2026-09-19.md. */
+  test("Testimonial IS on My Brand, and the studio really places one", () => {
+    /* This test used to say the opposite, out loud: *"Testimonial is short of
+       My Brand, which the offer does list"* — because the studio places one
+       layer per kind at an absolute x and y, and a quote with a name and a job
+       under it looked like a flow with nothing to place. It is three runs of
+       words at three sizes, and a canvas places runs of words.
+       `adapters/mybrand/insert.ts` has the case since 2026-09-22, so the claim
+       is now CHECKED and not just made: the kind is in `STUDIO_OWN_KINDS`,
+       which is the list `assertFamilyContract` and `familySurfaceGaps` both
+       read to answer "can that surface draw it". F5-1 is closed. */
     assert.ok(OFFERS.builders.mybrand.elementor.includes("testimonial"));
-    assert.equal(defOf("testimonial").builders.includes("mybrand"), false);
+    assert.equal(defOf("testimonial").builders.includes("mybrand"), true);
+    assert.ok(STUDIO_OWN_KINDS.includes("testimonial"),
+      "the panel claims My Brand and the studio has no case — the tile would do nothing");
   });
 });

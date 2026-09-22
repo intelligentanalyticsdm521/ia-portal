@@ -1040,6 +1040,70 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     count: { min: 2, max: 12, label: "How many photos?", default: 4 },
   },
   {
+    /* LINE. It was the third option inside Shape's "Which shape?" question,
+       which is why every parity round listed it as "present as a capability
+       with no tile". The offer file lists `line` beside `shape` in
+       `canvas_pieces`, so it is a tile, and Shape's question is down to two. */
+    kind: "line",
+    label: "Line",
+    description: { brand: "A straight rule — under a title, or between two things." },
+    icon: "Minus",
+    picture: pictureFrom(`<rect x="6" y="19" width="52" height="3" rx="1.5" fill="#94A3B8" stroke="none"/>`),
+    category: "Basic",
+    adapters: CANVAS,
+    defaults: { colour: "", thickness: 6 },
+    controls: [
+      { key: "colour", label: "Colour", type: "colour", help: "Starts as one of your brand colours." },
+      { key: "thickness", label: "Thickness", type: "number" },
+    ],
+  },
+  {
+    /* FRAME — a picture cut to a shape, placed EMPTY. The capability is
+       `ImageLayer.mask` / `frameStroke` / `frameFill` and has been there since
+       round 1, but only as a control on a Picture that already existed, which
+       is why the parity sheet called it "a crop on a Picture" rather than a
+       tile. A frame is what a person reaches for first: lay the circle out,
+       put the photograph in later. */
+    kind: "frame",
+    label: "Frame",
+    description: { brand: "A shaped hole for a photo — lay it out now, fill it later." },
+    icon: "Circle",
+    picture: pictureFrom(`<circle cx="32" cy="20" r="13" fill="#CBD5E1" stroke="#64748B"/>`
+      + `<circle cx="32" cy="20" r="7" fill="#94A3B8" stroke="none"/>`),
+    category: "Basic",
+    adapters: CANVAS,
+    defaults: { mask: "circle", ring: "" },
+    controls: [
+      { key: "mask", label: "Shape", type: "select", options: ["Circle", "Rounded", "Arch", "Hexagon"] },
+      { key: "ring", label: "Ring colour", type: "colour" },
+    ],
+  },
+  {
+    /* IA REVIEW — ONE real review of the business, as a graphic.
+       Its own kind and not `ia_reviews` with a fifth builder: the offer file
+       names `ia_review`, SINGULAR, for My Brand, and the two are different
+       things. `ia_reviews` is a ROW of slides a page or a mailbox lays out;
+       this is one review, placed as star shapes and two runs of words on an
+       absolute-pixel canvas. Declared here rather than in the f5 family for
+       the same reason `shape` and `qr_code` are here: it exists on ONE
+       adapter's canvas and nowhere else. */
+    kind: "ia_review",
+    label: "IA Review",
+    description: { brand: "One of your real reviews, with its stars and who left it." },
+    icon: "Stars",
+    picture: pictureFrom(`<path d="M12 12l1.6 4 4 .4-3.2 2.8 1.2 4-3.6-2.4-3.6 2.4 1.2-4L6.4 16.4l4-.4z" fill="#94A3B8" stroke="none"/>`
+      + `<path d="M26 12l1.6 4 4 .4-3.2 2.8 1.2 4-3.6-2.4-3.6 2.4 1.2-4-3.2-2.8 4-.4z" fill="#94A3B8" stroke="none"/>`
+      + bar(8, 26, 48, 4) + bar(8, 33, 30, 3)),
+    category: "Intelligent Analytics",
+    adapters: CANVAS,
+    defaults: { review_id: "", quote: "", author: "", rating: 5 },
+    controls: [
+      { key: "quote", label: "What they said", type: "text" },
+      { key: "author", label: "Who left it", type: "text" },
+      { key: "rating", label: "Stars", type: "number" },
+    ],
+  },
+  {
     kind: "qr_code",
     label: "QR code",
     description: "A square people scan with a phone to open your link.",
@@ -1288,13 +1352,24 @@ const LEGACY_WIDGETS: WidgetDef[] = [
   {
     kind: "product_card",
     label: "Product Cards",
-    description: "What you sell, with the price and how it is billed, straight from your catalogue.",
+    /* THE STUDIO CALLS IT WHAT IT PLACES THERE. In a mailbox this tile drops a
+       ROW of cards; on the My Brand canvas the offer file asks for "one promo
+       card with a real product name and price", singular, and a tile whose
+       name says Cards and whose press places one card is a tile that lied. */
+    labels: { brand: "Product card" },
+    description: {
+      email: "What you sell, with the price and how it is billed, straight from your catalogue.",
+      brand: "One thing you sell, with its real name and price, as a promo card.",
+    },
     icon: "ShoppingBag",
     picture: pictureFrom(solid(8, 8, 16, 14) + bar(8, 25, 16) + bar(8, 32, 10, 3)
       + solid(28, 8, 16, 14) + bar(28, 25, 16) + bar(28, 32, 10, 3)
       + solid(48, 8, 8, 14) + bar(48, 25, 8)),
     category: "Intelligent Analytics",
-    adapters: SENDS,
+    /* `brand` ADDED 2026-09-22 — the offer file's `builders.mybrand.ia` lists
+       `product_card`. Both surfaces read the SAME catalogue
+       (`/catalog/offerings?include_prices=1`); there is no second one. */
+    adapters: ["email", "brand"],
     defaults: { items: [], layout: "cards" },
     controls: [
       { key: "items", label: "What is on offer", type: "list", help: "Pick from Products & Services and the price and cadence come with it.",
@@ -1463,7 +1538,7 @@ export const PANEL_ORDER: string[] = [
   INNER_SECTION_PRESET_KIND,
   "heading", "image", "paragraph", "video", "button", "divider", "spacer", "google_maps", "icon",
   // ...and the studio's placed objects, which no other builder offers.
-  "brand_logo", "shape", "photo_grid",
+  "brand_logo", "shape", "photo_grid", "line", "frame",
   // General
   "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
   "counter", "progress_bar", "progress_tracker", "testimonial", "tabs", "accordion", "toggle",
@@ -1493,7 +1568,7 @@ export const PANEL_ORDER: string[] = [
   /* The email's three, by the ids the mailbox already draws. They sit where
      §11.13.3 puts them in the email's own IA column. */
   "product_card", "article_card", "email_footer",
-  "ia_posts", "reviews", "book_now",
+  "ia_posts", "reviews", "ia_review", "book_now",
   "ia_form", "newsletter_signup", "hours_location",
   "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
 ];

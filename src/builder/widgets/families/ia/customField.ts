@@ -314,14 +314,22 @@ export const CUSTOM_FIELD_DEF: FamilyWidgetDef = {
   icon: "Database",
   picture: pictureFrom(bar(6, 12, 16) + bar(26, 12, 32) + bar(6, 24, 16) + bar(26, 24, 22)),
   category: "Intelligent Analytics",
-  /* PROPOSALS ONLY, for now, and the reason is written down rather than left
-     as an omission. The record book is assembled by the proposal adapter and
-     by `recordBookFromContext`, both of which read a DOCUMENT's customer. An
-     email or a website page has no customer picked, so the widget would draw
-     an empty run an author could never fill — the exact defect 11.12's
-     catalogue pass was opened to close. The offer file lists Custom Field on
-     all five builders; the ask is in D168_HANDOFF_2026-09-19.md. */
-  builders: ["proposal"],
+  /* PROPOSALS, AND MY BRAND (2026-09-22). The reason the other four were off
+     still holds for three of them and is kept here: the record book is
+     assembled by the proposal adapter and by `recordBookFromContext`, both of
+     which read a DOCUMENT's customer, and an email or a website page has no
+     customer picked, so the widget would draw an empty run an author could
+     never fill.
+
+     It does NOT hold for the BUSINESS group. Every surface knows which
+     business is signed in, and a poster with the shop's phone number on it is
+     the commonest thing anybody makes in the studio. So My Brand offers this
+     tile over the business record ONLY — `StudioBrand.record`, filled from
+     `GET /account/profile`, with the chooser saying so in those words — and
+     `adapters/mybrand/insert.ts` places the value as a run of words with the
+     field's own placeholder when it is blank. Website, landing and newsletter
+     are still off, and that is still ask R-D4. */
+  builders: ["proposal", "mybrand"],
   defaults: customFieldProps(DEFAULT_CUSTOM_FIELD),
   controls: [...FIELD_CONTROLS, ...BINDING_CONTROLS],
 };

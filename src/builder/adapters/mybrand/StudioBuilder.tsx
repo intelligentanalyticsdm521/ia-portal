@@ -45,12 +45,23 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { fontStack } from "../../../lib/brandKit";
 import { useAppState } from "../../../app/AppState";
 import { useLumenApi } from "../../../hooks/useLumenApi";
+/* THE OLIVER CATALOGUE and THE SPARK REVIEWS HUB — the two real lists the
+   Product card and IA Review tiles read. The same endpoints the proposal
+   builder and the Reviews page read; no second catalogue, no second review
+   store. */
+import { useOliverApi } from "../../../hooks/useOliverApi";
+import { useSparkApi } from "../../../hooks/useSparkApi";
 import { useProductTier } from "../../../hooks/useProductTier";
 import { tierMeets } from "../../../lib/tierRank";
 import { PixelCanvas, type PixelCanvasHandle } from "./PixelCanvas";
 import { LayerInspector } from "./LayerInspector";
 import { TemplateGallery, type SavedTemplate } from "./TemplateGallery";
 import { insertWidget, chartLayer, brandSwatches, type StudioBrand } from "./insert";
+/* ONE LIST OF WHAT A BUSINESS RECORD HOLDS (D-167). The chooser reads the same
+   array `insert.ts` reads its placeholders from, so a field added there shows
+   up here without anybody remembering to. `logo` is left out: it is a picture,
+   and the picture tile for it is Your logo. */
+import { RECORD_FIELDS } from "../../proposal/recordWidgets";
 import { buildPremade, PREMADE_BY_KEY } from "./templates";
 import {
   addLayers, addLayersBehind, alignLayers, brandSync, clampCanvasSide, copyStyleOf,
@@ -103,6 +114,20 @@ export interface StudioBuilderProps {
   onChanged?: () => void;
 }
 
+/** The business facts a Custom Field may show here — everything but the logo. */
+const BUSINESS_FIELDS = RECORD_FIELDS.business_info.filter((f) => !f.picture);
+
+/**
+ * The shared tenant profile, as `GET /account/profile` returns it. Only the
+ * four fields the studio reads; the route returns the whole address too.
+ */
+interface BusinessProfile {
+  businessName?: string | null;
+  primaryContactEmail?: string | null;
+  primaryContactPhone?: string | null;
+  websiteUrl?: string | null;
+}
+
 /** One small question asked before a widget lands, the way the pane asks "how many?". */
 interface Chooser {
   kind: string;
@@ -114,6 +139,8 @@ interface Chooser {
 
 export function StudioBuilder(p: StudioBuilderProps) {
   const { get, post, put, ready } = useLumenApi();
+  const oliver = useOliverApi();
+  const spark = useSparkApi();
   const navigate = useNavigate();
   const { kit } = useBrandKit();
   const { active } = useAppState();
@@ -121,13 +148,55 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const hasProTools = tierMeets(tier, "pro");
 
   /* ── The business, as the studio needs it ────────────────────────────── */
-  const brand: StudioBrand = useMemo(() => ({
-    colours: kit.colours,
-    fonts: { heading: fontStack(kit, "heading"), body: fontStack(kit, "body") },
-    logoUrl: kit.logo_url,
-    businessName: active?.tenant?.tenantFullName || active?.tenant?.tenantName || "Your business",
-    websiteUrl: null,
-  }), [kit, active]);
+  /**
+   * THE BUSINESS RECORD, read ONCE — the Custom Field tile's whole source.
+   *
+   * `GET /account/profile` is the SHARED tenant profile (LUMEN
+   * `routes/accountProfile.js`, over `core.tenants`), which is what the SPARK
+   * Account page writes and what the QR page already reads. Not a second home
+   * for the business's phone number, and not the CRM's `lumen.account` row,
+   * which that route's own header says is a different thing.
+   *
+   * Read once per open, beside the catalogue and the templates, and never
+   * blocking: a profile that fails to load leaves every field on its
+   * placeholder, which is exactly what a field with no value shows anyway.
+   */
+  const [profile, setProfile] = useState<BusinessProfile | null>(null);
+  useEffect(() => {
+    if (!p.open || !ready) return;
+    let cancelled = false;
+    void get<{ data?: BusinessProfile } | BusinessProfile>("/api/v1/account/profile")
+      .then((r) => {
+        if (cancelled) return;
+        const row = (r as { data?: BusinessProfile })?.data ?? (r as BusinessProfile);
+        setProfile(row && typeof row === "object" ? row : null);
+      })
+      .catch(() => { /* placeholders, not a blocked studio */ });
+    return () => { cancelled = true; };
+  }, [p.open, ready, get]);
+
+  const brand: StudioBrand = useMemo(() => {
+    const name = profile?.businessName
+      || active?.tenant?.tenantFullName || active?.tenant?.tenantName || "Your business";
+    return {
+      colours: kit.colours,
+      fonts: { heading: fontStack(kit, "heading"), body: fontStack(kit, "body") },
+      logoUrl: kit.logo_url,
+      businessName: name,
+      /* The QR code's default used to be `null` and therefore "https://". The
+         profile carries the real one, so the code a business scans off its own
+         poster goes to its own site. */
+      websiteUrl: profile?.websiteUrl || null,
+      /* Keys are `RECORD_FIELDS.business_info`'s, which is the one list. */
+      record: {
+        name,
+        phone: profile?.primaryContactPhone || "",
+        email: profile?.primaryContactEmail || "",
+        licence: "",
+        logo: kit.logo_url || "",
+      },
+    };
+  }, [kit, active, profile]);
 
   /* ── The scene, and ONE history over it ──────────────────────────────── */
   /**
@@ -324,13 +393,36 @@ export function StudioBuilder(p: StudioBuilderProps) {
         setChooser({ kind: "icon", title: "Which symbol?", options: null, placeholder: "icon" });
         return;
       case "shape":
+        /* TWO OPTIONS, not three. Line is its own tile now (the offer file
+           lists `shape` and `line` side by side in `canvas_pieces`), so
+           offering it here as well would be two doors to one widget. */
         setChooser({
           kind: "shape", title: "Which shape?", options: [
             { value: "rect", label: "Rectangle", hint: "A block for a headline to sit on" },
             { value: "ellipse", label: "Circle", hint: "A badge, a photo frame, a dot" },
-            { value: "line", label: "Line", hint: "A rule under a title" },
           ],
         });
+        return;
+      /* ── The three tiles that read the business's own data ───────────── */
+      case "custom_field":
+        /* THE BUSINESS GROUP AND ONLY IT, and the title says so out loud. The
+           offer file's Custom Field reads Customer / Service location /
+           Business; a design is made once and shown to everybody, so there is
+           no customer here to read (ask R-D4). */
+        setChooser({
+          kind: "custom_field", title: "Which fact about your business?",
+          options: BUSINESS_FIELDS.map((f) => ({
+            value: f.key,
+            label: f.label,
+            hint: brand.record[f.key] || `Not set yet — it will say "${f.placeholder || f.label}"`,
+          })),
+        });
+        return;
+      case "product_card":
+        setPickingProduct(true);
+        return;
+      case "ia_review":
+        setPickingReview(true);
         return;
       case "colour_block":
         setChooser({
@@ -374,6 +466,42 @@ export function StudioBuilder(p: StudioBuilderProps) {
         place(def.kind, { count });
     }
   }, [brand, place]);
+
+  /* THE TWO PICKERS. Each one reads the platform's own list — the OLIVER
+     catalogue and the SPARK Reviews hub — and hands ONE row to `insertWidget`
+     as plain words. Same shape as the QR code's round trip above: the adapter
+     talks to the API, the pure module places the layers. */
+  const [pickingProduct, setPickingProduct] = useState(false);
+  const [pickingReview, setPickingReview] = useState(false);
+
+  /**
+   * THE TWO LISTS, read when their picker opens and not before.
+   *
+   * On open and not on mount: a poster with no product card on it should not
+   * cost a catalogue call, and a business with no OLIVER should not have a
+   * failed request in its console for a tile it may never press. Both failures
+   * are silent and leave an empty list, which the picker says out loud.
+   */
+  const [catalogue, setCatalogue] = useState<CatalogueRow[] | null>(null);
+  const [reviews, setReviews] = useState<ReviewRow[] | null>(null);
+
+  useEffect(() => {
+    if (!pickingProduct || catalogue) return;
+    let cancelled = false;
+    void oliver.get<unknown>("/catalog/offerings?include_prices=1")
+      .then((r) => { if (!cancelled) setCatalogue(rowsOf<CatalogueRow>(r)); })
+      .catch(() => { if (!cancelled) setCatalogue([]); });
+    return () => { cancelled = true; };
+  }, [pickingProduct, catalogue, oliver]);
+
+  useEffect(() => {
+    if (!pickingReview || reviews) return;
+    let cancelled = false;
+    void spark.get<unknown>("/api/v1/reviews")
+      .then((r) => { if (!cancelled) setReviews(rowsOf<ReviewRow>(r)); })
+      .catch(() => { if (!cancelled) setReviews([]); });
+    return () => { cancelled = true; };
+  }, [pickingReview, reviews, spark]);
 
   const [qrBusy, setQrBusy] = useState(false);
   const answerChooser = useCallback(async (value: string) => {
@@ -1343,6 +1471,72 @@ export function StudioBuilder(p: StudioBuilderProps) {
         </IadmModal>
       )}
 
+      {/* PRODUCT CARD — one real offering from the OLIVER catalogue. */}
+      {pickingProduct && (
+        <IadmModal open size="info" product="oliver"
+          eyebrow="OLIVER · Products & services"
+          title="Which product?"
+          onClose={() => setPickingProduct(false)}>
+          <div style={{ padding: 16 }} data-studio-productpicker>
+            {catalogue === null && <div className="text-xs text-slate-500">Reading your catalogue…</div>}
+            {catalogue?.length === 0 && (
+              <div className="text-xs text-slate-600">
+                Nothing in your catalogue yet. Add a product or service in OLIVER and it will be here.
+              </div>
+            )}
+            <div className="space-y-1">
+              {(catalogue || []).map((o) => (
+                <button key={o.offering_id} type="button"
+                  data-studio-product={o.offering_id}
+                  title={`Put ${o.name} on the design`}
+                  onClick={() => {
+                    setPickingProduct(false);
+                    place("product_card", { product: productWords(o) });
+                  }}
+                  className="flex w-full items-center justify-between gap-3 rounded border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-[#EF6C33]">
+                  <span className="font-semibold text-slate-800">{o.name}</span>
+                  <span className="tabular-nums text-slate-500">{productWords(o).price}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </IadmModal>
+      )}
+
+      {/* IA REVIEW — one real review from the SPARK Reviews hub. */}
+      {pickingReview && (
+        <IadmModal open size="info" product="spark"
+          eyebrow="SPARK · Reviews"
+          title="Which review?"
+          onClose={() => setPickingReview(false)}>
+          <div style={{ padding: 16 }} data-studio-reviewpicker>
+            {reviews === null && <div className="text-xs text-slate-500">Reading your reviews…</div>}
+            {reviews?.length === 0 && (
+              <div className="text-xs text-slate-600">
+                No reviews have come in yet. Connect Google in SPARK and they will be here.
+              </div>
+            )}
+            <div className="space-y-1">
+              {(reviews || []).filter((r) => (r.body || "").trim()).slice(0, 40).map((r) => (
+                <button key={r.id} type="button"
+                  data-studio-review={r.id}
+                  title="Put this review on the design"
+                  onClick={() => {
+                    setPickingReview(false);
+                    place("ia_review", { review: reviewWords(r) });
+                  }}
+                  className="block w-full rounded border border-slate-200 bg-white px-3 py-2 text-left text-xs hover:border-[#EF6C33]">
+                  <span className="block font-semibold text-slate-800">
+                    {"\u2605".repeat(Math.max(0, Math.min(5, Math.round(r.rating || 0))))} {r.reviewer_name || "Anonymous"}
+                  </span>
+                  <span className="block truncate text-slate-500">{r.body}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </IadmModal>
+      )}
+
       {libraryOpen && <AssetPickerModal onClose={() => { setLibraryOpen(false); setSlotTarget(null); }} onPick={placeAsset} />}
 
       {/* ASK ARGUS — what the panel's "Ask for it" box did, behind the bar's
@@ -1611,6 +1805,66 @@ function CustomSize({ width, height, onApply }: {
 }
 
 /* The tile renderer of the Upload / Library / Chart row went with the row. */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The two real lists, and the three strings each row becomes
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** One catalogue offering, as `/catalog/offerings?include_prices=1` returns it. */
+interface CatalogueRow {
+  offering_id: string;
+  name: string;
+  description?: string | null;
+  prices?: Array<{ unit_amount?: number; currency?: string; is_default?: boolean; label?: string | null }>;
+}
+
+/** One review, as SPARK's `/api/v1/reviews` returns it. */
+interface ReviewRow {
+  id: number;
+  reviewer_name?: string | null;
+  rating?: number | null;
+  body?: string | null;
+}
+
+/**
+ * A list out of a response that may or may not be wrapped.
+ *
+ * oliver's hook unwraps `{ data: … }` already and SPARK's does not, and a
+ * route that returns a bare array is a third shape. One reader rather than a
+ * guess per call site.
+ */
+function rowsOf<T>(r: unknown): T[] {
+  if (Array.isArray(r)) return r as T[];
+  const d = (r as { data?: unknown })?.data;
+  return Array.isArray(d) ? (d as T[]) : [];
+}
+
+/** An offering, as the three strings a card shows. */
+function productWords(o: CatalogueRow): { name: string; price: string; blurb: string } {
+  const price = (o.prices || []).find((x) => x.is_default) || (o.prices || [])[0];
+  const amount = typeof price?.unit_amount === "number" ? price.unit_amount : null;
+  return {
+    name: o.name || "",
+    /* The catalogue stores CENTS (oliver `catalog_price.unit_amount`), which is
+       why this divides: a card reading "$12900" is the bug that division
+       stops. A priceless offering shows nothing rather than "$0.00". */
+    price: amount === null ? "" : `$${(amount / 100).toFixed(2).replace(/\.00$/, "")}`,
+    blurb: (o.description || "").trim(),
+  };
+}
+
+/** A review, as the three things a graphic shows. */
+function reviewWords(r: ReviewRow): { quote: string; author: string; rating: number } {
+  const body = (r.body || "").trim();
+  return {
+    /* Long reviews are cut at a sentence boundary rather than mid-word: a
+       poster carries a line, not a paragraph, and "…the crew was extreme" is
+       worse than no quote at all. */
+    quote: body.length > 180 ? `${body.slice(0, 177).replace(/\s+\S*$/, "")}…` : body,
+    author: (r.reviewer_name || "").trim(),
+    rating: Math.max(0, Math.min(5, Math.round(r.rating || 5))),
+  };
+}
 
 function ExportOption({ icon, title, blurb, onClick, disabled, accent }: {
   icon: React.ReactNode; title: string; blurb: string; onClick: () => void; disabled?: boolean; accent?: boolean;

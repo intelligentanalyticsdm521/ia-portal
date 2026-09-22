@@ -180,7 +180,11 @@ export const RATING_DEF: FamilyWidgetDef = {
     + `<path d="M32 14l2 5 5 .5-4 3.5 1.5 5-4.5-3-4.5 3 1.5-5-4-3.5 5-.5z" fill="#94A3B8" stroke="none"/>`
     + `<path d="M52 14l2 5 5 .5-4 3.5 1.5 5-4.5-3-4.5 3 1.5-5-4-3.5 5-.5z" fill="#CBD5E1" stroke="none"/>`),
   category: "General",
-  builders: ["website", "landing", "newsletter", "proposal"],
+  /* `mybrand` ADDED 2026-09-22 — the offer file lists `rating` for My Brand.
+     `adapters/mybrand/insert.ts` places five star SHAPES from the studio's own
+     icon pack (never a text layer of star glyphs: a glyph outside the bundled
+     faces exports as a box). */
+  builders: ["website", "landing", "newsletter", "proposal", "mybrand"],
   /* Elementor's own defaults: scale 5, no value typed yet, the star. */
   defaults: {
     rating_scale: 5,

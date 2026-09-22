@@ -867,3 +867,146 @@ function codeOf(text) {
     .replace(/^[ \t]*\/\/.*$/gm, "")
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   7. THE NINE THE OFFER PROMISED AND THE PANEL DID NOT HAVE
+   ══════════════════════════════════════════════════════════════════════════
+
+   `test/builder-offers.test.mjs` named them, builder by builder, and stayed
+   red for My Brand from the hour STRICT_MISSING was flipped:
+
+     testimonial, rating, social-icons, line, frame, photo_grid,
+     custom_field, product_card, ia_review
+
+   That test asks whether a TILE exists. This one asks the question behind it —
+   *does pressing it put the right thing on the canvas* — because a tile whose
+   button does nothing is exactly the drift D-168 item 4 recorded, and a green
+   offer test with nine dead tiles would be worse than the red one.
+
+   MUTATIONS RUN, 2026-09-22, each watched go red and then restored:
+     · `case "star_rating"` returns four stars instead of five      → red
+     · `case "social_links"` drops the mark and keeps the disc      → red
+     · `case "custom_field"` reads `brand.businessName` always      → red
+     · `case "product_card"` drops `opts.product.price`             → red
+     · `case "ia_review"` ignores `opts.review.rating`              → red
+     · `case "frame"` places an image with no `mask`                → red
+   ════════════════════════════════════════════════════════════════════════ */
+
+describe("7. the nine offered tiles place what they say they place", () => {
+  const CANVAS = emptyCanvas(1080, 1080);
+  const WITH_RECORD = {
+    ...SENTINEL,
+    record: { name: "Summit Lawn", phone: "(555) 010-2244", email: "hi@summit.test", licence: "", logo: "" },
+  };
+
+  test("every one of the nineteen offered tiles places at least one layer", () => {
+    /* The PRESENCE half. `builder-offers` says the tile is there; this says
+       the press does something, for every tile on the panel and not just the
+       nine, so the next tile anybody adds is covered by the same line. */
+    const silent = [];
+    for (const w of widgetsFor("brand")) {
+      const opts = {};
+      if (w.kind === "icon" || w.kind === "shape") opts.option = w.kind === "icon" ? "star" : "rect";
+      if (w.kind === "qr_code") opts.imageSrc = "data:image/svg+xml;base64,AAAA";
+      if (!insertWidget(w.kind, CANVAS, WITH_RECORD, opts).layers.length) silent.push(w.kind);
+    }
+    assert.deepEqual(silent, [], `these tiles are on the panel and place nothing: ${silent.join(", ")}`);
+  });
+
+  test("Line is a line, and Shape no longer offers one", () => {
+    const [l] = insertWidget("line", CANVAS, WITH_RECORD).layers;
+    assert.equal(l.kind, "shape");
+    assert.equal(l.shape, "line");
+    assert.equal(l.h, 0, "a line with a height is a rectangle");
+    assert.ok(l.strokeWidth > 0, "a line with no stroke is invisible");
+    /* Two doors to one widget is the thing D-172 is about. */
+    const shell = read("builder/adapters/mybrand/StudioBuilder.tsx");
+    assert.ok(!shell.includes('{ value: "line", label: "Line", hint: "A rule under a title" }'),
+      "Shape still offers Line as well as the Line tile");
+  });
+
+  test("Frame is an EMPTY picture cut to a shape, with its ring on", () => {
+    const [f] = insertWidget("frame", CANVAS, WITH_RECORD).layers;
+    assert.equal(f.kind, "image");
+    assert.equal(f.src, null, "a frame arrives empty — the Picture controls fill it");
+    assert.ok(f.mask, "no mask means it is a plain rectangle, not a frame");
+    assert.ok(f.frameStroke && f.frameStrokeWidth > 0, "the ring is what makes it read as a frame");
+    assert.ok(f.frameFill, "an empty frame with no fill is an invisible hole");
+  });
+
+  test("Testimonial is the quote, the name and the job, as one group", () => {
+    const out = insertWidget("testimonial", CANVAS, WITH_RECORD);
+    const texts = out.layers.filter((l) => l.kind === "text");
+    assert.equal(texts.length, 3, "a testimonial is three runs of words");
+    assert.ok(texts[0].size > texts[1].size && texts[1].size > texts[2].size,
+      "the quote, the name and the job are not at three sizes");
+    const groups = new Set(out.layers.map((l) => l.groupId));
+    assert.equal(groups.size, 1, "the three come apart on the first drag");
+    assert.ok([...groups][0], "they are not grouped at all");
+  });
+
+  test("Rating is FIVE star shapes, with the score in the fill", () => {
+    const out = insertWidget("star_rating", CANVAS, WITH_RECORD, { count: 4 });
+    assert.equal(out.layers.length, 5, "a rating out of five draws five");
+    for (const l of out.layers) {
+      assert.equal(l.kind, "shape");
+      assert.equal(l.icon, "star", "a star drawn as a GLYPH exports as a box — it must be a path");
+    }
+    const lit = out.layers.filter((l) => l.fill === SENTINEL.colours.primary).length;
+    assert.equal(lit, 4, "four out of five did not read as four out of five");
+  });
+
+  test("Social Icons is a ROW of marks, not one handle", () => {
+    const out = insertWidget("social_links", CANVAS, WITH_RECORD);
+    const discs = out.layers.filter((l) => l.shape === "ellipse");
+    const marks = out.layers.filter((l) => l.shape === "icon");
+    assert.equal(discs.length, 3);
+    assert.equal(marks.length, 3, "a disc with no mark on it is a dot");
+    assert.equal(out.layers.filter((l) => l.kind === "text").length, 0,
+      "this is the row of icons, not the older Social handle with its @name");
+  });
+
+  test("Custom Field reads the BUSINESS record, and says so when it is blank", () => {
+    const filled = insertWidget("custom_field", CANVAS, WITH_RECORD, { option: "phone" });
+    assert.equal(filled.layers[0].content, "(555) 010-2244");
+    /* A blank field places its own placeholder rather than nothing: a tile
+       that places nothing because a field happens to be empty is the silent
+       button insert.ts's header is about. */
+    const blank = insertWidget("custom_field", CANVAS, { ...WITH_RECORD, record: {} }, { option: "phone" });
+    assert.equal(blank.layers.length, 1);
+    assert.ok(blank.layers[0].content.length > 0);
+    assert.notEqual(blank.layers[0].content, "(555) 010-2244");
+  });
+
+  test("Product card carries the PICKED product's own name and price", () => {
+    const out = insertWidget("product_card", CANVAS, WITH_RECORD,
+      { product: { name: "Spring cleanup", price: "$249", blurb: "One visit, the whole yard." } });
+    const words = out.layers.filter((l) => l.kind === "text").map((l) => l.content);
+    assert.ok(words.includes("Spring cleanup"), "the product's real name is not on the card");
+    assert.ok(words.includes("$249"), "the product's real price is not on the card");
+    assert.ok(words.includes("One visit, the whole yard."));
+    assert.equal(out.layers.filter((l) => l.kind === "shape").length, 1, "the card has no panel behind it");
+  });
+
+  test("IA Review carries the PICKED review's stars, words and author", () => {
+    const out = insertWidget("ia_review", CANVAS, WITH_RECORD,
+      { review: { quote: "Best crew in town.", author: "Dana R.", rating: 4 } });
+    const stars = out.layers.filter((l) => l.icon === "star");
+    assert.equal(stars.length, 5);
+    assert.equal(stars.filter((l) => l.fill === SENTINEL.colours.primary).length, 4,
+      "a four-star review drew five lit stars");
+    const words = out.layers.filter((l) => l.kind === "text").map((l) => l.content).join(" | ");
+    assert.ok(words.includes("Best crew in town."));
+    assert.ok(words.includes("Dana R."));
+  });
+
+  test("Photo gallery is the offer's `photo_grid`, and `gallery` is gone from the studio", () => {
+    const out = insertWidget("photo_grid", CANVAS, WITH_RECORD, { count: 4, gutter: 40, radius: 24 });
+    assert.equal(out.layers.length, 4);
+    for (const l of out.layers) assert.equal(l.radius, 24);
+    assert.equal(insertWidget("gallery", CANVAS, WITH_RECORD, { count: 4 }).layers.length, 0,
+      "the old unreachable `gallery` case came back");
+    assert.ok(!WIDGETS_BY_KIND.gallery.adapters.includes("brand"),
+      "the hidden `gallery` def still claims the studio can place one");
+  });
+});
