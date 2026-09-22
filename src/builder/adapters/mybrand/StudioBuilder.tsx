@@ -33,8 +33,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Download, FileImage, FileText, Layers, Loader2, Palette, Save, Scaling,
-  Send, Sparkles, Upload, BarChart3, Image as ImageIcon, LayoutTemplate,
+  AlertTriangle, Copy, Download, FileImage, FileText, Layers, Loader2, Palette, Plus,
+  Save, Scaling, Send, Sparkles, Trash2, Upload, BarChart3, Image as ImageIcon,
+  LayoutTemplate,
 } from "lucide-react";
 import { ARGUS_BUBBLE_CLEARANCE, BuilderFrame } from "../../BuilderFrame";
 import { WidgetPane } from "../../WidgetPane";
@@ -53,15 +54,22 @@ import { TemplateGallery, type SavedTemplate } from "./TemplateGallery";
 import { insertWidget, chartLayer, brandSwatches, type StudioBrand } from "./insert";
 import { buildPremade, PREMADE_BY_KEY } from "./templates";
 import {
-  addLayers, addLayersBehind, alignLayer, brandSync, duplicateLayer, emptyCanvas,
-  exportFilename, fixTextContrast, patchLayer, removeLayer, reorderLayer,
-  setBackgroundColor, smartResize, toggleLayerVisibility, uid, SIZE_PRESETS,
-  resolveBrandTokens,
+  addLayers, addLayersBehind, alignLayers, brandSync, clampCanvasSide, copyStyleOf,
+  distributeLayers, duplicateLayer, emptyCanvas, expandSelection, exportFilename,
+  fixTextContrast, groupLayers, moveLayersToEdge, moveLayerToIndex, nudgeLayers,
+  pasteStyle, patchLayer, removeLayer, reorderLayer, setBackgroundColor, smartResize,
+  tidyUp, toggleLayerVisibility, uid, ungroupLayers, MAX_CANVAS_SIDE, MIN_CANVAS_SIDE,
+  SIZE_PRESETS, resolveBrandTokens,
+  addPage, docForPage, duplicatePage, emptySlotMessage, movePage, pageCount,
+  removePage, setPage, MAX_PAGES,
+  fillPictureSlot, isEmptySlot, setSelectionBox, turnSelection,
   ICON_PATHS as ICON_PATHS_LIST,
-  type CanvasDoc, type DesignDto, type ExportResult, type ImageLayer, type Layer,
-  type TemplateDto,
+  type CanvasDoc, type CopiedStyle, type DesignDto, type ExportResult, type ImageLayer,
+  type Layer, type TemplateDto,
 } from "./scene";
-import { imagePdfFromPngDataUrl, pdfPageSize, PDF_MIME } from "./pdf";
+import { StructureWindow } from "./StructureWindow";
+import { setAssetBytesResolver, taintMessage, taintedIn } from "./fabricBridge";
+import { imagePdfFromPngDataUrls, pdfPageSize, PDF_MIME } from "./pdf";
 
 // The bundled faces. The CSS side-effects live HERE and not in scene.ts, so the
 // model stays importable by `node --test` (scripts/test-ts-loader: only pure
@@ -119,9 +127,33 @@ export function StudioBuilder(p: StudioBuilderProps) {
   }), [kit, active]);
 
   /* ── The scene, and ONE history over it ──────────────────────────────── */
-  const [doc, setDoc] = useState<CanvasDoc>(() => emptyCanvas());
+  /**
+   * `design` IS THE WHOLE THING; `doc` IS THE SIDE BEING EDITED (G-09).
+   *
+   * Round 1 had to hand in design 05 as two files "because a design has
+   * exactly one artboard". A business card has two sides.
+   *
+   * The whole editor below — sixty-odd call sites, the canvas, the inspector,
+   * the Structure window, every operation in `scene.ts` — works on ONE
+   * artboard, and it should: a page is an artboard. So the multi-page-ness is
+   * confined to exactly two lines. `doc` is the active side as a plain
+   * one-page document, and `apply` writes it back into the side it came from.
+   * Nothing downstream of these two lines knows pages exist, which is why
+   * adding them did not touch the canvas or the inspector at all.
+   */
+  const [design, setDesign] = useState<CanvasDoc>(() => emptyCanvas());
+  const [pageIndex, setPageIndex] = useState(0);
   const [history, setHistory] = useState<History<CanvasDoc>>(() => initHistory(emptyCanvas()));
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const doc = useMemo(() => docForPage(design, pageIndex), [design, pageIndex]);
+  const pages = pageCount(design);
+  /**
+   * THE SELECTION IS A LIST (G-01), and it lives here rather than in the
+   * canvas: the Structure window, the inspector and Fabric all have to agree
+   * on it, and the only way three surfaces agree is if none of them owns it.
+   */
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
+  const selectOne = useCallback((id: string | null) => setSelectedIds(id ? [id] : []), []);
 
   /**
    * THE HISTORY, in a ref as well as in state — D-18 and D-40, one cause.
@@ -144,29 +176,65 @@ export function StudioBuilder(p: StudioBuilderProps) {
    */
   const historyRef = useRef<History<CanvasDoc>>(initHistory(emptyCanvas()));
   const setHist = useCallback((h: History<CanvasDoc>) => { historyRef.current = h; setHistory(h); }, []);
-
-  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+  /**
+   * The history is over the WHOLE DESIGN, not over the visible side.
+   *
+   * One stack per page would mean Ctrl+Z on the back of a card undoing
+   * something on the front the moment you flipped it — undo has to be the
+   * order things happened, and things happen on every side.
+   */
+  const applyDesign = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
     setHist(push(historyRef.current, next, mergeKey));
-    setDoc(next);
+    setDesign(next);
   }, [setHist]);
+
+  /**
+   * Every existing caller hands in a one-page document; this puts it back on
+   * the side it came from.
+   *
+   * A CHANGE OF SIZE IS THE ONE THING THAT IS NOT PER-PAGE. Smart Resize hands
+   * back a document with new width and height, and a design whose front is
+   * 1050 × 600 and whose back is 1275 × 1650 is not a design. So a width or
+   * height that moved is written to the design AND the other sides are
+   * re-anchored through the same `smartResize` this one went through — rather
+   * than left at the old coordinates, which is the silent version of the same
+   * bug.
+   */
+  const apply = useCallback((next: CanvasDoc, mergeKey: string | null = null) => {
+    const resized = next.width !== design.width || next.height !== design.height;
+    let base = design;
+    if (resized) {
+      base = { ...smartResize(design, next.width, next.height), width: next.width, height: next.height };
+    }
+    applyDesign(setPage(base, pageIndex, {
+      background_color: next.background_color,
+      background_gradient: next.background_gradient,
+      layers: next.layers,
+    }), mergeKey);
+  }, [applyDesign, design, pageIndex]);
 
   /** A whole new scene — a template opened, a design loaded. The stack restarts
    *  so undo can never walk backwards into a different design. */
   const replaceScene = useCallback((next: CanvasDoc, select: string | null = null) => {
     setHist(initHistory(next));
-    setDoc(next);
-    setSelectedId(select);
-  }, [setHist]);
+    setDesign(next);
+    setPageIndex(0);
+    selectOne(select);
+  }, [setHist, selectOne]);
 
   const doUndo = useCallback(() => {
     const n = undo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    // A step that removed the side you were looking at must not leave the
+    // editor pointing past the end of the design.
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
   const doRedo = useCallback(() => {
     const n = redo(historyRef.current);
     setHist(n);
-    setDoc(n.present);
+    setDesign(n.present);
+    setPageIndex((i) => Math.min(i, pageCount(n.present) - 1));
   }, [setHist]);
 
   /* ── Record state ────────────────────────────────────────────────────── */
@@ -244,7 +312,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     const result = insertWidget(kind, doc, brand, opts);
     if (!result.layers.length) return;
     apply(result.behind ? addLayersBehind(doc, result.layers) : addLayers(doc, result.layers));
-    setSelectedId(result.selectId);
+    selectOne(result.selectId);
   }, [apply, brand, doc]);
 
   const onInsert = useCallback((def: WidgetDef, count?: number) => {
@@ -356,19 +424,146 @@ export function StudioBuilder(p: StudioBuilderProps) {
     apply(patchLayer(doc, id, patch));
   }, [apply, doc]);
 
-  const deleteLayer = useCallback((id: string) => {
-    apply(removeLayer(doc, id));
-    if (selectedId === id) setSelectedId(null);
-  }, [apply, doc, selectedId]);
-
   const duplicate = useCallback((id: string) => {
     const r = duplicateLayer(doc, id);
     apply(r.doc);
-    if (r.id) setSelectedId(r.id);
+    if (r.id) selectOne(r.id);
+  }, [apply, doc, selectOne]);
+
+  /* ── Selecting more than one thing (G-01) ────────────────────────────── */
+
+  /**
+   * THE ONE PLACE A SELECTION IS DECIDED.
+   *
+   * Every surface that can change it — the canvas, the Structure window, a
+   * keyboard shortcut — comes through here, and here is where a group becomes
+   * the whole group. Doing that in the canvas would leave the Structure window
+   * showing half a group selected; doing it in both would be two rules to keep
+   * in step.
+   */
+  const changeSelection = useCallback((ids: string[]) => {
+    setSelectedIds(expandSelection(doc, ids));
+  }, [doc]);
+
+  /** A row in the Structure window: plain click, Ctrl-click, Shift-click. */
+  const selectFromStructure = useCallback((id: string, mode: "replace" | "additive" | "range") => {
+    if (mode === "replace") { changeSelection([id]); return; }
+    if (mode === "additive") {
+      const next = selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id];
+      changeSelection(next);
+      return;
+    }
+    // Range: everything between the last thing picked and this one, in stack
+    // order — which is what a person means by Shift-click in a list.
+    const order = doc.layers.map((l) => l.id);
+    const anchor = selectedIds.length ? order.indexOf(selectedIds[selectedIds.length - 1]) : -1;
+    const here = order.indexOf(id);
+    if (anchor < 0 || here < 0) { changeSelection([id]); return; }
+    const [lo, hi] = anchor <= here ? [anchor, here] : [here, anchor];
+    changeSelection(order.slice(lo, hi + 1));
+  }, [changeSelection, doc.layers, selectedIds]);
+
+  const selectedLayers = useMemo(
+    () => doc.layers.filter((l) => selectedIds.includes(l.id)),
+    [doc.layers, selectedIds],
+  );
+
+  /** Several boxes moved as one drag — ONE undo step, not one per member. */
+  const onManyGeometry = useCallback((patches: Array<{ id: string; patch: Partial<Layer> }>) => {
+    let next = doc;
+    for (const { id, patch } of patches) next = patchLayer(next, id, patch);
+    apply(next);
   }, [apply, doc]);
 
+  const deleteLayers = useCallback((ids: string[]) => {
+    let next = doc;
+    for (const id of ids) next = removeLayer(next, id);
+    apply(next);
+    setSelectedIds((cur) => cur.filter((id) => !ids.includes(id)));
+  }, [apply, doc]);
+
+  const doGroup = useCallback((ids: string[]) => {
+    const r = groupLayers(doc, ids);
+    if (!r.groupId) return;
+    apply(r.doc);
+  }, [apply, doc]);
+
+  /* ── Copy the look (G-13) ────────────────────────────────────────────── */
+  const [copiedStyle, setCopiedStyle] = useState<CopiedStyle | null>(null);
+  const copyStyle = useCallback((id: string) => {
+    setCopiedStyle(copyStyleOf(doc.layers.find((l) => l.id === id) || null));
+  }, [doc.layers]);
+  const applyCopiedStyle = useCallback((ids: string[]) => {
+    if (!copiedStyle) return;
+    apply(pasteStyle(doc, ids, copiedStyle));
+  }, [apply, copiedStyle, doc]);
+
+  /* ── The floating Structure window (G-19, §11.13.1) ──────────────────── */
+  const [structureOpen, setStructureOpen] = useState(false);
+
   /* ── Pictures ────────────────────────────────────────────────────────── */
+  /**
+   * WHICH SLOT A PICTURE IS FOR (R2-C).
+   *
+   * Null means "no slot in particular" and a picture lands as a new centred
+   * layer, exactly as it always did. An id means the author pressed "Put a
+   * picture in this slot" on a cell of a photo grid, and what comes back fills
+   * THAT cell — keeping its box, its corners, its crop shape and its border,
+   * because those are the layout and the picture is only its contents.
+   */
+  /**
+   * WHERE THE CANVAS GETS A LIBRARY PICTURE FROM (R2-A).
+   *
+   * `fabricBridge` must not know about tenants or auth, and the blob host will
+   * not answer a CORS request — so the bridge asks THIS for the bytes, and it
+   * asks LUMEN, with the same headers every other call carries. Registered here
+   * because this is where the API client lives, and asserted to be registered
+   * by the suite, because a seam that silently falls back hides the defect it
+   * was built for.
+   */
+  useEffect(() => {
+    setAssetBytesResolver(async (assetId: string) => {
+      const r = await get<{ dataUrl?: string }>(`/api/v1/my-brand/assets/${assetId}/bytes`);
+      return r?.dataUrl || null;
+    });
+    return () => setAssetBytesResolver(null);
+  }, [get]);
+
+  const [slotTarget, setSlotTarget] = useState<string | null>(null);
+  const openSlotPicker = useCallback((id: string) => {
+    setSlotTarget(id);
+    setLibraryOpen(true);
+  }, []);
+
+  /** The same slot, from a file on this machine — the library may be empty. */
+  const uploadToSlot = useCallback((id: string) => {
+    setSlotTarget(id);
+    fileInputRef.current?.click();
+  }, []);
+
   const placeAsset = useCallback((asset: PickerAsset) => {
+    /**
+     * A SLOT IS FILLED, NOT COVERED.
+     *
+     * The target is the slot the author asked to fill; failing that, the
+     * EMPTY picture layer they have selected — because clicking a grid cell
+     * and then picking a picture can only mean one thing, and round 2 answered
+     * it by dropping a second picture in the middle of the design instead.
+     */
+    const target = slotTarget
+      ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+      : isEmptySlot(selected) ? selected : null;
+    if (target && asset.url) {
+      apply(fillPictureSlot(doc, target.id, {
+        src: asset.url,
+        asset_id: asset.asset_id,
+        blob_ref: asset.blob_ref,
+      }));
+      selectOne(target.id);
+      setSlotTarget(null);
+      setLibraryOpen(false);
+      return;
+    }
     const maxSide = Math.min(doc.width, doc.height) * 0.6;
     const aw = asset.width_px || 800;
     const ah = asset.height_px || 800;
@@ -382,9 +577,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
       rotation: 0, visible: true,
     };
     apply(addLayers(doc, [layer]));
-    setSelectedId(layer.id);
+    selectOne(layer.id);
     setLibraryOpen(false);
-  }, [apply, doc]);
+  }, [apply, doc, selected, slotTarget]);
 
   const onUploadImage = useCallback((e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -401,11 +596,22 @@ export function StudioBuilder(p: StudioBuilderProps) {
           return;
         }
       } catch { /* fall through to a local-only layer */ }
+      // The upload did not reach the library, but the author still asked for a
+      // picture IN A SLOT — so it goes in the slot, as the bytes they chose.
+      const target = slotTarget
+        ? doc.layers.find((l) => l.id === slotTarget && l.kind === "image")
+        : isEmptySlot(selected) ? selected : null;
+      if (target) {
+        apply(fillPictureSlot(doc, target.id, { src: dataUrl }));
+        selectOne(target.id);
+        setSlotTarget(null);
+        return;
+      }
       place("image", { imageSrc: dataUrl });
     };
     reader.readAsDataURL(file);
     e.target.value = "";
-  }, [place, placeAsset, post]);
+  }, [apply, doc, place, placeAsset, post, selected, slotTarget]);
 
   const [bgRemoveBusy, setBgRemoveBusy] = useState(false);
   const [bgRemoveError, setBgRemoveError] = useState<string | null>(null);
@@ -454,7 +660,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       const r = insertWidget("heading", doc, brand);
       const layers = r.layers.map((l) => (l.kind === "text" ? { ...l, content: textValue } : l));
       apply(addLayers(doc, layers as Layer[]));
-      setSelectedId(r.selectId);
+      selectOne(r.selectId);
     }
     setAiOptions([]); setAiPrompt("");
   }, [apply, brand, doc, selected]);
@@ -480,7 +686,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
     if (!ready) return null;
     setSaving(true); setSaveError(null);
     try {
-      const body = { canvas: doc, name: designName };
+      // The WHOLE design is saved, every side of it — `doc` is only the side
+      // on screen, and saving that would quietly throw the back of the card away.
+      const body = { canvas: design, name: designName };
       const saved = currentDesignId
         ? await put<DesignDto>(`/api/v1/my-brand/designs/${currentDesignId}`, body)
         : await post<DesignDto>("/api/v1/my-brand/designs", body);
@@ -497,7 +705,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     } finally {
       setSaving(false);
     }
-  }, [currentDesignId, designName, doc, p, post, put, ready]);
+  }, [currentDesignId, design, designName, p, post, put, ready]);
 
   /** §7: open one, adjust it, SAVE AS A NEW TEMPLATE. */
   const [templateName, setTemplateName] = useState("");
@@ -508,7 +716,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
     setTemplateBusy(true); setTemplateError(null);
     try {
       const created = await post<TemplateDto>("/api/v1/my-brand/templates", {
-        name, kind: kindForSize(doc), canvas: doc,
+        name, kind: kindForSize(doc), canvas: design,
       });
       if (!created?.template_id) throw new Error("the template was not saved");
       setSaveTemplateOpen(false);
@@ -538,17 +746,62 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const exportLocal = useCallback(async (format: "png" | "jpg" | "svg" | "pdf") => {
     setExporting(format); setExportError(null);
     try {
+      /**
+       * A DOWNLOAD REFUSES RATHER THAN DROPPING A SLOT (parity D-6).
+       *
+       * Round 1: *"'Leave an empty slot for now' draws a grey slot with
+       * instructions on the canvas and writes no ink into the PNG."* The
+       * author does not find out until the file is at the printer.
+       *
+       * The two honest answers were export the slot or refuse; exporting it
+       * ships a grey instruction box in a customer's flyer, so it refuses, by
+       * name, in the same sentence LUMEN's own export refuses with
+       * (`scene.emptySlotMessage` and `templateStudio.emptySlotMessage`
+       * produce the same words).
+       *
+       * Checked against the WHOLE design, not the visible side: page two's
+       * empty slot is just as missing.
+       */
+      const blocked = emptySlotMessage(design);
+      if (blocked) throw new Error(blocked);
+      /**
+       * A PHOTOGRAPH THAT POISONED THE WHOLE DOWNLOAD (round-3 R2-A).
+       *
+       * Six of the ten reference designs could not be downloaded at all: PNG,
+       * JPG and PDF each died with the browser's own "Tainted canvases may not
+       * be exported", which tells an author nothing and offers them nothing.
+       *
+       * `fabricBridge` now asks every picture's host for permission, so the
+       * ordinary case simply works. This is the case where a host refuses:
+       * rather than let the browser throw, the design says which pictures and
+       * where to go instead. An SVG carries the picture by reference and never
+       * reads the canvas back, so it is not refused.
+       */
+      if (format !== "svg") {
+        const dirty = taintedIn(design.layers.concat(...(design.pages || []).map((pg) => pg.layers)));
+        if (dirty.length) throw new Error(taintMessage(dirty.length));
+      }
       if (format === "svg") {
         const svg = canvasRef.current?.toSVG();
         if (!svg) throw new Error("the design could not be drawn");
         const href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
         download(href, exportFilename(designName, "svg"));
       } else if (format === "pdf") {
-        // One page, the artboard's real size, the SAME picture the PNG download
-        // gets — see pdf.ts. No library, no server round trip.
-        const url = canvasRef.current?.toDataURL("png");
-        if (!url) throw new Error("the design could not be drawn");
-        const bytes = await imagePdfFromPngDataUrl(url, pageSize, designName);
+        // EVERY side, each at the artboard's real size, the SAME picture the
+        // PNG download gets — see pdf.ts. No library, no server round trip.
+        //
+        // The side on screen is captured from the live canvas, exactly as it
+        // always was; the others are drawn off screen. A one-page design
+        // therefore takes the identical path it took before pages existed.
+        const urls: string[] = [];
+        for (let i = 0; i < pages; i++) {
+          const url = i === pageIndex
+            ? canvasRef.current?.toDataURL("png")
+            : await canvasRef.current?.renderPage(docForPage(design, i));
+          if (!url) throw new Error(`page ${i + 1} could not be drawn`);
+          urls.push(url);
+        }
+        const bytes = await imagePdfFromPngDataUrls(urls, pageSize, designName);
         const href = URL.createObjectURL(new Blob([bytes], { type: PDF_MIME }));
         download(href, exportFilename(designName, "pdf"));
         // Freed on a timer, not immediately: revoking before the anchor's click
@@ -565,7 +818,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
       setExporting(null);
       setExportOpen(false);
     }
-  }, [designName, download, pageSize]);
+  }, [design, designName, download, pageIndex, pages, pageSize]);
 
   /** Render server-side into the Media Library, and go and look at it. */
   const exportToLibrary = useCallback(async () => {
@@ -620,14 +873,57 @@ export function StudioBuilder(p: StudioBuilderProps) {
         duplicate(selectedId);
         return;
       }
-      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedId) {
+      /**
+       * Ctrl+I opens Structure — §11.13.1 names that key for every builder.
+       *
+       * IT WORKS WITH THE CARET IN A FIELD (parity D-7). Round 1: *"After
+       * typing an X into Advanced, the shortcut is swallowed by the typing
+       * guard. The toolbar button works; the shortcut card promises the key."*
+       *
+       * The typing guard is right for Ctrl+Z, Ctrl+D and Delete, because each
+       * of those means something ELSE inside a text field — undo the typing,
+       * delete the character. Opening a window means the same thing wherever
+       * the caret is, and Ctrl+I is not a field shortcut in any browser (the
+       * one page context that claims it, rich-text italic, is not a thing this
+       * inspector has). So the guard does not apply to it.
+       *
+       * The field is blurred first: leaving the caret in a number box while a
+       * floating window takes focus is how a half-typed X gets abandoned.
+       */
+      if (mod && e.key.toLowerCase() === "i") {
         e.preventDefault();
-        deleteLayer(selectedId);
+        if (typing && t) t.blur();
+        setStructureOpen((v) => !v);
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "g") {
+        if (typing || !selectedIds.length) return;
+        e.preventDefault();
+        if (e.shiftKey) apply(ungroupLayers(doc, selectedIds));
+        else doGroup(selectedIds);
+        return;
+      }
+      // Arrow-key nudge: one pixel, ten with Shift, the same as every design
+      // tool. Not wired before, and it is what "move it two pixels left"
+      // actually needs — a drag cannot do two pixels.
+      if (!typing && !mod && selectedIds.length &&
+          (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === "ArrowLeft" ? -step : e.key === "ArrowRight" ? step : 0;
+        const dy = e.key === "ArrowUp" ? -step : e.key === "ArrowDown" ? step : 0;
+        // One undo step per burst of taps on the same arrow, not one per tap.
+        apply(nudgeLayers(doc, selectedIds, dx, dy), `nudge:${selectedIds.join(",")}`);
+        return;
+      }
+      if ((e.key === "Delete" || e.key === "Backspace") && !typing && selectedIds.length) {
+        e.preventDefault();
+        deleteLayers(selectedIds);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayer, selectedId]);
+  }, [p.open, save, doUndo, doRedo, duplicate, deleteLayers, doGroup, apply, doc, selectedId, selectedIds]);
 
   const errorMessage = saveError ? `Could not save: ${saveError}`
     : exportError ? `Could not export: ${exportError}`
@@ -752,7 +1048,7 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 onOpenGallery={() => setGalleryOpen(true)}
                 onUpload={() => fileInputRef.current?.click()}
                 onLibrary={() => setLibraryOpen(true)}
-                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); setSelectedId(l.id); }}
+                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); selectOne(l.id); }}
                 ai={{
                   prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
                   setPrompt: setAiPrompt, write: () => void aiWrite(), generate: () => void aiGenerate(), apply: aiApply,
@@ -770,13 +1066,25 @@ export function StudioBuilder(p: StudioBuilderProps) {
             doc={doc}
             brand={brand}
             selected={selected}
-            onSelect={setSelectedId}
+            selectedLayers={selectedLayers}
             onUpdate={updateLayer}
-            onDelete={deleteLayer}
+            onDelete={deleteLayers}
             onDuplicate={duplicate}
             onReorder={(id, d) => apply(reorderLayer(doc, id, d))}
+            onToEdge={(ids, edge) => apply(moveLayersToEdge(doc, ids, edge))}
             onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
-            onAlign={(id, which) => apply(alignLayer(doc, id, which))}
+            onAlign={(ids, which) => apply(alignLayers(doc, ids, which))}
+            onDistribute={(ids, axis) => apply(distributeLayers(doc, ids, axis))}
+            onTidy={(ids) => apply(tidyUp(doc, ids))}
+            onGroup={doGroup}
+            onUngroup={(ids) => apply(ungroupLayers(doc, ids))}
+            onCopyStyle={copyStyle}
+            onPasteStyle={applyCopiedStyle}
+            onSelectionBox={(ids, box) => apply(setSelectionBox(doc, ids, box))}
+            onTurnSelection={(ids, to, from) => apply(turnSelection(doc, ids, to, from))}
+            onFillSlot={openSlotPicker}
+            onUploadToSlot={uploadToSlot}
+            copiedStyleKind={copiedStyle?.kind ?? null}
             onFixContrast={(id) => apply(fixTextContrast(doc, id))}
             onSetBackground={(c) => apply(setBackgroundColor(doc, c))}
             onBrandSync={() => apply(brandSync(doc, brandSwatches(brand).map((s) => s.colour)))}
@@ -799,22 +1107,130 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </div>
           )}
           <input ref={fileInputRef} type="file" accept="image/*" onChange={onUploadImage} className="hidden" />
+          {/*
+            THE PAGE STRIP (G-09).
+            It is drawn only once there is more than one side, or once somebody
+            has hovered the Add-a-side button into existence — a single-page
+            poster should not carry a page rail it will never use. Canva puts
+            the same strip under the canvas and so does this.
+          */}
+          <div className="flex items-center gap-1 border-b border-slate-100 px-4 py-1.5 text-[10px]">
+            {Array.from({ length: pages }, (_, i) => (
+              <div key={i} className="group flex items-center">
+                <button
+                  type="button"
+                  data-page-tab={i}
+                  onClick={() => { setPageIndex(i); selectOne(null); }}
+                  title={pages === 2 ? (i === 0 ? "The front" : "The back") : `Side ${i + 1} of ${pages}`}
+                  className={"rounded-l border px-2 py-1 font-semibold " + (i === pageIndex
+                    ? "border-slate-800 bg-slate-800 text-white"
+                    : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}
+                >
+                  {pages === 2 ? (i === 0 ? "Front" : "Back") : `Side ${i + 1}`}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const out = duplicatePage(design, i);
+                    applyDesign(out.doc);
+                    setPageIndex(out.index);
+                    selectOne(null);
+                  }}
+                  disabled={pages >= MAX_PAGES}
+                  title="Make a copy of this side"
+                  className="border-y border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700 disabled:text-slate-200"
+                >
+                  <Copy className="h-2.5 w-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    applyDesign(removePage(design, i));
+                    setPageIndex((cur) => Math.min(cur, pages - 2));
+                    selectOne(null);
+                  }}
+                  disabled={pages <= 1}
+                  title={pages <= 1 ? "A design has to have one side" : "Delete this side"}
+                  className="rounded-r border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-red-600 disabled:text-slate-200"
+                >
+                  <Trash2 className="h-2.5 w-2.5" />
+                </button>
+                {i > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => { applyDesign(movePage(design, i, i - 1)); setPageIndex(i - 1); }}
+                    title="Move this side earlier"
+                    className="ml-0.5 rounded border border-slate-200 bg-white px-1 py-1 text-slate-400 hover:text-slate-700"
+                  >
+                    ←
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              type="button"
+              data-add-page
+              onClick={() => {
+                const out = addPage(design);
+                applyDesign(out.doc);
+                setPageIndex(out.index);
+                selectOne(null);
+              }}
+              disabled={pages >= MAX_PAGES}
+              title={pages >= MAX_PAGES
+                ? `A design can have up to ${MAX_PAGES} sides`
+                : "Add another side — the back of a card, the second page of a flyer. Every side is the same size, and the PDF download carries them all."}
+              className="ml-1 inline-flex items-center gap-1 rounded border border-dashed border-slate-300 px-2 py-1 font-semibold text-slate-600 hover:bg-slate-50 disabled:text-slate-300"
+            >
+              <Plus className="h-2.5 w-2.5" /> Add a side
+            </button>
+          </div>
           <div className="min-h-0 flex-1">
             <PixelCanvas
               ref={canvasRef}
               doc={doc}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
+              selectedIds={selectedIds}
+              onSelect={changeSelection}
               onLayerGeometry={onGeometry}
+              onManyGeometry={onManyGeometry}
+              overlay={
+                <StructureWindow
+                  open={structureOpen}
+                  onClose={() => setStructureOpen(false)}
+                  layers={doc.layers}
+                  selectedIds={selectedIds}
+                  onSelect={selectFromStructure}
+                  onMove={(id, toIndex) => apply(moveLayerToIndex(doc, id, toIndex))}
+                  onToggleVisibility={(id) => apply(toggleLayerVisibility(doc, id))}
+                  onToggleLock={(id) => {
+                    const l = doc.layers.find((x) => x.id === id);
+                    if (l) apply(patchLayer(doc, id, { locked: l.locked !== true }));
+                  }}
+                />
+              }
               toolbar={
                 <div className="flex items-center gap-2 rounded border border-slate-200 bg-white px-2 py-1 shadow-sm">
                   <button
                     type="button"
-                    onClick={() => setResizeOpen(true)}
-                    title="Resize this design for another platform — everything re-anchors itself"
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100"
+                    data-structure-toggle
+                    onClick={() => setStructureOpen((v) => !v)}
+                    title="Structure — the list of everything on this design, as a window you can drag out of the way (⌘/Ctrl+I)"
+                    className={"inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold hover:bg-slate-100 " +
+                      (structureOpen ? "bg-slate-100 text-slate-900" : "text-slate-700")}
                   >
-                    <Scaling className="h-3 w-3" /> Resize
+                    <Layers className="h-3 w-3" /> Structure
+                  </button>
+                  <div className="h-4 w-px bg-slate-200" />
+                  <button
+                    type="button"
+                    onClick={hasProTools ? () => setResizeOpen(true) : undefined}
+                    disabled={!hasProTools}
+                    title={hasProTools
+                      ? "Resize this design for another platform, or a size of your own — everything re-anchors itself"
+                      : "Resizing a finished design is a Pro feature"}
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
+                  >
+                    <Scaling className="h-3 w-3" /> Resize{!hasProTools && " · Pro+"}
                   </button>
                   <div className="h-4 w-px bg-slate-200" />
                   <button
@@ -903,23 +1319,16 @@ export function StudioBuilder(p: StudioBuilderProps) {
         </IadmModal>
       )}
 
-      {libraryOpen && <AssetPickerModal onClose={() => setLibraryOpen(false)} onPick={placeAsset} />}
+      {libraryOpen && <AssetPickerModal onClose={() => { setLibraryOpen(false); setSlotTarget(null); }} onPick={placeAsset} />}
 
       {resizeOpen && (
         <IadmModal
           open onClose={() => setResizeOpen(false)} product="spark"
           eyebrow="MY BRAND · DESIGN STUDIO" title="Resize this design"
-          subtitle={hasProTools
-            ? "Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
-            : "Resizing a finished design is a Pro feature."}
+          subtitle="Everything re-anchors itself — edges stay on edges, full-width bands stay full width."
           size="nav"
         >
-          <div className="p-5">
-            {!hasProTools && (
-              <div className="mb-3 rounded border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
-                Upgrade to Pro to resize one design for every platform in a click.
-              </div>
-            )}
+          <div className="max-h-[60vh] overflow-y-auto p-5">
             <div className="grid grid-cols-2 gap-2">
               {SIZE_PRESETS.map((s) => {
                 const activeSize = doc.width === s.w && doc.height === s.h;
@@ -927,13 +1336,12 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   <button
                     key={s.key}
                     type="button"
-                    disabled={!hasProTools || activeSize}
+                    disabled={activeSize}
                     title={activeSize ? "This is the size you are on" : `Resize to ${s.label}, ${s.w}×${s.h}`}
                     onClick={() => { apply(smartResize(doc, s.w, s.h)); setResizeOpen(false); }}
                     className={`flex items-center justify-between rounded-lg border-2 px-3 py-2 text-left text-xs transition-colors ${
                       activeSize ? "border-[#EF6C33] bg-[#EF6C33]/5 text-slate-900"
-                        : hasProTools ? "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
-                          : "cursor-not-allowed border-slate-100 bg-slate-50 text-slate-400"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-[#EF6C33] hover:bg-[#EF6C33]/5"
                     }`}
                   >
                     <span className="font-semibold">{s.label}</span>
@@ -942,6 +1350,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
                 );
               })}
             </div>
+            <CustomSize
+              width={doc.width}
+              height={doc.height}
+              onApply={(w, h) => { apply(smartResize(doc, w, h)); setResizeOpen(false); }}
+            />
           </div>
         </IadmModal>
       )}
@@ -1093,6 +1506,85 @@ function StudioPaneHeader({ onOpenGallery, onUpload, onLibrary, onChart, ai }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A size of your own (G-11).
+ *
+ * The ratio lock is the whole reason this is not two boxes: the common job is
+ * "the same poster, but A3", and typing one number and having the other follow
+ * is what keeps a design from being squashed by a typo. The sides are clamped
+ * to what the SERVER will render — an export refuses over 6000 px a side, and
+ * a design authored at 8000 would be a design that can never be downloaded.
+ */
+function CustomSize({ width, height, onApply }: {
+  width: number; height: number; onApply: (w: number, h: number) => void;
+}) {
+  const [w, setW] = useState(String(width));
+  const [h, setH] = useState(String(height));
+  const [lock, setLock] = useState(false);
+  const ratio = height > 0 ? width / height : 1;
+  const cw = clampCanvasSide(w);
+  const ch = clampCanvasSide(h);
+  const unchanged = cw === width && ch === height;
+  return (
+    <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">A size of your own</div>
+      <div className="flex items-end gap-2">
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Wide
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={w}
+            title={`How wide, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom width in pixels"
+            data-custom-width
+            onChange={(e) => {
+              setW(e.target.value);
+              if (lock) setH(String(clampCanvasSide(Number(e.target.value) / (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+          Tall
+          <input
+            type="number" min={MIN_CANVAS_SIDE} max={MAX_CANVAS_SIDE}
+            value={h}
+            title={`How tall, in pixels — between ${MIN_CANVAS_SIDE} and ${MAX_CANVAS_SIDE}`}
+            aria-label="Custom height in pixels"
+            data-custom-height
+            onChange={(e) => {
+              setH(e.target.value);
+              if (lock) setW(String(clampCanvasSide(Number(e.target.value) * (ratio || 1))));
+            }}
+            className="mt-0.5 w-24 rounded border border-slate-300 px-1.5 py-1 text-[11px] font-normal normal-case tabular-nums"
+          />
+        </label>
+        <label
+          className="flex items-center gap-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500"
+          title="Keep the same shape — change one side and the other follows"
+        >
+          <input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} />
+          Keep the shape
+        </label>
+        <button
+          type="button"
+          disabled={unchanged}
+          onClick={() => onApply(cw, ch)}
+          title={unchanged ? "That is the size you are already on" : `Resize to ${cw}×${ch}`}
+          className="ml-auto rounded bg-slate-800 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          Resize
+        </button>
+      </div>
+      {(cw !== Number(w) || ch !== Number(h)) && (
+        <div className="mt-1.5 text-[10px] text-amber-700">
+          Sides are kept between {MIN_CANVAS_SIDE} and {MAX_CANVAS_SIDE} pixels — that is the biggest picture we can render for you.
+        </div>
+      )}
     </div>
   );
 }

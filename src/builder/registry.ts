@@ -735,7 +735,12 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     picture: pictureFrom(solid(8, 8, 14, 12) + solid(25, 8, 14, 12) + solid(42, 8, 14, 12) + solid(8, 23, 14, 10) + solid(25, 23, 14, 10) + solid(42, 23, 14, 10)),
     category: "Basic",
     hidden: true,
-    adapters: ["landing", "brand"],
+    /* `brand` CAME OFF THIS LIST on 2026-09-22. The offer file's name for My
+       Brand's grid is `photo_grid` (canvas_pieces), which is its own def
+       below; `adapters/mybrand/insert.ts` has no `gallery` case any more, so
+       claiming the studio here said the studio could place something it
+       could not. */
+    adapters: ["landing"],
     defaults: { items: [] },
     controls: [{ key: "items", label: "Photos", type: "list" }],
     count: { min: 2, max: 12, label: "How many photos?", default: 6 },
@@ -1013,6 +1018,26 @@ const LEGACY_WIDGETS: WidgetDef[] = [
     controls: [
       { key: "fill", label: "Fill", type: "select", options: ["Brand colour", "Fade between two brand colours", "A photo"] },
     ],
+  },
+  {
+    /* PHOTO GALLERY — `photo_grid`, one of the five `canvas_pieces` the offer
+       file gives My Brand. Its own def and not `gallery`'s second adapter,
+       because the two are different things: a landing page's gallery is a
+       FLOW of pictures the page lays out, and this is a set of absolute-pixel
+       slots with a gutter and a corner radius the author drags. */
+    kind: "photo_grid",
+    label: "Photo gallery",
+    description: { brand: "Several photos laid out in a grid, each one a slot you fill." },
+    icon: "Images",
+    picture: pictureFrom(solid(8, 8, 14, 12) + solid(25, 8, 14, 12) + solid(42, 8, 14, 12) + solid(8, 23, 14, 10) + solid(25, 23, 14, 10) + solid(42, 23, 14, 10)),
+    category: "Basic",
+    adapters: CANVAS,
+    defaults: { gutter: 16, radius: 0 },
+    controls: [
+      { key: "gutter", label: "Gap", type: "number", help: "The space between the pictures." },
+      { key: "radius", label: "Rounded corners", type: "number" },
+    ],
+    count: { min: 2, max: 12, label: "How many photos?", default: 4 },
   },
   {
     kind: "qr_code",
@@ -1438,7 +1463,7 @@ export const PANEL_ORDER: string[] = [
   INNER_SECTION_PRESET_KIND,
   "heading", "image", "paragraph", "video", "button", "divider", "spacer", "google_maps", "icon",
   // ...and the studio's placed objects, which no other builder offers.
-  "brand_logo", "shape",
+  "brand_logo", "shape", "photo_grid",
   // General
   "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
   "counter", "progress_bar", "progress_tracker", "testimonial", "tabs", "accordion", "toggle",

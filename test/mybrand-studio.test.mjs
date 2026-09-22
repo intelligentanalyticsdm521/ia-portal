@@ -512,14 +512,34 @@ describe("the PDF export", () => {
   test("the inches and the pixels describe the SAME rectangle", () => {
     // PRINT_INCHES is keyed by preset key, so the two facts live apart. If a
     // preset's pixels are ever re-cut without its inches, this is what says so.
+    //
+    // WHY THIS IS A TOLERANCE AND NOT AN EQUALITY (changed 2026-09-19, G-11).
+    // It used to demand that width/inches and height/inches came out at the
+    // SAME whole number of dpi. That is only possible for a paper whose sides
+    // are a whole number of inches — Letter and a business card are, and A4 is
+    // 210 × 297 MILLIMETRES, which is 8.2677 × 11.6929 in. At 150 dpi that is
+    // 1240.16 × 1753.93 pixels, and a canvas cannot be a sixth of a pixel
+    // wide. So the claim is the honest one: rounding to whole pixels is the
+    // ONLY difference allowed between the two sides, which is still tight
+    // enough that re-cutting a preset's pixels without its inches fails here.
     for (const [key, physical] of Object.entries(PRINT_INCHES)) {
       const preset = SIZE_PRESETS.find((p) => p.key === key);
       assert.ok(preset, `PRINT_INCHES names ${key}, which is not a size preset`);
       const [inW, inH] = physical.inches;
       const dpiW = preset.w / inW;
       const dpiH = preset.h / inH;
-      assert.equal(dpiW, dpiH, `${key} is ${dpiW} dpi across and ${dpiH} dpi down — one of the two is wrong`);
-      assert.ok(Number.isInteger(dpiW) && dpiW >= 150, `${key} would print at ${dpiW} dpi`);
+      // The two dpi may differ only by what one rounded pixel is worth.
+      const slackW = 0.5 / inW;
+      const slackH = 0.5 / inH;
+      assert.ok(
+        Math.abs(dpiW - dpiH) <= slackW + slackH,
+        `${key} is ${dpiW} dpi across and ${dpiH} dpi down — one of the two is wrong`,
+      );
+      const nominal = Math.round(dpiW);
+      assert.ok(nominal >= 150, `${key} would print at ${dpiW} dpi`);
+      // And the pixels really are the inches at that nominal dpi, rounded.
+      assert.equal(preset.w, Math.round(inW * nominal), `${key} width is not ${nominal} dpi of ${inW} in`);
+      assert.equal(preset.h, Math.round(inH * nominal), `${key} height is not ${nominal} dpi of ${inH} in`);
     }
   });
 
@@ -599,7 +619,7 @@ describe("the PDF export", () => {
     );
     await assert.rejects(
       () => buildImagePdf({ rgb: swatch(2, 2), pixelWidth: 2, pixelHeight: 2, pageWidthPt: 0, pageHeightPt: 72 }),
-      /no size/,
+      /no size|no page size/,
     );
   });
 

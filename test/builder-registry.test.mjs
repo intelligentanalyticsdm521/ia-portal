@@ -237,7 +237,7 @@ describe("§3.2's union is registered", () => {
     "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
     // The studio's placed objects (§5 step 5). Not one of §11.13.3's four
     // builders, so they keep their own words.
-    "brand_logo", "shape", "colour_block", "background", "qr_code", "social_handle",
+    "brand_logo", "shape", "photo_grid", "colour_block", "background", "qr_code", "social_handle",
     // Understood, never offered. Each one's reason is in registry.ts.
     // `data_table` is OFFERED now (the offer file's proposal list), so it
     // moved up into the Intelligent Analytics block above.
