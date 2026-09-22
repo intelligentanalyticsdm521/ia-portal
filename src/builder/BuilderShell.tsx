@@ -245,7 +245,12 @@ export interface BuilderShellProps extends InspectorSlots {
    * inventing one. Returning false means "I handled it"; the default is the
    * engine's own blank section.
    */
-  onAddBlank?: (atIndex: number) => boolean;
+  /* The STRUCTURE the author picked comes with it (B-168 W-3, 2026-09-22).
+     The add area has handed `(layout, preset)` to the shell since D-172; this
+     prop took only the index, so an adapter that builds its own section had no
+     way to know whether the author asked for one column or four. The website
+     adapter's did not, and every section it added published as one. */
+  onAddBlank?: (atIndex: number, layout: SectionLayout, preset: StructurePreset) => boolean;
   /**
    * The adapter's own insert. The website adapter needs it because a SECTION
    * widget there is a whole new section whose Elementor node the SERVER
@@ -711,7 +716,10 @@ export function BuilderShell(p: BuilderShellProps) {
     const payload = drag;
     setDrag(null);
     if (!payload) return;
-    if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    /* A DROP ON THE ADD AREA IS ONE COLUMN — the author dropped a thing, they
+       did not pick a structure, so the preset is the one-column one and the
+       adapter is told so rather than left to guess. */
+    if (p.onAddBlank && p.onAddBlank(at, "flex", STRUCTURE_PRESETS[0]) === false) return;
     /* THE SAME ONE SHAPE (D-172, round 2) — Section → its column → ONE
        container, with the dropped thing INSIDE the container. This used to
        make a bare section and put the widget straight in the column, so a
@@ -779,7 +787,7 @@ export function BuilderShell(p: BuilderShellProps) {
    * existed and this arranges them.
    */
   const addStructure = useCallback((at: number, layout: SectionLayout, preset: StructurePreset) => {
-    if (p.onAddBlank && p.onAddBlank(at) === false) return;
+    if (p.onAddBlank && p.onAddBlank(at, layout, preset) === false) return;
     /* ONE SHAPE FROM THE ADD AREA (D-172, round 2).
        EVERY preset now makes a CARRIER PAIR — Section → its one column → ONE
        container — including the one-column preset, which used to make a

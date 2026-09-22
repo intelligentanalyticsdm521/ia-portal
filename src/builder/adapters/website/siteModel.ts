@@ -88,6 +88,28 @@ export interface SectionStyle { background?: string; padding?: number | null; he
 
 /** The prop a section keeps its look AS IT ARRIVED in. */
 export const STYLE0_PROP = "__style0";
+/**
+ * THE SECTION'S WHOLE BOX, AS IT ARRIVED (B-168 W-4, 2026-09-22).
+ *
+ * `SectionStyle` above is three keys, and those three were all that ever left
+ * the browser. The builder's Container panel offers Width, Background, Text
+ * colour, Edge width / style / colour, Rounded corners, Shadow, Min Height,
+ * Typography, Margin and Padding — a read-only scorer changed every one of
+ * them, watched the canvas change, published, and read the container back byte
+ * for byte its defaults. Eleven of its 52 Wrongs were this one gap.
+ *
+ * The engine already keeps all of it on `Section.style` (§11.8's
+ * `ElementStyle`), which is the SAME shape a nested box sends and which
+ * arion-api's `styleToSettings` / `layoutFromStyle` pair has published since
+ * D-156. So it rides as `box`, unchanged, and nothing new has to be invented
+ * at either end.
+ *
+ * It is sent ONLY WHEN IT CHANGED, measured against this snapshot. Not an
+ * optimisation: a box read off a client's own page and written straight back
+ * must be byte for byte what it was, and re-emitting a style nobody touched
+ * would normalise their keys.
+ */
+export const BOX0_PROP = "__box0";
 
 /** The style a section is actually BUILT with, which is what changes are measured from. */
 function asBuiltStyle(style: SectionStyle): SectionStyle {
@@ -242,7 +264,12 @@ function sectionFor(entry: ArionSection): Section {
       padding: Number.isFinite(Number(freeStyle.padding)) ? Number(freeStyle.padding) : 0,
       headingFont: freeStyle.headingFont || "",
       columns,
-      meta: { [NODE_PROP]: node, [STYLE0_PROP]: asBuiltStyle(freeStyle) },
+      style: (fields as any).box || undefined,
+      meta: {
+        [NODE_PROP]: node,
+        [STYLE0_PROP]: asBuiltStyle(freeStyle),
+        [BOX0_PROP]: (fields as any).box || null,
+      },
     });
   }
 
@@ -265,7 +292,11 @@ function sectionFor(entry: ArionSection): Section {
     // `Section.padding` is a number and a section with no padding of its own
     // is built with 0, so comparing against the incoming `null` would report a
     // change the author never made.
-    meta: { [STYLE0_PROP]: asBuiltStyle(style) },
+    style: (entry.fields as any)?.box || undefined,
+    meta: {
+      [STYLE0_PROP]: asBuiltStyle(style),
+      [BOX0_PROP]: (entry.fields as any)?.box || null,
+    },
   });
 }
 
@@ -331,6 +362,14 @@ export function styleOf(s: Section): SectionStyle | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/** The section's own box, when the author changed it. `undefined` otherwise. */
+export function boxOf(s: Section): Record<string, any> | undefined {
+  const now = s.style && Object.keys(s.style).length ? s.style : null;
+  const before = ((s.meta as any)?.[BOX0_PROP] ?? null) as Record<string, any> | null;
+  if (JSON.stringify(now) === JSON.stringify(before)) return undefined;
+  return (now || {}) as Record<string, any>;
+}
+
 export function contentFieldsOf(s: Section): Record<string, any> {
   const blocks: any[] = [];
   s.columns.forEach((col, i) => {
@@ -340,7 +379,8 @@ export function contentFieldsOf(s: Section): Record<string, any> {
     }
   });
   const style = styleOf(s);
-  return { layout: s.layout, blocks, ...(style ? { style } : {}) };
+  const box = boxOf(s);
+  return { layout: s.layout, blocks, ...(style ? { style } : {}), ...(box ? { box } : {}) };
 }
 
 /** Everything a section sends back, minus the props that are ours, not theirs. */
@@ -356,7 +396,8 @@ export function fieldsOf(s: Section): Record<string, any> | null {
   // The section's own look comes off the SECTION, not the widget — the canvas
   // toolbar puts it there and the engine carries it through undo and reorder.
   const style = styleOf(s);
-  return { ...fields, ...(style ? { style } : {}) };
+  const box = boxOf(s);
+  return { ...fields, ...(style ? { style } : {}), ...(box ? { box } : {}) };
 }
 
 /**
