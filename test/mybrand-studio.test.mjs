@@ -781,3 +781,89 @@ describe("every button in the studio carries a tooltip — SD-010", () => {
     assert.match(read("builder/adapters/mybrand/LayerInspector.tsx"), /data-colour-hex/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   6. THE LEFT PANEL IS THE ELEMENTS PANEL — nothing else is in it
+   ══════════════════════════════════════════════════════════════════════════
+
+   D-165 item 1, D-172 law 1, and the thing every My Brand parity round from 1
+   to 5 recorded as unfixed: *"What else is in the left panel that is not a
+   widget at all: a Start from a template button, an Upload · Library · Chart
+   row, an ASK FOR IT box …"*.
+
+   This is an ABSENCE guard, which is the weakest kind, so it is written as a
+   pair: each thing that must be GONE is asserted absent, and the place its job
+   MOVED TO is asserted present. An absence on its own would pass if somebody
+   deleted the feature instead of moving it (feedback_assert_presence_not_just_
+   absence).
+
+   MUTATIONS RUN, 2026-09-22, each watched go red and then restored:
+     · put `<StudioPaneHeader … />` back into the `pane` slot  → red (1)
+     · put the `<SmallTool … label="Chart" …>` row back        → red (1)
+     · drop `data-studio-templates` from the bar               → red (2)
+     · drop the `askArgus={` prop from the frame call          → red (3)
+     · make the chooser strip unconditional again              → red (4)
+   ════════════════════════════════════════════════════════════════════════ */
+
+describe("6. the studio's left panel is the shared Elements panel and nothing else", () => {
+  const shell = read("builder/adapters/mybrand/StudioBuilder.tsx");
+
+  test("(1) the studio's own pane furniture is GONE, every piece of it", () => {
+    /* Read the CODE, not the file: the note that records what was deleted and
+       where each piece went names all five, and a rule about the screen must
+       not be broken by the prose describing the screen. */
+    const code = codeOf(shell);
+    const still = [
+      "StudioPaneHeader",       // the component itself
+      "Start from a template",  // the template button
+      "SmallTool",              // the Upload · Library · Chart row
+      "Ask for it",             // the AI box's heading, in the pane
+      "chartLayer(",            // the Chart button's only caller
+    ].filter((gone) => code.includes(gone));
+    assert.deepEqual(still, [],
+      `these are still in the left panel: ${still.join(", ")}. The panel is the `
+      + `Elements panel — the offer file's tiles and nothing else (D-165 item 1, D-172).`);
+  });
+
+  test("(2) …and Start from a template became the bar's Add Template folder", () => {
+    assert.match(codeOf(shell), /data-studio-templates/);
+    assert.match(codeOf(shell), /title="Add Template"/);
+    assert.match(codeOf(shell), /onClick=\{\(\) => setGalleryOpen\(true\)\}/);
+  });
+
+  test("(3) …and Ask for it became the bar's one Ask ARGUS door", () => {
+    const code = codeOf(shell);
+    assert.match(code, /askArgus=\{/, "the frame is not given a bar button");
+    assert.match(code, /data-builder-argus/);
+    assert.match(code, /data-studio-ask/, "the dialog the bar button opens is missing");
+    // The two actions and their prices survived the move, word for word.
+    assert.ok(code.includes("Write copy · 1cr"), "Write copy is gone, not moved");
+    assert.ok(code.includes("Make image · 8cr"), "Make image is gone, not moved");
+  });
+
+  test("(4) …and Upload / Library became the Picture's own Content controls", () => {
+    const inspector = codeOf(read("builder/adapters/mybrand/LayerInspector.tsx"));
+    assert.match(inspector, /Put a picture in this slot/);
+    assert.match(inspector, /onUploadToSlot/);
+    // The tile asks NOTHING before it lands — Elementor does not.
+    assert.ok(!codeOf(shell).includes('title: "Where is the picture?"'),
+      "the Picture tile still asks where the picture is before it lands");
+  });
+
+  test("(5) the only thing that may sit over the tiles is a question being asked", () => {
+    const code = codeOf(shell);
+    /* The strip is inside `{chooser && (`, so an author who is not mid-insert
+       sees the panel with nothing above it. */
+    assert.match(code, /pane=\{\s*<>\s*\{chooser && \(/);
+    assert.match(code, /<WidgetPane adapter="brand"/);
+  });
+});
+
+/** A file's CODE, with its comments taken out — a rule about the screen must
+    not be satisfied or broken by prose describing the screen. */
+function codeOf(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^[ \t]*\/\/.*$/gm, "")
+    .replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
+}

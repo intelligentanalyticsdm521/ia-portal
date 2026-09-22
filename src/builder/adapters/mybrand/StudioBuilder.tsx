@@ -33,9 +33,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle, Copy, Download, FileImage, FileText, Layers, Loader2, Palette, Plus,
-  Save, Scaling, Send, Sparkles, Trash2, Upload, BarChart3, Image as ImageIcon,
-  LayoutTemplate,
+  AlertTriangle, Copy, Download, FileImage, FileText, FolderOpen, Layers, Loader2,
+  Palette, Plus, Save, Scaling, Send, Sparkles, Trash2,
 } from "lucide-react";
 import { ARGUS_BUBBLE_CLEARANCE, BuilderFrame } from "../../BuilderFrame";
 import { WidgetPane } from "../../WidgetPane";
@@ -86,6 +85,10 @@ import "@fontsource/lora/400.css";
 import "@fontsource/lora/700.css";
 import "@fontsource/oswald/400.css";
 import "@fontsource/oswald/700.css";
+
+/** What the Ask ARGUS box suggests you type. One sentence, in plain words. */
+const PROMPT_PLACEHOLDER =
+  'Describe it — "punchy headline for our spring special" or "a golden retriever in a hard hat"';
 
 export interface StudioBuilderProps {
   open: boolean;
@@ -359,24 +362,14 @@ export function StudioBuilder(p: StudioBuilderProps) {
         setChooserText(brand.websiteUrl || "https://");
         setChooser({ kind: "qr_code", title: "What should the code open?", options: null, placeholder: "https://yourbusiness.com/book" });
         return;
-      case "image":
-        setChooser({
-          kind: "image", title: "Where is the picture?", options: [
-            { value: "library", label: "From your Media Library", hint: "Pictures you have uploaded or generated" },
-            { value: "upload", label: "Upload one from this computer" },
-            { value: "placeholder", label: "Leave an empty slot for now" },
-          ],
-        });
-        return;
-      case "brand_logo":
-        if (brand.logoUrl) { place("brand_logo"); return; }
-        setChooser({
-          kind: "brand_logo", title: "You have not added a logo yet", options: [
-            { value: "upload", label: "Upload your logo now" },
-            { value: "placeholder", label: "Leave a space for it" },
-          ],
-        });
-        return;
+      /* `image` AND `brand_logo` ASKED "Where is the picture?" BEFORE THEY
+         LANDED, and they no longer do (2026-09-22). Elementor asks nothing
+         before an insert: an Image tile drops an Image, and *Choose Image* is
+         a control on the Content tab of the panel on the right. Ours is the
+         same — the tile drops an empty slot (or, for Your logo, the brand
+         kit's logo when there is one), and `ImageContent` in `LayerInspector`
+         offers "Put a picture in this slot" and "Upload", which is where the
+         deleted Upload / Library row's job went. */
       default:
         place(def.kind, { count });
     }
@@ -398,12 +391,6 @@ export function StudioBuilder(p: StudioBuilderProps) {
       } finally {
         setQrBusy(false);
       }
-      return;
-    }
-    if (kind === "image" || kind === "brand_logo") {
-      if (value === "library") { setLibraryOpen(true); return; }
-      if (value === "upload") { fileInputRef.current?.click(); return; }
-      place(kind);
       return;
     }
     place(kind, { option: value });
@@ -634,6 +621,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
   }, [apply, doc, post]);
 
   /* ── Ask for words / a picture ───────────────────────────────────────── */
+  /* ONE DOOR, IN THE BAR (D-172). This used to be a box living in the left
+     panel; the panel is the Elements panel now, so the same two actions sit
+     behind the bar's Ask ARGUS button, in a dialog over the canvas. */
+  const [askOpen, setAskOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
   const [aiBusy, setAiBusy] = useState<"write" | "image" | null>(null);
   const [aiOptions, setAiOptions] = useState<string[]>([]);
@@ -945,8 +936,42 @@ export function StudioBuilder(p: StudioBuilderProps) {
         canRedo={canRedo(history)}
         onUndo={doUndo}
         onRedo={doRedo}
+        /* OUR ANGIE, IN THE BAR AND NOWHERE ELSE (D-172). The studio's own AI
+           — three written options for the words, or a generated picture — is
+           what the panel's "Ask for it" box did; this is the same two actions
+           behind the same one door every other builder's AI is behind. */
+        askArgus={
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS"
+            aria-label="Ask ARGUS"
+            /* ARGUS's own gold as a Tailwind arbitrary class, never as a style
+               VALUE: `test/brand-kit.test.mjs`'s grep draws exactly that line —
+               our control chrome may carry our colour, a business's brand may
+               only come out of the kit — and the studio is a brand consumer. */
+            className="text-[#FEC82C]"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
+          </button>
+        }
         headerActions={
           <>
+            {/* ADD TEMPLATE — the reference's folder, and the studio's own
+                counterpart of the proposal builder's add-area folder button.
+                The studio's canvas is absolute pixels and has no add area, so
+                the folder lives in the bar; it opens the SAME gallery the
+                studio opens on when there is nothing on the page yet
+                (§7, "never a blank page"). */}
+            <button type="button" data-studio-templates
+              title="Add Template" aria-label="Add Template"
+              onClick={() => setGalleryOpen(true)}
+              className="inline-flex h-7 w-7 items-center justify-center rounded border border-white/20 bg-transparent text-white hover:bg-white/10"
+            >
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
             {saving ? (
               <span className="text-[11px] text-white/60">Saving…</span>
             ) : lastSavedAt && !saveError ? (
@@ -995,14 +1020,22 @@ export function StudioBuilder(p: StudioBuilderProps) {
             </IadmButton>
           </div>
         }
-        /* THE PANE'S `header` SLOT IS GONE (§11.13.1, D-165, stream 1): the
-           left panel is the widgets panel and nothing else. These are the
-           studio's own insert tools — the shape chooser, the chart, the AI
-           box — so they sit ABOVE the widget list rather than inside its
-           component. Whether they belong here at all is this adapter's own
-           call; the request is in D165_HANDOFF_2026-09-19.md. */
+        /* THE LEFT PANEL IS THE ELEMENTS PANEL (D-165 item 1, D-172 law 1).
+           The shared `WidgetPane` over the registry, `adapter="brand"`,
+           exactly as the other four builders draw it, showing the tiles
+           `BUILDER_OFFERS_2026-09-19.json` gives `builders.mybrand` and
+           nothing else. The studio's own furniture that used to sit above it
+           is DELETED — see the note where `StudioPaneHeader` was.
+
+           The ONE thing that may still appear over the tiles is a question
+           being asked THIS SECOND (Which shape? What should the code open?),
+           and only while it is being asked: the strip is not drawn at all
+           otherwise, so an author who is not mid-insert sees the panel and
+           nothing above it. The reference does the same when it replaces the
+           panel with "Select your structure". */
         pane={
           <>
+            {chooser && (
             <div style={{ borderBottom: "1px solid #E2E8F0", padding: 12 }}>
               <>
               {/* D-36: "Which shape?" opened a SECOND full-screen modal over
@@ -1044,18 +1077,9 @@ export function StudioBuilder(p: StudioBuilderProps) {
                   </div>
                 </div>
               )}
-              <StudioPaneHeader
-                onOpenGallery={() => setGalleryOpen(true)}
-                onUpload={() => fileInputRef.current?.click()}
-                onLibrary={() => setLibraryOpen(true)}
-                onChart={() => { const l = chartLayer(doc); apply(addLayers(doc, [l])); selectOne(l.id); }}
-                ai={{
-                  prompt: aiPrompt, busy: aiBusy, options: aiOptions, error: aiError,
-                  setPrompt: setAiPrompt, write: () => void aiWrite(), generate: () => void aiGenerate(), apply: aiApply,
-                }}
-              />
               </>
             </div>
+            )}
             <div style={{ minHeight: 0, flex: 1 }}>
               <WidgetPane adapter="brand" onInsert={onInsert} />
             </div>
@@ -1321,6 +1345,54 @@ export function StudioBuilder(p: StudioBuilderProps) {
 
       {libraryOpen && <AssetPickerModal onClose={() => { setLibraryOpen(false); setSlotTarget(null); }} onPick={placeAsset} />}
 
+      {/* ASK ARGUS — what the panel's "Ask for it" box did, behind the bar's
+          one door. The same two calls, the same credits, the same words. */}
+      {askOpen && (
+        <IadmModal
+          open size="info" product="spark"
+          title="Ask ARGUS"
+          onClose={() => { setAskOpen(false); setAiError(null); }}
+        >
+          <div style={{ padding: 16 }} data-studio-ask>
+            <textarea
+              value={aiPrompt}
+              onChange={(e) => setAiPrompt(e.target.value)}
+              placeholder={PROMPT_PLACEHOLDER}
+              title="Describe what you want in plain words"
+              aria-label="Describe what you want"
+              rows={3}
+              className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-xs focus:border-[#EF6C33] focus:outline-none"
+            />
+            <div className="mt-2 flex flex-wrap gap-2">
+              <IadmButton variant="ghost" disabled={!aiPrompt.trim() || !!aiBusy}
+                title="Write three options for the words — costs 1 credit"
+                onClick={() => void aiWrite()}>
+                {aiBusy === "write" ? "Writing…" : "Write copy · 1cr"}
+              </IadmButton>
+              <IadmButton variant="accent" product="spark" disabled={!aiPrompt.trim() || !!aiBusy}
+                title="Make a picture from your description — costs 8 credits"
+                onClick={() => void aiGenerate()}>
+                {aiBusy === "image" ? "Making…" : "Make image · 8cr"}
+              </IadmButton>
+            </div>
+            {aiError && <div className="mt-2 rounded border border-red-200 bg-red-50 p-2 text-[11px] text-red-700">{aiError}</div>}
+            {aiOptions.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {aiOptions.map((o, i) => (
+                  <button
+                    key={i} type="button" onClick={() => { aiApply(o); setAskOpen(false); }} title="Use these words"
+                    className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-xs text-slate-700 hover:border-[#EF6C33]"
+                  >
+                    {o}
+                  </button>
+                ))}
+                <div className="text-[10px] text-slate-400">Click one — it replaces the selected words, or drops in fresh.</div>
+              </div>
+            )}
+          </div>
+        </IadmModal>
+      )}
+
       {resizeOpen && (
         <IadmModal
           open onClose={() => setResizeOpen(false)} product="spark"
@@ -1427,88 +1499,37 @@ export function StudioBuilder(p: StudioBuilderProps) {
    Pane header — the things that are not "add a widget"
    ══════════════════════════════════════════════════════════════════════════ */
 
-interface AiPaneState {
-  prompt: string;
-  busy: "write" | "image" | null;
-  options: string[];
-  error: string | null;
-  setPrompt: (v: string) => void;
-  write: () => void;
-  generate: () => void;
-  apply: (text: string) => void;
-}
+/* `AiPaneState` AND `StudioPaneHeader` LIVED HERE and are DELETED
+   (2026-09-22, D-165 item 1 / D-172 law 1). They drew the studio's OWN
+   furniture at the top of the left panel - a *Start from a template* button,
+   an Upload / Library / Chart row and an **Ask for it** box with *Write copy
+   1cr* and *Make image 8cr*. The left panel is the Elements panel: the tiles
+   the offer file gives My Brand, in Elementor's groups, and nothing else.
+   Where each piece went is written beside its new home:
 
-function StudioPaneHeader({ onOpenGallery, onUpload, onLibrary, onChart, ai }: {
-  onOpenGallery: () => void;
-  onUpload: () => void;
-  onLibrary: () => void;
-  onChart: () => void;
-  ai: AiPaneState;
-}) {
-  return (
-    <div className="space-y-2">
-      <button
-        type="button"
-        onClick={onOpenGallery}
-        title="Start from a template — every one opens already in your brand"
-        className="flex w-full items-center justify-center gap-1.5 rounded bg-slate-800 px-2 py-1.5 text-[11px] font-bold text-white hover:bg-slate-700"
-      >
-        <LayoutTemplate className="h-3.5 w-3.5" /> Start from a template
-      </button>
-
-      <div className="grid grid-cols-3 gap-1.5">
-        <SmallTool icon={<Upload className="h-3.5 w-3.5" />} label="Upload" title="Put a picture from this computer on the design" onClick={onUpload} />
-        <SmallTool icon={<ImageIcon className="h-3.5 w-3.5" />} label="Library" title="Place a picture you already have in your Media Library" onClick={onLibrary} />
-        <SmallTool icon={<BarChart3 className="h-3.5 w-3.5" />} label="Chart" title="Type numbers and get a chart in your brand colours" onClick={onChart} />
-      </div>
-
-      <div className="rounded border border-slate-200 bg-slate-50 p-2">
-        <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-          <Sparkles className="h-3 w-3 text-[#EF6C33]" /> Ask for it
-        </div>
-        <textarea
-          value={ai.prompt}
-          onChange={(e) => ai.setPrompt(e.target.value)}
-          placeholder='Describe it — "punchy headline for our spring special" or "a golden retriever in a hard hat"'
-          title="Describe what you want in plain words"
-          aria-label="Describe what you want"
-          rows={3}
-          className="w-full resize-none rounded border border-slate-200 px-2 py-1.5 text-[11px] focus:border-[#EF6C33] focus:outline-none"
-        />
-        <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-          <button
-            type="button" onClick={ai.write} disabled={!ai.prompt.trim() || !!ai.busy}
-            title="Write three options for the words — costs 1 credit"
-            className="rounded bg-slate-800 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-slate-700 disabled:opacity-40"
-          >
-            {ai.busy === "write" ? "Writing…" : "Write copy · 1cr"}
-          </button>
-          <button
-            type="button" onClick={ai.generate} disabled={!ai.prompt.trim() || !!ai.busy}
-            title="Make a picture from your description — costs 8 credits"
-            className="rounded bg-[#EF6C33] px-2 py-1.5 text-[10px] font-bold text-white hover:bg-[#d75a25] disabled:opacity-40"
-          >
-            {ai.busy === "image" ? "Making…" : "Make image · 8cr"}
-          </button>
-        </div>
-        {ai.error && <div className="mt-1.5 rounded border border-red-200 bg-red-50 p-1.5 text-[10px] text-red-700">{ai.error}</div>}
-        {ai.options.length > 0 && (
-          <div className="mt-1.5 space-y-1">
-            {ai.options.map((o, i) => (
-              <button
-                key={i} type="button" onClick={() => ai.apply(o)} title="Use these words"
-                className="w-full rounded border border-slate-200 bg-white px-2 py-1.5 text-left text-[11px] text-slate-700 hover:border-[#EF6C33]"
-              >
-                {o}
-              </button>
-            ))}
-            <div className="text-[9px] text-slate-400">Click one — it replaces the selected words, or drops in fresh.</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+     Start from a template  -> the bar's folder button, titled Add Template,
+                               which is where the reference puts it, and the
+                               studio's counterpart of the proposal builder's
+                               add-area folder. It opens the same gallery.
+     Upload / Library       -> the Picture's own Content controls on the RIGHT
+                               (`ImageContent` in LayerInspector: "Put a
+                               picture in this slot" and "Upload"), which
+                               already existed, so the row was a second door
+                               to a job already done once.
+     Chart                  -> DELETED, and nothing replaces it. The offer
+                               file gives My Brand nineteen things and a chart
+                               is not one of them; Elementor has no chart
+                               widget either, and THE SCREEN LAW's rule is
+                               that what the reference does not have is not on
+                               our screen. The chart LAYER keeps its renderer,
+                               its inspector and its exporters, so a design
+                               already carrying one still opens and draws. A
+                               chart tile is an IA-twin question for Brandon
+                               and is written up in the handoff.
+     Ask for it             -> the bar's Ask ARGUS (D-172: one door to the AI,
+                               in the bar and nowhere else). The same two
+                               actions and the same credits, in the dialog
+                               that button opens. */
 
 /**
  * A size of your own (G-11).
@@ -1589,17 +1610,7 @@ function CustomSize({ width, height, onApply }: {
   );
 }
 
-function SmallTool({ icon, label, title, onClick }: { icon: React.ReactNode; label: string; title: string; onClick: () => void }) {
-  return (
-    <button
-      type="button" onClick={onClick} title={title} aria-label={title}
-      className="flex flex-col items-center justify-center gap-1 rounded border border-slate-200 bg-white px-2 py-2 text-[10px] font-semibold text-slate-700 hover:border-slate-800 hover:bg-slate-50"
-    >
-      {icon}
-      <span>{label}</span>
-    </button>
-  );
-}
+/* The tile renderer of the Upload / Library / Chart row went with the row. */
 
 function ExportOption({ icon, title, blurb, onClick, disabled, accent }: {
   icon: React.ReactNode; title: string; blurb: string; onClick: () => void; disabled?: boolean; accent?: boolean;
@@ -1684,7 +1695,7 @@ function AssetPickerModal({ onClose, onPick }: { onClose: () => void; onPick: (a
         ) : assets.length === 0 ? (
           <div className="py-8 text-center text-xs text-slate-500">
             <Layers className="mx-auto mb-2 h-5 w-5 text-slate-300" />
-            No pictures yet — upload one, or make one with “Ask for it”.
+            No pictures yet — upload one, or make one with Ask ARGUS.
           </div>
         ) : (
           <div className="grid grid-cols-4 gap-2">
