@@ -61,7 +61,7 @@ const fabric = await import("fabric");
 
 import {
   FABRIC_FONT_SIZE_FRACTION, FABRIC_FONT_SIZE_MULT, FIRST_BASELINE_EM,
-  SIDE_BEARING_EM, fabricTypeMetrics, fittableWidth, mainPaint, measureRun, wrapLines,
+  fabricTypeMetrics, mainPaint, measureRun, wrapLines,
 } from "../src/builder/adapters/mybrand/textEffects.ts";
 import {
   ICON_INK, ICON_OUTLINE_WEIGHT, RAMP_DEEPEST, RAMP_PALEST,
@@ -184,49 +184,95 @@ describe("R4-A a hollow word is the same hollow in both engines", () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   R4-C — an advance is not where the ink stops
+   R5-B and R5-C — the wrap packs to the BOX, and a run keeps every glyph
+   ══════════════════════════════════════════════════════════════════════════
+
+   These two used to be one block called "R4-C — an advance is not where the
+   ink stops", which asserted `SIDE_BEARING_EM` and `fittableWidth`. Both are
+   DELETED; the reasoning is in `textEffects.wrapLines`' own note, and the
+   numbers below are the two designs the round-5 sheet measured, at their real
+   authored values. LUMEN's `test/mybrand-parity-round5.test.mjs` asserts the
+   SAME literals against its own half — a wrapper that agrees with itself
+   proves nothing.
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("R4-C a line is not packed flush to the edge of its box", () => {
-  test("the allowance is the measured worst overhang in the pack", () => {
-    assert.equal(SIDE_BEARING_EM, 0.0855);            // Playfair Display 700 "f"
-    // A worked width, asserted digit for digit in LUMEN's suite too.
-    assert.equal(fittableWidth(560, 42), 560 - 42 * 0.0855);
-    assert.equal(Number(fittableWidth(560, 42).toFixed(4)), 556.409);
+describe("R5-B a run fits when its ADVANCES fit the box", () => {
+  /* Design 07's button label, at the values `round5-driver/designs.mjs` types:
+     Poppins 700, 32 px, 2 px of letter-spacing, in a 330 px box. */
+  const P07 = ["Poppins", "NO POWER TOOLS", 32, true, 2];
+  /* Design 03's headline, likewise: Playfair Display 700, 42 px, a 560 px box. */
+  const P03 = ["Playfair Display", "Same-day diagnostics.", 42, true, 0];
+
+  test("design 07's label measures 328.478 in a 330 box — and is ONE line", () => {
+    const run = measureRun(...P07);
+    assert.equal(Number(run.toFixed(3)), 328.478);
+    assert.equal(run < 330, true, "the run does not fit the box at all");
+    assert.deepEqual(wrapLines("NO POWER TOOLS", 330, 32, "700", "Poppins", 2), ["NO POWER TOOLS"]);
   });
 
-  test("a run that only fits flush is wrapped, and one with room to spare is not", () => {
-    const words = "Same-day diagnostics.";
-    const run = measureRun("Playfair Display", words, 42, true, 0);
-    // The box is the run's own width to the pixel: the advances fit exactly and
-    // the ink does not.
-    const flush = Math.ceil(run);
-    assert.deepEqual(wrapLines(words, flush, 42, "700", "Playfair Display", 0), ["Same-day", "diagnostics."]);
-    // Give it the allowance and it is one line again.
-    const roomy = Math.ceil(run + 42 * SIDE_BEARING_EM);
-    assert.deepEqual(wrapLines(words, roomy, 42, "700", "Playfair Display", 0), [words]);
+  test("MUTATION: round 5's allowance is what made it two", () => {
+    /* The deleted rule, spelt out rather than imported, so this stays a test of
+       the DEFECT and not of a constant somebody could change back. 0.0855 em of
+       32 px is 2.736 px; 330 − 2.736 = 327.264, and 328.478 does not fit it. */
+    const packableUnderRound5 = 330 - 32 * 0.0855;
+    assert.equal(Number(packableUnderRound5.toFixed(3)), 327.264);
+    assert.equal(measureRun(...P07) > packableUnderRound5, true,
+      "the allowance no longer explains the break — re-measure before deleting this");
+  });
+
+  test("a run wider than its box still wraps, so nothing has been switched off", () => {
+    assert.deepEqual(
+      wrapLines("Weekend hours are changing from October", 560, 42, "700", "Montserrat", 0),
+      ["Weekend hours are", "changing from October"],
+    );
   });
 
   test("the fit warning fires on the same edge the wrap respects", () => {
     const run = measureRun("Playfair Display", "diagnostics.", 42, true, 0);
-    const layer = {
-      id: "t", kind: "text", x: 0, y: 0, w: Math.ceil(run), h: 60,
+    const tight = {
+      id: "t", kind: "text", x: 0, y: 0, w: Math.floor(run) - 2, h: 60,
       content: "diagnostics.", font: "Playfair Display", weight: "700", size: 42,
     };
-    assert.equal(textFit(layer).wordTooWide, true);
-    const roomy = { ...layer, w: Math.ceil(run + 42 * SIDE_BEARING_EM) + 2 };
-    assert.equal(textFit(roomy).wordTooWide, false);
+    assert.equal(textFit(tight).wordTooWide, true);
+    /* And a word that fits the BOX does not warn, even though its ink hangs
+       over — which is the whole of R5-B in one assertion. */
+    assert.equal(textFit({ ...tight, w: Math.ceil(run) }).wordTooWide, false);
+  });
+});
+
+describe("R5-C a run keeps its last glyph, in BOTH engines", () => {
+  const P03 = ["Playfair Display", "Same-day diagnostics.", 42, true, 0];
+
+  test("design 03's headline is one line in its authored 560 box", () => {
+    assert.equal(Number(measureRun(...P03).toFixed(3)), 461.656);
+    assert.deepEqual(wrapLines("Same-day diagnostics.", 560, 42, "700", "Playfair Display", 0),
+      ["Same-day diagnostics."]);
   });
 
-  test("MUTATION: round 4 packed to the box itself and let the ink hang out", () => {
-    const words = "Same-day diagnostics.";
-    const run = measureRun("Playfair Display", words, 42, true, 0);
-    const flush = Math.ceil(run);
-    // Round 4's rule, spelt out: fit against the box, not against the box less
-    // the overhang. It keeps the line whole and paints past the edge.
-    const round4Fits = run <= flush;
-    assert.equal(round4Fits, true);
-    assert.equal(fittableWidth(flush, 42) < run, true);
+  test("the full stop survives the wrap, character for character", () => {
+    /* R5-C: *"the browser's file and the server's file both end in s"*. The
+       wrap is where round 5 lost it — a period is not a word, so it can only
+       leave on the back of the word it belongs to. */
+    const [line] = wrapLines("Same-day diagnostics.", 560, 42, "700", "Playfair Display", 0);
+    assert.equal(line, "Same-day diagnostics.");
+    assert.equal(line.endsWith("."), true, "the full stop is gone again");
+  });
+
+  test("…and it survives a box only as wide as the advances", () => {
+    /* The flush case, which round 4 broke by clipping and round 5 broke by
+       wrapping. The period's own ink may hang over the edge; it may not
+       disappear. */
+    const flush = Math.ceil(measureRun(...P03));
+    const lines = wrapLines("Same-day diagnostics.", flush, 42, "700", "Playfair Display", 0);
+    assert.deepEqual(lines, ["Same-day diagnostics."]);
+    assert.equal(lines.join("").endsWith("."), true);
+  });
+
+  test("MUTATION: put the allowance back and the glyph goes on its own line", () => {
+    const flush = Math.ceil(measureRun(...P03));
+    const underRound5 = flush - 42 * 0.0855;
+    assert.equal(measureRun(...P03) > underRound5, true,
+      "the flush box no longer demonstrates the defect — re-measure");
   });
 });
 

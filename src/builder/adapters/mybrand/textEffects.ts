@@ -539,41 +539,44 @@ export function measureRun(
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
-   AN ADVANCE IS NOT WHERE THE INK STOPS — ROUND-5 R4-C
+   THE LAST GLYPH'S INK MAY HANG OUT OF THE BOX — R5-B, and R4-C UNDONE
    ══════════════════════════════════════════════════════════════════════════
 
-   `measureRun` adds up ADVANCES: where the next glyph starts. A glyph's ink is
-   free to reach past its own advance — that is what a round terminal, an
-   italic tail or a slash does — so a line packed until its advances exactly
-   fill the box is painted with its last glyph's ink hanging OUT of the box,
-   and whatever the box was sized to hold takes the overhang off.
+   ROUND 5 TOOK A LINE AWAY. Round 4 noticed that `measureRun` adds up
+   ADVANCES — where the next glyph starts — and that a glyph's ink is free to
+   reach past its own advance, so a line packed until its advances exactly fill
+   the box is painted with its last glyph's ink a hair outside it. The answer
+   it wrote was `SIDE_BEARING_EM = 0.0855`, taken off EVERY line of EVERY face
+   before the wrap was allowed to fit one, and the cost of that answer was
+   measured the very next round:
 
-   MEASURED, not chosen: Chrome was asked for `actualBoundingBoxRight` and
-   `width` for ASCII 32…126 in each of the six bundled faces at 400 and 700
-   (bearing.mjs in the round-5 harness, against the very TTFs LUMEN
-   rasterises with). The worst overhang in the whole pack:
+     design 07's button label, "NO POWER TOOLS" in Poppins 700 at 32 px with
+     2 px of letter-spacing, measures 328.478 px. Its box is 330. It was ONE
+     LINE in round 4 and TWO in round 5, from the identical click drive, because
+     the allowance made the packable width 327.264 — and nothing said so on the
+     canvas before the author downloaded the file.
 
-     Playfair Display 700  f   0.0855 em      Lora 700  f   0.0685 em
-     Playfair Display 400  f   0.0742 em      Montserrat 700  /  0.0455 em
-     Oswald 700  g  0.0136 em                 Bebas Neue  _   0.0125 em
-     Poppins 700  w  0.0090 em
+   A LINE BREAK IS WORSE THAN AN OVERHANG, and it is not close. 3.6 px of a
+   round terminal reaching over the edge of an invisible box is something
+   nobody can see; a headline folding onto two lines moves every layer's
+   relationship on the page. The browser itself lets ink overhang — Fabric packs
+   to the box, and so does every other typesetter a person has used.
 
-   0.0855 em is the allowance, for every face rather than one table per face:
-   the widest of them costs a 42 px line three and a half pixels of a box that
-   is hundreds wide, and a second table is a second thing to keep in step for
-   under one per cent.
+   So the allowance is GONE, from the wrap and from the fit warning alike, and
+   with it `SIDE_BEARING_EM` and `fittableWidth`. A run fits when its ADVANCES
+   fit the box it was given, measured with real glyph advances off the very
+   TTFs LUMEN rasterises with, and the last glyph's ink is allowed to overhang.
+   The identical rule is in LUMEN's `textEffects.js` and both suites assert the
+   same worked numbers.
 
-   The identical number and the identical function are in LUMEN's
-   `textEffects.js`, and both suites assert the same worked width.
+   WHAT ROUND 4 WAS ACTUALLY LOOKING AT, kept so nobody reintroduces the
+   allowance to fix it: round 4's lost glyph (R4-C, design 03's full stop) was
+   a CLIPPED RIGHT EDGE, not a wrap. Neither half clips a run to its layer box
+   any more — the Portal's Textbox and LUMEN's `<text>` both draw at canvas
+   coordinates — so a glyph that starts inside the box is drawn whole wherever
+   its ink ends. `mybrand-parity-round5.test.mjs` pins both designs' real
+   numbers, in both repos.
 */
-export const SIDE_BEARING_EM = 0.0855;
-
-/** The width a run may actually be packed into, ink and all. */
-export function fittableWidth(width: number, size: number): number {
-  const w = num(width, 1);
-  const s = Math.max(1, num(size, 1));
-  return Math.max(1, w - s * SIDE_BEARING_EM);
-}
 
 /**
  * Soft-wrap to the layer width.
@@ -604,7 +607,9 @@ export function wrapLines(
 ): string[] {
   const text = String(content ?? "");
   const bold = Number(weight) >= 600 || weight === "bold";
-  const max = Math.max(1, fittableWidth(width, size));
+  /* THE BOX ITSELF (R5-B). Not the box less an allowance for the last glyph's
+     ink: see the note above — that allowance cost design 07 a line. */
+  const max = Math.max(1, num(width, 1));
   return text.split(/\r?\n/).flatMap((para) => {
     const words = para.split(/\s+/);
     const out: string[] = [];

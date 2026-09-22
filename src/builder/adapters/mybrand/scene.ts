@@ -26,7 +26,7 @@
 
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
 import {
-  applyCase, curvedTextSvg, dashArray, dashLineCap, fittableWidth, isCurved,
+  applyCase, curvedTextSvg, dashArray, dashLineCap, isCurved,
   measureRun, needsSvgText, straightTextSvg, wrapLines,
   type StrokeStyle, type TextCase, type TextEffect,
 } from "./textEffects";
@@ -919,14 +919,15 @@ export function textFit(layer: TextLayer): TextFit | null {
   // is the one case where making the box taller does not help — so it is
   // reported apart from plain overflow rather than folded into it.
   const bold = Number(layer.weight) >= 600 || layer.weight === "bold";
-  // R4-C: against the width a run can actually be PACKED into — the box less
-  // the ink that hangs past the last advance — so the warning fires on the
-  // same edge the wrap respects.
+  // R5-B: against the BOX, which is the same edge the wrap now respects. It
+  // used to be the box less a side-bearing allowance, and that allowance is
+  // gone — see `textEffects.wrapLines`. A warning that fires on a word which
+  // actually fits is a warning an author learns to ignore.
   const widest = content.split(/\s+/).reduce(
     (max, word) => Math.max(max, measureRun(family0, word, size, bold, layer.letterSpacing || 0)),
     0,
   );
-  const packable = fittableWidth(w, size);
+  const packable = Math.max(1, w);
   const fit: TextFit = {
     lines: lines.length,
     neededH,
