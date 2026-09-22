@@ -48,6 +48,12 @@ const SRC = path.join(process.cwd(), "src");
  */
 const NO_CONTROLS = new Set([
   "page_break",
+  /* OPAQUE is a widget on the CLIENT'S OWN PAGE that arion-api has no row
+     for (B-168, 2026-09-22). It draws a placeholder saying what it is and
+     where to change it, and it is written back to the website byte for
+     byte. A control on it would be a setting for something we cannot read,
+     which is the one thing this widget exists to be honest about. */
+  "opaque",
   /* INNER SECTION is a LAYOUT PRESET (B-168, family F0). Pressing it inserts a
      row Container holding two Containers — `registry.LAYOUT_PRESETS` — and
      from that moment the thing on the page is a container, whose panel is the
@@ -190,6 +196,11 @@ describe("§3.2's union is registered", () => {
    * `test/builder-widget-set.test.mjs` proves nothing is lost.
    */
   const REQUIRED = [
+    /* Not offered and not addable: what a client's page ALREADY holds.
+       `site_custom` carries a section the server could not read at all;
+       `opaque` is one widget inside a section we DID read (B-168). Both are
+       hidden, and both exist so a client's own work is never dropped. */
+    "opaque",
     // Layout
     "container", "grid",
     // Basic

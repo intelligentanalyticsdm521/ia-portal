@@ -278,11 +278,11 @@ export function swapSectionLayout(
 export function sectionSummary(s: EditorSection): string {
   const headline = typeof s.fields?.headline === 'string' ? s.fields.headline.trim() : '';
   if (headline) return headline;
-  // A section built on the site has no fields to read a headline out of, so
-  // the server sends the first words a visitor sees on it. Without that, four
-  // hand-built rows on one page all read "Built on the website itself" and a
-  // client cannot tell which one they are looking at.
-  if (!s.editable) return s.adoptPreview || 'Built on the website itself';
+  /* THERE IS NO "not editable" ANY MORE (B-168, 2026-09-22). A section built
+     on the website itself is read into blocks like any other and has no
+     `headline` field, so it falls through to the same line every headline-less
+     section gets. The branch that read the server's `adoptPreview` is gone
+     with the adoption machinery it belonged to. */
   return 'No headline yet';
 }
 
@@ -346,69 +346,4 @@ export function acceptProposedSections(sections: EditorSection[]): EditorSection
 /** The client said no: every suggested section leaves the list. */
 export function dropProposedSections(sections: EditorSection[]): EditorSection[] {
   return sections.filter((s) => !s.isProposed).map((s, i) => ({ ...s, index: i }));
-}
-
-/* ── Adoption (Phase 3) ─────────────────────────────────────────────────── */
-
-/**
- * Swap a section that has just been adopted for the editable one the server
- * put on the website in its place.
- *
- * `dirty: false` on purpose. Adoption is not an unsaved edit sitting in the
- * editor — the write has already landed and the cache has already been purged,
- * so marking the row dirty would light up "Unsaved changes" over something
- * that is already live and would invite a Save that writes it a second time.
- */
-export function replaceAdoptedSection(
-  sections: EditorSection[],
-  index: number,
-  adopted: ArionPageSection,
-): EditorSection[] {
-  return sections.map((s, i) => (
-    i === index
-      ? { ...adopted, index: i, uid: s.uid, dirty: false, isNew: false, isProposed: false }
-      : s
-  ));
-}
-
-/**
- * Put a section back the way it was built, after an "Undo adoption". The row
- * returns to a greyed, read-only "Custom section" exactly as it was before
- * anybody touched it.
- */
-export function revertAdoptedSection(
-  sections: EditorSection[],
-  index: number,
-  original: ArionPageSection,
-): EditorSection[] {
-  return sections.map((s, i) => (
-    i === index
-      ? { ...original, index: i, uid: s.uid, dirty: false, isNew: false, isProposed: false }
-      : s
-  ));
-}
-
-/**
- * The rows the "Review sections built on the site" list shows: every section
- * the client cannot edit here, with the server's own answer about whether that
- * can change and why not.
- */
-export function customSectionRows(sections: EditorSection[]) {
-  return sections
-    .map((s, i) => ({ s, i }))
-    .filter(({ s }) => !s.editable && !s.isProposed)
-    .map(({ s, i }) => ({
-      index: i,
-      label: s.label,
-      summary: s.adoptPreview || sectionSummary(s),
-      adoptable: !!s.adoptable,
-      kindLabel: s.adoptKindLabel || null,
-      reasonText: s.adoptReasonText || null,
-      confidenceLabel: s.adoptConfidenceLabel || null,
-    }));
-}
-
-/** How many sections on this page were built on the site and are still greyed. */
-export function customSectionCount(sections: EditorSection[]): number {
-  return sections.filter((s) => !s.editable && !s.isProposed).length;
 }

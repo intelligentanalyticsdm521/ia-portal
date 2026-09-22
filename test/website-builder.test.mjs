@@ -316,7 +316,6 @@ describe("a section built on the website itself", () => {
     const w = sectionWidget(doc.sections[1]);
     assert.equal(w.kind, "site_custom");
     assert.equal(w.props[LOCK_PROP].label, "Custom section — built on the site");
-    assert.equal(w.props[LOCK_PROP].adoptable, true);
     assert.equal(arionKindOfSection(doc.sections[1]), null);
   });
 
@@ -334,7 +333,10 @@ describe("a section built on the website itself", () => {
     assert.match(html, /sw-locked/);
     assert.match(html, /Custom section/);
     assert.match(html, /County Build Awards 2025/);
-    assert.match(html, /Can be made editable/);
+    // "Can be made editable" was adoption's chip. Deleted with it (B-168):
+    // nothing on a page is offered as something we could take charge of,
+    // because everything is already editable.
+    assert.doesNotMatch(html, /Can be made editable/);
     // And nothing on it is typeable.
     assert.doesNotMatch(html, /data-edit=/);
   });

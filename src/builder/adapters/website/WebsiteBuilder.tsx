@@ -51,10 +51,9 @@ import type { WidgetLock } from "../../tier";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
-import { AdoptSectionSheet, AdoptReviewList } from "../../../arion/components/AdoptSectionSheet";
 import type { FieldContext } from "../../../arion/components/SectionFieldInputs";
 import type {
-  SectionCatalogEntry, SectionFieldSpec, SitePageSettings, SitePageSeo, AdoptPreview,
+  SectionCatalogEntry, SectionFieldSpec, SitePageSettings, SitePageSeo,
 } from "../../../lib/arionApi";
 
 
@@ -88,9 +87,6 @@ export interface WebsiteBuilderApi {
   askSection: (pageId: number, body: any) => Promise<any>;
   askPage: (pageId: number, body: any) => Promise<any>;
   discardProposal: (id: string) => Promise<any>;
-  adoptPreview: (pageId: number, index: number) => Promise<any>;
-  adopt: (pageId: number, index: number, body: any) => Promise<any>;
-  undoAdoption: (pageId: number, adoptionId: string) => Promise<any>;
   swapRoles: (body: any) => Promise<any>;
   /* The jobs that used to send a client to wp-admin (ARION pack 1). They keep
      their homes: the builder gained a canvas, it did not lose the address bar,
@@ -175,11 +171,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
   const [swapErr, setSwapErr] = useState<string | null>(null);
 
-  /* Adoption — one at a time, always previewed, never automatic. */
-  const [adopt, setAdopt] = useState<{ index: number; sectionId: string; label: string } | null>(null);
-  const [adoptPv, setAdoptPv] = useState<AdoptPreview | null>(null);
-  const [adoptLoading, setAdoptLoading] = useState(false);
-  const [adoptErr, setAdoptErr] = useState<string | null>(null);
+  /* ADOPTION IS DELETED (B-168, 2026-09-22). Four pieces of state, a sheet,
+     a review checklist and three API calls existed to offer to REPLACE a
+     client's own Elementor section with one of our archetypes, because it
+     could not be edited otherwise. arion-api reads every section now, so
+     there is nothing to adopt and nothing to review. */
 
   /* Publishing asks first. It is the one button that changes what the world
      sees, and it is next to Save draft. */
@@ -193,10 +189,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
    * dialog: one piece of state, one `ConfirmDialog`, named buttons.
    */
   const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
-
-  /* "Review sections built on the site (N)" — a checklist, never a bulk
-     adopt. Offered only when there IS something to review. */
-  const [reviewOpen, setReviewOpen] = useState(false);
 
   /* Where the adapter could not tell which of two boxes is which, it says so
      rather than letting a guess look like a decision (pack 2b). */
@@ -673,48 +665,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     finally { setSettingsBusy(null); }
   }, [api, onClose, pageId]);
 
-  /** Put an adopted section back, once the client has said yes to it. */
-  const undoAdoption = useCallback(async (adoptionId: string) => {
-    setBusy("adopt"); setErr(null);
-    try {
-      await api.undoAdoption(pageId, adoptionId);
-      setOk("That section is back exactly as it was, byte for byte.");
-      await load();
-    } catch (e: any) {
-      setErr(messageFrom(e, "We could not undo that. Nothing was changed."));
-    } finally {
-      setBusy(null);
-    }
-  }, [api, load, pageId]);
-
   /* ── the inspector's own panel ───────────────────────────────────────── */
 
   const deps: SiteFieldDeps = useMemo(() => ({
     field: api.field,
     specsFor,
-    // ALWAYS PREVIEWED, never automatic: the sheet shows the section as it is
-    // beside what it would become, asks for anything the mapper could not read,
-    // and only then writes. The preview writes nothing, anywhere.
-    onAdopt: async (index: number, sectionId: string, label: string) => {
-      setAdopt({ index, sectionId, label });
-      setAdoptPv(null); setAdoptErr(null); setAdoptLoading(true);
-      try {
-        const pv: any = await api.adoptPreview(pageId, index);
-        setAdoptPv(pv?.data || null);
-      } catch (e: any) {
-        setAdoptErr(messageFrom(e, "We could not read that section well enough to show you what would happen."));
-      } finally {
-        setAdoptLoading(false);
-      }
-    },
-    onUndoAdoption: (adoptionId: string) => {
-      setConfirmAsk({
-        title: "Put this section back the way your website built it?",
-        body: "Anything you have changed on it since goes with it, and the section stops being editable here.",
-        confirmLabel: "Yes, put it back",
-        onConfirm: () => { void undoAdoption(adoptionId); },
-      });
-    },
     onSwapRoles: swapRoles,
     roleSwapBusy,
     onSwapLook: (sectionId: string, kind: string, blueprintId: string | null, label: string) => {
@@ -723,11 +678,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     },
     catalogFor: (kind: string) => catalog.find((c) => c.kind === kind) || null,
     catalogue,
-  }), [api, catalog, catalogue, pageId, roleSwapBusy, specsFor, swapRoles, undoAdoption]);
+  }), [api, catalog, catalogue, roleSwapBusy, specsFor, swapRoles]);
 
   const widgetExtras = useCallback((w: Widget, sectionId: string) => {
     if (w.kind === "site_custom") {
-      return <SiteLockedPanel widget={w} sectionId={sectionId} deps={deps} busy={busy === "adopt"} />;
+      return <SiteLockedPanel widget={w} sectionId={sectionId} deps={deps} busy={false} />;
     }
     const kind = arionKindOf(w.kind);
     if (!kind) return null;
@@ -775,17 +730,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
    * check would treat "we do not know" as "there is none" (D-ARION-E). */
   const cannotPublish = !!pageEngine?.known && pageEngine.active === false;
 
-  /* Every locked section on the page, and how many of them we could offer to
-     take charge of. `customCount` is what the review entry counts. */
-  const locked = useMemo(() => doc.sections
-    .map((sec, i) => {
-      const w = sectionWidget(sec);
-      const lock: any = w && w.kind === "site_custom" ? (w.props as any)[LOCK_PROP] : null;
-      return lock ? { sectionId: sec.id, order: i, ...lock } : null;
-    })
-    .filter(Boolean) as Array<any>, [doc]);
-  const customCount = locked.length;
-
+  /* THE "Review sections built on the site (N)" ENTRY IS GONE with adoption
+     (B-168). Nothing on a page is locked any more: `site_custom` survives only
+     as the carrier for a section the server could not read at all, and a
+     checklist of those would be a checklist of nothing. */
 
   if (loading) {
     return (
@@ -983,19 +931,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
               </div>
             )}
             <div style={{ fontWeight: 600, color: "#0B1C24" }}>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}</div>
-            {customCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setReviewOpen(true)}
-                title="Go through the sections built on the website itself, one at a time. Nothing happens in bulk."
-                style={{
-                  marginTop: 6, border: "1px solid #CBD5E1", background: "#fff", color: "#0C4A60",
-                  borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                Review sections built on the site ({customCount})
-              </button>
-            )}
             <div>Everything on the canvas is what a visitor sees. Your website changes when you press Publish.</div>
             {ok && (
               <div style={{ color: "#166534", marginTop: 6 }}>
@@ -1107,41 +1042,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         />
       )}
 
-      {adopt && (
-        <AdoptSectionSheet
-          sectionLabel={adopt.label}
-          preview={adoptPv}
-          loading={adoptLoading}
-          busy={busy === "adopt"}
-          error={adoptErr}
-          onClose={() => { setAdopt(null); setAdoptPv(null); setAdoptErr(null); }}
-          onAdopt={async (fixes) => {
-            setBusy("adopt"); setAdoptErr(null);
-            try {
-              // The fingerprint from the PREVIEW, so an adopt can only act on
-              // the section the client actually looked at.
-              const res: any = await api.adopt(pageId, adopt.index, {
-                fingerprint: adoptPv?.fingerprint, fixes,
-              });
-              const adopted = res?.data?.section;
-              // reference_catch_swallow_report_success: a 200 with no section
-              // is a failure, and it must not arrive as a green toast.
-              if (!adopted) throw new Error('Your website said it took charge of that section but did not send it back.');
-              change({
-                ...doc,
-                sections: doc.sections.map((x) => (x.id === adopt.sectionId ? sectionFromServer(adopted) : x)),
-              });
-              setAdopt(null); setAdoptPv(null);
-              setOk(`That section is editable now. You can undo it for ${res?.data?.undoDays ?? 30} days.`);
-            } catch (e: any) {
-              setAdoptErr(messageFrom(e, 'We could not take charge of that section. Nothing was changed.'));
-            } finally {
-              setBusy(null);
-            }
-          }}
-        />
-      )}
-
       {asking && (() => {
         const row = sitePremade(asking.key);
         if (!row?.count) return null;
@@ -1180,26 +1080,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           </IadmModal>
         );
       })()}
-
-      {reviewOpen && (
-        <AdoptReviewList
-          rows={locked.map((l) => ({
-            index: Number(l.index) || l.order,
-            label: String(l.label || "Custom section"),
-            summary: String(l.preview || ""),
-            adoptable: !!l.adoptable,
-            kindLabel: l.adoptKindLabel || null,
-            reasonText: l.why || null,
-            confidenceLabel: (l.adoptConfidence || null) as any,
-          }))}
-          onClose={() => setReviewOpen(false)}
-          onOpen={(index) => {
-            const row = locked.find((l) => (Number(l.index) || l.order) === index);
-            setReviewOpen(false);
-            if (row) void deps.onAdopt(index, row.sectionId, String(row.label || "this section"));
-          }}
-        />
-      )}
 
       {/* Publish is asked in the SAME dialog as every other question here. It
           used to be the one app modal among six browser boxes on one toolbar;
