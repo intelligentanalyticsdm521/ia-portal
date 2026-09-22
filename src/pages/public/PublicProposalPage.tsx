@@ -18,7 +18,7 @@
  *
  * No auth: the token IS the auth, as with /p/revisions/:token.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { deserialise, type BuilderDocument } from "../../builder/model";
 import { DEFAULT_CONSENT, DOCUMENT_CSS, makeContext, renderDocument, walkDocumentTree } from "../../builder/render";
@@ -32,6 +32,18 @@ interface Payload {
   title: string;
   document: unknown | null;
   render_context: any | null;
+  /**
+   * DOES THIS DOCUMENT ASK TO BE SIGNED? (D-174)
+   *
+   * The SERVER decides, from the document, with `signatureRequired()` in
+   * oliver's lib/documentModel.js. This page reads the answer and never works
+   * it out for itself — a page that did would be a second decider, and the two
+   * would disagree the first time a Signature widget moved into a box.
+   *
+   * Absent (an older API) means the rule this page has always followed: a name
+   * is required. Fail closed.
+   */
+  signature_required?: boolean;
   signatures: Array<{ party: string; signer_name: string; signed_at: string; consent_text: string; document_version: number }>;
   version_number: number;
   scope_html: string | null;
@@ -52,9 +64,17 @@ export function PublicProposalPage() {
   const [data, setData] = useState<Payload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [signature, setSignature] = useState("");
+  // The block's first line. Empty means they signed without printing, and the
+  // record then shows the signature on both lines — which is what every
+  // signature taken before D-174 shows.
+  const [printedName, setPrintedName] = useState("");
   const [agreed, setAgreed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [accepted, setAccepted] = useState<{ signer: string; at: string } | null>(null);
+  // The rendered document, so the signing boxes ON the block can be listened
+  // to. The HTML is the ONE renderer's output and is never re-laid-out here;
+  // this only reads what the customer types into it and fills the Date line.
+  const docRef = useRef<HTMLDivElement | null>(null);
   // "Ask for a change" — the customer's half of a revision. Before this the
   // only way a revision existed was the business inventing one, so a customer
   // who wanted a different price sent an email and hoped; what they asked for
@@ -79,11 +99,30 @@ export function PublicProposalPage() {
   const doc: BuilderDocument | null = useMemo(
     () => (data?.document ? deserialise(data.document) : null), [data?.document]);
 
+  /* THE SERVER'S ANSWER, READ AND NOT RECOMPUTED (D-174). Absent means the
+     rule this page has always followed. */
+  const signatureRequired = data?.signature_required !== false;
+  /* …and whether the document has somewhere to sign. A proposal written before
+     the builder has no Signature block at all, so its name box stays at the
+     foot of the page exactly as it is today. */
+  const hasSignatureBlock = useMemo(
+    () => (doc ? walkDocumentTree(doc).some((w) => w.kind === "signature") : false), [doc]);
+
+  const alreadySignedRow = data?.signatures?.find((s) => s.party === "customer");
+  const isAcceptedNow = !!data?.accepted_at || !!accepted;
+  /* SIGN ON THE DOCUMENT. The block's own Printed name and Signature rules
+     become boxes; the foot keeps only the button. Off when the document does
+     not ask for a signature, when there is no block to sign on, and once it
+     has been signed. */
+  const signingOnDocument = signatureRequired && hasSignatureBlock
+    && ["sent", "viewed"].includes(data?.status || "") && !alreadySignedRow && !isAcceptedNow;
+
   const html = useMemo(() => {
     if (!doc) return "";
     const rc = data?.render_context || {};
     return renderDocument(doc, makeContext(doc, {
       mode: "view",
+      ...(signingOnDocument ? { signing: true } : {}),
       merge: rc.merge || {},
       accent: rc.accent,
       headingFont: rc.headingFont,
@@ -95,9 +134,43 @@ export function PublicProposalPage() {
       // about a number. It computes them once, in lib/documentModel.js.
       totals: rc.totals,
     }));
-  }, [doc, data]);
+  }, [doc, data, signingOnDocument]);
 
-  const alreadySigned = !!data?.signatures?.find((s) => s.party === "customer");
+  /* WHAT THEY TYPE ON THE BLOCK IS WHAT GETS SENT.
+     The document is one string of HTML from the ONE renderer, so the boxes on
+     it are not React inputs. Listening beats re-rendering: re-rendering the
+     document on every keystroke would take the caret with it. The Date line is
+     filled here for the same reason — the moment a signature exists, today's
+     date appears on the rule, in the customer's own locale. */
+  useEffect(() => {
+    const root = docRef.current;
+    if (!root || !signingOnDocument) return;
+    const dateSlot = root.querySelector('[data-sign-slot="customer-date"]');
+    const onInput = (e: Event) => {
+      const el = e.target as HTMLInputElement;
+      const which = el.getAttribute("data-sign-input");
+      if (which === "signature") {
+        setSignature(el.value);
+        if (dateSlot) {
+          dateSlot.textContent = el.value.trim().length >= 2
+            ? new Date().toLocaleDateString() : "";
+        }
+      } else if (which === "printed") {
+        setPrintedName(el.value);
+      }
+    };
+    const onTick = (e: Event) => setAgreed((e.target as HTMLInputElement).checked);
+    const inputs = Array.from(root.querySelectorAll("[data-sign-input]"));
+    const ticks = Array.from(root.querySelectorAll("[data-sign-agree]"));
+    inputs.forEach((el) => el.addEventListener("input", onInput));
+    ticks.forEach((el) => el.addEventListener("change", onTick));
+    return () => {
+      inputs.forEach((el) => el.removeEventListener("input", onInput));
+      ticks.forEach((el) => el.removeEventListener("change", onTick));
+    };
+  }, [html, signingOnDocument]);
+
+  const alreadySigned = !!alreadySignedRow;
   const consent = useMemo(() => {
     // The exact words stored on the record are the exact words shown.
     // THE WHOLE TREE (D-156). A signature block the author dragged into a box
@@ -116,7 +189,13 @@ export function PublicProposalPage() {
       const res = await fetch(`${OLIVER_API_BASE}/p/proposals/${token}/accept`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signature: signature.trim(), consent }),
+        // An approval sends no signature at all, and the server writes the
+        // contact on file. The page does not invent a name to send.
+        body: JSON.stringify({
+          signature: signature.trim(),
+          printed_name: printedName.trim(),
+          consent,
+        }),
       });
       const body = await res.json();
       if (!res.ok) throw new Error(body?.message || body?.error || `HTTP ${res.status}`);
@@ -151,6 +230,11 @@ export function PublicProposalPage() {
 
   const isAccepted = !!data.accepted_at || !!accepted;
   const canSign = ["sent", "viewed"].includes(data.status) && !alreadySigned && !isAccepted;
+  // Enough to accept: a signature and a tick when the document asks for one,
+  // nothing at all when it does not. The server holds the same rule — this only
+  // stops the button being pressed on a form that is not finished.
+  const ready = !signatureRequired || (signature.trim().length >= 2 && agreed);
+  const verb = signatureRequired ? "Accept" : "Approve";
 
   return (
     <Shell accent={data.render_context?.accent || data.branding?.accentColor}>
@@ -172,56 +256,91 @@ export function PublicProposalPage() {
         <div style={{ background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.08)" }}>
           {doc
             // The ONE renderer's output. Nothing is re-laid-out here.
-            ? <div className="bx-doc" dangerouslySetInnerHTML={{ __html: html }} />
+            ? <div className="bx-doc" ref={docRef} dangerouslySetInnerHTML={{ __html: html }} />
             : <LegacyDocument data={data} />}
         </div>
 
         {isAccepted ? (
           <div style={{ marginTop: 18, border: "1px solid #BBF7D0", background: "#F0FDF4", borderRadius: 8, padding: 16 }}>
-            <div style={{ fontWeight: 700, color: "#15803D" }}>Signed and accepted. Thank you.</div>
+            {/* SAID HONESTLY (D-174). A document that never asked for a
+                signature was APPROVED, and calling that "signed" would be a
+                claim about something nobody did. */}
+            <div style={{ fontWeight: 700, color: "#15803D" }}>
+              {signatureRequired ? "Signed and accepted. Thank you." : "Approved. Thank you."}
+            </div>
             <div style={{ fontSize: 12, color: "#166534", marginTop: 4 }}>
-              Signed by {accepted?.signer || data.signatures?.find((s) => s.party === "customer")?.signer_name}
+              {signatureRequired ? "Signed by " : "Approved by "}
+              {accepted?.signer || data.signatures?.find((s) => s.party === "customer")?.signer_name}
               {" on "}
               {new Date(accepted?.at || data.signatures?.find((s) => s.party === "customer")?.signed_at || Date.now()).toLocaleString()}
             </div>
             <a href={`${OLIVER_API_BASE}/p/proposals/${token}/pdf`} target="_blank" rel="noreferrer"
-              title="Open the signed PDF, with your signature on it"
+              title={signatureRequired ? "Open the signed PDF, with your signature on it" : "Open the PDF, with the approval on it"}
               style={{ display: "inline-block", marginTop: 10, background: "#0C4A60", color: "#fff", borderRadius: 4, padding: "9px 14px", fontSize: 13, fontWeight: 600, textDecoration: "none" }}>
-              Open the signed PDF
+              {signatureRequired ? "Open the signed PDF" : "Open the PDF"}
             </a>
           </div>
         ) : canSign ? (
           <div style={{ marginTop: 18, border: "1px solid #E2E8F0", background: "#fff", borderRadius: 8, padding: 16 }}>
-            <div style={{ fontWeight: 700, marginBottom: 8 }}>Sign to accept</div>
-            <label style={{ display: "block", fontSize: 12, color: "#5A7A8A", marginBottom: 4 }}>Type your full name</label>
-            <input
-              value={signature}
-              onChange={(e) => setSignature(e.target.value)}
-              placeholder="Your full name"
-              title="Your typed name becomes your signature on this document"
-              style={{
-                width: "100%", maxWidth: 420, border: "1px solid #CBD5E1", borderRadius: 4, padding: "10px 12px",
-                fontFamily: '"Segoe Script","Brush Script MT",cursive', fontSize: 22,
-              }}
-            />
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "#334155", marginTop: 10, maxWidth: 560, lineHeight: 1.5 }}>
-              <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)}
-                title="You must agree before you can accept" />
-              <span>{consent}</span>
-            </label>
+            {/* ── THE FOOT (D-174) ──────────────────────────────────────────
+                THREE SHAPES, AND THE DOCUMENT CHOOSES:
+
+                required, with a Signature block  the customer signs ON the
+                  block — printed name, signature, and the date fills itself —
+                  so the foot is one button and nothing else. The name box that
+                  used to live here is GONE: two places to type your name is
+                  two documents.
+                required, no block (pre-builder)  the box is still here,
+                  because there is nowhere else to put it.
+                not required                      no name box anywhere, one
+                  Approve button, and the sentence that says what pressing it
+                  means. */}
+            <div style={{ fontWeight: 700, marginBottom: 8 }}>
+              {signatureRequired ? (signingOnDocument ? "Sign on the document above" : "Sign to accept") : "Approve this document"}
+            </div>
+            {signatureRequired && !signingOnDocument && (<>
+              <label style={{ display: "block", fontSize: 12, color: "#5A7A8A", marginBottom: 4 }}>Type your full name</label>
+              <input
+                value={signature}
+                onChange={(e) => setSignature(e.target.value)}
+                placeholder="Your full name"
+                title="Your typed name becomes your signature on this document"
+                style={{
+                  width: "100%", maxWidth: 420, border: "1px solid #CBD5E1", borderRadius: 4, padding: "10px 12px",
+                  fontFamily: '"Segoe Script","Brush Script MT",cursive', fontSize: 22,
+                }}
+              />
+              <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12, color: "#334155", marginTop: 10, maxWidth: 560, lineHeight: 1.5 }}>
+                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)}
+                  title="You must agree before you can accept" />
+                <span>{consent}</span>
+              </label>
+            </>)}
+            {signatureRequired && signingOnDocument && (
+              <div style={{ fontSize: 12, color: "#5A7A8A", maxWidth: 560, lineHeight: 1.5 }}>
+                Print your name, type your signature and tick the box on the acceptance
+                block above. The date fills itself.
+              </div>
+            )}
+            {!signatureRequired && (
+              <div style={{ fontSize: 12, color: "#334155", maxWidth: 560, lineHeight: 1.5 }}>
+                By pressing Approve you agree to this document.
+              </div>
+            )}
             {error && <div style={{ fontSize: 12, color: "#B91C1C", marginTop: 8 }}>{error}</div>}
             <button
               type="button"
-              disabled={busy || signature.trim().length < 2 || !agreed}
+              disabled={busy || !ready}
               onClick={accept}
-              title={signature.trim().length < 2 ? "Type your name first" : !agreed ? "Tick the box to agree first" : "Accept this document"}
+              title={ready ? `${verb} this document`
+                : signature.trim().length < 2 ? "Type your name on the document first" : "Tick the box to agree first"}
               style={{
-                marginTop: 12, background: signature.trim().length >= 2 && agreed ? "#EF6C33" : "#CBD5E1",
+                marginTop: 12, background: ready ? "#EF6C33" : "#CBD5E1",
                 color: "#fff", border: "none", borderRadius: 4, padding: "11px 18px",
-                fontSize: 14, fontWeight: 700, cursor: signature.trim().length >= 2 && agreed ? "pointer" : "not-allowed",
+                fontSize: 14, fontWeight: 700, cursor: ready ? "pointer" : "not-allowed",
               }}
             >
-              {busy ? "Signing…" : "Sign and accept"}
+              {busy ? (signatureRequired ? "Signing…" : "Approving…") : verb}
             </button>
             <button
               type="button"

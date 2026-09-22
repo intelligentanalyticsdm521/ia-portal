@@ -147,6 +147,20 @@ export interface RenderContext {
    * carries no badges at all.
    */
   changed?: Record<string, "added" | "changed">;
+  /**
+   * THE CUSTOMER IS SIGNING THIS, RIGHT NOW (D-174).
+   *
+   * Only the customer's copy hands this in, and only while the document is
+   * open for signature and asks for one. It turns the Signature block's
+   * customer side into the thing they fill in: a Printed name box and a
+   * Signature box on the block's own rules, with the consent tick under it.
+   * The page's foot button then has no name box of its own — the customer
+   * signs ON the document, the way they would on paper.
+   *
+   * Absent everywhere else, so the author's canvas, the seller's preview, the
+   * PDF and an already-signed copy all draw the plain paper block.
+   */
+  signing?: boolean;
 }
 
 export function makeContext(
@@ -169,6 +183,7 @@ export function makeContext(
     numbers: partial.numbers ?? sectionNumbers(doc),
     extra: partial.extra,
     ...(partial.changed ? { changed: partial.changed } : {}),
+    ...(partial.signing ? { signing: true } : {}),
   };
 }
 
@@ -683,24 +698,82 @@ function clauses(p: any, ctx: RenderContext): string {
 
 
 
+/**
+ * THE ACCEPTANCE BLOCK — a paper form with three lines a side (D-174).
+ *
+ * Brandon, 2026-09-22: *"Like their printed name, then the e-signature. Then
+ * we fill in the date."* So the block is Printed name · Signature · Date,
+ * twice, and ONE painter draws all four states of it:
+ *
+ *   unsigned          blank rules with their labels — print it and sign it
+ *                     with a pen, and it is the same document.
+ *   being signed      the customer's Printed name and Signature rules become
+ *                     boxes they type in; the Date fills itself the moment
+ *                     they sign (the page writes it, `data-sign-slot`).
+ *   signed            the typed name in the signature face, the printed name
+ *                     above it, the date from the signing record.
+ *   approved          the document never asked for a signature, so there is
+ *                     nothing to put on a signature rule and blank rules under
+ *                     an accepted agreement would be a lie: one sentence,
+ *                     "Approved by <name> on <date>".
+ *
+ * The same four states are painted onto paper by oliver's lib/proposalPdf.js.
+ */
 function signature(p: any, ctx: RenderContext): string {
   const head = p.heading || ctx.mode === "edit"
     ? `<h2 class="bx-h bx-h2" style="color:${esc(ctx.accent)}" data-edit="heading">${t(p.heading, ctx)}</h2>` : "";
+
+  // APPROVED, NOT SIGNED. Stamped by oliver's applySignaturesToDocument, which
+  // is the one thing that knows whether this document asked to be signed.
+  if (p.approved) {
+    return `${head}
+    ${paras(p.body, ctx, "body")}
+    <div class="bx-approved" data-sign="approved">
+      <span class="bx-approved-n">Approved by ${esc(p.approvedName || "")}</span>${
+      p.approvedOn ? `<span class="bx-approved-d"> on ${esc(p.approvedOn)}</span>` : ""}
+    </div>
+    ${p.consent ? `<p class="bx-smallprint">${t(p.consent, ctx)}</p>` : ""}`;
+  }
+
+  const signable = ctx.mode === "view" && !!ctx.signing && !p.signedName;
+  const rule = (slot: string, label: string, value: string, face = false, input = "") => `
+        <div class="bx-sign-row">
+          <div class="bx-sign-line" data-sign-slot="${esc(slot)}">${
+    input || (value ? `<span class="${face ? "bx-signed" : "bx-sign-v"}">${esc(value)}</span>` : "")}</div>
+          <div class="bx-sign-rl">${esc(label)}</div>
+        </div>`;
+
+  const customer = `
+      <div class="bx-sign-box">
+        <div class="bx-sign-l">${esc(p.customerLabel || "Customer signature")}</div>${
+    rule("customer-printed", "Printed name", p.printedName || "", false,
+      signable ? `<input class="bx-sign-in" type="text" data-sign-input="printed" autocomplete="name" placeholder="Print your full name" aria-label="Print your full name"/>` : "")}${
+    rule("customer", "Signature", p.signedName || "", true,
+      signable ? `<input class="bx-sign-in bx-sign-face" type="text" data-sign-input="signature" placeholder="Type your full name to sign" aria-label="Type your full name to sign"/>` : "")}${
+    rule("customer-date", "Date", p.signedOn || "")}
+      </div>`;
+
+  const business = `
+      <div class="bx-sign-box">
+        <div class="bx-sign-l">${esc(p.businessLabel || "For " + (ctx.business.name || "the business"))}</div>${
+    rule("business-printed", "Printed name", p.counterPrintedName || "")}${
+    rule("business", "Signature", p.counterName || "", true)}${
+    rule("business-date", "Date", p.counterOn || "")}
+      </div>`;
+
+  const words = t(p.consent || DEFAULT_CONSENT, ctx);
+  // THE TICK SITS UNDER THE BLOCK, and it carries the same words the record
+  // stores. Said once: a tick whose label is the consent, and the small print
+  // under an unsigned copy, are the same sentence in two places.
+  const consent = signable
+    ? `<label class="bx-sign-agree"><input type="checkbox" data-sign-agree="1" aria-label="I agree to this document"/><span>${words}</span></label>`
+    : `<p class="bx-smallprint" data-edit="consent">${words}</p>`;
+
   return `${head}
     ${paras(p.body, ctx, "body")}
-    <div class="bx-sign" data-sign="1">
-      <div class="bx-sign-box">
-        <div class="bx-sign-l">${esc(p.customerLabel || "Customer signature")}</div>
-        <div class="bx-sign-line" data-sign-slot="customer">${p.signedName ? `<span class="bx-signed">${esc(p.signedName)}</span>` : ""}</div>
-        <div class="bx-sign-meta">${p.signedAt ? esc(p.signedAt) : ""}</div>
-      </div>
-      <div class="bx-sign-box">
-        <div class="bx-sign-l">${esc(p.businessLabel || "For " + (ctx.business.name || "the business"))}</div>
-        <div class="bx-sign-line" data-sign-slot="business">${p.counterName ? `<span class="bx-signed">${esc(p.counterName)}</span>` : ""}</div>
-        <div class="bx-sign-meta">${p.counterAt ? esc(p.counterAt) : ""}</div>
-      </div>
+    <div class="bx-sign" data-sign="1">${customer}${business}
     </div>
-    <p class="bx-smallprint" data-edit="consent">${t(p.consent || DEFAULT_CONSENT, ctx)}</p>`;
+    ${consent}`;
 }
 
 /** The consent statement stored on the signing record. Shown, not hidden. */
@@ -946,8 +1019,18 @@ export const DOCUMENT_CSS = `
 .bx-site-sub { display: flex; justify-content: space-between; padding: 6px 10px; background: #F2F6F9; border-radius: 6px; }
 .bx-sign { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 20px; margin: 12px 0; }
 .bx-sign-l { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: #5A7A8A; font-weight: 700; margin-bottom: 4px; }
+.bx-sign-row { margin-top: 10px; }
 .bx-sign-line { border-bottom: 1px solid #0B1C24; min-height: 34px; display: flex; align-items: flex-end; padding-bottom: 2px; }
+.bx-sign-rl { font-size: 9px; letter-spacing: .06em; text-transform: uppercase; color: #5A7A8A; margin-top: 3px; }
+.bx-sign-v { font-size: 13px; line-height: 1.2; }
 .bx-signed { font-family: "Segoe Script", "Brush Script MT", cursive; font-size: 22px; line-height: 1.1; }
+.bx-sign-in { width: 100%; border: none; outline: none; background: transparent; font: inherit; font-size: 13px; padding: 0 0 2px; color: #0B1C24; }
+.bx-sign-in.bx-sign-face { font-family: "Segoe Script", "Brush Script MT", cursive; font-size: 22px; line-height: 1.1; }
+.bx-sign-in::placeholder { color: #94A3B8; font-family: Inter, system-ui, sans-serif; font-size: 12px; }
+.bx-sign-agree { display: flex; align-items: flex-start; gap: 8px; font-size: 11px; color: #334155; margin: 10px 0 0; line-height: 1.5; }
+.bx-approved { margin: 12px 0; padding: 10px 12px; background: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 6px; }
+.bx-approved-n { font-weight: 700; color: #15803D; font-size: 14px; }
+.bx-approved-d { color: #166534; font-size: 14px; }
 .bx-sign-meta { font-size: 10px; color: #5A7A8A; margin-top: 4px; min-height: 12px; }
 .bx-smallprint { font-size: 10px; color: #5A7A8A; margin: 6px 0 0; }
 .bx-merge { background: #FFF3E9; border: 1px dashed #EF6C33; color: #9A4318; border-radius: 3px; padding: 0 4px; font-weight: 600; }

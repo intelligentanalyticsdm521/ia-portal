@@ -540,7 +540,10 @@ export function ProposalDetailDrawer({
   const [builderRevision, setBuilderRevision] = useState<{ proposalId: string; revisionId: string } | null>(null);
   const [creatingRevision, setCreatingRevision] = useState(false);
   // §8 item 6 — the business's countersign, and the signing record behind it.
-  const [signatures, setSignatures] = useState<Array<{ party: string; signer_name: string; signed_at: string; ip_address: string | null; consent_text: string; document_version: number }>>([]);
+  const [signatures, setSignatures] = useState<Array<{ party: string; signer_name: string; printed_name?: string | null; signed_at: string; ip_address: string | null; consent_text: string; document_version: number }>>([]);
+  // D-174 — does this document ask to be signed? Read from the API, never
+  // worked out here.
+  const [signatureRequired, setSignatureRequired] = useState(true);
   const [counterName, setCounterName] = useState("");
   const [counterBusy, setCounterBusy] = useState(false);
   const [counterErr, setCounterErr] = useState<string | null>(null);
@@ -633,6 +636,11 @@ export function ProposalDetailDrawer({
         const row = r?.data ?? r;
         setSignatures(row?.signatures || []);
         setPublicToken(row?.token || null);
+        /* D-174 — SIGNED, OR APPROVED? The SERVER decides, from the document
+           (`signatureRequired` in oliver's lib/documentModel.js), and hands
+           the answer to this page and to the customer's copy. Absent (an older
+           API) means the rule this drawer has always shown. */
+        setSignatureRequired(row?.signature_required !== false);
       })
       .catch(() => { if (!cancelled) { setSignatures([]); setPublicToken(null); } });
     return () => { cancelled = true; };
@@ -749,17 +757,29 @@ export function ProposalDetailDrawer({
           on the record rather than an edit of the customer's. */}
       <div style={{ marginBottom: 14, padding: 12, background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8, fontSize: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>Signatures</span>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: "#5A7A8A" }}>
+            {signatureRequired ? "Signatures" : "Approval"}
+          </span>
           {publicToken && (
             <a href={`${OLIVER_PDF_BASE}/p/proposals/${publicToken}/pdf`} target="_blank" rel="noreferrer"
               title="Open this document as a PDF, with any signatures on it — the same file the customer gets"
               style={{ fontSize: 11, fontWeight: 600, color: "#1A7DB5" }}>Open the PDF</a>
           )}
         </div>
-        {signatures.length === 0 && <div style={{ color: "#94A3B8" }}>Nobody has signed this yet.</div>}
+        {signatures.length === 0 && (
+          <div style={{ color: "#94A3B8" }}>
+            {signatureRequired
+              ? "Nobody has signed this yet."
+              : "This document does not ask for a signature. Nobody has approved it yet."}
+          </div>
+        )}
         {signatures.map((sg) => (
           <div key={sg.party} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "5px 0", borderBottom: "1px solid #F1F5F9" }}>
-            <span style={{ color: "#5A7A8A" }}>{sg.party === "customer" ? "Customer" : "Countersigned"}</span>
+            {/* Said honestly: a document that never asked for a signature was
+                APPROVED, and the row must not call that "signed". */}
+            <span style={{ color: "#5A7A8A" }}>
+              {sg.party === "customer" ? (signatureRequired ? "Signed by" : "Approved by") : "Countersigned"}
+            </span>
             <span style={{ textAlign: "right" }}>
               <strong>{sg.signer_name}</strong>
               <span style={{ color: "#5A7A8A" }}> · {new Date(sg.signed_at).toLocaleString()} · v{sg.document_version}{sg.ip_address ? ` · ${sg.ip_address}` : ""}</span>
