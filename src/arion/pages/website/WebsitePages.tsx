@@ -210,7 +210,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
         done += 1;
       }
       setNote(bulk === 'trash'
-        ? `${done} page${done === 1 ? '' : 's'} moved to the bin. Your website keeps them for 30 days.`
+        ? `${done} page${done === 1 ? '' : 's'} moved to the bin. Your website keeps ${done === 1 ? 'it' : 'them'} for 30 days.`
         : `${done} page${done === 1 ? '' : 's'} put back, as drafts.`);
     } catch (e: any) {
       setError(messageFrom(e, done > 0
