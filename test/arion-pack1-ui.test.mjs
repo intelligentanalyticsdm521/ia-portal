@@ -22,7 +22,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { toEditorSections, swapSectionLayout, isDirty, orderOf } from '../src/arion/utils/sectionListState.ts';
-import { splitPages } from '../src/arion/utils/siteBuilderCopy.ts';
+import { filterPages, statusLinks, rowActions } from '../src/arion/utils/pagesTable.ts';
 
 const ROOT = path.resolve('src/arion');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -96,10 +96,16 @@ test('page settings, the search fields and delete all have a home', () => {
 });
 
 test('a deleted page can be put back, and the list says how long for', () => {
+  // The "Deleted pages" card is gone (2026-09-22); the bin is WordPress's own
+  // Trash link, and the way back out is the row action WordPress calls
+  // Restore. The 30 days are still said out loud, on both doors.
   const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /Deleted pages/);
-  assert.match(src, /Put it back/);
+  assert.deepEqual(
+    statusLinks([{ pageId: 1, status: 'trash' }]).find((l) => l.view === 'trash'),
+    { view: 'trash', label: 'Trash', count: 1 });
+  assert.deepEqual(rowActions({ pageId: 1, status: 'trash' }, 'trash'), ['restore']);
   assert.match(src, /30 days/);
+  assert.match(src, /restoreSitePage/);
 });
 
 test('the home page cannot be deleted, and a draft cannot be made the home page', () => {
@@ -235,11 +241,17 @@ test('the builder quotes the SERVER price and computes none', () => {
 
 /* ═══════════════════════ 7. the lists still hold ════════════════════════ */
 
-test('a page in the bin is in neither the drafts nor the live list', () => {
-  const { drafts, live, deleted } = splitPages([
+/* The three lists are now WordPress's three status links (2026-09-22), so the
+   rule is asserted where it lives — `filterPages` — and not on the two cards
+   that are gone. Nothing has been relaxed: a page in the bin is still in
+   neither of the other two. */
+test('a page in the bin is under Trash, and under neither Published nor Drafts', () => {
+  const pages = [
     { pageId: 1, status: 'publish' }, { pageId: 2, status: 'draft' }, { pageId: 3, status: 'trash' },
-  ]);
-  assert.deepEqual(deleted.map((p) => p.pageId), [3]);
-  assert.deepEqual(drafts.map((p) => p.pageId), [2]);
-  assert.deepEqual(live.map((p) => p.pageId), [1]);
+  ];
+  const ids = (view) => filterPages(pages, view, '').map((p) => p.pageId);
+  assert.deepEqual(ids('trash'), [3]);
+  assert.deepEqual(ids('draft'), [2]);
+  assert.deepEqual(ids('publish'), [1]);
+  assert.deepEqual(ids('all'), [1, 2], 'All is everything but the bin, exactly as WordPress counts it');
 });

@@ -23,28 +23,3 @@ export function costLine(credits: number | null | undefined): string | null {
   return `This uses ${credits} ${credits === 1 ? 'credit' : 'credits'}.`;
 }
 
-/**
- * Drafts are their own list. A draft is work in progress that nobody can see;
- * putting it in among the live pages makes the client hunt for the difference
- * in a status chip.
- *
- * `pending` sits with the drafts because it is likewise not on the website.
- * Everything else — published, private, scheduled — is a page WordPress is
- * already serving to somebody, so it belongs in the live list.
- *
- * `trash` is its own list too (ARION pack 1). A deleted page is not a draft: a
- * draft is work somebody is doing, a deleted page is work somebody stopped
- * doing, and WordPress keeps it for 30 days — which is only useful if a client
- * can see that it is there and put it back.
- */
-export function splitPages(pages: ArionSitePage[]): {
-  drafts: ArionSitePage[]; live: ArionSitePage[]; deleted: ArionSitePage[];
-} {
-  const isDeleted = (p: ArionSitePage) => p.status === 'trash';
-  const isDraft = (p: ArionSitePage) => p.status === 'draft' || p.status === 'pending';
-  return {
-    drafts: (pages || []).filter((p) => !isDeleted(p) && isDraft(p)),
-    live: (pages || []).filter((p) => !isDeleted(p) && !isDraft(p)),
-    deleted: (pages || []).filter(isDeleted),
-  };
-}
