@@ -206,6 +206,12 @@ describe("the customer's copy", () => {
     assert.ok(PAGE.includes('signatureRequired ? "Open the signed PDF" : "Open the PDF"'));
   });
 
+  test("it only calls the PDF a SIGNED pdf when it was signed", () => {
+    // Found by driving it (2026-09-22): the header link read "Signed PDF" on an
+    // approved document, which is a claim about something nobody did.
+    assert.ok(PAGE.includes('{isAccepted && signatureRequired ? "Signed PDF" : "PDF"}'));
+  });
+
   test("the printed name is sent with the signature", () => {
     assert.ok(PAGE.includes("printed_name: printedName.trim()"));
   });

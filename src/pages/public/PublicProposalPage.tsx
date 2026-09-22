@@ -246,10 +246,13 @@ export function PublicProposalPage() {
             {data.proposal_number} · version {data.version_number}
             {data.valid_until ? ` · valid until ${new Date(data.valid_until).toLocaleDateString(undefined, { timeZone: "UTC" })}` : ""}
           </div>
+          {/* "Signed PDF" only when it WAS signed (D-174, found by driving
+              it): an approved document's PDF carries an approval, and calling
+              it a signed PDF is a claim about something nobody did. */}
           <a href={`${OLIVER_API_BASE}/p/proposals/${token}/pdf`} target="_blank" rel="noreferrer"
-            title={isAccepted ? "Open the signed PDF" : "Open this document as a PDF"}
+            title={isAccepted && signatureRequired ? "Open the signed PDF" : "Open this document as a PDF"}
             style={{ fontSize: 12, fontWeight: 600, color: "#0C4A60" }}>
-            {isAccepted ? "Signed PDF" : "PDF"}
+            {isAccepted && signatureRequired ? "Signed PDF" : "PDF"}
           </a>
         </div>
 
