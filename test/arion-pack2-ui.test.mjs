@@ -28,7 +28,7 @@ import {
   toMenuRows, toMenuInput, moveMenuRow, removeMenuRow, toggleMenuRowParent,
   canTuckMenuRow, menuRowsEqual,
 } from '../src/arion/utils/menuListState.ts';
-import { splitPages } from '../src/arion/utils/siteBuilderCopy.ts';
+import { filterPages, stateSuffix } from '../src/arion/utils/pagesTable.ts';
 
 const ROOT = path.resolve('src/arion');
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
@@ -223,12 +223,15 @@ test('the two switches that lived only in WordPress have a home', () => {
 
 /* ═══════════════════ 6. blog posts ═════════════════════════════════════ */
 
-test('blog posts are their own list, not mixed in with the pages', () => {
+test('a blog post is marked as one, and can still be written', () => {
+  // The separate "Blog posts" card is gone with the rest of the card list
+  // (2026-09-22). One table, WordPress's, and a post says what it is in the
+  // same place WordPress puts "— Draft" — so a client never has to work out
+  // which of two lists a thing is in.
   const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /const livePosts = useMemo\(\(\) => live\.filter\(\(p\) => p\.type === 'post'\)/);
-  assert.match(src, /\{livePosts\.map\(row\)\}/, 'the Blog posts card renders the posts');
-  assert.match(src, /const livePages = useMemo\(\(\) => live\.filter\(\(p\) => p\.type !== 'post'\)/);
-  assert.match(stripComments(src), /Blog posts/);
+  assert.equal(stateSuffix({ pageId: 1, status: 'publish', type: 'post' }), 'Post');
+  assert.equal(stateSuffix({ pageId: 1, status: 'draft', type: 'post' }), 'Draft, Post');
+  assert.equal(stateSuffix({ pageId: 1, status: 'publish', type: 'page' }), '');
   assert.match(stripComments(src), /Write a post/);
 });
 
@@ -237,17 +240,17 @@ test('a post is created as a post, not a page', () => {
   assert.match(src, /type: newKind/);
 });
 
-test('splitPages still keeps drafts and the bin apart, posts included', () => {
+test('the status links still keep drafts and the bin apart, posts included', () => {
   const pages = [
-    { pageId: 1, status: 'publish', type: 'page' },
-    { pageId: 2, status: 'draft', type: 'post' },
-    { pageId: 3, status: 'trash', type: 'post' },
-    { pageId: 4, status: 'publish', type: 'post' },
+    { pageId: 1, status: 'publish', type: 'page', title: 'A' },
+    { pageId: 2, status: 'draft', type: 'post', title: 'B' },
+    { pageId: 3, status: 'trash', type: 'post', title: 'C' },
+    { pageId: 4, status: 'publish', type: 'post', title: 'D' },
   ];
-  const { drafts, live, deleted } = splitPages(pages);
-  assert.deepEqual(drafts.map((p) => p.pageId), [2]);
-  assert.deepEqual(live.map((p) => p.pageId), [1, 4]);
-  assert.deepEqual(deleted.map((p) => p.pageId), [3]);
+  const ids = (view) => filterPages(pages, view, '').map((p) => p.pageId);
+  assert.deepEqual(ids('draft'), [2]);
+  assert.deepEqual(ids('publish'), [1, 4]);
+  assert.deepEqual(ids('trash'), [3]);
 });
 
 test('a blog post gets its own four fields in the settings sheet', () => {

@@ -6,7 +6,10 @@ import { useArionData } from '../../useArionData';
 import { smallButton } from '../../components/SectionFieldInputs';
 import type { ArionSitePage } from '../../../lib/arionApi';
 import type { FieldContext } from '../../components/SectionFieldInputs';
-import { splitPages } from '../../utils/siteBuilderCopy';
+import {
+  statusLinks, filterPages, paginate, stateSuffix, dateCell, rowActions,
+  ROW_ACTION_LABEL, bulkActions, type PagesView, type RowAction,
+} from '../../utils/pagesTable';
 import { WebsiteBuilder, type WebsiteBuilderApi } from '../../../builder/adapters/website/WebsiteBuilder';
 import { SITE_PAGE_TEMPLATES, siteLibrary } from '../../../builder/adapters/website/siteTemplates';
 import { TemplateLibrary } from '../../../builder/TemplateLibrary';
@@ -19,7 +22,16 @@ import { TemplateLibrary } from '../../../builder/TemplateLibrary';
  *  like, and hit Publish. I never open WordPress."
  *
  * Two views behind one route, switched by ?pageId=<n>:
- *   the list of pages, and the section-list editor for one page.
+ *   the list of pages, and the builder for one page.
+ *
+ * THE LIST IS WORDPRESS'S PAGES SCREEN (2026-09-22). Brandon: *"for the
+ * website pages, can we make this look like what wordpress pages looks like."*
+ * The "Drafts" / "Live pages" cards are DELETED, and with them the sentences
+ * that counted how much of a page we could edit. What a client sees is the
+ * screen they already know: Pages + Add New Page, All | Published | Drafts |
+ * Trash with counts, a search box, Title / Author / Date, the row actions
+ * under the title, bulk actions and pagination. Read off the real screen on
+ * the dev fixture site, not from memory. The pure half is `utils/pagesTable`.
  *
  * Shape (REBUILT 2026-09-16): the ONE builder. A page opens on a canvas that
  * draws every section the way the website will, the widget pane adds sections
@@ -50,37 +62,6 @@ import { TemplateLibrary } from '../../../builder/TemplateLibrary';
 
 /* ── small shared bits ─────────────────────────────────────────────────── */
 
-const STATUS_LABEL: Record<string, string> = {
-  publish: 'Live', draft: 'Draft', pending: 'Waiting for review',
-  future: 'Scheduled', private: 'Private',
-};
-const STATUS_TONE: Record<string, { bg: string; fg: string }> = {
-  publish: { bg: '#DCFCE7', fg: '#166534' },
-  draft:   { bg: '#FEF3C7', fg: '#92400E' },
-  pending: { bg: '#DBEAFE', fg: '#1E40AF' },
-  future:  { bg: '#DBEAFE', fg: '#1E40AF' },
-  private: { bg: '#F1F5F9', fg: '#475569' },
-};
-
-function StatusChip({ status }: { status: string }) {
-  const tone = STATUS_TONE[status] || STATUS_TONE.private;
-  return (
-    <span style={{
-      background: tone.bg, color: tone.fg, borderRadius: 999, padding: '2px 10px',
-      fontSize: 11, fontWeight: 600, whiteSpace: 'nowrap',
-    }}>
-      {STATUS_LABEL[status] || status}
-    </span>
-  );
-}
-
-function whenText(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
 /** One line the client can act on, never a stack trace. */
 function messageFrom(err: any, fallback: string): string {
   const m = err?.message;
@@ -110,7 +91,24 @@ function Banner({ tone, children, onClose }: {
   );
 }
 
-/* ── the list of pages ─────────────────────────────────────────────────── */
+/* ── the list of pages: WordPress's Pages screen, in our colours ────────── */
+
+/**
+ * Brandon, 2026-09-22: *"for the website pages, can we make this look like
+ * what wordpress pages looks like, then I can't actually edit anything."*
+ *
+ * The card list this replaces stacked "Drafts" and "Live pages" cards, each
+ * row a title, a chip and a sentence about how much of the page we could
+ * edit. Nobody who has run a WordPress site recognises that screen. This one
+ * is the screen they already know — heading, Add New Page, the status links,
+ * a search box, a table of Title / Author / Date with the row actions under
+ * the title on hover, bulk actions and pagination — read off the real one on
+ * the dev fixture site rather than from memory.
+ *
+ * Everything about it that is not JSX lives in `utils/pagesTable.ts`, so the
+ * counts, the search, the page of twenty, the row actions and WordPress's two
+ * row strings are `node --test` rows rather than a browser check.
+ */
 
 function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
@@ -130,31 +128,98 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   const [askFor, setAskFor] = useState<ArionSitePage | null>(null);
   const [askText, setAskText] = useState('');
   const [asked, setAsked] = useState<string | null>(null);
-  const [restored, setRestored] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+
+  /* The screen's own state: which status link, what is typed in the search
+     box, which page of twenty, and which rows are ticked. */
+  const [view, setView] = useState<PagesView>('all');
+  const [typed, setTyped] = useState('');
+  const [search, setSearch] = useState('');
+  const [pageNo, setPageNo] = useState(1);
+  const [ticked, setTicked] = useState<number[]>([]);
+  const [bulk, setBulk] = useState('');
 
   const { data, loading, error: loadError, refetch } = useArionData(
     () => (activeSiteId ? arionApi.listSitePages(activeSiteId) : Promise.resolve(null)),
     [activeSiteId],
   );
   const pages: ArionSitePage[] = (data as any)?.data?.pages || [];
-  const { drafts, live, deleted } = useMemo(() => splitPages(pages), [pages]);
-  // Blog posts are their own list. A post is not a page: it is dated writing
-  // that appears in a blog list, and mixing the two makes a client hunt for
-  // the difference in a chip (ARION pack 2, D-ARION-C).
-  const livePages = useMemo(() => live.filter((p) => p.type !== 'post'), [live]);
-  const livePosts = useMemo(() => live.filter((p) => p.type === 'post'), [live]);
+
+  const links = useMemo(() => statusLinks(pages), [pages]);
+  const filtered = useMemo(() => filterPages(pages, view, search), [pages, view, search]);
+  const screen = useMemo(() => paginate(filtered, pageNo), [filtered, pageNo]);
+  const shown = screen.rows;
+  const allTicked = shown.length > 0 && shown.every((p) => ticked.includes(p.pageId));
+
+  /* A link, a search or a new page of rows starts from the top with nothing
+     ticked — a tick a client cannot see is a page they are about to bin by
+     accident. */
+  const go = (next: PagesView) => { setView(next); setPageNo(1); setTicked([]); };
+  useEffect(() => { setTicked([]); }, [pageNo, search, view]);
+  // The bin link disappears the moment the bin empties, so a view pinned to it
+  // would show a table with no way back to the pages.
+  useEffect(() => {
+    if (view === 'trash' && !links.some((l) => l.view === 'trash')) setView('all');
+  }, [links, view]);
 
   const restore = async (p: ArionSitePage) => {
     if (!activeSiteId) return;
     setBusy(true); setError(null);
     try {
       await arionApi.restoreSitePage(activeSiteId, p.pageId);
-      setRestored(p.title || 'That page');
+      setNote(`“${p.title || 'That page'}” is back, as a draft. Publish it when you are ready.`);
       refetch();
     } catch (e: any) {
       setError(messageFrom(e, 'We could not bring that page back.'));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const trash = async (p: ArionSitePage) => {
+    if (!activeSiteId) return;
+    setBusy(true); setError(null);
+    try {
+      await arionApi.trashSitePage(activeSiteId, p.pageId);
+      setNote(`“${p.title || 'That page'}” is in the bin. Your website keeps it for 30 days.`);
+      refetch();
+    } catch (e: any) {
+      setError(messageFrom(e, 'We could not delete that page.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Bulk actions, one page at a time.
+   *
+   * The website has no bulk door, so this is the row action run over the
+   * ticked rows — and it STOPS on the first refusal rather than carrying on
+   * and reporting a success it did not have. A client is told how many moved
+   * and which one would not.
+   */
+  const applyBulk = async () => {
+    if (!activeSiteId || !bulk || ticked.length === 0) return;
+    const rows = filtered.filter((p) => ticked.includes(p.pageId));
+    setBusy(true); setError(null);
+    let done = 0;
+    try {
+      for (const p of rows) {
+        if (bulk === 'trash') await arionApi.trashSitePage(activeSiteId, p.pageId);
+        else if (bulk === 'restore') await arionApi.restoreSitePage(activeSiteId, p.pageId);
+        done += 1;
+      }
+      setNote(bulk === 'trash'
+        ? `${done} page${done === 1 ? '' : 's'} moved to the bin. Your website keeps them for 30 days.`
+        : `${done} page${done === 1 ? '' : 's'} put back, as drafts.`);
+    } catch (e: any) {
+      setError(messageFrom(e, done > 0
+        ? `${done} of ${rows.length} were done, then your website refused the next one.`
+        : 'Your website refused that.'));
+    } finally {
+      setTicked([]); setBulk('');
+      setBusy(false);
+      refetch();
     }
   };
 
@@ -201,66 +266,70 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     }
   };
 
-  const row = (p: ArionSitePage) => (
-    <div
-      key={p.pageId}
-      style={{
-        borderTop: '1px solid var(--border)', padding: '14px 0',
-        display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between',
-      }}
-    >
-      <div style={{ minWidth: 220, flex: '1 1 240px' }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: 14, fontWeight: 600 }}>{p.title || '(no title)'}</span>
-          <StatusChip status={p.status} />
-        </div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-          {p.type === 'post' ? 'Blog post · ' : ''}
-          {p.editableSectionCount > 0
-            ? `${p.editableSectionCount} of ${p.sectionCount} sections you can edit here`
-            : (p.adoptCandidateCount || 0) > 0
-              ? `Built on the website itself · up to ${p.adoptCandidateCount} of ${p.sectionCount} `
-                + 'may be editable here'
-              : 'Built on the website itself'}
-          {p.modified ? ` · last changed ${whenText(p.modified)}` : ''}
-        </div>
-        {p.status === 'publish' && p.permalink && (
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, wordBreak: 'break-all' }}>
-            {p.permalink}
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+  /** One row action, drawn the way WordPress draws them — a row of links. */
+  const action = (p: ArionSitePage, kind: RowAction) => {
+    const label = ROW_ACTION_LABEL[kind];
+    if (kind === 'view' || kind === 'preview') {
+      return (
+        <a key={kind} className="wpp-action" href={p.permalink || '#'} target="_blank" rel="noopener noreferrer">
+          {label}
+        </a>
+      );
+    }
+    const onClick = kind === 'edit' ? () => onOpen(p.pageId)
+      : kind === 'trash' ? () => trash(p)
+      : kind === 'restore' ? () => restore(p)
+      : () => { setAskFor(p); setAskText(''); };
+    return (
+      <button
+        key={kind}
+        type="button"
+        className={`wpp-action${kind === 'trash' ? ' wpp-action-bad' : ''}`}
+        disabled={busy}
+        onClick={onClick}
+      >
+        {label}
+      </button>
+    );
+  };
+
+  /** The bulk bar and the pagination, which WordPress prints above AND below. */
+  const tablenav = (where: 'top' | 'bottom') => (
+    <div className="wpp-tablenav">
+      <div className="wpp-bulk">
+        <label className="wpp-sr" htmlFor={`wpp-bulk-${where}`}>What to do with the pages you ticked</label>
+        <select
+          id={`wpp-bulk-${where}`}
+          value={bulk}
+          onChange={(e) => setBulk(e.target.value)}
+          style={{ ...smallButton, padding: '8px 10px' }}
+        >
+          {bulkActions(view).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
         <button
           type="button"
-          className="abtn abtn-sky"
-          style={{ minHeight: 44 }}
-          // A page with NOTHING editable but something that could be still
-          // opens — that is precisely the page whose owner most needs the
-          // review, and disabling it locked them out of Phase 3 entirely.
-          disabled={p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) === 0}
-          title={p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) === 0
-            ? 'Every section on this page was built on the website itself and none of them can be '
-              + 'made editable here, so there is nothing to change. Use “Ask us to change it”.'
-            : undefined}
-          onClick={() => onOpen(p.pageId)}
+          style={{ ...smallButton }}
+          disabled={busy || !bulk || ticked.length === 0}
+          onClick={applyBulk}
         >
-          {p.editableSectionCount === 0 && (p.adoptCandidateCount || 0) > 0 ? 'Review' : 'Edit'}
+          Apply
         </button>
-        {p.permalink && (
-          <a
-            className="abtn"
-            style={{ ...smallButton, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}
-            href={p.permalink}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            {p.status === 'draft' ? 'Preview' : 'Open'}
-          </a>
+      </div>
+      <div className="wpp-pagination">
+        <span className="wpp-count">{screen.total} item{screen.total === 1 ? '' : 's'}</span>
+        {screen.pages > 1 && (
+          <>
+            <button type="button" style={smallButton} disabled={screen.page === 1} aria-label="First page"
+                    onClick={() => setPageNo(1)}>«</button>
+            <button type="button" style={smallButton} disabled={screen.page === 1} aria-label="Previous page"
+                    onClick={() => setPageNo(screen.page - 1)}>‹</button>
+            <span className="wpp-count">{screen.page} of {screen.pages}</span>
+            <button type="button" style={smallButton} disabled={screen.page === screen.pages} aria-label="Next page"
+                    onClick={() => setPageNo(screen.page + 1)}>›</button>
+            <button type="button" style={smallButton} disabled={screen.page === screen.pages} aria-label="Last page"
+                    onClick={() => setPageNo(screen.pages)}>»</button>
+          </>
         )}
-        <button type="button" style={smallButton} onClick={() => { setAskFor(p); setAskText(''); }}>
-          Ask us to change it
-        </button>
       </div>
     </div>
   );
@@ -276,171 +345,215 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   }
 
   return (
-    <div>
+    <div className="wpp">
       {error && <Banner tone="bad" onClose={() => setError(null)}>{error}</Banner>}
       {asked && (
         <Banner tone="good" onClose={() => setAsked(null)}>
           Request sent about “{asked}”. You can follow it under Website → Support.
         </Banner>
       )}
-      {restored && (
-        <Banner tone="good" onClose={() => setRestored(null)}>
-          “{restored}” is back, as a draft. Publish it when you are ready.
-        </Banner>
-      )}
+      {note && <Banner tone="good" onClose={() => setNote(null)}>{note}</Banner>}
 
-      {drafts.length > 0 && (
-        <Card
-          title="Drafts"
-          subtitle="Nobody can see these until you publish them."
-          style={{ marginBottom: 12 }}
+      <div className="wpp-head">
+        <h1 className="wpp-title">Pages</h1>
+        <button
+          type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
+          onClick={() => { setNewKind('page'); setCreating(true); }}
         >
-          {drafts.map(row)}
-        </Card>
-      )}
+          Add New Page
+        </button>
+        <button
+          type="button" style={{ ...smallButton, minHeight: 44 }}
+          onClick={() => { setNewKind('post'); setCreating(true); }}
+        >
+          Write a post
+        </button>
+        <span className="wpp-where">{selectedSite?.primaryDomain || 'your website'}</span>
+      </div>
 
-      <Card
-        title={drafts.length > 0 ? 'Live pages' : 'Pages'}
-        subtitle={
-          drafts.length > 0
-            ? `On ${selectedSite?.primaryDomain || 'your website'} right now.`
-            : `Every page on ${selectedSite?.primaryDomain || 'your website'}, drafts included.`
-        }
-        action={
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
-              onClick={() => { setNewKind('page'); setCreating(true); }}
-            >
-              New page
-            </button>
-            <button
-              type="button" style={{ ...smallButton, minHeight: 44 }}
-              onClick={() => { setNewKind('post'); setCreating(true); }}
-            >
-              Write a post
-            </button>
-          </div>
-        }
-      >
-        {creating && (
-          <div style={{
-            border: '1px solid var(--border)', borderRadius: 10, padding: 12, marginBottom: 12,
-            background: 'var(--surface-2, #F8FAFC)',
-          }}>
-            <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }} htmlFor="new-page-title">
-              What is the {newKind === 'post' ? 'post' : 'page'} called?
-            </label>
-            <input
-              id="new-page-title"
-              value={newTitle}
-              onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="e.g. Garden offices"
-              style={{
-                width: '100%', fontSize: 16, padding: '10px 12px', borderRadius: 8,
-                border: '1px solid var(--border)', minHeight: 44, boxSizing: 'border-box',
-              }}
-            />
-            {/* §11.9 / D-146 — the grid of text cards that used to sit here is
-                gone. One library, with a picture of every page, search and
-                categories, shared with the proposal and email builders. */}
-            {newKind === 'page' && (
-              <div style={{ margin: '12px 0' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Start from…</div>
-                <div style={{
-                  display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
-                  border: '1px solid var(--border)', borderRadius: 8, padding: 10,
-                  background: 'var(--surface, #fff)',
-                }}>
-                  <div style={{ flex: 1, minWidth: 200 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600 }}>{chosenTemplate?.name || 'Choose a template'}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>
-                      {chosenTemplate
-                        ? `${chosenTemplate.purpose} · ${chosenTemplate.kinds.length} section${chosenTemplate.kinds.length === 1 ? '' : 's'} · ${chosenTemplate.bestFor}`
-                        : 'Every template opens filled in from your own business details.'}
-                    </div>
+      {creating && (
+        <div style={{
+          border: '1px solid var(--border)', borderRadius: 10, padding: 12, margin: '12px 0',
+          background: 'var(--surface-2, #F8FAFC)',
+        }}>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }} htmlFor="new-page-title">
+            What is the {newKind === 'post' ? 'post' : 'page'} called?
+          </label>
+          <input
+            id="new-page-title"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            placeholder="e.g. Garden offices"
+            style={{
+              width: '100%', fontSize: 16, padding: '10px 12px', borderRadius: 8,
+              border: '1px solid var(--border)', minHeight: 44, boxSizing: 'border-box',
+            }}
+          />
+          {/* §11.9 / D-146 — the grid of text cards that used to sit here is
+              gone. One library, with a picture of every page, search and
+              categories, shared with the proposal and email builders. */}
+          {newKind === 'page' && (
+            <div style={{ margin: '12px 0' }}>
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Start from…</div>
+              <div style={{
+                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
+                border: '1px solid var(--border)', borderRadius: 8, padding: 10,
+                background: 'var(--surface, #fff)',
+              }}>
+                <div style={{ flex: 1, minWidth: 200 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{chosenTemplate?.name || 'Choose a template'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>
+                    {chosenTemplate
+                      ? `${chosenTemplate.purpose} · ${chosenTemplate.kinds.length} section${chosenTemplate.kinds.length === 1 ? '' : 's'} · ${chosenTemplate.bestFor}`
+                      : 'Every template opens filled in from your own business details.'}
                   </div>
-                  <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setBrowsing(true)}>
-                    Browse templates
-                  </button>
                 </div>
+                <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setBrowsing(true)}>
+                  Browse templates
+                </button>
               </div>
-            )}
-            {browsing && (
-              <TemplateLibrary
-                open
-                onClose={() => setBrowsing(false)}
-                product="arion"
-                eyebrow="ARION · Website"
-                title="Start your page"
-                subtitle="Every page opens as a draft, filled in from your own business details. Pick the one closest to what this page is for, then change anything in the builder."
-                entries={pageLibrary}
-                onPick={(id) => { setTemplate(id); setBrowsing(false); }}
-              />
-            )}
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 10px' }}>
-              It starts as a draft, filled in from your own business details, so nothing appears on your
-              website until you publish it. Every section can be changed, moved or removed in the builder.
-              {newKind === 'post' && ' You can set what it is filed under, and its picture, in its settings.'}
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !newTitle.trim()} onClick={create}>
-                {busy ? 'Creating…' : 'Create draft'}
-              </button>
-              <button type="button" style={smallButton} onClick={() => { setCreating(false); setNewTitle(''); }}>Cancel</button>
-            </div>
+          )}
+          {browsing && (
+            <TemplateLibrary
+              open
+              onClose={() => setBrowsing(false)}
+              product="arion"
+              eyebrow="ARION · Website"
+              title="Start your page"
+              subtitle="Every page opens as a draft, filled in from your own business details. Pick the one closest to what this page is for, then change anything in the builder."
+              entries={pageLibrary}
+              onPick={(id) => { setTemplate(id); setBrowsing(false); }}
+            />
+          )}
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 10px' }}>
+            It starts as a draft, filled in from your own business details, so nothing appears on your
+            website until you publish it. Every section can be changed, moved or removed in the builder.
+            {newKind === 'post' && ' You can set what it is filed under, and its picture, in its settings.'}
           </div>
-        )}
-
-        {livePages.length === 0 ? (
-          <EmptyPanel message={
-            drafts.length > 0
-              ? 'Nothing is live on this website yet.'
-              : 'We could not find any pages on this website yet.'
-          } />
-        ) : (
-          <div>{livePages.map(row)}</div>
-        )}
-      </Card>
-
-      {livePosts.length > 0 && (
-        <Card
-          title="Blog posts"
-          subtitle="Written here, in the same editor as your pages."
-          style={{ marginTop: 12 }}
-        >
-          {livePosts.map(row)}
-        </Card>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !newTitle.trim()} onClick={create}>
+              {busy ? 'Creating…' : 'Create draft'}
+            </button>
+            <button type="button" style={smallButton} onClick={() => { setCreating(false); setNewTitle(''); }}>Cancel</button>
+          </div>
+        </div>
       )}
 
-      {deleted.length > 0 && (
-        <Card
-          title="Deleted pages"
-          subtitle="Your website keeps these for 30 days. Nobody can see them."
-          style={{ marginTop: 12 }}
-        >
-          {deleted.map((p) => (
-            <div key={p.pageId} style={{
-              borderTop: '1px solid var(--border)', padding: '14px 0',
-              display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <div style={{ minWidth: 220, flex: '1 1 240px' }}>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>{p.title || '(no title)'}</span>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                  Deleted{p.modified ? ` · ${whenText(p.modified)}` : ''}
-                </div>
-              </div>
+      <div className="wpp-bar">
+        <ul className="wpp-status">
+          {links.map((l, i) => (
+            <li key={l.view}>
               <button
-                type="button" style={{ ...smallButton, minHeight: 44 }}
-                disabled={busy} onClick={() => restore(p)}
+                type="button"
+                className={`wpp-statuslink${view === l.view ? ' is-on' : ''}`}
+                aria-current={view === l.view ? 'true' : undefined}
+                onClick={() => go(l.view)}
               >
-                Put it back
+                {l.label} <span className="wpp-n">({l.count})</span>
               </button>
-            </div>
+              {i < links.length - 1 && <span className="wpp-sep">|</span>}
+            </li>
           ))}
-        </Card>
-      )}
+        </ul>
+        <form
+          className="wpp-search"
+          onSubmit={(e) => { e.preventDefault(); setSearch(typed); setPageNo(1); }}
+        >
+          <label className="wpp-sr" htmlFor="wpp-search">Search pages</label>
+          <input
+            id="wpp-search"
+            type="search"
+            value={typed}
+            onChange={(e) => {
+              setTyped(e.target.value);
+              // An emptied box puts the whole list back without a second click,
+              // which is what a person expects of a search box they cleared.
+              if (e.target.value === '') { setSearch(''); setPageNo(1); }
+            }}
+            style={{
+              fontSize: 14, padding: '8px 10px', borderRadius: 8,
+              border: '1px solid var(--border)', minHeight: 44, minWidth: 180,
+            }}
+          />
+          <button type="submit" style={{ ...smallButton, minHeight: 44 }}>Search pages</button>
+        </form>
+      </div>
+
+      {tablenav('top')}
+
+      <table className="data-table wpp-table">
+        <thead>
+          <tr>
+            <th className="wpp-cb">
+              <label className="wpp-sr" htmlFor="wpp-all">Tick every page on this screen</label>
+              <input
+                id="wpp-all"
+                type="checkbox"
+                checked={allTicked}
+                onChange={(e) => setTicked(e.target.checked ? shown.map((p) => p.pageId) : [])}
+              />
+            </th>
+            <th>Title</th>
+            <th>Author</th>
+            <th>Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shown.length === 0 ? (
+            <tr>
+              <td colSpan={4} style={{ color: 'var(--text-muted)', padding: '18px 8px' }}>
+                {search
+                  ? `Nothing on your website matches “${search}”.`
+                  : view === 'trash'
+                    ? 'The bin is empty.'
+                    : 'We could not find any pages on this website yet.'}
+              </td>
+            </tr>
+          ) : shown.map((p) => {
+            const suffix = stateSuffix(p);
+            const when = dateCell(p);
+            return (
+              <tr key={p.pageId} className="wpp-row">
+                <td className="wpp-cb">
+                  <label className="wpp-sr" htmlFor={`wpp-cb-${p.pageId}`}>Tick “{p.title || '(no title)'}”</label>
+                  <input
+                    id={`wpp-cb-${p.pageId}`}
+                    type="checkbox"
+                    checked={ticked.includes(p.pageId)}
+                    onChange={(e) => setTicked((t) => (e.target.checked
+                      ? [...t, p.pageId]
+                      : t.filter((id) => id !== p.pageId)))}
+                  />
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="wpp-rowtitle"
+                    onClick={() => (p.status === 'trash' ? restore(p) : onOpen(p.pageId))}
+                  >
+                    {p.title || '(no title)'}
+                  </button>
+                  {suffix && <span className="wpp-state"> — {suffix}</span>}
+                  <div className="wpp-actions">
+                    {rowActions(p, view).map((k) => action(p, k))}
+                  </div>
+                </td>
+                {/* The website's pages door does not say who wrote a page, so
+                    this reads the way WordPress's own column reads when it does
+                    not know either — a dash, never a name we invented. */}
+                <td className="wpp-author">—</td>
+                <td className="wpp-date">
+                  <div className="wpp-datelabel">{when.label}</div>
+                  <div>{when.when}</div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {tablenav('bottom')}
 
       {askFor && (
         <Card title={`Ask us to change “${askFor.title}”`} style={{ marginTop: 12 }}>
@@ -465,6 +578,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     </div>
   );
 }
+
 
 /* ── the builder, hosted ───────────────────────────────────────────────── */
 
