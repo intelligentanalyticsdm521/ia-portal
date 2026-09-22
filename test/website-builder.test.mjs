@@ -332,11 +332,19 @@ describe("a section built on the website itself", () => {
     const html = renderSiteWidget(sectionWidget(doc.sections[1]), ctx);
     assert.match(html, /sw-locked/);
     assert.match(html, /Custom section/);
-    assert.match(html, /County Build Awards 2025/);
-    // "Can be made editable" was adoption's chip. Deleted with it (B-168):
-    // nothing on a page is offered as something we could take charge of,
-    // because everything is already editable.
+    /* The FIRST WORDS on the section used to be printed here, and they came
+       from `adoptPreview` — a field the adoption mapper computed. Adoption is
+       deleted (B-168, 2026-09-22) and so is the field. The rule it served is
+       kept and asserted instead: this block is NEVER BLANK. It names the
+       section and says what will happen to it, which is the whole of what a
+       client needs from a section we could not read.
+
+       "Can be made editable" was adoption's chip. Nothing on a page is offered
+       as something we could take charge of any more, because everything else
+       is already editable. */
+    assert.match(html, /Publishing this page does not change one byte of it/);
     assert.doesNotMatch(html, /Can be made editable/);
+    assert.ok(html.replace(/<[^>]*>/g, "").trim().length > 40, "never blank");
     // And nothing on it is typeable.
     assert.doesNotMatch(html, /data-edit=/);
   });
