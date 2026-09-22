@@ -1211,14 +1211,37 @@ const LEGACY_WIDGETS: WidgetDef[] = [
   },
   {
     kind: "site_custom",
-    label: "Custom section (kept as is)",
-    description: "Something built on the website itself. It stays exactly as it is until you take charge of it.",
+    label: "Kept exactly as it is",
+    description: "A section the website sent us that we could not read at all. It stays exactly as it is.",
     icon: "Lock",
     picture: pictureFrom(box(5, 6, 54, 29) + `<path d="M12 13l40 20M52 13L12 33" stroke="#CBD5E1"/>`),
     category: "General",
     adapters: ["website"],
-    // Never offered: a custom section is what a page ALREADY has, not
-    // something anybody can add.
+    /* THE LAST RESORT, and nothing routinely reaches it any more (B-168,
+       2026-09-22). Every section arion-api sends is now `editable: true` —
+       ours and the client's alike — so this is what draws a section the server
+       could not read at all. It is KEPT rather than deleted because it is the
+       thing that carries the client's own Elementor bytes back untouched; a
+       section that fell through with nowhere to go would be a section dropped
+       off somebody's live page. Never offered: it is what a page ALREADY has,
+       not something anybody can add. */
+    hidden: true,
+    defaults: {},
+    controls: [],
+  },
+  {
+    kind: "opaque",
+    label: "Built in WordPress",
+    description: "A part of this page that was built on the website itself. It is kept exactly as it is.",
+    icon: "Lock",
+    picture: pictureFrom(box(5, 6, 54, 29) + `<path d="M12 13l40 20M52 13L12 33" stroke="#CBD5E1"/>`),
+    category: "General",
+    adapters: ["website"],
+    /* ONE WIDGET ON THE CLIENT'S PAGE THAT WE HAVE NO ROW FOR (B-168).
+       The page opens, everything around it is editable, and this one draws a
+       placeholder saying what it is and where to change it. It is written back
+       to the website byte for byte, so nothing on a live page is ever lost to
+       a vocabulary gap. Hidden: nobody adds one, a page already has it. */
     hidden: true,
     defaults: {},
     controls: [],

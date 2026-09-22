@@ -2489,13 +2489,6 @@ export interface ArionSitePage {
   sectionCount: number;
   editableSectionCount: number;
   /**
-   * An UPPER BOUND on how many sections built on the site could be made
-   * editable, from the website's coarse widget census. The exact answer needs
-   * the mapper and arrives when the page is opened, so this is worded as
-   * "up to N" wherever it is shown.
-   */
-  adoptCandidateCount?: number;
-  /**
    * There is work saved in the builder that the public has not seen (D-05).
    *
    * A LIVE page with this set reads "Live · draft saved, not published": two
@@ -2549,25 +2542,6 @@ export interface ArionPageSection {
   /** Role assignments the server had to guess at, so the sheet can ask. */
   roleReview?: SectionRoleReview[] | null;
 
-  /* ── Phase 3: adoption ─────────────────────────────────────────────── */
-  /** A greyed row we could offer to make editable. */
-  adoptable?: boolean;
-  adoptReason?: AdoptRefusal | null;
-  adoptReasonText?: string | null;
-  adoptKind?: string | null;
-  adoptKindLabel?: string | null;
-  /** Why we think it is that kind, in plain words. */
-  adoptWhy?: string | null;
-  /** The first words a visitor reads on it — how a person recognises the row. */
-  adoptPreview?: string | null;
-  adoptConfidence?: number | null;
-  adoptConfidenceLabel?: 'high' | 'fair' | 'low' | null;
-  /** Proves an adopt acts on the section that was previewed and no other. */
-  fingerprint?: string;
-  /** The website's own coarse view: is anything on it beyond the editor? */
-  pluginAdoptable?: boolean | null;
-  /** Set on a row that IS editable because it was adopted. */
-  adoption?: SectionAdoption | null;
 }
 
 export interface ArionPageDetail {
@@ -2596,13 +2570,6 @@ export interface ArionPageDetail {
     title: string | null;
     sections: Array<Partial<ArionPageSection>>;
   } | null;
-  /** The page-level answer to "how many were built on the site, and how many
-      of those could I take charge of?" — what the review entry counts. */
-  adoption?: {
-    customCount: number;
-    adoptableCount: number;
-    undoDays: number;
-  };
 }
 
 /** One editable field, exactly as arion-api lib/websiteBuilder/sectionSchema.js declares it. */
@@ -2683,75 +2650,17 @@ export interface SectionCatalogEntry {
   variants: SectionVariant[];
 }
 
-/* ── Adoption: "make it editable" (Phase 3, decision W-5) ─────────────────
-   Every page on the five sites we already run was built by hand, so every
-   section on them reads as "Custom section — built on the site": greyed, in
-   position, saved back untouched. Adoption is the offer to change that one
-   section at a time — best effort, always previewed, always opt-in, and
-   reversible for 30 days from the original bytes arion-api kept.
+/* ADOPTION IS DELETED (B-168, 2026-09-22).
 
-   Nothing here happens by itself. There is deliberately no "adopt everything":
-   the review list is a checklist and each row is ticked on its own. */
+   It existed for exactly one reason: a section built on the website itself
+   could not be edited here, so the next best thing was to offer to REPLACE it
+   with one of our archetypes — previewed, opt-in, reversible for 30 days.
 
-/** Why a section built on the site cannot be made editable here. */
-export type AdoptRefusal =
-  | 'no_match'            // we cannot work out what kind of section it is
-  | 'low_confidence'      // we have a guess and are not sure enough to act on it
-  | 'would_lose_content'  // it holds something we cannot carry over
-  | 'needs_pro'           // it has a form, and this plan has no Elementor Pro
-  | 'empty'               // there is nothing on it
-  | 'already_ours';       // it is already editable here
-
-/** One thing on the section the editor has no field for. */
-export interface AdoptUnmappedWidget {
-  widgetType: string;
-  /** Plain words: "a video", "a map", "custom code". Never Elementor's name. */
-  label: string;
-  /** False for decoration — a divider or a space loses nothing when it goes. */
-  carriesContent: boolean;
-  preview: string;
-}
-
-/** A value the client has to supply before the adopted section can be published. */
-export interface AdoptNeedsInput {
-  /** `image_alt`, or `images[2].alt` for a row inside a list. */
-  field: string;
-  message: string;
-}
-
-/** What one adoption did, as the row's small note shows it. */
-export interface SectionAdoption {
-  adoptionId: string;
-  kind: string | null;
-  confidence: number | null;
-  adoptedAt: string | null;
-  adoptedBy: string | null;
-  /** When "Undo adoption" stops being offered. */
-  undoUntil: string | null;
-  canUndo: boolean;
-}
-
-export interface AdoptPreview {
-  adoptable: boolean;
-  reason?: AdoptRefusal | null;
-  reasonText?: string | null;
-  kind: string | null;
-  kindLabel: string | null;
-  why?: string | null;
-  confidence: number;
-  confidenceLabel: 'high' | 'fair' | 'low';
-  warnings?: string[];
-  unmapped: AdoptUnmappedWidget[];
-  needsInput?: AdoptNeedsInput[];
-  fields?: Record<string, any>;
-  dropped?: string[];
-  /** Proves the section on the site is still the one that was previewed. */
-  fingerprint: string;
-  /** A whole HTML document: the section now, beside what it would become. */
-  html: string | null;
-  /** Always false. The preview writes nothing, anywhere. */
-  saved: boolean;
-}
+   arion-api's `elementorReader.js` now reads every section, ours and theirs
+   alike, so there is nothing left to adopt. The four calls, the eight types
+   and the whole "Review sections built on the site" surface are gone with it.
+   The `arion.site_section_adoption` table is left in place: it records what
+   was done to five real sites. */
 
 /* ── "Ask ARGUS to change it" (Phase 1B) ──────────────────────────────────
    Every one of these PROPOSES. Nothing here writes to the website: an
@@ -2977,93 +2886,6 @@ export async function undoSitePage(p: {
     method: 'POST',
     path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/undo`,
     timeoutMs: 90_000,
-  });
-}
-
-/* ── Adoption calls (Phase 3) ─────────────────────────────────────────────
-   `adoptSectionPreview` writes NOTHING — not to the website, not to our own
-   tables — so it is safe to call the moment somebody taps "Make it editable".
-   `adoptSection` is the only one that changes anything, and it will not run
-   without the fingerprint the preview handed back. */
-
-export async function adoptSectionPreview(p: {
-  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
-  pageId: number; index: number;
-  /** Values the client typed for what the preview asked for. */
-  fixes?: Record<string, string>;
-}) {
-  return requestJson<{ data: AdoptPreview }>({
-    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
-    method: 'POST',
-    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections/${p.index}/adopt-preview`,
-    body: { fixes: p.fixes },
-    timeoutMs: 45_000,
-  });
-}
-
-export async function adoptSection(p: {
-  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
-  pageId: number; index: number;
-  /** From the preview. Without it the call is refused, so nothing can be
-      adopted that the client has not looked at. */
-  fingerprint: string;
-  fixes?: Record<string, string>;
-}) {
-  return requestJson<{
-    data: {
-      adoptionId: string;
-      pageId: number;
-      index: number;
-      kind: string;
-      handle: string;
-      confidence: number;
-      section: ArionPageSection;
-      undoDays: number;
-      sectionsWritten: number;
-      cachePurged: boolean;
-      undoCount: number;
-    };
-  }>({
-    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
-    method: 'POST',
-    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/sections/${p.index}/adopt`,
-    body: { fingerprint: p.fingerprint, fixes: p.fixes },
-    timeoutMs: 90_000,
-  });
-}
-
-export async function undoSectionAdoption(p: {
-  baseUrl: string; bearerToken: string; tenantId: string; siteId: string;
-  pageId: number; adoptionId: string;
-}) {
-  return requestJson<{
-    data: {
-      adoptionId: string; pageId: number; index: number;
-      restored: boolean; recordUpdated: boolean; cachePurged: boolean; undoCount: number;
-    };
-  }>({
-    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
-    method: 'POST',
-    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}`
-        + `/adoptions/${encodeURIComponent(p.adoptionId)}/undo`,
-    timeoutMs: 90_000,
-  });
-}
-
-export async function listSectionAdoptions(p: {
-  baseUrl: string; bearerToken: string; tenantId: string; siteId: string; pageId: number;
-}) {
-  return requestJson<{
-    data: {
-      adoptions: Array<SectionAdoption & {
-        handle: string; sectionIndex: number; status: string; revertedAt: string | null;
-      }>;
-      undoDays: number;
-    };
-  }>({
-    baseUrl: p.baseUrl, bearerToken: p.bearerToken, tenantId: p.tenantId,
-    path: `/arion/sites/${encodeURIComponent(p.siteId)}/pages/${p.pageId}/adoptions`,
-    timeoutMs: 45_000,
   });
 }
 

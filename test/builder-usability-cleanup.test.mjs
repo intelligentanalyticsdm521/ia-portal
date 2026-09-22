@@ -359,12 +359,17 @@ describe("§11.11 · ONE confirm mechanism, and it is the app's modal", () => {
     assert.equal(/confirmPublish/.test(website), false, "the bespoke publish modal is deleted");
   });
 
-  test("the website inspector no longer asks the same question twice", () => {
+  test("the website inspector never reaches for the browser's own box", () => {
+    /* The question this row was written about — "Undo adoption", asked once by
+       `window.confirm` and again by the adapter — is GONE with adoption itself
+       (B-168, 2026-09-22). The rule it was protecting is not: no file in this
+       builder asks anything with the browser's grey box.  */
     const inspector = SRC("builder/adapters/website/SiteInspectorExtras.tsx");
-    assert.match(inspector, /void deps\.onUndoAdoption/);
-    assert.equal(/if \(window\.confirm/.test(inspector), false);
-    // The adapter owns the one question.
-    assert.match(website, /Put this section back the way your website built it\?/);
+    // The CODE, not the comment that records why the code is the way it is.
+    const live = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    assert.equal(/window\.confirm/.test(live(inspector)), false);
+    assert.equal(/window\.confirm/.test(live(website)), false);
+    assert.equal(/onUndoAdoption|onAdopt/.test(inspector), false, "adoption is deleted, not hidden");
   });
 
   test("Save as template asks in the builder's own dialog, with two boxes", () => {

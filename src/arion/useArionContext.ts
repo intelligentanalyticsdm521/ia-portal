@@ -939,39 +939,6 @@ export function useArionContext() {
         return createSitePage({ ...b, siteId, ...params });
       },
 
-      /* Adoption (Phase 3) — making a section that was built on the website
-         itself editable from here. The preview writes nothing; the adopt is
-         refused without the fingerprint the preview handed back, so nothing
-         can be adopted that nobody looked at. None of these spend credits. */
-      async adoptSectionPreview(
-        siteId: string, pageId: number, index: number, fixes?: Record<string, string>,
-      ) {
-        const b = await base();
-        const { adoptSectionPreview } = await import('../lib/arionApi');
-        return adoptSectionPreview({ ...b, siteId, pageId, index, fixes });
-      },
-
-      async adoptSection(
-        siteId: string, pageId: number, index: number,
-        params: { fingerprint: string; fixes?: Record<string, string> },
-      ) {
-        const b = await base();
-        const { adoptSection } = await import('../lib/arionApi');
-        return adoptSection({ ...b, siteId, pageId, index, ...params });
-      },
-
-      async undoSectionAdoption(siteId: string, pageId: number, adoptionId: string) {
-        const b = await base();
-        const { undoSectionAdoption } = await import('../lib/arionApi');
-        return undoSectionAdoption({ ...b, siteId, pageId, adoptionId });
-      },
-
-      async listSectionAdoptions(siteId: string, pageId: number) {
-        const b = await base();
-        const { listSectionAdoptions } = await import('../lib/arionApi');
-        return listSectionAdoptions({ ...b, siteId, pageId });
-      },
-
       async buildSiteSection(siteId: string, kind: string, blueprintId?: string) {
         const b = await base();
         const { buildSiteSection } = await import('../lib/arionApi');
