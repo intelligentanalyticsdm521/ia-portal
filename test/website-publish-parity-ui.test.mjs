@@ -144,3 +144,53 @@ describe("W-3 · the structure the author picked reaches the server", () => {
     assert.match(site, /columns: section\.columns\.map\(\(c, i\) => \(i === 0 \? \{ \.\.\.c, widgets: \[box\] \} : c\)\)/);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE MISSING LIST — a control with nothing to press
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("a control the author could not reach", () => {
+  const controlsOf = (rel, kind) => {
+    const src = fs.readFileSync(path.resolve("src/builder/widgets/families", rel), "utf8");
+    return { src, kind };
+  };
+
+  test("EVERY responsive control has the device switcher, not only the sliders", () => {
+    /* It was drawn in the size-slider branch and nowhere else, so a Heading's
+       Alignment and an Icon Box's Size stored their `_tablet` / `_mobile`
+       twins and offered no way to reach them. The parity scorer found it on
+       two widgets; it was on every non-slider responsive control there is. */
+    const panel = fs.readFileSync(path.resolve("src/builder/definitionControls.tsx"), "utf8");
+    const rows = panel.split("data-control-responsive").length - 1;
+    assert.ok(rows >= 2, "both branches still mark a responsive control");
+    // The label cell of the ORDINARY row carries it now.
+    assert.match(panel, /\{c\.label\}\s*\n\s*\{c\.responsive && p\.onDevice && \(\s*\n\s*<DeviceSegment/);
+  });
+
+  test("M-1 · Social Icons has a way to ADD an account", () => {
+    const src = fs.readFileSync(
+      path.resolve("src/builder/widgets/families/f3-buttons-icons-panels/socialIcons.ts"), "utf8");
+    // A row is the platform and the address — the two every reader of this
+    // list takes, here and in arion's `deep.js`.
+    assert.match(src, /row: \{ social: "", link: "" \}/);
+    // ...and the other stored spelling is named, so the first press adds to
+    // the list the author can SEE instead of emptying it.
+    assert.match(src, /from: "links"/);
+  });
+
+  test("the Accordion and the Tabs have one too", () => {
+    for (const f of ["f4-moving/accordion.ts", "f4-moving/tabs.ts"]) {
+      const src = fs.readFileSync(path.resolve("src/builder/widgets/families", f), "utf8");
+      assert.match(src, /row: \{ tab_title: "", tab_content: "" \}/, f);
+      assert.match(src, /from: "items"/, f);
+    }
+  });
+
+  test("a control that names neither is still typed on the page, not guessed at", () => {
+    const repeater = fs.readFileSync(path.resolve("src/builder/repeater.ts"), "utf8");
+    assert.match(repeater, /return !!spec && \(spec\.row !== undefined \|\| typeof spec\.cellsFrom === "string"\)/);
+    // `from` alone does NOT make a repeater: it answers "which list", not
+    // "what is a row", and a blank row still has to be declared.
+    assert.match(repeater, /export function rowsFor\(/);
+  });
+});

@@ -174,6 +174,13 @@ export const TABS_DEF: FamilyWidgetDef = {
   controls: [
     /* ── Content › Tabs — Elementor's own section, labels and order ──────── */
     { key: "tabs", label: "Tabs Items", type: "list", tab: "content", section: "Tabs",
+      /* ELEMENTOR'S OWN REPEATER, with a way to ADD one (B-168, 2026-09-22).
+         The parity scorer: "the Items list has no editor beyond typing on
+         the canvas". A row is a title and its words — the two `panelRows`
+         reads — and `from` names the other spelling of the same list, so
+         the first press adds to whichever one the author can see. */
+      row: { tab_title: "", tab_content: "" },
+      from: "items",
       help: "One title and its words per row." },
     { key: "tabs_direction", label: "Direction", type: "select", tab: "content", section: "Tabs",
       responsive: true, options: TAB_DIRECTIONS },

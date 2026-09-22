@@ -146,6 +146,13 @@ export const ACCORDION_DEF: FamilyWidgetDef = {
   controls: [
     /* ── Content › Layout — Elementor's own section name and order ───────── */
     { key: "tabs", label: "Items", type: "list", tab: "content", section: "Layout",
+      /* ELEMENTOR'S OWN REPEATER, with a way to ADD one (B-168, 2026-09-22).
+         The parity scorer: "the Items list has no editor beyond typing on
+         the canvas". A row is a title and its words — the two `panelRows`
+         reads — and `from` names the other spelling of the same list, so
+         the first press adds to whichever one the author can see. */
+      row: { tab_title: "", tab_content: "" },
+      from: "items",
       help: "One question and its answer per row." },
     { key: "accordion_item_title_position_horizontal", label: "Item Position", type: "select", tab: "content",
       section: "Layout", responsive: true,

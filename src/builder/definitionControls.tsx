@@ -48,7 +48,7 @@ import type { Device } from "./style";
 /* THE REPEATER'S ARITHMETIC (G-1). Every "what is a row" question is answered
    in one pure module the tests execute; this file only draws. */
 import {
-  cellCount, isRepeater, repeaterOp, rowFields, rowsOf, rowTitle, setRowField,
+  cellCount, isRepeater, repeaterOp, rowFields, rowsFor, rowsOf, rowTitle, setRowField,
   type RepeaterOp, type RepeaterRow,
 } from "./repeater";
 /* WHEN A CONTROL IS DRAWN AT ALL (2026-09-20). Elementor's `condition`, whose
@@ -302,7 +302,9 @@ export interface RepeaterControlProps {
  */
 export function RepeaterControl({ control, controls, props, onPatch }: RepeaterControlProps) {
   const [open, setOpen] = React.useState<number | null>(null);
-  const rows = rowsOf(props, control.key);
+  // The rows this control EDITS — its own key, or the other spelling of the
+  // same list when its own is empty (B-168; `RepeaterSpec.from`).
+  const rows = rowsFor(control, props, control.key);
   const headings = control.cellsFrom
     ? rowsOf(props, control.cellsFrom).map((h) => String(h ?? ""))
     : undefined;
@@ -599,7 +601,21 @@ export function DefinitionControls(p: DefinitionControlsProps) {
               <div key={c.key} style={c.type === "code" ? FIELD : ROW} data-control={c.key}
                 data-control-key={deviceKey(c, p.device)}
                 data-control-responsive={c.responsive ? "yes" : undefined}>
-                <span style={L}>{c.label}</span>
+                {/* THE DEVICE SWITCHER BELONGS TO EVERY RESPONSIVE CONTROL, not
+                    only to the sliders (B-168, 2026-09-22). It was drawn in the
+                    size-slider branch above and nowhere else, so a Heading's
+                    Alignment and an Icon Box's Size were marked responsive,
+                    stored their `_tablet` / `_mobile` twins and offered no way
+                    to reach them — the author could set the desktop value and
+                    nothing else. The parity scorer found it on two widgets; it
+                    was on every non-slider responsive control there is.
+                    Beside the label, which is where the reference puts it. */}
+                <span style={c.responsive && p.onDevice
+                  ? { ...L, display: "flex", alignItems: "center", gap: 6 } : L}>
+                  {c.label}
+                  {c.responsive && p.onDevice && (
+                    <DeviceSegment device={p.device as Device} onDevice={p.onDevice} />)}
+                </span>
                 {/* EVERY TOGGLE IS THE SWITCHER PILL (D-172, round 2). The
                     reference has one on/off shape, and a native checkbox whose
                     label was its help sentence was the last one left. */}
