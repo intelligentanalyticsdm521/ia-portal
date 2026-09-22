@@ -446,15 +446,23 @@ describe("R2-F · the bow reaches what the references do", () => {
     curveSpreadDegrees({ text, cx: w / 2, y: size, span: w * 0.92, bulge, size, family, bold: true, letterSpacing: 0 });
 
   test("BLUE HERON, which the reference spreads over 38.8°", () => {
+    /* THE TWO NUMBERS MOVED ON 2026-09-22, and the thing they measure is why:
+       R5-A stopped asking a face for a weight it does not have, and Bebas Neue
+       has no bold, so `advanceEm` no longer widens its glyphs by
+       BOLD_ADVANCE_FACTOR. Narrower glyphs over the same arc spread less —
+       37.9° → 34.8° at round 2's clamp, 59.0° → 54.1° at the ceiling. The
+       CLAIM is untouched and is still the one that matters: the old clamp
+       misses the reference and the new ceiling clears it. LUMEN's suite
+       asserts the same two numbers. */
     const [w, h, size] = [900, 150, 120];
     // MUTATION FIRST: round 2's ceiling could not reach the reference at all.
     const was = spread("BLUE HERON", w, size, "Bebas Neue", mutantMax(w, h));
-    assert.equal(Number(was.toFixed(1)), 37.9);
+    assert.equal(Number(was.toFixed(1)), 34.8);
     assert.ok(was < 38.8, "the mutation no longer reproduces the defect");
     // The fix clears it with room to spare, and the slider is the only thing
     // that changed — the same packer, the same face, the same span.
     const now = spread("BLUE HERON", w, size, "Bebas Neue", curveMaxBulge(w));
-    assert.equal(Number(now.toFixed(1)), 59.0);
+    assert.equal(Number(now.toFixed(1)), 54.1);
     assert.ok(now > 38.8);
   });
 

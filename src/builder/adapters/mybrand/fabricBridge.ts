@@ -23,7 +23,7 @@ import {
   type ShapeLayer, type TextLayer,
 } from "./scene";
 import {
-  applyCase, dashArray, dashLineCap, fabricTypeMetrics, mainPaint, wrapLines,
+  applyCase, dashArray, dashLineCap, drawWeight, fabricTypeMetrics, mainPaint, wrapLines,
 } from "./textEffects";
 import { cachedFontFace, loadFontFace } from "./fontEmbed";
 import { NEUTRAL_BRAND_KIT } from "../../../lib/brandKit";
@@ -633,7 +633,18 @@ export function layerToFabricObject(
       width: t.w,
       fontSize: size,
       fontFamily: t.font || DEFAULT_FONTS[0],
-      fontWeight: t.weight || "400",
+      /**
+       * R5-A: THE ONE PLACE THE BROWSER WAS INVITED TO FAKE A BOLD.
+       *
+       * Bebas Neue has no bold — one `@fontsource/bebas-neue/400.css` here and
+       * one `BebasNeue-Regular.ttf` in LUMEN's pack — and asked for 700 Chrome
+       * synthesises one, smearing every glyph by about 0.024 em. At 110 px
+       * that is 2.6 px on every edge, which closes the counters of a Hollow
+       * word and is exactly the 12 px stroke measured against the server's 7.
+       * `drawWeight` answers for BOTH halves, so the canvas and the file
+       * cannot disagree, and the STORED weight is untouched.
+       */
+      fontWeight: drawWeight(t.font || DEFAULT_FONTS[0], t.weight || "400"),
       fontStyle: t.italic ? "italic" : "normal",
       underline: t.underline === true,
       linethrough: t.strike === true,

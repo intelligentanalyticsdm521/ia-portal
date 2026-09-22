@@ -59,10 +59,25 @@ for (const k of ["window", "document", "navigator", "HTMLCanvasElement", "Image"
 }
 const fabric = await import("fabric");
 
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
-  FABRIC_FONT_SIZE_FRACTION, FABRIC_FONT_SIZE_MULT, FIRST_BASELINE_EM,
-  fabricTypeMetrics, mainPaint, measureRun, wrapLines,
+  FABRIC_FONT_SIZE_FRACTION, FABRIC_FONT_SIZE_MULT, FIRST_BASELINE_EM, FACES_WITH_BOLD,
+  drawWeight, fabricTypeMetrics, hasBoldFace, mainPaint, measureRun, wrapLines,
 } from "../src/builder/adapters/mybrand/textEffects.ts";
+import {
+  STUDIO_FONTS, addLayers, emptyCanvas, familyOf, patchLayer,
+} from "../src/builder/adapters/mybrand/scene.ts";
+import { insertWidget } from "../src/builder/adapters/mybrand/insert.ts";
+
+const SRC = path.join(process.cwd(), "src");
+/** A brand with a business record on it — what the studio hands `insertWidget`. */
+const SENTINEL_WITH_RECORD = {
+  colours: { primary: "#0A0B0C", secondary: "#141516", accent: "#1E1F20", text: "#282930", background: "#323340" },
+  fonts: { heading: "Testa, serif", body: "Testb, sans-serif" },
+  logoUrl: null, businessName: "Rolling In It", websiteUrl: null,
+  record: { name: "Rolling In It", phone: "", email: "", licence: "", logo: "" },
+};
 import {
   ICON_INK, ICON_OUTLINE_WEIGHT, RAMP_DEEPEST, RAMP_PALEST,
   chartToSvg, iconToSvg, inkViewBox, rampColour, textFit, tintTowardWhite,
@@ -397,5 +412,94 @@ describe("R4-E a symbol can be an outline", () => {
     const svg = iconToSvg(layer);
     assert.doesNotMatch(svg, /fill="none"/);
     assert.match(svg, /stroke-width="0"/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   R5-A — a face that has no bold is never asked for one
+   ══════════════════════════════════════════════════════════════════════════
+
+   MEASURED ON THE RUNNING CANVAS, 2026-09-22, not on a bundled painter: the
+   word was built by clicking in the studio on a private Vite and taken out
+   both ways. One row of pixels through the caps of FREE ENTRY, Bebas Neue at
+   110 px, Hollow:
+
+     before   browser 11,31,11,14,11,35,23 …  median 12 px    openness 0.2051
+              server  7,6,6,9,7,6,7 …         median  7 px    openness 0.4671
+     after    browser 7,8,8,11,7,8,7 …        median  8 px    openness 0.4154
+              server  unchanged                              openness 0.4671
+
+   The stroke was the same 6 px throughout — the Fabric object was read live:
+   `fill "transparent", stroke "#F4D35E", strokeWidth 6, paintFirst "stroke"`,
+   one `strokeText` call at `lineWidth 6`. What differed was the FACE: the
+   object's own declaration read `normal 700 110px Bebas Neue`, and Bebas Neue
+   has no bold in either half, so Chrome synthesised one and closed the
+   counters.
+
+   Pictures: `overnight-report/mybrand-parity/round6/r5a-hollow-browser.png`
+   (before) and `…-browser-fixed.png` (after), beside `…-server.png`.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("R5-A a face with no bold is drawn at 400, in both halves", () => {
+  test("the list is the pack, and Bebas Neue is the one face without a bold", () => {
+    /* Not a judgement: every bundled TTF was read for an `fvar` table (a
+       variable font carries 400–700 on one file) and every `@fontsource`
+       import in StudioBuilder was counted. Lora, Montserrat, Oswald and
+       Playfair are variable on the server and have a real 700 in the browser;
+       Poppins ships Regular, SemiBold and Bold on both. */
+    assert.deepEqual([...FACES_WITH_BOLD].sort(),
+      ["Lora", "Montserrat", "Oswald", "Playfair Display", "Poppins"]);
+    assert.equal(hasBoldFace("Bebas Neue"), false);
+    assert.equal(hasBoldFace("Poppins"), true);
+    /* The studio's own font list and this one cannot drift apart silently:
+       every face the author can pick is either in the list or has no bold. */
+    for (const f of STUDIO_FONTS) {
+      assert.equal(typeof hasBoldFace(familyOf(f.value)), "boolean");
+    }
+  });
+
+  test("a bold asked of Bebas draws at 400; a bold asked of Poppins is a bold", () => {
+    assert.equal(drawWeight("Bebas Neue", "700"), "400");
+    assert.equal(drawWeight("Bebas Neue", "bold"), "400");
+    assert.equal(drawWeight("Bebas Neue", 600), "400");
+    assert.equal(drawWeight("Poppins", "700"), "700");
+    /* Anything under 600 is untouched, whichever face it is. */
+    assert.equal(drawWeight("Bebas Neue", "400"), "400");
+    assert.equal(drawWeight("Bebas Neue", "500"), "500");
+  });
+
+  test("the CANVAS asks for the resolved weight — this is where the fake came from", () => {
+    const bridge = readFileSync(
+      path.join(SRC, "builder/adapters/mybrand/fabricBridge.ts"), "utf8");
+    assert.match(bridge, /fontWeight: drawWeight\(/,
+      "the Textbox is back to asking for the stored weight, which invites a synthetic bold");
+  });
+
+  test("the STORED weight is untouched, so a bold Bebas would just work", () => {
+    /* The fix is at the drawing edge on purpose. A design saved today still
+       says 700; the day a bold Bebas joins the pack it draws bold everywhere,
+       with no migration and no rewritten documents. */
+    const out = insertWidget("heading", emptyCanvas(1080, 1080), SENTINEL_WITH_RECORD, {});
+    const doc = addLayers(emptyCanvas(1080, 1080), out.layers);
+    const patched = patchLayer(doc, out.layers[0].id,
+      { font: "Bebas Neue", weight: "700", size: 110 });
+    const layer = patched.layers.find((l) => l.id === out.layers[0].id);
+    assert.equal(layer.weight, "700", "the stored weight was rewritten at the wrong edge");
+    /* …and what is DRAWN from it is 400, which is the whole shape of the fix:
+       the change is at the drawing edge, not in the document. */
+    assert.equal(drawWeight(layer.font, layer.weight), "400");
+  });
+
+  test("a face with no bold is not measured as if it were wider either", () => {
+    /* `advanceEm` used to multiply by BOLD_ADVANCE_FACTOR whenever the author
+       asked for a bold. On a face that cannot deliver one that is nine per
+       cent of width reserved for ink that never arrives — a line break bought
+       with nothing. */
+    const plain = measureRun("Bebas Neue", "BLUE HERON", 120, false, 0);
+    const asked = measureRun("Bebas Neue", "BLUE HERON", 120, true, 0);
+    assert.equal(asked, plain);
+    // …and a face that HAS one still measures wider when it is asked for.
+    assert.ok(measureRun("Poppins", "BLUE HERON", 120, true, 0)
+      > measureRun("Poppins", "BLUE HERON", 120, false, 0));
   });
 });

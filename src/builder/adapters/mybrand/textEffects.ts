@@ -240,6 +240,81 @@ export const ADVANCE_TABLES: Record<string, string> = {
  */
 export const BOLD_ADVANCE_FACTOR = 1.0897;
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   A FACE THAT HAS NO BOLD MUST NOT BE ASKED FOR ONE — R5-A
+   ═══════════════════════════════════════════════════════════════════════════
+
+   R5-A, and three rounds could not close it: *"Hollow is still near-solid in
+   the half a person downloads from"*. Design 09's FREE ENTRY and design 02's
+   TIMETABLE came out of Download PNG as filled slabs with a hairline of
+   background in the counters, while the same designs through Save to your
+   Media Library — and the reference — came out as clean open outlines. Round 4
+   blamed the mitre and rounded the joins; round 5 measured the bundled painter
+   inside a harness page, reported 8.273% → 0.507%, and the running editor did
+   not agree with that number.
+
+   MEASURED ON THE RUNNING CANVAS, 2026-09-22, not on a painter. The same word
+   was built by CLICKING in the studio on a private Vite and taken out both
+   ways. Scanning one row of pixels through the caps:
+
+     the server's file   ink runs 7,6,6,9,7,6,7,6,6,7 …   median 7 px
+     the browser's file  ink runs 11,31,11,14,11,35,23 …  median 12 px
+
+   The stroke is the SAME 6 px in both — `mainPaint` is one function and the
+   Fabric object was read live: `fill "transparent", stroke "#F4D35E",
+   strokeWidth 6, paintFirst "stroke", lineWidth 6 at the one strokeText call`.
+   What differs is the FACE. The object's own font declaration is
+
+     normal 700 110px Bebas Neue, Impact, sans-serif
+
+   and **Bebas Neue has no bold**. The Portal loads one file for it,
+   `@fontsource/bebas-neue/400.css`; LUMEN's pack carries one,
+   `assets/fonts/BebasNeue-Regular.ttf` with no `fvar` table. Asked for 700,
+   the browser SYNTHESISES bold — it smears each glyph by about 0.024 em, which
+   at 110 px is 2.6 px on every edge — and that is the whole of the missing
+   5 px: it fattens the stems until the counters close. librsvg does not
+   synthesise, which is why the server's half was right all along.
+
+   So the fix is not in the paint. It is: **do not ask a face for a weight it
+   does not have**, in both halves, from ONE list.
+
+   HOW THE LIST WAS MADE, so it can be checked rather than believed: every
+   bundled TTF was read for an `fvar` table (a variable font carries 400–700 on
+   one file) and every `@fontsource` import in `StudioBuilder.tsx` was counted.
+   Lora, Montserrat, Oswald and Playfair Display are VARIABLE on the server and
+   have a real 700 in the browser; Poppins ships Regular, SemiBold and Bold on
+   both. Bebas Neue is the one face in the pack with no bold anywhere.
+
+   A face with no bold is ALSO not wider, so `advanceEm` stops applying
+   `BOLD_ADVANCE_FACTOR` to it — otherwise the wrap would reserve nine per cent
+   for weight the glyphs never gain, which is a line break bought with nothing.
+*/
+
+/** The bundled faces that ship a real bold. Everything else draws at 400. */
+export const FACES_WITH_BOLD: readonly string[] = Object.freeze([
+  "Poppins", "Montserrat", "Playfair Display", "Lora", "Oswald",
+]);
+
+/** Does this family have a bold face in BOTH halves? */
+export function hasBoldFace(family: string): boolean {
+  return FACES_WITH_BOLD.includes(String(family || "").trim());
+}
+
+/**
+ * The weight to actually draw in — the author's, unless the face has no bold.
+ *
+ * Both engines call this, so a word cannot be bold on the canvas and regular
+ * in the file, or faked in one and real in the other. The STORED weight is
+ * untouched: a design keeps saying 700, and the day a bold Bebas is added to
+ * the pack it draws bold everywhere with no migration.
+ */
+export function drawWeight(family: string, weight: string | number | undefined): string {
+  const w = String(weight ?? "400").trim() || "400";
+  const wantsBold = Number(w) >= 600 || w === "bold";
+  return wantsBold && !hasBoldFace(family) ? "400" : w;
+}
+
+
 /**
  * The mean advance of a face, used for a glyph outside ASCII and for a family
  * we carry no metrics for. Computed from the table so it can never drift from
@@ -286,7 +361,9 @@ export function advanceEm(family: string, ch: string, bold?: boolean): number {
     : ch === " "
       ? meanAdvanceEm(family) * 0.5
       : meanAdvanceEm(family);
-  return bold ? base * BOLD_ADVANCE_FACTOR : base;
+  /* R5-A: a face with no bold is not wider either. Asking for one and
+     measuring as if it arrived buys a line break with nothing. */
+  return bold && hasBoldFace(family) ? base * BOLD_ADVANCE_FACTOR : base;
 }
 
 /**
@@ -465,7 +542,10 @@ export function fontFaceStyle(family: string, dataUri: string | null | undefined
   if (!fam || !uri) return "";
   const w = weight ? String(weight) : "400";
   return `@font-face{font-family:"${fam.replace(/["\\]/g, "")}";` +
-    `font-style:${italic ? "italic" : "normal"};font-weight:${w.replace(/[^0-9a-z]/gi, "")};` +
+    /* R5-A: the @font-face declares the weight the bytes ACTUALLY are. Saying
+       700 over a file that only has 400 is how the browser is invited to fake
+       one. */
+    `font-style:${italic ? "italic" : "normal"};font-weight:${drawWeight(fam, w).replace(/[^0-9a-z]/gi, "")};` +
     `src:url(${uri});}`;
 }
 
@@ -483,7 +563,8 @@ export function curvedTextSvg(input: CurvedSvgInput): string {
   const paint = mainPaint(input.effectInput);
   const passes = effectPasses(input.effectInput);
   const fontAttrs =
-    `font-family="${escapeXml(input.font)}" font-size="${input.size}" font-weight="${escapeXml(input.weight)}"` +
+    `font-family="${escapeXml(input.font)}" font-size="${input.size}" ` +
+    `font-weight="${escapeXml(drawWeight(input.font, input.weight))}"` +
     (input.italic ? ` font-style="italic"` : "");
   const defs: string[] = [];
   const ring = (dx: number, dy: number, fill: string, stroke: string | null, strokeWidth: number, opacity: number, filter: string) =>
@@ -725,7 +806,8 @@ export function straightTextSvg(input: StraightSvgInput): string {
   const passes = effectPasses(input.effectInput);
   const decoration = [input.underline ? "underline" : "", input.strike ? "line-through" : ""].filter(Boolean).join(" ");
   const fontAttrs =
-    `font-family="${escapeXml(input.font)}" font-size="${input.size}" font-weight="${escapeXml(input.weight)}"` +
+    `font-family="${escapeXml(input.font)}" font-size="${input.size}" ` +
+    `font-weight="${escapeXml(drawWeight(input.font, input.weight))}"` +
     (input.italic ? ` font-style="italic"` : "") +
     (decoration ? ` text-decoration="${decoration}"` : "") +
     (input.letterSpacing ? ` letter-spacing="${input.letterSpacing}"` : "");
