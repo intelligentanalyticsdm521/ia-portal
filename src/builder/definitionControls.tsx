@@ -185,6 +185,22 @@ export function isOn(v: unknown): boolean {
 }
 
 /**
+ * WHAT A CONTROL SHOWS WHEN NOTHING IS STORED — the widget's own default.
+ *
+ * `def.defaults` is what a NEW widget is built from (`buildWidget` in
+ * BuilderShell), so a widget the author dropped already carries every default
+ * as a stored prop and this changes nothing for it. What it answers for is a
+ * widget a TEMPLATE placed, which carries only the props the template wrote:
+ * before this, such a widget's switches all read off, whatever the definition
+ * said they start as. Desktop only — a tablet or phone twin with nothing
+ * stored falls back to the desktop value, which is the engine's own rule.
+ */
+export function defaultOf(def: WidgetDef | null | undefined, c: WidgetControl, device: Device): unknown {
+  if (deviceKey(c, device) !== c.key) return undefined;
+  return (def?.defaults as Record<string, unknown> | undefined)?.[c.key];
+}
+
+/**
  * WHERE A CONTROL'S VALUE IS STORED FOR THIS SCREEN.
  *
  * Desktop is the bare key — the value everything falls back to. Tablet and
@@ -591,7 +607,17 @@ export function DefinitionControls(p: DefinitionControlsProps) {
                   <Switcher
                     name={c.label}
                     testId={deviceKey(c, p.device)}
-                    on={isOn(valueOf(c))}
+                    /* A SWITCH WITH NO STORED VALUE SHOWS THE WIDGET'S OWN
+                       DEFAULT (D-174). Found by driving it: the Signature
+                       widget has carried `required: true` since it existed,
+                       but the Acceptance section template places one WITHOUT
+                       the prop, so "Required to accept" arrived OFF on a
+                       document the server treats as requiring a signature. A
+                       panel that says off while the document says on is the
+                       worst of the three possible screens. Only when nothing
+                       is stored, and only on the desktop key -- a responsive
+                       twin falls back to its own device, not to a default. */
+                    on={isOn(valueOf(c) ?? defaultOf(p.def, c, p.device))}
                     onChange={(v) => patch(c, v)}
                   />
                 )}

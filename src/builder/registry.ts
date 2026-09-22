@@ -900,6 +900,17 @@ const LEGACY_WIDGETS: WidgetDef[] = [
       { key: "body", label: "What they are agreeing to", type: "textarea" },
       { key: "customerLabel", label: "Customer line", type: "text" },
       { key: "businessLabel", label: "Your line", type: "text" },
+      /* D-174 - THE SWITCH THAT WAS ALREADY IN THE DEFAULTS.
+         `required: true` has been on this widget since it existed and nothing
+         read it: the server refused every acceptance without a typed name, for
+         every document. It is real now - the server asks the DOCUMENT
+         (`signatureRequired` in oliver's lib/documentModel.js) and the
+         customer's copy is told the answer. Off means the customer presses
+         Approve and the acceptance is still recorded, with their name on file.
+         One control, on the widget's own Content tab, drawn by the one control
+         mechanism - nothing new anywhere on the builder screen. */
+      { key: "required", label: "Required to accept", type: "toggle",
+        help: "On: they type their name on this block before they can accept. Off: one Approve button." },
       { key: "consent", label: "Consent statement", type: "textarea", help: "Stored word for word on the signing record." },
     ],
   },
