@@ -20,6 +20,7 @@ import { FileBarChart, BarChart3, Clock } from "lucide-react";
 import { ReportGroupModal, type ReportActions } from "./ReportGroupModal";
 import { buildReportGroups, type ReportGroup } from "../../analytics/reportGroups";
 import type { DetailPayload } from "../../analytics/detail";
+import { pluralize } from "../../analytics/detail";
 import type { DashboardDef } from "../../analytics/catalog";
 
 /** @deprecated The catalog now needs full definitions — use DashboardDef. */
@@ -144,7 +145,7 @@ export function InsightsReportsCatalog({
                   <p className="mt-0.5 pl-5 text-[11px] text-slate-500">
                     {g.reports.length === 1
                       ? (answers[g.reports[0].id]
-                          || `${g.reports[0].items.length} ${g.reports[0].itemLabel.toLowerCase()}${g.reports[0].items.length === 1 ? "" : "s"} tracked`)
+                          || `${g.reports[0].items.length} ${pluralize(g.reports[0].itemLabel, g.reports[0].items.length)} tracked`)
                       : g.reports.map((r) => r.label).join(" · ")}
                   </p>
                 </div>

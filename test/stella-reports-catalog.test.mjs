@@ -203,6 +203,21 @@ test("on net profit, rising Expenses is a loss, not a gain — in the movers and
   assert.ok(!/A mixed month: \d+ lines up/.test(html), "'1 lines up'");
 });
 
+// Click-through 24 Sept: "4 activitys", and bars labelled Oct … Oct.
+test("the modal says 'activities', and the chart labels are the server's months", () => {
+  const cf = detail.stella_cash_flow;
+  const html = renderToStaticMarkup(h(ReportGroupModal, { group: { key: "k", label: "Cash flow", reports: [cf] }, product: "stella", onClose() {} }));
+  assert.ok(!/activitys/.test(html), "'activitys'");
+  assert.match(html, /4 activities/);
+  const deep = deriveDeepReport(cf, deepConfigFor(cf.id));
+  assert.deepEqual(deep.months, cf.monthLabels);
+  assert.equal(deep.months.at(-1), "Aug '26", "the last bar is the picked month");
+  // Other products send no labels and keep counting back from today.
+  const { monthLabels: _drop, ...bare } = cf;
+  assert.equal(deriveDeepReport(bare, deepConfigFor(cf.id)).months.length, 13);
+  assert.notDeepEqual(deriveDeepReport(bare, deepConfigFor(cf.id)).months, cf.monthLabels);
+});
+
 test("net profit and cash flow do not add different measures into a 'Total'", () => {
   for (const id of ["stella_net_profit", "stella_cash_flow"]) {
     const deep = deriveDeepReport(detail[id], deepConfigFor(id));

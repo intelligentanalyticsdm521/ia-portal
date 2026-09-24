@@ -39,6 +39,12 @@ export interface DetailReport {
    * the report has no rows ("You owe $0.00 on open bills"). STELLA (D-177).
    */
   facts?: Array<{ tone: "good" | "bad" | "watch" | "info"; text: string }>;
+  /**
+   * The month each series point belongs to, oldest first, when the SERVER read
+   * a specific window (STELLA's month picker). Without it the labels count back
+   * from today, which is right for the live dashboards and wrong for a picked month.
+   */
+  monthLabels?: string[];
   /** Balance Sheet / Trial Balance: the statement's own verdict, never recomputed. */
   balanced?: boolean;
   difference?: number;

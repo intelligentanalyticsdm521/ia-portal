@@ -252,7 +252,7 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
         {distribution && (
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-2">
-              {distribution.kind === "bands" ? `${report.itemLabel}s by band, 12 months` : "Composition, 12 months"}
+              {distribution.kind === "bands" ? `${report.itemLabel}s by band, ${report.monthLabels ? months.length : 12} months` : `Composition, ${report.monthLabels ? months.length : 12} months`}
             </div>
             <StackedChart dist={distribution} months={months} />
           </div>
