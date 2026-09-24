@@ -106,6 +106,11 @@ export function OliverAgentsPage() {
       await load();
     } catch (err) {
       setNotice(apiErrorMessage(err));
+      // A refused approval can still have CHANGED the row (the API marks an
+      // expired quote's follow-up halted). Reload so the card leaves WAITING
+      // FOR YOU instead of sitting there with a live button under a banner
+      // (walk finding 23 Sep, oliver-agents-halted-or-suppressed-followup-stays-in-waiting).
+      await load().catch(() => {});
     } finally {
       setBusy(null);
     }
