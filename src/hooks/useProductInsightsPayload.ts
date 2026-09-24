@@ -28,7 +28,40 @@
 // dev-only flag that labels itself SAMPLE on screen (see insightsDemo.ts).
 import { useEffect, useState } from "react";
 import { useSparkApi } from "./useSparkApi";
+import { useStellaApi } from "./useStellaApi";
 import type { MetricsPayload } from "../analytics/arionDashboards";
+import type { DetailPayload } from "../analytics/detail";
+
+/**
+ * STELLA (D-177). Its reports are built by oliver-api from the SAME statement
+ * functions the /ledger statement routes use (GET /ledger/insights-detail), so
+ * the ledger math has one home. The period and basis are the Reports page's
+ * month picker and cash/accrual toggle; changing either re-fetches.
+ */
+export interface StellaInsightsOptions {
+  /** "YYYY-MM" — the last month of the 13-month window. Default: this month. */
+  month?: string;
+  basis?: "cash" | "accrual";
+}
+
+/** What the server says the reports cover — the export paths are built from it. */
+export interface StellaReportPeriod {
+  basis: "cash" | "accrual";
+  months: number;
+  month: string;
+  from: string;
+  to: string;
+  as_of: string;
+  year: number;
+  month_list: string[];
+}
+
+export function stellaInsightsPath(opts: StellaInsightsOptions = {}): string {
+  const q = new URLSearchParams({ months: "13" });
+  if (opts.basis) q.set("basis", opts.basis);
+  if (opts.month) q.set("month", opts.month);
+  return `/ledger/insights-detail?${q.toString()}`;
+}
 
 export type InsightsState =
   /** The request has not finished. Render a skeleton, not an answer. */
@@ -38,15 +71,48 @@ export type InsightsState =
   /** Reached, understood, and there is genuinely nothing to measure yet. */
   | { status: "empty"; payload: null; error: null }
   /** Real numbers for this business. */
-  | { status: "ready"; payload: MetricsPayload; error: null };
+  | { status: "ready"; payload: MetricsPayload & { period?: StellaReportPeriod }; error: null };
 
 const LOADING: InsightsState = { status: "loading", payload: null, error: null };
 
-export function useProductInsightsPayload(product: "spark" | "oliver"): InsightsState {
+export function useProductInsightsPayload(
+  product: "spark" | "oliver" | "stella",
+  stella: StellaInsightsOptions = {},
+): InsightsState {
   const { get, ready } = useSparkApi();
+  const stellaApi = useStellaApi();
   const [state, setState] = useState<InsightsState>(LOADING);
+  const stellaPath = stellaInsightsPath(stella);
 
   useEffect(() => {
+    if (product !== "stella") return;
+    if (!stellaApi.ready) return;
+    let cancelled = false;
+    setState(LOADING); // period / basis / tenant switch — never show the previous answer
+    (async () => {
+      try {
+        const p = await stellaApi.get<{ detail?: DetailPayload; period?: StellaReportPeriod }>(stellaPath);
+        if (cancelled) return;
+        const detail = p?.detail && Object.keys(p.detail).length ? p.detail : null;
+        if (!detail) {
+          setState({ status: "empty", payload: null, error: null });
+          return;
+        }
+        setState({
+          status: "ready",
+          payload: { metrics: {}, detail, period: p.period } as unknown as MetricsPayload & { period?: StellaReportPeriod },
+          error: null,
+        });
+      } catch (err) {
+        console.error("[useProductInsightsPayload] stella reports could not be read.", err);
+        if (!cancelled) setState({ status: "error", payload: null, error: err });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [product, stellaApi, stellaPath]);
+
+  useEffect(() => {
+    if (product === "stella") return;
     if (!ready) return;
     let cancelled = false;
     setState(LOADING); // tenant switch — never show the previous tenant's series

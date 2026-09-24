@@ -17,7 +17,7 @@
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { FileBarChart, BarChart3, Clock } from "lucide-react";
-import { ReportGroupModal } from "./ReportGroupModal";
+import { ReportGroupModal, type ReportActions } from "./ReportGroupModal";
 import { buildReportGroups, type ReportGroup } from "../../analytics/reportGroups";
 import type { DetailPayload } from "../../analytics/detail";
 import type { DashboardDef } from "../../analytics/catalog";
@@ -37,6 +37,8 @@ export function InsightsReportsCatalog({
   intro,
   footer,
   product = "arion",
+  controls,
+  reportActions,
 }: {
   /** `detail` from the product's insights payload. */
   detail: DetailPayload | undefined;
@@ -55,6 +57,11 @@ export function InsightsReportsCatalog({
   footer?: ReactNode;
   /** Product branding for the report modals opened from this catalog. */
   product?: "arion" | "spark" | "oliver" | "argus" | "stella";
+  /** Rendered under the intro, above the sections — one control that applies
+   *  to every report (STELLA's month picker + cash/accrual toggle). */
+  controls?: ReactNode;
+  /** Passed to every report modal's header (see ReportGroupModal). */
+  reportActions?: ReportActions;
 }) {
   // Reports are grouped by the SECTION they already carry, then those sections
   // are bucketed by feature. Two levels, both of which already exist in the
@@ -89,6 +96,8 @@ export function InsightsReportsCatalog({
             "Every report we produce, grouped by the part of your business it covers. Each one is the full analysis — the same report you reach from the page itself or by drilling into a score."}
         </p>
       </div>
+
+      {controls}
 
       {loading && (
         <div className="rounded-xl border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
@@ -162,6 +171,7 @@ export function InsightsReportsCatalog({
           initialTab={open.tab}
           product={product}
           onClose={() => setOpen(null)}
+          actions={reportActions}
         />
       )}
 

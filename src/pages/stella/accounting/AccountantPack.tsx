@@ -20,7 +20,9 @@ import { useStellaApi } from "../../../hooks/useStellaApi";
 import { STELLA_API_BASE, getStellaAuthHeaders } from "../../../lib/stellaApi";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
 import { DbCard, DbError, DbButton, DbSelect, DbField, DbTable, DbEmpty, Pill } from "../dbmanager/DbManagerKit";
-import type { Basis } from "./AccountingReports";
+// The Reports page's cash/accrual choice (AccountingReports.tsx, where this
+// type used to live, went with the ten-tab page — D-177).
+type Basis = "cash" | "accrual";
 
 type TrialRow = {
   account_code: string; account_name: string; account_type: string;

@@ -22,6 +22,7 @@ import type { DetailReport, DetailItem } from "./detail";
 import { itemMom, pluralize } from "./detail";
 
 import type { ValueFormat } from "./scoring";
+import { fmtMoney } from "./scoring";
 import { mirrorKindOf } from "./reportNotes";
 
 // ── config ────────────────────────────────────────────────────────────────
@@ -53,6 +54,13 @@ export interface DeepConfig {
   flag?: (it: DetailItem, all: DetailItem[]) => string | null;
   /** extra[] key used to weight movement importance (default "volume", falls back to current value). */
   weightKey?: string;
+  /**
+   * The items are DIFFERENT MEASURES of one thing — Income, Expenses and Net;
+   * Operating, Investing, Financing and Net change — so adding them up is
+   * meaningless ("Total amount" = income + expenses + net). Drops the summed
+   * headline stat. (D-177, STELLA.)
+   */
+  noTotal?: boolean;
   /**
    * The series is a STATE CODE, not a quantity — 1 = current, 2 = update
    * available, 3 = dormant. Arithmetic on those numbers is meaningless: summing
@@ -133,6 +141,7 @@ export function fmtV(v: number | string | null | undefined, format: ValueFormat 
     case "score":    return String(Math.round(n));
     case "count":    return String(Math.round(n));
     case "currency": return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`;
+    case "money":    return fmtMoney(n);
     default:         return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
                             : Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
@@ -385,7 +394,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   narrative += ".";
 
   const stats: DeepStat[] = [{ label: pluralize(report.itemLabel, 2), value: String(items.length) }];
-  if (aggCur != null && !cfg?.categorical) {
+  if (aggCur != null && !cfg?.categorical && !cfg?.noTotal) {
     stats.push({
       label: `${isAvgFormat(report.format) ? "Avg" : "Total"} ${report.primaryLabel || "value"}`,
       value: fmtV(aggCur, report.format), momPct: aggMom,
@@ -430,7 +439,18 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
 // for a business owner: what happened, why it matters, what to do with it.
 // No σ, no r², no analyst-speak — those stay in the tables for people who
 // want them.
-function buildMeaning(ctx: {
+/**
+ * "What this means". Facts the SERVER states from the statement itself —
+ * "Balanced: NO — out by $1,999.98" (D-177, STELLA) — lead, ahead of anything
+ * derived here, and are never crowded out by the length cap.
+ */
+function buildMeaning(ctx: Parameters<typeof buildDerivedMeaning>[0]): MeaningItem[] {
+  const facts = ctx.report.facts || [];
+  const derived = buildDerivedMeaning(ctx);
+  return facts.length ? [...facts, ...derived].slice(0, Math.max(5, facts.length)) : derived;
+}
+
+function buildDerivedMeaning(ctx: {
   report: DetailReport;
   cfg?: DeepConfig;
   noun: string;

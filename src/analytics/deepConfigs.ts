@@ -1447,6 +1447,58 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   argus_leads_by_source: { composition: true },
   argus_revenue_by_source: { composition: true },
   argus_events_by_product: { composition: true },
+
+  // ══ STELLA — the books (D-177) ══
+  // Account-level P&L lines add up to the month's total, so their mix is a
+  // real composition. Net profit and cash flow are DIFFERENT MEASURES side by
+  // side (income, expenses, net; operating, investing, financing, net change):
+  // stacking or summing them would state a number that means nothing.
+  stella_income_by_account: { composition: true, weightKey: "ytd" },
+  stella_expenses_by_account: {
+    composition: true,
+    weightKey: "ytd",
+    opportunities: [{
+      title: "Growing faster than a quarter ago",
+      note: "This month above the average of the three months before it by 25% or more.",
+      filter: (it: DetailItem) => {
+        const s = (it.series || []).filter((v): v is number => v != null);
+        if (s.length < 4) return false;
+        const prior = (s[s.length - 2] + s[s.length - 3] + s[s.length - 4]) / 3;
+        return prior > 0 && s[s.length - 1] >= prior * 1.25;
+      },
+      lede: (n: number) => `${n} expense ${n === 1 ? "account is" : "accounts are"} running at least a quarter above ${n === 1 ? "its" : "their"} recent average. Worth checking each is a choice you made, not a price rise or a duplicate charge.`,
+    }],
+  },
+  stella_net_profit: { composition: false, noTotal: true },
+  stella_cash_flow: { composition: false, noTotal: true },
+  stella_balance_sheet: {},
+  stella_ar_aging: {
+    opportunities: [{
+      title: "More than 60 days late",
+      filter: (it: DetailItem) => Number(it.extra?.days_overdue || 0) > 60,
+      sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.balance || 0) - Number(a.extra?.balance || 0),
+      lede: (n: number) => `${n} ${n === 1 ? "invoice is" : "invoices are"} more than 60 days late. The older a debt gets the less likely it is to be paid — these are the calls to make first.`,
+    }],
+    flag: (it: DetailItem) => Number(it.extra?.days_overdue || 0) > 90 ? `${it.extra?.days_overdue} days late` : null,
+  },
+  stella_ap_aging: {
+    opportunities: [{
+      title: "Already past due",
+      filter: (it: DetailItem) => Number(it.extra?.days_overdue || 0) > 0,
+      sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.days_overdue || 0) - Number(a.extra?.days_overdue || 0),
+      lede: (n: number) => `${n} ${n === 1 ? "bill is" : "bills are"} past due. Paying these first protects your supplier relationships and avoids late fees.`,
+    }],
+  },
+  stella_1099: {
+    opportunities: [{
+      title: "W-9 missing",
+      filter: (it: DetailItem) => String(it.extra?.w9 || "") === "Missing",
+      lede: (n: number) => `${n} ${n === 1 ? "vendor needs" : "vendors need"} a W-9 before a 1099 can be filed for them. Ask now — January is when everyone asks at once.`,
+    }],
+  },
+  stella_sales_tax: {},
+  stella_trial_balance: {},
+  stella_general_ledger: {},
 };
 
 export function deepConfigFor(reportId: string): DeepConfig | undefined {

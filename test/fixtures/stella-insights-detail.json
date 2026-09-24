@@ -1,0 +1,1471 @@
+{
+ "detail": {
+  "stella_income_by_account": {
+   "id": "stella_income_by_account",
+   "section": "profitability.statements",
+   "label": "Income by account",
+   "itemLabel": "Income account",
+   "primaryLabel": "Income",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "trend",
+   "columns": [
+    {
+     "key": "this_month",
+     "label": "This month",
+     "format": "money"
+    },
+    {
+     "key": "ytd",
+     "label": "Year to date",
+     "format": "money"
+    }
+   ],
+   "items": [
+    {
+     "name": "Service Revenue",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1774.06,
+      19525.36,
+      20533.3,
+      13300.89,
+      0
+     ],
+     "extra": {
+      "this_month": 0,
+      "ytd": 55133.61
+     }
+    }
+   ]
+  },
+  "stella_expenses_by_account": {
+   "id": "stella_expenses_by_account",
+   "section": "profitability.statements",
+   "label": "Expenses by account",
+   "itemLabel": "Expense account",
+   "primaryLabel": "Spent",
+   "format": "money",
+   "higherIsBetter": false,
+   "kind": "trend",
+   "columns": [
+    {
+     "key": "this_month",
+     "label": "This month",
+     "format": "money",
+     "lowerBetter": true
+    },
+    {
+     "key": "ytd",
+     "label": "Year to date",
+     "format": "money",
+     "lowerBetter": true
+    },
+    {
+     "key": "pct_of_expenses",
+     "label": "% of expenses",
+     "format": "percent"
+    }
+   ],
+   "items": [
+    {
+     "name": "Depreciation Expense",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      666.66,
+      666.66,
+      666.66
+     ],
+     "extra": {
+      "this_month": 666.66,
+      "ytd": 1999.98,
+      "pct_of_expenses": 65.1
+     }
+    },
+    {
+     "name": "Job Materials",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      200
+     ],
+     "extra": {
+      "this_month": 200,
+      "ytd": 200,
+      "pct_of_expenses": 19.5
+     }
+    },
+    {
+     "name": "Mileage Deduction",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      157.15
+     ],
+     "extra": {
+      "this_month": 157.15,
+      "ytd": 157.15,
+      "pct_of_expenses": 15.3
+     }
+    },
+    {
+     "name": "Materials & Supplies",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      150,
+      0
+     ],
+     "extra": {
+      "this_month": 0,
+      "ytd": 150,
+      "pct_of_expenses": 0
+     }
+    },
+    {
+     "name": "Office Supplies",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      25,
+      0
+     ],
+     "extra": {
+      "this_month": 0,
+      "ytd": 25,
+      "pct_of_expenses": 0
+     }
+    },
+    {
+     "name": "Software & Subscriptions",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      40,
+      0
+     ],
+     "extra": {
+      "this_month": 0,
+      "ytd": 40,
+      "pct_of_expenses": 0
+     }
+    },
+    {
+     "name": "Vehicle & Fuel",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      75.5,
+      0
+     ],
+     "extra": {
+      "this_month": 0,
+      "ytd": 75.5,
+      "pct_of_expenses": 0
+     }
+    }
+   ]
+  },
+  "stella_net_profit": {
+   "id": "stella_net_profit",
+   "section": "profitability.statements",
+   "label": "Net profit",
+   "itemLabel": "Line",
+   "primaryLabel": "Amount",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "trend",
+   "items": [
+    {
+     "name": "Income",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1774.06,
+      19525.36,
+      20533.3,
+      13300.89,
+      0
+     ]
+    },
+    {
+     "name": "Expenses",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      666.66,
+      957.16,
+      1023.81
+     ]
+    },
+    {
+     "name": "Net profit",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1774.06,
+      19525.36,
+      19866.64,
+      12343.73,
+      -1023.81
+     ]
+    }
+   ],
+   "facts": [
+    {
+     "tone": "bad",
+     "text": "August 2026, cash basis: income $0.00 less expenses $1,023.81 = net loss of -$1,023.81."
+    }
+   ]
+  },
+  "stella_cash_flow": {
+   "id": "stella_cash_flow",
+   "section": "cash_flow.position",
+   "label": "Cash flow",
+   "itemLabel": "Activity",
+   "primaryLabel": "Cash moved",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "trend",
+   "items": [
+    {
+     "name": "Operating",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1774.06,
+      19525.36,
+      20533.3,
+      13010.39,
+      -382.15
+     ]
+    },
+    {
+     "name": "Investing",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "name": "Financing",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1158.15
+     ]
+    },
+    {
+     "name": "Net change in cash",
+     "series": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1774.06,
+      19525.36,
+      20533.3,
+      13010.39,
+      776
+     ]
+    }
+   ],
+   "facts": [
+    {
+     "tone": "good",
+     "text": "August 2026: the three sections add up to exactly what your bank accounts did (cash went from $46,160.51 to $46,936.51)."
+    }
+   ]
+  },
+  "stella_balance_sheet": {
+   "id": "stella_balance_sheet",
+   "section": "cash_flow.position",
+   "label": "Balance sheet",
+   "itemLabel": "Account",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "type",
+     "label": "Type",
+     "format": "text"
+    },
+    {
+     "key": "amount",
+     "label": "Amount",
+     "format": "money"
+    }
+   ],
+   "items": [
+    {
+     "name": "1000 · Cash — Operating",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "amount": 46936.51
+     }
+    },
+    {
+     "name": "1200 · Accounts Receivable",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "amount": 25
+     }
+    },
+    {
+     "name": "1610 · Accumulated Depreciation",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "amount": -1999.98
+     }
+    },
+    {
+     "name": "2100 · Credit Card Payable",
+     "series": [],
+     "extra": {
+      "type": "Liability",
+      "amount": -25
+     }
+    },
+    {
+     "name": "3000 · Owner's Equity",
+     "series": [],
+     "extra": {
+      "type": "Equity",
+      "amount": 1347.15
+     }
+    },
+    {
+     "name": "3200 · Retained Earnings (current)",
+     "series": [],
+     "extra": {
+      "type": "Equity",
+      "amount": 43639.38
+     }
+    }
+   ],
+   "balanced": true,
+   "difference": 0,
+   "facts": [
+    {
+     "tone": "good",
+     "text": "Balanced: YES — assets $44,961.53 equal liabilities -$25.00 plus equity $44,986.53 (difference $0.00), as of 2026-08-31, cash basis."
+    },
+    {
+     "tone": "info",
+     "text": "Equity includes Retained Earnings (current) of $43,639.38 — income less expenses to date, rolled in, which is what lets the sheet balance without a year-end close."
+    }
+   ]
+  },
+  "stella_ar_aging": {
+   "id": "stella_ar_aging",
+   "section": "revenue_quality.receivables",
+   "label": "AR aging",
+   "itemLabel": "Invoice",
+   "format": "money",
+   "higherIsBetter": false,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "customer",
+     "label": "Customer",
+     "format": "text"
+    },
+    {
+     "key": "due",
+     "label": "Due",
+     "format": "text"
+    },
+    {
+     "key": "days_overdue",
+     "label": "Days overdue",
+     "format": "count",
+     "lowerBetter": true
+    },
+    {
+     "key": "balance",
+     "label": "Balance",
+     "format": "money"
+    }
+   ],
+   "items": [
+    {
+     "name": "PW2-OPEN-S",
+     "series": [],
+     "extra": {
+      "customer": "Prewalk Books",
+      "due": "2026-05-16",
+      "days_overdue": 132,
+      "balance": 107
+     }
+    },
+    {
+     "name": "DEMO-INV-1081",
+     "series": [],
+     "extra": {
+      "customer": "Morgan Marsh",
+      "due": "2026-05-29",
+      "days_overdue": 118,
+      "balance": 890.24
+     }
+    },
+    {
+     "name": "DEMO-INV-1088",
+     "series": [],
+     "extra": {
+      "customer": "Emerson Gallagher",
+      "due": "2026-05-31",
+      "days_overdue": 116,
+      "balance": 749
+     }
+    },
+    {
+     "name": "DEMO-INV-1008",
+     "series": [],
+     "extra": {
+      "customer": "Marlowe Marsh",
+      "due": "2026-06-02",
+      "days_overdue": 114,
+      "balance": 502.9
+     }
+    },
+    {
+     "name": "DEMO-INV-1093",
+     "series": [],
+     "extra": {
+      "customer": "Emerson Gallagher",
+      "due": "2026-06-05",
+      "days_overdue": 111,
+      "balance": 555.33
+     }
+    },
+    {
+     "name": "DEMO-INV-1043",
+     "series": [],
+     "extra": {
+      "customer": "Morgan Marsh",
+      "due": "2026-06-28",
+      "days_overdue": 88,
+      "balance": 478.29
+     }
+    },
+    {
+     "name": "DEMO-INV-1046",
+     "series": [],
+     "extra": {
+      "customer": "Emerson Gallagher",
+      "due": "2026-07-05",
+      "days_overdue": 81,
+      "balance": 689.08
+     }
+    },
+    {
+     "name": "DEMO-INV-1005",
+     "series": [],
+     "extra": {
+      "customer": "Morgan Marsh",
+      "due": "2026-07-23",
+      "days_overdue": 63,
+      "balance": 344.54
+     }
+    },
+    {
+     "name": "DEMO-INV-1026",
+     "series": [],
+     "extra": {
+      "customer": "Noel Dawson",
+      "due": "2026-08-17",
+      "days_overdue": 38,
+      "balance": 529.65
+     }
+    },
+    {
+     "name": "INV-DEV-001",
+     "series": [],
+     "extra": {
+      "customer": "Avery Rasmussen",
+      "due": "2026-09-06",
+      "days_overdue": 18,
+      "balance": 1387.79
+     }
+    },
+    {
+     "name": "FIX-INV-9001",
+     "series": [],
+     "extra": {
+      "customer": "Avery Rasmussen",
+      "due": "2026-09-14",
+      "days_overdue": 11,
+      "balance": 325
+     }
+    },
+    {
+     "name": "DEMO-INV-1022",
+     "series": [],
+     "extra": {
+      "customer": "Hayden Castillo",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 701.92
+     }
+    },
+    {
+     "name": "DEMO-INV-1033",
+     "series": [],
+     "extra": {
+      "customer": "Jordan Zamora",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 556.4
+     }
+    },
+    {
+     "name": "DEMO-INV-1037",
+     "series": [],
+     "extra": {
+      "customer": "Logan Yates",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 646.28
+     }
+    },
+    {
+     "name": "DEMO-INV-1038",
+     "series": [],
+     "extra": {
+      "customer": "Noel Dawson",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 239.68
+     }
+    },
+    {
+     "name": "DEMO-INV-1055",
+     "series": [],
+     "extra": {
+      "customer": "Reese Yates",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 425.86
+     }
+    },
+    {
+     "name": "DEMO-INV-1057",
+     "series": [],
+     "extra": {
+      "customer": "Reese Yates",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 404.46
+     }
+    },
+    {
+     "name": "DEMO-INV-1067",
+     "series": [],
+     "extra": {
+      "customer": "Noel Dawson",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 258.94
+     }
+    },
+    {
+     "name": "DEMO-INV-1078",
+     "series": [],
+     "extra": {
+      "customer": "Marlowe Hollis",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 804.64
+     }
+    },
+    {
+     "name": "DEMO-INV-1094",
+     "series": [],
+     "extra": {
+      "customer": "Reese Yates",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 694.43
+     }
+    },
+    {
+     "name": "DEMO-INV-1102",
+     "series": [],
+     "extra": {
+      "customer": "Marlowe Hollis",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 762.91
+     }
+    },
+    {
+     "name": "DEMO-INV-1107",
+     "series": [],
+     "extra": {
+      "customer": "Hayden Castillo",
+      "due": "No due date",
+      "days_overdue": 0,
+      "balance": 253.59
+     }
+    }
+   ],
+   "facts": [
+    {
+     "tone": "watch",
+     "text": "You are owed $12,307.93 in total, $6,558.82 of it late."
+    },
+    {
+     "tone": "info",
+     "text": "Not yet due $5,749.11 (11 invoices) · 1-30 days late $1,712.79 (2 invoices) · 31-60 days late $529.65 (1 invoice) · 61-90 days late $1,511.91 (3 invoices) · 90+ days late $2,804.47 (5 invoices)"
+    }
+   ]
+  },
+  "stella_ap_aging": {
+   "id": "stella_ap_aging",
+   "section": "revenue_quality.payables",
+   "label": "AP aging",
+   "itemLabel": "Bill",
+   "format": "money",
+   "higherIsBetter": false,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "vendor",
+     "label": "Vendor",
+     "format": "text"
+    },
+    {
+     "key": "due",
+     "label": "Due",
+     "format": "text"
+    },
+    {
+     "key": "days_overdue",
+     "label": "Days overdue",
+     "format": "count",
+     "lowerBetter": true
+    },
+    {
+     "key": "balance",
+     "label": "Balance",
+     "format": "money"
+    }
+   ],
+   "items": [],
+   "facts": [
+    {
+     "tone": "good",
+     "text": "You owe $0.00 on open bills, $0.00 of it past due."
+    },
+    {
+     "tone": "info",
+     "text": "Not yet due $0.00 (0 bills) · 1-30 days late $0.00 (0 bills) · 31-60 days late $0.00 (0 bills) · 61-90 days late $0.00 (0 bills) · 90+ days late $0.00 (0 bills)"
+    }
+   ]
+  },
+  "stella_sales_tax": {
+   "id": "stella_sales_tax",
+   "section": "books.tax",
+   "label": "Sales tax",
+   "itemLabel": "Jurisdiction",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "taxable",
+     "label": "Taxable sales",
+     "format": "money"
+    },
+    {
+     "key": "rate",
+     "label": "Rate",
+     "format": "text"
+    },
+    {
+     "key": "tax",
+     "label": "Tax to file",
+     "format": "money"
+    }
+   ],
+   "items": [],
+   "facts": [
+    {
+     "tone": "watch",
+     "text": "You have not set up any sales-tax rates yet, so there is nothing to file from here. Add the rate you charge under Settings → Sales tax."
+    }
+   ]
+  },
+  "stella_1099": {
+   "id": "stella_1099",
+   "section": "books.tax",
+   "label": "1099 vendors",
+   "itemLabel": "Vendor",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "paid_ytd",
+     "label": "Paid in 2026",
+     "format": "money"
+    },
+    {
+     "key": "over_threshold",
+     "label": "$600.00 or more",
+     "format": "text"
+    },
+    {
+     "key": "w9",
+     "label": "W-9",
+     "format": "text"
+    }
+   ],
+   "items": [
+    {
+     "name": "ACH Electronic CreditGUSTO PAY 123456",
+     "series": [],
+     "extra": {
+      "paid_ytd": 17550,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "E5C7EB63-3AB0-46CC-A75F-FE33E01307A0",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "AUTOMATIC PAYMENT - THANK",
+     "series": [],
+     "extra": {
+      "paid_ytd": 4157,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "41B32E22-86B4-4B99-B604-FC36CC6955AC",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "CD DEPOSIT .INITIAL.",
+     "series": [],
+     "extra": {
+      "paid_ytd": 3000,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "9A44FDAF-146C-4693-91BE-B283782BBB97",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "KFC",
+     "series": [],
+     "extra": {
+      "paid_ytd": 1500,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "D6B5893F-B0A2-470D-A3A4-1D39D9FAAFE1",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "Madison Bicycle Shop",
+     "series": [],
+     "extra": {
+      "paid_ytd": 1500,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "9249C7AF-A561-49E5-8CB6-DF0431846596",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "Tectra Inc",
+     "series": [],
+     "extra": {
+      "paid_ytd": 1500,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "6CEF156F-90E3-4F6E-B4EB-9EC20B857EB2",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "United Airlines",
+     "series": [],
+     "extra": {
+      "paid_ytd": 1500,
+      "over_threshold": "Yes",
+      "w9": "Missing",
+      "counterparty_id": "1E185E15-C1E4-4416-B4D1-931EDA2C52AD",
+      "tin_on_file": "no"
+     }
+    },
+    {
+     "name": "Test Vendor LLC",
+     "series": [],
+     "extra": {
+      "paid_ytd": 0,
+      "over_threshold": "No — flagged 1099",
+      "w9": "On file",
+      "counterparty_id": "7D3A34CD-224D-4C78-86A6-119D5BBB3173",
+      "tin_on_file": "yes"
+     }
+    }
+   ],
+   "facts": [
+    {
+     "tone": "info",
+     "text": "Vendors and subcontractors paid $600.00 or more in 2026, plus anyone you flagged 1099. STELLA does not file for you — the form and the filing file come from the 1099 downloads."
+    }
+   ]
+  },
+  "stella_trial_balance": {
+   "id": "stella_trial_balance",
+   "section": "books.ledger",
+   "label": "Trial balance",
+   "itemLabel": "Account",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "type",
+     "label": "Type",
+     "format": "text"
+    },
+    {
+     "key": "debit",
+     "label": "Debit",
+     "format": "money"
+    },
+    {
+     "key": "credit",
+     "label": "Credit",
+     "format": "money"
+    }
+   ],
+   "items": [
+    {
+     "name": "1000 · Cash — Operating",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "debit": 46936.51,
+      "credit": 0
+     }
+    },
+    {
+     "name": "1200 · Accounts Receivable",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "debit": 25,
+      "credit": 0
+     }
+    },
+    {
+     "name": "1610 · Accumulated Depreciation",
+     "series": [],
+     "extra": {
+      "type": "Asset",
+      "debit": 0,
+      "credit": 1999.98
+     }
+    },
+    {
+     "name": "2100 · Credit Card Payable",
+     "series": [],
+     "extra": {
+      "type": "Liability",
+      "debit": 25,
+      "credit": 0
+     }
+    },
+    {
+     "name": "3000 · Owner's Equity",
+     "series": [],
+     "extra": {
+      "type": "Equity",
+      "debit": 0,
+      "credit": 1347.15
+     }
+    },
+    {
+     "name": "4000 · Service Revenue",
+     "series": [],
+     "extra": {
+      "type": "Revenue",
+      "debit": 0,
+      "credit": 59583.61
+     }
+    },
+    {
+     "name": "4900 · Other Income",
+     "series": [],
+     "extra": {
+      "type": "Revenue",
+      "debit": 0,
+      "credit": 150
+     }
+    },
+    {
+     "name": "4950 · Interest Income",
+     "series": [],
+     "extra": {
+      "type": "Revenue",
+      "debit": 0,
+      "credit": 4.22
+     }
+    },
+    {
+     "name": "5100 · Materials & Supplies",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 1333.7,
+      "credit": 0
+     }
+    },
+    {
+     "name": "5300 · Equipment Rental",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 75,
+      "credit": 0
+     }
+    },
+    {
+     "name": "5400 · Job Materials",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 200,
+      "credit": 0
+     }
+    },
+    {
+     "name": "6050 · Vehicle & Fuel",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 2910.68,
+      "credit": 0
+     }
+    },
+    {
+     "name": "6250 · Utilities",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 1595,
+      "credit": 0
+     }
+    },
+    {
+     "name": "6350 · Software & Subscriptions",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 89,
+      "credit": 0
+     }
+    },
+    {
+     "name": "6400 · Mileage Deduction",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 157.15,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7000 · Office Supplies",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 63.75,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7100 · Wages & Salaries",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 5850,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7400 · Meals (50%)",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 1733.19,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7500 · Travel",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 0,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7600 · Dues & Memberships",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 78.5,
+      "credit": 0
+     }
+    },
+    {
+     "name": "7950 · Regression Test Expense v2",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 12.5,
+      "credit": 0
+     }
+    },
+    {
+     "name": "9000 · Depreciation Expense",
+     "series": [],
+     "extra": {
+      "type": "Expense",
+      "debit": 1999.98,
+      "credit": 0
+     }
+    }
+   ],
+   "balanced": true,
+   "difference": 0,
+   "facts": [
+    {
+     "tone": "good",
+     "text": "Balanced: YES — total debits $79,907.28 equal total credits $79,907.28 (difference $0.00), cash basis, to 2026-08-31."
+    }
+   ]
+  },
+  "stella_general_ledger": {
+   "id": "stella_general_ledger",
+   "section": "books.ledger",
+   "label": "General ledger",
+   "itemLabel": "Journal line",
+   "format": "money",
+   "higherIsBetter": true,
+   "kind": "feed",
+   "columns": [
+    {
+     "key": "date",
+     "label": "Date",
+     "format": "text"
+    },
+    {
+     "key": "account",
+     "label": "Account",
+     "format": "text"
+    },
+    {
+     "key": "memo",
+     "label": "Memo",
+     "format": "text"
+    },
+    {
+     "key": "debit",
+     "label": "Debit",
+     "format": "money"
+    },
+    {
+     "key": "credit",
+     "label": "Credit",
+     "format": "money"
+    }
+   ],
+   "items": [
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-10",
+      "account": "6400 · Mileage Deduction",
+      "memo": "Mileage — 124.5 miles",
+      "debit": 87.15,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-10",
+      "account": "3000 · Owner's Equity",
+      "memo": "Mileage — 124.5 miles",
+      "debit": 0,
+      "credit": 87.15
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-11",
+      "account": "5400 · Job Materials",
+      "memo": "Materials — Mulch, 40 bags",
+      "debit": 170,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-11",
+      "account": "1000 · Cash — Operating",
+      "memo": "Materials — Mulch, 40 bags",
+      "debit": 0,
+      "credit": 170
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-12",
+      "account": "6400 · Mileage Deduction",
+      "memo": "Mileage — 100 miles",
+      "debit": 70,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-12",
+      "account": "3000 · Owner's Equity",
+      "memo": "Mileage — 100 miles",
+      "debit": 0,
+      "credit": 70
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-12",
+      "account": "5400 · Job Materials",
+      "memo": "Materials — walk test",
+      "debit": 30,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Transaction",
+     "series": [],
+     "extra": {
+      "date": "2026-08-12",
+      "account": "1000 · Cash — Operating",
+      "memo": "Materials — walk test",
+      "debit": 0,
+      "credit": 30
+     }
+    },
+    {
+     "name": "test record",
+     "series": [],
+     "extra": {
+      "date": "2026-08-14",
+      "account": "1200 · Accounts Receivable",
+      "memo": "S5 memo edit after reopen",
+      "debit": 25,
+      "credit": 0
+     }
+    },
+    {
+     "name": "test record",
+     "series": [],
+     "extra": {
+      "date": "2026-08-14",
+      "account": "1000 · Cash — Operating",
+      "memo": "S5 memo edit after reopen",
+      "debit": 0,
+      "credit": 25
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-20",
+      "account": "1000 · Cash — Operating",
+      "memo": "Owner capital injection",
+      "debit": 500,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-20",
+      "account": "3000 · Owner's Equity",
+      "memo": "Owner capital injection",
+      "debit": 0,
+      "credit": 500
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-20",
+      "account": "1000 · Cash — Operating",
+      "memo": "Owner capital injection",
+      "debit": 500,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-20",
+      "account": "3000 · Owner's Equity",
+      "memo": "Owner capital injection",
+      "debit": 0,
+      "credit": 500
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-21",
+      "account": "1000 · Cash — Operating",
+      "memo": "after the close",
+      "debit": 1,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Manual",
+     "series": [],
+     "extra": {
+      "date": "2026-08-21",
+      "account": "3000 · Owner's Equity",
+      "memo": "after the close",
+      "debit": 0,
+      "credit": 1
+     }
+    },
+    {
+     "name": "Depreciation",
+     "series": [],
+     "extra": {
+      "date": "2026-08-31",
+      "account": "9000 · Depreciation Expense",
+      "memo": "Depreciation 2026-08 — Walk truck",
+      "debit": 333.33,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Depreciation",
+     "series": [],
+     "extra": {
+      "date": "2026-08-31",
+      "account": "1610 · Accumulated Depreciation",
+      "memo": "Depreciation 2026-08 — Walk truck",
+      "debit": 0,
+      "credit": 333.33
+     }
+    },
+    {
+     "name": "Depreciation",
+     "series": [],
+     "extra": {
+      "date": "2026-08-31",
+      "account": "9000 · Depreciation Expense",
+      "memo": "Depreciation 2026-08 — Walk truck",
+      "debit": 333.33,
+      "credit": 0
+     }
+    },
+    {
+     "name": "Depreciation",
+     "series": [],
+     "extra": {
+      "date": "2026-08-31",
+      "account": "1610 · Accumulated Depreciation",
+      "memo": "Depreciation 2026-08 — Walk truck",
+      "debit": 0,
+      "credit": 333.33
+     }
+    }
+   ],
+   "facts": [
+    {
+     "tone": "info",
+     "text": "Every journal line posted 2026-08-01 to 2026-08-31, cash basis — 20 lines."
+    }
+   ]
+  }
+ },
+ "period": {
+  "basis": "cash",
+  "months": 13,
+  "month": "2026-08",
+  "from": "2026-08-01",
+  "to": "2026-08-31",
+  "as_of": "2026-08-31",
+  "year": 2026,
+  "month_list": [
+   "2025-08",
+   "2025-09",
+   "2025-10",
+   "2025-11",
+   "2025-12",
+   "2026-01",
+   "2026-02",
+   "2026-03",
+   "2026-04",
+   "2026-05",
+   "2026-06",
+   "2026-07",
+   "2026-08"
+  ]
+ }
+}
