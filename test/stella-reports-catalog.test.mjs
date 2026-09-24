@@ -234,6 +234,8 @@ test("the page is the catalog: product stella, controls, actions, and the record
   assert.match(page, /<ReportsHubPage platform="STELLA" bare onAction=/);
   assert.match(page, /<AccountantPack \/>/);
   assert.ok(!/StellaTabs|\/ledger\/pnl/.test(page), "the ten-tab page is back");
+  // An empty statement still exports (AP aging with no bills, Sales Tax with no rates).
+  assert.ok(!/<StatementExportBar[^>]*disabled=/.test(page), "Export is greyed out on an empty statement");
   const hub = read("components/insights/ReportsHubPage.tsx");
   for (const l of ["Report Library", "Report Builder", "Scheduled Reports", "Exports", "Accountant pack"]) {
     assert.ok(hub.includes(`label: "${l}"`), `${l} missing from the STELLA records footer`);

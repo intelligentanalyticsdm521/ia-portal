@@ -79,8 +79,12 @@ test("the export period is the period the SERVER says the reports cover", () => 
   assert.match(exportMap, /cash-flow\?basis=\$\{b\}&from=\$\{p\.year\}-01-01&to=\$\{p\.year\}-12-31/);
 });
 
-test("Export is off when there is nothing to export", () => {
-  assert.match(reportsPage, /disabled=\{!report\.items\.length\}/);
+// Pack 1 turned Export off while the statement had not loaded (hasData). In the
+// D-177 modal the bar is only drawn for a report that has arrived, so it is
+// never off: an EMPTY statement ("You owe $0.00") still exports, as it did.
+test("Export is drawn only for a loaded report, and an empty statement still exports", () => {
+  assert.match(reportsPage, /function ReportActions\(\{ report, period \}/);
+  assert.doesNotMatch(reportsPage, /<StatementExportBar[^>]*disabled=/);
 });
 
 test("Print hides the app chrome and never splits a section across pages", () => {
