@@ -83,7 +83,7 @@ export interface DeepConfig {
 
 // ── output ────────────────────────────────────────────────────────────────
 export interface DeepStat { label: string; value: string; sub?: string; momPct?: number | null }
-export interface DeepMovementTable { title: string; items: Array<{ name: string; current: number | null; momPct: number | null }> }
+export interface DeepMovementTable { title: string; items: Array<{ name: string; current: number | null; momPct: number | null; lowerBetter?: boolean }> }
 export interface DeepSegmentTable { title: string; rows: Array<{ name: string; count: number; value: string; momPct: number | null }> }
 export interface DeepDistribution { kind: "bands" | "composition"; series: Array<{ label: string; color: string; values: number[] }> }
 export interface DeepItemStats { best: number; worst: number; avg: number; volatilityPct: number }
@@ -212,11 +212,14 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     const c = lastVal(it.series || []);
     return c != null ? Math.abs(c) : 1;
   };
-  // Direction-aware improvement (a falling position is a gain).
+  // Direction-aware improvement (a falling position is a gain). A line can
+  // carry its own direction when it runs against the report's: on a net
+  // profit report, Expenses going UP is a loss (extra.lowerIsBetter).
+  const itemHib = (it: DetailItem) => (!!it.extra?.lowerIsBetter ? false : report.higherIsBetter);
   const improveOf = (it: DetailItem) => {
     const m = itemMom(it);
     if (m == null) return null;
-    return report.higherIsBetter ? m : -m;
+    return itemHib(it) ? m : -m;
   };
 
   // A — aggregate series + headline stats
@@ -282,7 +285,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   // available". The name alone is the whole finding in a band-change table.
   const row = (it: DetailItem) => cfg?.categorical
     ? { name: it.name, current: null, momPct: null }
-    : { name: it.name, current: lastVal(it.series || []), momPct: itemMom(it) };
+    : { name: it.name, current: lastVal(it.series || []), momPct: itemMom(it), ...(itemHib(it) !== report.higherIsBetter ? { lowerBetter: !itemHib(it) } : {}) };
   const movements: DeepMovementTable[] = [];
   const entered: DetailItem[] = [], dropped: DetailItem[] = [];
   if (cfg?.bands) {
@@ -579,7 +582,7 @@ function buildDerivedMeaning(ctx: {
     } else if (losers.length >= gainers.length * 2) {
       out.push({ tone: "bad", text: `This area needs attention: ${losers.length} of your ${total} ${nouns} lost ground this month against ${gainers.length} that improved. The movement table below shows exactly where the slide is.` });
     } else {
-      out.push({ tone: "info", text: `A mixed month: ${gainers.length} ${nouns} up, ${losers.length} down. The wins and losses roughly balance — the details below show which side deserves your energy.` });
+      out.push({ tone: "info", text: `A mixed month: ${gainers.length} up, ${losers.length} down. The wins and losses roughly balance — the details below show which side deserves your energy.` });
     }
   }
 

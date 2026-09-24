@@ -181,6 +181,28 @@ test("the server's facts lead 'What this means' — the balance verdict first, t
   assert.match(d2.meaning[0].text, /differ by \$1,999\.98/);
 });
 
+// Click-through 24 Sept: the Net profit tab listed Expenses (up 88%) as its
+// BIGGEST GAINER in green. A line can run against its report's direction.
+test("on net profit, rising Expenses is a loss, not a gain — in the movers and on the row", () => {
+  const rep = detail.stella_net_profit;
+  const exp = rep.items.find((i) => i.name === "Expenses");
+  assert.equal(exp.extra?.lowerIsBetter, true);
+  assert.ok(exp.series[12] > exp.series[11], "fixture: August expenses rose");
+  const deep = deriveDeepReport(rep, deepConfigFor("stella_net_profit"));
+  const gain = deep.movements.find((m) => /gainers/i.test(m.title));
+  const lose = deep.movements.find((m) => /losers/i.test(m.title));
+  assert.ok(!gain || !gain.items.some((r) => r.name === "Expenses"), "rising Expenses listed as a gainer");
+  const row = lose && lose.items.find((r) => r.name === "Expenses");
+  assert.ok(row, "rising Expenses missing from the losers");
+  assert.equal(row.lowerBetter, true, "the mover row would paint +% green");
+  // A report whose lines all share its direction carries no per-row flag.
+  const inc = deriveDeepReport(detail.stella_income_by_account, deepConfigFor("stella_income_by_account"));
+  assert.ok(inc.movements.every((m) => m.items.every((r) => r.lowerBetter === undefined)));
+  // The body still renders, and never says "1 lines up".
+  const html = renderToStaticMarkup(h(DeepReportView, { deep }));
+  assert.ok(!/A mixed month: \d+ lines up/.test(html), "'1 lines up'");
+});
+
 test("net profit and cash flow do not add different measures into a 'Total'", () => {
   for (const id of ["stella_net_profit", "stella_cash_flow"]) {
     const deep = deriveDeepReport(detail[id], deepConfigFor(id));

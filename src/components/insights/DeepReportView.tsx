@@ -101,11 +101,12 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
   const isFeed = report.kind === "feed" || !(it.series?.filter((v) => v != null).length);
   const mom = itemMom(it);
   const cur = it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null;
-  const up = mom == null ? true : report.higherIsBetter ? mom >= 0 : mom < 0;
+  // A line may run against its report (Expenses on a net profit report).
+  const lowerBetter = !!it.extra?.lowerIsBetter || !report.higherIsBetter;
+  const up = mom == null ? true : !lowerBetter ? mom >= 0 : mom < 0;
   const cols = report.columns || [];
   const st = itemStats[it.name];
   const flag = flags[it.name];
-  const lowerBetter = !report.higherIsBetter;
 
   return (
     <>
@@ -161,7 +162,7 @@ function ItemRow({ it, deep }: { it: DetailItem; deep: DeepReportData }) {
   );
 }
 
-function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string; rows: Array<{ name: string; current: number | null; momPct: number | null }>; format: any; lowerBetter: boolean }) {
+function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string; rows: Array<{ name: string; current: number | null; momPct: number | null; lowerBetter?: boolean }>; format: any; lowerBetter: boolean }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
       <div className="text-[10px] uppercase font-semibold tracking-wide text-slate-500 mb-1.5">{title}</div>
@@ -170,7 +171,7 @@ function MiniMovementTable({ title, rows, format, lowerBetter }: { title: string
           <span className="text-slate-700 truncate" title={r.name}>{r.name}</span>
           <span className="flex items-center gap-2 flex-shrink-0">
             <span className="tabular-nums font-medium text-slate-800">{fmtV(r.current, format)}</span>
-            <Mom pct={r.momPct} lowerBetter={lowerBetter} small />
+            <Mom pct={r.momPct} lowerBetter={r.lowerBetter ?? lowerBetter} small />
           </span>
         </div>
       ))}
