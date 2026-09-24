@@ -609,7 +609,7 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
 
           {/* ── Conversation ─────────────────────────────────────────── */}
           {tab === "conversation" && lead && (
-            <LeadChatPanel leadId={lead.id} onChanged={onChanged} />
+            <LeadChatPanel leadId={lead.id} onChanged={() => { void load(); onChanged?.(); }} />
           )}
 
           {/* ── Responder ────────────────────────────────────────────── */}
