@@ -498,7 +498,7 @@ export function SecurityOverview() {
           })}
         </div>
         <div style={{ marginTop: 16, padding: 12, background: '#FFFBEB', borderLeft: '3px solid #D97706', borderRadius: 4, fontSize: 11, color: '#78350F', lineHeight: 1.5 }}>
-          <strong>Need to disable a setting?</strong> Open your WordPress admin → Shield Security → settings. ARION intentionally doesn't let you disable security protections remotely.
+          <strong>Need a protection switched off?</strong> Send us a request from Website → Pages → Ask us to change it. Protections cannot be switched off from here, on purpose.
         </div>
       </DetailsModal>
 

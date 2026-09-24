@@ -117,7 +117,7 @@ export function StellaManualEntryPage() {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 16 }}>
                   <DbButton type="submit" disabled={saving}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-                      <PlusCircle size={13} /> {saving ? "Saving…" : `Add ${entity.label.replace(/s$/, "")}`}
+                      <PlusCircle size={13} /> {saving ? "Saving…" : `Add ${({ "Transactions": "transaction", "Vendors & Customers": "vendor or customer", "Chart of Accounts": "account", "Mileage": "trip" } as Record<string, string>)[entity.label] ?? entity.label.replace(/s$/, "").toLowerCase()}`}
                     </span>
                   </DbButton>
                   <Pill>* required</Pill>
