@@ -895,7 +895,14 @@ export function SparkLeadGenNewPage() {
       title="New B2B Lead Search"
       subtitle="Find verified B2B leads — see exactly what you're searching for before you pay"
       help="Set your categories, location, and search mode. Pick more than one category and the search asks each of them in turn. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost and estimated runtime, and tells you when a search looks too strict to fill your order. Nothing runs (and you're not charged) until you click Start Search."
-      actions={<LeadGenTermsLink />}
+      actions={
+        <span className="inline-flex items-center gap-3">
+          <Link to="/app/spark/leadgen/saved" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline">
+            <Save className="h-3.5 w-3.5" /> Saved searches
+          </Link>
+          <LeadGenTermsLink />
+        </span>
+      }
       error={error}
       loading={false}
     >
@@ -1490,7 +1497,7 @@ export function SparkLeadGenNewPage() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-[12px] text-slate-500">Saved searches appear under SPARK → Lead Gen → Saved Searches. Re-run any time without re-configuring.</p>
+            <p className="text-[12px] text-slate-500">Find it again under the Saved searches link at the top of this page (and on every search results page). Re-run any time without re-configuring.</p>
             <div>
               <label className="text-[10px] uppercase font-semibold text-slate-500">Name</label>
               <input
