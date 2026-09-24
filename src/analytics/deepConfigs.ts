@@ -1475,6 +1475,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   stella_ar_aging: {
     opportunities: [{
       title: "More than 60 days late",
+      valueKey: "balance",
       filter: (it: DetailItem) => Number(it.extra?.days_overdue || 0) > 60,
       sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.balance || 0) - Number(a.extra?.balance || 0),
       lede: (n: number) => `${n} ${n === 1 ? "invoice is" : "invoices are"} more than 60 days late. The older a debt gets the less likely it is to be paid — these are the calls to make first.`,
@@ -1484,6 +1485,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   stella_ap_aging: {
     opportunities: [{
       title: "Already past due",
+      valueKey: "balance",
       filter: (it: DetailItem) => Number(it.extra?.days_overdue || 0) > 0,
       sortBy: (a: DetailItem, b: DetailItem) => Number(b.extra?.days_overdue || 0) - Number(a.extra?.days_overdue || 0),
       lede: (n: number) => `${n} ${n === 1 ? "bill is" : "bills are"} past due. Paying these first protects your supplier relationships and avoids late fees.`,
@@ -1492,6 +1494,7 @@ export const DEEP_CONFIGS: Record<string, DeepConfig> = {
   stella_1099: {
     opportunities: [{
       title: "W-9 missing",
+      valueKey: "paid_ytd",
       filter: (it: DetailItem) => String(it.extra?.w9 || "") === "Missing",
       lede: (n: number) => `${n} ${n === 1 ? "vendor needs" : "vendors need"} a W-9 before a 1099 can be filed for them. Ask now — January is when everyone asks at once.`,
     }],

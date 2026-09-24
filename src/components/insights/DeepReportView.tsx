@@ -312,7 +312,7 @@ export function DeepReportView({ deep }: { deep: DeepReportData }) {
                       {/* On a categorical report the series is a status code —
                           printing "1" beside a plugin name reads as a
                           measurement of something. */}
-                      {!categorical && <span className="tabular-nums font-medium text-slate-800">{fmtV(it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>}
+                      {!categorical && <span className="tabular-nums font-medium text-slate-800">{fmtV(op.valueKey ? (it.extra?.[op.valueKey] as number | undefined) ?? null : it.series?.filter((v): v is number => v != null).slice(-1)[0] ?? null, report.format)}</span>}
                       {it.extra?.volume != null && <span className="text-[10px] text-slate-400">{fmtV(it.extra.volume as any, "number")} vol</span>}
                     </span>
                   </div>
