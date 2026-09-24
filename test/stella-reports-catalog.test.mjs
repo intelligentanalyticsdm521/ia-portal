@@ -218,6 +218,25 @@ test("the modal says 'activities', and the chart labels are the server's months"
   assert.notDeepEqual(deriveDeepReport(bare, deepConfigFor(cf.id)).months, cf.monthLabels);
 });
 
+// Click-through 24 Sept: the "More than 60 days late" and "W-9 missing" lists
+// printed "—" beside every invoice and vendor (a feed has no series).
+test("problem lists on feeds print the balance / amount paid, not a dash", () => {
+  for (const [id, key] of [["stella_ar_aging", "balance"], ["stella_1099", "paid_ytd"]]) {
+    const deep = deriveDeepReport(detail[id], deepConfigFor(id));
+    const op = deep.opportunities[0];
+    assert.ok(op && op.items.length, `${id}: no list`);
+    assert.equal(op.valueKey, key);
+    const html = renderToStaticMarkup(h(DeepReportView, { deep }));
+    // Only the list itself — the full table further down has the amounts anyway.
+    const start = html.indexOf(op.title);
+    const list = html.slice(start, html.indexOf("<table", start));
+    assert.ok(start > 0 && list.length > 0, `${id}: list not rendered before the table`);
+    const first = op.items[0];
+    assert.ok(list.includes(fmtV(first.extra[key], "money")), `${id}: ${first.name} shows no amount in the list`);
+  }
+  assert.equal(deepConfigFor("stella_ap_aging").opportunities[0].valueKey, "balance");
+});
+
 test("net profit and cash flow do not add different measures into a 'Total'", () => {
   for (const id of ["stella_net_profit", "stella_cash_flow"]) {
     const deep = deriveDeepReport(detail[id], deepConfigFor(id));

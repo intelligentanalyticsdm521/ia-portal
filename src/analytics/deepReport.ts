@@ -42,6 +42,12 @@ export interface DeepOpportunityDef {
    * is a defect rather than an opportunity must supply its own (2026-08-14).
    */
   lede?: (n: number, itemLabel: string) => string;
+  /**
+   * The extra[] column to print beside each item. A feed (an invoice, a vendor)
+   * has no series, so without it the list printed "—" where the balance goes
+   * (STELLA AR aging, click-through 24 Sept).
+   */
+  valueKey?: string;
 }
 export interface DeepConfig {
   /** Value bands → "count of items per band per month" stacked chart (B). */
@@ -103,7 +109,7 @@ export interface DeepReportData {
     title: string; note?: string; items: DetailItem[];
     /** How many items actually match. `items` is capped for display; this is not. */
     total: number;
-    lede?: (n: number, itemLabel: string) => string;
+    valueKey?: string; lede?: (n: number, itemLabel: string) => string;
   }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
@@ -352,7 +358,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
     // number as the finding is a lie the reader cannot detect: production has
     // 150 images with no alt text and the narrative would have said 8.
     return {
-      title: def.title, note: def.note, lede: def.lede,
+      title: def.title, note: def.note, lede: def.lede, valueKey: def.valueKey,
       total: list.length,
       items: list.slice(0, def.limit ?? 8),
     };
@@ -467,7 +473,7 @@ function buildDerivedMeaning(ctx: {
     title: string; note?: string; items: DetailItem[];
     /** How many items actually match. `items` is capped for display; this is not. */
     total: number;
-    lede?: (n: number, itemLabel: string) => string;
+    valueKey?: string; lede?: (n: number, itemLabel: string) => string;
   }>;
   flags: Record<string, string>;
   itemStats: Record<string, DeepItemStats>;
