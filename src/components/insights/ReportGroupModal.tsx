@@ -19,6 +19,7 @@ import { deriveDeepReport } from "../../analytics/deepReport";
 import { deepConfigFor } from "../../analytics/deepConfigs";
 import type { ReportGroup } from "../../analytics/reportGroups";
 import type { DetailReport } from "../../analytics/detail";
+import { pluralize } from "../../analytics/detail";
 
 /**
  * What the modal header carries on its right, beside the close X. Either one
@@ -52,7 +53,7 @@ export function ReportGroupModal({
 
   const multi = group.reports.length > 1;
   const count = active.items.length;
-  const itemWord = count === 1 ? active.itemLabel : `${active.itemLabel}s`;
+  const itemWord = count === 1 ? active.itemLabel : pluralize(active.itemLabel, count);
   const headerActions = typeof actions === "function" ? actions(active) : actions;
   const hasActions = headerActions != null && headerActions !== false;
   const title = multi ? group.label : active.label;

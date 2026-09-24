@@ -9,6 +9,21 @@
    "format": "money",
    "higherIsBetter": true,
    "kind": "trend",
+   "monthLabels": [
+    "Aug '25",
+    "Sep '25",
+    "Oct '25",
+    "Nov '25",
+    "Dec '25",
+    "Jan '26",
+    "Feb '26",
+    "Mar '26",
+    "Apr '26",
+    "May '26",
+    "Jun '26",
+    "Jul '26",
+    "Aug '26"
+   ],
    "columns": [
     {
      "key": "this_month",
@@ -55,6 +70,21 @@
    "format": "money",
    "higherIsBetter": false,
    "kind": "trend",
+   "monthLabels": [
+    "Aug '25",
+    "Sep '25",
+    "Oct '25",
+    "Nov '25",
+    "Dec '25",
+    "Jan '26",
+    "Feb '26",
+    "Mar '26",
+    "Apr '26",
+    "May '26",
+    "Jun '26",
+    "Jul '26",
+    "Aug '26"
+   ],
    "columns": [
     {
      "key": "this_month",
@@ -247,6 +277,21 @@
    "format": "money",
    "higherIsBetter": true,
    "kind": "trend",
+   "monthLabels": [
+    "Aug '25",
+    "Sep '25",
+    "Oct '25",
+    "Nov '25",
+    "Dec '25",
+    "Jan '26",
+    "Feb '26",
+    "Mar '26",
+    "Apr '26",
+    "May '26",
+    "Jun '26",
+    "Jul '26",
+    "Aug '26"
+   ],
    "items": [
     {
      "name": "Income",
@@ -322,6 +367,21 @@
    "format": "money",
    "higherIsBetter": true,
    "kind": "trend",
+   "monthLabels": [
+    "Aug '25",
+    "Sep '25",
+    "Oct '25",
+    "Nov '25",
+    "Dec '25",
+    "Jan '26",
+    "Feb '26",
+    "Mar '26",
+    "Apr '26",
+    "May '26",
+    "Jun '26",
+    "Jul '26",
+    "Aug '26"
+   ],
    "items": [
     {
      "name": "Operating",

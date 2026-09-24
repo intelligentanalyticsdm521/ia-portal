@@ -203,7 +203,7 @@ export function deriveDeepReport(report: DetailReport, cfg?: DeepConfig): DeepRe
   const items = report.items || [];
   const trendItems = items.filter((it) => (it.series?.filter((v) => v != null).length ?? 0) >= 2);
   const seriesLen = Math.max(12, ...items.map((it) => it.series?.length || 0));
-  const months = monthLabels(seriesLen);
+  const months = report.monthLabels && report.monthLabels.length === seriesLen ? report.monthLabels : monthLabels(seriesLen);
   const noun = report.itemLabel.toLowerCase();
   const weightKey = cfg?.weightKey || "volume";
   const weightOf = (it: DetailItem) => {
