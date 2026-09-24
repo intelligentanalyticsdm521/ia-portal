@@ -121,7 +121,10 @@ function ReportActions({ report, period }: { report: DetailReport; period: Stell
     // header is ink.
     <div className="flex items-center gap-2 rounded-md bg-white/95 px-2 py-1">
       {report.id === "stella_1099" && <Ten99Forms report={report} year={period.year} />}
-      <StatementExportBar path={target.path} fileBase={target.fileBase} disabled={!report.items.length} />
+      {/* Never greyed for an empty statement: "You owe $0.00" is a statement an
+          accountant or lender can ask for, and the old page exported it (walk
+          W-ST1-02 exports an empty Sales Tax). Found by the D-177 click-through. */}
+      <StatementExportBar path={target.path} fileBase={target.fileBase} />
     </div>
   );
 }
