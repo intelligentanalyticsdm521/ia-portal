@@ -33,6 +33,15 @@ export interface DetailReport {
   columns?: DetailColumn[];
   items: DetailItem[];
   kind?: "trend" | "feed";
+  /**
+   * Plain-English facts the SERVER states from the statement it read — "Balanced:
+   * NO — out by $1,999.98". They lead "What this means" and are shown even when
+   * the report has no rows ("You owe $0.00 on open bills"). STELLA (D-177).
+   */
+  facts?: Array<{ tone: "good" | "bad" | "watch" | "info"; text: string }>;
+  /** Balance Sheet / Trial Balance: the statement's own verdict, never recomputed. */
+  balanced?: boolean;
+  difference?: number;
 }
 
 export type DetailPayload = Record<string, DetailReport>;

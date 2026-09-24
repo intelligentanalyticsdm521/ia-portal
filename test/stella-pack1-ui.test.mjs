@@ -23,7 +23,10 @@ const read = (rel) => readFileSync(path.join(SRC, rel), "utf8").replace(/\r\n/g,
 
 const exportBar = read("pages/stella/StatementExportBar.tsx");
 const reportsPage = read("pages/stella/StellaReportsPage.tsx");
-const accountingReports = read("pages/stella/accounting/AccountingReports.tsx");
+// D-177: the ten-tab page and AccountingReports.tsx are gone; the statements
+// are reports in the IA catalog, and the export path per report lives in ONE
+// pure map built from the period the server says the reports cover.
+const exportMap = read("pages/stella/stellaReportExports.ts");
 const splitEditor = read("pages/stella/SplitEditor.tsx");
 const recordModal = read("pages/stella/RecordTransactionModal.tsx");
 const detailModal = read("pages/stella/TransactionDetailModal.tsx");
@@ -53,30 +56,31 @@ test("a failed download is said on the page, not only in the console", () => {
   assert.match(exportBar, /The download did not start/);
 });
 
-test("all five register statements and the Balance Sheet carry the bar", () => {
+test("every statement carries the bar — in the report modal's header (D-177)", () => {
   assert.match(reportsPage, /import \{ StatementExportBar, StellaPrintStyles \}/);
-  for (const p of ["/ledger/pnl", "/ledger/cash-flow", "/ledger/ar-aging", "/ledger/sales-tax", "/ledger/ten99"]) {
-    assert.match(reportsPage, new RegExp(p.replace(/\//g, "\\/")), `${p} is not exportable`);
+  assert.match(reportsPage, /<StatementExportBar path=\{target\.path\} fileBase=\{target\.fileBase\}/);
+  assert.match(reportsPage, /reportActions=\{/);
+  for (const p of ["/ledger/income-statement", "/ledger/cash-flow", "/ledger/balance-sheet", "/ledger/ar-aging",
+    "/ledger/ap-aging", "/ledger/sales-tax", "/ledger/ten99", "/ledger/trial-balance", "/ledger/general-ledger"]) {
+    assert.match(exportMap, new RegExp(p.replace(/\//g, "\\/")), `${p} is not exportable`);
   }
-  assert.match(accountingReports, /StatementExportBar/);
-  assert.match(accountingReports, /\/ledger\/balance-sheet\?basis=\$\{basis\}&as_of=\$\{asOf\}/);
 });
 
-test("the export period is derived from the SAME state the fetch uses", () => {
+test("the export period is the period the SERVER says the reports cover", () => {
   // A separate copy of the period would let someone export August while looking
-  // at September, and nothing on the file would say so.
-  assert.match(reportsPage, /const exportTarget/);
-  assert.match(reportsPage, /const \{ from, to \} = monthRange\(month\);\s*\n\s*return \{ path: `\/ledger\/pnl\?from=\$\{from\}&to=\$\{to\}`/);
-  // Pack 2: the sales-tax return carries the BASIS as well as the year, and
-  // the export path is still built from the same two pieces of state the
-  // fetch above uses — which is the property this test exists to pin.
-  assert.match(reportsPage, /sales-tax\?basis=\$\{basis\}&year=\$\{year\}/);
-  assert.match(reportsPage, /cash-flow\?basis=\$\{basis\}&from=\$\{year\}-01-01&to=\$\{year\}-12-31/);
+  // at September, and nothing on the file would say so. The page hands the
+  // export map the `period` that came back WITH the numbers (D-177).
+  assert.match(reportsPage, /const period = state\.status === "ready" \? state\.payload\.period : undefined;/);
+  assert.match(reportsPage, /statementExportFor\(report\.id, period\)/);
+  assert.match(exportMap, /income-statement\?basis=\$\{b\}&from=\$\{p\.from\}&to=\$\{p\.to\}/);
+  assert.match(exportMap, /balance-sheet\?basis=\$\{b\}&as_of=\$\{p\.as_of\}/);
+  // Pack 2: the sales-tax return carries the BASIS as well as the year.
+  assert.match(exportMap, /sales-tax\?basis=\$\{b\}&year=\$\{p\.year\}/);
+  assert.match(exportMap, /cash-flow\?basis=\$\{b\}&from=\$\{p\.year\}-01-01&to=\$\{p\.year\}-12-31/);
 });
 
 test("Export is off when there is nothing to export", () => {
-  assert.match(reportsPage, /disabled=\{!hasData\}/);
-  assert.match(accountingReports, /disabled=\{!data\}/);
+  assert.match(reportsPage, /disabled=\{!report\.items\.length\}/);
 });
 
 test("Print hides the app chrome and never splits a section across pages", () => {

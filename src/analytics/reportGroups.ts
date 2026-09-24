@@ -56,7 +56,10 @@ export function buildReportGroups(
   const byKey = new Map<string, ReportGroup>();
 
   for (const rep of Object.values(detail || {})) {
-    if (!rep?.items?.length) continue;         // same rule as everywhere: no data, no door
+    // Same rule as everywhere: no data, no door — EXCEPT a report whose server
+    // stated a fact about the empty state. "You owe $0.00 on open bills" is an
+    // answer, not an absence (STELLA's AP Aging with nothing open, D-177).
+    if (!rep?.items?.length && !rep?.facts?.length) continue;
     const section = String(rep.section || "");
     const dashboardKey = section.split(".")[0];
     // A report whose section is unknown to the dashboards (an Intelligence

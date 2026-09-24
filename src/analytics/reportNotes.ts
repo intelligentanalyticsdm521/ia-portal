@@ -464,6 +464,55 @@ export const REPORT_NOTES: Record<string, ReportNote> = {
     "The health of every connected data source, with last sync times.",
     "A silently broken integration means silently wrong reports everywhere downstream. Anything not marked Healthy is the first thing to fix — before trusting any number it feeds.",
   ),
+
+  // ══ STELLA — the books (D-177) ══
+  // Every number in these reports is read from the same statement the
+  // Export button downloads, so the notes point the owner at that file when
+  // the question is "can I hand this to someone?".
+  stella_income_by_account: N(
+    "The money you earned each month for the last 13 months, account by account, straight from your books on the basis you picked (cash = when the money arrived, accrual = when you invoiced it).",
+    "Look at the last column for this month and the one beside it for the year so far. An account that keeps rising is where your business is growing; one that suddenly drops is worth a phone call before it becomes a trend.",
+  ),
+  stella_expenses_by_account: N(
+    "What you spent each month for the last 13 months, account by account. A charge you split across accounts shows up as its parts — $90 of materials and $60 of tools, never $150 twice.",
+    "The \"% of expenses\" column shows where this month's money went. A cost growing faster than your income squeezes profit quietly — the movement table names the accounts that moved most.",
+  ),
+  stella_net_profit: N(
+    "Your profit and loss in three lines — income, expenses and what was left — for each of the last 13 months.",
+    "Net profit is income minus expenses. A month below zero is a loss. Read the trend over three or four months rather than any single month; one-off bills make single months noisy. Export gives you the full P&L statement for the picked month.",
+  ),
+  stella_cash_flow: N(
+    "Where your cash came from and went, month by month: running the business (operating), buying or selling equipment (investing), and loans or money you put in or took out (financing).",
+    "Profit and cash are not the same thing — a month can be profitable and still drain the bank if customers have not paid yet. The top line says whether the statement adds up to what your bank accounts actually did; if it does not, fix the books before trusting it.",
+  ),
+  stella_balance_sheet: N(
+    "Everything the business owns (assets), owes (liabilities) and is worth to you (equity), as of the end of the picked month.",
+    "The first line is the one that matters: assets must equal liabilities plus equity, to the cent. \"Balanced: YES\" means the books are sound; \"Balanced: NO\" means something needs fixing before you hand this to a lender or your accountant.",
+  ),
+  stella_ar_aging: N(
+    "Every unpaid invoice, with who owes it, when it was due, and how many days late it is.",
+    "The older a debt, the less likely it is to be paid — anything past 60 days deserves a call today, not another email. The top line splits what you are owed into not-yet-due and late.",
+  ),
+  stella_ap_aging: N(
+    "Every open bill you have recorded, with the vendor, the due date and how late it is.",
+    "Paying on time keeps suppliers on your side; paying early rarely earns anything. Anything already late is at the top. Record and pay bills under Bills.",
+  ),
+  stella_sales_tax: N(
+    "The sales tax you collected this year, per jurisdiction and rate, on the basis you picked — the figure you file.",
+    "Cash basis counts tax on money that actually arrived; accrual counts every invoice you issued. File on the basis your state asks for. If it says you have no rates set up, add them under Settings → Sales tax first.",
+  ),
+  stella_1099: N(
+    "Vendors and subcontractors you paid $600 or more this year, plus anyone you marked as needing a 1099.",
+    "Each one needs a 1099-NEC in January, and you need their W-9 to file it — chase the ones marked Missing now. The forms and the filing file are the downloads at the top of this report.",
+  ),
+  stella_trial_balance: N(
+    "Every account with a balance, on its debit or credit side, as of the end of the picked month — the first thing an accountant asks for.",
+    "Total debits must equal total credits. \"Balanced: YES\" means the double-entry books foot; \"NO\" means something is wrong with the books, not the report.",
+  ),
+  stella_general_ledger: N(
+    "Every line posted to your books in the picked month — date, account, memo, debit and credit.",
+    "This is the drill-down behind every other number here. When a figure on the P&L or Balance Sheet looks wrong, find its lines here; a hand-written (manual) entry is the usual suspect.",
+  ),
 };
 
 // ── Modeled-variant templates ─────────────────────────────────────────────

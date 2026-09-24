@@ -34,8 +34,17 @@ export const LEVEL_ABOVE_SLOPE = 40;
 // ── Types ────────────────────────────────────────────────────────────────
 export type BenchmarkKind = "self" | "cohort" | "absolute";
 export type VisualKind = "line" | "bar" | "donut" | "gauge" | "stat";
+// "currency" is the rounded dashboard figure ($44.2k). "money" (D-177) is a
+// bookkeeping figure — exact cents, minus before the sign ($44,182.86,
+// -$1,999.98) — the way QuickBooks prints a statement. STELLA uses "money".
 export type ValueFormat =
-  | "percent" | "number" | "score" | "position" | "ms" | "rating" | "count" | "currency";
+  | "percent" | "number" | "score" | "position" | "ms" | "rating" | "count" | "currency" | "money";
+
+const MONEY = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+/** Exact cents, minus before the dollar sign: 44182.86 → "$44,182.86", -1999.98 → "-$1,999.98". */
+export function fmtMoney(n: number): string {
+  return MONEY.format(n);
+}
 
 export interface Benchmark {
   /** The "solid/typical-good" reference value the metric is judged against. */

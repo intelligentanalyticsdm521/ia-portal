@@ -149,6 +149,23 @@ export function StellaPrintStyles() {
         body { background: #fff !important; }
         a[href]:after { content: "" !important; }
       }
+      @media print {
+        /* D-177: the statements are reports in the IA report modal now, and
+         * Print sits in that modal's header. Paper gets the REPORT ON SCREEN
+         * ([data-report-print-root], ReportGroupModal) and nothing behind it:
+         * everything that is neither the report, inside it, nor one of its
+         * ancestors is dropped, and the modal's fixed, scrolling frame is
+         * unwound so a long report runs onto the next page instead of being
+         * cut at the bottom of the screen. With no report open these match
+         * nothing. */
+        body:has([data-report-print-root]) :not(:has([data-report-print-root])):not([data-report-print-root]):not([data-report-print-root] *) { display: none !important; }
+        body:has([data-report-print-root]) :has([data-report-print-root]) {
+          position: static !important; overflow: visible !important;
+          height: auto !important; max-height: none !important; width: auto !important;
+          background: #fff !important; box-shadow: none !important;
+        }
+        [data-report-print-root] { padding: 0 !important; }
+      }
     `}</style>
   );
 }

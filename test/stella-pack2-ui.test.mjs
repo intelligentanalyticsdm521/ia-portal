@@ -71,37 +71,34 @@ test("Bills, Assets and Budgets are in the catalog, the nav and the router", () 
 
 /* ── Item 2 + 6 — no placeholder, and a real statement ───────────────────── */
 
-test("AP Aging is no longer a placeholder — it reads open bills", () => {
-  assert.match(reportsPage, /const PLACEHOLDERS: Record<[^>]*> = \{\};/);
-  assert.ok(!/Arrives with Bill Pay/.test(reportsPage), "the AP Aging placeholder copy is still there");
-  assert.match(reportsPage, /\/ledger\/ap-aging/);
-  assert.match(reportsPage, /Bills you owe — aged by due date/);
+// D-177 (24 Sept): the ten-tab Reports page is gone. AP Aging, the Statement
+// of Cash Flows, the sales-tax return and the 1099 worksheet are reports in
+// the IA catalog now; their numbers and their sentences ("Do not hand this to
+// anybody", "Settings → Sales tax", "STELLA does not file for you") come from
+// oliver-api lib/stellaInsightsDetail.js, pinned by its own
+// test/stella-insights-detail.test.mjs. What stays true HERE is that every one
+// of them is in the catalog, exportable from the statement route it is drawn
+// from, and that no taxpayer id is ever rendered by the page.
+const exportMap = read("pages/stella/stellaReportExports.ts");
+const stellaDash = read("analytics/stellaDashboards.ts");
+
+test("AP Aging is a report over open bills, with its export", () => {
+  assert.match(stellaDash, /stella_ap_aging: "Who do I owe\?"/);
+  assert.match(exportMap, /case "stella_ap_aging":\s*\n\s*return \{ path: "\/ledger\/ap-aging"/);
+  assert.ok(!/Arrives with Bill Pay/.test(reportsPage), "the AP Aging placeholder copy is back");
 });
 
-test("Cash Flow is a statement with three sections, not a bar chart", () => {
-  assert.match(reportsPage, /Statement of Cash Flows/);
-  assert.ok(!/ComposedChart/.test(reportsPage), "the cash-flow bar chart is still on the page");
-  assert.match(reportsPage, /cashFlow\.sections\.map/);
-  assert.match(reportsPage, /Net change in cash/);
+test("Cash Flow is the statement, not a bar chart, and exports as one", () => {
+  assert.match(exportMap, /case "stella_cash_flow":\s*\n\s*return \{ path: `\/ledger\/cash-flow\?basis=/);
+  assert.ok(!/ComposedChart|BarChart/.test(reportsPage), "a hand-drawn chart is back on the reports page");
 });
 
-test("a statement that does not reconcile tells the reader NOT to file it", () => {
-  assert.match(reportsPage, /cashFlow\.totals\.reconciles/);
-  assert.match(reportsPage, /Do not hand this to anybody/);
+test("Sales Tax is a report per jurisdiction, on either basis, with its export", () => {
+  assert.match(stellaDash, /stella_sales_tax:/);
+  assert.match(exportMap, /sales-tax\?basis=\$\{b\}&year=\$\{p\.year\}/);
 });
 
 /* ── Item 9 — sales tax ──────────────────────────────────────────────────── */
-
-test("Sales Tax is a return per jurisdiction, on either basis", () => {
-  assert.match(reportsPage, /salesTax\.jurisdictions\.map/);
-  assert.match(reportsPage, /Total to file for/);
-  assert.match(reportsPage, /basis === "accrual"/);
-});
-
-test("a business with no rates is told what to do, not shown an empty table", () => {
-  assert.match(reportsPage, /salesTax\.needs_setup/);
-  assert.match(reportsPage, /Settings → Sales tax/);
-});
 
 test("the rates page says WHO keeps the rates current, on the page", () => {
   assert.match(salesTax, /You keep these rates current/);
@@ -115,9 +112,11 @@ test("a rate that has been charged offers no delete", () => {
 
 /* ── Item 4 — the 1099 ───────────────────────────────────────────────────── */
 
-test("a taxpayer id on screen is the last four, and the whole one is a download", () => {
-  assert.match(reportsPage, /v\.tin_masked/);
-  assert.ok(!/v\.tin\b(?!_)/.test(reportsPage), "the reports page is rendering a whole taxpayer id");
+test("a taxpayer id is never rendered by the reports page, and the whole one is a download", () => {
+  // The report payload carries tin_on_file (yes/no) and never the id itself.
+  assert.ok(!/\btin\b(?!_)|tin_masked/.test(reportsPage), "the reports page is handling a taxpayer id");
+  assert.match(reportsPage, /<Ten99Download counterpartyId=\{chosen\.id\} year=\{year\}/);
+  assert.match(reportsPage, /<Ten99CsvDownload year=\{year\}/);
   assert.match(ten99, /\/ledger\/ten99\/\$\{counterpartyId\}\/pdf\?year=\$\{year\}/);
   assert.match(ten99, /\/ledger\/ten99\/irs-csv\?year=\$\{year\}/);
 });
@@ -125,10 +124,7 @@ test("a taxpayer id on screen is the last four, and the whole one is a download"
 test("the download says it is recorded, and a vendor with no W-9 cannot be filed for", () => {
   assert.match(ten99, /This download is recorded/);
   assert.match(ten99, /No taxpayer id on file — ask this vendor for a W-9 first/);
-});
-
-test("the page says STELLA does not file for you", () => {
-  assert.match(reportsPage, /STELLA does not file for you/);
+  assert.match(reportsPage, /disabled=\{!chosen\.hasTin\}/);
 });
 
 /* ── Item 3 — learned categorisation ─────────────────────────────────────── */

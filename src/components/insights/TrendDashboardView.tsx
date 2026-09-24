@@ -15,7 +15,7 @@ import { ChevronRight, ChevronLeft, TrendingUp, TrendingDown, Minus, ArrowLeft }
 import { LineChart, BarChart, Donut, Gauge, StatBlock } from "../iainsights/SectionVisuals";
 import { deriveInsights } from "../../analytics/insightGen";
 import type { DashboardScore, SectionScore, DataPointScore, ValueFormat } from "../../analytics/scoring";
-import { businessPulse, scoreDataPoint } from "../../analytics/scoring";
+import { businessPulse, scoreDataPoint, fmtMoney } from "../../analytics/scoring";
 import { reportsForSection, itemMom, pluralize, type DetailPayload, type DetailReport } from "../../analytics/detail";
 import { deriveDeepReport } from "../../analytics/deepReport";
 import { deepConfigFor } from "../../analytics/deepConfigs";
@@ -34,6 +34,7 @@ export function formatValue(v: number | string | null, format: ValueFormat): str
     case "score":    return String(Math.round(n));
     case "count":    return String(Math.round(n));
     case "currency": return n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : `$${Math.round(n)}`;
+    case "money":    return fmtMoney(n);
     default:         return n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 0 })
                             : Number.isInteger(n) ? String(n) : n.toFixed(1);
   }
