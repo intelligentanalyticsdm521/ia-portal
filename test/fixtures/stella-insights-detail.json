@@ -282,7 +282,10 @@
       666.66,
       957.16,
       1023.81
-     ]
+     ],
+     "extra": {
+      "lowerIsBetter": true
+     }
     },
     {
      "name": "Net profit",
@@ -306,7 +309,7 @@
    "facts": [
     {
      "tone": "bad",
-     "text": "August 2026, cash basis: income $0.00 less expenses $1,023.81 = net loss of -$1,023.81."
+     "text": "August 2026, cash basis: income $0.00 less expenses $1,023.81 = net loss of $1,023.81."
     }
    ]
   },
