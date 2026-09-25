@@ -18,6 +18,7 @@ interface JobDetail {
   id: string;
   title?: string;
   customerName?: string;
+  jobNumber?: string;
   customerEmail?: string;
   contactId?: string;
   status: string;
@@ -226,6 +227,9 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       <ScheduleJobModal
         jobId={jobId}
         jobTitle={job?.title}
+        jobNumber={job?.jobNumber}
+        customerName={job?.customerName}
+        currentStart={job?.scheduledDate || null}
         // How long the QUOTED work says this takes. The job's line items came
         // from the accepted quote, and each carries durationMinutes off the
         // service it was sold from — so the scheduler opens pre-filled with the
@@ -237,7 +241,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
         onClose={() => setSchedulingOpen(false)}
         onScheduled={async (startIso) => {
           setSchedulingOpen(false);
-          setToast(`Scheduled for ${new Date(startIso).toLocaleString()}`);
+          setToast(`${job?.scheduledDate ? "Moved to" : "Scheduled for"} ${new Date(startIso).toLocaleString()}. The customer has been emailed.`);
           await reload();
           onChanged?.();
         }}
