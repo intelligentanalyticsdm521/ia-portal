@@ -166,7 +166,7 @@ export function OliverJobBoardPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const data = await get<Job[]>(withLocation("/jobs?per_page=200", loc.selectedLocationId));
+      const data = await get<Job[]>(withLocation("/jobs?per_page=500", loc.selectedLocationId));
       setJobs(data || []);
       setBoardVersion((v) => v + 1);
     } catch (e) { setError(e); }
