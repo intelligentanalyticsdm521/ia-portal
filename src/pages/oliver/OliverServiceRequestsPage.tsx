@@ -20,6 +20,8 @@ interface ServiceRequest {
   customerNotes?: string;
   /** The catalog service, job scope or custom entry the customer picked (GET /booking/pending). */
   service_name?: string | null;
+  /** The booking page (form) a booking request came in on (GET /booking/pending, /booking/decided). */
+  booking_page_title?: string | null;
   /** Where the visit is, as the guest typed it on the booking form; null on a page that does not ask. */
   service_address?: { address_line_1?: string; address_line_2?: string; city?: string; state?: string; postal_code?: string; access_notes?: string } | string | null;
   service_address_line?: string | null;
@@ -183,9 +185,13 @@ export function OliverServiceRequestsPage() {
   /** The service a row asked for: the booked service, else the title before " · ". */
   const serviceOf = (r: ServiceRequest) =>
     String(r.service_name || String(r.title || "").split(" · ")[0] || "").trim();
+  /** Where a request came from, one entry per booking page. 2026-09-25 (Brandon,
+   *  Test 4.17): "None of the service requests say which form it is from." */
+  const sourceOf = (r: ServiceRequest) =>
+    r.source === "booking" ? `Booking · ${r.booking_page_title || "booking page"}` : sourceLabel(r.source).label;
   const passesDropdowns = (r: ServiceRequest) =>
     (!typeFilter || serviceOf(r) === typeFilter) &&
-    (!sourceFilter || sourceLabel(r.source).label === sourceFilter);
+    (!sourceFilter || sourceOf(r) === sourceFilter);
 
   const filtered = useMemo(() => {
     const rows = requests.filter(passesDropdowns);
@@ -216,7 +222,7 @@ export function OliverServiceRequestsPage() {
   // The dropdowns offer only what the current view holds.
   const viewRows: ServiceRequest[] = view === "open" ? requests : decided.filter((d) => d.outcome === view);
   const typeOptions = Array.from(new Set(viewRows.map(serviceOf).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const sourceOptions = Array.from(new Set(viewRows.map((r) => sourceLabel(r.source).label))).sort((a, b) => a.localeCompare(b));
+  const sourceOptions = Array.from(new Set(viewRows.map(sourceOf))).sort((a, b) => a.localeCompare(b));
 
   const decidedCount = (o: DecidedRequest["outcome"]) => decided.filter((d) => d.outcome === o).length;
   const viewPills = [
@@ -334,9 +340,17 @@ export function OliverServiceRequestsPage() {
       render: (r) => {
         const meta = sourceLabel(r.source);
         return (
-          <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color }}>
-            {meta.label}
-          </span>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color }}>
+              {meta.label}
+            </span>
+            {/* 2026-09-25 (Brandon, Test 4.17): which booking page (form) it came in on. */}
+            {r.source === "booking" && r.booking_page_title && (
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 3, maxWidth: 160, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.booking_page_title}>
+                {r.booking_page_title}
+              </div>
+            )}
+          </div>
         );
       },
     },
@@ -796,9 +810,10 @@ function BookingDetailDrawer({
           address): the office used to confirm a visit without being shown what
           was booked or where. GET /booking/pending has carried both since
           OLIVER pack 1; the drawer never read them. */}
-      {(row.service_name || row.service_address_line || accessNotes) && (
+      {(row.booking_page_title || row.service_name || row.service_address_line || accessNotes) && (
         <div className="card">
           <div className="card-ttl">What and where</div>
+          {row.booking_page_title && <Row label="Booking page" value={row.booking_page_title} />}
           {row.service_name && <Row label="Service" value={row.service_name} />}
           {row.service_address_line && <Row label="Address" value={row.service_address_line} />}
           {accessNotes && <Row label="Getting in" value={accessNotes} />}
