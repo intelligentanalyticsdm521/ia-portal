@@ -39,6 +39,13 @@ export function apiBodySentence(body: unknown): string | null {
   for (const key of ["details", "message", "error"]) {
     const v = b[key];
     if (typeof v === "string" && v.trim()) return v.trim();
+    // 2026-09-25 (pane re-test W-L3-04): validation answers carry details as a
+    // LIST of sentences (["Amount is required"]); print them, joined, before
+    // falling through to the code in `error`.
+    if (Array.isArray(v)) {
+      const lines = v.filter((x): x is string => typeof x === "string" && x.trim().length > 0).map((x) => x.trim());
+      if (lines.length) return lines.join(" · ");
+    }
     // arion answers { error: { code, message } } — one level in, no further.
     if (v && typeof v === "object") {
       const m = (v as Record<string, unknown>).message;

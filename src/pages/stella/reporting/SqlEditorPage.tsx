@@ -62,9 +62,18 @@ export function StellaSqlEditorPage() {
     try {
       setResult(await api.postFull<Result>("/reporting/sql/execute", { sql: sqlText }));
     } catch (e) {
-      const d = (e as { details?: string })?.details;
-      const m = (e as { message?: string })?.message;
-      setError(d ? { message: `${m} ${d}` } : e);
+      // 2026-09-25 (pane re-test W-L3-16): the sandbox answers { error: <the
+      // sentence>, details: <why> }. The Result box printed the detail alone
+      // ("found update", "In the sandbox, every table is already limited to
+      // your business.") and lost the sentence. Print the sentence first, the
+      // detail under it; fall back to whatever the error carries.
+      const err = e as { body?: { error?: unknown; details?: unknown }; details?: unknown; message?: string };
+      const sentence = typeof err?.body?.error === "string" ? err.body.error : undefined;
+      const rawDetail = err?.details ?? err?.body?.details;
+      const d = typeof rawDetail === "string" ? rawDetail : undefined;
+      if (sentence) setError({ message: d ? `${sentence} ${d}` : sentence });
+      else if (d) setError({ message: err?.message && !/^OLIVER API \d+:/.test(err.message) ? `${err.message} ${d}` : d });
+      else setError(e);
     } finally { setRunning(false); loadHistory(); }
   }
 
