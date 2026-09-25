@@ -53,6 +53,26 @@ export function SparkNewsletterPage() {
   const [loading, setLoading] = useState(true);
   const [publishing, setPublishing] = useState<number | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  // 2026-09-25 (register spark-newsletter-list-crashes-on-a-row-action-error):
+  // a failed row action (publish, send, delete) used to go to setError, which
+  // the page wrapper renders as "Something went wrong loading this page" and
+  // the six issues vanished behind raw JSON. A row action that fails says so
+  // in a red line above the table and the list stays on screen; setError is
+  // for the LOAD only.
+  const [actionError, setActionError] = useState<string | null>(null);
+  const plainError = (err: unknown): string => {
+    const raw = err instanceof Error ? err.message : String(err ?? "");
+    // "SPARK API 502: {"error":"publish_failed","message":"…"}" → the message.
+    const brace = raw.indexOf("{");
+    if (brace >= 0) {
+      try {
+        const body = JSON.parse(raw.slice(brace));
+        const m = body?.message || body?.error?.message || body?.error;
+        if (typeof m === "string" && m.trim()) return m;
+      } catch { /* not JSON — fall through to the raw text */ }
+    }
+    return raw || "Something went wrong.";
+  };
 
   /** The pending "are you sure?", or null. One home for every question. */
   const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
@@ -137,12 +157,12 @@ export function SparkNewsletterPage() {
   }, [post, saveIssue]);
 
   async function publish(id: number, again = false) {
-    setPublishing(id); setFlash(null);
+    setPublishing(id); setFlash(null); setActionError(null);
     try {
       await post(`/api/v1/newsletters/${id}/publish`, {}); await load();
       setFlash(again ? "Updated on your website." : "Published to your website.");
     }
-    catch (err) { setError(err); } finally { setPublishing(null); }
+    catch (err) { setActionError(`Could not ${again ? "update" : "publish"} it: ${plainError(err)}`); } finally { setPublishing(null); }
   }
 
   /**
@@ -172,21 +192,21 @@ export function SparkNewsletterPage() {
   }
 
   async function remove(issue: NewsletterIssue) {
-    setPublishing(issue.id); setFlash(null); setError(null);
+    setPublishing(issue.id); setFlash(null); setActionError(null);
     try {
       await del(`/api/v1/newsletters/${issue.id}`);
       await load();
       setFlash(`Deleted issue #${issue.issue_number}.`);
-    } catch (err) { setError(err); } finally { setPublishing(null); }
+    } catch (err) { setActionError(`Could not delete issue #${issue.issue_number}: ${plainError(err)}`); } finally { setPublishing(null); }
   }
 
   async function createSend(issue: NewsletterIssue) {
-    setPublishing(issue.id); setFlash(null);
+    setPublishing(issue.id); setFlash(null); setActionError(null);
     try {
       await post(`/api/v1/newsletters/${issue.id}/campaign`, {});
       await load();
       setFlash(`A draft campaign is ready for “${issue.title}”. Open Campaigns to choose who gets it and when.`);
-    } catch (err) { setError(err); } finally { setPublishing(null); }
+    } catch (err) { setActionError(`Could not build the send for “${issue.title}”: ${plainError(err)}`); } finally { setPublishing(null); }
   }
 
   const draftCount = list.filter(n => !n.published_at).length;
@@ -227,6 +247,11 @@ export function SparkNewsletterPage() {
       loading={loading}
       error={error}
     >
+      {actionError && (
+        <div role="alert" className="mb-3 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+          {actionError}
+        </div>
+      )}
       {flash && (
         <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
           {flash}
