@@ -136,9 +136,12 @@ export function SparkNewsletterPage() {
     return (r as any)?.data?.message || `Sent to ${to}. It went out exactly as a real send would.`;
   }, [post, saveIssue]);
 
-  async function publish(id: number) {
+  async function publish(id: number, again = false) {
     setPublishing(id); setFlash(null);
-    try { await post(`/api/v1/newsletters/${id}/publish`, {}); await load(); setFlash("Published to your website."); }
+    try {
+      await post(`/api/v1/newsletters/${id}/publish`, {}); await load();
+      setFlash(again ? "Updated on your website." : "Published to your website.");
+    }
     catch (err) { setError(err); } finally { setPublishing(null); }
   }
 
@@ -269,11 +272,21 @@ export function SparkNewsletterPage() {
         onRowClick={n => setEditing(n)}
         rowActions={n => (
           <div className="flex items-center gap-1.5">
-            {!n.published_at && (
+            {!n.published_at ? (
               <button onClick={(e) => { e.stopPropagation(); publish(n.id); }} disabled={publishing === n.id}
                       title="Put this issue on your website as a post"
                       className="spark-btn spark-btn-sm spark-btn-secondary">
                 <ExternalLink className="h-3 w-3" /> {publishing === n.id ? "Publishing…" : "Publish to site"}
+              </button>
+            ) : (
+              /* 2026-09-25 (register spark-newsletter-republish-creates-a-second-post):
+                 an issue edited after it went to the website had no way back
+                 there. Same route; LUMEN sends the post id, so the post on the
+                 site is rewritten, never duplicated. */
+              <button onClick={(e) => { e.stopPropagation(); publish(n.id, true); }} disabled={publishing === n.id}
+                      title="Write this issue's latest text over the post already on your website"
+                      className="spark-btn spark-btn-sm spark-btn-secondary">
+                <ExternalLink className="h-3 w-3" /> {publishing === n.id ? "Updating…" : "Update on website"}
               </button>
             )}
             <button
