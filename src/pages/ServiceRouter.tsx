@@ -320,16 +320,11 @@ const OliverProposalsPage = lazyNamed(() => import('./oliver/OliverProposalsPage
 const OliverUsagePage = lazyNamed(() => import('./oliver/OliverUsagePage'), 'OliverUsagePage');
 const OliverFeesPage = lazyNamed(() => import('./oliver/OliverFeesPage'), 'OliverFeesPage');
 const OliverClientExperiencePage = lazyNamed(() => import('./oliver/OliverClientExperiencePage'), 'OliverClientExperiencePage');
-const OliverPortalDesignerPage = lazyNamed(() => import('./oliver/OliverPortalDesignerPage'), 'OliverPortalDesignerPage');
 const OliverAutomationsPage = lazyNamed(() => import('./oliver/OliverAutomationsPage'), 'OliverAutomationsPage');
 const OliverAddonsPage = lazyNamed(() => import('./oliver/OliverAddonsPage'), 'OliverAddonsPage');
 const OliverPortalDomainsPage = lazyNamed(() => import('./oliver/OliverPortalDomainsPage'), 'OliverPortalDomainsPage');
 // F-114 — unified portals hub
 const OliverPortalsHubPage = lazyNamed(() => import('./oliver/OliverPortalsHubPage'), 'OliverPortalsHubPage');
-// #290 Onboarding V3 Phase 3 — constrained WYSIWYG portal customization
-// (welcome copy / hero image / brand colors). Scaffolded page; full editor
-// ships in the next pass — see file header for what's stubbed.
-const PortalCustomizationPage = lazyNamed(() => import('./oliver/PortalCustomizationPage'), 'PortalCustomizationPage');
 // OLIVER v1.0 additions
 const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
@@ -795,12 +790,10 @@ function ServiceRouterInner() {
       case 'oliver_usage': oliverPage = <OliverUsagePage />; break;
       case 'oliver_fees': oliverPage = <OliverFeesPage />; break;
       case 'oliver_client_experience': oliverPage = <OliverClientExperiencePage />; break;
-      case 'oliver_portal_designer': oliverPage = <OliverPortalDesignerPage />; break;
       case 'oliver_automations': oliverPage = <OliverAutomationsPage />; break;
       case 'oliver_addons': oliverPage = <OliverAddonsPage />; break;
       case 'oliver_portal_domains': oliverPage = <OliverPortalDomainsPage />; break;
       case 'oliver_portals_hub': oliverPage = <OliverPortalsHubPage />; break;
-      case 'oliver_portal_customization': oliverPage = <PortalCustomizationPage />; break;
       // v1.0 additions
       case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;

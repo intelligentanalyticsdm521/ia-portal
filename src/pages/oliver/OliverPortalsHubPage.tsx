@@ -1,14 +1,24 @@
 // OliverPortalsHubPage — F-114.
 //
 // Single consolidated admin page that replaces the 3 scattered surfaces:
-//   - oliver_portal_designer (white-label / theme)
+//   - oliver_portal_designer (white-label / theme; the page itself was deleted
+//     2026-09-25, its job is the Look tab)
 //   - oliver_portal_domains  (subdomain + custom domain binding)
 //   - signup-form portion of oliver_workflow_settings
 //
 // Layout: two side-by-side cards (Customer Portal + Crew Portal) showing
 // status + URL + "Edit portal" button. Clicking Edit opens an info-size
-// modal (F-107) with 4 tabs: Design / Signup form / Domain / Workflow.
-import { useCallback, useEffect, useMemo, useState } from "react";
+// modal (F-107) with the tabs Look (customer portal only) / Signup form /
+// Layout / Domain / Workflow.
+//
+// 2026-09-25 (CUSTOMER_PORTAL_LOOK_SCOPE §5.3 C): the Design tab became Look
+// (./look/LookTab.tsx) — five styles, the brand switch, Buttons & functions and
+// a live preview of the real customer portal. The Design tab's colour pickers,
+// font list, header/footer copy and custom CSS box are gone: they saved to
+// portal_design and nothing read them. The crew portal has no look to choose
+// (the contract's look is the customer portal's), so its editor opens on
+// Signup form.
+import { useCallback, useEffect, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
@@ -16,13 +26,15 @@ import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../
 import { PortalActivationWizard } from "../../components/oliver/PortalActivationWizard";
 import { PortalLayoutTab } from "../../components/oliver/PortalLayoutTab";
 import { AppLinksCard } from "../../components/oliver/AppLinksCard";
+import { LookTab, useLookEditor } from "./look/LookTab";
+import { lookPreviewSrc } from "./look/lookModel";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
-  AlertTriangle, CheckCircle2, Clock, Palette, Upload, Layers,
+  AlertTriangle, CheckCircle2, Clock, Palette, Layers,
 } from "lucide-react";
 
 type PortalKind = "customer" | "crew";
-type Tab = "design" | "signup" | "layout" | "domain" | "workflow";
+type Tab = "look" | "signup" | "layout" | "domain" | "workflow";
 
 interface PortalStatus {
   subdomain_slug: string | null;
@@ -60,6 +72,19 @@ function portalUrl(p: PortalStatus, kind: PortalKind): string {
   return `https://${kind === "customer" ? DEFAULT_CUSTOMER_HOST : DEFAULT_CREW_HOST}/${slug}/`;
 }
 
+/**
+ * Where the Look tab's live preview loads the customer portal: the address
+ * portalUrl() prints, with ?look=preview on it. Local dev runs the customer app
+ * on :5175 (dev-stack start-portals-dev.cmd) rather than customer.ia-dm.com, so
+ * a dev build swaps the origin and keeps the /<slug>/ path. Build-time constant:
+ * a production bundle never carries the localhost branch.
+ */
+const DEV_CUSTOMER_PORTAL_ORIGIN = "http://localhost:5175";
+
+function customerPreviewSrc(p: PortalStatus): string | null {
+  return lookPreviewSrc(portalUrl(p, "customer"), p.subdomain_slug, import.meta.env.DEV ? DEV_CUSTOMER_PORTAL_ORIGIN : null);
+}
+
 export function OliverPortalsHubPage() {
   const { get, ready } = useOliverApi();
   const [data, setData] = useState<HubData | null>(null);
@@ -73,7 +98,11 @@ export function OliverPortalsHubPage() {
 
   const load = useCallback(async () => {
     if (!ready) return;
-    setLoading(true); setError(null);
+    // `loading` is the FIRST read only (it starts true). A refresh after a tab
+    // saves must not flip it back: OliverPageWrapper swaps its children for
+    // "Loading…" while it is true, which unmounted the open editor on every
+    // save and reopened it on its first tab with the unsaved state gone.
+    setError(null);
     try {
       // lib/oliverApi already strips the { data: ... } envelope; reading .data
       // again yielded undefined and this page rendered empty.
@@ -92,7 +121,7 @@ export function OliverPortalsHubPage() {
   return (
     <OliverPageWrapper
       title="Customer & Crew Portals"
-      subtitle="One place to configure design, signup forms, custom domains, and workflow for both portals."
+      subtitle="One place for your customer portal's look, both portals' signup forms, custom domains and workflow."
       error={error}
       loading={loading}
     >
@@ -224,7 +253,7 @@ function PortalCard({
         >
           <ExternalLink className="h-3 w-3" /> Open portal
         </a>
-        <button onClick={() => onEdit("design")} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
+        <button onClick={() => onEdit(kind === "customer" ? "look" : "signup")} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
           <Brush className="h-3 w-3" /> Edit portal
         </button>
       </div>
@@ -232,7 +261,7 @@ function PortalCard({
   );
 }
 
-// ── Modal with 4 tabs ─────────────────────────────────────────────────────────
+// ── The editor modal ──────────────────────────────────────────────────────────
 
 function PortalEditorModal({
   portalKind, status, initialTab, onClose, onSaved,
@@ -243,11 +272,16 @@ function PortalEditorModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [tab, setTab] = useState<Tab>(initialTab);
+  const hasLook = portalKind === "customer";
+  const [tab, setTab] = useState<Tab>(initialTab === "look" && !hasLook ? "signup" : initialTab);
+  const [confirmClose, setConfirmClose] = useState(false);
   const accent = portalKind === "customer" ? "#1A3A4A" : "#FEC82C";
+  // The Look tab's state lives here, not in the tab, so an unsaved choice
+  // survives a trip to another tab and the footer can say so.
+  const look = useLookEditor(hasLook);
 
   const tabs: Array<{ key: Tab; label: string; icon: typeof Brush }> = [
-    { key: "design",   label: "Design",      icon: Brush },
+    ...(hasLook ? [{ key: "look" as Tab, label: "Look", icon: Palette }] : []),
     { key: "signup",   label: "Signup form", icon: FileText },
     // F-114 Phase 3 — constrained WYSIWYG layout builder.
     { key: "layout",   label: "Layout",      icon: Layers },
@@ -255,241 +289,130 @@ function PortalEditorModal({
     { key: "workflow", label: "Workflow",    icon: Settings },
   ];
 
+  // Closing with an unsaved look asks first, like the booking page editor.
+  function requestClose() {
+    if (look.dirty && !look.saving) setConfirmClose(true);
+    else onClose();
+  }
+
+  const saveBlocked = !look.dirty || look.saving || look.problems.length > 0;
+
   return (
+    <>
     <IadmModal
       open
-      onClose={onClose}
+      onClose={requestClose}
       product="oliver"
       eyebrow={`${portalKind === "customer" ? "CUSTOMER" : "CREW"} PORTAL · EDIT`}
       title={`${portalKind === "customer" ? "Customer" : "Crew"} portal settings`}
-      subtitle="Design, signup form, domain, and workflow — all per-portal."
+      subtitle={hasLook ? "Look, signup form, layout, domain and workflow." : "Signup form, layout, domain and workflow."}
       size="info"
       footer={
         <>
-          <IadmButton variant="ghost" onClick={onClose}>Done</IadmButton>
+          {tab === "look" ? (
+            <>
+              <span className="mr-auto text-xs text-slate-500">
+                {look.saving ? "Saving…" : look.dirty ? "Unsaved changes" : "All changes saved"}
+              </span>
+              <button
+                type="button"
+                onClick={look.discard}
+                disabled={!look.dirty || look.saving}
+                title="Put back the look as it was last saved"
+                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-40"
+              >
+                Discard
+              </button>
+              <button
+                type="button"
+                onClick={() => { void look.save(); }}
+                disabled={saveBlocked}
+                title={look.problems.length > 0 ? "Some colours are too hard to read to save; see the warning above" : "Save this look for your customers"}
+                className="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                {look.saving ? "Saving…" : "Save look"}
+              </button>
+            </>
+          ) : (
+            look.dirty && <span className="mr-auto text-xs text-slate-500">Unsaved changes on the Look tab</span>
+          )}
+          <IadmButton variant="ghost" onClick={requestClose}>Done</IadmButton>
         </>
       }
     >
       <div className="flex h-full flex-col">
-        <div className="flex items-center gap-1 border-b border-slate-200 bg-slate-50 px-3 py-1">
+        {/* Scrolls sideways on its own at phone width rather than widening the modal. */}
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 bg-slate-50 px-3 py-1">
           {tabs.map((t) => {
             const Icon = t.icon;
             return (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
                   tab === t.key ? "bg-white text-slate-900 shadow-sm border border-slate-200" : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" /><span>{t.label}</span>
+                {t.key === "look" && look.dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
               </button>
             );
           })}
         </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
-          {tab === "design" && <DesignTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
-          {tab === "signup" && <SignupTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
-          {tab === "layout" && <PortalLayoutTab portalKind={portalKind} accent={accent} onSaved={onSaved} />}
-          {tab === "domain" && <DomainTabStub portalKind={portalKind} status={status} accent={accent} onSaved={onSaved} />}
-          {tab === "workflow" && <WorkflowTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
-        </div>
+        {tab === "look" ? (
+          // The Look tab lays out its own two scrolling columns (choices, preview).
+          <div className="min-h-0 flex-1 overflow-hidden">
+            <LookTab editor={look} previewSrc={customerPreviewSrc(status)} accent={accent} />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-5">
+            {tab === "signup" && <SignupTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
+            {tab === "layout" && <PortalLayoutTab portalKind={portalKind} accent={accent} onSaved={onSaved} />}
+            {tab === "domain" && <DomainTabStub portalKind={portalKind} status={status} accent={accent} onSaved={onSaved} />}
+            {tab === "workflow" && <WorkflowTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
+          </div>
+        )}
       </div>
     </IadmModal>
+
+    {confirmClose && (
+      <IadmModal
+        open
+        onClose={() => setConfirmClose(false)}
+        product="oliver"
+        eyebrow="OLIVER · CUSTOMER PORTAL"
+        title="Close without saving?"
+        subtitle="Your portal's look"
+        size="confirm"
+        z={60}
+        footer={
+          <>
+            <button type="button" onClick={() => setConfirmClose(false)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+              Keep editing
+            </button>
+            <button type="button" onClick={() => { setConfirmClose(false); onClose(); }}
+                    className="rounded-md bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800">
+              Close without saving
+            </button>
+          </>
+        }
+      >
+        <div className="p-5 text-sm leading-relaxed text-slate-700">
+          You changed your customer portal's look and have not saved it. If you close now, those changes are lost and your customers keep the look you saved before.
+        </div>
+      </IadmModal>
+    )}
+    </>
   );
 }
 
 // ── Tab content (F-114 Phase 2) ──────────────────────────────────────────────
 //
-// All four tabs are fully inline — no deep-links to legacy /portal-* pages.
-// Each tab loads its own slice on mount, edits in-place, and PATCHes on Save.
-
-// ── DesignTabStub → inline design editor + live preview (F-114 Phase 2) ───
-type DesignShape = { primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string; footer_text: string; custom_css: string };
-
-function DesignTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
-  const { get, patch, ready } = useOliverApi();
-  const [design, setDesign] = useState<DesignShape | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
-
-  const defaults: DesignShape = useMemo(
-    () => ({ primary_color: "#1A3A4A", accent_color: accent, logo_url: "", button_radius: 6, font_family: "Inter", header_text: "", footer_text: "", custom_css: "" }),
-    [accent]
-  );
-
-  useEffect(() => {
-    if (!ready) return;
-    // 2026-09-01 — useOliverApi unwraps the envelope, so `r.data` was
-    // undefined and this ALWAYS fell back to `defaults`: a saved portal design
-    // was never loaded back, so every visit looked unsaved.
-    get<DesignShape>(`/portals/design?kind=${portalKind}`)
-      .then((r) => setDesign(r || defaults))
-      .catch(() => setDesign(defaults));
-  }, [ready, portalKind, get, defaults]);
-
-  const reset = () => {
-    if (!window.confirm("Reset all design fields to the platform defaults? You'll still need to click Save to persist.")) return;
-    setDesign({ ...defaults });
-  };
-
-  if (!design) return <div className="text-xs text-slate-500">Loading design…</div>;
-
-  const save = async () => {
-    setSaving(true);
-    try {
-      await patch(`/portals/design?kind=${portalKind}`, design);
-      setSavedMsg("Saved.");
-      setTimeout(() => setSavedMsg(null), 3000);
-      onSaved();
-    } catch (e) {
-      setSavedMsg(`Error: ${(e as Error).message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900">Design</h3>
-          <p className="text-xs text-slate-600">Logo, colors, buttons, header/footer copy. Available on Standard+. Custom CSS unlocked on Pro+.</p>
-        </div>
-        <DesignLivePreview design={design} portalKind={portalKind} />
-      </div>
-
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Primary color</span>
-          <div className="flex items-center gap-2 mt-1">
-            <input type="color" value={design.primary_color} onChange={(e) => setDesign({ ...design, primary_color: e.target.value })} className="h-8 w-12 rounded border border-slate-300" />
-            <input type="text" value={design.primary_color} onChange={(e) => setDesign({ ...design, primary_color: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
-          </div>
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Accent color</span>
-          <div className="flex items-center gap-2 mt-1">
-            <input type="color" value={design.accent_color} onChange={(e) => setDesign({ ...design, accent_color: e.target.value })} className="h-8 w-12 rounded border border-slate-300" />
-            <input type="text" value={design.accent_color} onChange={(e) => setDesign({ ...design, accent_color: e.target.value })} className="flex-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
-          </div>
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Logo URL</span>
-        <div className="flex items-center gap-2 mt-1">
-          <Upload className="h-3 w-3 text-slate-400" />
-          <input type="url" value={design.logo_url} onChange={(e) => setDesign({ ...design, logo_url: e.target.value })} placeholder="https://yourcompany.com/logo.png" className="flex-1 text-xs px-2 py-1 rounded border border-slate-300" />
-        </div>
-      </label>
-
-      <div className="grid grid-cols-2 gap-3">
-        <label className="block">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Button corner radius (px)</span>
-          <input type="number" value={design.button_radius} onChange={(e) => setDesign({ ...design, button_radius: Number(e.target.value) })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
-        </label>
-        <label className="block">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Font family</span>
-          <select value={design.font_family} onChange={(e) => setDesign({ ...design, font_family: e.target.value })} className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300 bg-white">
-            <option value="Inter">Inter (default)</option>
-            <option value="System">System</option>
-            <option value="Georgia">Georgia (serif)</option>
-            <option value="Roboto">Roboto</option>
-            <option value="Open Sans">Open Sans</option>
-            <option value="Poppins">Poppins</option>
-          </select>
-        </label>
-      </div>
-
-      <label className="block">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Header copy</span>
-        <input type="text" value={design.header_text} onChange={(e) => setDesign({ ...design, header_text: e.target.value })} placeholder="Welcome to {{business_name}}" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
-      </label>
-
-      <label className="block">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Footer copy</span>
-        <input type="text" value={design.footer_text} onChange={(e) => setDesign({ ...design, footer_text: e.target.value })} placeholder="Need help? Email us at support@…" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300" />
-      </label>
-
-      <label className="block">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Custom CSS <span className="text-slate-400 normal-case">(Pro+)</span></span>
-        <textarea value={design.custom_css} onChange={(e) => setDesign({ ...design, custom_css: e.target.value })} rows={4} placeholder=".portal-card { box-shadow: 0 2px 12px rgba(0,0,0,0.08); }" className="w-full mt-1 text-xs px-2 py-1 rounded border border-slate-300 font-mono" />
-      </label>
-
-      <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-        {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
-        <div className="ml-auto flex items-center gap-2">
-          <button
-            type="button"
-            onClick={reset}
-            disabled={saving}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            title="Revert all fields to platform defaults"
-          >
-            Reset to defaults
-          </button>
-          <button onClick={save} disabled={saving} className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50" style={{ background: accent, color: accent === "#FEC82C" ? "#1A3A4A" : "#fff" }}>
-            <Palette className="h-3 w-3" /> {saving ? "Saving…" : "Save design"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── DesignLivePreview — instant rendering of color/logo/font (F-114 Phase 2)
-//
-// Pure-CSS mock of the portal header + a primary button so the user sees the
-// effect of their edits before saving. Width-constrained so it sits next to
-// the form column without stealing layout.
-function DesignLivePreview({
-  design, portalKind,
-}: {
-  design: { primary_color: string; accent_color: string; logo_url: string; button_radius: number; font_family: string; header_text: string };
-  portalKind: PortalKind;
-}) {
-  const headerText = design.header_text || `Welcome to ${portalKind === "customer" ? "your portal" : "Crew"}`;
-  return (
-    <div className="hidden md:block w-[220px] shrink-0">
-      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Live preview</div>
-      <div
-        className="rounded-md border border-slate-200 overflow-hidden bg-white shadow-sm"
-        style={{ fontFamily: design.font_family || "Inter" }}
-      >
-        <div
-          className="px-3 py-2 flex items-center gap-2"
-          style={{ background: design.primary_color || "#1A3A4A", color: "#fff" }}
-        >
-          {design.logo_url ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={design.logo_url} alt="" className="h-5 w-5 rounded-sm bg-white object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          ) : (
-            <div className="h-5 w-5 rounded-sm bg-white/30" />
-          )}
-          <span className="text-[11px] font-semibold truncate">{headerText}</span>
-        </div>
-        <div className="p-3 space-y-2">
-          <div className="h-2 w-full bg-slate-200 rounded" />
-          <div className="h-2 w-2/3 bg-slate-200 rounded" />
-          <button
-            type="button"
-            className="text-[10px] font-semibold px-3 py-1.5"
-            style={{
-              background: design.accent_color || "#FEC82C",
-              color: (design.accent_color || "#FEC82C").toLowerCase() === "#fec82c" ? "#1A3A4A" : "#fff",
-              borderRadius: `${Math.max(0, Math.min(40, Number(design.button_radius) || 6))}px`,
-              border: 0,
-            }}
-          >
-            Continue
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// Signup form, Domain and Workflow are fully inline — no deep-links to legacy
+// /portal-* pages. Each loads its own slice on mount, edits in place, and
+// PATCHes on Save. (Look is ./look/LookTab.tsx; Layout is PortalLayoutTab.)
 
 // ── SignupTabStub → inline signup form builder (F-114 Phase 2) ────────────
 function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {

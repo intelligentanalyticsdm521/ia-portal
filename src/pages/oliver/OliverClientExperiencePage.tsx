@@ -17,7 +17,6 @@ interface CxState {
   pricing: Record<string, { price: number; label: string }>;
   features: CxFeature[];
   entitlements: string[];
-  canDesignPortal: boolean;
   canEditAutomations: boolean;
 }
 
@@ -138,17 +137,12 @@ export function OliverClientExperiencePage() {
         </div>
       )}
 
-      {/* Quick links to the editors */}
-      {(state?.canDesignPortal || state?.canEditAutomations) && (
+      {/* Quick link to the automations editor. The White Label Design Editor
+          tile that sat beside it was deleted 2026-09-25 with its page: the
+          customer portal's look, buttons and functions are chosen on
+          Customer & Crew Portals → Edit portal → Look, on every plan. */}
+      {state?.canEditAutomations && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-5">
-          <a href="/app/services/oliver_portal_designer"
-             className="card flex items-center gap-3 px-4 py-3 hover:ring-2 hover:ring-[#1A7DB5]/30 transition">
-            <Sparkles className="h-5 w-5 text-[#1A7DB5]" />
-            <div>
-              <div className="font-semibold text-slate-800 text-sm">White Label Design Editor</div>
-              <div className="text-xs text-slate-500">Buttons, labels, fonts, header/footer, custom CSS</div>
-            </div>
-          </a>
           <a href="/app/services/oliver_automations"
              className="card flex items-center gap-3 px-4 py-3 hover:ring-2 hover:ring-[#1A7DB5]/30 transition">
             <Sparkles className="h-5 w-5 text-[#1A7DB5]" />
