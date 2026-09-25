@@ -949,8 +949,11 @@ function WeeklyGlance({
     }
     return arr;
   }, [today]);
-  const startStr = today.toISOString().slice(0, 10);
-  const endStr = days[6].toISOString().slice(0, 10);
+  // /schedule/calendar treats end as midnight (scheduled_start <= @end), so the
+  // seventh day's jobs were cut off; ask up to the day after it, in local days.
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const startStr = ymd(today);
+  const endStr = ymd(new Date(days[6].getFullYear(), days[6].getMonth(), days[6].getDate() + 1));
 
   useEffect(() => {
     if (!ready) return;

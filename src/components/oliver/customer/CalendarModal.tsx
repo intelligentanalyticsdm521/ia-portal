@@ -151,9 +151,14 @@ export function CalendarModal({
 
   // Fetch window covers the visible month even when in day view, so flipping
   // between days within the month doesn't trigger a refetch.
-  const startStr = currentMonth.toISOString().slice(0, 10);
-  const endDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-  const endStr = endDate.toISOString().slice(0, 10);
+  // GET /schedule/calendar compares scheduled_start <= @end with @end a DATE
+  // (midnight), so "end = the 30th" dropped every job ON the 30th — the last
+  // day of every month was empty (pane test 25 Sep: JOB-99055 on Wed 30 Sep
+  // missing). Ask up to the 1st of next month, and format the reader's own
+  // calendar day rather than a UTC slice.
+  const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const startStr = ymd(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
+  const endStr = ymd(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
 
   useEffect(() => {
     if (!ready) return;
