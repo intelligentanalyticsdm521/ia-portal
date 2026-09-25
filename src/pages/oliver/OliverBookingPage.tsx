@@ -68,6 +68,9 @@ interface OrgSettings {
 }
 
 /** One row of GET /booking/pages — what a library card shows. */
+/** One booking request still waiting for an answer (GET /booking/pages/:id/waiting). */
+interface WaitingBooking { slot_id: string; name: string; when: string; start_utc?: string }
+
 interface BookingPageRow {
   booking_page_id: string;
   slug: string;
@@ -358,7 +361,25 @@ export function OliverBookingPage() {
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   /** The page open in the editor; pageId null = a new page. */
   const [editing, setEditing] = useState<{ pageId: string | null } | null>(null);
-  const [confirmOff, setConfirmOff] = useState<BookingPageRow | null>(null);
+  // Brandon, 2026-09-25 (Test 4.17 follow-up): a page with booking requests still
+  // waiting for an answer opens a small window that lists them with a link
+  // each; the list empties as they are answered and then offers "Switch it off".
+  // ONE window (Brandon, 25 Sep, "there are no job links"): pressing Switch off
+  // on a card opens it at once. While the check runs the list is null; with
+  // requests waiting it lists them; with none it is the plain "switch it off".
+  const [waitingOff, setWaitingOff] = useState<{ row: BookingPageRow; bookings: WaitingBooking[] | null } | null>(null);
+
+  async function openSwitchOff(row: BookingPageRow) {
+    setWaitingOff({ row, bookings: null });
+    try {
+      const w = await get<{ bookings: WaitingBooking[] }>(`/booking/pages/${row.booking_page_id}/waiting`);
+      setWaitingOff((cur) => (cur && cur.row.booking_page_id === row.booking_page_id ? { ...cur, bookings: w?.bookings || [] } : cur));
+    } catch {
+      // The switch itself re-checks on the API, so an unreadable list is not a
+      // reason to hold the page: show the plain switch-off.
+      setWaitingOff((cur) => (cur && cur.row.booking_page_id === row.booking_page_id ? { ...cur, bookings: [] } : cur));
+    }
+  }
   const [busyId, setBusyId] = useState<string | null>(null);
   const { copiedKey, copy } = useCopied();
 
@@ -436,18 +457,46 @@ export function OliverBookingPage() {
   async function switchOff(row: BookingPageRow) {
     setBusyId(row.booking_page_id);
     try {
-      await del(`/booking/pages/${row.booking_page_id}`);
-      setNotice({ tone: "ok", text: `"${row.title}" is switched off. Its link no longer takes bookings.` });
+      const r = await del<{ deactivated: string; confirmed_upcoming?: number }>(`/booking/pages/${row.booking_page_id}`);
+      const kept = Number(r?.confirmed_upcoming || 0);
+      setNotice({
+        tone: "ok",
+        text: `"${row.title}" is switched off. Its link no longer takes bookings.`
+          + (kept ? ` Its ${kept} confirmed booking${kept === 1 ? "" : "s"} stay${kept === 1 ? "s" : ""} on the calendar and their links keep working.` : ""),
+      });
+      setWaitingOff(null);
       await load(true);
     } catch (e) {
-      // 409s carry the sentence: the main page stays on; a page with upcoming
-      // bookings stays on until they are confirmed, moved or cancelled.
+      // 409s: the main page stays on (a sentence); a page with booking requests
+      // still waiting opens the list window instead of a banner.
+      const body = (e as { body?: { error?: string; bookings?: WaitingBooking[] } }).body;
+      if (body?.error === "page_has_waiting_bookings") {
+        setWaitingOff({ row, bookings: body.bookings || [] });
+        return;
+      }
       setNotice({ tone: "err", text: apiErrorMessage(e) });
     } finally {
       setBusyId(null);
-      setConfirmOff(null);
     }
   }
+
+  // While the list window is open, re-read the list every few seconds and when
+  // this tab gets focus back (the links open Service Requests in a new tab).
+  useEffect(() => {
+    if (!waitingOff) return;
+    const id = waitingOff.row.booking_page_id;
+    let stopped = false;
+    const tick = async () => {
+      try {
+        const w = await get<{ bookings: WaitingBooking[] }>(`/booking/pages/${id}/waiting`);
+        if (!stopped) setWaitingOff((cur) => (cur && cur.row.booking_page_id === id ? { ...cur, bookings: w?.bookings || [] } : cur));
+      } catch { /* keep the last list; the next tick tries again */ }
+    };
+    const timer = window.setInterval(tick, 4000);
+    window.addEventListener("focus", tick);
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener("focus", tick); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [waitingOff?.row.booking_page_id, get]);
 
   async function switchOn(row: BookingPageRow) {
     setBusyId(row.booking_page_id);
@@ -525,7 +574,7 @@ export function OliverBookingPage() {
                 copied={copiedKey === `card-${p.booking_page_id}`}
                 onCopy={() => copy(`card-${p.booking_page_id}`, p.url)}
                 onEdit={() => { setNotice(null); setEditing({ pageId: p.booking_page_id }); }}
-                onSwitchOff={() => setConfirmOff(p)}
+                onSwitchOff={() => openSwitchOff(p)}
                 onSwitchOn={() => switchOn(p)}
               />
             ))}
@@ -547,32 +596,61 @@ export function OliverBookingPage() {
         />
       )}
 
-      {confirmOff && (
+      {waitingOff && (
         <IadmModal
           open
-          onClose={() => setConfirmOff(null)}
+          onClose={() => setWaitingOff(null)}
           product="oliver"
           eyebrow="OLIVER · BOOKING"
-          title="Switch off this booking page?"
-          subtitle={confirmOff.title}
+          title={waitingOff.bookings === null ? "Checking this page…" : waitingOff.bookings.length ? "Answer these first" : "Switch off this booking page?"}
+          subtitle={waitingOff.row.title}
           size="confirm"
           footer={
             <>
-              <button type="button" onClick={() => setConfirmOff(null)}
+              <button type="button" onClick={() => setWaitingOff(null)}
                       className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100">
                 Keep it on
               </button>
-              <button type="button" disabled={busyId === confirmOff.booking_page_id}
-                      onClick={() => switchOff(confirmOff)}
+              <button type="button"
+                      disabled={waitingOff.bookings === null || waitingOff.bookings.length > 0 || busyId === waitingOff.row.booking_page_id}
+                      onClick={() => switchOff(waitingOff.row)}
+                      title={waitingOff.bookings?.length ? "Answer every request on the list first" : "Switch this page off"}
                       className="rounded-md bg-red-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-800 disabled:opacity-50">
-                {busyId === confirmOff.booking_page_id ? "Working…" : "Switch it off"}
+                {busyId === waitingOff.row.booking_page_id ? "Working…" : "Switch it off"}
               </button>
             </>
           }
         >
           <div className="p-5 text-sm leading-relaxed text-slate-700">
-            Its link stops taking bookings and it leaves your booking site. Nothing is deleted —
-            its past bookings stay on their jobs, and you can switch it back on from this card.
+            {waitingOff.bookings === null ? (
+              <p>Checking for booking requests still waiting for an answer…</p>
+            ) : waitingOff.bookings.length ? (
+              <>
+                <p>
+                  These booking requests are still waiting for an answer. Open each one, confirm or
+                  decline it, and it drops off this list. When the list is empty, switch the page off.
+                </p>
+                <ul className="mt-3 divide-y divide-slate-200 rounded-md border border-slate-200">
+                  {waitingOff.bookings.map((b) => (
+                    <li key={b.slot_id} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span><span className="font-semibold text-slate-900">{b.name}</span> · {b.when}</span>
+                      <a href={`/app/services/oliver_service_requests?request=${encodeURIComponent(b.slot_id)}`}
+                         target="_blank" rel="noopener noreferrer"
+                         className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+                        Open <ExternalLink className="h-3 w-3" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-slate-500">This list updates on its own as you answer them.</p>
+              </>
+            ) : (
+              <p>
+                Its link stops taking bookings and it leaves your booking site. Nothing is deleted:
+                its confirmed bookings stay on the calendar with their links working, and you can
+                switch it back on from this card.
+              </p>
+            )}
           </div>
         </IadmModal>
       )}

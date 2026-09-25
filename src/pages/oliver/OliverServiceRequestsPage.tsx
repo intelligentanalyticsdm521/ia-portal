@@ -725,11 +725,15 @@ function BookingDetailDrawer({
 }) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | "reschedule" | null>(null);
   const [rescheduleMode, setRescheduleMode] = useState(false);
+  // 2026-09-25: the yes/no used to be the browser's own confirm() box, which
+  // some browsers and every embedded pane swallow (the click then did nothing
+  // and said nothing). The question now sits in the drawer, like Reschedule.
+  const [ask, setAsk] = useState<"confirm" | "decline" | null>(null);
   const [newStart, setNewStart] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function doConfirm() {
-    if (!confirm("Confirm this booking? The guest will receive a confirmation email.")) return;
+    setAsk(null);
     setBusy("confirm"); setError(null);
     try {
       const result = await api.patch<ConfirmResult>(`/booking/slots/${row.id}/confirm`, {});
@@ -744,7 +748,7 @@ function BookingDetailDrawer({
   }
 
   async function doCancel() {
-    if (!confirm("Decline this booking? The guest will be notified.")) return;
+    setAsk(null);
     setBusy("cancel"); setError(null);
     try {
       await api.patch(`/booking/slots/${row.id}/cancel`, {});
@@ -862,16 +866,33 @@ function BookingDetailDrawer({
             </Button>
           </div>
         </div>
+      ) : ask ? (
+        <div className="card" style={{ background: ask === "confirm" ? "#ECFDF5" : "#FEF2F2" }}>
+          <div className="card-ttl">{ask === "confirm" ? "Confirm this booking?" : "Decline this booking?"}</div>
+          <div style={{ fontSize: 13, color: "#334155", marginBottom: 10 }}>
+            {ask === "confirm"
+              ? "It becomes a job on the calendar and the guest gets a confirmation email."
+              : "The guest is told it was declined. The request moves to Declined."}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="primary" onClick={ask === "confirm" ? doConfirm : doCancel} disabled={!!busy}>
+              {ask === "confirm" ? (busy === "confirm" ? "Confirming…" : "Yes, confirm it") : (busy === "cancel" ? "Declining…" : "Yes, decline it")}
+            </Button>
+            <Button variant="secondary" onClick={() => setAsk(null)} disabled={!!busy}>
+              Back
+            </Button>
+          </div>
+        </div>
       ) : (
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Button variant="primary" onClick={doConfirm} disabled={!!busy}>
-            {busy === "confirm" ? "Confirming…" : "Confirm booking"}
+          <Button variant="primary" onClick={() => { setError(null); setAsk("confirm"); }} disabled={!!busy}>
+            Confirm booking
           </Button>
           <Button variant="secondary" onClick={() => setRescheduleMode(true)} disabled={!!busy}>
             Reschedule
           </Button>
-          <Button variant="secondary" onClick={doCancel} disabled={!!busy}>
-            {busy === "cancel" ? "Cancelling…" : "Decline"}
+          <Button variant="secondary" onClick={() => { setError(null); setAsk("decline"); }} disabled={!!busy}>
+            Decline
           </Button>
         </div>
       )}
