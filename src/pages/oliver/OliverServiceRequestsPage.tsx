@@ -18,6 +18,11 @@ interface ServiceRequest {
   customerEmail?: string;
   customerPhone?: string;
   customerNotes?: string;
+  /** The catalog service, job scope or custom entry the customer picked (GET /booking/pending). */
+  service_name?: string | null;
+  /** Where the visit is, as the guest typed it on the booking form; null on a page that does not ask. */
+  service_address?: { address_line_1?: string; address_line_2?: string; city?: string; state?: string; postal_code?: string; access_notes?: string } | string | null;
+  service_address_line?: string | null;
   scheduledDate?: string;
   source: string;
   status: string;
@@ -725,6 +730,9 @@ function BookingDetailDrawer({
   const localTime = row.scheduledDate
     ? new Date(row.scheduledDate).toLocaleString(undefined, { dateStyle: "full", timeStyle: "short" })
     : "—";
+  const accessNotes = row.service_address && typeof row.service_address === "object"
+    ? String(row.service_address.access_notes || "").trim() || null
+    : null;
 
   return (
     <DetailDrawer
@@ -738,6 +746,19 @@ function BookingDetailDrawer({
         <Row label="When" value={localTime} />
         {row.guest_timezone && <Row label="Guest timezone" value={row.guest_timezone} />}
       </div>
+
+      {/* 2026-09-25 (register oliver-service-request-modal-omits-the-service-
+          address): the office used to confirm a visit without being shown what
+          was booked or where. GET /booking/pending has carried both since
+          OLIVER pack 1; the drawer never read them. */}
+      {(row.service_name || row.service_address_line || accessNotes) && (
+        <div className="card">
+          <div className="card-ttl">What and where</div>
+          {row.service_name && <Row label="Service" value={row.service_name} />}
+          {row.service_address_line && <Row label="Address" value={row.service_address_line} />}
+          {accessNotes && <Row label="Getting in" value={accessNotes} />}
+        </div>
+      )}
 
       <div className="card">
         <div className="card-ttl">Customer</div>
