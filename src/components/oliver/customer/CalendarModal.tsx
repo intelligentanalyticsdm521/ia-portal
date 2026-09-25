@@ -52,6 +52,10 @@ const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   quoted:       { bg: "#E0E7FF", fg: "#4338CA" },
 };
 const BOOKING_COLOR = { bg: "#F3E8FF", fg: "#7E22CE" };
+// The drawer header is the dark teal gradient; the month label and the ghost
+// ‹ › / ← Month buttons were #0B1C24 on #0B1C24 — invisible (Brandon, W-OB-05:
+// "nothing in the head on the calendars is black").
+const ON_DARK = { color: "#fff", fontSize: 14, fontWeight: 600 } as const;
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // Day View hour range — 6am to 10pm. Future enhancement: pull from
@@ -284,21 +288,21 @@ export function CalendarModal({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {view === "month" ? (
               <>
-                <Button variant="ghost" onClick={prevMonth}>‹</Button>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24", minWidth: 140, textAlign: "center" }}>
+                <Button variant="ghost" onClick={prevMonth} aria-label="Previous month" style={ON_DARK}>‹</Button>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", minWidth: 140, textAlign: "center" }}>
                   {monthLabel}
                 </div>
-                <Button variant="ghost" onClick={nextMonth}>›</Button>
+                <Button variant="ghost" onClick={nextMonth} aria-label="Next month" style={ON_DARK}>›</Button>
                 <Button variant="secondary" onClick={gotoToday}>Today</Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" onClick={() => setView("month")}>← Month</Button>
-                <Button variant="ghost" onClick={prevDay}>‹</Button>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#0B1C24", minWidth: 200, textAlign: "center" }}>
+                <Button variant="ghost" onClick={() => setView("month")} style={ON_DARK}>← Month</Button>
+                <Button variant="ghost" onClick={prevDay} aria-label="Previous day" style={ON_DARK}>‹</Button>
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", minWidth: 200, textAlign: "center" }}>
                   {selectedDay.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 </div>
-                <Button variant="ghost" onClick={nextDay}>›</Button>
+                <Button variant="ghost" onClick={nextDay} aria-label="Next day" style={ON_DARK}>›</Button>
                 <Button variant="secondary" onClick={gotoToday}>Today</Button>
               </>
             )}
