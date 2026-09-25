@@ -126,7 +126,23 @@ async function oliverFetch<T>(
         if (typeof e === "object" && e !== null && "type" in e) throw e;
       }
     }
-    throw new Error(`OLIVER API ${res.status}: ${text}`);
+    // 2026-09-25 (pane re-test W-L3-04): keep this message shape — several
+    // callers parse "OLIVER API <status>: <json>" — but carry the API's own
+    // words on the error too, so a form can print "Amount is required"
+    // instead of the code "validation_failed" (ManualEntryPage reads .details).
+    const apiErr = new Error(`OLIVER API ${res.status}: ${text}`) as Error & {
+      status?: number; code?: string; details?: unknown; body?: unknown;
+    };
+    apiErr.status = res.status;
+    try {
+      const body = JSON.parse(text);
+      if (body && typeof body === "object") {
+        apiErr.body = body;
+        if (typeof body.error === "string") apiErr.code = body.error;
+        if (body.details !== undefined) apiErr.details = body.details;
+      }
+    } catch { /* not JSON — the message already carries the text */ }
+    throw apiErr;
   }
 
   if (res.status === 204) return undefined as T;
