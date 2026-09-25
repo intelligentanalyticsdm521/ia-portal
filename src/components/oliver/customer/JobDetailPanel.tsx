@@ -28,6 +28,8 @@ interface JobDetail {
   scheduledDate?: string;
   scheduledEnd?: string;
   total?: number;
+  /** A pending customer reschedule request (GET /jobs/:id) — the customer-side colour. */
+  rescheduleRequested?: boolean | null;
   assignedWorkers?: Array<{
     assignmentId?: string;
     id: string;
@@ -351,6 +353,7 @@ function JobLayout(p: JobLayoutProps) {
             <StatusDropdown
               currentStatus={job.status}
               hasWorker={(job.assignedWorkers?.length ?? 0) > 0}
+              customerAttention={!!job.rescheduleRequested}
               busy={!!(p.busy && p.busy.startsWith("status:"))}
               onChange={p.changeStatus}
             />
@@ -661,21 +664,25 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // here matches the card that was clicked on a calendar or the Job Board.
 // This panel does not know about a pending reschedule request, so it colours
 // by status + whether a worker is on the job.
-function statusStyle(status: string, hasWorker?: boolean): { bg: string; fg: string } {
-  const c = jobColor({ kind: "job", status, hasWorker: hasWorker ?? null });
+function statusStyle(status: string, hasWorker?: boolean, customerAttention?: boolean): { bg: string; fg: string } {
+  // 2026-09-25 (register oliver-job-panel-pill-ignores-the-customer-side-colour):
+  // the pill takes the same three facts the board and the calendars colour
+  // by, so an orange chip opens on an orange pill.
+  const c = jobColor({ kind: "job", status, hasWorker: hasWorker ?? null, customerAttention: customerAttention ?? null });
   return { bg: c.soft, fg: c.softText };
 }
 
 function StatusDropdown({
-  currentStatus, hasWorker, busy, onChange,
+  currentStatus, hasWorker, customerAttention, busy, onChange,
 }: {
   currentStatus: string;
   hasWorker?: boolean;
+  customerAttention?: boolean;
   busy: boolean;
   onChange: (s: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const c = statusStyle(currentStatus, hasWorker);
+  const c = statusStyle(currentStatus, hasWorker, customerAttention);
   const label = ALL_STATUSES.find((s) => s.key === currentStatus)?.label || currentStatus;
 
   return (
