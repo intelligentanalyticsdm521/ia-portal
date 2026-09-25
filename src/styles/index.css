@@ -754,7 +754,7 @@ body {
   color: rgb(71, 85, 105);
 }
 
-.oliver-bucket-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.oliver-bucket-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 /* The job detail body: content column + 280px summary. Below ~560px of usable
    width there is no room for both, so they stack. See JobDetailPanel.tsx. */
 .oliver-job-detail-grid { grid-template-columns: minmax(0, 1fr) 280px; }
@@ -811,7 +811,7 @@ body {
   .arion-page .ptabs { max-width: 100%; overflow-x: auto; }
   .spark-pill { min-height: 40px; padding: 8px 12px; }
 
-  /* The Job Board's five status tiles. See OliverJobBoardPage.tsx. */
+  /* The Job Board's six status tiles. See OliverJobBoardPage.tsx. */
   .oliver-bucket-grid { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
 
   /* A page header that puts its actions beside a title has ~120px left for

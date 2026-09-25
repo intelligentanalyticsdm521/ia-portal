@@ -1,9 +1,9 @@
 // jobStatusColors — the ONE status → colour map for OLIVER jobs.
 //
 // Every place a job is coloured reads it from here: the Schedule calendar
-// (month grid + day view), the Job Board's Calendar week view, the Job Board's
-// List and Kanban status pills, the Dashboard's Weekly Glance and its full
-// calendar. Pure module (no React) so the rule is unit-tested.
+// (month grid + day view), the Job Board's List and Kanban status pills, the
+// Dashboard's Weekly Glance and its full calendar. Pure module (no React) so
+// the rule is unit-tested.
 //
 // The founder's rule — Brandon, walk W-OB-05, 25 Sep 2026:
 //   "Green ready to work, yellow business side attention needed, orange
@@ -143,7 +143,7 @@ export function jobColor(f: JobColorFacts): JobColor {
 
 // ─── Facts from each feed ────────────────────────────────────────────────────
 
-/** A /calendar/unified event (the Schedule page and the Job Board week view). */
+/** A /calendar/unified event (the Schedule page). */
 export interface UnifiedJobEventLike {
   kind?: string | null;
   status?: string | null;

@@ -19,7 +19,6 @@ import { PageHeader } from "../../components/oliver/ui";
 import { UnifiedCalendarGrid, type UnifiedEvent, type EventPresentation } from "../../components/UnifiedCalendarGrid";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { JobColorGuide } from "../../components/oliver/JobColors";
-import { jobIdOf } from "../../components/oliver/JobWeekCalendar";
 import { jobColor, factsFromUnifiedEvent } from "../../oliver/jobStatusColors";
 import { NeedsSchedulingRail } from "../../components/oliver/NeedsSchedulingRail";
 import { AssignWorkerPanel } from "../../components/oliver/AssignWorkerPanel";
@@ -28,6 +27,16 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
+
+/** The job a /calendar/unified event is, or null for a booking request.
+ *  (Moved here from the Job Board week view when that view was removed,
+ *  2026-09-25 — this page is its only user.) */
+function jobIdOf(e: { id: string; kind: string; job_id?: string | null }): string | null {
+  if (e.kind !== "job") return null;
+  if (e.job_id) return e.job_id;
+  return e.id.startsWith("job:") ? e.id.slice(4) : null;
+}
+
 function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

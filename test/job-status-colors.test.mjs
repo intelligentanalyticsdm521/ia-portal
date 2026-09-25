@@ -6,7 +6,7 @@
 // calendars carry the guide, and nothing in a dark modal header is ink-black.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import {
@@ -102,7 +102,6 @@ test("every job calendar and the Job Board pills read the one map", () => {
     "Schedule page": read("pages", "oliver", "OliverSchedulePage.tsx"),
     "Schedule day view": read("components", "oliver", "DaySchedulePanel.tsx"),
     "Job Board": read("pages", "oliver", "OliverJobBoardPage.tsx"),
-    "Job Board week view": read("components", "oliver", "JobWeekCalendar.tsx"),
     "Dashboard full calendar": read("components", "oliver", "customer", "CalendarModal.tsx"),
     "Dashboard Weekly Glance": read("pages", "oliver", "OliverDashboardPage.tsx"),
     "Job panel status pill": read("components", "oliver", "customer", "JobDetailPanel.tsx"),
@@ -115,22 +114,25 @@ test("every job calendar and the Job Board pills read the one map", () => {
   assert.doesNotMatch(users["Dashboard Weekly Glance"], /weeklyGlanceStatusColor/);
 });
 
-test("the guide sits under the Schedule calendar, the week view and the full calendar", () => {
+test("the guide sits under the Schedule calendar and the full calendar", () => {
   for (const f of [
     ["pages", "oliver", "OliverSchedulePage.tsx"],
-    ["components", "oliver", "JobWeekCalendar.tsx"],
     ["components", "oliver", "customer", "CalendarModal.tsx"],
   ]) {
     assert.match(read(...f), /<JobColorGuide \/>/, `${f.at(-1)} must render the colour guide`);
   }
 });
 
-test("the Job Board has a Calendar view with a link to the full calendar", () => {
+// Brandon, 25 Sep 2026: "We may be able to remove the calendar section you
+// built, I forgot we had the schedule." Schedule is the calendar; the board
+// links to it and keeps List and Kanban.
+test("the Job Board has no Calendar tab, and links to the Schedule calendar", () => {
   const board = read("pages", "oliver", "OliverJobBoardPage.tsx");
-  assert.match(board, /setView\("calendar"\)/, "a Calendar tab beside List and Kanban");
-  assert.match(board, /<JobWeekCalendar[\s\S]*?onOpenJob=\{setDetailId\}/, "a card opens the same panel as a List row");
-  assert.match(board, /fullCalendarHref="\/app\/services\/oliver_schedule"/);
-  assert.match(read("components", "oliver", "JobWeekCalendar.tsx"), /Open the full calendar/);
+  assert.doesNotMatch(board, /setView\("calendar"\)/, "no Calendar tab beside List and Kanban");
+  assert.doesNotMatch(board, /JobWeekCalendar/, "the week view is gone from the board");
+  assert.ok(!existsSync(path.join(SRC, "components", "oliver", "JobWeekCalendar.tsx")),
+    "replace means delete: the week view file is gone");
+  assert.match(board, /<Link\s+to="\/app\/services\/oliver_schedule"[\s\S]{0,200}?Open the full calendar →/);
   // The calendars' job links (?job=) now open the job on the board.
   assert.match(board, /searchParams\.get\("focus"\) \|\| searchParams\.get\("job"\)/);
 });

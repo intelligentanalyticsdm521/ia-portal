@@ -8,9 +8,12 @@ import {
 } from "../../components/oliver/ui";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
-import { JobWeekCalendar, type JobHints } from "../../components/oliver/JobWeekCalendar";
 import { JobStatusPill } from "../../components/oliver/JobColors";
 import { jobColor, factsFromJobRow, JOB_COLORS } from "../../oliver/jobStatusColors";
+import {
+  DATE_SCOPE_STORAGE_KEY, addDays, mondayOf, weekRangeLabel, weekName, scopeWord,
+  inDateScope, cancelledLine,
+} from "../../oliver/jobBoardWeek";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import { useOliverLocations } from "../../hooks/useOliverLocations";
@@ -31,6 +34,11 @@ interface Job {
   /** A pending reschedule request from the customer (GET /jobs, 2026-09-25).
    *  Orange in the one colour map. Absent on an older API — read as no. */
   rescheduleRequested?: boolean | null;
+  /** A cancelled job: who called it off ("customer" | "business" | "system")
+   *  and when — the latest status event to 'cancelled' (GET /jobs,
+   *  2026-09-25). Null on every other status and on an older API. */
+  cancelledBy?: string | null;
+  cancelledAt?: string | null;
   total: number;
   revenue?: number;
   laborCost?: number;
@@ -61,11 +69,16 @@ interface Job {
 //   Job Closed    ← paid, cancelled              (terminal; substatus pills discriminate)
 //
 // Statuses are kept on the backend exactly as today — buckets are purely a
-// UI grouping so we don't have to touch the state machine in jobs.js. The
-// Closed bucket shows a rolling 7-day window on the board; older closed
-// jobs live on the Archive page (#41).
+// UI grouping so we don't have to touch the state machine in jobs.js. What
+// the board shows is scoped by the week bar (src/oliver/jobBoardWeek): this
+// week by default, or all dates. The week replaced the Closed bucket's rolling
+// 7-day window (2026-09-25): stepping back a week has to show that week's paid
+// and cancelled jobs. Closed-job history also lives on the Archive page (#41).
 // ─────────────────────────────────────────────────────────────────────────────
 type BucketKey = 'quotes' | 'scheduled' | 'in_progress' | 'completed' | 'closed';
+/** The board's status filter: a bucket, or the Cancelled shortcut (Brandon,
+ *  2026-09-25: "we should be able to filter to open/cancelled requests"). */
+type BoardFilter = '' | BucketKey | 'cancelled';
 
 interface BucketDef {
   key: BucketKey;
@@ -98,16 +111,22 @@ const CLOSED_SUBSTATUS_PILLS = [
   { key: 'cancelled', label: 'Cancelled' },
 ] as const;
 
+// The six tiles: the five Kanban buckets, then Cancelled (red, 2026-09-25).
+const TILES: Array<{ key: Exclude<BoardFilter, ''>; label: string; meaning: string }> = [
+  { key: 'quotes',      label: 'Quotes',        meaning: 'awaiting decision' },
+  { key: 'scheduled',   label: 'Scheduled',     meaning: 'booked' },
+  { key: 'in_progress', label: 'In Progress',   meaning: 'active work' },
+  { key: 'completed',   label: 'Job Completed', meaning: 'awaiting close' },
+  { key: 'closed',      label: 'Job Closed',    meaning: 'paid or cancelled' },
+  { key: 'cancelled',   label: 'Cancelled',     meaning: 'called off' },
+];
+
 const PROFIT_PILLS = [
   { key: "", label: "Any profit" },
   { key: "profit:positive", label: "Profitable" },
   { key: "profit:negative", label: "Losing money" },
   { key: "profit:none", label: "No data" },
 ];
-
-// Days back included in the Closed bucket on the main board. Older closed
-// jobs are surfaced via /app/services/oliver_jobs_archive.
-const CLOSED_BOARD_WINDOW_DAYS = 7;
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -123,15 +142,14 @@ export function OliverJobBoardPage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, post, patch, del, ready } = useOliverApi();
-  const navigate = useNavigate();
   // Multi-location: the header picker scopes the board (location_id on
   // /jobs). "All locations" sends nothing — identical to today.
   const loc = useOliverLocations();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  // bucket filter: '' = all buckets, else one of BucketKey
-  const [bucketFilter, setBucketFilter] = useState<'' | BucketKey>('');
+  // status filter: '' = all, a bucket, or 'cancelled'
+  const [bucketFilter, setBucketFilter] = useState<BoardFilter>('');
   // substatus filter — only meaningful when bucketFilter='closed'
   const [closedSubstatus, setClosedSubstatus] = useState<'' | 'paid' | 'cancelled'>('');
   // recurring tag filter — '' = any, 'recurring' = only recurring,
@@ -139,9 +157,22 @@ export function OliverJobBoardPage() {
   const [recurringFilter, setRecurringFilter] = useState<'' | 'recurring' | 'one_off'>('');
   const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
-  // Default Kanban — easier to see at a glance per founder request 2026-05-25.
-  // Calendar (2026-09-25, Brandon W-OB-05): the week, Mon–Sun, same jobs.
-  const [view, setView] = useState<"list" | "kanban" | "calendar">("kanban");
+  // Opens on List with this week (Brandon, 2026-09-25). The Calendar tab of
+  // the same morning is gone: "I forgot we had the schedule" — Schedule is the
+  // calendar, and the header links to it.
+  const [view, setView] = useState<"list" | "kanban">("list");
+  // The week bar: one week (Mon–Sun, this week to start) or all dates. The
+  // All dates switch is remembered per browser; the week always opens on this
+  // week. Storage can throw (private window, blocked site data) — then the
+  // board simply opens on this week.
+  const [weekStart, setWeekStart] = useState(() => mondayOf(new Date()));
+  const [allDates, setAllDates] = useState<boolean>(() => {
+    try { return window.localStorage.getItem(DATE_SCOPE_STORAGE_KEY) === "all"; } catch { return false; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(DATE_SCOPE_STORAGE_KEY, allDates ? "all" : "week"); } catch { /* per-browser nicety only */ }
+  }, [allDates]);
+  const dateScope = useMemo(() => ({ allDates, weekStart }), [allDates, weekStart]);
   // 2026-05-25 — "+ New job" now opens the NewEntityLauncher (customer-first
   // picker), then routes the user into the CustomerModal at the chosen
   // section's create panel. The old inline JobCreateForm is gone.
@@ -153,14 +184,10 @@ export function OliverJobBoardPage() {
     subject?: { kind: "company" | "person"; id: string } | null;
   } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
-  // Bumped on every board load, so the Calendar view refetches its week when
-  // a job is changed from the panel (the same moment List and Kanban redraw).
-  const [boardVersion, setBoardVersion] = useState(0);
   // The page-wide "Loading…" is for the FIRST load only. OliverPageWrapper
   // swaps the whole page for it, so showing it on every refetch unmounted the
-  // open job panel and the Calendar view — a worker assigned from the panel
-  // threw the week back to today (W-OB-05 follow-up). Later loads swap the
-  // rows in place.
+  // open job panel — and threw the week bar back to this week (W-OB-05
+  // follow-up). Later loads swap the rows in place.
   const [loadedOnce, setLoadedOnce] = useState(false);
 
   const reload = useCallback(async () => {
@@ -168,7 +195,6 @@ export function OliverJobBoardPage() {
     try {
       const data = await get<Job[]>(withLocation("/jobs?per_page=500", loc.selectedLocationId));
       setJobs(data || []);
-      setBoardVersion((v) => v + 1);
     } catch (e) { setError(e); }
     finally { setLoading(false); setLoadedOnce(true); }
   }, [get, loc.selectedLocationId]);
@@ -191,43 +217,22 @@ export function OliverJobBoardPage() {
     }
   }, [searchParams, setSearchParams]);
 
-  // What the board already knows about each job's worker and reschedule
-  // state, handed to the week view so its colours match the pills even
-  // where the calendar feed does not carry those facts.
-  const jobHints: JobHints = useMemo(() => {
-    const m: JobHints = new Map();
-    for (const j of jobs) {
-      const f = factsFromJobRow(j);
-      m.set(String(j.id).toLowerCase(), { hasWorker: f.hasWorker, customerAttention: f.customerAttention });
-    }
-    return m;
-  }, [jobs]);
-
-  // Board-visible jobs apply the rolling 7-day window to the Closed bucket
-  // BEFORE any user filters run. This keeps the board feeling current and
-  // pushes long-tail history to /oliver_jobs_archive without forcing the API
-  // to know about the cutoff.
-  const cutoffMs = useMemo(
-    () => Date.now() - CLOSED_BOARD_WINDOW_DAYS * 24 * 60 * 60 * 1000,
-    [],
-  );
-  function isClosedAndStale(j: Job): boolean {
-    if (bucketOf(j.status) !== 'closed') return false;
-    if (!j.scheduledDate) return false; // no anchor date → keep on board
-    const t = Date.parse(j.scheduledDate);
-    if (Number.isNaN(t)) return false;
-    return t < cutoffMs;
-  }
+  // The week bar scopes the board BEFORE any other filter runs: the tiles,
+  // the chips, List and Kanban all count and show the same jobs. Jobs with no
+  // date show in every week (src/oliver/jobBoardWeek).
   const boardJobs = useMemo(() => {
-    const live = jobs.filter((j) => !isClosedAndStale(j));
-    if (!loc.multi) return live;
-    return live.map((j) => ({ ...j, locationName: locationNameOf(rowLocationId(j), loc.locations, rowLocationName(j)) }));
-  }, [jobs, cutoffMs, loc.multi, loc.locations]);
-  const closedHidden = jobs.length - boardJobs.length;
+    const scoped = jobs.filter((j) => inDateScope(j, dateScope));
+    if (!loc.multi) return scoped;
+    return scoped.map((j) => ({ ...j, locationName: locationNameOf(rowLocationId(j), loc.locations, rowLocationName(j)) }));
+  }, [jobs, dateScope, loc.multi, loc.locations]);
+  const scopeText = scopeWord(dateScope);
+  const undatedShown = useMemo(() => boardJobs.filter((j) => !j.scheduledDate).length, [boardJobs]);
 
   const filtered = useMemo(() => {
     let list = boardJobs;
-    if (bucketFilter) {
+    if (bucketFilter === 'cancelled') {
+      list = list.filter((j) => j.status === 'cancelled');
+    } else if (bucketFilter) {
       list = list.filter((j) => bucketOf(j.status) === bucketFilter);
       if (bucketFilter === 'closed' && closedSubstatus) {
         list = list.filter((j) => j.status === closedSubstatus);
@@ -252,14 +257,15 @@ export function OliverJobBoardPage() {
     return list;
   }, [boardJobs, bucketFilter, closedSubstatus, recurringFilter, profitFilter, search]);
 
-  // Counts are board-scoped (post 7-day window) so the pill totals reflect
-  // what's actually visible.
+  // Counts follow the week bar, so the tile and chip totals are what the
+  // board shows.
   const bucketCounts = useMemo(() => {
-    const c: Record<string, number> = { '': boardJobs.length };
+    const c: Record<string, number> = { '': boardJobs.length, cancelled: 0 };
     for (const b of BUCKETS) c[b.key] = 0;
     for (const j of boardJobs) {
       const b = bucketOf(j.status);
       if (b) c[b] = (c[b] || 0) + 1;
+      if (j.status === 'cancelled') c.cancelled += 1;
     }
     return c;
   }, [boardJobs]);
@@ -267,6 +273,7 @@ export function OliverJobBoardPage() {
     () => [
       { key: '', label: 'All', count: bucketCounts[''] ?? 0 },
       ...BUCKETS.map((b) => ({ key: b.key, label: b.label, count: bucketCounts[b.key] ?? 0 })),
+      { key: 'cancelled', label: 'Cancelled', count: bucketCounts.cancelled ?? 0 },
     ],
     [bucketCounts],
   );
@@ -288,7 +295,19 @@ export function OliverJobBoardPage() {
         </div>
       ),
     },
-    { key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status, render: (j) => <JobStatusPill status={j.status} facts={factsFromJobRow(j)} /> },
+    {
+      key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status,
+      render: (j) => {
+        // A cancelled job says who called it off and when, when the job knows.
+        const cx = j.status === "cancelled" ? cancelledLine(j) : null;
+        return (
+          <div>
+            <JobStatusPill status={j.status} facts={factsFromJobRow(j)} />
+            {cx && <div className="mt-1 text-[11px] font-medium text-rose-700">{cx}</div>}
+          </div>
+        );
+      },
+    },
     ...(loc.multi ? [{
       key: "location", header: "Location", sortable: true, sortAccessor: (j: Job) => j.locationName ?? "",
       render: (j: Job) => <span className="text-xs text-slate-600">{j.locationName || "—"}</span>,
@@ -342,16 +361,32 @@ export function OliverJobBoardPage() {
             <div className="ptabs" style={{ marginBottom: 0 }}>
               <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => setView("list")}>List</button>
               <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => setView("kanban")}>Kanban</button>
-              <button className={`ptab${view === "calendar" ? " active" : ""}`} onClick={() => setView("calendar")} title="This week's jobs on a calendar">Calendar</button>
             </div>
+            <Link
+              to="/app/services/oliver_schedule"
+              className="text-xs font-semibold text-[#1A7DB5] hover:underline"
+              title="Jobs, Schedule: the calendar, month and day"
+            >
+              Open the full calendar →
+            </Link>
             <Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>
           </div>
         }
       />
 
-      {/* F-05 — Stat cards: smaller (compact padding + smaller numbers) and
-          5-column grid that aligns 1:1 with the Kanban buckets below. Click
-          a card to filter the board to that bucket; click again to clear. */}
+      <WeekBar
+        weekStart={weekStart}
+        allDates={allDates}
+        shown={boardJobs.length}
+        undated={undatedShown}
+        onWeek={setWeekStart}
+        onAllDates={setAllDates}
+      />
+
+      {/* F-05 — Stat cards: smaller (compact padding + smaller numbers), the
+          five Kanban buckets plus Cancelled (2026-09-25). They count what the
+          week bar shows and say which scope. Click a card to filter the List
+          to it; click again to clear. */}
       {/* PHONE PASS 2026-09-06: five 1fr columns is 63px each at 375px, which
           cut "SCHEDULED" and "JOB COMPLETED" mid-word. `auto-fit` with a 104px
           floor keeps the five-across row on every desktop width the design was
@@ -362,26 +397,22 @@ export function OliverJobBoardPage() {
         className="mb-3 oliver-bucket-grid"
         style={{ display: "grid", gap: 8 }}
       >
-        {BUCKETS.map((b) => {
+        {TILES.map((b) => {
           const count = bucketCounts[b.key] ?? 0;
           const active = bucketFilter === b.key;
           const isCompleted = b.key === 'completed';
           const isClosed = b.key === 'closed';
-          const label =
-            b.key === 'quotes' ? 'awaiting decision'
-              : b.key === 'scheduled' ? 'booked'
-              : b.key === 'in_progress' ? 'active work'
-              : b.key === 'completed' ? 'awaiting close'
-              : `last ${CLOSED_BOARD_WINDOW_DAYS}d`;
+          const isCancelled = b.key === 'cancelled';
+          const label = `${b.meaning} · ${scopeText}`;
           return (
             <button
               key={b.key}
               type="button"
-              onClick={() => setBucketFilter(active ? '' : b.key)}
-              title={`Filter board to ${b.label} (click again to clear)`}
+              onClick={() => { setBucketFilter(active ? '' : b.key); setClosedSubstatus(''); }}
+              title={`Filter the List to ${b.label} (click again to clear)`}
               style={{
-                background: active ? "#FFF8E1" : "#fff",
-                border: `1px solid ${active ? "#FEC82C" : "#E5E7EB"}`,
+                background: active ? "#FFF8E1" : isCancelled ? "#FEF2F2" : "#fff",
+                border: `1px solid ${active ? "#FEC82C" : isCancelled ? "#FECACA" : "#E5E7EB"}`,
                 borderRadius: 8,
                 padding: "8px 10px",
                 cursor: "pointer",
@@ -389,21 +420,17 @@ export function OliverJobBoardPage() {
                 transition: "all 0.12s",
               }}
             >
-              <div style={{ fontSize: 10, fontWeight: 700, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: isCancelled ? "#991B1B" : "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.4 }}>
                 {b.label}
               </div>
               <div style={{
                 fontSize: 22, fontWeight: 700, fontFamily: "monospace", lineHeight: 1.2, marginTop: 2,
-                color: isCompleted ? "#059669" : isClosed ? "#5A7A8A" : "#0B1C24",
+                color: isCompleted ? "#059669" : isClosed ? "#5A7A8A" : isCancelled ? "#B91C1C" : "#0B1C24",
               }}>
                 {count}
               </div>
-              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 2 }}>
-                {isClosed && closedHidden > 0 ? (
-                  <Link to="/app/services/oliver_jobs_archive" style={{ color: '#1A7DB5' }} onClick={(e) => e.stopPropagation()}>
-                    +{closedHidden} in archive →
-                  </Link>
-                ) : label}
+              <div style={{ fontSize: 10, color: isCancelled ? "#991B1B" : "#5A7A8A", marginTop: 2 }}>
+                {label}
               </div>
             </button>
           );
@@ -416,23 +443,16 @@ export function OliverJobBoardPage() {
           description="Jobs appear here when customers submit service requests, or when you create them manually."
           action={<Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>}
         />
-      ) : view === "calendar" ? (
-        <JobWeekCalendar
-          locationId={loc.selectedLocationId}
-          reloadKey={boardVersion}
-          hints={jobHints}
-          onOpenJob={setDetailId}
-          onOpenRequest={(slotId) => navigate(slotId ? `/app/services/oliver_service_requests?request=${encodeURIComponent(slotId)}` : "/app/services/oliver_service_requests")}
-          fullCalendarHref="/app/services/oliver_schedule"
-        />
       ) : view === "list" ? (
         <>
           <FilterBar
             pills={bucketPills}
             activePill={bucketFilter}
             onPillChange={(k) => {
-              setBucketFilter(k as '' | BucketKey);
-              if (k !== 'closed') setClosedSubstatus('');
+              // Click a chip again to clear it, as the tiles do.
+              const next = (k === bucketFilter ? '' : k) as BoardFilter;
+              setBucketFilter(next);
+              if (next !== 'closed') setClosedSubstatus('');
             }}
             search={search}
             onSearchChange={setSearch}
@@ -455,7 +475,7 @@ export function OliverJobBoardPage() {
                 to="/app/services/oliver_jobs_archive"
                 style={{ marginLeft: 8, alignSelf: 'center', fontSize: 12, color: '#1A7DB5' }}
               >
-                Older than {CLOSED_BOARD_WINDOW_DAYS} days → Archive
+                Closed-job history → Archive
               </Link>
             </div>
           )}
@@ -491,6 +511,7 @@ export function OliverJobBoardPage() {
           </div>
           <DataTable
             rows={filtered}
+            emptyMessage={allDates ? "No jobs match these filters." : `No jobs ${scopeText} match these filters. Try Previous week, Next week or All dates.`}
             columns={columns}
             rowKey={(j) => j.id}
             onRowClick={(j) => setDetailId(j.id)}
@@ -500,10 +521,10 @@ export function OliverJobBoardPage() {
       ) : (
         <KanbanView
           jobs={boardJobs}
+          allJobs={jobs}
           search={search}
           onSearch={setSearch}
           onPick={setDetailId}
-          closedHidden={closedHidden}
           onMove={async (jobId, targetStatus) => {
             // F-40: optimistic local update, then PATCH /jobs/:id/status
             // with force=true so the state-machine guards don't block free
@@ -561,6 +582,68 @@ export function OliverJobBoardPage() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// The week bar (Brandon, 2026-09-25): "just add like a default to show the
+// current week's jobs, then like next week previous week, etc."
+//   ‹ Previous week · This week (Mon 21 – Sun 27 Sep 2026) · Next week ›  [All dates]
+// The rule for what is in a week is src/oliver/jobBoardWeek.
+// ─────────────────────────────────────────────────────────────────────────────
+function WeekBar({
+  weekStart, allDates, shown, undated, onWeek, onAllDates,
+}: {
+  weekStart: Date;
+  allDates: boolean;
+  /** Jobs on the board for this scope (before the chips and search). */
+  shown: number;
+  /** Of those, how many have no date — they show in every week. */
+  undated: number;
+  onWeek: (d: Date) => void;
+  onAllDates: (on: boolean) => void;
+}) {
+  const name = weekName(weekStart);
+  const range = weekRangeLabel(weekStart);
+  const navBtn = "rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 max-md:min-h-[40px]";
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2" aria-label="Which dates the board shows">
+      <button type="button" className={navBtn} disabled={allDates} onClick={() => onWeek(addDays(weekStart, -7))}>
+        ‹ Previous week
+      </button>
+      <span className="min-w-[230px] text-center text-sm font-bold text-slate-900" aria-live="polite">
+        {allDates ? "All dates" : name ? `${name} (${range})` : range}
+      </span>
+      <button type="button" className={navBtn} disabled={allDates} onClick={() => onWeek(addDays(weekStart, 7))}>
+        Next week ›
+      </button>
+      {!allDates && name !== "This week" && (
+        <button type="button" className={navBtn} onClick={() => onWeek(mondayOf(new Date()))}>
+          Back to this week
+        </button>
+      )}
+      <span className="text-[11px] text-slate-500">
+        {allDates
+          ? `${shown} job${shown === 1 ? "" : "s"}, every date`
+          : `${shown - undated} with a date in the week · ${undated} with no date, shown every week`}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={allDates}
+        onClick={() => onAllDates(!allDates)}
+        className="ml-auto inline-flex items-center gap-2 rounded-md px-1.5 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50 max-md:min-h-[40px]"
+        title={allDates ? "Show one week at a time" : "Show every job, whatever its date"}
+      >
+        <span
+          aria-hidden
+          className={`relative inline-block h-4 w-7 rounded-full transition-colors ${allDates ? "bg-[#1A7DB5]" : "bg-slate-300"}`}
+        >
+          <span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white shadow transition-all ${allDates ? "left-3.5" : "left-0.5"}`} />
+        </span>
+        All dates
+      </button>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // F-40 — Drag-and-drop between buckets. Native HTML5 DnD.
 // On drop, we PATCH /jobs/:id/status with force=true to the FIRST status
 // in the target bucket's list (e.g. drop on "Scheduled" → status='scheduled').
@@ -570,17 +653,20 @@ export function OliverJobBoardPage() {
 // ─────────────────────────────────────────────────────────────────────────────
 function KanbanView({
   jobs,
+  allJobs,
   search,
   onSearch,
   onPick,
-  closedHidden,
   onMove,
 }: {
+  /** The jobs in the week bar's scope. */
   jobs: Job[];
+  /** Every job loaded — the worker list does not change with the week, so a
+   *  picked worker stays in the dropdown in a week they have no jobs. */
+  allJobs: Job[];
   search: string;
   onSearch: (q: string) => void;
   onPick: (id: string) => void;
-  closedHidden: number;
   /** F-40: called when a card is dropped on a bucket different from its
    *  current one. Returns the chosen target status. */
   onMove: (jobId: string, targetStatus: string) => void;
@@ -594,7 +680,7 @@ function KanbanView({
   // Build the worker dropdown options from whatever workers appear in jobs.
   const workerOptions = useMemo(() => {
     const seen = new Map<string, string>();
-    for (const j of jobs) {
+    for (const j of allJobs) {
       for (const w of j.assignedWorkers || []) {
         if (w.worker_id && !seen.has(w.worker_id)) {
           seen.set(w.worker_id, `${(w.first_name || "").trim()} ${(w.last_name || "").trim()}`.trim() || w.worker_id);
@@ -602,7 +688,7 @@ function KanbanView({
       }
     }
     return Array.from(seen.entries()).sort((a, b) => a[1].localeCompare(b[1]));
-  }, [jobs]);
+  }, [allJobs]);
 
   const filtered = useMemo(() => {
     let list = jobs;
@@ -666,11 +752,6 @@ function KanbanView({
           >
             Clear filters
           </button>
-        )}
-        {closedHidden > 0 && (
-          <Link to="/app/services/oliver_jobs_archive" className="text-xs text-blue-600 hover:underline">
-            +{closedHidden} closed jobs older than {CLOSED_BOARD_WINDOW_DAYS}d → Archive
-          </Link>
         )}
         <span className="text-[11px] text-slate-400 italic ml-auto">
           Tip: drag any card to a different column to change its status.
