@@ -420,10 +420,10 @@ export function CustomerModal({
         </div>
       ) : undefined}
     >
-      {resolveErr && (
+      {resolveErr && !customerMissing && (
         <div style={{ color: "#991B1B", background: "#FEE2E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>{resolveErr}</div>
       )}
-      {loadErr && (
+      {loadErr && !customerMissing && (
         <div style={{ color: "#991B1B", background: "#FEE2E2", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>
           {loadErr} <Button variant="ghost" onClick={reload}>Retry</Button>
         </div>
