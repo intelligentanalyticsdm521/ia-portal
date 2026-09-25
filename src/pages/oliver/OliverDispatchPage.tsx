@@ -62,11 +62,16 @@ export function OliverDispatchPage() {
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [j, w] = await Promise.all([
-        get<Job[]>(withLocation("/jobs?status=scheduled,dispatched,assigned", loc.selectedLocationId)),
+      // GET /jobs matches ONE status (routes/jobs.js: `j.status = @status`), so
+      // "?status=scheduled,dispatched,assigned" matched nothing and Dispatch
+      // always read "No jobs ready for dispatch" (pane test 25 Sep). Ask per status.
+      const [s, d, a, w] = await Promise.all([
+        get<Job[]>(withLocation("/jobs?status=scheduled&per_page=200", loc.selectedLocationId)),
+        get<Job[]>(withLocation("/jobs?status=dispatched&per_page=200", loc.selectedLocationId)),
+        get<Job[]>(withLocation("/jobs?status=assigned&per_page=200", loc.selectedLocationId)),
         get<Worker[]>(withLocation("/workers", loc.selectedLocationId)),
       ]);
-      setJobs(j || []);
+      setJobs([...(s || []), ...(d || []), ...(a || [])]);
       setWorkers(w || []);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
