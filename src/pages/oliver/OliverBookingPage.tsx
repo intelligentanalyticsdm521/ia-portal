@@ -102,6 +102,8 @@ interface BookingPage {
   job_type: string;
   duration_minutes: number;
   buffer_minutes: number;
+  /** The grid start times fall on, in minutes (migration 220). null = 30. */
+  slot_interval_minutes?: number | null;
   advance_notice_hours: number;
   max_days_ahead: number;
   availability_windows: AvailabilityWindow[] | string;
@@ -836,6 +838,7 @@ function BookingPageEditor({
         job_type: draft.job_type || draft.job_category,
         duration_minutes: draft.duration_minutes,
         buffer_minutes: draft.buffer_minutes,
+        slot_interval_minutes: draft.slot_interval_minutes ?? null,
         advance_notice_hours: draft.advance_notice_hours,
         max_days_ahead: draft.max_days_ahead,
         availability_windows: draft.availability_windows,
@@ -1387,6 +1390,22 @@ function BookingPageEditor({
                     >
                       {BUFFER_OPTIONS.map((d) => <option key={d} value={d}>{d === 0 ? "None" : `${d} minutes`}</option>)}
                     </select>
+                  </Field>
+                  {/* 2026-09-25 (Brandon): "30 minute windows or whatever the client
+                      wants to set it as... every 30 minutes or every 15". The grid the
+                      customer picks from; booked visits, calendar jobs and the buffer
+                      on each side come off it. */}
+                  <Field label="Offer a start every">
+                    <select
+                      value={draft?.slot_interval_minutes ?? 30}
+                      onChange={(e) => setDraftField("slot_interval_minutes", Number(e.target.value))}
+                      className={inputCls}
+                    >
+                      {[15, 30, 60].map((d) => <option key={d} value={d}>{d} minutes</option>)}
+                    </select>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Customers pick from this grid (9:00, 9:15, 9:30 with 15). Times taken by a booking or a job, plus the buffer on each side, drop off it.
+                    </p>
                   </Field>
                   {/* F-47 — Slot capacity. Auto = one attendee per slot with
                       concurrency driven by active worker count (default, matches
@@ -2135,6 +2154,8 @@ function defaultBookingPage(): BookingPage {
     // ON by default: OLIVER exists for work you travel to, and a job with no
     // address is a crew with no map link.
     collect_service_address: true,
+    // The grid customers pick a start from (migration 220).
+    slot_interval_minutes: 30,
     form_fields: [],
     services: [],
     // Today's behaviour until the owner chooses otherwise: the catalog picker.
