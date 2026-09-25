@@ -544,6 +544,13 @@ export function OliverBookingPage() {
           {limitSentence}
         </div>
       )}
+      {pages.length > 0 && pages.every((p) => !p.is_active) && (
+        <div className="mb-4 rounded-md border-2 border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+          <strong>Online booking is paused.</strong> Every page is switched off, so your booking site says so and
+          takes nothing new. Existing bookings and their links keep working. Press <strong>Switch back on</strong> on a
+          page to take bookings again.
+        </div>
+      )}
 
       {pages.length === 0 ? (
         <div className="rounded-xl border-2 border-dashed border-slate-300 bg-white p-8 text-center">
@@ -649,6 +656,9 @@ export function OliverBookingPage() {
                 Its link stops taking bookings and it leaves your booking site. Nothing is deleted:
                 its confirmed bookings stay on the calendar with their links working, and you can
                 switch it back on from this card.
+                {pages.filter((p) => p.is_active && p.booking_page_id !== waitingOff.row.booking_page_id).length === 0 && (
+                  <> This is your last live page, so online booking is <strong>paused</strong> for the whole business until a page is back on.</>
+                )}
               </p>
             )}
           </div>
@@ -729,15 +739,18 @@ function BookingPageCard({
         <button type="button" className={btn} onClick={onEdit} title="Edit this booking page">
           <Pencil className="h-3.5 w-3.5" /> Edit
         </button>
-        {!page.is_main && (page.is_active ? (
-          <button type="button" className={btn} onClick={onSwitchOff} disabled={busy} title="Stop this page taking bookings">
+        {/* D-BK8 (25 Sep 2026): the main page can go off too. With every page
+            off, online booking is paused for the whole business (the booking
+            site says so) until a page is switched back on. */}
+        {page.is_active ? (
+          <button type="button" className={btn} onClick={onSwitchOff} disabled={busy} title={page.is_main ? "Stop this page taking bookings (pauses online booking if it is your only live page)" : "Stop this page taking bookings"}>
             {busy ? "Working…" : "Switch off"}
           </button>
         ) : (
           <button type="button" className={btn} onClick={onSwitchOn} disabled={busy} title="Let this page take bookings again">
             {busy ? "Working…" : "Switch back on"}
           </button>
-        ))}
+        )}
       </div>
     </div>
   );
