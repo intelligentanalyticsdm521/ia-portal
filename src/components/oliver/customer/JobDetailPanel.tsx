@@ -338,7 +338,10 @@ function JobLayout(p: JobLayoutProps) {
         gap: 12, padding: "10px 14px", background: "#F8FAFC", borderRadius: 8, marginBottom: 12,
       }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 11, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.5 }}>Job</div>
+          <div style={{ fontSize: 11, color: "#5A7A8A", textTransform: "uppercase", letterSpacing: 0.5 }}>
+            {/* 2026-09-25 Brandon: "not sure where the job number is here" */}
+            Job{job.jobNumber ? <span style={{ marginLeft: 6, fontFamily: "ui-monospace, monospace", textTransform: "none", letterSpacing: 0, color: "#0B1C24" }}>{job.jobNumber}</span> : null}
+          </div>
           <div style={{ fontSize: 16, fontWeight: 700, color: "#0B1C24", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
             {job.title || "(untitled job)"}
           </div>
