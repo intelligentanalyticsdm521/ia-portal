@@ -60,18 +60,28 @@ export function SparkNewsletterPage() {
   // in a red line above the table and the list stays on screen; setError is
   // for the LOAD only.
   const [actionError, setActionError] = useState<string | null>(null);
+  const PLAIN_CODES: Record<string, string> = {
+    publish_failed: "your website did not answer",
+    arion_api_not_configured: "the website link is not set up on this account",
+    issue_has_no_content: "write the issue first",
+    no_arion_site: "no website is connected to this account",
+    title_required: "give the issue a title first",
+  };
   const plainError = (err: unknown): string => {
     const raw = err instanceof Error ? err.message : String(err ?? "");
-    // "SPARK API 502: {"error":"publish_failed","message":"…"}" → the message.
+    // "SPARK API 502: {"error":"publish_failed","message":"…"}" → the message,
+    // or a plain sentence for a bare code (the message can be empty).
     const brace = raw.indexOf("{");
     if (brace >= 0) {
       try {
         const body = JSON.parse(raw.slice(brace));
-        const m = body?.message || body?.error?.message || body?.error;
+        const m = body?.message || body?.error?.message;
         if (typeof m === "string" && m.trim()) return m;
+        const code = typeof body?.error === "string" ? body.error : body?.error?.code;
+        if (typeof code === "string" && code) return PLAIN_CODES[code] || code.replace(/_/g, " ");
       } catch { /* not JSON — fall through to the raw text */ }
     }
-    return raw || "Something went wrong.";
+    return raw || "something went wrong";
   };
 
   /** The pending "are you sure?", or null. One home for every question. */
