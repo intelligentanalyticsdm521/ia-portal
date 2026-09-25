@@ -99,6 +99,14 @@ export function OliverServiceRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [search, setSearch] = useState("");
+  // D-BK11 (Brandon, 25 Sep 2026, Test 2.6): "a dropdown filter that allows
+  // them to filter the panels by a specific job type, like Mowing, or ... only
+  // my website booking requests". Two narrow filters beside the search: the
+  // service (what was asked for) and where the request came from. Options are
+  // read off the rows in the current view, so the lists never offer a choice
+  // that matches nothing.
+  const [typeFilter, setTypeFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState<"quote" | "cancel" | null>(null);
@@ -172,20 +180,28 @@ export function OliverServiceRequestsPage() {
     setTimeout(() => setBulkResult(null), 6000);
   }
 
+  /** The service a row asked for: the booked service, else the title before " · ". */
+  const serviceOf = (r: ServiceRequest) =>
+    String(r.service_name || String(r.title || "").split(" · ")[0] || "").trim();
+  const passesDropdowns = (r: ServiceRequest) =>
+    (!typeFilter || serviceOf(r) === typeFilter) &&
+    (!sourceFilter || sourceLabel(r.source).label === sourceFilter);
+
   const filtered = useMemo(() => {
-    if (!search.trim()) return requests;
+    const rows = requests.filter(passesDropdowns);
+    if (!search.trim()) return rows;
     const q = search.toLowerCase();
-    return requests.filter((r) =>
+    return rows.filter((r) =>
       r.title?.toLowerCase().includes(q) ||
       r.customerName?.toLowerCase().includes(q) ||
       r.customerEmail?.toLowerCase().includes(q) ||
       r.customerNotes?.toLowerCase().includes(q)
     );
-  }, [requests, search]);
+  }, [requests, search, typeFilter, sourceFilter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Confirmed / Declined / Cancelled — the same search, over the decided list.
   const filteredDecided = useMemo(() => {
-    const rows = view === "open" ? [] : decided.filter((d) => d.outcome === view);
+    const rows = (view === "open" ? [] : decided.filter((d) => d.outcome === view)).filter(passesDropdowns);
     if (!search.trim()) return rows;
     const q = search.toLowerCase();
     return rows.filter((r) =>
@@ -195,7 +211,12 @@ export function OliverServiceRequestsPage() {
       r.customerNotes?.toLowerCase().includes(q) ||
       r.job_number?.toLowerCase().includes(q)
     );
-  }, [decided, view, search]);
+  }, [decided, view, search, typeFilter, sourceFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The dropdowns offer only what the current view holds.
+  const viewRows: ServiceRequest[] = view === "open" ? requests : decided.filter((d) => d.outcome === view);
+  const typeOptions = Array.from(new Set(viewRows.map(serviceOf).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const sourceOptions = Array.from(new Set(viewRows.map((r) => sourceLabel(r.source).label))).sort((a, b) => a.localeCompare(b));
 
   const decidedCount = (o: DecidedRequest["outcome"]) => decided.filter((d) => d.outcome === o).length;
   const viewPills = [
@@ -462,6 +483,30 @@ export function OliverServiceRequestsPage() {
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search title, customer, email, or notes…"
+        rightSlot={
+          <>
+            <select
+              aria-label="Service"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              title="Only requests for one service"
+            >
+              <option value="">All services</option>
+              {typeOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select
+              aria-label="Source"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+              className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+              title="Only requests from one place"
+            >
+              <option value="">All sources</option>
+              {sourceOptions.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </>
+        }
       />
 
       {confirmedNotice && (
