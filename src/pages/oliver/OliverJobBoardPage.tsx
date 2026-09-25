@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import {
@@ -121,12 +121,7 @@ const TILES: Array<{ key: Exclude<BoardFilter, ''>; label: string; meaning: stri
   { key: 'cancelled',   label: 'Cancelled',     meaning: 'called off' },
 ];
 
-const PROFIT_PILLS = [
-  { key: "", label: "Any profit" },
-  { key: "profit:positive", label: "Profitable" },
-  { key: "profit:negative", label: "Losing money" },
-  { key: "profit:none", label: "No data" },
-];
+const BOARD_FILTERS = new Set<string>(['quotes', 'scheduled', 'in_progress', 'completed', 'closed', 'cancelled']);
 
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
@@ -142,25 +137,47 @@ export function OliverJobBoardPage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, post, patch, del, ready } = useOliverApi();
+  const navigate = useNavigate();
+  const location = useLocation();
+  // View and status filter live in the URL (Brandon, 2026-09-25): Kanban is
+  // the default — no ?view — and a Kanban tile or column header drills into
+  // the List pre-filtered, ?view=list&status=cancelled, so the browser's Back
+  // button returns to the board as well as "← Back to board" does.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const view: "list" | "kanban" = searchParams.get("view") === "list" ? "list" : "kanban";
+  const statusParam = searchParams.get("status") || "";
+  const bucketFilter = (BOARD_FILTERS.has(statusParam) ? statusParam : '') as BoardFilter;
   // Multi-location: the header picker scopes the board (location_id on
   // /jobs). "All locations" sends nothing — identical to today.
   const loc = useOliverLocations();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  // status filter: '' = all, a bucket, or 'cancelled'
-  const [bucketFilter, setBucketFilter] = useState<BoardFilter>('');
   // substatus filter — only meaningful when bucketFilter='closed'
   const [closedSubstatus, setClosedSubstatus] = useState<'' | 'paid' | 'cancelled'>('');
-  // recurring tag filter — '' = any, 'recurring' = only recurring,
-  // 'one_off' = only one-off
-  const [recurringFilter, setRecurringFilter] = useState<'' | 'recurring' | 'one_off'>('');
-  const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
-  // Opens on List with this week (Brandon, 2026-09-25). The Calendar tab of
-  // the same morning is gone: "I forgot we had the schedule" — Schedule is the
-  // calendar, and the header links to it.
-  const [view, setView] = useState<"list" | "kanban">("list");
+  // The Calendar tab of the same morning is gone: "I forgot we had the
+  // schedule" — Schedule is the calendar, and the header links to it.
+  /** Show the List with this status filter. From the board it is a drill-in
+   *  (a new history entry, so Back returns to the board); inside the List a
+   *  chip or tile only replaces the filter. */
+  const openList = useCallback((status: BoardFilter, opts: { fromBoard: boolean }) => {
+    const p = new URLSearchParams(searchParams);
+    p.set("view", "list");
+    if (status) p.set("status", status); else p.delete("status");
+    setClosedSubstatus('');
+    if (opts.fromBoard) setSearchParams(p, { state: { fromBoard: true } });
+    else setSearchParams(p, { replace: true, state: location.state });
+  }, [searchParams, setSearchParams, location.state]);
+  /** Back to the Kanban board — one step back when the List was opened from
+   *  it, otherwise the board replaces this entry. */
+  const showBoard = useCallback(() => {
+    if ((location.state as { fromBoard?: boolean } | null)?.fromBoard) { navigate(-1); return; }
+    const p = new URLSearchParams(searchParams);
+    p.delete("view");
+    p.delete("status");
+    setSearchParams(p, { replace: true });
+  }, [location.state, navigate, searchParams, setSearchParams]);
   // The week bar: one week (Mon–Sun, this week to start) or all dates. The
   // All dates switch is remembered per browser; the week always opens on this
   // week. Storage can throw (private window, blocked site data) — then the
@@ -205,7 +222,6 @@ export function OliverJobBoardPage() {
   // Used by the Service Requests detail drawer's "Open in job board" action.
   // ?job=<job_id> is accepted too: the calendars' "Open →" links used it for
   // months and the board ignored it, so the job never opened (W-OB-05).
-  const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
     const focus = searchParams.get("focus") || searchParams.get("job");
     if (focus) {
@@ -238,24 +254,12 @@ export function OliverJobBoardPage() {
         list = list.filter((j) => j.status === closedSubstatus);
       }
     }
-    if (recurringFilter === 'recurring') {
-      list = list.filter((j) => !!j.isRecurring || !!j.recurringJobId);
-    } else if (recurringFilter === 'one_off') {
-      list = list.filter((j) => !j.isRecurring && !j.recurringJobId);
-    }
-    if (profitFilter === "profit:positive") {
-      list = list.filter((j) => Number(j.profit ?? 0) > 0);
-    } else if (profitFilter === "profit:negative") {
-      list = list.filter((j) => Number(j.profit ?? 0) < 0 || (Number(j.laborCost ?? 0) > 0 && Number(j.revenue ?? 0) === 0));
-    } else if (profitFilter === "profit:none") {
-      list = list.filter((j) => Number(j.revenue ?? 0) === 0 && Number(j.laborCost ?? 0) === 0);
-    }
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter((j) => j.title?.toLowerCase().includes(q) || j.customerName?.toLowerCase().includes(q));
     }
     return list;
-  }, [boardJobs, bucketFilter, closedSubstatus, recurringFilter, profitFilter, search]);
+  }, [boardJobs, bucketFilter, closedSubstatus, search]);
 
   // Counts follow the week bar, so the tile and chip totals are what the
   // board shows.
@@ -359,8 +363,8 @@ export function OliverJobBoardPage() {
         actions={
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <div className="ptabs" style={{ marginBottom: 0 }}>
-              <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => setView("list")}>List</button>
-              <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => setView("kanban")}>Kanban</button>
+              <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => { if (view !== "kanban") showBoard(); }}>Kanban</button>
+              <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => { if (view !== "list") openList('', { fromBoard: true }); }}>List</button>
             </div>
             <Link
               to="/app/services/oliver_schedule"
@@ -385,8 +389,10 @@ export function OliverJobBoardPage() {
 
       {/* F-05 — Stat cards: smaller (compact padding + smaller numbers), the
           five Kanban buckets plus Cancelled (2026-09-25). They count what the
-          week bar shows and say which scope. Click a card to filter the List
-          to it; click again to clear. */}
+          week bar shows and say which scope. On the List a click filters it
+          (click again to clear); on Kanban a click opens the List filtered to
+          that card — Brandon: "if I click on the cancelled just have it go to
+          the list prefiltered then a back button". */}
       {/* PHONE PASS 2026-09-06: five 1fr columns is 63px each at 375px, which
           cut "SCHEDULED" and "JOB COMPLETED" mid-word. `auto-fit` with a 104px
           floor keeps the five-across row on every desktop width the design was
@@ -399,7 +405,7 @@ export function OliverJobBoardPage() {
       >
         {TILES.map((b) => {
           const count = bucketCounts[b.key] ?? 0;
-          const active = bucketFilter === b.key;
+          const active = view === "list" && bucketFilter === b.key;
           const isCompleted = b.key === 'completed';
           const isClosed = b.key === 'closed';
           const isCancelled = b.key === 'cancelled';
@@ -408,8 +414,8 @@ export function OliverJobBoardPage() {
             <button
               key={b.key}
               type="button"
-              onClick={() => { setBucketFilter(active ? '' : b.key); setClosedSubstatus(''); }}
-              title={`Filter the List to ${b.label} (click again to clear)`}
+              onClick={() => (view === "kanban" ? openList(b.key, { fromBoard: true }) : openList(active ? '' : b.key, { fromBoard: false }))}
+              title={view === "kanban" ? `Open the ${b.label} jobs in the List` : `Filter the List to ${b.label} (click again to clear)`}
               style={{
                 background: active ? "#FFF8E1" : isCancelled ? "#FEF2F2" : "#fff",
                 border: `1px solid ${active ? "#FEC82C" : isCancelled ? "#FECACA" : "#E5E7EB"}`,
@@ -445,14 +451,16 @@ export function OliverJobBoardPage() {
         />
       ) : view === "list" ? (
         <>
+          {/* Top left, one level per press (convention_back_button_top_left). */}
+          <div className="mb-3">
+            <Button variant="secondary" onClick={showBoard}>← Back to board</Button>
+          </div>
           <FilterBar
             pills={bucketPills}
             activePill={bucketFilter}
             onPillChange={(k) => {
               // Click a chip again to clear it, as the tiles do.
-              const next = (k === bucketFilter ? '' : k) as BoardFilter;
-              setBucketFilter(next);
-              if (next !== 'closed') setClosedSubstatus('');
+              openList((k === bucketFilter ? '' : k) as BoardFilter, { fromBoard: false });
             }}
             search={search}
             onSearchChange={setSearch}
@@ -479,36 +487,10 @@ export function OliverJobBoardPage() {
               </Link>
             </div>
           )}
-          {/* Recurring tag filter — orthogonal to bucket, applies everywhere.
-              Backend recurring linkage lands in Phase 1C; until then the
-              filter returns zero matches for "Recurring", which is correct. */}
-          <div className="ptabs" style={{ marginBottom: 8, marginTop: -4 }}>
-            {[
-              { key: '', label: 'All jobs' },
-              { key: 'recurring', label: 'Recurring' },
-              { key: 'one_off', label: 'One-off' },
-            ].map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setRecurringFilter(p.key as '' | 'recurring' | 'one_off')}
-                className={`ptab${recurringFilter === p.key ? " active" : ""}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-          {/* Profitability pills */}
-          <div className="ptabs" style={{ marginBottom: 12, marginTop: -4 }}>
-            {PROFIT_PILLS.map((p) => (
-              <button
-                key={p.key}
-                onClick={() => setProfitFilter(p.key)}
-                className={`ptab${profitFilter === p.key ? " active" : ""}`}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
+          {/* The Recurring / One-off and profit chip rows are gone (Brandon,
+              2026-09-25: "that section is confusing and we need STELLA to tell
+              that whole story anyway … The filters aren't the main thing
+              here"). Kanban's "All types" select still splits recurring. */}
           <DataTable
             rows={filtered}
             emptyMessage={allDates ? "No jobs match these filters." : `No jobs ${scopeText} match these filters. Try Previous week, Next week or All dates.`}
@@ -522,6 +504,7 @@ export function OliverJobBoardPage() {
         <KanbanView
           jobs={boardJobs}
           allJobs={jobs}
+          onOpenColumn={(key) => openList(key, { fromBoard: true })}
           search={search}
           onSearch={setSearch}
           onPick={setDetailId}
@@ -654,6 +637,7 @@ function WeekBar({
 function KanbanView({
   jobs,
   allJobs,
+  onOpenColumn,
   search,
   onSearch,
   onPick,
@@ -664,6 +648,8 @@ function KanbanView({
   /** Every job loaded — the worker list does not change with the week, so a
    *  picked worker stays in the dropdown in a week they have no jobs. */
   allJobs: Job[];
+  /** A column header opens the List filtered to that column. */
+  onOpenColumn: (key: BucketKey) => void;
   search: string;
   onSearch: (q: string) => void;
   onPick: (id: string) => void;
@@ -764,10 +750,15 @@ function KanbanView({
             const isDropTarget = dragOverBucket === bucket.key;
             return (
               <div key={bucket.key} className="w-72 flex-shrink-0">
-                <div className="bg-slate-100 rounded-t-lg px-3 py-2 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => onOpenColumn(bucket.key)}
+                  className="w-full bg-slate-100 rounded-t-lg px-3 py-2 flex items-center justify-between text-left hover:bg-slate-200"
+                  title={`Open the ${bucket.label} jobs in the List`}
+                >
                   <span className="text-xs font-semibold uppercase tracking-wide text-slate-700">{bucket.label}</span>
                   <span className="text-xs text-slate-500">{colJobs.length}</span>
-                </div>
+                </button>
                 <div
                   className={`rounded-b-lg p-2 min-h-[400px] space-y-2 transition-colors ${
                     isDropTarget ? "bg-amber-50 ring-2 ring-amber-300" : "bg-slate-50"

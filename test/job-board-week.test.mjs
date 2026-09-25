@@ -71,9 +71,11 @@ test("a cancelled job says who cancelled it and when", () => {
   assert.equal(cancelledLine({}), null, "nothing known, nothing said");
 });
 
-test("the board: opens on List and this week, week bar above List and Kanban, Cancelled chip and tile", () => {
+test("the board: Kanban by default and this week, week bar above List and Kanban, Cancelled chip and tile", () => {
   const board = read("pages", "oliver", "OliverJobBoardPage.tsx");
-  assert.match(board, /useState<"list" \| "kanban">\("list"\)/, "opens on List");
+  // Brandon, 25 Sep 2026: "the kanban board which is our default view".
+  assert.match(board, /const view: "list" \| "kanban" = searchParams\.get\("view"\) === "list" \? "list" : "kanban";/,
+    "Kanban unless the URL says ?view=list");
   assert.match(board, /useState\(\(\) => mondayOf\(new Date\(\)\)\)/, "opens on this week");
   assert.equal(DATE_SCOPE_STORAGE_KEY, "oliver.jobBoard.dateScope");
   assert.match(board, /try \{ return window\.localStorage\.getItem\(DATE_SCOPE_STORAGE_KEY\) === "all"; \} catch \{ return false; \}/,
@@ -82,7 +84,31 @@ test("the board: opens on List and this week, week bar above List and Kanban, Ca
   assert.match(board, /<KanbanView\s+jobs=\{boardJobs\}/, "Kanban shows the scoped jobs");
   assert.match(board, /\{ key: 'cancelled', label: 'Cancelled', count: bucketCounts\.cancelled/, "a Cancelled chip");
   assert.match(board, /\{ key: 'cancelled',\s+label: 'Cancelled',\s+meaning: 'called off' \}/, "a sixth tile, Cancelled");
-  assert.match(board, /const next = \(k === bucketFilter \? '' : k\) as BoardFilter;/, "click a chip again to clear it");
+  assert.match(board, /openList\(\(k === bucketFilter \? '' : k\) as BoardFilter, \{ fromBoard: false \}\)/, "click a chip again to clear it");
   assert.match(board, /j\.status === "cancelled" \? cancelledLine\(j\) : null/, "cancelled rows say who and when");
   assert.doesNotMatch(board, /CLOSED_BOARD_WINDOW_DAYS|isClosedAndStale/, "the week replaced the Closed 7-day window");
+});
+
+// Brandon, 25 Sep 2026: "I can't click cancelled to see cancelled, like if I
+// click on the cancelled just have it go to the list prefiltered then a back
+// button or something like that to get back to the kanban board".
+test("on Kanban a tile or column header opens the List pre-filtered, with Back to board", () => {
+  const board = read("pages", "oliver", "OliverJobBoardPage.tsx");
+  assert.match(board, /view === "kanban" \? openList\(b\.key, \{ fromBoard: true \}\)/, "a tile on Kanban drills into the List");
+  assert.match(board, /onOpenColumn=\{\(key\) => openList\(key, \{ fromBoard: true \}\)\}/, "so does a column header");
+  assert.match(board, /p\.set\("view", "list"\);\s+if \(status\) p\.set\("status", status\)/, "URL-driven: ?view=list&status=<key>");
+  assert.match(board, /if \(opts\.fromBoard\) setSearchParams\(p, \{ state: \{ fromBoard: true \} \}\);/,
+    "a new history entry, so the browser Back button returns to the board");
+  assert.match(board, /<Button variant="secondary" onClick=\{showBoard\}>← Back to board<\/Button>/);
+  assert.match(board, /\?\.fromBoard\) \{ navigate\(-1\); return; \}/, "Back to board is one step back when the List came from the board");
+});
+
+// Brandon, 25 Sep 2026: "I don't think we need to show the any profit,
+// profitable losing money no data, that section is confusing and we need
+// STELLA to tell that whole story anyway."
+test("the List has no profit or recurring chip rows", () => {
+  const board = read("pages", "oliver", "OliverJobBoardPage.tsx");
+  assert.doesNotMatch(board, /PROFIT_PILLS|Losing money|profitFilter/, "the profit chips are gone");
+  assert.doesNotMatch(board, /recurringFilter|label: 'One-off'/, "the Recurring / One-off chips are gone");
+  assert.match(board, /<option value="">All types<\/option>/, "Kanban's type select stays");
 });
