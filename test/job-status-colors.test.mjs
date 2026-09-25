@@ -157,7 +157,7 @@ test("nothing in a dark modal header is ink-black: the header publishes its fore
   const btn = read("components", "oliver", "ui", "Button.tsx");
   assert.match(btn, /ghost:\s+\{ background: "transparent", color: "var\(--iadm-head-fg, #0B1C24\)" \}/,
     "a ghost button takes the header's foreground inside a header and its ink everywhere else");
-  assert.match(btn, /color: "var\(--iadm-head-fg, #0B1C24\)",\n\s+border: "1px solid var\(--iadm-head-btn-border/,
+  assert.match(btn, /color: "var\(--iadm-head-fg, #0B1C24\)",\r?\n\s+border: "1px solid var\(--iadm-head-btn-border/,
     "so does the outline (secondary) button");
   // No calendar patches its header per page any more.
   const walk = (d) => readdirSync(d).flatMap((e) => {
