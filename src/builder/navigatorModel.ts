@@ -13,7 +13,7 @@
  * "Paragraph" eleven times down the list is not an outline — so the label
  * rule lives here with a test on it.
  */
-import { isRequired } from "./model";
+import { carrierContainer as carrierOf, isRequired } from "./model";
 import type { BuilderDocument, Node, Section, Widget, WidgetPath } from "./model";
 import { directionOf, holdsLocked, isContainer, walkNodes } from "./treeOps";
 import { WIDGETS_BY_KIND } from "./registry";
@@ -23,6 +23,8 @@ export type OutlineRow =
     kind: "section";
     id: string;
     label: string;
+    /** Its element TYPE, as a lucide name — see `rowIcon`. */
+    icon: string;
     /** Its position in the document, for the drag and for "3 of 12". */
     index: number;
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
@@ -30,11 +32,26 @@ export type OutlineRow =
     required: boolean;
     /** Its first column's id — where a drop on the section header lands. */
     hostId: string;
+    /**
+     * THE CONTAINER THIS ROW REALLY IS (D-172, round 2).
+     *
+     * Set when the section is a CARRIER PAIR — a section whose one column
+     * holds one container and nothing else. The pair is one box on the page,
+     * so it is one row here: this row is drawn, the container's own row is
+     * not, and everything inside the container comes up a level. Clicking the
+     * row selects the CONTAINER, which is what this id is for.
+     *
+     * Absent on a section that is not a pair, which keeps the rows it always
+     * had — old documents are left exactly as they are.
+     */
+    containerId?: string;
   }
   | {
     kind: "widget";
     id: string;
     label: string;
+    /** Its element TYPE, as a lucide name — see `rowIcon`. */
+    icon: string;
     path: WidgetPath;
     hiddenOn: { desktop: boolean; tablet: boolean; phone: boolean };
     locked: boolean;
@@ -49,6 +66,17 @@ export type OutlineRow =
     depth: number;
     /** True when this row IS a box. Its children are the rows under it. */
     container: boolean;
+    /**
+     * DOES ANYTHING SIT UNDER IT (D-172)?
+     *
+     * The reference puts an expand triangle on EVERY row that has children,
+     * containers included; ours drew one on section rows only, so a
+     * container row could not be collapsed. Carried on the row rather than
+     * counted at the point of drawing, because the component draws a flat
+     * list and counting children from a flat list is the nesting computed
+     * twice.
+     */
+    hasChildren: boolean;
     /** A box says which way it runs, because that is what it is FOR. */
     direction?: "row" | "column" | "grid";
     /** The box or column it lives in — what a drag in the outline drops into. */
@@ -64,16 +92,42 @@ export type OutlineRow =
  * arithmetic over the tree, which is why it lives here with a test on it.
  */
 export function rowLabel(w: Node): string {
+  /* THE AUTHOR'S OWN NAME WINS (D-172, round 2). Double-clicking a row in the
+     reference renames the element and the tree shows the rename; `_label` is
+     where that name is kept — on the node's own props, additive, and read by
+     nothing that draws the page. */
+  const own = (w.props as Record<string, unknown> | undefined)?._label;
+  if (typeof own === "string" && own.trim()) return own.trim();
+  /* THE ELEMENT'S NAME, AND NOTHING ELSE (D-172).
+     The reference's rows read "Container", "Flexbox", "Heading". Ours read
+     "Container · 2 things", "Container · 1 thing", "Heading · ZZ audit
+     headi…" — a count and a snippet of the words, which is the row saying
+     three things where the reference says one. `firstWords` stays exported
+     because a RENAMED row keeps the author's own label and the default has to
+     come from somewhere; it is no longer glued onto the name. */
   if (isContainer(w)) {
-    const dir = directionOf(w);
-    const name = dir === "row" ? "Row" : dir === "grid" ? "Grid" : "Box";
-    const n = w.children.length;
-    return `${name} · ${n === 0 ? "empty" : n === 1 ? "1 thing" : `${n} things`}`;
+    return directionOf(w) === "grid" ? "Grid" : "Container";
   }
   const def = WIDGETS_BY_KIND[w.kind];
-  const name = def?.label || w.kind;
-  const words = firstWords(w.props);
-  return words ? `${name} · ${words}` : name;
+  return def?.label || w.kind;
+}
+
+/**
+ * THE ROW'S ICON — its element TYPE, as a lucide name (D-172, round 2).
+ *
+ * Driven in the reference on 2026-09-19: every `.elementor-navigator__element`
+ * carries one — `eicon-container` on a container, `eicon-text` on a Text
+ * Editor, `eicon-flexbox` on a flexbox. Ours drew a generic box glyph on
+ * container rows only, so a Heading row and a Button row were two identical
+ * lines of text and the tree could not be scanned at all.
+ *
+ * The NAME, not a component, because this module is pure and the Navigator is
+ * what maps a name to a glyph — the same arrangement the widget panel already
+ * uses for the tiles.
+ */
+export function rowIcon(w: Node): string {
+  if (isContainer(w)) return directionOf(w) === "grid" ? "Grid3x3" : "Square";
+  return WIDGETS_BY_KIND[w.kind]?.icon || "Square";
 }
 
 /**
@@ -145,9 +199,23 @@ export function sectionRequired(s: Section): boolean {
 export function outline(doc: BuilderDocument): OutlineRow[] {
   const rows: OutlineRow[] = [];
   const bySection = new Map<string, OutlineRow[]>();
+  /* ONE ROW PER BOX ON THE PAGE (D-172, round 2).
+     Driven in the reference on 2026-09-19: a 50-50 structure with a heading in
+     one cell and a button in the other is FIVE rows — the parent, two children
+     and the two widgets. Ours was SIX, because the Section and the container
+     filling it each got one. The carrier's container is the row the section
+     row already is, so its own row is dropped and everything under it comes up
+     a level. */
+  const carriers = new Map<string, string>();
+  doc.sections.forEach((s) => {
+    const box = carrierOf(s);
+    if (box) carriers.set(s.id, box.id);
+  });
   walkNodes(doc, (hit) => {
+    if (carriers.get(hit.sectionId) === hit.node.id) return;
     const list = bySection.get(hit.sectionId) || [];
     const box = isContainer(hit.node);
+    const lifted = carriers.has(hit.sectionId) ? 1 : 0;
     list.push({
       kind: "widget",
       id: hit.node.id,
@@ -158,11 +226,13 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
         widgetIndex: hit.index,
         id: hit.node.id,
       },
+      icon: rowIcon(hit.node),
       hiddenOn: hiddenOf(hit.node.style),
       locked: !!(hit.node as Widget).locked,
       required: isRequired(hit.node as Widget),
-      depth: hit.depth,
+      depth: Math.max(0, hit.depth - lifted),
       container: box,
+      hasChildren: box && (hit.node as { children?: unknown[] }).children!.length > 0,
       ...(box ? { direction: directionOf(hit.node) } : {}),
       parentId: hit.parentId,
     });
@@ -170,14 +240,29 @@ export function outline(doc: BuilderDocument): OutlineRow[] {
   });
 
   doc.sections.forEach((s, index) => {
+    const carried = carriers.get(s.id);
     rows.push({
       kind: "section",
       id: s.id,
-      label: s.label || `Section ${index + 1}`,
+      ...(carried ? { containerId: carried } : {}),
+      /* "Container", not "Section 1" (D-172) — the reference's tree has one
+         kind of box and one word for it. A section the author (or a template)
+         HAS named keeps that name, because the reference lets a row be renamed
+         and shows the rename; what goes is our own default. */
+      /* A CARRIER ROW IS THE CONTAINER IT CARRIES, and the reference calls a
+         top-level box a Container whichever way it runs — in its own editor a
+         GRID IS A CONTAINER, with the grid-ness set inside the panel. */
+      label: s.label || "Container",
+      /* A carrier row is its container, so it wears the container's own
+         glyph; a plain section is a Container too. */
+      icon: carried ? rowIcon(carrierOf(s)!) : "Square",
       index,
       hiddenOn: hiddenOf(s.style),
       required: sectionRequired(s),
-      hostId: s.columns[0]?.id || s.id,
+      /* A drop on a carrier's row lands INSIDE its container, never beside it
+         in the column — the column is the invisible level this whole change
+         exists to take off the screen. */
+      hostId: carried || s.columns[0]?.id || s.id,
     });
     rows.push(...(bySection.get(s.id) || []));
   });

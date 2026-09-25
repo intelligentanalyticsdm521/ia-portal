@@ -18,8 +18,9 @@ const MUTATIONS = [
   {
     name: 'P1 the plan ignores what the server locked',
     file: PLAN,
-    from: '    if (row.available === false) locked[row.kind] = row.unavailableReason || DEFAULT_LOCK;',
-    to: '    if (false) locked[row.kind] = DEFAULT_LOCK;',
+    /* REPOINTED AT INTEGRATION 2026-09-19: the line moved, the promise did not. */
+    from: '    if (row.available !== false) continue;',
+    to: '    continue;',
     expects: 'a Lite business gets the locked kind and the sentence the server sent',
   },
   {
@@ -32,7 +33,8 @@ const MUTATIONS = [
   {
     name: 'P3 the insert stops asking the plan',
     file: BUILDER,
-    from: '    const locked = lockFor(plan, kind);\n    if (locked) { setErr(locked); return false; }',
+    /* REPOINTED AT INTEGRATION 2026-09-19: the line moved, the promise did not. */
+    from: '    const locked = lockFor(plan, kind);\n    if (locked) { setErr(locked.sentence); return false; }',
     to: '    const locked = null;',
     expects: "the pane's insert asks the plan before anything is built",
   },

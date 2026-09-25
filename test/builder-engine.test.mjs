@@ -33,6 +33,12 @@ import {
   renderDocument, renderSection, renderWidget, makeContext, RENDERED_KINDS,
   UNRENDERED_KINDS, esc,
 } from "../src/builder/render.ts";
+/* B-168 §C.1 — THE TEN FAMILIES ANSWER FOR THEMSELVES. `RENDERED_KINDS` is
+   render.ts’s hand-kept list and a family agent never opens that file;
+   `FAMILY_RENDERED_KINDS` is derived from the ten folders, so "does something
+   draw this?" is answered by the code instead of by a list somebody has to
+   remember. render.ts asks `renderFamily` FIRST, before its own switch. */
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { initHistory, push, undo, redo, canUndo, canRedo } from "../src/builder/history.ts";
 import {
   PREMADE_SECTIONS, SHIPPED_TEMPLATES, hydrateClauses, searchPremade, templateByKey, premadeByKey,
@@ -518,7 +524,9 @@ describe("the ONE renderer", () => {
     // MUTATION: add a widget to the registry with the "proposal" adapter and
     // no renderer branch, and this names it.
     const missing = widgetsFor("proposal").map((w) => w.kind)
-      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k));
+
+      .filter((k) => !RENDERED_KINDS.includes(k) && !UNRENDERED_KINDS.includes(k)
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -574,8 +582,20 @@ describe("templates and pre-made sections (§7)", () => {
        a lump, and every clause on this document is its own two widgets. The
        money is `price_line`, which is what makes the schedule catalogue-bound
        and per-event. */
-    for (const k of ["doc_header", "key_fact", "heading", "paragraph",
-      "pricing_table", "price_line", "callout", "signature", "property_plan"]) {
+    /* D-165 REBUILT IT ON THE STANDARD SET (§11.13.3). The cover is a row
+       Container holding an Image and a Heading; the short answers and the crew's
+       sheet are Text Editor lines; the glance table is the plain Table it always
+       was; the tinted panel is Elementor's Alert; the address is Service
+       Location. The ten numbered sections, the clauses and the per-event rule
+       are unchanged — `test/builder-widget-set.test.mjs` pins all three. */
+    // `walkWidgets` skips containers by design; the box itself is pinned in
+    // `test/builder-widget-set.test.mjs`.
+    /* D-167 — the address on section 10 is a **Custom Field** pointed at
+       `service_location.address`, not a block widget. The template still
+       spells the old kind and `upgradeDocument` unpacks it on `build()`,
+       which is exactly what a stored document from yesterday gets. */
+    for (const k of ["image", "heading", "paragraph", "data_table",
+      "price_line", "alert", "signature", "custom_field"]) {
       assert.ok(kinds.includes(k), `the agreement template has no ${k}`);
     }
     assert.ok(!kinds.includes("clauses"),
@@ -720,8 +740,11 @@ describe("opening a proposal written by the old editor", () => {
     // pre-builder proposal opens as the tree too — one model on the screen.
     assert.equal(kinds.filter((k) => k === "price_line").length, 2, "service + line");
     assert.ok(kinds.includes("card"), "cards");
-    assert.ok(kinds.includes("callout"), "callout");
-    assert.ok(kinds.includes("key_value_table"), "buckets");
+    /* D-165 — a call-out is Elementor's **Alert**, and a details list is lines
+       of text. Both convert on the way in, so a v1 proposal opens as the new
+       set without anybody retyping it. */
+    assert.ok(kinds.includes("alert"), "callout");
+    assert.ok(kinds.filter((k) => k === "paragraph").length >= 2, "buckets");
     assert.ok(kinds.includes("signature"), "signature");
   });
 
@@ -780,11 +803,17 @@ describe("what goes on the wire", () => {
     assert.deepEqual(locationsUsedBy(doc), []);
   });
 
-  test("a comparison card never becomes a line item", () => {
+  test("a comparison card never becomes a line item, and a rate card is worth nothing", () => {
     const doc = deserialise(FIXTURE.cases[0].document);
     const wire = toWire(doc);
-    assert.deepEqual(wire.line_items, []);
+    /* A CARD still never sums — that is the rule, and it is what `total` says.
+       The rate card's two ROWS do become priced lines (D-165: "the old pricing
+       table -> Product Line Items"), and each one arrives at ZERO, because the
+       cell they came from held words ("$185.00 / push") and inventing a number
+       from those would put a charge on a document nobody typed. */
     assert.equal(wire.total, 0);
+    assert.deepEqual(wire.line_items.map((l) => [l.description, l.line_total]),
+      [["Per-push Plowing", 0], ["Ice Control", 0]]);
   });
 
   test("the v1 blocks written alongside are honest about the priced parts", () => {

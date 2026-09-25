@@ -1,37 +1,50 @@
 /**
- * builder/WidgetPane.tsx — the side pane SD-010 describes, once, for every builder.
+ * builder/WidgetPane.tsx — THE LEFT PANEL. Widgets, and nothing else.
  *
- * "A side pane of widgets/blocks with a picture and one line of what each is
- *  for; tooltips on every button."
+ * Scope §11.13.1 (D-165), agreed with Brandon 2026-09-19:
  *
- * Drop it into IadmBuilderPanes' `pane` slot. It reads ./registry.ts and
- * nothing else, so a builder gets the right widget set by passing its adapter
- * name — no per-builder list to keep in step.
+ *   "Widgets on the side — all the widgets should be on the left side. This is
+ *    the 5th time that I have explained this. You have all this random details
+ *    on the side. I never asked for any of that."
  *
- * ── PATTERN IT COMES FROM ─────────────────────────────────────────────────
- * SparkFormBuilderPage's field palette (the only pane on the platform whose
- * buttons carried a description, via FIELD_TYPE_META) and the Template Studio's
- * InsertRail (the only one grouped under headings). This is both, plus the two
- * things SD-010 asks for that neither had: a picture of the SHAPE each widget
- * makes, and a search box — twenty-five widgets is more than a person scans.
+ * ── WHAT THE REAL EDITOR DOES ─────────────────────────────────────────────
+ * Looked at on 2026-09-19 in a live Elementor 4.2.4 (WordPress Playground,
+ * `post.php?post=2&action=elementor`), screenshots under
+ * `overnight-report/d165-screens/`:
  *
- * ── STEP 0 SCOPE ──────────────────────────────────────────────────────────
- * Definitions only. `onInsert` hands the caller the widget definition and the
- * count the pane asked for; what a builder DOES with that is the engine, which
- * is step 2. Nothing here renders a widget.
+ *   · a title — "Elements"
+ *   · a search box — placeholder "Search Widget..."
+ *   · groups as ACCORDIONS, each with a chevron, first one open
+ *   · tiles TWO ACROSS: a line-icon above, the name under it, nothing else
+ *   · drag a tile onto the page, or click it to insert at the selection
+ *
+ * Nothing else is in that panel. No outline, no totals, no customer box, no
+ * templates list, no "still to fill in" counter.
+ *
+ * ── WHAT WAS DELETED HERE, AND WHY IT IS NOT HIDDEN ───────────────────────
+ *   · `LeftPane.tsx`, the two-tab wrapper (Add | Outline) — the outline is now
+ *     the floating Structure window (Navigator.tsx), so the wrapper had one tab
+ *     left and no reason to exist.
+ *   · the `header` slot — the door adapters injected their own left-pane
+ *     groups through. The proposal builder pushed its Details group through it;
+ *     that group was invented on 2026-09-16 and was never scope. Removing the
+ *     slot is what stops it coming back. Told to the proposal stream in
+ *     D165_HANDOFF_2026-09-19.md.
+ *   · the picture strip — the 12×8 thumbnail of the SHAPE each widget makes — and the
+ *     one-line description on every row. Elementor shows an icon and a name;
+ *     the sentence is the tooltip. Twenty-six rows of picture-plus-paragraph is
+ *     four screens of scrolling for a panel you are meant to scan.
+ *   · the `hint` line under the search box — the adapter's words about dragging.
+ *     One sentence at the top of a panel nobody reads twice.
  */
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Lock, Search } from "lucide-react";
 import * as Icons from "lucide-react";
-import {
-  widgetTooltip,
-  type BuilderAdapter,
-  type WidgetDef,
-  widgetDescription,
-  widgetLabel,
-} from "./registry";
+/* `widgetTooltip` WAS IMPORTED HERE and is gone with the tile's title
+   attribute (D-172, round 2) — the reference puts no tooltip on a tile. */
+import { type BuilderAdapter, type WidgetDef, widgetLabel } from "./registry";
 import type { WidgetLock } from "./tier";
-import { groupByTask } from "./widgetTasks";
+import { openGroups, panelGroups, type PanelGroup } from "./widgetGroups";
 
 /** Resolve a lucide icon by NAME — registry.ts stays pure and importable. */
 function WidgetIcon({ name, className }: { name: string; className?: string }) {
@@ -40,177 +53,306 @@ function WidgetIcon({ name, className }: { name: string; className?: string }) {
   return <Cmp className={className} />;
 }
 
+/**
+ * The panel's title — the reference editor's own word (D-172).
+ *
+ * Driven in a live Elementor 4.2.4 on 2026-09-19 (the capture is
+ * `elementor-reference/widgets/_zz_screen_round1.json`): the panel is titled
+ * "Elements", its search says "Search Widget...", its group headings are Title
+ * Case, and the panel is 300px wide with 85px tiles. "Widgets" was ours.
+ */
+export const PANE_TITLE = "Elements";
+
+/** The reference editor's own placeholder, to the character. */
+export const PANE_SEARCH_PLACEHOLDER = "Search Widget...";
+
 export interface WidgetPaneProps {
   /** Which builder this is. Decides which widgets are offered at all. */
   adapter: BuilderAdapter;
-  /**
-   * Called when the author picks a widget. `count` is present only for a
-   * widget that declares one, and is what the author answered to the guided
-   * question ("How many cards?") — asked ONCE, before insert, per SD-010.
-   */
-  onInsert: (widget: WidgetDef, count?: number) => void;
-  /** Rendered above the search box — an "Ask ARGUS" action, typically. */
-  header?: React.ReactNode;
+  /** Called when the author picks a widget — inserted at the selection. */
+  onInsert: (widget: WidgetDef) => void;
   /**
    * DRAG TO POSITION (§11.8).
    *
-   * A card can be dragged onto the canvas and dropped between two widgets
-   * rather than only clicked and landed at the end. The pane reports what is
-   * being dragged and the canvas draws the indicator, because the canvas is
-   * the only thing that knows where the columns are; the shell holds the one
-   * piece of state between them.
+   * A tile can be dragged onto the canvas and dropped between two things
+   * rather than only clicked and landed at the selection. The pane reports
+   * what is in the air and the canvas draws the indicator, because the canvas
+   * is the only thing that knows where the columns are.
    *
    * `null` means the drag is over. Told on `dragend` whatever the outcome, so
-   * a drag that ends on the widget list itself cannot leave the canvas
-   * believing something is still in the air.
+   * a drag that ends on the panel itself cannot leave the canvas believing
+   * something is still in the air.
    */
   onDragWidget?: (widget: WidgetDef | null) => void;
   /**
    * WIDGETS THIS PLAN CANNOT HAVE — kind → the sentence the client reads.
    *
-   * The pane's half of request R-D1. Same rule as the picker's: the row stays,
-   * greyed, with the reason as its line, and neither the click nor the DRAG
-   * does anything. A drag that landed and was then refused would look like a
-   * broken canvas rather than a plan.
+   * The three states of §11.12: offered, not on this plan, or needs a product
+   * this business does not have. A locked tile stays IN the group, greyed,
+   * with the reason as its tooltip, and neither the click nor the DRAG does
+   * anything — a drag that landed and was then refused looks like a broken
+   * canvas rather than a plan.
    */
   lockedKinds?: Record<string, WidgetLock>;
   /**
-   * The line under the search box, in the adapter's words (copy.ts, D-30).
+   * WHERE "UPGRADE" GOES, when a whole group is behind a bigger plan.
    *
-   * "drop it exactly where you want it" is true of a page and of an email, but
-   * the NOUN differs, and a proposal builder that says "page" is the leak this
-   * prop exists to stop. Absent, the generic sentence is used.
+   * D-168 item 6. On a website plan that carries no paid page widgets, every
+   * tile in the **Pro** and **Site** groups is refused, and a column of greyed
+   * tiles with no way forward is the screen
+   * `reference_nav_visibility_semantics` calls the defect: the client can see
+   * there is something there and cannot find out what to do about it. The
+   * heading of a group whose every tile is refused ON PLAN carries one link.
+   *
+   * Absent means no link is drawn at all, which is right for a surface that has
+   * nowhere to send somebody — a link that goes nowhere is worse than none.
    */
-  hint?: string;
+  upgradeHref?: string;
+  /**
+   * THE EDGE HANDLE (D-172). The reference editor puts a small chevron tab
+   * halfway down the panel's right border that folds the panel away. Optional,
+   * so a frame that has no panel toggle simply does not draw one.
+   */
+  onCollapse?: () => void;
 }
 
-export function WidgetPane({ adapter, onInsert, header, onDragWidget, hint, lockedKinds }: WidgetPaneProps) {
+/**
+ * IS EVERY TILE IN THIS GROUP REFUSED, AND REFUSED ON PLAN?
+ *
+ * Only then is "Upgrade" the true answer. A group where ONE tile is refused
+ * because the business does not own OLIVER is not a group a bigger website plan
+ * opens, and `reference_nav_visibility_semantics` is explicit that collapsing
+ * those two answers into one word is the defect. Exported so the test can run
+ * it rather than read the JSX.
+ */
+export function groupLockedOnPlan(
+  group: { widgets: WidgetDef[] },
+  lockedKinds?: Record<string, WidgetLock> | null,
+): boolean {
+  if (!group.widgets.length) return false;
+  return group.widgets.every((w) => lockedKinds?.[w.kind]?.reason === "plan");
+}
+
+export function WidgetPane({
+  adapter, onInsert, onDragWidget, lockedKinds, upgradeHref, onCollapse,
+}: WidgetPaneProps) {
   const [query, setQuery] = useState("");
-  // Which widget is mid-question, and the number showing in its stepper.
+  /* NO BOX PRESETS AND NO SPECIAL CASE (integration, 2026-09-19). The Layout
+     group holds two real WIDGETS — Container and Grid — so a search for "row"
+     matches one of them and the group is there on its own. The pane used to
+     add the group back when only a PRESET matched; the presets are gone from
+     this panel, and with them the rule that existed for them. */
+  const groups = useMemo(() => panelGroups(adapter, query), [adapter, query]);
+  /* `total` WAS HERE and is deleted with the empty-search sentence it fed. */
 
-  /* GROUPED BY THE JOB, NOT BY THE TYPE (D-147). "Information" and "Trust"
-     are words a developer wrote down; "Customer & property" and "Products &
-     services" are the two sentences the business owner said. The picker uses
-     the same call, so the two surfaces cannot drift — widgetTasks.ts. */
-  const groups = useMemo(() => groupByTask(adapter, query), [adapter, query]);
-  const total = useMemo(() => groups.reduce((n, g) => n + g.widgets.length, 0), [groups]);
+  /**
+   * WHICH ACCORDIONS ARE OPEN.
+   *
+   * `null` means "nobody has clicked a heading yet", so the default from
+   * widgetGroups applies — EVERY group open, as the reference editor's panel
+   * is. The moment the author opens or shuts one themselves, their set wins,
+   * and clearing the search puts the default back because `open` is reset with
+   * the query.
+   */
+  const [open, setOpen] = useState<PanelGroup[] | null>(null);
+  const shown = open ?? openGroups(groups, query);
+  const toggle = (g: PanelGroup) =>
+    setOpen(shown.includes(g) ? shown.filter((x) => x !== g) : [...shown, g]);
 
-  /* THE "HOW MANY?" QUESTION IS GONE (D-156, item 4).
-     It only existed because the cards inside a composite could not be added or
-     removed once the widget was on the page. They can now: a card is a widget
-     with the same duplicate and delete as everything else, so the thing arrives
-     with its default rows and the author changes them where they can see them.
-     The picker lost the same control in the same pass — two surfaces, one
-     deletion, or one of them keeps asking. */
-  function pick(w: WidgetDef) {
-    onInsert(w);
-  }
+  /**
+   * A SEARCH IS ONE FLAT GRID (D-172).
+   *
+   * Driven in the reference on 2026-09-19: typing "heading" gives two Heading
+   * tiles and NO group heading above them. Ours kept "BASIC" over the matches,
+   * which turns a two-result search into a list of headings.
+   */
+  const searching = query.trim().length > 0;
+  const flat = useMemo(() => groups.flatMap((g) => g.widgets), [groups]);
+
+  /** One tile. The same markup whether it is in a group or in a search. */
+  const tile = (w: WidgetDef) => {
+    const lock = lockedKinds?.[w.kind] ?? null;
+    const label = widgetLabel(w, adapter);
+    return (
+      <button
+        key={w.kind}
+        type="button"
+        onClick={() => { if (!lock) onInsert(w); }}
+        disabled={!!lock}
+        {...(lock ? {
+          "data-widget-locked": lock.sentence,
+          "data-widget-state": lock.reason,
+          "data-widget-tier": lock.tier,
+        } : { "data-widget-state": "offered" })}
+        /* NO TOOLTIP ON A TILE (D-172, round 2). Driven in the reference on
+           2026-09-19: hovering Heading gives cursor `move`, background
+           #F1F2F3, `titleAttr: null` and no tooltip node anywhere. Ours put a
+           full sentence on every single tile — "Container - A box you drop
+           things into. Set it to a row for columns, or a column for a stack."
+           — so the panel you are meant to SCAN answered every glance with a
+           paragraph. The name under the icon is the whole label.
+
+           A LOCKED tile keeps its sentence, and only a locked tile: the
+           reference's own locked tile is the one place the panel explains
+           itself, and "why can I not press this" has no other answer. */
+        {...(lock ? { title: lock.sentence, "aria-label": lock.sentence } : {})}
+        data-widget-kind={w.kind}
+        /* HTML5 drag, the events Canvas already uses to reorder.
+           No library: a second drag mechanism is a second set of
+           rules about what a drop means. */
+        draggable={!!onDragWidget && !lock}
+        onDragStart={(e) => {
+          if (lock) { e.preventDefault(); return; }
+          e.dataTransfer.effectAllowed = "copy";
+          // Some browsers refuse to start a drag with no payload.
+          e.dataTransfer.setData("text/plain", label);
+          onDragWidget?.(w);
+        }}
+        onDragEnd={() => onDragWidget?.(null)}
+        /* SEPARATE CARDS, NOT A SHEET OF CELLS (D-172, round 2).
+           Driven in the reference on 2026-09-19: the tile is a 130x85 button
+           with `1px solid rgb(213,216,220)` on ALL FOUR sides, the grid is
+           `130px 130px` with a `10px` gap, and the panel has a 15px gutter
+           each side — 15+130+10+130+15 = the panel's own 300px, exactly.
+           Ours was edge to edge: bottom and right hairlines only, no gap, no
+           gutter, so the panel read as a spreadsheet rather than a tray of
+           cards. Hover is #F1F2F3 and the cursor is `move`, both measured. */
+        className={`relative flex h-[85px] flex-col items-center justify-center gap-1.5 rounded-[3px] border border-[#D5D8DC] px-1 text-center transition-colors ${
+          lock
+            ? "cursor-not-allowed bg-white opacity-60"
+            : "cursor-move bg-white hover:bg-[#F1F2F3]"}`}
+      >
+        {/* THE PADLOCK BADGE (D-172) — the reference draws one in a locked
+            tile's top-right corner. Ours only greyed the tile, so "not on this
+            plan" and "still loading" looked the same. */}
+        {lock && (
+          <span data-widget-padlock={w.kind} className="absolute right-1 top-1 text-slate-400">
+            <Lock className="h-3 w-3" />
+          </span>
+        )}
+        <WidgetIcon name={w.icon} className="h-5 w-5 text-slate-500" />
+        <span className="w-full truncate text-[10.5px] font-medium leading-tight text-slate-700">
+          {label}
+        </span>
+      </button>
+    );
+  };
 
   return (
-    <div className="flex h-full flex-col" data-builder-pane={adapter}>
-      {header && <div className="border-b border-slate-100 p-3">{header}</div>}
+    <div className="relative flex h-full flex-col" data-builder-pane={adapter}>
+      {/* 15px, weight 400, text-align start — the reference's own H2,
+          measured 2026-09-19 (`_zz_r2_panel_topbar_ref_b.json`: id
+          `elementor-panel-header-title`, `align: "start 15px none"`). Ours was
+          12px bold and centred, which read as a section label rather than the
+          panel's name. */}
+      <div className="flex-shrink-0 border-b border-slate-200 px-[15px] py-2.5 text-left text-[15px] font-normal text-slate-700">
+        {PANE_TITLE}
+      </div>
 
-      {/* Search — twenty-five widgets is past the point of scanning. Matches
-          the description too, because people type what they want, not what we
-          decided to call it. */}
-      <div className="border-b border-slate-100 p-3">
+      <div className="flex-shrink-0 border-b border-slate-100 p-3">
         <div className="relative">
           <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
           <input
             type="search"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search — try “price” or “photo”"
-            aria-label="Search widgets"
+            onChange={(e) => { setQuery(e.target.value); setOpen(null); }}
+            placeholder={PANE_SEARCH_PLACEHOLDER}
+            aria-label={PANE_SEARCH_PLACEHOLDER}
+            data-pane-search
             className="w-full rounded border border-slate-200 py-1.5 pl-7 pr-2 text-xs focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-300"
           />
         </div>
       </div>
 
-      {/* DRAG TO POSITION (§11.8), said once rather than appended to every
-          tooltip — the tooltips are the widget's own words and stay that way. */}
-      <div className="border-b border-slate-100 px-3 pb-2 text-[10px] leading-snug text-slate-400">
-        {hint ?? <>Click one to add it where you are, or <strong className="font-semibold text-slate-500">drag it onto the page</strong> to
-        drop it exactly where you want it.</>}
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {total === 0 && (
-          <div className="rounded border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-xs text-slate-500">
-            Nothing matches “{query}”. Clear the search to see everything this builder can add.
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* A SEARCH THAT MATCHES NOTHING SHOWS NOTHING (D-172, round 2).
+            Driven in the reference: type "zzzzqqq" and the whole panel reads
+            "Widgets Components Globals Search Widget: … Upgrade Now" — an
+            empty grid, and not one word about the search. Ours drew a dashed
+            box saying "Nothing matches […]. Clear the search to see every
+            widget.", which is a paragraph telling you what the empty grid
+            already told you. The box, its copy and its `total === 0` branch
+            are deleted, not hidden. */}
+        {searching ? (
+          <div data-pane-flat="1" className="grid grid-cols-2 gap-[10px] px-[15px] py-[10px]">
+            {flat.map(tile)}
           </div>
-        )}
+        ) : groups.map((g) => {
+          const isOpen = shown.includes(g.group);
+          return (
+            <div key={g.group} data-pane-group={g.group} data-pane-group-open={isOpen ? "1" : "0"}>
+              <button
+                type="button"
+                data-pane-group-toggle={g.group}
+                aria-expanded={isOpen}
+                title={isOpen ? `Hide the ${g.group} widgets` : `Show the ${g.group} widgets`}
+                onClick={() => toggle(g.group)}
+                /* TITLE CASE, not UPPERCASE (D-172). The reference's headings
+                   are "Atomic Elements", "Layout", "Basic", "General" —
+                   measured `text-transform: none` on every one of them.
 
-        {groups.map((group) => (
-          <div key={group.task} className="mb-4 last:mb-0">
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-              {group.task}
-            </div>
-            <div className="space-y-1.5">
-              {group.widgets.map((w) => {
-                /* THE THREE STATES (catalogue G.4): offered, not on this
-                   plan, or needs a product this business does not have. The
-                   `reason` is on the row as a data attribute so a test can
-                   tell the two refusals apart, and so can anybody reading the
-                   DOM — they are two different things and the memory rule
-                   says they must never read as one. */
-                const lock = lockedKinds?.[w.kind] ?? null;
-                return (
-                <div key={w.kind}>
-                  <button
-                    type="button"
-                    onClick={() => { if (!lock) pick(w); }}
-                    disabled={!!lock}
-                    {...(lock ? {
-                      "data-widget-locked": lock.sentence,
-                      "data-widget-state": lock.reason,
-                      "data-widget-tier": lock.tier,
-                    } : { "data-widget-state": "offered" })}
-                    /* TOOLTIP ON EVERY BUTTON — SD-010, not optional. */
-                    title={lock?.sentence || widgetTooltip(w, adapter)}
-                    aria-label={lock?.sentence || widgetTooltip(w, adapter)}
-                    data-widget-kind={w.kind}
-                    /* HTML5 drag, the events Canvas already uses to reorder
-                       sections. No library: a second drag mechanism is a
-                       second set of rules about what a drop means. */
-                    draggable={!!onDragWidget && !lock}
-                    onDragStart={(e) => {
-                      if (lock) { e.preventDefault(); return; }
-                      e.dataTransfer.effectAllowed = "copy";
-                      // Some browsers refuse to start a drag with no payload.
-                      e.dataTransfer.setData("text/plain", w.label);
-                      onDragWidget?.(w);
-                    }}
-                    onDragEnd={() => onDragWidget?.(null)}
-                    className={`flex w-full items-start gap-2.5 rounded border border-slate-200 p-2 text-left transition-colors ${
-                      lock ? "cursor-not-allowed bg-slate-50 opacity-60" : "bg-white hover:border-slate-400 hover:bg-slate-50"}`}
+                   NO GREY BAND, 13.3px, weight 400 (D-172, round 2). Ours was
+                   11.5px weight 700 on a grey band the full width of the
+                   panel, so six headings read as six toolbars. The reference's
+                   heading is a line of plain text with a caret on its left. */
+                className="flex w-full items-center gap-1.5 px-[15px] py-2 text-left text-[13.3px] font-normal tracking-normal text-slate-700 hover:text-slate-900"
+              >
+                {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                {g.group}
+                {upgradeHref && groupLockedOnPlan(g, lockedKinds) && (
+                  /* D-168 item 6 — ONE link, on the heading of a group whose
+                     every tile this plan refuses. It is a real anchor and not a
+                     button, so it works with the middle mouse button and with
+                     the keyboard, and `stopPropagation` keeps a click on it
+                     from also collapsing the group it is explaining. */
+                  <a
+                    href={upgradeHref}
+                    data-pane-group-upgrade={g.group}
+                    onClick={(e) => e.stopPropagation()}
+                    className="ml-auto rounded px-1.5 py-0.5 text-[10px] font-semibold normal-case text-sky-700 underline hover:bg-sky-50"
                   >
-                    {/* The PICTURE: the shape this widget makes on the page. */}
-                    <img
-                      src={w.picture}
-                      alt=""
-                      aria-hidden="true"
-                      className="mt-0.5 h-8 w-12 flex-shrink-0 rounded-sm bg-slate-50"
-                    />
-                    <span className="min-w-0">
-                      <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-800">
-                        <WidgetIcon name={w.icon} className="h-3 w-3 text-slate-400" />
-                        {widgetLabel(w, adapter)}
-                      </span>
-                      {/* ONE line, in a business owner's words. */}
-                      <span className="mt-0.5 block text-[11px] leading-snug text-slate-500">
-                        {lock?.sentence || widgetDescription(w, adapter)}
-                      </span>
-                    </span>
-                  </button>
+                    Upgrade
+                  </a>
+                )}
+              </button>
 
+              {isOpen && (
+                /* TWO ACROSS, icon over name. Elementor's tile, and the reason
+                   the picture and the sentence went: this panel is scanned, not
+                   read. */
+                <div className="grid grid-cols-2 gap-[10px] px-[15px] pb-[15px]">
+                  {/* THE BOX PRESETS LIVED HERE and are GONE (integration,
+                      2026-09-19). The Layout group held Box / Row / Grid as
+                      presets AND Container / Grid as widgets, so "Grid" was
+                      two tiles side by side and the two inserted different
+                      things — the preset a real box, the widget a node nothing
+                      draws. §11.13.1: "Layout holds exactly Container and
+                      Grid, as the reference editor's does", and
+                      `registry.presetFor` is what makes the Grid TILE insert a
+                      grid container. A row is a Container with its direction
+                      set, which is the reference editor's own answer. */}
+                  {g.widgets.map(tile)}
                 </div>
-                );
-              })}
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* THE EDGE HANDLE (D-172) — the reference's chevron tab, halfway down
+          the panel's right border, which folds the panel away. */}
+      {onCollapse && (
+        <button
+          type="button"
+          data-pane-collapse
+          onClick={onCollapse}
+          title="Hide Panel"
+          aria-label="Hide Panel"
+          className="absolute -right-3 top-1/2 z-10 flex h-9 w-3 -translate-y-1/2 items-center justify-center rounded-r border border-l-0 border-slate-300 bg-white text-slate-500 hover:text-slate-800"
+        >
+          <ChevronLeft className="h-3 w-3" />
+        </button>
+      )}
     </div>
   );
 }

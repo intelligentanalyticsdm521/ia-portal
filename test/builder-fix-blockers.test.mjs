@@ -12,12 +12,16 @@
  *   V-3  a nested box's "+" painted at the identical pixel as its parent's,
  *        and the parent's won, so "add inside this row" added one level OUT
  *
+ * V-3's BUTTON IS DELETED (2026-09-19). A box that already has something in it
+ * has no "+" of its own any more — the reference editor has none — so the
+ * placement rule it needed went with it. What is left of V-3 here is the pair
+ * that says so: the rule is gone, and the thing that replaced it is on the page.
+ *
  * ── WHY THE SUITE MISSED THEM, AND WHAT THIS FILE DOES DIFFERENTLY ────────
  * 2,294 tests were green while all three were broken. Every test that touched
  * this behaviour asserted SOURCE TEXT — that the shell mentions `onEditText`,
- * that the adapter renders a picker — and source text cannot tell you that the
- * document came back unchanged. The one test that pinned the slash command
- * pinned the DEFECTIVE line as its expected value, character for character.
+ * that the adapter renders a widget list — and source text cannot tell you that
+ * the document came back unchanged.
  *
  * So every test below CALLS the real function on a real document and reads the
  * document that comes back. The one document it calls them on is the one
@@ -41,12 +45,11 @@ import {
 } from "../src/builder/model.ts";
 import { MAX_DEPTH } from "../src/builder/treeOps.ts";
 import { MAX_CONTAINER_DEPTH } from "../src/builder/render.ts";
-import {
-  boxPlusPlacement, BOX_PLUS_SIZE, BOX_PLUS_STEP, insertSpotFor,
-} from "../src/builder/insertPosition.ts";
+import * as place from "../src/builder/insertPosition.ts";
+import { insertSpotFor } from "../src/builder/insertPosition.ts";
 import { resolveCatalogCard } from "../src/builder/widgets/index.ts";
-import { boxMatches } from "../src/builder/WidgetPicker.tsx";
-import { groupByTask } from "../src/builder/widgetTasks.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
+
 import { documentTotals } from "../src/builder/totals.ts";
 
 const SRC = path.join(process.cwd(), "src");
@@ -156,11 +159,16 @@ describe("V-1 · words typed inside a box reach the document", () => {
     assert.ok(!/findIndex/.test(fn), "an index hunt is still in onEditText");
   });
 
-  test("and neither the slash command nor the jump counts an index any more", () => {
+  test("the slash command is GONE, and the jump still counts no index", () => {
     const shell = readSrc("builder/BuilderShell.tsx");
-    const slash = shell.slice(shell.indexOf("const slashCommit ="), shell.indexOf("const slashCommitBox"));
-    assert.ok(slash.includes('editWidgetText(doc, s.widgetId, s.path, "")'));
-    assert.ok(!/widgets\.findIndex/.test(slash), "the slash command still scans a column");
+    // ABSENT: "/" on an empty line opened a pop-up list of widgets. Deleted
+    // 2026-09-19 — the reference editor has no such thing, and half of V-1 was
+    // this command reaching into a column by hand.
+    assert.ok(!/slashCommit|setSlash|onSlashCommit/.test(shell), "the slash command is back in the shell");
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/,
+      "the pop-up list of widgets the slash command opened is back");
+    // PRESENT: the jump, which is the half of this test that still has a
+    // subject, and it still addresses the widget by node id.
     const jump = shell.slice(shell.indexOf("function jumpToProblem"), shell.indexOf("const placeSection"));
     assert.ok(jump.includes("pathOfNode(doc, widgetId)"), "the jump cannot select a widget at depth");
   });
@@ -260,54 +268,65 @@ describe("V-2 · the panel writes to the widget inside the box", () => {
 });
 
 /* ══════════════════════════════════════════════════════════════════════════
-   V-3 — every box's "+" is its own
+   V-3 — the "+" inside a full box is DELETED, and an empty one has its own
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("V-3 · a nested box's + belongs to the nested box", () => {
-  test("no two boxes in an ancestor chain share a pixel or a layer", () => {
-    const seen = new Set();
-    let last = null;
-    for (let depth = 0; depth < MAX_DEPTH; depth += 1) {
-      const p = boxPlusPlacement(depth);
-      const key = `${p.right}:${p.bottom}`;
-      assert.ok(!seen.has(key), `depth ${depth} paints its "+" where another one already is`);
-      seen.add(key);
-      if (last) {
-        assert.ok(p.right - last.right >= BOX_PLUS_SIZE, "two + buttons are closer together than one is wide");
-        assert.ok(p.zIndex > last.zIndex, "the parent's + is still stacked above its child's");
-      }
-      last = p;
+describe("V-3 · the corner + inside a box is gone, and the middle one replaces it", () => {
+  test("the placement rule and its two numbers are NOT exported any more", () => {
+    // ABSENT. V-3 was a fight between two "+" buttons on the same pixel; the
+    // reference editor has neither of them, so on 2026-09-19 the button, the
+    // rule that placed it and the constants it was measured in were deleted
+    // rather than tidied. Read off the module object, so a re-export under a
+    // different name cannot slip back in unnoticed.
+    for (const gone of ["boxPlusPlacement", "BOX_PLUS_SIZE", "BOX_PLUS_STEP"]) {
+      assert.equal(place[gone], undefined, `insertPosition.ts exports ${gone} again`);
     }
-    assert.equal(BOX_PLUS_STEP >= BOX_PLUS_SIZE, true, "the step does not clear the button");
+    const src = readSrc("builder/insertPosition.ts");
+    assert.ok(!/BoxPlusPlacement/.test(src), "the BoxPlusPlacement type is back");
   });
 
-  test("a box directly in a column keeps the placement it has today", () => {
-    assert.deepEqual(boxPlusPlacement(0), { right: -11, bottom: -11, zIndex: 6 });
-  });
-
-  test("a nonsense depth is treated as the outermost, never as a negative offset", () => {
-    assert.deepEqual(boxPlusPlacement(-3), boxPlusPlacement(0));
-    assert.deepEqual(boxPlusPlacement(Number.NaN), boxPlusPlacement(0));
-  });
-
-  test("THE CANVAS USES IT, and the stylesheet no longer answers too", () => {
+  test("and the canvas paints no + inside a box that already has something in it", () => {
     const canvas = readSrc("builder/Canvas.tsx");
-    assert.ok(canvas.includes("const place = boxPlusPlacement(level)"), "the canvas does not use the one placement rule");
-    assert.ok(canvas.includes('b.style.right = `${place.right}px`'));
-    assert.ok(canvas.includes('b.setAttribute("data-addin-level", String(level))'), "the level is not on the button");
-    // The depth is counted off the box's OWN ancestors, so it is the box's own
-    // answer and not the section's.
-    assert.ok(canvas.includes('up.hasAttribute("data-bx-host") && !up.hasAttribute("data-col")'));
-    // ONE answer: the stylesheet must not pin the button as well.
-    const css = canvas.slice(canvas.indexOf(".bxc-addin {"), canvas.indexOf(".bxc-addin:hover"));
-    assert.ok(!/right:\s*-?\d/.test(css), "the stylesheet still pins the + to one corner");
-    assert.ok(!/z-index:\s*\d/.test(css), "the stylesheet still gives every + the same layer");
+    // ABSENT: the class the corner button wore, and the level it carried.
+    assert.ok(!canvas.includes("bxc-addin"), "the corner + inside a box is back on the canvas");
+    assert.ok(!canvas.includes("data-addin-level"), "the nesting level is back on a + button");
   });
 
-  test("the picker the + opens lands the thing in the box that was pressed", () => {
-    // The other half of the same gesture: a spot in the ROW inserts into the
-    // row. `insertSpotFor` is the one placement rule, asked with the row's own
-    // widget selected.
+  test("PRESENT INSTEAD: an EMPTY container shows one + in its middle, and it selects that container", () => {
+    const canvas = readSrc("builder/Canvas.tsx");
+    // Only a box with nothing in it gets one — that is the `continue`.
+    assert.ok(canvas.includes('if (box.querySelector("[data-widget]")) continue;'),
+      "the + is drawn inside boxes that already hold something");
+    assert.ok(canvas.includes('b.className = "bxc-addhere"'), "the empty container has no + in its middle");
+    assert.ok(canvas.includes('b.setAttribute("data-builder-addhere", String(columnIndex))'),
+      "the empty container's + is not addressable");
+    // ABSENT: the instruction sentence we hung on it. The reference's empty
+    // container is a "+" and nothing else — no tooltip, no sentence (D-172).
+    // PRESENT: a short accessible name, so the button is still reachable.
+    assert.ok(!canvas.includes("Drag a widget here, or press and then choose one on the left"),
+      "the + carries an instruction sentence again");
+    assert.ok(canvas.includes('b.setAttribute("aria-label", "Add Widget")'),
+      "the + has no accessible name at all");
+    // Pressing it SELECTS, and the widgets are on the left. No list opens here.
+    assert.ok(canvas.includes('onSelect({ kind: "widget", ...path })'),
+      "pressing the + does not select the container it is in");
+    assert.ok(canvas.includes('document.querySelector<HTMLInputElement>(\'[data-builder-slot="pane"] input\')?.focus()'),
+      "pressing the + does not send the author to the left panel");
+  });
+
+  test("and a CONTAINER selected is what puts the next widget INSIDE it", () => {
+    // The rule that makes the middle "+" worth pressing: rule 0 of
+    // insertPosition. Executed, not read — a box selected, a widget asked for,
+    // and the spot comes back naming the box itself.
+    const { doc, boxId } = nested();
+    const spot = insertSpotFor(doc, { kind: "widget", sectionId: "s", columnIndex: 0, widgetIndex: 0, id: boxId });
+    assert.equal(spot.hostId, boxId, "a widget chosen with a container selected lands outside it");
+    assert.equal(spot.index, 2, "it does not land at the END of what is already in the container");
+  });
+
+  test("a widget beside a card in a row still lands in the row", () => {
+    // Unchanged by the deletion, and the reason the deletion is safe: the one
+    // placement rule already put things where the author was pointing.
     const { doc, rowId, cardId } = nested();
     const spot = insertSpotFor(doc, { kind: "widget", sectionId: "s", columnIndex: 0, widgetIndex: 0, id: cardId });
     assert.equal(spot.hostId, rowId, "a widget added beside a card in a row would land outside the row");
@@ -334,39 +353,39 @@ describe("D-156 · how deep a box may go is ONE number", () => {
     }
   });
 
-  test("a search that matches only a BOX still shows the Layout group", () => {
-    // FOUND BY DRIVING IT (2026-09-17): wiring `onPickBox` into the slash
-    // picker was not enough. `groupByTask` returns the groups holding a
-    // matching WIDGET, and a box is not a widget — so typing "/row", which
-    // matches the Row box and nothing else, dropped Layout out of the list
-    // and the picker said "Nothing here matches 'row'" while holding exactly
-    // the thing asked for.
-    assert.equal(boxMatches("row").length, 1, "the Row box does not match the word row");
+  test("searching the LEFT PANEL for 'row' reaches the Layout group — no second list to ask", () => {
+    /* WAS "a search that matches only a BOX still shows the Layout group",
+       about the widget pop-up and its box presets. Both are deleted, and the
+       fix is structural rather than a special case: the Layout group holds two
+       real widgets — Container and Grid — whose sentences say "Set it to a row
+       for columns", so typing "row" matches a WIDGET and the group is there on
+       its own merits, in the one panel there is. */
     assert.equal(
-      groupByTask("proposal", "row").some((g) => g.task === "Layout"), false,
-      "this test's premise is gone — a widget now matches 'row' too",
+      panelGroups("proposal", "row").some((g) => g.group === "Layout"), true,
+      "typing 'row' no longer reaches the Layout group at all",
     );
-    const src = readSrc("builder/WidgetPicker.tsx");
-    assert.ok(src.includes("const boxes = useMemo(() => (p.onPickBox ? boxMatches(query) : [])"),
-      "the picker does not compute the matching boxes once");
-    assert.ok(/groups\.some\(\(g\) => g\.task === "Layout"\)/.test(src),
-      "the picker does not put the Layout group back when only a box matches");
-    // The empty message must count the boxes too, or it says "nothing matches"
-    // over a list with something in it.
-    assert.ok(/\+ \(shown\.some\(\(g\) => g\.task === "Layout"\) \? boxes\.length : 0\)/.test(src),
-      "the count that decides the empty message does not count the boxes");
+    // ABSENT: the pop-up, and the preset list it searched.
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "the widget pop-up is back");
+    const pane = readSrc("builder/WidgetPane.tsx");
+    assert.ok(!/boxMatches/.test(pane), "the panel is matching box presets again as well as widgets");
+    // PRESENT: one call, in the one panel, and the groups it draws are that call's.
+    assert.ok(pane.includes("panelGroups(adapter, query)"), "the panel does not ask the one grouping");
   });
 
-  test("the slash command can ask for a Box, a Row or a Grid", () => {
-    // `onPickBox` reached only the "+" door, so the picker the slash command
-    // opens showed no Layout group at all — a box you cannot ask for.
+  test("a box is asked for in the LEFT PANEL, and nowhere else", () => {
+    /* WAS "the slash command can ask for a Box, a Row or a Grid". The slash
+       command is deleted and so is the pop-up it opened. */
     const shell = readSrc("builder/BuilderShell.tsx");
-    assert.ok(shell.includes("onPickBox={slashCommitBox}"), "the slash picker still has no box door");
-    assert.ok(shell.includes("const slashCommitBox = useCallback"), "there is no handler behind it");
-    // ONE handler: the box is placed by `insertBox`, the same function the "+"
-    // and a drag from the pane use, so the depth refusal is one behaviour.
-    const fn = shell.slice(shell.indexOf("const slashCommitBox"), shell.indexOf("/** D-35: take me"));
-    assert.ok(fn.includes("insertBox(preset, spot, cleared)"), "the slash box does not go through insertBox");
-    assert.ok(shell.includes("boxMatches(s.query)[0]"), "Enter cannot choose a box");
+    // ABSENT: both doors, and the handlers behind them.
+    for (const gone of ["slashCommitBox", "onPickBox", "WidgetPicker", "boxMatches"]) {
+      assert.ok(!shell.includes(gone), `the shell still wires ${gone}`);
+    }
+    // PRESENT: the Layout group offers Container and Grid as ordinary tiles,
+    // and the Grid tile makes a real grid container through the registry.
+    const layout = panelGroups("proposal").find((g) => g.group === "Layout");
+    assert.deepEqual(layout.widgets.map((w) => w.kind).sort(), ["container", "grid"],
+      "the Layout group is not Container and Grid");
+    assert.ok(readSrc("builder/registry.ts").includes("export function presetFor"),
+      "there is no one place that turns a Layout tile into a container");
   });
 });

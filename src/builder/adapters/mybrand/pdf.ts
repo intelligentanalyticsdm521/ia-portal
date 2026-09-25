@@ -77,9 +77,13 @@ export function pdfPageSize(doc: Pick<CanvasDoc, "width" | "height">): PdfPageSi
     widthPt: round2(inW * PT_PER_INCH),
     heightPt: round2(inH * PT_PER_INCH),
     dpi: Math.round(w / inW),
+    // Shown to a person, so the inches are rounded to two places: A4 is 210 ×
+    // 297 MILLIMETRES and its true inch figures run to four, which on a menu
+    // reads as a mistake rather than as precision. The PAGE is still cut from
+    // the full figures above — only the sentence is rounded.
     label: physical
-      ? `${trim(inW)} × ${trim(inH)} in (${physical.label})`
-      : `${trim(inW)} × ${trim(inH)} in`,
+      ? `${trim(round2(inW))} × ${trim(round2(inH))} in (${physical.label})`
+      : `${trim(round2(inW))} × ${trim(round2(inH))} in`,
   };
 }
 
@@ -99,27 +103,60 @@ export interface ImagePdfInput {
   createdAt?: Date;
 }
 
+/** One side of a design, ready to be written as one PDF page. */
+export interface ImagePdfPage {
+  rgb: Uint8Array<ArrayBuffer>;
+  pixelWidth: number;
+  pixelHeight: number;
+  pageWidthPt: number;
+  pageHeightPt: number;
+}
+
 /**
- * A complete one-page PDF, as bytes. Pure: give it pixels and a page size and
- * it gives you a file, in a browser or under `node --test`.
+ * A complete PDF, as bytes — ONE PAGE PER SIDE OF THE DESIGN (G-09).
+ *
+ * Round 1 delivered design 05 as two separate files because a design had one
+ * artboard. A card's front and back belong in one file, and so do the two
+ * sides of a flyer.
+ *
+ * Objects are numbered 1 (the catalog), 2 (the page tree), then THREE PER PAGE
+ * — the page, its image and its content stream — and the document info last.
+ * The arithmetic is three named functions rather than a running counter,
+ * because an xref table that is one object out produces a file that opens in
+ * one reader and not in another, and that is the worst way to find out.
+ *
+ * Pure: give it pixels and page sizes and it gives you a file, in a browser or
+ * under `node --test`.
  */
-export async function buildImagePdf(input: ImagePdfInput): Promise<Uint8Array<ArrayBuffer>> {
-  const px = whole(input.pixelWidth);
-  const py = whole(input.pixelHeight);
-  if (!px || !py) throw new Error("the design has no size to print");
+export async function buildImagePdfPages(
+  pages: ImagePdfPage[],
+  opts: { title?: string; createdAt?: Date } = {},
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (!pages.length) throw new Error("there are no pages to print");
 
-  const needed = px * py * 3;
-  if (input.rgb.length !== needed) {
-    // Never write a PDF from a buffer that is not the picture: a short one
-    // produces a file that opens, shows a torn image, and blames the printer.
-    throw new Error(`the picture is ${input.rgb.length} bytes where a ${px}×${py} page needs ${needed}`);
-  }
+  const prepared = await Promise.all(pages.map(async (page, i) => {
+    const px = whole(page.pixelWidth);
+    const py = whole(page.pixelHeight);
+    if (!px || !py) throw new Error(`page ${i + 1} has no size to print`);
+    const needed = px * py * 3;
+    if (page.rgb.length !== needed) {
+      // Never write a PDF from a buffer that is not the picture: a short one
+      // produces a file that opens, shows a torn image, and blames the printer.
+      throw new Error(`the picture is ${page.rgb.length} bytes where a ${px}×${py} page needs ${needed}`);
+    }
+    const pageW = round2(page.pageWidthPt);
+    const pageH = round2(page.pageHeightPt);
+    if (!(pageW > 0) || !(pageH > 0)) throw new Error(`page ${i + 1} has no page size`);
+    return { px, py, pageW, pageH, image: await flate(page.rgb) };
+  }));
 
-  const pageW = round2(input.pageWidthPt);
-  const pageH = round2(input.pageHeightPt);
-  if (!(pageW > 0) || !(pageH > 0)) throw new Error("the page has no size");
-
-  const image = await flate(input.rgb);
+  const n = prepared.length;
+  /** Page i's three objects. Page one's are 3, 4, 5; page two's are 6, 7, 8. */
+  const pageObj = (i: number) => 3 + i * 3;
+  const imageObj = (i: number) => 4 + i * 3;
+  const contentObj = (i: number) => 5 + i * 3;
+  const infoObj = 3 + n * 3;
+  const lastObj = infoObj;
 
   const parts: Uint8Array[] = [];
   let at = 0;
@@ -139,40 +176,59 @@ export async function buildImagePdf(input: ImagePdfInput): Promise<Uint8Array<Ar
   put("1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n");
 
   startObject(2);
-  put("2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n");
+  const kids = prepared.map((_, i) => `${pageObj(i)} 0 R`).join(" ");
+  put(`2 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${n} >>\nendobj\n`);
 
-  startObject(3);
-  put(`3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pageW} ${pageH}]`
-    + ` /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>\nendobj\n`);
+  prepared.forEach((page, i) => {
+    startObject(pageObj(i));
+    put(`${pageObj(i)} 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.pageW} ${page.pageH}]`
+      + ` /Resources << /XObject << /Im0 ${imageObj(i)} 0 R >> >> /Contents ${contentObj(i)} 0 R >>\nendobj\n`);
 
-  startObject(4);
-  put(`4 0 obj\n<< /Type /XObject /Subtype /Image /Width ${px} /Height ${py}`
-    + ` /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode`
-    + ` /Length ${image.length} >>\nstream\n`);
-  put(image);
-  put("\nendstream\nendobj\n");
+    startObject(imageObj(i));
+    put(`${imageObj(i)} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${page.px} /Height ${page.py}`
+      + ` /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode`
+      + ` /Length ${page.image.length} >>\nstream\n`);
+    put(page.image);
+    put("\nendstream\nendobj\n");
 
-  // The whole page: scale the unit image square up to the MediaBox and draw it.
-  const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im0 Do\nQ\n`;
-  startObject(5);
-  put(`5 0 obj\n<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+    // The whole page: scale the unit image square up to the MediaBox and draw it.
+    const content = `q\n${page.pageW} 0 0 ${page.pageH} 0 0 cm\n/Im0 Do\nQ\n`;
+    startObject(contentObj(i));
+    put(`${contentObj(i)} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}endstream\nendobj\n`);
+  });
 
-  startObject(6);
-  put(`6 0 obj\n<< /Title (${pdfText(input.title || "Design")})`
+  startObject(infoObj);
+  put(`${infoObj} 0 obj\n<< /Title (${pdfText(opts.title || "Design")})`
     + ` /Producer (Intelligent Analytics My Brand Design Studio)`
-    + ` /CreationDate (${pdfDate(input.createdAt || new Date())}) >>\nendobj\n`);
+    + ` /CreationDate (${pdfDate(opts.createdAt || new Date())}) >>\nendobj\n`);
 
   const xrefAt = at;
-  let xref = "xref\n0 7\n0000000000 65535 f \n";
-  for (let id = 1; id <= 6; id++) xref += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
+  let xref = `xref\n0 ${lastObj + 1}\n0000000000 65535 f \n`;
+  for (let id = 1; id <= lastObj; id++) xref += `${String(offsets[id]).padStart(10, "0")} 00000 n \n`;
   put(xref);
-  put(`trailer\n<< /Size 7 /Root 1 0 R /Info 6 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
+  put(`trailer\n<< /Size ${lastObj + 1} /Root 1 0 R /Info ${infoObj} 0 R >>\nstartxref\n${xrefAt}\n%%EOF\n`);
 
   const out = new Uint8Array(at);
   let cursor = 0;
   for (const p of parts) { out.set(p, cursor); cursor += p.length; }
   return out;
 }
+
+/**
+ * One page. KEPT under its own name because it is what every existing caller
+ * asks for and because a one-sided design is still the common case: this is
+ * the multi-page writer handed a list of one.
+ */
+export async function buildImagePdf(input: ImagePdfInput): Promise<Uint8Array<ArrayBuffer>> {
+  return buildImagePdfPages([{
+    rgb: input.rgb,
+    pixelWidth: input.pixelWidth,
+    pixelHeight: input.pixelHeight,
+    pageWidthPt: input.pageWidthPt,
+    pageHeightPt: input.pageHeightPt,
+  }], { title: input.title, createdAt: input.createdAt });
+}
+
 
 /* ══════════════════════════════════════════════════════════════════════════
    The browser half — the only DOM in this file
@@ -189,11 +245,32 @@ export async function imagePdfFromPngDataUrl(
   page: PdfPageSize,
   title?: string,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const { rgb, width, height } = await rasterise(dataUrl);
-  return buildImagePdf({
-    rgb, pixelWidth: width, pixelHeight: height,
-    pageWidthPt: page.widthPt, pageHeightPt: page.heightPt, title,
-  });
+  return imagePdfFromPngDataUrls([dataUrl], page, title);
+}
+
+/**
+ * EVERY SIDE OF THE DESIGN, IN ONE FILE (G-09).
+ *
+ * The caller draws each page in turn and hands the pictures over in order;
+ * every page is the same size, because every page of a design is the same
+ * artboard. One `PdfPageSize` for all of them says so rather than leaving it
+ * to a caller to keep consistent.
+ */
+export async function imagePdfFromPngDataUrls(
+  dataUrls: string[],
+  page: PdfPageSize,
+  title?: string,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (!dataUrls.length) throw new Error("there are no pages to print");
+  const pages: ImagePdfPage[] = [];
+  for (const url of dataUrls) {
+    const { rgb, width, height } = await rasterise(url);
+    pages.push({
+      rgb, pixelWidth: width, pixelHeight: height,
+      pageWidthPt: page.widthPt, pageHeightPt: page.heightPt,
+    });
+  }
+  return buildImagePdfPages(pages, { title });
 }
 
 async function rasterise(dataUrl: string): Promise<{ rgb: Uint8Array<ArrayBuffer>; width: number; height: number }> {

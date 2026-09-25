@@ -16,7 +16,8 @@
  * document with one at the bottom — every document we ship — is unchanged.
  */
 import type { Widget } from "../model";
-import { esc, type RenderContext } from "../render";
+import { esc } from "../esc";
+import type { RenderContext } from "../render";
 import type { WidgetDef } from "../registry";
 import { bar, pictureFrom } from "../pictures";
 import { money, widgetTotals } from "../totals";
@@ -124,16 +125,17 @@ export const TOTALS_DEF: WidgetDef = {
   kind: "totals",
   label: "Totals",
   description: "Adds up the priced lines above it — subtotal, tax, any discount, and the total.",
-  task: "Products & services",
   icon: "Calculator",
   picture: pictureFrom(bar(8, 10, 26) + bar(44, 10, 12) + bar(8, 18, 20) + bar(44, 18, 12)
     + `<path d="M8 26h48" stroke="#94A3B8"/>` + bar(8, 30, 16) + bar(42, 30, 14, 5)),
-  category: "Money",
+  category: "Intelligent Analytics",
   // WHERE IT MAY BE USED (catalogue F.1): a proposal, an email and a landing
   // page — the three that carry priced lines for it to add up. NOT `website`:
   // a public page has nothing to total, and the website publish path has no
   // emitter for the kind, so a placed one could never be published.
-  adapters: ["proposal", "email", "landing"],
+  /* PROPOSALS ONLY (§11.13.3): Totals is in the proposal's IA column and in
+     nobody else's. A newsletter does not add anything up. */
+  adapters: ["proposal"],
   // Quotes, proposals and invoices are the OLIVER Invoicing tier's whole job
   // (G.4). WHETHER this business has it is still the server's answer.
   tier: "ia:oliver",

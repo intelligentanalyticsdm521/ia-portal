@@ -30,9 +30,12 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 
 import {
-  WIDGETS_BY_KIND, widgetsFor, allWidgetsFor, groupForPane, widgetTooltip,
-  SITE_SECTION_KINDS, arionKindOf, siteWidgetKindFor, WEBSITE_USES_A_SECTION_INSTEAD,
+  WIDGETS_BY_KIND, widgetsFor, allWidgetsFor, widgetTooltip,
+  SITE_SECTION_KINDS, arionKindOf, siteWidgetKindFor,
 } from "../src/builder/registry.ts";
+/* ONE grouping (D-165): `groupForPane` is deleted and `groupByTask` reads the
+   registry's own categories. */
+import { panelGroups } from "../src/builder/widgetGroups.ts";
 import {
   toDocument, toPayload, freshenDuplicates, fieldsOf, arionKindOfSection,
   sectionWidget, sectionsWithoutNodes, NODE_PROP, LOCK_PROP,
@@ -45,6 +48,11 @@ import {
   SITE_PAGE_TEMPLATES, SITE_PREMADE, SITE_PREMADE_TAGS, withCount, repeatFieldFor, blankRow,
 } from "../src/builder/adapters/website/siteTemplates.ts";
 import { makeContext, RENDERED_KINDS, UNRENDERED_KINDS } from "../src/builder/render.ts";
+/* B-168 §C.1 — the ten families draw themselves, and `render.ts` asks them
+   before its own switch. RENDERED_KINDS cannot spread this list (it is read
+   while render.ts is still evaluating, which is the whole reason
+   widgets/kinds.ts exists), so the one place that needs both asks for both. */
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 import { addSection, duplicateSection, moveSection, removeSection, makeWidget } from "../src/builder/model.ts";
 
 const FIXTURE = JSON.parse(
@@ -140,16 +148,44 @@ describe("the seam — what the pane offers is what the website can build", () =
     }
   });
 
-  test("the pane opens with the sections first, then the parts of a page", () => {
-    const groups = groupForPane("website", "");
-    assert.equal(groups[0].category, "Sections");
-    assert.deepEqual(groups[0].widgets.map((w) => w.kind), [...SITE_SECTION_KINDS]);
-    // "Money" joined the website pane on 2026-09-17: catalogue F.1 puts a
-    // card and a product card on a site, and both are `category: "Money"`.
-    // The SECTIONS group still comes first — a whole ready-made band is what
-    // most authors want — and the parts follow.
-    assert.deepEqual(groups.map((g) => g.category),
-      ["Sections", "Text", "Money", "Layout", "Media", "Information"]);
+  /**
+   * THE PANE IS ELEMENTOR'S NOW (D-165, §11.13.1).
+   *
+   * It used to open with a "Sections" group holding the twelve whole-page ARION
+   * sections. Brandon, 2026-09-19: the left panel is *"widgets only… groups
+   * Layout / Basic / General / Intelligent Analytics"*, and a whole ready-made
+   * band is what **Add section → Template** is for. So the twelve sections are
+   * `hidden` in the registry — still a kind, so a stored page draws and round
+   * trips — and belong in the template library. The ask is in the handoff.
+   */
+  test("the pane opens with Elementor's groups, in Elementor's order", () => {
+    /* SIX since family f7-data-lists landed (B-168): `Site` is drawn when a
+       builder offers one of Elementor’s theme pieces, and the website now
+       offers Site Logo, Site Title, Page Title, Post Title, Post Excerpt,
+       Featured Image, Archive Title and Sitemap — the offer file’s own
+       `website.elementor_pro` list. Was five while that group was empty. */
+    const groups = panelGroups("website", "");
+    assert.deepEqual(groups.map((g) => g.group),
+      ["Layout", "Basic", "Pro", "General", "Site", "Intelligent Analytics"]);
+    assert.equal(groups[0].widgets.map((w) => w.label).join(", "), "Container, Grid");
+    /* MEMBERSHIP IS `builder-offers.test.mjs`’s question and ORDER is
+       `builder-widget-set.test.mjs`’s; a hand-typed list of the Pro group here
+       was stale within the hour eight families landed into it. What this still
+       earns its keep for is that the group is REAL and full — the four Pro
+       word widgets are not sitting in General behind a padlock. */
+    const pro = groups.find((g) => g.group === "Pro").widgets.map((w) => w.label);
+    assert.ok(pro.length > 20, `the Pro group has only ${pro.length} tiles`);
+    for (const must of ["Gallery", "Hotspot", "Lottie", "Video Playlist", "Posts", "Form"]) {
+      assert.ok(pro.includes(must), `${must} is not in the Pro group`);
+    }
+  });
+
+  test("the twelve whole-page sections are understood and never offered", () => {
+    for (const kind of SITE_SECTION_KINDS) {
+      assert.ok(WIDGETS_BY_KIND[kind], `${kind} left the vocabulary`);
+      assert.equal(WIDGETS_BY_KIND[kind].hidden, true, `${kind} is still a tile`);
+      assert.equal(allWidgetsFor("website").some((w) => w.kind === kind), true, kind);
+    }
   });
 
   test("every button in the pane has a tooltip", () => {
@@ -159,16 +195,13 @@ describe("the seam — what the pane offers is what the website can build", () =
     }
   });
 
-  test("a job a SECTION does is not also offered as a loose widget", () => {
-    // One mechanism per concern. A price on a website is `site_pricing`, with
-    // its own emitter and its own round trip — offering the document's pricing
-    // table beside it would be two things that publish differently.
-    for (const [kind, instead] of Object.entries(WEBSITE_USES_A_SECTION_INSTEAD)) {
-      assert.ok(WIDGETS_BY_KIND[kind], `${kind} is named in the list and does not exist`);
-      assert.equal(WIDGETS_BY_KIND[kind].adapters.includes("website"), false,
-        `${kind} is still offered to the website builder; ${instead} is the one mechanism`);
-    }
-  });
+  /* THE "a job a SECTION does" TEST LIVED HERE and is DELETED (D-165).
+     It read `WEBSITE_USES_A_SECTION_INSTEAD`, which is gone with it: the twelve
+     whole-page sections are off the widget panel (they are templates now), six
+     of the nine widgets that map named are deleted outright, and Testimonial is
+     a standard Elementor widget every builder offers. The rule that replaced it
+     is stronger — `test/builder-widget-set.test.mjs` pins the website pane's
+     whole list, by name and in order. */
 
   test('"Custom section (kept as is)" is in the vocabulary and never offered', () => {
     assert.ok(WIDGETS_BY_KIND.site_custom);
@@ -283,7 +316,6 @@ describe("a section built on the website itself", () => {
     const w = sectionWidget(doc.sections[1]);
     assert.equal(w.kind, "site_custom");
     assert.equal(w.props[LOCK_PROP].label, "Custom section — built on the site");
-    assert.equal(w.props[LOCK_PROP].adoptable, true);
     assert.equal(arionKindOfSection(doc.sections[1]), null);
   });
 
@@ -300,8 +332,19 @@ describe("a section built on the website itself", () => {
     const html = renderSiteWidget(sectionWidget(doc.sections[1]), ctx);
     assert.match(html, /sw-locked/);
     assert.match(html, /Custom section/);
-    assert.match(html, /County Build Awards 2025/);
-    assert.match(html, /Can be made editable/);
+    /* The FIRST WORDS on the section used to be printed here, and they came
+       from `adoptPreview` — a field the adoption mapper computed. Adoption is
+       deleted (B-168, 2026-09-22) and so is the field. The rule it served is
+       kept and asserted instead: this block is NEVER BLANK. It names the
+       section and says what will happen to it, which is the whole of what a
+       client needs from a section we could not read.
+
+       "Can be made editable" was adoption's chip. Nothing on a page is offered
+       as something we could take charge of any more, because everything else
+       is already editable. */
+    assert.match(html, /Publishing this page does not change one byte of it/);
+    assert.doesNotMatch(html, /Can be made editable/);
+    assert.ok(html.replace(/<[^>]*>/g, "").trim().length > 40, "never blank");
     // And nothing on it is typeable.
     assert.doesNotMatch(html, /data-edit=/);
   });
@@ -349,8 +392,14 @@ describe("duplicating a section", () => {
 
 describe("the canvas draws the page, not a form", () => {
   test("every widget the website pane offers is actually drawn", () => {
+    /* B-168 §C.1 — `FAMILY_RENDERED_KINDS` is the fifth source, and it is read
+       off the families' own index rather than typed out here: a second copy of
+       the list would agree with whatever the families did. `render.ts` asks
+       `renderFamily` before its own switch, so a kind in this set really is
+       drawn on the canvas. */
     const drawn = new Set([
-      ...RENDERED_KINDS, ...SITE_RENDERED_KINDS, ...UNRENDERED_KINDS, ...SITE_UNRENDERED_KINDS,
+      ...RENDERED_KINDS, ...FAMILY_RENDERED_KINDS,
+      ...SITE_RENDERED_KINDS, ...UNRENDERED_KINDS, ...SITE_UNRENDERED_KINDS,
     ]);
     for (const w of allWidgetsFor("website")) {
       assert.ok(drawn.has(w.kind), `${w.kind} is offered and nothing draws it`);

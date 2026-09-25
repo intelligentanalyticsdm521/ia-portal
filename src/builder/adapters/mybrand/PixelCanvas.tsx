@@ -23,35 +23,54 @@ import {
 } from "react";
 import * as fabric from "fabric";
 import { Maximize, ZoomIn, ZoomOut } from "lucide-react";
-import { layerToFabricObject, fabricGradient } from "./fabricBridge";
-import { isTransparent, type BaseLayer, type CanvasDoc, type Layer, type TextLayer } from "./scene";
+import { layerToFabricObject, fabricGradient, paintsAsynchronously } from "./fabricBridge";
+import {
+  isTransparent, modelTopLeft, textLayerSvg,
+  type BaseLayer, type CanvasDoc, type Layer, type ShapeLayer, type TextLayer,
+} from "./scene";
 
 export interface PixelCanvasHandle {
   /** A PNG/JPEG data URI of the scene at 1:1, whatever the zoom is. */
   toDataURL: (format: "png" | "jpg") => string | null;
   /** The scene as SVG text — vector, for print shops and sign makers. */
   toSVG: () => string | null;
+  /**
+   * ANY page of the design as a PNG data URI, drawn off screen at 1:1 (G-09).
+   * The multi-page PDF needs a picture of every side, and only one side is on
+   * the canvas at a time.
+   */
+  renderPage: (pageDoc: CanvasDoc) => Promise<string>;
   /** Re-fit the design to the visible area. */
   fit: () => void;
 }
 
 export interface PixelCanvasProps {
   doc: CanvasDoc;
-  selectedId: string | null;
-  onSelect: (id: string | null) => void;
+  /** Everything selected. One entry is an ordinary pick; more is a set. */
+  selectedIds: string[];
+  /** The canvas changed the selection — a click, a Shift-click or a marquee. */
+  onSelect: (ids: string[]) => void;
   /**
    * A drag or a resize finished, or someone typed on the canvas. The parent
    * decides what that means for the scene and the undo stack.
    */
   onLayerGeometry: (id: string, patch: Partial<Layer>) => void;
+  /**
+   * Several things moved as one. ONE call, so moving a group of six is ONE
+   * undo step and not six — which is the whole reason a group exists.
+   */
+  onManyGeometry: (patches: Array<{ id: string; patch: Partial<Layer> }>) => void;
   /** Rendered in the top-left corner, over the paper. */
   toolbar?: ReactNode;
+  /** Drawn over the paper — the floating Structure window lives here. */
+  overlay?: ReactNode;
 }
 
 export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(function PixelCanvas(
-  { doc, selectedId, onSelect, onLayerGeometry, toolbar },
+  { doc, selectedIds, onSelect, onLayerGeometry, onManyGeometry, toolbar, overlay },
   ref,
 ) {
+  const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const canvasElRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<fabric.Canvas | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -65,8 +84,12 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
 
   const selectedIdRef = useRef<string | null>(null);
   selectedIdRef.current = selectedId;
+  const selectedIdsRef = useRef<string[]>([]);
+  selectedIdsRef.current = selectedIds;
   const onGeometryRef = useRef(onLayerGeometry);
   onGeometryRef.current = onLayerGeometry;
+  const onManyGeometryRef = useRef(onManyGeometry);
+  onManyGeometryRef.current = onManyGeometry;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
 
@@ -82,12 +105,22 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
     if (!layer) return;
     const w = (obj.width ?? layer.w) * (obj.scaleX ?? 1);
     const h = (obj.height ?? layer.h) * (obj.scaleY ?? 1);
+    const rotation = Math.round((((obj.angle ?? layer.rotation ?? 0) % 360) + 360) % 360);
+    /**
+     * R2-G, the way back. Fabric's `left`/`top` is the point it PINNED the
+     * object by, which for a turned object is not the box's top-left; the scene
+     * says x,y is the unturned top-left. `modelTopLeft` is the exact inverse of
+     * the `rotatedTopLeft` the bridge placed it with, and the identity at 0°,
+     * so an untouched, unturned drag reads back the same integers it always
+     * did. Without it, turning a layer with the handle and letting go moved it.
+     */
+    const box = modelTopLeft(obj.left ?? layer.x, obj.top ?? layer.y, w, h, rotation);
     const updates: Partial<BaseLayer> = {
-      x: Math.round(obj.left ?? layer.x),
-      y: Math.round(obj.top ?? layer.y),
+      x: Math.round(box.x),
+      y: Math.round(box.y),
       w: Math.round(w),
       h: Math.round(h),
-      rotation: Math.round((((obj.angle ?? layer.rotation ?? 0) % 360) + 360) % 360),
+      rotation,
     };
     if (layer.kind === "text" && obj instanceof fabric.IText) {
       // Fabric resizes type by SCALE; bake it into the font size so future
@@ -101,6 +134,36 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
       return;
     }
     onGeometryRef.current(id, updates as Partial<Layer>);
+  }, []);
+
+  /**
+   * A layer's box, read out of Fabric's own transform matrix.
+   *
+   * Needed ONLY for a multi-selection: inside an ActiveSelection a child's
+   * `left`/`top` are measured from the set's centre, so reading them the way
+   * `syncOne` does would file every member at a negative coordinate near the
+   * origin and pile the design into a corner. `calcTransformMatrix` is
+   * absolute whatever an object is currently parented to, and Fabric's matrix
+   * translation IS the object's centre, so the box is the centre less half the
+   * scaled size.
+   *
+   * `syncOne` keeps reading left/top for the ordinary single-object case: it
+   * is the path every existing drag and resize takes, it bakes a text scale
+   * back into the font size, and it is proven. Two readers, because a child of
+   * a selection and a free object really are two different things in Fabric.
+   */
+  const absoluteBox = useCallback((obj: fabric.FabricObject) => {
+    const d = fabric.util.qrDecompose(obj.calcTransformMatrix());
+    const w = (obj.width ?? 0) * d.scaleX;
+    const h = (obj.height ?? 0) * d.scaleY;
+    return {
+      x: Math.round(d.translateX - w / 2),
+      y: Math.round(d.translateY - h / 2),
+      w: Math.round(w),
+      h: Math.round(h),
+      rotation: Math.round(((Math.round(d.angle) % 360) + 360) % 360),
+      scaleY: d.scaleY,
+    };
   }, []);
 
   const docRef = useRef(doc);
@@ -121,21 +184,45 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
       (window as unknown as Record<string, unknown>).__fabricCanvas = c;
     }
 
-    const pick = (e: unknown) => {
-      const obj = (e as { selected?: fabric.FabricObject[] }).selected?.[0];
-      if (!obj) return;
-      const id = idByObjectRef.current.get(obj);
-      if (id) onSelectRef.current(id);
+    /**
+     * Shift-click and the marquee both arrive here as a LIST. Reporting only
+     * `selected[0]` — which is what this did until G-01 — is the whole reason
+     * the studio had no multi-select: Fabric was already handing us the set.
+     */
+    const pick = () => {
+      const active = c.getActiveObjects();
+      const ids = active.map((o) => idByObjectRef.current.get(o)).filter((v): v is string => !!v);
+      if (ids.length) onSelectRef.current(ids);
     };
     c.on("selection:created", pick);
     c.on("selection:updated", pick);
-    c.on("selection:cleared", () => onSelectRef.current(null));
+    c.on("selection:cleared", () => onSelectRef.current([]));
 
     c.on("object:modified", (e) => {
       if (suppressSyncRef.current) return;
       if (guidesRef.current.v !== null || guidesRef.current.h !== null) setGuides({ v: null, h: null });
       const obj = e.target as fabric.FabricObject | undefined;
       if (!obj) return;
+      const children = (obj as unknown as { getObjects?: () => fabric.FabricObject[] }).getObjects?.();
+      if (obj.type === "activeselection" && children?.length) {
+        // The whole set moved, turned or scaled as one. ONE patch list, so it
+        // is ONE undo step.
+        const patches: Array<{ id: string; patch: Partial<Layer> }> = [];
+        for (const child of children) {
+          const id = idByObjectRef.current.get(child);
+          if (!id) continue;
+          const layer = docRef.current.layers.find((l) => l.id === id);
+          if (!layer) continue;
+          const box = absoluteBox(child);
+          const patch: Partial<Layer> = { x: box.x, y: box.y, w: box.w, h: box.h, rotation: box.rotation };
+          if (layer.kind === "text") {
+            (patch as Partial<TextLayer>).size = Math.max(6, Math.round(((layer as TextLayer).size ?? 24) * box.scaleY));
+          }
+          patches.push({ id, patch });
+        }
+        if (patches.length) onManyGeometryRef.current(patches);
+        return;
+      }
       const id = idByObjectRef.current.get(obj);
       if (!id) return;
       syncOne(id, obj, docRef.current.layers.find((l) => l.id === id));
@@ -209,7 +296,11 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
     }
     // The rebuild wipes Fabric's selection even though the inspector still
     // shows the layer — put it back, or the handles vanish after every edit.
-    const selId = selectedIdRef.current;
+    // A single pick is put back here; a SET is put back by the selection
+    // effect below, which is the only thing that knows how to build an
+    // ActiveSelection — two writers of the same selection is how a group ends
+    // up half-selected.
+    const selId = selectedIdsRef.current.length === 1 ? selectedIdsRef.current[0] : null;
     if (selId) {
       const obj = objectsByIdRef.current.get(selId);
       if (obj && obj.selectable !== false) c.setActiveObject(obj);
@@ -223,17 +314,32 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
   useEffect(() => { docDimsRef.current = { w: doc.width, h: doc.height }; }, [doc.width, doc.height]);
 
   // Keep Fabric's own idea of the selection in step when the INSPECTOR or the
-  // layer list moves it, not the canvas.
+  // Structure window moves it, not the canvas. A group is the interesting
+  // case: clicking ONE member hands us the whole tag's id list, and the set
+  // only moves as one once Fabric has been given an ActiveSelection for it.
+  const idsKey = selectedIds.join("|");
   useEffect(() => {
     const c = fabricRef.current;
     if (!c) return;
-    if (!selectedId) { c.discardActiveObject(); c.requestRenderAll(); return; }
-    const obj = objectsByIdRef.current.get(selectedId);
-    if (obj && c.getActiveObject() !== obj && obj.selectable !== false) {
-      c.setActiveObject(obj);
-      c.requestRenderAll();
+    const ids = idsKey ? idsKey.split("|") : [];
+    if (!ids.length) { c.discardActiveObject(); c.requestRenderAll(); return; }
+    const objs = ids
+      .map((id) => objectsByIdRef.current.get(id))
+      .filter((o): o is fabric.FabricObject => !!o && o.selectable !== false);
+    if (!objs.length) return;
+    const current = c.getActiveObjects();
+    const same = current.length === objs.length && objs.every((o) => current.includes(o));
+    if (same) return;
+    suppressSyncRef.current = true;
+    c.discardActiveObject();
+    if (objs.length === 1) {
+      c.setActiveObject(objs[0]);
+    } else {
+      c.setActiveObject(new fabric.ActiveSelection(objs, { canvas: c }));
     }
-  }, [selectedId, doc]);
+    suppressSyncRef.current = false;
+    c.requestRenderAll();
+  }, [idsKey, doc]);
 
   /* ── Zoom ──────────────────────────────────────────────────────────────── */
   const fit = useCallback(() => {
@@ -295,12 +401,62 @@ export const PixelCanvas = forwardRef<PixelCanvasHandle, PixelCanvasProps>(funct
       return url;
     }),
     toSVG: () => withFullSize((c) => c.toSVG()),
+    /**
+     * ANY page of the design, drawn OFF SCREEN, at 1:1 (G-09).
+     *
+     * The multi-page PDF needs a picture of every side, and only one side is
+     * on the canvas at a time. The two alternatives were both worse: flipping
+     * the visible page four times during a download makes the editor blink and
+     * loses the selection, and keeping four live canvases in the DOM costs
+     * four canvases for a feature used once per download.
+     *
+     * A `StaticCanvas` is Fabric's own non-interactive surface — the same
+     * painter, no event plumbing — and it is fed by the SAME
+     * `layerToFabricObject` the editor is, so an exported page cannot be drawn
+     * differently from the page you were just looking at.
+     *
+     * The wait is not a guess dressed up as one: images, icons and effect text
+     * swap themselves in asynchronously, so the render is taken once no
+     * placeholder is left, checked every 40 ms, and at 4 s it gives up and
+     * draws what it has rather than hanging a download for ever.
+     */
+    renderPage: async (pageDoc: CanvasDoc): Promise<string> => {
+      const surface = new fabric.StaticCanvas(undefined, {
+        width: pageDoc.width,
+        height: pageDoc.height,
+        backgroundColor: isTransparent(pageDoc) ? undefined : (pageDoc.background_color || "#FFFFFF"),
+      });
+      try {
+        let outstanding = 0;
+        for (const layer of pageDoc.layers) {
+          if (layer.visible === false) continue;
+          const obj = layerToFabricObject(layer, () => { outstanding = Math.max(0, outstanding - 1); });
+          if (!obj) continue;
+          // Every async kind comes back as a dashed placeholder first, and the
+          // callback above fires when the real object replaces it. The list of
+          // which kinds those are lives in fabricBridge, beside the branching
+          // it describes — a second copy of it here is what left a textured
+          // panel out of every exported page without a word.
+          if (paintsAsynchronously(layer)) outstanding += 1;
+          surface.add(obj);
+        }
+        const deadline = Date.now() + 4000;
+        while (outstanding > 0 && Date.now() < deadline) {
+          await new Promise((r) => setTimeout(r, 40));
+        }
+        surface.renderAll();
+        return surface.toDataURL({ format: "png", quality: 1, multiplier: 1 });
+      } finally {
+        surface.dispose();
+      }
+    },
     fit,
   }), [withFullSize, fit, doc]);
 
   return (
     <div className="relative flex h-full min-w-0 flex-col">
       {toolbar && <div className="absolute left-4 top-3 z-10">{toolbar}</div>}
+      {overlay}
 
       <div className="absolute right-4 top-3 z-10 flex items-center gap-1 rounded border border-slate-200 bg-white px-1 py-0.5 shadow-sm">
         <button type="button" onClick={() => setZoom((z) => Math.max(0.05, Math.round((z - 0.1) * 100) / 100))}

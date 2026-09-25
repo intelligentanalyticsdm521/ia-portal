@@ -16,45 +16,98 @@
  * customer's locations) are passed IN as slots, so the engine stays free of
  * OLIVER and the same inspector serves the website and email builders later.
  *
- * ── THE GROUPS (§11.8, D-140) ─────────────────────────────────────────────
- * Elementor's shape, because that is the one every author on this platform has
- * already used:
+ * ── THREE TABS (§11.13.1, D-165) ──────────────────────────────────────────
+ * Brandon, 2026-09-19: *"I am fine with the settings on the right."* So the
+ * panel stays where it is and takes the reference editor's own shape — the
+ * three tabs it puts over EVERY element, with collapsible sections inside them
+ * named as it names them:
  *
- *   a WIDGET   Content · Typography · Spacing · Advanced
- *   a SECTION  Layout · Spacing · Style · Typography · Page
+ *   a WIDGET     Content   · Style (Typography) · Advanced (Layout, Responsive)
+ *   a BOX        Layout    · Style (edge)       · Advanced (Layout, Responsive)
+ *   a SECTION    Layout    · Style, Typography  · Advanced (Layout, Page)
  *
- * Collapsible, each with a reset, every control with a tooltip in plain words.
+ * A container's first tab is LAYOUT and not Content, because that is what the
+ * reference calls it and the machine catalogue agrees to the letter: every
+ * container section is `tab: "layout"`, every `common` advanced section is
+ * `tab: "advanced"` with `_section_style` labelled "Layout".
+ *
+ * ── WHAT THE TABS REPLACED ────────────────────────────────────────────────
+ * One scrolling column of every group at once, with the SECTION's five groups
+ * repeated under the widget's four. Selecting a widget now shows that widget;
+ * the section is reached by selecting the section — from its handle on the
+ * page, or from the Structure window. That is the reference's rule and it is
+ * why the panel no longer has two "Layout" groups arguing in one scroll.
+ *
  * The controls themselves are in StyleGroups.tsx and the maths is in style.ts —
- * this file decides WHICH groups a selection gets, and nothing else.
+ * this file decides WHICH groups a selection gets, in WHICH tab, and nothing
+ * else.
  *
- * The Desktop / Tablet / Phone segment inside Spacing and Typography edits the
+ * The Desktop / Tablet / Phone segment inside Layout and Typography edits the
  * override for the device the CANVAS is previewing. ONE state, handed down from
  * BuilderShell: two would let an author edit the phone and watch the desktop.
  */
-import type { ReactNode } from "react";
-import { Sparkles, Trash2 } from "lucide-react";
-import type { BuilderDocument, Node, Section, Selection, Widget } from "./model";
-import { widgetAt } from "./model";
+import { useState, type ReactNode } from "react";
+import {
+  AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical,
+  AlignHorizontalDistributeCenter, AlignHorizontalSpaceAround, AlignHorizontalSpaceBetween,
+  AlignStartHorizontal, AlignStartVertical, AlignVerticalDistributeCenter,
+  AlignVerticalSpaceAround, AlignVerticalSpaceBetween, ArrowDown, ArrowLeft, ArrowRight,
+  ArrowUp, Link2, MoveHorizontal, Sparkles, StretchHorizontal, Unlink, WrapText,
+} from "lucide-react";
+import type { BuilderDocument, DocumentSettings, Node, Section, Selection, Widget } from "./model";
+import { carrierContainer, widgetAt } from "./model";
 import { directionOf, isContainer } from "./treeOps";
 import {
-  WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  WIDGETS_BY_KIND, controlOptions, controlSections, controlTab, optionValue,
   widgetDescription, widgetLabel,
-  type BuilderAdapter, type WidgetControl,
+  type BuilderAdapter, type ControlTab, type WidgetControl,
 } from "./registry";
+/* THE PANEL, DRAWN FROM THE DEFINITION ALONE — B-168 §C.1. */
+import { DefinitionControls } from "./definitionControls";
 import {
   isTypographic, layerFor, resetKeys, seedFromPadding, withLayer,
-  type Device, type ElementStyle, type ItemsSpec, type JustifySpec, type StyleLayer,
+  type Device, type DirectionSpec, type ElementStyle, type ItemsSpec, type JustifySpec,
+  type StyleLayer,
 } from "./style";
 import {
-  AdvancedGroup, DeviceSegment, Group, RatioPicker, SpacingGroup, TypographyGroup,
-  FIELD, INPUT, L,
+  Accordion, ContainerAdvancedGroups, ContainerStyleGroups,
+  DeviceSegment, Group, IconChoice, INSPECTOR_TABS, InspectorTabs, RatioPicker,
+  ResponsiveGroup, Slider, SpacingGroup, Switcher, TypographyGroup,
+  Swatches, miniBtn,
+  FIELD, INPUT, L, ROW, type InspectorTab,
 } from "./StyleGroups";
+
+/**
+ * THE PANEL'S TITLE IS CENTRED (D-172, round 3).
+ *
+ * Measured in the reference: `#elementor-panel-header-title` is
+ * `display: flex; justify-content: center`, 15px, weight 700, and the ink of
+ * "Edit Heading" sits at x=107 width 86 — centre 150 of a 300px panel. Ours
+ * was 14px at weight 600, starting 10px from the panel's left edge.
+ */
+const PANEL_TITLE: React.CSSProperties = {
+  display: "flex", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#0C0D0E",
+};
+
+/**
+ * THE PANEL'S BODY HAS NO SIDE PADDING (D-172, round 3).
+ *
+ * Measured: `#elementor-controls` is x=0, width 300, `padding: 15px 0 0`. The
+ * 20px inset belongs to each band, which is how a band can run the full width
+ * of the panel and still line its label up at x=20. Ours padded the body 16px
+ * and drew cards inside that, so nothing could ever be full-bleed.
+ */
+const PANEL_BODY: React.CSSProperties = {
+  padding: "15px 0 0", display: "flex", flexDirection: "column", gap: 0,
+};
 
 export interface InspectorSlots {
   /** Rendered inside the selected widget's panel, above the standard controls. */
   widgetExtras?: (w: Widget, sectionId: string) => ReactNode;
-  /** Rendered at the top of the panel — the gold Ask ARGUS button. */
-  askArgus?: ReactNode;
+  /* THE GOLD Ask ARGUS BUTTON IN THIS HEADER IS DELETED (D-172). The
+     reference editor has ONE door to its AI, in the top bar; we had three.
+     The bar's is the one that stays, so the slot is gone rather than
+     emptied — an empty slot is how the second button comes back. */
   /**
    * The DOCUMENT's own settings, shown whatever is selected — including when
    * nothing is.
@@ -66,15 +119,31 @@ export interface InspectorSlots {
    * would hide them.
    */
   documentExtras?: ReactNode;
+  /**
+   * THE DOCUMENT'S OWN LOOK (D-172, round 2) — the page panel's Style tab.
+   *
+   * `settings.style`, `accent`, `headingFont` and `bodyFont` are ENGINE-owned
+   * facts that the canvas, the PDF, the mailbox and the publisher all read,
+   * and until the page panel got tabs there was no control for any of them
+   * anywhere in the builder. Optional: a builder that hands in no writer gets
+   * the same controls, disabled, rather than a tab that is not there on one
+   * screen and is on another.
+   */
+  onPatchDocument?: (patch: Partial<DocumentSettings>) => void;
 }
+
+/** The page treatments `settings.style` may hold — templates.ts reads them. */
+const PAGE_LAYOUTS: Array<{ value: string; label: string }> = [
+  { value: "plain", label: "Default" },
+  { value: "bordered", label: "Boxed" },
+  { value: "card", label: "Card" },
+];
 
 export interface InspectorProps extends InspectorSlots {
   doc: BuilderDocument;
   selection: Selection;
   onPatchSection: (sectionId: string, patch: Partial<Section>) => void;
   onPatchWidget: (props: Record<string, unknown>) => void;
-  onDeleteWidget: () => void;
-  onMoveWidget: (delta: -1 | 1) => void;
   /** Any colour, any font — the brand kit only supplies the swatches. */
   swatches: string[];
   fonts: string[];
@@ -110,29 +179,120 @@ export interface InspectorProps extends InspectorSlots {
 }
 
 /**
- * What a box is CALLED at the top of the inspector.
+ * What a box is CALLED at the top of the inspector: **Container**.
  *
- * "Row", "Grid", "Box" — the same three words the outline uses, from the same
+ * "Container" or "Grid" — Elementor's two words, the same ones the outline uses, from the same
  * `directionOf`, because a thing called one name in the outline and another in
  * the inspector is two things as far as the author is concerned.
  */
 function boxName(n: Node | null): string {
   const d = directionOf(n);
-  return d === "row" ? "Row" : d === "grid" ? "Grid" : "Box";
+  return d === "grid" ? "Grid" : "Container";
 }
 
 export function Inspector(p: InspectorProps) {
   const { doc, selection } = p;
+  /**
+   * WHICH TAB.
+   *
+   * Kept across selections on purpose — the reference editor does the same,
+   * and an author who is setting spacing on six things in a row should not be
+   * put back on Content after every click. A tab with nothing behind it for
+   * the new selection falls back to Content, which `shownTab` decides.
+   */
+  const [tab, setTab] = useState<InspectorTab>("content");
+
   if (!selection) {
+    /* NOTHING SELECTED = PAGE SETTINGS (§11.13.1 item 2). The reference shows
+       the document's own settings here rather than an empty panel, and the
+       adapter's `documentExtras` is exactly that. */
+    /* THE SAME THREE TABS AS EVERY OTHER PANEL (D-172, round 2).
+       Driven in the reference on 2026-09-19: its page-settings panel is
+       Settings | Style | Advanced, with a "General Settings" section under the
+       first. Ours had NO tabs and one line — "No priced lines yet" — because
+       `documentExtras` was the whole of it and the adapter had nothing else to
+       put there. A panel with a heading and one sentence is a panel that
+       taught the author the page has no settings.
+
+       The document's own fields are the adapter's — only it knows whether this
+       thing has a customer, a currency or a tax rate — so they arrive through
+       `documentExtras` as they always did; what is added here is the SHAPE the
+       reference gives them, and a General Settings section for the two facts
+       the ENGINE owns about any document, whatever builder it is. */
+    /* SETTINGS and STYLE, and no Advanced (D-172, round 2).
+       The reference's page panel has three; ours has two, because there is
+       nothing engine-owned or adapter-owned behind a third and a tab that
+       re-renders the one beside it is a tab that lies — the same rule the
+       Spacer's missing Style tab already follows. Recorded as an omission. */
+    const pageTabs: InspectorTab[] = ["content", "style"];
+    const pageTab: InspectorTab = pageTabs.includes(tab) ? tab : "content";
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflowY: "auto" }}>
-        {p.documentExtras}
-        <div style={{ padding: 16, fontSize: 12, color: "#5A7A8A" }}>
-          <div style={L}>Nothing selected</div>
-          <p style={{ marginTop: 8, lineHeight: 1.5 }}>
-            Click a section or anything on the page to change it here. Words are typed straight on the page.
-          </p>
+      <div data-inspector="page" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
+          <div style={PANEL_TITLE} data-inspector-title>Page settings</div>
         </div>
+        <InspectorTabs tab={pageTab} onTab={setTab} first="Settings" tabs={pageTabs} />
+        <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>
+          <Accordion key={pageTab}>
+          <div style={PANEL_BODY}>
+            {pageTab === "content" && (
+              /* GENERAL SETTINGS — the reference's own heading over the
+                 document's own fields. The FIELDS are the adapter's: only it
+                 knows whether this document has a customer, a currency or a
+                 tax rate, and they arrive through `documentExtras` as they
+                 always did. What is added is the section the reference puts
+                 round them, so a page panel is a panel rather than one loose
+                 line reading "No priced lines yet". */
+              <Group title="General Settings" defaultOpen>
+                {p.documentExtras}
+              </Group>
+            )}
+            {pageTab === "style" && (
+              /* THE PAGE'S OWN LOOK — engine-owned, every builder, and until
+                 now reachable from nowhere: `settings.style`, `accent`,
+                 `headingFont` and `bodyFont` are read by the canvas, the PDF,
+                 the mailbox and the publisher, and had no control anywhere. */
+              <Group title="Page Layout" defaultOpen>
+                <div style={ROW}>
+                  <span style={L}>Page Layout</span>
+                  <select style={INPUT} data-page-layout value={doc.settings.style || "plain"}
+                    onChange={(e) => p.onPatchDocument?.({ style: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    {PAGE_LAYOUTS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Accent Color</span>
+                  <input style={INPUT} type="color" data-page-accent
+                    value={doc.settings.accent || p.swatches[0] || "#0C4A60"}
+                    onChange={(e) => p.onPatchDocument?.({ accent: e.target.value })}
+                    disabled={!p.onPatchDocument} />
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Heading Font</span>
+                  <select style={INPUT} data-page-headingfont value={doc.settings.headingFont || ""}
+                    onChange={(e) => p.onPatchDocument?.({ headingFont: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    <option value="">Default</option>
+                    {p.fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+                <div style={ROW}>
+                  <span style={L}>Body Font</span>
+                  <select style={INPUT} data-page-bodyfont value={doc.settings.bodyFont || ""}
+                    onChange={(e) => p.onPatchDocument?.({ bodyFont: e.target.value })}
+                    disabled={!p.onPatchDocument}>
+                    <option value="">Default</option>
+                    {p.fonts.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </select>
+                </div>
+              </Group>
+            )}
+          </div>
+          </Accordion>
+        </div>
+        {/* THE COACHING SENTENCE IS DELETED (D-172). The reference panels
+            carry no such line. */}
       </div>
     );
   }
@@ -145,6 +305,11 @@ export function Inspector(p: InspectorProps) {
   // a column, which is where every selection used to be.
   const widget = selection.kind === "widget" ? widgetAt(doc, selection) : null;
   const box = isContainer(widget);
+  /* IS THIS BOX THE ONE ITS SECTION IS MERELY CARRYING (D-172, round 2)?
+     A carrier pair is one box on the screen and therefore one panel; the
+     section's own settings are reached from THIS panel's Advanced tab, which
+     is the only place left that can reach them. See `carrierContainer`. */
+  const carried = !!widget && box && carrierContainer(section)?.id === widget.id;
   const def = widget && !box ? WIDGETS_BY_KIND[widget.kind] : null;
   const isEmail = p.adapter === "email";
 
@@ -157,200 +322,619 @@ export function Inspector(p: InspectorProps) {
     if (!widget) return;
     p.onSetWidgetStyle(withLayer(widget.style, p.device, patch), `${widget.id}:${mergeKey}:${p.device}`);
   };
+  /* IS THE GAPS CHAIN ON? The stored model answers it: `rowGap` absent has
+     always meant "the same as the column gap", which is exactly what a
+     linked chain means — so there is nothing new to store and nothing to
+     migrate. See the Gaps control below. */
+  const gapsLinked = widgetLayer.rowGap === undefined;
+
   const patchSectionStyle = (patch: Partial<StyleLayer>, mergeKey: string) => {
     p.onSetSectionStyle(section.id, withLayer(section.style, p.device, patch), `${section.id}:${mergeKey}:${p.device}`);
   };
 
+  /** The name on the panel — "Edit <Widget name>", as the reference writes it. */
+  /* A TOP-LEVEL SECTION IS A CONTAINER ON THE SCREEN (D-172).
+     The reference has ONE kind of box and calls it Container; the panel over a
+     section used to read "Edit Scope of work" or, with no label, "Edit
+     Section" — a word the reference never puts in front of a client. The
+     STORED model is untouched: what the author is editing is still
+     `doc.sections[n]`, and the PDF, the email and the publisher all still read
+     it as a section. Only the name on the panel changes. */
+  const name = widget
+    ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
+    : "Container";
+
+  /**
+   * WHICH TABS HAVE ANYTHING BEHIND THEM.
+   *
+   * A box has no Typography of its own — it holds things, it does not say
+   * anything — so its Style tab carries only its edge, which it does have.
+   * A widget with no words has no Style tab at all, and the tab is GREYED
+   * rather than removed: a row that changes width as the selection moves is a
+   * row nobody can aim at.
+   */
+  /* …and a widget whose DEFINITION puts controls on the Style tab has one
+     too (B-168 §C.1). Before this, `isTypographic` was the only way a Style
+     tab could exist, so a family widget with a Style section and no words
+     would have declared controls nobody could reach. */
+  const hasDefTab = (t: ControlTab) => (def?.controls || []).some((c) => controlTab(c) === t);
+  /* Does this widget's own definition already offer a colour on its Style tab?
+     If it does, the Typography band does not draw a second one — see row 51. */
+  const defHasStyleColour = (def?.controls || [])
+    .some((c) => controlTab(c) === "style" && c.type === "colour");
+  const hasStyle = box || !widget || isTypographic(widget.kind) || hasDefTab("style");
+  /* A WIDGET WITH NO STYLE CONTROLS HAS NO STYLE TAB (D-172).
+     The reference's Spacer has Content and Advanced and nothing between them;
+     ours drew a greyed third tab, and pressing it re-rendered the Content
+     section under a Style heading — the same header, the same fields. A greyed
+     tab was the old answer ("a row that changes width is a row nobody can aim
+     at"); driving it showed the worse half, which is a tab that lies about what
+     is behind it. */
+  const tabs: InspectorTab[] = hasStyle ? INSPECTOR_TABS : ["content", "advanced"];
+  const shownTab: InspectorTab = tabs.includes(tab) ? tab : "content";
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      {p.documentExtras}
-      <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-        <div>
-          <div style={L}>Selected</div>
-          <div style={{ fontSize: 14, fontWeight: 600 }}>{
-            widget
-              ? (box ? boxName(widget) : def ? widgetLabel(def, p.adapter) : widget.kind)
-              : (section.label || "Section")
-          }</div>
-        </div>
-        {p.askArgus}
+    <div data-inspector={widget ? (box ? "box" : "widget") : "section"}
+      style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      {/* `documentExtras` IS NOT DRAWN HERE (integration, 2026-09-19).
+          It is PAGE settings, and page settings belong in the no-selection
+          branch above — §11.13.1 item 2. Drawing it in both branches is why
+          three adapters each wrote `documentExtras={selection ? null : …}` and
+          kept a copy of the selection to do it with: one rule, written four
+          times. The rule lives here now, once. */}
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0" }}>
+        <div style={PANEL_TITLE} data-inspector-title>Edit {name}</div>
       </div>
 
-      <div style={{ padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, overflowY: "auto" }}>
+      <InspectorTabs tab={shownTab} onTab={setTab} first={widget && !box ? "Content" : "Layout"} tabs={tabs} />
+
+      <Accordion key={shownTab}>
+      <div style={{ ...PANEL_BODY, overflowY: "auto" }}>
         {widget && (
           <>
-            {/* A BOX (§11.12, D-156).
+            {/* A BOX (§11.12, D-156) — its LAYOUT tab.
 
                 A box has no Content and no Typography: it holds things, it does
-                not say anything. What it HAS is a layout, and that is its first
-                group, open, because it is the reason the author put it there.
+                not say anything. What it HAS is a layout, and that is the whole
+                of its first tab, because it is the reason the author put it
+                there.
 
-                Everything BELOW this — Spacing, Advanced, and the section's own
-                groups — is the same for a box and for a widget and is written
-                ONCE. Two padding controls for one padding is exactly the drift
-                this file exists to stop. */}
-            {box && (
-              <Group title="Layout" hint="Which way what is inside this box runs, and how far apart" defaultOpen
-                onReset={() => p.onSetWidgetStyle(
-                  resetKeys(widget.style, ["direction", "justify", "alignItems", "wrap", "columns", "gap", "minHeight"]))}>
-                <DeviceSegment device={p.device} onDevice={p.onDevice} />
-                <div style={FIELD}>
-                  <span style={L}>Which way things run</span>
-                  <select
-                    style={INPUT}
-                    data-box-direction
-                    title="Top to bottom, side by side, or in even columns. You can say something different for phones."
-                    value={widgetLayer.direction || "column"}
-                    onChange={(e) => {
-                      const v = e.target.value as "row" | "column" | "grid";
-                      patchWidgetStyle({
-                        direction: v === "column" ? undefined : v,
-                        columns: v === "grid" ? (widgetLayer.columns ?? 3) : undefined,
-                      }, "direction");
-                    }}
-                  >
-                    <option value="column">Stacked, top to bottom</option>
-                    <option value="row">Side by side</option>
-                    <option value="grid">Even columns</option>
+                Everything in the Advanced tab is the same for a box and for a
+                widget and is written ONCE. Two padding controls for one padding
+                is exactly the drift this file exists to stop. */}
+            {/* A BOX'S LAYOUT TAB — the reference's Container · Items ·
+                Additional Options, drawn from the container family's own
+                control table (`widgets/families/container/controls.ts`).
+
+                THE ONE COPY OF THIS PANEL (B-168 land, the b168/demo merge).
+                It was written out here AND a second time as
+                `ContainerLayoutGroup` in StyleGroups.tsx, which nothing
+                rendered. The dead one is deleted; all fifteen of the
+                reference's Layout controls are here, where THE SCREEN LAW
+                pins them row by row. */}
+            {box && shownTab === "content" && (
+              <Group title="Container" defaultOpen
+                onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, [
+                  "direction", "justify", "alignItems", "alignContent", "wrap", "columns",
+                  "rows", "autoFlow", "justifyItems", "gap", "rowGap", "minHeight",
+                  "contentWidth", "width", "units",
+                ]))}>
+                {/* THE BARE DEVICE ROW IS DELETED (D-172, round 2). The
+                    Container section's FIRST row was three unlabelled device
+                    glyphs attached to no control — a switcher floating above
+                    six settings, only two of which are responsive at all. The
+                    reference has no such row anywhere in its panel: the
+                    switcher belongs ON the label of the control being set,
+                    which is where Gaps and Min Height already carry it. */}
+                {/* CONTAINER LAYOUT — the section's FIRST control (D-172,
+                    round 3). Driven in the reference: a grid is a CONTAINER
+                    with Container Layout set to Grid, not a third Direction
+                    button. Ours put Grid beside Column and Row, which said a
+                    grid is a way of running a flexbox — so the Direction
+                    chooser had three answers where the reference has four and
+                    the Flexbox/Grid question had nowhere to be asked at all. */}
+                <div style={ROW}>
+                  <span style={L}>Container Layout</span>
+                  <select style={INPUT} data-box-layout
+                    value={widgetLayer.direction === "grid" ? "grid" : "flex"}
+                    onChange={(e) => patchWidgetStyle(e.target.value === "grid"
+                      ? { direction: "grid", columns: widgetLayer.columns ?? 3 }
+                      : { direction: undefined, columns: undefined }, "layout")}>
+                    <option value="flex">Flexbox</option>
+                    <option value="grid">Grid</option>
                   </select>
                 </div>
 
-                {widgetLayer.direction === "grid" && (
-                  <div style={FIELD}>
-                    <span style={L}>How many columns</span>
-                    <input
-                      style={INPUT} type="number" min={1} max={12} data-box-columns
-                      title="How many even columns the things inside sit in"
-                      value={widgetLayer.columns ?? 3}
+                {/* CONTENT WIDTH — the reference's second control, and it sets
+                    the box the author is looking at.
+
+                    On a CARRIER PAIR the box on the screen is a section and
+                    its one container, so the width that moves the canvas is
+                    the SECTION's — the same three the renderer has always
+                    understood, Narrow included, kept because documents are set
+                    to it. On any other box it is that box's own
+                    `contentWidth`, which is the key `containerBoxDeclarations`
+                    emits and the key arion's container emitter reads. One
+                    label, one control, and whichever of the two it writes is
+                    the one that changes the page. */}
+                <div style={ROW}>
+                  <span style={L}>Content Width</span>
+                  {/* TWO VALUES, AND A THIRD ONLY WHERE A DOCUMENT ALREADY
+                      HOLDS IT (2026-09-20, audit round 4 row 73). Driven:
+                      the reference's `content_width` offers `boxed` and
+                      `full` and nothing else. "Narrow" is ours, the renderer
+                      still understands it, and section templates on the
+                      estate are set to it — so it is not deleted from the
+                      MODEL, it is deleted from the CHOICE. A section already
+                      set to Narrow shows it (an author has to be able to see
+                      and change what their own document says); nothing else
+                      can be made Narrow from here again. */}
+                  {carried ? (
+                    <select style={INPUT} data-box-content-width value={section.width}
+                      onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
+                      <option value="contained">Boxed</option>
+                      <option value="full">Full Width</option>
+                      {section.width === "narrow" && <option value="narrow">Narrow</option>}
+                    </select>
+                  ) : (
+                    <select style={INPUT} data-box-content-width value={widgetLayer.contentWidth ?? "boxed"}
                       onChange={(e) => patchWidgetStyle(
-                        { columns: Math.max(1, Math.min(12, Number(e.target.value) || 1)) }, "columns")}
+                        { contentWidth: e.target.value === "full" ? "full" : undefined }, "contentWidth")}>
+                      <option value="boxed">Boxed</option>
+                      <option value="full">Full Width</option>
+                    </select>
+                  )}
+                </div>
+
+                {/* WIDTH — the reference's third control, and it follows
+                    Content Width: pixels for a boxed box, per cent for a full
+                    one, which is the reference swapping `boxed_width` for
+                    `width` on the one control. One unit, so the switcher shows
+                    the one it is in rather than offering a choice the emitter
+                    would throw away. */}
+                {/* THE REFERENCE'S FIVE UNITS ON A BOXED BOX (2026-09-20,
+                    audit round 4 row 74). Driven: `boxed_width.size_units` is
+                    px / % / em / rem / vw / custom, and "custom" is a CSS
+                    expression the PDF and the mailbox cannot promise, which
+                    style.ts has refused since round 3.
+
+                    A FULL box still offers one. Its width is a per cent of
+                    its parent — `containerBoxDeclarations` writes `width:N%`
+                    and the three server mirrors read that pair — so one unit
+                    here is a STATEMENT, not a choice withheld. Said out loud
+                    in the handoff rather than shown as a switcher that would
+                    put `40em` on the panel and 40% on the page.
+
+                    On the website and the landing page `unitsOffered` cuts
+                    the five back to px, because those two emitters publish
+                    px — the rule is style.ts's, not this control's. */}
+                <Slider
+                  label="Width"
+                  head={<>
+                    <span style={L}>Width</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                  </>}
+                  testAttr="data-box-width"
+                  adapter={p.adapter}
+                  units={widgetLayer.contentWidth === "full" ? ["%"] : ["px", "%", "em", "rem", "vw"]}
+                  unit={widgetLayer.contentWidth === "full" ? undefined : widgetLayer.units?.width}
+                  max={widgetLayer.contentWidth === "full" ? 100 : 1600}
+                  value={widgetLayer.width}
+                  placeholder={widgetLayer.contentWidth === "full" ? "100" : "as the page allows"}
+                  onChange={(v) => patchWidgetStyle({ width: v }, "width")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), width: u } }, "width:unit")}
+                />
+
+                {/* MIN HEIGHT, ABOVE "Items" (D-172, round 3) — the
+                    reference's own order: the box's own size comes before
+                    anything about what is inside it. A SLIDER with a number box
+                    and a unit switcher, which is the shape it gives every size:
+                    px / em / rem / vh, measured. */}
+                <Slider
+                  label="Min Height"
+                  head={<>
+                    <span style={L}>Min Height</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                  </>}
+                  testAttr="data-box-minheight"
+                  adapter={p.adapter}
+                  units={["px", "em", "rem", "vh"]}
+                  unit={widgetLayer.units?.minHeight}
+                  value={widgetLayer.minHeight}
+                  placeholder="auto"
+                  onChange={(v) => patchWidgetStyle({ minHeight: v }, "minHeight")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), minHeight: u } }, "minHeight:unit")}
+                />
+
+                {/* "Items" — the reference's own sub-heading, splitting the
+                    box's own settings from its children's. */}
+                <div data-control-subheading="Items"
+                  style={{ ...L, marginTop: 4, fontWeight: 600, color: "#0B1C24" }}>Items</div>
+
+                {/* DIRECTION — the reference's FOUR, in its own wording
+                    (D-172, round 3), and its four are FOUR STORED VALUES:
+                    `row | column | row-reverse | column-reverse`, which is
+                    what its own `flex_direction` offers and what the three
+                    server mirrors read. A `reverse` flag beside three of them
+                    was tried and deleted (B-168 land): everything that only
+                    wants "row, column or grid?" asks `baseDirection`. */}
+                {widgetLayer.direction !== "grid" && (
+                <div style={ROW}>
+                  <span style={L}>Direction</span>
+                  <IconChoice
+                    name="Direction"
+                    testAttr="data-box-direction"
+                    value={(widgetLayer.direction ?? "column") as DirectionSpec}
+                    onPick={(v) => patchWidgetStyle(
+                      { direction: !v || v === "column" ? undefined : v }, "direction")}
+                    options={[
+                      { v: "row" as DirectionSpec, title: "Row - horizontal", icon: <ArrowRight size={13} /> },
+                      { v: "column" as DirectionSpec, title: "Column - vertical", icon: <ArrowDown size={13} /> },
+                      { v: "row-reverse" as DirectionSpec, title: "Row - reversed", icon: <ArrowLeft size={13} /> },
+                      { v: "column-reverse" as DirectionSpec, title: "Column - reversed", icon: <ArrowUp size={13} /> },
+                    ]}
+                  />
+                </div>
+                )}
+
+                {/* A GRID'S OWN THREE — how many tracks each way, and which
+                    way a cell that was not placed is added. Only in a grid: a
+                    `grid-auto-flow` on a flex box is a declaration the browser
+                    throws away and the next reader has to wonder about. */}
+                {/* A GRID GETS THE GRID'S PANEL (2026-09-20, audit round 4
+                    rows 94–99). Driven out of the live control model on
+                    2026-09-20: every control under "Items" carries
+                    `condition: { container_type: ["grid"] }` or `["flex"]`,
+                    and the grid's are Grid Outline, Columns, Rows, Gaps,
+                    Auto Flow, Justify Items, Align Items — in that order,
+                    with NO Direction, NO Justify Content and NO Wrap. Ours
+                    showed the whole flexbox block, so a grid could not be
+                    given a Justify Items at all and could be given three
+                    settings the browser throws away.
+
+                    GRID OUTLINE IS NOT HERE, on purpose. In the reference it
+                    dashes the empty cells INSIDE THE EDITOR and prints
+                    nothing on the published page; our canvas draws the same
+                    HTML the page gets, so emitting it would put dashes on a
+                    customer's page and not emitting it would be a switch
+                    that does nothing. It needs the canvas, which this pass
+                    does not own. Left, and named in the handoff. */}
+                {widgetLayer.direction === "grid" && (
+                  <>
+                    <Slider
+                      label="Columns"
+                      head={<>
+                        <span style={L}>Columns</span>
+                        <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                      </>}
+                      testAttr="data-box-columns"
+                      /* `fr` is what a track is measured in, and the emitter
+                         writes `repeat(N, minmax(0,1fr))` — so the word on
+                         the panel is the word on the page. It is a STATEMENT:
+                         a second unit would need a track list, which is what
+                         the reference's own `custom` is and what its Justify
+                         Content waits on. */
+                      units={["fr"]}
+                      unit={undefined}
+                      max={12}
+                      value={widgetLayer.columns ?? 3}
+                      onChange={(v) => patchWidgetStyle(
+                        { columns: Math.max(1, Math.min(12, v ?? 1)) }, "columns")}
+                      onUnit={() => undefined}
+                    />
+                    <Slider
+                      label="Rows"
+                      head={<>
+                        <span style={L}>Rows</span>
+                        <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                      </>}
+                      testAttr="data-box-rows"
+                      units={["fr"]}
+                      unit={undefined}
+                      max={12}
+                      value={widgetLayer.rows}
+                      placeholder="as many as it needs"
+                      onChange={(v) => patchWidgetStyle(
+                        { rows: v === undefined ? undefined : Math.max(1, Math.min(12, v)) }, "rows")}
+                      onUnit={() => undefined}
+                    />
+                  </>
+                )}
+
+                {/* JUSTIFY CONTENT — the reference's SIX, label ABOVE, which is
+                    the shape it gives this one (`elementor-label-block`).
+                    FLEX ONLY: driven, its `flex_justify_content` is
+                    `condition: { container_type: ["flex"] }`, and a grid's
+                    own Justify Content waits on a custom track list. */}
+                {widgetLayer.direction !== "grid" && (
+                <div style={FIELD}>
+                  <span style={L}>Justify Content</span>
+                  <IconChoice
+                    name="Justify Content"
+                    testAttr="data-box-justify"
+                    value={(widgetLayer.justify || "start") as JustifySpec}
+                    onPick={(v) => patchWidgetStyle(
+                      { justify: !v || v === "start" ? undefined : v }, "justify")}
+                    options={[
+                      { v: "start" as JustifySpec, title: "Start", icon: <AlignStartVertical size={13} /> },
+                      { v: "center" as JustifySpec, title: "Center", icon: <AlignCenterVertical size={13} /> },
+                      { v: "end" as JustifySpec, title: "End", icon: <AlignEndVertical size={13} /> },
+                      { v: "between" as JustifySpec, title: "Space Between", icon: <AlignHorizontalSpaceBetween size={13} /> },
+                      { v: "around" as JustifySpec, title: "Space Around", icon: <AlignHorizontalSpaceAround size={13} /> },
+                      { v: "evenly" as JustifySpec, title: "Space Evenly", icon: <AlignHorizontalDistributeCenter size={13} /> },
+                    ]}
+                  />
+                </div>
+                )}
+
+                {/* JUSTIFY ITEMS — the GRID's way of lining its children up
+                    across a track (audit row 98). Four, the same four Align
+                    Items has, which is what the reference offers. */}
+                {widgetLayer.direction === "grid" && (
+                  <div style={ROW}>
+                    <span style={L}>Justify Items</span>
+                    <IconChoice
+                      name="Justify Items"
+                      testAttr="data-box-justifyitems"
+                      value={(widgetLayer.justifyItems || "stretch") as ItemsSpec}
+                      onPick={(v) => patchWidgetStyle(
+                        { justifyItems: !v || v === "stretch" ? undefined : v }, "justifyItems")}
+                      options={[
+                        { v: "start" as ItemsSpec, title: "Start", icon: <AlignStartVertical size={13} /> },
+                        { v: "center" as ItemsSpec, title: "Center", icon: <AlignCenterVertical size={13} /> },
+                        { v: "end" as ItemsSpec, title: "End", icon: <AlignEndVertical size={13} /> },
+                        { v: "stretch" as ItemsSpec, title: "Stretch", icon: <StretchHorizontal size={13} /> },
+                      ]}
                     />
                   </div>
                 )}
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Along that way</span>
-                    <select style={INPUT} data-box-justify value={widgetLayer.justify || "start"}
-                      title="Where the things sit along the direction they run in"
-                      onChange={(e) => patchWidgetStyle(
-                        { justify: e.target.value === "start" ? undefined : e.target.value as JustifySpec }, "justify")}>
-                      <option value="start">At the start</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the end</option>
-                      <option value="between">Spread out</option>
-                    </select>
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Across it</span>
-                    <select style={INPUT} data-box-align value={widgetLayer.alignItems || "stretch"}
-                      title="Whether the things fill the box across, or line up at one edge"
-                      onChange={(e) => patchWidgetStyle(
-                        { alignItems: e.target.value === "stretch" ? undefined : e.target.value as ItemsSpec }, "alignItems")}>
-                      <option value="stretch">Fill the box</option>
-                      <option value="start">At the top or left</option>
-                      <option value="center">In the middle</option>
-                      <option value="end">At the bottom or right</option>
-                    </select>
-                  </div>
+                <div style={ROW}>
+                  <span style={L}>Align Items</span>
+                  <IconChoice
+                    name="Align Items"
+                    testAttr="data-box-align"
+                    value={(widgetLayer.alignItems || "stretch") as ItemsSpec}
+                    onPick={(v) => patchWidgetStyle(
+                      { alignItems: !v || v === "stretch" ? undefined : v }, "alignItems")}
+                    options={[
+                      { v: "start" as ItemsSpec, title: "Start", icon: <AlignStartHorizontal size={13} /> },
+                      { v: "center" as ItemsSpec, title: "Center", icon: <AlignCenterHorizontal size={13} /> },
+                      { v: "end" as ItemsSpec, title: "End", icon: <AlignEndHorizontal size={13} /> },
+                      { v: "stretch" as ItemsSpec, title: "Stretch", icon: <StretchHorizontal size={13} /> },
+                    ]}
+                  />
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Space between them</span>
-                    <input style={INPUT} type="number" min={0} data-box-gap
-                      title="The gap between the things inside this box, in pixels"
-                      value={widgetLayer.gap ?? ""} placeholder="0"
+                {/* GAPS IS ONE CONTROL WITH A CHAIN (2026-09-20, audit round
+                    4 row 82). Driven: the reference has a single `gaps`
+                    control — a column value and a row value under ONE label,
+                    linked — and ours drew two sliders, "Gaps" and "Row Gap",
+                    with nothing between them and no way to tell that leaving
+                    the second empty meant "the same".
+
+                    THE CHAIN IS THE STORED MODEL, not a new key. `rowGap`
+                    absent has always meant "the same as Gaps" —
+                    `containerLayoutDeclarations` reads `layer.rowGap ??
+                    layer.gap` — so linking CLEARS it and unlinking seeds it
+                    from the column value. No document is migrated and no
+                    second spelling is invented.
+
+                    The label row stays `<span style={L}>Gaps</span>` followed
+                    by the device switcher, where SCREEN LAW 10 and 11 pin it;
+                    the chain goes after them. */}
+                <Slider
+                  label="Gaps"
+                  head={<>
+                    <span style={L}>Gaps</span>
+                    <DeviceSegment device={p.device} onDevice={p.onDevice} />
+                    <button
+                      type="button"
+                      data-box-gap-link={gapsLinked ? "on" : "off"}
+                      aria-pressed={gapsLinked}
+                      title={gapsLinked
+                        ? "Columns and rows use one gap. Click to set the row gap on its own."
+                        : "The row gap is set on its own. Click to use one gap for both."}
+                      onClick={() => patchWidgetStyle(
+                        { rowGap: gapsLinked ? (widgetLayer.gap ?? 0) : undefined }, "rowGap")}
+                      style={{
+                        border: "1px solid " + (gapsLinked ? "#0C4A60" : "#CBD5E1"),
+                        background: gapsLinked ? "#0C4A60" : "#fff",
+                        color: gapsLinked ? "#fff" : "#64748B",
+                        borderRadius: 4, padding: "1px 4px", cursor: "pointer",
+                        display: "inline-flex", alignItems: "center",
+                      }}
+                    >{gapsLinked ? <Link2 size={11} /> : <Unlink size={11} />}</button>
+                  </>}
+                  testAttr="data-box-gap"
+                  adapter={p.adapter}
+                  units={["px", "%", "em", "rem", "vw"]}
+                  unit={widgetLayer.units?.gap}
+                  value={widgetLayer.gap}
+                  max={120}
+                  onChange={(v) => patchWidgetStyle({ gap: v }, "gap")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), gap: u } }, "gap:unit")}
+                />
+
+                {/* …AND THE ROW HALF, BEHIND THE CHAIN. The same one control:
+                    it is the SECOND number of the reference's Gaps, so it has
+                    no device switcher and no unit row of its own — one unit
+                    for the pair, because the emitter writes one. It is drawn
+                    only while the chain is off, which is exactly when the
+                    stored `rowGap` is saying something. */}
+                {!gapsLinked && (
+                <Slider
+                  label="Row"
+                  head={<span style={L}>Row</span>}
+                  testAttr="data-box-rowgap"
+                  adapter={p.adapter}
+                  units={[]}
+                  unit={widgetLayer.units?.gap}
+                  value={widgetLayer.rowGap}
+                  max={120}
+                  placeholder={widgetLayer.gap === undefined ? "same as Gaps" : String(widgetLayer.gap)}
+                  onChange={(v) => patchWidgetStyle({ rowGap: v }, "rowGap")}
+                  onUnit={(u) => patchWidgetStyle(
+                    { units: { ...(widgetLayer.units || {}), gap: u } }, "gap:unit")}
+                />
+                )}
+
+                {/* AUTO FLOW — which way a cell nobody placed is added. The
+                    reference puts it AFTER Gaps and before Justify Items,
+                    which is where it is now; it was up with Columns and Rows
+                    before anybody had driven the order. */}
+                {widgetLayer.direction === "grid" && (
+                  <div style={ROW}>
+                    <span style={L}>Auto Flow</span>
+                    <select style={INPUT} data-box-autoflow value={widgetLayer.autoFlow ?? "row"}
                       onChange={(e) => patchWidgetStyle(
-                        { gap: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "gap")} />
+                        { autoFlow: e.target.value === "column" ? "column" : undefined }, "autoFlow")}>
+                      <option value="row">Row</option>
+                      <option value="column">Column</option>
+                    </select>
                   </div>
-                  <div style={FIELD}>
-                    <span style={L}>Least height</span>
-                    <input style={INPUT} type="number" min={0} data-box-minheight
-                      title="The box is at least this tall, whatever is in it"
-                      value={widgetLayer.minHeight ?? ""} placeholder="auto"
-                      onChange={(e) => patchWidgetStyle(
-                        { minHeight: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "minHeight")} />
-                  </div>
+                )}
+
+                {/* WRAP — the reference's two icon buttons, not a checkbox with
+                    a sentence for a label. FLEX ONLY: driven, `flex_wrap` is
+                    `condition: { container_type: ["flex"] }`, and a grid wraps
+                    by having tracks. */}
+                {widgetLayer.direction !== "grid" && (<>
+                <div style={ROW}>
+                  <span style={L}>Wrap</span>
+                  <IconChoice
+                    name="Wrap"
+                    testAttr="data-box-wrap"
+                    value={widgetLayer.wrap ? "wrap" : "nowrap"}
+                    onPick={(v) => patchWidgetStyle({ wrap: v === "wrap" ? true : undefined }, "wrap")}
+                    options={[
+                      { v: "nowrap" as const, title: "No Wrap", icon: <MoveHorizontal size={13} /> },
+                      { v: "wrap" as const, title: "Wrap", icon: <WrapText size={13} /> },
+                    ]}
+                  />
                 </div>
 
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                  title="When there is not enough room, let them carry on to a second line rather than squeezing">
-                  <input type="checkbox" data-box-wrap checked={!!widgetLayer.wrap}
-                    onChange={(e) => patchWidgetStyle({ wrap: e.target.checked ? true : undefined }, "wrap")} />
-                  Let them wrap onto a second line
-                </label>
+                {/* ALIGN CONTENT — ONLY ONCE THE LINES WRAP (D-172, round 3).
+                    The audit sheet said the reference always offers it; driving
+                    it says otherwise — it is not in the section at all until
+                    Wrap is on, and then it appears under Wrap, label above,
+                    with SIX choices whose second word is "Middle", not
+                    "Center". Offered on the same condition here, because a
+                    control that can do nothing is worse than a missing one. */}
+                {widgetLayer.wrap && (
+                  <div style={FIELD}>
+                    <span style={L}>Align Content</span>
+                    <IconChoice
+                      name="Align Content"
+                      testAttr="data-box-aligncontent"
+                      value={(widgetLayer.alignContent || "start") as JustifySpec}
+                      onPick={(v) => patchWidgetStyle(
+                        { alignContent: !v || v === "start" ? undefined : v }, "alignContent")}
+                      options={[
+                        { v: "start" as JustifySpec, title: "Start", icon: <AlignStartHorizontal size={13} /> },
+                        { v: "center" as JustifySpec, title: "Middle", icon: <AlignCenterHorizontal size={13} /> },
+                        { v: "end" as JustifySpec, title: "End", icon: <AlignEndHorizontal size={13} /> },
+                        { v: "between" as JustifySpec, title: "Space Between", icon: <AlignVerticalSpaceBetween size={13} /> },
+                        { v: "around" as JustifySpec, title: "Space Around", icon: <AlignVerticalSpaceAround size={13} /> },
+                        { v: "evenly" as JustifySpec, title: "Space Evenly", icon: <AlignVerticalDistributeCenter size={13} /> },
+                      ]}
+                    />
+                  </div>
+                )}
+                </>)}
 
-                {/* WHAT THE BOX IS DRAWN AS — `props.html_tag` (conformance,
-                    2026-09-17).
+              </Group>
+            )}
 
-                    The renderer has honoured this since stream C and NOTHING
-                    could set it, so the only way to have a page's main region
-                    be a `<main>` was to hand-edit the document. It is on the
-                    box's props rather than its style because it is the same on
-                    every device: a `<header>` does not become a `<div>` on a
-                    phone. That is also the ONE Elementor-spelled key the
-                    engine reads, and it keeps that name so the publish is a
-                    pass-through. */}
-                <div style={FIELD}>
-                  <span style={L}>What this box is, to a screen reader</span>
+            {/* HTML TAG, IN ITS OWN SECTION (D-172).
+
+                The reference's container Layout tab ends with a section called
+                "Additional Options" holding HTML Tag -- measured in the live
+                editor on 2026-09-19. Ours had a seven-option select inside
+                Layout labelled "WHAT THIS BOX IS, TO A SCREEN READER", which is
+                our own control, with our own words, in the wrong section. Same
+                prop, same renderer, the reference's name and place. */}
+            {box && shownTab === "content" && (
+              <Group title="Additional Options">
+                {/* OVERFLOW comes FIRST (D-172, round 3) — driven: the section
+                    is Overflow then HTML Tag, and its values are Default,
+                    Hidden and Auto. There is no Link control in it; the audit
+                    sheet's row for one did not survive driving. */}
+                <div style={ROW}>
+                  <span style={L}>Overflow</span>
+                  <select style={INPUT} data-box-overflow
+                    value={widgetLayer.overflow ?? ""}
+                    onChange={(e) => patchWidgetStyle(
+                      { overflow: (e.target.value || undefined) as "hidden" | "auto" | undefined }, "overflow")}>
+                    <option value="">Default</option>
+                    <option value="hidden">Hidden</option>
+                    <option value="auto">Auto</option>
+                  </select>
+                </div>
+                {/* THE REFERENCE'S TEN, IN ITS ORDER (D-172, round 3): Default,
+                    div, header, footer, main, article, section, aside, nav, a
+                    (link) — read off the live select, and the same ten the
+                    machine catalogue's `html_tag` offers. Ours had seven, in an
+                    order of its own, and called the empty one "div" although
+                    the reference calls it Default. */}
+                <div style={ROW}>
+                  <span style={L}>HTML Tag</span>
                   <select style={INPUT} data-box-html-tag
-                    title="Most boxes are just boxes. Say what this one is and a screen reader, and search, can tell."
                     value={String((widget.props as any)?.html_tag ?? "")}
                     onChange={(e) => p.onPatchWidget({ html_tag: e.target.value })}>
-                    <option value="">Just a box</option>
-                    <option value="header">The top of the page</option>
-                    <option value="main">The main part of the page</option>
-                    <option value="section">A section of the page</option>
-                    <option value="article">A whole article</option>
-                    <option value="aside">Something to one side</option>
-                    <option value="footer">The bottom of the page</option>
+                    <option value="">Default</option>
+                    <option value="div">div</option>
+                    <option value="header">header</option>
+                    <option value="footer">footer</option>
+                    <option value="main">main</option>
+                    <option value="article">article</option>
+                    <option value="section">section</option>
+                    <option value="aside">aside</option>
+                    <option value="nav">nav</option>
+                    <option value="a">a (link)</option>
                   </select>
                 </div>
               </Group>
             )}
 
-            {/* THE BOX'S OWN EDGE — the same three controls a section wears,
-                reading and writing the same keys through the same style.ts. */}
-            {box && (
-              <Group title="Style" hint="The edge round this box, and its corners"
-                onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["border", "radius", "shadow"]))}>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                  <div style={FIELD}>
-                    <span style={L}>Edge</span>
-                    <input style={INPUT} type="number" min={0} data-box-border
-                      title="How thick the line round this box is, in pixels"
-                      value={widgetLayer.border?.width ?? ""} placeholder="none"
-                      onChange={(e) => patchWidgetStyle({
-                        border: e.target.value === ""
-                          ? undefined
-                          : { ...(widgetLayer.border || {}), width: Math.max(0, Number(e.target.value) || 0) },
-                      }, "border")} />
-                  </div>
-                  <div style={FIELD}>
-                    <span style={L}>Rounded corners</span>
-                    <input style={INPUT} type="number" min={0} data-box-radius
-                      title="How round the corners of this box are, in pixels"
-                      value={widgetLayer.radius ?? ""} placeholder="0"
-                      onChange={(e) => patchWidgetStyle(
-                        { radius: e.target.value === "" ? undefined : Math.max(0, Number(e.target.value) || 0) }, "radius")} />
-                  </div>
-                </div>
-              </Group>
+            {/* THE BOX'S STYLE TAB — Background · Background Overlay · Border ·
+                Shape Divider, the reference's own four sections. The Border
+                group was here with two of its five controls; it moved into
+                `ContainerStyleGroups` with the other three and the three
+                sections that were missing entirely. */}
+            {box && shownTab === "style" && (
+              <ContainerStyleGroups
+                device={p.device}
+                onDevice={p.onDevice}
+                layer={widgetLayer}
+                swatches={p.swatches}
+                isEmail={isEmail}
+                onPatch={patchWidgetStyle}
+                onReset={(keys) => p.onSetWidgetStyle(resetKeys(widget.style, keys))}
+              />
             )}
 
             {/* ── CONTENT — everything that was here before ─────────────── */}
-            {!box && (
-            <Group title="Content" hint="What this shows, and where it comes from" defaultOpen>
-              {def && widgetDescription(def, p.adapter) && (
-                <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>{widgetDescription(def, p.adapter)}</div>
-              )}
+            {/* NAMED AFTER THE WIDGET (D-172). The reference calls a widget's
+                first section by the widget's own name — Heading, Image, Button,
+                Divider, Spacer, Icon — not "Content"; "Content" is the TAB. */}
+            {!box && shownTab === "content" && (
+            <Group title={def ? widgetLabel(def, p.adapter) : "Content"} defaultOpen>
+              {/* THE WIDGET'S DESCRIPTION IS NOT DRAWN HERE (D-172). No
+                  descriptive paragraph appears anywhere in the reference's
+                  panel; the sentence is the TILE'S TOOLTIP in the left panel,
+                  which is where a description belongs and where it already is
+                  (WidgetPane, `widgetTooltip`). The registry keeps the text --
+                  this stops the panel printing it under every section header. */}
 
               {p.widgetExtras?.(widget, section.id)}
 
               {/* THE COUNT CONTROL WAS HERE AND IS DELETED (D-156, item 4).
 
-                  It had THREE homes — the pane, the picker and this — and this
+                  It had THREE homes — the pane, the old pop-up and this — and this
                   one was found by DRIVING the builder rather than by reading
                   it: a Key facts widget dropped into a row still showed "HOW
                   MANY FACTS? 2 3 4 5 6 7 8 9 10" on the right.
@@ -374,92 +958,27 @@ export function Inspector(p: InspectorProps) {
                   editing mechanism and a panel field beside it would be a
                   second one. `hidden` controls draw nothing at all — they are
                   declared so the Binding section can be read as a whole. */}
-              {controlSections(def?.controls || []).map((grp) => {
-                const shown = grp.controls.filter((c) => PANEL_CONTROL_TYPES.has(c.type));
-                if (!shown.length) return null;
-                return (
-                  <div key={grp.section ?? "_"} data-control-section={grp.section ?? ""}>
-                    {grp.section && (
-                      <div style={{ ...L, marginTop: 4, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.4 }}>
-                        {grp.section}
-                      </div>
-                    )}
-                    {shown.map((c) => (
-                <div key={c.key} style={FIELD}>
-                  <span style={L}>{c.label}</span>
-                  {c.type === "toggle" && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}>
-                      <input type="checkbox" checked={isOn((widget.props as any)[c.key])}
-                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.checked })} />
-                      {c.help || "On"}
-                    </label>
-                  )}
-                  {c.type === "select" && (controlOptions(c).length ? (
-                    <select style={INPUT} value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: optionValue(c, e.target.value) })}>
-                      {controlOptions(c).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                  ) : null)}
-                  {c.type === "number" && (
-                    <input type="number" style={INPUT} value={Number((widget.props as any)[c.key] ?? 0)}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: Number(e.target.value) })} />
-                  )}
-                  {c.type === "colour" && (
-                    <Swatches value={String((widget.props as any)[c.key] ?? "")} swatches={p.swatches}
-                      onPick={(v) => p.onPatchWidget({ [c.key]: v })} />
-                  )}
-                  {(c.type === "image" || c.type === "link") && (
-                    <input style={INPUT} placeholder={c.type === "image" ? "Paste an image address" : "https://"}
-                      value={String((widget.props as any)[c.key] ?? "")}
-                      onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
-                  )}
-                  {/* A CODE BOX WITH A LIVE PREVIEW. The box is monospace and
-                      does not wrap words in the middle of a tag; the preview
-                      under it is the same markup the page will carry, drawn
-                      here so the author sees what they pasted before anybody
-                      else does. */}
-                  {c.type === "code" && (
-                    <>
-                      <textarea
-                        style={{ ...INPUT, minHeight: 120, fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 11, whiteSpace: "pre", overflowWrap: "normal" }}
-                        data-code-box={c.key}
-                        spellCheck={false}
-                        placeholder="<div>Paste your own HTML here</div>"
-                        value={String((widget.props as any)[c.key] ?? "")}
-                        onChange={(e) => p.onPatchWidget({ [c.key]: e.target.value })} />
-                      <span style={{ fontSize: 10, color: "#5A7A8A" }}>What it looks like</span>
-                      <div
-                        data-code-preview={c.key}
-                        style={{ border: "1px solid #E2E8F0", borderRadius: 4, padding: 8, background: "#fff", overflow: "auto", maxHeight: 220 }}
-                        dangerouslySetInnerHTML={{ __html: String((widget.props as any)[c.key] ?? "") }} />
-                    </>
-                  )}
-                  {c.help && c.type !== "toggle" && <span style={{ fontSize: 10, color: "#94A3B8" }}>{c.help}</span>}
-                </div>
-                    ))}
-                  </div>
-                );
-              })}
+              {/* THE DEFINITION DRAWS THE PANEL (B-168 §C.1). This block used
+                  to be written out here; it is `definitionControls.tsx` now,
+                  called on all three tabs, so a family that adds a widget adds
+                  no line to this file. */}
+              {/* `bandTitle` IS THE GROUP ABOVE (2026-09-20, round 4 row 24).
+                  The Group is titled with the widget's own name and the
+                  section under it carried the same word again; handing the
+                  name down is how the panel stops saying "Heading / Heading".
+                  It is the SAME expression the Group is given, so the two
+                  cannot drift. */}
+              <DefinitionControls def={def} tab="content" props={widget.props as any}
+                bandTitle={def ? widgetLabel(def, p.adapter) : "Content"}
+                device={p.device} onDevice={p.onDevice}
+                swatches={p.swatches} onPatch={p.onPatchWidget} />
 
-              <div style={{ display: "flex", gap: 6 }}>
-                {/* The keyboard path, kept (§11.8): HTML5 drag does not fire
-                    on touch at all, so a phone has to be able to do everything
-                    a mouse can. Dragging is the other half, not the only one. */}
-                <button type="button" style={miniBtn} title="Move this up inside its column" onClick={() => p.onMoveWidget(-1)}>↑ Up</button>
-                <button type="button" style={miniBtn} title="Move this down inside its column" onClick={() => p.onMoveWidget(1)}>↓ Down</button>
-                {/* A locked widget is a part the law puts on the page, not the
-                    author. model.removeWidget refuses it too — this is the half
-                    that explains WHY, which a disabled button with no tooltip
-                    never does. */}
-                <button
-                  type="button"
-                  disabled={!!widget.locked}
-                  style={{ ...miniBtn, color: widget.locked ? "#94A3B8" : "#B91C1C", marginLeft: "auto", cursor: widget.locked ? "default" : "pointer" }}
-                  title={widget.locked
-                    ? "This has to be on every email you send — it carries the unsubscribe link and your postal address. You can change the wording; you cannot remove it."
-                    : "Remove this from the page"}
-                  onClick={p.onDeleteWidget}><Trash2 size={12} /> Remove</button>
-              </div>
+              {/* UP / DOWN / REMOVE WERE HERE AND ARE DELETED (D-172).
+                  Nothing like that row is in the reference panel: order is a
+                  drag or the Structure window, and deleting is right-click.
+                  Keeping them here was a second home for verbs the menu
+                  already owns. What stays is the ONE thing the panel has to
+                  say, which is WHY a locked part cannot be removed. */}
               {widget.locked && (
                 <div style={{ fontSize: 10, color: "#B45309", lineHeight: 1.45 }}>
                   Required on every marketing email. Edit the wording on the page; it stays where it is.
@@ -468,105 +987,230 @@ export function Inspector(p: InspectorProps) {
             </Group>
             )}
 
-            {/* ── TYPOGRAPHY — only where there are words to set ────────── */}
-            {!box && isTypographic(widget.kind) && (
+            {/* ── STYLE and ADVANCED, FROM THE DEFINITION (B-168 §C.1) ────
+                The machine file says which tab every Elementor control is on,
+                a family copies that onto its def, and this draws it there. No
+                per-widget code, and nothing a family adds needs a line here. */}
+            {/* A WIDGET'S STYLE SECTIONS ARE BANDS (2026-09-20, round 4 row
+                25). Driven: "Image" and "Caption" are sections that open and
+                shut in the reference; ours was a flat list with plain
+                sub-headings, so a Text Editor's Style tab was twenty-nine rows
+                in a 300px column with nothing to collapse. The Advanced tab is
+                NOT banded here — its sections are `SpacingGroup` and
+                `ResponsiveGroup`, which are bands already. */}
+            {!box && shownTab !== "content" && (
+              <DefinitionControls def={def} tab={shownTab} props={widget.props as any}
+                asBands={shownTab === "style"}
+                device={p.device} onDevice={p.onDevice}
+                swatches={p.swatches} onPatch={p.onPatchWidget} />
+            )}
+
+            {/* ── STYLE ▸ TYPOGRAPHY — only where there are words to set ── */}
+            {/* ONE HOME FOR ONE COLOUR (2026-09-20, audit round 4 row 51).
+                A Heading's Style tab drew "Text Color" from its definition AND
+                "Text colour" inside this band — two controls, two stored keys,
+                one thing. The reference keeps colour out of typography, so the
+                band gives its copy up to the widget's OWN control wherever the
+                definition declares one. A kind that declares none keeps it. */}
+            {!box && shownTab === "style" && isTypographic(widget.kind) && (
               <TypographyGroup
                 device={p.device}
                 onDevice={p.onDevice}
                 layer={widgetLayer}
                 fonts={p.fonts}
+                colour={!defHasStyleColour}
                 onPatch={patchWidgetStyle}
                 onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["typography"]))}
               />
             )}
 
-            {/* ── SPACING ───────────────────────────────────────────────── */}
-            <SpacingGroup
-              device={p.device}
-              onDevice={p.onDevice}
-              layer={widgetLayer}
-              what="widget"
-              onPatch={patchWidgetStyle}
-              onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["padding", "margin"]))}
-            />
+            {/* ── ADVANCED ▸ LAYOUT and RESPONSIVE ─────────────────────── */}
+            {shownTab === "advanced" && (
+              <>
+                {/* CSS ID AND CSS CLASSES ARE IN LAYOUT (D-172, round 3), where
+                    the reference keeps them — driven: its Layout section ends
+                    Z-Index, CSS ID, CSS Classes, Cache Settings. They are NOT
+                    per device, so they are written on the element's own style
+                    and never through `withLayer`. */}
+                <SpacingGroup
+                  device={p.device}
+                  onDevice={p.onDevice}
+                  layer={widgetLayer}
+                  what="widget"
+                  align={!box}
+                  /* A BOX gets the other five the reference puts in this same
+                     Advanced ▸ Layout section — Size, Align Self, Order,
+                     Position, Z-Index — inside this group and not beside it. */
+                  box={box}
+                  onPatch={patchWidgetStyle}
+                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style,
+                    ["padding", "margin", "align", "selfWidth", "alignSelf", "order", "position", "zIndex"]))}
+                  cssId={String(widget.style?.cssId ?? "")}
+                  cssClasses={String(widget.style?.cssClasses ?? "")}
+                  onPatchNames={(patch) => p.onSetWidgetStyle({ ...(widget.style || {}), ...patch })}
+                />
+                {/* MOTION EFFECTS SITS HERE, between Layout and Responsive,
+                    because that is the reference editor's own order on this
+                    tab: Layout · Motion Effects · Transform · Responsive ·
+                    Attributes · Custom CSS. */}
+                {box && (
+                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="motion" />
+                )}
+                {/* A CONTAINER'S Responsive BAND CARRIES "Visibility"
+                    (2026-09-20, audit round 4 row 66). The reference puts a
+                    `heading` control above the three Hide switches on a
+                    container and none on a widget; `ResponsiveGroup` has
+                    taken the flag since round 2 and nobody ever passed it. */}
+                <ResponsiveGroup
+                  visibilityHeading={box}
+                  hiddenOn={{
+                    desktop: !!widget.style?.hidden,
+                    tablet: !!widget.style?.tablet?.hidden,
+                    phone: !!widget.style?.phone?.hidden,
+                  }}
+                  onHide={(device, hidden) =>
+                    p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
+                  onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["hidden"]))}
+                />
+                {/* THE "ATTRIBUTES" SECTION IS DELETED (D-172, round 3): the
+                    reference has one by that name and it holds a Pro promo,
+                    not these two fields. They are in Layout above. */}
+                {/* …and CUSTOM CSS last, which is where the reference puts it
+                    and where an author expects the escape hatch to be. Neither
+                    it nor Sticky is per device, so neither goes through
+                    `withLayer`.
 
-            {/* ── ADVANCED ──────────────────────────────────────────────── */}
-            <AdvancedGroup
-              layer={widgetLayer}
-              hiddenOn={{
-                tablet: !!widget.style?.tablet?.hidden,
-                phone: !!widget.style?.phone?.hidden,
-              }}
-              onPatch={patchWidgetStyle}
-              onHide={(device, hidden) =>
-                p.onSetWidgetStyle(withLayer(widget.style, device, { hidden: hidden ? true : undefined }))}
-              onReset={() => p.onSetWidgetStyle(resetKeys(widget.style, ["align", "hidden"]))}
-            />
+                    B-168 land: this and the carrier's Page group above landed
+                    in the same place from two branches and are BOTH kept. They
+                    answer different questions — one is the box's own escape
+                    hatch, one is what only a section can hold — and the
+                    reference's Advanced tab ends with Custom CSS, so the order
+                    is the carrier group, then this. */}
+                {box && (
+                  <ContainerAdvancedGroups style={widget.style} onStyle={p.onSetWidgetStyle} only="css" />
+                )}
+                {/* WHAT ONLY A SECTION CAN HOLD, ON THE BOX THAT CARRIES IT
+                    (D-172, round 2) — AND ONLY WHERE THERE ARE PAGES
+                    (2026-09-20, audit round 4 row 69).
+
+                    The reference has nothing of this kind on an element
+                    panel, and the audit counts it as one of the nine
+                    extras. It is KEPT, because a proposal is printed and
+                    signed and a page break the author cannot reach is
+                    worse than one in a tab the reference does not have —
+                    but it is kept the way an extra has to be kept: only
+                    in a builder that HAS pages (`pageBreakLabel`, the
+                    adapter's own signal, already used by the row inside;
+                    the website, the landing page and the mailbox all pass
+                    ""), never open on arrival, and LAST — under Custom
+                    CSS, so nothing the reference DOES draw is pushed down
+                    the panel by it.
+
+                    A carrier pair is ONE box on the screen, so there is no
+                    second panel to put these in — and a page break the author
+                    cannot reach is worse than one in the wrong tab. They are
+                    written through `onPatchSection`, the SAME handler the
+                    section panel below uses, so there is one writer of
+                    "pageBreakBefore" and it is not copied here. A section that
+                    is NOT a carrier still has its own panel, unchanged. */}
+                {carried && p.pageBreakLabel !== "" && (
+                  <Group title="Page"
+                    onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer", numbered: false })}
+                    resetTitle="Back to: no page break, no number, and the customer sees it">
+                    {/* THE SWITCHER PILL, NOT A CHECKBOX (D-172, round 3).
+                        The reference has ONE on/off shape and these three were
+                        the last native checkboxes left in the panel — a form
+                        field in a settings panel, with the sentence as its
+                        label instead of beside it. */}
+                    {p.pageBreakLabel !== "" && (
+                      <div style={ROW} data-carrier-pagebreak>
+                        <span style={L}>{p.pageBreakLabel || "Start a new page here"}</span>
+                        <Switcher
+                          name={p.pageBreakLabel || "Start a new page here"}
+                          testId="carrier-pagebreak"
+                          on={!!section.pageBreakBefore}
+                          onChange={(v) => p.onPatchSection(section.id, { pageBreakBefore: v })}
+                        />
+                      </div>
+                    )}
+                    <div style={ROW} data-carrier-numbered>
+                      <span style={L}>Number this section</span>
+                      <Switcher
+                        name="Number this section"
+                        testId="carrier-numbered"
+                        on={!!section.numbered}
+                        onChange={(v) => p.onPatchSection(section.id, { numbered: v })}
+                      />
+                    </div>
+                    <div style={ROW} data-carrier-internal>
+                      <span style={L}>Internal note only</span>
+                      <Switcher
+                        name="Internal note only"
+                        testId="carrier-internal"
+                        on={section.visibility === "internal"}
+                        onChange={(v) => p.onPatchSection(section.id, { visibility: v ? "internal" : "customer" })}
+                      />
+                    </div>
+                  </Group>
+                )}
+              </>
+            )}
           </>
         )}
 
-        {/* ══ THE SECTION, always available under the widget's ══════════ */}
-        <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={L}>This section</div>
+        {/* ══ THE SECTION — only when the SECTION is what is selected ═════
+            §11.13.1: the reference shows the element you clicked and nothing
+            else. Repeating the section's five groups under every widget's
+            four is what made this panel a scroll rather than a panel, and it
+            put two groups called "Layout" in one column. The section is
+            reached from its own handle on the page, or from Structure. */}
+        {!widget && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
 
           {/* ── LAYOUT ────────────────────────────────────────────────── */}
-          <Group title="Layout" hint="How many columns, how they split, how wide they run" defaultOpen={!widget}
+          {shownTab === "content" && (
+          <Group title="Container" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["columnWidths", "gap"]))}>
-            <div style={FIELD}>
-              <span style={L}>Label</span>
-              <input style={INPUT} value={section.label || ""} title="Shown in the toolbar, and on the page when the section is numbered"
-                onChange={(e) => p.onPatchSection(section.id, { label: e.target.value })} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              <div style={FIELD}>
-                <span style={L}>Columns</span>
-                <select style={INPUT} value={section.layout} title="One, two or three columns side by side"
-                  onChange={(e) => p.onPatchSection(section.id, { layout: Number(e.target.value) as 1 | 2 | 3 })}>
-                  <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option>
-                </select>
-              </div>
-              <div style={FIELD}>
-                <span style={L}>Width</span>
-                <select style={INPUT} value={section.width} title="How wide the content runs inside the page"
-                  onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
-                  <option value="full">Full</option><option value="contained">Boxed</option><option value="narrow">Narrow</option>
-                </select>
-              </div>
-            </div>
-            <div style={FIELD}>
-              <span style={L}>Split</span>
-              <RatioPicker
-                layout={section.layout}
-                widths={sectionResolvedWidths(section)}
-                onPick={(widths) =>
-                  p.onSetSectionStyle(section.id, withLayer(section.style, "desktop", { columnWidths: widths }))}
-              />
-              <span style={{ fontSize: 10, color: "#94A3B8" }}>
-                How the width is shared between the columns. On a phone they go under each other whatever you pick.
-              </span>
-            </div>
-            <div style={FIELD}>
-              <span style={L}>Gap between columns</span>
-              <input type="number" style={INPUT} data-style-gap value={sectionLayer.gap ?? ""} placeholder="24"
-                title="Space between the columns, in pixels."
-                onChange={(e) => patchSectionStyle(
-                  { gap: e.target.value === "" ? undefined : Number(e.target.value) }, "gap")} />
-            </div>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Number this section on the page — 01, 02, 03. The numbers are worked out from the order, so moving a section renumbers both.">
-              <input type="checkbox" data-section-numbered checked={!!section.numbered}
-                onChange={(e) => p.onPatchSection(section.id, { numbered: e.target.checked })} />
-              Number this section (01, 02, 03…)
-            </label>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Put a Recommended badge on this section, so the reader knows which one you suggest">
-              <input type="checkbox" data-section-recommended checked={!!section.recommended}
-                onChange={(e) => p.onPatchSection(section.id, { recommended: e.target.checked })} />
-              Mark as Recommended
-            </label>
-          </Group>
+            {/* LABEL, COLUMNS, SPLIT and GAP BETWEEN COLUMNS WERE HERE AND ARE
+                DELETED (D-172).
 
-          {/* ── SPACING ───────────────────────────────────────────────── */}
+                The reference's container has Direction, Justify Content, Align
+                Items and Gaps — and NO column count, because a column IS a
+                child container. It has no name field on the canvas either, so
+                a LABEL text box holding the word "Section" was ours twice over:
+                our own control for our own word.
+
+                WIDTH stays: the reference's Content Width is the same idea. */}
+            <div style={ROW}>
+              <span style={L}>Width</span>
+              <select style={INPUT} value={section.width} title="How wide the content runs inside the page"
+                onChange={(e) => p.onPatchSection(section.id, { width: e.target.value as Section["width"] })}>
+                <option value="full">Full</option><option value="contained">Boxed</option><option value="narrow">Narrow</option>
+              </select>
+            </div>
+            <div style={ROW}>
+              <span style={L}>Number this section</span>
+              <Switcher
+                name="Number this section"
+                testId="section-numbered"
+                on={!!section.numbered}
+                onChange={(v) => p.onPatchSection(section.id, { numbered: v })}
+              />
+            </div>
+            <div style={ROW}>
+              <span style={L}>Mark as Recommended</span>
+              <Switcher
+                name="Mark as Recommended"
+                testId="section-recommended"
+                on={!!section.recommended}
+                onChange={(v) => p.onPatchSection(section.id, { recommended: v })}
+              />
+            </div>
+          </Group>
+          )}
+
+          {/* ── ADVANCED ▸ LAYOUT ─────────────────────────────────────── */}
+          {shownTab === "advanced" && (
           <SpacingGroup
             device={p.device}
             onDevice={p.onDevice}
@@ -576,9 +1220,11 @@ export function Inspector(p: InspectorProps) {
             onPatch={patchSectionStyle}
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["padding", "margin"]))}
           />
+          )}
 
           {/* ── STYLE ─────────────────────────────────────────────────── */}
-          <Group title="Style" hint="Background, edge, corners and shadow"
+          {shownTab === "style" && (
+          <Group title="Background" defaultOpen
             onReset={() => p.onSetSectionStyle(section.id, resetKeys(section.style, ["border", "radius", "shadow", "minHeight"]))}>
             <div style={FIELD}>
               <span style={L}>Background</span>
@@ -648,17 +1294,20 @@ export function Inspector(p: InspectorProps) {
                 both, so we leave them out rather than show you something your reader will not get.
               </div>
             )}
-            <div style={FIELD}>
-              <span style={L}>Least height</span>
-              <input type="number" style={INPUT} data-style-minheight value={sectionLayer.minHeight ?? ""} placeholder="as tall as it needs"
+            <div style={ROW}>
+              {/* "Min Height", the reference's name (D-172). "Least height" was
+                  ours, and the same control on a container already says it. */}
+              <span style={L}>Min Height</span>
+              <input type="number" style={INPUT} data-style-minheight value={sectionLayer.minHeight ?? ""} placeholder="auto"
                 title="The shortest this section may be, in pixels. Useful for a band with a background picture."
                 onChange={(e) => patchSectionStyle({ minHeight: e.target.value === "" ? undefined : Number(e.target.value) }, "minHeight")} />
             </div>
           </Group>
+          )}
 
           {/* ── TYPOGRAPHY — the section's own heading font ────────────── */}
-          {p.fonts.length > 0 && (
-            <Group title="Typography" hint="The font the headings in this section are set in"
+          {shownTab === "style" && p.fonts.length > 0 && (
+            <Group title="Typography"
               onReset={() => p.onPatchSection(section.id, { headingFont: "" })}
               resetTitle="Back to the font the rest of the document uses">
               <div style={FIELD}>
@@ -681,33 +1330,42 @@ export function Inspector(p: InspectorProps) {
               throwing away the words the author typed, and a single click with
               no confirmation is not how that should happen. Every group that
               owns STYLING resets; the one that owns content does not. */}
-          <Group title="Page" hint="Where this sits when the document is printed, and who sees it"
+          {shownTab === "advanced" && (
+          <Group title="Page"
             onReset={() => p.onPatchSection(section.id, { pageBreakBefore: false, visibility: "customer" })}
             resetTitle="Back to: no page break, and the customer sees it">
             {/* Only where there ARE pages. An email and a web page have none,
                 and a control that cannot do anything is worse than a missing
                 one — D-30. The adapter's own words, through copy.ts. */}
             {p.pageBreakLabel !== "" && (
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-                title="Start a new page here when this is printed or saved as a PDF">
-                <input type="checkbox" checked={!!section.pageBreakBefore}
-                  onChange={(e) => p.onPatchSection(section.id, { pageBreakBefore: e.target.checked })} />
-                {p.pageBreakLabel || "Start a new page here"}
-              </label>
+              <div style={ROW}>
+                <span style={L}>{p.pageBreakLabel || "Start a new page here"}</span>
+                <Switcher
+                  name={p.pageBreakLabel || "Start a new page here"}
+                  testId="section-pagebreak"
+                  on={!!section.pageBreakBefore}
+                  onChange={(v) => p.onPatchSection(section.id, { pageBreakBefore: v })}
+                />
+              </div>
             )}
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12 }}
-              title="Your crew sees this; the customer never does, and it is left out of the PDF">
-              <input type="checkbox" checked={section.visibility === "internal"}
-                onChange={(e) => p.onPatchSection(section.id, { visibility: e.target.checked ? "internal" : "customer" })} />
-              Internal note only
-            </label>
+            <div style={ROW}>
+              <span style={L}>Internal note only</span>
+              <Switcher
+                name="Internal note only"
+                testId="section-internal"
+                on={section.visibility === "internal"}
+                onChange={(v) => p.onPatchSection(section.id, { visibility: v ? "internal" : "customer" })}
+              />
+            </div>
           </Group>
+          )}
         </div>
+        )}
       </div>
+      </Accordion>
 
-      <div style={{ marginTop: "auto", padding: "10px 16px", borderTop: "1px solid #E2E8F0", fontSize: 11, color: "#5A7A8A" }}>
-        Changes show on the page as you make them.
-      </div>
+      {/* THE FOOTER SENTENCE — "Changes show on the page as you make them."
+          — IS DELETED (D-172). No footer sentence in the reference panel. */}
     </div>
   );
 }
@@ -723,59 +1381,19 @@ function sectionResolvedWidths(section: Section): number[] | undefined {
   return layerFor(section.style, "desktop").columnWidths;
 }
 
-const miniBtn: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: 4, border: "1px solid #CBD5E1", background: "#fff",
-  borderRadius: 4, padding: "5px 9px", fontSize: 11, fontWeight: 600, color: "#334155", cursor: "pointer",
-};
-
-/** Brand swatches first, any colour after — Q4, in one control. */
-function Swatches({ value, swatches, onPick }: { value: string; swatches: string[]; onPick: (v: string) => void }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-      {swatches.map((c) => (
-        <button key={c} type="button" title={`Use ${c}`} onClick={() => onPick(c)}
-          style={{
-            width: 20, height: 20, borderRadius: 4, background: c, cursor: "pointer",
-            border: value.toLowerCase() === c.toLowerCase() ? "2px solid #0B1C24" : "1px solid #CBD5E1",
-          }} />
-      ))}
-      <label title="Any colour you like" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#0C4A60", cursor: "pointer" }}>
-        <input type="color" value={value || "#ffffff"} onChange={(e) => onPick(e.target.value)}
-          style={{ width: 20, height: 20, padding: 0, border: "1px dashed #CBD5E1", borderRadius: 4, background: "transparent" }} />
-        Any colour
-      </label>
-      {value && (
-        <button type="button" title="Back to the page's own background" onClick={() => onPick("")}
-          style={{ ...miniBtn, padding: "2px 6px", fontSize: 10 }}>Clear</button>
-      )}
-    </div>
-  );
-}
+/* `miniBtn` and `Swatches` LIVED HERE and are now `StyleGroups.tsx`'s (B-168).
+   `definitionControls.tsx` draws a family's `colour` control and needs the same
+   swatch row this panel uses; two copies would be two answers to "what colours
+   may I pick". Moved, not copied — replace means delete. */
 
 /* `optionKey` and `optionValue` LIVED HERE and are now `registry.ts`'s, beside
    the controls that declare the options. Two copies of "what got saved" is two
    answers, and the registry is the one a test can pin against the machine
    files without rendering a panel. */
 
-/**
- * The control types the PANEL draws.
- *
- * Everything else is either typed on the page (`text`, `textarea`, `richtext`,
- * `list`, `money`, `merge` - the engine's one editing mechanism) or carried by
- * the widget and never typed at all (`hidden`).
- */
-const PANEL_CONTROL_TYPES: ReadonlySet<WidgetControl["type"]> = new Set([
-  "toggle", "select", "colour", "number", "image", "link", "code",
-]);
-
-/**
- * Is a switch ON? Elementor's switcher stores the string "yes"; a checkbox
- * writes a boolean. ONE reader, because "yes" is truthy and `false` is not,
- * and a control that reads only one of the two silently loses the other.
- */
-function isOn(v: unknown): boolean {
-  return v === true || v === "yes";
-}
+/* `PANEL_CONTROL_TYPES` and `isOn` LIVED HERE and are now
+   `definitionControls.tsx`'s, beside the only code that draws a control from a
+   definition. Moved, not copied (B-168). */
 
 export { Sparkles, DeviceSegment };
 export default Inspector;

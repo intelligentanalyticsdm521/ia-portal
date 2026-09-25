@@ -74,6 +74,10 @@ export function LandingBuilder(p: LandingBuilderProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  /* IS ANYTHING SELECTED? (D-165 §11.13.1) Page settings are what the right
+     panel shows when nothing is. */
+  /* No `selected` flag: the Inspector draws page settings only when nothing
+     is selected, so this adapter keeps no second copy of the selection. */
   const [copied, setCopied] = useState(false);
   const [business, setBusiness] = useState<LandingBusiness>({ name: "" });
   /**
@@ -194,10 +198,15 @@ export function LandingBuilder(p: LandingBuilderProps) {
   if (picking || !doc) {
     return (
       <TemplateLibrary
+        /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow=""
         open
         onClose={p.onClose}
         product="spark"
-        eyebrow="SPARK · Landing page"
         title={`Start ${p.page.name}`}
         subtitle="Each of these opens with a headline, some copy and a form — the shape that actually converts. Pick one and change anything on it."
         entries={libraryEntries}
@@ -250,7 +259,6 @@ export function LandingBuilder(p: LandingBuilderProps) {
       onClose={p.onClose}
       adapter="landing"
       resetKey={resetKey}
-      eyebrow="SPARK · Landing page"
       doc={doc}
       onChange={setDoc}
       ctx={ctx as unknown as RenderContext}
@@ -270,27 +278,15 @@ export function LandingBuilder(p: LandingBuilderProps) {
         outlineHeading: "This page, top to bottom",
         defaultFontLabel: "This page's own font",
         pageBreakLabel: "",
-        canvasHint: "Click anything on the page to edit it. This is the page a visitor gets.",
         emptyHeading: "What goes on this page?",
         emptyHint: "A headline, a reason to care, and a form. Pick one to start.",
       }}
       onSave={() => void save(false)}
-      canvasHint="Click anything on the page to edit it. This is the page a visitor gets."
-      paperNote="hosted page"
       premade={LANDING_PREMADE_SECTIONS}
       premadeTags={LANDING_PREMADE_TAGS}
       swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}
       fonts={kit.fonts.catalog.map((f) => f.value)}
       title={<span style={{ fontSize: 15, fontWeight: 600 }}>{p.page.name}</span>}
-      subtitle={
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 10, fontSize: 11 }}>
-          <span style={{ background: "rgba(255,255,255,0.12)", borderRadius: 999, padding: "2px 9px" }}>/{p.page.slug}</span>
-          {published
-            ? <a data-landing-chip href={publicUrl!} target="_blank" rel="noreferrer" style={{ color: "#fff", textDecoration: "underline" }}
-              title="Open the live page in a new tab">Live — see it <ExternalLink size={10} style={{ verticalAlign: -1 }} /></a>
-            : <span data-landing-chip style={{ opacity: 0.8 }}>Not live yet</span>}
-        </span>
-      }
       headerActions={
         <>
           {published && (
@@ -313,8 +309,17 @@ export function LandingBuilder(p: LandingBuilderProps) {
           </button>
         </>
       }
-      paneHeader={
-        <div style={{ fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
+      /* D-165 §11.13.1 — the LEFT panel is widgets and nothing else. What is
+         true of the PAGE (that there is no form on it yet, that this business
+         has a website these could be pages of, what the last press did) is
+         page settings: the right panel, when nothing is selected. */
+      documentExtras={(
+        <div data-page-settings="landing"
+          style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC",
+            fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em", fontWeight: 700, color: "#5A7A8A" }}>
+            This page
+          </div>
           {p.arionSitePath && (
             <div style={{ color: "#1D4ED8" }}>
               <Globe size={11} style={{ verticalAlign: -1 }} /> You have a website with us —{" "}
@@ -329,7 +334,7 @@ export function LandingBuilder(p: LandingBuilderProps) {
           {err && <div style={{ color: "#B91C1C" }}>{err}</div>}
           {said && <div style={{ color: "#047857" }}>{said}</div>}
         </div>
-      }
+      )}
       widgetExtras={(w) => (
         <LandingExtras widget={w} doc={doc} onChange={setDoc} />
       )}

@@ -174,7 +174,7 @@ export function cloneNode(n: Node): Node {
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * BOX, ROW, GRID — the three things the picker's Layout group puts on the page.
+ * BOX, ROW, GRID — the three shapes a Layout tile puts on the page.
  *
  * Containers and not widgets, and therefore here and not in `registry.ts`: a
  * box is a fact about the ENGINE's model, the same in a proposal, an email and
@@ -373,9 +373,9 @@ function editNodeById(
 /**
  * PUT A NODE IN A HOST, at an exact index.
  *
- * The one insert. A "+" strip, a drag from the pane, a slash command, a
- * ready-made section and the upgrade all come through here, so the rules about
- * where something may go are written once.
+ * The one insert. The add area, a drag from the pane, a tile pressed in the
+ * pane, a ready-made section and the upgrade all come through here, so the
+ * rules about where something may go are written once.
  */
 export function insertNode(
   doc: BuilderDocument,

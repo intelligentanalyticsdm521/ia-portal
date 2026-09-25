@@ -77,8 +77,12 @@ const MUTATIONS = [
   {
     name: "D4 a client of ours is named on the shipped cover",
     file: SNOW,
-    from: 'subtitle: "A clear, dependable plan for winter weather.',
-    to: `subtitle: "Prepared for ${A_CLIENT}. A clear, dependable plan for winter weather.`,
+    /* REPOINTED AT INTEGRATION 2026-09-19. `doc_header` is deleted (§11.13.3)
+       and the cover is a row Container with an Image and a Heading, so the
+       subtitle it used to mutate is a Text Editor's `text` now. Same promise,
+       same guard, the line that carries it today. */
+    from: 'text: "A clear, dependable plan for winter weather.',
+    to: `text: "Prepared for ${A_CLIENT}. A clear, dependable plan for winter weather.`,
     test: SNOWTEST,
     expects: "none of the names appears in the entry or in the built document",
   },

@@ -74,11 +74,27 @@ describe('"builder" clears the SD-010 floor on every screen', () => {
     });
   }
 
-  test("at 1400px and up it takes the FULL width", () => {
-    assert.equal(widthFractionAt("builder", 1400), 1);
-    assert.equal(widthFractionAt("builder", 2560), 1);
-    // ...and below the breakpoint it keeps a small gutter.
-    assert.ok(widthFractionAt("builder", 1399) < 1);
+  // D-172 round 2 — THE BUILDER FILLS THE WINDOW, at every width.
+  //
+  // ABSENT: the gutter, and the breakpoint that used to switch it off. The
+  // surface was 96vw up to 1400px and 100vw above it, so on a 1366px laptop
+  // the Portal's own nav showed down both sides of the editor. Measured in
+  // the reference on 2026-09-19: top bar 0,0 1680x48, panel 0,48 300x952,
+  // canvas 300,48 1380x952 — nothing behind it, at any size.
+  // PRESENT: full width on every screen, and the `fullBleed` flag that drops
+  // the rounded corner and the backdrop with it.
+  test("it takes the FULL width at EVERY size — no gutter, no breakpoint", () => {
+    for (const w of SCREENS) {
+      assert.equal(widthFractionAt("builder", w), 1, `builder must fill a ${w}px screen`);
+    }
+    assert.equal(MODAL_SIZES.builder.widthAtWide, undefined, "the wide override is deleted");
+    assert.equal(MODAL_SIZES.builder.wideFrom, undefined, "the breakpoint is deleted");
+    assert.equal(MODAL_SIZES.builder.fullBleed, true, "the builder is a full-bleed surface");
+  });
+
+  test("it is the ONLY full-bleed size — a dialog is still a dialog", () => {
+    const full = Object.entries(MODAL_SIZES).filter(([, d]) => d.fullBleed).map(([k]) => k);
+    assert.deepEqual(full, ["builder"]);
   });
 
   test("it is TALLER than the xl surface it replaces, and over the floor", () => {
@@ -108,9 +124,12 @@ describe("the three-pane slots are part of the SHELL", () => {
     assert.deepEqual(withPanes, ["builder"]);
   });
 
-  test("the pane is 320px and the inspector is 320px", () => {
+  test("the inspector is 300px, the width the reference's panel measures (D-172)", () => {
     assert.equal(BUILDER_PANE_WIDTH, 320);
-    assert.equal(BUILDER_INSPECTOR_WIDTH, 320);
+    // Measured in the live editor on 2026-09-19: its panel reports exactly 300
+    // whether it is showing Elements or Edit Container. 320 was ours, and it
+    // is 20px of canvas on every builder.
+    assert.equal(BUILDER_INSPECTOR_WIDTH, 300);
   });
 
   const shell = read("components/IadmModal.tsx");
@@ -159,9 +178,14 @@ describe("every builder opens through ONE frame", () => {
     }
   });
 
-  test("the frame carries exactly ONE undo and ONE redo control", () => {
-    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
-    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
+  test("the frame carries NO undo control — the reference editor has none (D-172)", () => {
+    // SD-010 said "exactly one undo control". Driven in the real editor on
+    // 2026-09-19, the answer is none: undo is the chord and the History panel.
+    // ABSENT, so a second one cannot arrive by being "the only one".
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 0);
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 0);
+    // PRESENT: the one door that replaced them.
+    assert.match(frame, /title="History" aria-label="History"/);
   });
 
   test("both engines open it", () => {

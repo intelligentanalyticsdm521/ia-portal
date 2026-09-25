@@ -25,7 +25,8 @@ import {
   insertProposedSection, acceptProposedSections, dropProposedSections,
   sectionSummary,
 } from '../src/arion/utils/sectionListState.ts';
-import { costLine, splitPages } from '../src/arion/utils/siteBuilderCopy.ts';
+import { costLine } from '../src/arion/utils/siteBuilderCopy.ts';
+import { filterPages, statusLinks } from '../src/arion/utils/pagesTable.ts';
 
 const node = (id, kind = 'hero') => ({
   id, elType: 'section', settings: { _title: `ia:${kind}:scratch:${id}` }, elements: [],
@@ -233,7 +234,7 @@ test('the credit price is read from the server, never written into the UI', () =
  * Drafts and publishing
  * ======================================================================== */
 
-test('drafts are their own list, and everything else is live', () => {
+test('Drafts counts the drafts and the pending, and All counts every page', () => {
   const pages = [
     { pageId: 1, status: 'publish', title: 'Home' },
     { pageId: 2, status: 'draft', title: 'Autumn offer' },
@@ -241,12 +242,15 @@ test('drafts are their own list, and everything else is live', () => {
     { pageId: 4, status: 'pending', title: 'Waiting' },
     { pageId: 5, status: 'future', title: 'Scheduled' },
   ];
-  const { drafts, live, deleted } = splitPages(pages);
-  assert.deepEqual(drafts.map((p) => p.pageId), [2, 4]);
-  assert.deepEqual(live.map((p) => p.pageId), [1, 3, 5]);
-  assert.deepEqual(deleted, []);
-  assert.equal(drafts.length + live.length, pages.length, 'no page falls between the two lists');
-  assert.deepEqual(splitPages([]), { drafts: [], live: [], deleted: [] });
+  const ids = (view) => filterPages(pages, view, '').map((p) => p.pageId).sort();
+  assert.deepEqual(ids('draft'), [2, 4]);
+  assert.deepEqual(ids('publish'), [1]);
+  assert.deepEqual(ids('trash'), []);
+  assert.deepEqual(ids('all'), [1, 2, 3, 4, 5], 'a private or scheduled page is still on the list');
+  // The bin link is not even drawn when the bin is empty, exactly as WordPress
+  // does not draw it - a door to nothing is a door nobody opens twice.
+  assert.deepEqual(statusLinks(pages).map((l) => l.label), ['All', 'Published', 'Drafts']);
+  assert.deepEqual(statusLinks([]).map((l) => l.count), [0, 0, 0]);
 });
 
 test('a deleted page is its own list, not a draft and not live', () => {
@@ -258,12 +262,13 @@ test('a deleted page is its own list, not a draft and not live', () => {
     { pageId: 2, status: 'draft', title: 'Autumn offer' },
     { pageId: 6, status: 'trash', title: 'Old offer' },
   ];
-  const { drafts, live, deleted } = splitPages(pages);
-  assert.deepEqual(deleted.map((p) => p.pageId), [6]);
-  assert.deepEqual(drafts.map((p) => p.pageId), [2]);
-  assert.deepEqual(live.map((p) => p.pageId), [1]);
-  assert.equal(drafts.length + live.length + deleted.length, pages.length,
-    'no page falls between the three lists');
+  const ids = (view) => filterPages(pages, view, '').map((p) => p.pageId).sort();
+  assert.deepEqual(ids('trash'), [6]);
+  assert.deepEqual(ids('draft'), [2]);
+  assert.deepEqual(ids('publish'), [1]);
+  assert.deepEqual(statusLinks(pages).find((l) => l.label === 'Trash').count, 1);
+  assert.equal(ids('all').length + ids('trash').length, pages.length,
+    'no page falls between the status links');
 });
 
 test('publishing asks first, and unpublishing goes back to a draft', () => {

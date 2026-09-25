@@ -43,6 +43,20 @@ interface Props {
   subtitle?: ReactNode;
   /** Rendered on the right side of the header row, before the close X. */
   headerActions?: ReactNode;
+  /**
+   * THE WHOLE HEADER, for a surface that owns its own bar (D-172).
+   *
+   * The builder's top bar is a copy of the reference editor's: a menu at the
+   * far left, the page's name CENTRED with a chevron, the device switcher
+   * centred beside it, and the verb at the right. That is not an eyebrow, a
+   * title and a row of actions with a close X on the end — it is one bar, and
+   * a header built out of the four slots above cannot be made to read like it.
+   *
+   * When this is supplied it REPLACES eyebrow, title, subtitle, headerActions
+   * and the close X; the caller owns every control in the strip, the way out
+   * included. One additive prop, so no existing call site moves.
+   */
+  chrome?: ReactNode;
   /** Footer area. Caller is responsible for button order (Core Blue first,
    *  Platform color second). Sticky to bottom. */
   footer?: ReactNode;
@@ -105,7 +119,7 @@ const HEADER_FG_RESET = {
 
 export function IadmModal({
   open, onClose, product, eyebrow, title, subtitle,
-  headerActions, footer, size = "lg", z, children,
+  headerActions, chrome, footer, size = "lg", z, children,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -144,13 +158,24 @@ export function IadmModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ ...HEADER_FG_RESET, background: "rgba(0,0,0,0.5)", ...(z === undefined ? null : { zIndex: z }) }}
+      /* A FULL-BLEED SURFACE HAS NO BACKDROP (D-172, round 2) — there is
+         nothing behind it to dim, and a scrim over a window-filling editor is
+         a grey wash over the author's own colours.
+         HEADER_FG_RESET first (W-OB-05, 2026-09-25): the root resets the
+         header's foreground tokens, so a modal opened from inside a header
+         (or a body) never inherits the dark-header values. */
+      style={{
+        ...HEADER_FG_RESET,
+        ...(dims.fullBleed ? null : { background: "rgba(0,0,0,0.5)" }),
+        ...(z === undefined ? null : { zIndex: z }),
+      }}
       onMouseDown={onBackdropDown}
       onMouseUp={onBackdropUp}
     >
       <div
         onMouseDown={(e) => e.stopPropagation()}
-        className="flex flex-col overflow-hidden rounded-xl bg-white shadow-2xl"
+        data-iadm-modal-full={dims.fullBleed ? "1" : undefined}
+        className={`flex flex-col overflow-hidden bg-white${dims.fullBleed ? "" : " rounded-xl shadow-2xl"}`}
         style={{
           width,
           // "auto" height (confirm only) lets the modal size to its content
@@ -159,36 +184,43 @@ export function IadmModal({
           maxHeight: dims.height === "auto" ? "90vh" : undefined,
         }}
       >
-        {/* Ink gradient header */}
+        {/* Ink gradient header. A surface that owns its own bar (the builder,
+            D-172) hands one in through `chrome` and gets the strip to itself. */}
         <div
-          className="flex items-center justify-between gap-3 px-5 py-3"
+          className={chrome
+            ? "flex items-center gap-2 px-3 py-2"
+            : "flex items-center justify-between gap-3 px-5 py-3"}
           style={{ ...HEADER_FG_VARS, color: "var(--iadm-head-fg)", background: "linear-gradient(to right, #0B1C24, #1a3540)" }}
         >
-          <div className="min-w-0">
-            <div
-              className="text-[10px] font-bold uppercase tracking-wider"
-              style={{ color: accent }}
-            >
-              {eyebrowText}
-            </div>
-            <h2 className="mt-0.5 truncate text-base font-semibold">{title}</h2>
-            {subtitle && (
-              <div className={typeof subtitle === "string" ? "mt-0.5 truncate text-[11px] text-white/60" : "relative z-30 mt-0.5 text-[11px] text-white/60"}>{subtitle}</div>
-            )}
-          </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
-            {headerActions}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              // SD-010: a tooltip on every button, the close X included.
-              title="Close"
-              className="rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
+          {chrome ?? (
+            <>
+              <div className="min-w-0">
+                <div
+                  className="text-[10px] font-bold uppercase tracking-wider"
+                  style={{ color: accent }}
+                >
+                  {eyebrowText}
+                </div>
+                <h2 className="mt-0.5 truncate text-base font-semibold">{title}</h2>
+                {subtitle && (
+                  <div className={typeof subtitle === "string" ? "mt-0.5 truncate text-[11px] text-white/60" : "relative z-30 mt-0.5 text-[11px] text-white/60"}>{subtitle}</div>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {headerActions}
+                <button
+                  type="button"
+                  onClick={onClose}
+                  aria-label="Close"
+                  // SD-010: a tooltip on every button, the close X included.
+                  title="Close"
+                  className="rounded-full p-1.5 text-white/60 transition-colors hover:bg-white/10 hover:text-white"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Body — internal scroll only. Fixed-size canvas means short

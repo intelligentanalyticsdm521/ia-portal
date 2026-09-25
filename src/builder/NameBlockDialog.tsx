@@ -3,7 +3,8 @@
  *
  * BUILDER_UX_SPEC §M-23: *"Right-click a section → Save this as my own block →
  * name it, one line of what it is for → it appears in the template library
- * under 'Your own blocks', and in the '+'-between-sections picker."* For a snow
+ * under 'Your own blocks'."* (The '+'-between-sections pop-up that sentence
+ * also named is deleted; the template library is the one home.) For a snow
  * contractor with one severe-weather clause they use on every agreement, this
  * is the difference between the builder saving them time and costing them time.
  *

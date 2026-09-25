@@ -18,27 +18,45 @@ export interface HistoryPanelProps {
 
 export function HistoryPanel(p: HistoryPanelProps) {
   return (
+    /* NO SCRIM (D-172, round 2).
+       In the reference, History IS the left panel — the panel becomes History
+       and the page beside it stays fully usable, which is the point of a
+       history: you look at where you were WHILE looking at the page. Ours was
+       a drawer on the right over a dark wash across the whole editor, so the
+       one thing you wanted to compare against was greyed out behind it.
+       The panel on the right is the agreed difference (a); the scrim was not,
+       and it is deleted, along with the click-the-scrim-to-close it carried —
+       Escape and the X close it, and Escape now reaches it (BuilderShell's
+       `onShortcut`, same round). */
     <div
-      style={{ position: "fixed", inset: 0, zIndex: 9560, background: "rgba(11,28,36,0.4)", display: "flex", justifyContent: "flex-end" }}
-      onMouseDown={(e) => { if (e.target === e.currentTarget) p.onClose(); }}
+      style={{ position: "fixed", inset: 0, zIndex: 9560, display: "flex", justifyContent: "flex-end", pointerEvents: "none" }}
     >
       <div
         data-builder-history="1"
         role="dialog"
-        aria-label="What you've changed"
-        style={{ width: "min(320px, 100vw)", background: "#fff", boxShadow: "-16px 0 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}
+        aria-label="History"
+        style={{ width: "min(320px, 100vw)", background: "#fff", boxShadow: "-16px 0 40px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column", pointerEvents: "auto" }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "12px 14px", borderBottom: "1px solid #EEF2F6" }}>
-          <strong style={{ fontSize: 13.5, color: "#0B1C24" }}>What you&rsquo;ve changed</strong>
+          <strong style={{ fontSize: 13.5, color: "#0B1C24" }}>History</strong>
           <button type="button" onClick={p.onClose} aria-label="Close" title="Close"
             style={{ marginLeft: "auto", border: "none", background: "transparent", cursor: "pointer", color: "#64748B" }}>
             <X size={14} />
           </button>
         </div>
-        <p style={{ fontSize: 11.5, color: "#5A7A8A", lineHeight: 1.5, padding: "9px 14px 4px", margin: 0 }}>
-          Every step you have taken, newest first. Press one to go back to how the page looked then &mdash; nothing is
-          thrown away until you edit again.
-        </p>
+        {/* THE TWO TABS (D-172, round 2). The reference's history panel has
+            Actions and Revisions, each with its own list and its own empty
+            state. We keep no revisions of a document in the editor — a saved
+            proposal's versions are the adapter's, reached from the list, and a
+            tab that opened onto "nothing here" every time is worse than none.
+            Recorded as an agreed omission in the handoff rather than built
+            hollow; Actions is the list below, under its own heading. */}
+        <div data-history-tab="actions"
+          style={{ padding: "8px 14px 0", fontSize: 12, fontWeight: 600, color: "#0B1C24" }}>
+          Actions
+        </div>
+        {/* THE COACHING PARAGRAPH IS DELETED (D-172). No reference panel
+            carries one; the list explains itself. */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 10px" }}>
           {p.steps.map((s) => (
             <button

@@ -30,9 +30,11 @@ import { useBrandKit } from "../../../brand/BrandKitProvider";
 import { BuilderShell } from "../../BuilderShell";
 import { Canvas } from "../../Canvas";
 import {
-  addSection, makeSection, makeWidget, patchNode,
+  addSection, makeContainer, makeSection, makeWidget, patchNode,
   type BuilderDocument, type Selection, type Widget,
 } from "../../model";
+import { withLayer } from "../../style";
+import type { SectionLayout, StructurePreset } from "../../AddSection";
 import { makeContext, type RenderContext } from "../../render";
 import { arionKindOf, widgetsFor, type WidgetDef } from "../../registry";
 import type { PremadeSection } from "../../templates";
@@ -51,10 +53,9 @@ import type { WidgetLock } from "../../tier";
 import { AskArgusBox } from "../../../arion/components/AskArgus";
 import { PageSettingsSheet } from "../../../arion/components/PageSettingsSheet";
 import { SwapLookSheet } from "../../../arion/components/SwapLookSheet";
-import { AdoptSectionSheet, AdoptReviewList } from "../../../arion/components/AdoptSectionSheet";
 import type { FieldContext } from "../../../arion/components/SectionFieldInputs";
 import type {
-  SectionCatalogEntry, SectionFieldSpec, SitePageSettings, SitePageSeo, AdoptPreview,
+  SectionCatalogEntry, SectionFieldSpec, SitePageSettings, SitePageSeo,
 } from "../../../lib/arionApi";
 
 
@@ -88,9 +89,6 @@ export interface WebsiteBuilderApi {
   askSection: (pageId: number, body: any) => Promise<any>;
   askPage: (pageId: number, body: any) => Promise<any>;
   discardProposal: (id: string) => Promise<any>;
-  adoptPreview: (pageId: number, index: number) => Promise<any>;
-  adopt: (pageId: number, index: number, body: any) => Promise<any>;
-  undoAdoption: (pageId: number, adoptionId: string) => Promise<any>;
   swapRoles: (body: any) => Promise<any>;
   /* The jobs that used to send a client to wp-admin (ARION pack 1). They keep
      their homes: the builder gained a canvas, it did not lose the address bar,
@@ -175,11 +173,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
   const [swapBusy, setSwapBusy] = useState<string | null>(null);
   const [swapErr, setSwapErr] = useState<string | null>(null);
 
-  /* Adoption — one at a time, always previewed, never automatic. */
-  const [adopt, setAdopt] = useState<{ index: number; sectionId: string; label: string } | null>(null);
-  const [adoptPv, setAdoptPv] = useState<AdoptPreview | null>(null);
-  const [adoptLoading, setAdoptLoading] = useState(false);
-  const [adoptErr, setAdoptErr] = useState<string | null>(null);
+  /* ADOPTION IS DELETED (B-168, 2026-09-22). Four pieces of state, a sheet,
+     a review checklist and three API calls existed to offer to REPLACE a
+     client's own Elementor section with one of our archetypes, because it
+     could not be edited otherwise. arion-api reads every section now, so
+     there is nothing to adopt and nothing to review. */
 
   /* Publishing asks first. It is the one button that changes what the world
      sees, and it is next to Save draft. */
@@ -193,10 +191,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
    * dialog: one piece of state, one `ConfirmDialog`, named buttons.
    */
   const [confirmAsk, setConfirmAsk] = useState<ConfirmAsk | null>(null);
-
-  /* "Review sections built on the site (N)" — a checklist, never a bulk
-     adopt. Offered only when there IS something to review. */
-  const [reviewOpen, setReviewOpen] = useState(false);
 
   /* Where the adapter could not tell which of two boxes is which, it says so
      rather than letting a guess look like a decision (pack 2b). */
@@ -291,7 +285,46 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
 
   /* ── adding a section: the SERVER builds it ──────────────────────────── */
 
-  const addFromServer = useCallback(async (kind: string, at: number, count?: number, blueprintId?: string) => {
+  /**
+   * THE STRUCTURE THE AUTHOR PICKED (B-168 W-3, 2026-09-22).
+   *
+   * The add area hands back `(layout, preset)` — one column, 50/50, 33/33/33,
+   * 25/25/25/25, 33/66 — and this adapter took neither, so every section the
+   * author added was built by the server as one column at 100% however many
+   * they picked. A read-only scorer dropped an Icon Box into each of three
+   * columns and watched all three publish in one; the canvas itself only ever
+   * drew one `[data-col]`.
+   *
+   * It is built the way `BuilderShell.addStructure` builds it for every other
+   * builder — a row Container holding one Container per cell, with the cells'
+   * widths on the row's desktop layer — because that is the one shape this
+   * platform has for "columns" and the one arion-api's `buildContentBox`
+   * publishes. The shell cannot do it here: a website section has to carry the
+   * Elementor NODE the server built for it, and a section with no node is
+   * dropped by `toPayload` rather than invented.
+   */
+  const structureFor = useCallback((layout: SectionLayout, preset: StructurePreset): Widget | null => {
+    if (!preset || !Array.isArray(preset.cells) || preset.cells.length === 0) return null;
+    const many = preset.cells.length > 1;
+    const cells = many ? preset.cells.map(() => makeContainer()) : [];
+    return makeContainer(
+      many
+        ? withLayer(
+          layout === "grid"
+            ? { direction: "grid", columns: preset.cells.length, gap: 16 }
+            : { direction: "row", gap: 16 },
+          "desktop",
+          { columnWidths: preset.cells.map((n) => n / 100) },
+        )
+        : (layout === "grid" ? { direction: "grid", columns: 1, gap: 16 } : undefined),
+      cells,
+    );
+  }, []);
+
+  const addFromServer = useCallback(async (
+    kind: string, at: number, count?: number, blueprintId?: string,
+    structure?: { layout: SectionLayout; preset: StructurePreset } | null,
+  ) => {
     setBusy("add"); setErr(null);
     try {
       const built: any = await api.buildSection(kind, blueprintId);
@@ -313,6 +346,17 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           };
         }
       }
+      /* The author's structure, onto the section the server just built. The
+         node rides on the section's `meta`, so replacing the column's widgets
+         leaves it exactly where `toPayload` looks for it. */
+      const box = structure ? structureFor(structure.layout, structure.preset) : null;
+      if (box) {
+        section = {
+          ...section,
+          label: "Container",
+          columns: section.columns.map((c, i) => (i === 0 ? { ...c, widgets: [box] } : c)),
+        };
+      }
       change(addSection(doc, section, at));
       setSelection(null);
     } catch (e: any) {
@@ -320,7 +364,7 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     } finally {
       setBusy(null);
     }
-  }, [api, change, doc]);
+  }, [api, change, doc, structureFor]);
 
   /* ── placing a pre-made section from the gallery ─────────────────────── */
 
@@ -355,9 +399,9 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     const kind = arionKindOf(def.kind);
     /* THE PLAN, BEFORE ANYTHING IS BUILT (D-157).
      *
-     * The picker greys the row and says why, and this is the second end of the
-     * same guard: a keyboard shortcut, a slash command and a drag all arrive
-     * here, and only one of them goes through the picker. The server refuses
+     * The panel greys the tile and says why, and this is the second end of the
+     * same guard: a keyboard shortcut, a pressed tile and a drag all arrive
+     * here, and only one of them goes through the panel. The server refuses
      * the build as well — three ends, on purpose, because the one a client
      * finds is never the one you thought of. */
     const locked = lockFor(plan, kind);
@@ -673,48 +717,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     finally { setSettingsBusy(null); }
   }, [api, onClose, pageId]);
 
-  /** Put an adopted section back, once the client has said yes to it. */
-  const undoAdoption = useCallback(async (adoptionId: string) => {
-    setBusy("adopt"); setErr(null);
-    try {
-      await api.undoAdoption(pageId, adoptionId);
-      setOk("That section is back exactly as it was, byte for byte.");
-      await load();
-    } catch (e: any) {
-      setErr(messageFrom(e, "We could not undo that. Nothing was changed."));
-    } finally {
-      setBusy(null);
-    }
-  }, [api, load, pageId]);
-
   /* ── the inspector's own panel ───────────────────────────────────────── */
 
   const deps: SiteFieldDeps = useMemo(() => ({
     field: api.field,
     specsFor,
-    // ALWAYS PREVIEWED, never automatic: the sheet shows the section as it is
-    // beside what it would become, asks for anything the mapper could not read,
-    // and only then writes. The preview writes nothing, anywhere.
-    onAdopt: async (index: number, sectionId: string, label: string) => {
-      setAdopt({ index, sectionId, label });
-      setAdoptPv(null); setAdoptErr(null); setAdoptLoading(true);
-      try {
-        const pv: any = await api.adoptPreview(pageId, index);
-        setAdoptPv(pv?.data || null);
-      } catch (e: any) {
-        setAdoptErr(messageFrom(e, "We could not read that section well enough to show you what would happen."));
-      } finally {
-        setAdoptLoading(false);
-      }
-    },
-    onUndoAdoption: (adoptionId: string) => {
-      setConfirmAsk({
-        title: "Put this section back the way your website built it?",
-        body: "Anything you have changed on it since goes with it, and the section stops being editable here.",
-        confirmLabel: "Yes, put it back",
-        onConfirm: () => { void undoAdoption(adoptionId); },
-      });
-    },
     onSwapRoles: swapRoles,
     roleSwapBusy,
     onSwapLook: (sectionId: string, kind: string, blueprintId: string | null, label: string) => {
@@ -723,11 +730,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
     },
     catalogFor: (kind: string) => catalog.find((c) => c.kind === kind) || null,
     catalogue,
-  }), [api, catalog, catalogue, pageId, roleSwapBusy, specsFor, swapRoles, undoAdoption]);
+  }), [api, catalog, catalogue, roleSwapBusy, specsFor, swapRoles]);
 
   const widgetExtras = useCallback((w: Widget, sectionId: string) => {
     if (w.kind === "site_custom") {
-      return <SiteLockedPanel widget={w} sectionId={sectionId} deps={deps} busy={busy === "adopt"} />;
+      return <SiteLockedPanel widget={w} sectionId={sectionId} deps={deps} busy={false} />;
     }
     const kind = arionKindOf(w.kind);
     if (!kind) return null;
@@ -775,21 +782,19 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
    * check would treat "we do not know" as "there is none" (D-ARION-E). */
   const cannotPublish = !!pageEngine?.known && pageEngine.active === false;
 
-  /* Every locked section on the page, and how many of them we could offer to
-     take charge of. `customCount` is what the review entry counts. */
-  const locked = useMemo(() => doc.sections
-    .map((sec, i) => {
-      const w = sectionWidget(sec);
-      const lock: any = w && w.kind === "site_custom" ? (w.props as any)[LOCK_PROP] : null;
-      return lock ? { sectionId: sec.id, order: i, ...lock } : null;
-    })
-    .filter(Boolean) as Array<any>, [doc]);
-  const customCount = locked.length;
-
+  /* THE "Review sections built on the site (N)" ENTRY IS GONE with adoption
+     (B-168). Nothing on a page is locked any more: `site_custom` survives only
+     as the carrier for a section the server could not read at all, and a
+     checklist of those would be a checklist of nothing. */
 
   if (loading) {
     return (
-      <IadmModal open onClose={onClose} product="arion" eyebrow="ARION · Website" title="Opening the page…" size="builder">
+      <IadmModal open onClose={onClose} product="arion" /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow="" title="Opening the page…" size="builder">
         <div style={{ padding: 40, textAlign: "center", color: "#5A7A8A" }}>Reading the page from your website…</div>
       </IadmModal>
     );
@@ -811,30 +816,11 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         }}
         adapter="website"
         resetKey={resetKey}
-        eyebrow="ARION · Website builder"
         title={detail?.title || "Page"}
-        subtitle={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            {/* D-05: a live page with work saved says BOTH, because both are
-                true. "Draft" on its own is what the walk read as "my website is
-                down", and it was right to. */}
-            <span data-site-status
-              title={isLive && heldDraft
-                ? "Your website still shows the published version. Your saved changes are held here until you publish them."
-                : undefined}
-              style={{ background: "rgba(255,255,255,0.14)", borderRadius: 999, padding: "2px 9px" }}>
-              {isLive
-                ? (heldDraft ? "Live · draft saved, not published" : "Live")
-                : detail?.status === "draft" ? "Draft" : detail?.status || "Draft"}
-            </span>
-            {detail?.permalink && <span style={{ opacity: 0.8 }}>{String(detail.permalink).replace(/^https?:\/\//, "")}</span>}
-          </span>
-        }
         doc={doc}
         onChange={change}
         ctx={ctx}
         paperWidth="full"
-        paperNote={detail?.permalink ? String(detail.permalink).replace(/^https?:\/\//, "") : "your website"}
         extraCss={SITE_CSS}
         /* D-30. The engine was written for a proposal, so without this a
            website inspector offers "Start a new page here (when printed or
@@ -850,12 +836,10 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           outlineHeading: "This page, top to bottom",
           defaultFontLabel: "Your website's own font",
           pageBreakLabel: "",
-          canvasHint: "Click anything on the page to edit it. Everything here is what a visitor sees.",
           emptyHeading: "What goes on this page?",
           emptyHint: "Pick one to start. You can add the rest after.",
         }}
         onSave={saveNow}
-        canvasHint="Click anything on the page to edit it. Everything here is what a visitor sees."
         chromeTop={renderHeaderChrome({ businessName: chrome.businessName, logoUrl: chrome.logoUrl, menu: chrome.menu })}
         chromeBottom={renderFooterChrome({ businessName: chrome.businessName, menu: chrome.menu, contactLine: chrome.contactLine })}
         chromeNote="Your website's header and footer. They are the same on every page — change them under Website → Menus."
@@ -866,32 +850,35 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         premadeTags={SITE_PREMADE_TAGS}
         onSelectionChange={setSelection}
         onInsertWidget={insertWidget}
-        /* R-D1 — the PANE and the PICKER say so before the press. `insertWidget`
-           above is the seam a shortcut, a slash command and a drag all reach,
-           and it refuses; this is the same answer, shown as a greyed row with
+        /* R-D1 — the PANEL says so before the press. `insertWidget`
+           above is the seam a shortcut, a pressed tile and a drag all reach,
+           and it refuses; this is the same answer, shown as a greyed tile with
            the reason as its line, so "not on your plan" never arrives looking
            like a bug. ONE source: the plan the server sent. */
         lockedKinds={lockedKinds}
         onPlaceSection={placePremade}
-        onAddBlank={(at) => { void addFromServer("content", at); return false; }}
-        nextUp={null}
+        onAddBlank={(at: number, layout: SectionLayout, preset: StructurePreset) => {
+          void addFromServer("content", at, undefined, undefined, { layout, preset });
+          return false;
+        }}
+        widgetExtras={widgetExtras}
+        /* OUR ANGIE, and the reference's eye — both in the bar's own
+           positions (D-172), not stacked in with the verbs. */
+        onAskArgus={() => setAskOpen(true)}
         askArgus={
-          <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write or rewrite this page. Uses AI credits, and you see what it suggests before anything changes.">
-            <Sparkles size={12} /> Ask ARGUS
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS" aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#38BDF8", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
           </button>
         }
-        widgetExtras={widgetExtras}
+        onPreviewDoc={() => { if (!busy) void runPreview(); }}
         headerActions={
           <>
-            <button type="button" style={GOLD} onClick={() => setAskOpen(true)}
-              title="Ask ARGUS to write or rewrite this page. Uses AI credits.">
-              <Sparkles size={13} /> Ask ARGUS
-            </button>
-            <button type="button" style={GHOST} disabled={!!busy} onClick={runPreview}
-              title="See the page on your own website, rendered by your own theme. Nothing is published.">
-              {busy === "preview" ? "Working…" : "Preview"}
-            </button>
             {/* D-05. On a LIVE page this holds the work beside the published
                 version; it does not touch the website and it does not send
                 `status: draft`, which is the same wire as Unpublish. */}
@@ -947,8 +934,15 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             </button>
           </>
         }
-        paneHeader={
-          <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>
+        /* D-165 §11.13.1 — the LEFT panel is widgets and nothing else. What
+           the page itself is doing (held draft, whether it can be published,
+           the sections built on the site) is a fact about the PAGE, so it is
+           page settings: the right panel, when nothing is selected. It reads
+           the selection this builder ALREADY tracks — a second piece of state
+           saying the same thing is a second thing to get wrong. */
+        documentExtras={(
+          <div data-page-settings="website" style={{ padding: "12px 16px", borderBottom: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+            <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.45 }}>
             {cannotPublish && (
               <div style={{ color: "#B91C1C", fontWeight: 600, marginBottom: 6 }}>
                 Your website cannot show pages built here yet. {pageEngine?.reason}
@@ -992,19 +986,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
               </div>
             )}
             <div style={{ fontWeight: 600, color: "#0B1C24" }}>{doc.sections.length} section{doc.sections.length === 1 ? "" : "s"}</div>
-            {customCount > 0 && (
-              <button
-                type="button"
-                onClick={() => setReviewOpen(true)}
-                title="Go through the sections built on the website itself, one at a time. Nothing happens in bulk."
-                style={{
-                  marginTop: 6, border: "1px solid #CBD5E1", background: "#fff", color: "#0C4A60",
-                  borderRadius: 6, padding: "6px 10px", fontSize: 11, fontWeight: 600, cursor: "pointer",
-                }}
-              >
-                Review sections built on the site ({customCount})
-              </button>
-            )}
             <div>Everything on the canvas is what a visitor sees. Your website changes when you press Publish.</div>
             {ok && (
               <div style={{ color: "#166534", marginTop: 6 }}>
@@ -1019,7 +1000,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
             )}
             {err && <div style={{ color: "#B91C1C", marginTop: 6 }}>{err}</div>}
           </div>
-        }
+          </div>
+        )}
       />
 
       {askOpen && (
@@ -1115,41 +1097,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         />
       )}
 
-      {adopt && (
-        <AdoptSectionSheet
-          sectionLabel={adopt.label}
-          preview={adoptPv}
-          loading={adoptLoading}
-          busy={busy === "adopt"}
-          error={adoptErr}
-          onClose={() => { setAdopt(null); setAdoptPv(null); setAdoptErr(null); }}
-          onAdopt={async (fixes) => {
-            setBusy("adopt"); setAdoptErr(null);
-            try {
-              // The fingerprint from the PREVIEW, so an adopt can only act on
-              // the section the client actually looked at.
-              const res: any = await api.adopt(pageId, adopt.index, {
-                fingerprint: adoptPv?.fingerprint, fixes,
-              });
-              const adopted = res?.data?.section;
-              // reference_catch_swallow_report_success: a 200 with no section
-              // is a failure, and it must not arrive as a green toast.
-              if (!adopted) throw new Error('Your website said it took charge of that section but did not send it back.');
-              change({
-                ...doc,
-                sections: doc.sections.map((x) => (x.id === adopt.sectionId ? sectionFromServer(adopted) : x)),
-              });
-              setAdopt(null); setAdoptPv(null);
-              setOk(`That section is editable now. You can undo it for ${res?.data?.undoDays ?? 30} days.`);
-            } catch (e: any) {
-              setAdoptErr(messageFrom(e, 'We could not take charge of that section. Nothing was changed.'));
-            } finally {
-              setBusy(null);
-            }
-          }}
-        />
-      )}
-
       {asking && (() => {
         const row = sitePremade(asking.key);
         if (!row?.count) return null;
@@ -1188,26 +1135,6 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
           </IadmModal>
         );
       })()}
-
-      {reviewOpen && (
-        <AdoptReviewList
-          rows={locked.map((l) => ({
-            index: Number(l.index) || l.order,
-            label: String(l.label || "Custom section"),
-            summary: String(l.preview || ""),
-            adoptable: !!l.adoptable,
-            kindLabel: l.adoptKindLabel || null,
-            reasonText: l.why || null,
-            confidenceLabel: (l.adoptConfidence || null) as any,
-          }))}
-          onClose={() => setReviewOpen(false)}
-          onOpen={(index) => {
-            const row = locked.find((l) => (Number(l.index) || l.order) === index);
-            setReviewOpen(false);
-            if (row) void deps.onAdopt(index, row.sectionId, String(row.label || "this section"));
-          }}
-        />
-      )}
 
       {/* Publish is asked in the SAME dialog as every other question here. It
           used to be the one app modal among six browser boxes on one toolbar;
@@ -1260,7 +1187,8 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
                   onDuplicateSection={() => undefined}
                   onDeleteSection={() => undefined}
                   onMoveSection={() => undefined}
-                  onAddSection={() => undefined}
+                  onAddBlank={() => undefined}
+                  onAddTemplate={() => undefined}
                 />
               </div>
             </div>

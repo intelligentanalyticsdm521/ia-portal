@@ -78,17 +78,14 @@ export function firstWithFocus(problems: BuilderProblem[] | undefined): BuilderP
   return (problems || []).find((p) => !!p.focus) ?? (problems || [])[0] ?? null;
 }
 
-/**
- * What the counter says.
- *
- * "still blank" and not "invalid": the author has not done anything wrong, they
- * have not finished. Singular and plural both written out, because "1 details"
- * is the sort of thing that makes a product look unfinished.
- */
-export function problemsLabel(count: number): string {
-  if (count <= 0) return "";
-  return count === 1 ? "1 detail still to fill in" : `${count} details still to fill in`;
-}
+/* `problemsLabel` LIVED HERE and is DELETED (D-165 integration, 2026-09-19).
+   It wrote the counter's sentence — "N details still to fill in" — at the top
+   of the left pane. §11.13.2 deletes the Details group AND its counter:
+   "Nobody types into a list of boxes", and a counter is the group coming back
+   in a new place. There is ONE refusal now, and it is Send's: it names the
+   blanks in plain words (`blanksRefusal` in proposal/documentDetails.ts) and
+   jumps to the first one WHERE IT IS ON THE PAGE. The jump below is that one,
+   and it is why `firstWithFocus` and `PROBLEMS_CTA` stay. */
 
 /** The button's own words: it goes somewhere, so it says so. */
 export const PROBLEMS_CTA = "Take me to the first one";

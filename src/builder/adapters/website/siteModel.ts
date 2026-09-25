@@ -36,7 +36,7 @@
  * Pure: no React, no fetch, so the round trip is a `node --test` file.
  */
 import {
-  makeSection, makeWidget, emptyDocument,
+  CONTAINER_KIND, isContainer, makeContainer, makeSection, makeWidget, emptyDocument,
   type BuilderDocument, type Section, type Widget,
 } from "../../model";
 import { arionKindOf, siteWidgetKindFor } from "../../registry";
@@ -56,16 +56,8 @@ export interface ArionSection {
   label: string;
   fields: Record<string, any> | null;
   node: any;
-  /* Phase 3 adoption, carried through so the canvas can offer it. */
-  adoptable?: boolean;
-  adoptKindLabel?: string | null;
-  adoptWhy?: string | null;
-  adoptPreview?: string | null;
-  adoptConfidenceLabel?: string | null;
-  adoptReasonText?: string | null;
-  fingerprint?: string;
-  /** Set on a row that IS editable because it was adopted — so it can be undone. */
-  adoption?: { adoptionId: string; adoptedAt?: string | null; canUndo?: boolean } | null;
+  /** Set on a section read off the client's own website (B-168). */
+  foreign?: boolean;
   /** Roles the server had to guess at, so the inspector can ask. */
   roleReview?: Array<{ list: string; roles: string[]; fields: string[]; why: string }> | null;
 }
@@ -77,8 +69,9 @@ export interface SectionPayload { fields: Record<string, any> | null; node: any 
 export const NODE_PROP = "__node";
 /** The prop a custom section carries its "why not" in. */
 export const LOCK_PROP = "__lock";
-/** The prop an ADOPTED section carries its undo record in. */
-export const ADOPTION_PROP = "__adoption";
+/* `ADOPTION_PROP` was here. Adoption is deleted (B-168, 2026-09-22): every
+   section is editable, so there is nothing to take charge of and nothing to
+   undo. */
 /** The prop a section carries the roles the adapter had to GUESS at in. */
 export const ROLE_REVIEW_PROP = "__roleReview";
 /**
@@ -95,6 +88,28 @@ export interface SectionStyle { background?: string; padding?: number | null; he
 
 /** The prop a section keeps its look AS IT ARRIVED in. */
 export const STYLE0_PROP = "__style0";
+/**
+ * THE SECTION'S WHOLE BOX, AS IT ARRIVED (B-168 W-4, 2026-09-22).
+ *
+ * `SectionStyle` above is three keys, and those three were all that ever left
+ * the browser. The builder's Container panel offers Width, Background, Text
+ * colour, Edge width / style / colour, Rounded corners, Shadow, Min Height,
+ * Typography, Margin and Padding — a read-only scorer changed every one of
+ * them, watched the canvas change, published, and read the container back byte
+ * for byte its defaults. Eleven of its 52 Wrongs were this one gap.
+ *
+ * The engine already keeps all of it on `Section.style` (§11.8's
+ * `ElementStyle`), which is the SAME shape a nested box sends and which
+ * arion-api's `styleToSettings` / `layoutFromStyle` pair has published since
+ * D-156. So it rides as `box`, unchanged, and nothing new has to be invented
+ * at either end.
+ *
+ * It is sent ONLY WHEN IT CHANGED, measured against this snapshot. Not an
+ * optimisation: a box read off a client's own page and written straight back
+ * must be byte for byte what it was, and re-emitting a style nobody touched
+ * would normalise their keys.
+ */
+export const BOX0_PROP = "__box0";
 
 /** The style a section is actually BUILT with, which is what changes are measured from. */
 function asBuiltStyle(style: SectionStyle): SectionStyle {
@@ -118,6 +133,92 @@ export function contentBlockKind(widgetKind: string): string {
   return widgetKind;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   A BLOCK IS A NODE (B-168, "one vocabulary for what a page may hold")
+
+   A free section used to send a FLAT list of `{ kind, col, ...props }`, which
+   was right while the only things it could hold were nine atoms. It now holds
+   whatever the panel offers, including a BOX, and a box has children and a
+   layout — neither of which `...props` carries, because a container keeps its
+   children in `children` and its arranging in `style`.
+
+   Two reserved keys carry them, both `__`-prefixed like every other prop that
+   is ours rather than the widget's, so neither can ever collide with a control
+   key (`divider` really does have a control called `style`). arion-api's
+   `sectionSchema.js` spells them the same way and nothing else does.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** What is inside a box. */
+export const BLOCK_CHILDREN_KEY = "__children";
+/** A block's own §11.8 look, which for a box is also its layout. */
+export const BLOCK_STYLE_KEY = "__style";
+/**
+ * WHICH ELEMENTOR NODE THIS BLOCK CAME OFF (B-168, 2026-09-22).
+ *
+ * A page the client built on their own website is read into blocks by
+ * arion-api's `elementorReader.js`, and a save has to find the node each block
+ * came from again — by id, never by position, because a block removed from the
+ * middle would otherwise shuffle every block after it onto the wrong node.
+ *
+ * It is what makes "open a page, change nothing, publish, and nothing on the
+ * live site changed" true: arion matches a block to its node, reads that node
+ * again, and hands the ORIGINAL back when the two still say the same thing.
+ * Drop this key on the way through and every publish rewrites the whole page.
+ *
+ * STRUCTURE, like `__children` and `__style` — which is why these are named
+ * one at a time rather than swept up by the "every `__` prop is ours" rule.
+ */
+export const BLOCK_ID_KEY = "__id";
+/** Which element a box was: `container`, `section` or `column`. */
+export const BLOCK_EL_KEY = "__el";
+/** What an OPAQUE block really is, so the canvas can name it. */
+export const OPAQUE_TYPE_KEY = "__widgetType";
+/** A widget on the client's own page that arion-api has no row for. */
+export const OPAQUE_KIND = "opaque";
+
+/** One builder node → one ARION content block. */
+function blockFor(w: Widget, col?: number): Record<string, any> {
+  const props: Record<string, any> = {};
+  for (const [k, v] of Object.entries((w.props || {}) as Record<string, unknown>)) {
+    // Every `__` prop is OURS — the Elementor node, the lock — and none of them
+    // is content. Stripped in one rule rather than named one at a time, so a
+    // new one cannot leak onto somebody's website. The structural three are
+    // put back below, by name.
+    if (k.startsWith("__")) continue;
+    props[k] = v;
+  }
+  const out: Record<string, any> = { kind: contentBlockKind(w.kind), ...(col != null ? { col } : {}), ...props };
+  for (const key of [BLOCK_ID_KEY, BLOCK_EL_KEY, OPAQUE_TYPE_KEY]) {
+    const held = (w.props as any)?.[key];
+    if (held != null && held !== "") out[key] = held;
+  }
+  if (w.style && Object.keys(w.style).length) out[BLOCK_STYLE_KEY] = w.style;
+  if (isContainer(w)) {
+    out[BLOCK_CHILDREN_KEY] = (w.children || []).map((k) => blockFor(k as Widget));
+  }
+  return out;
+}
+
+/** One ARION content block → one builder node. */
+function nodeForBlock(b: any): Widget {
+  const { kind, col: _col, [BLOCK_CHILDREN_KEY]: kids, [BLOCK_STYLE_KEY]: style, ...rest } =
+    (b || {}) as Record<string, any>;
+  const name = blockWidgetKind(String(kind || "paragraph"));
+  const base: Widget = name === CONTAINER_KIND
+    ? makeContainer(style, Array.isArray(kids) ? kids.map(nodeForBlock) : [])
+    : makeWidget(name, rest);
+  // A box's node id and element ride on its props too — `makeContainer` takes
+  // the style and the children and nothing else.
+  if (name === CONTAINER_KIND) {
+    const carried: Record<string, any> = {};
+    for (const key of [BLOCK_ID_KEY, BLOCK_EL_KEY]) if (b?.[key] != null) carried[key] = b[key];
+    if (Object.keys(carried).length) base.props = { ...(base.props || {}), ...carried };
+    return base;
+  }
+  if (style && typeof style === "object" && Object.keys(style).length) base.style = style;
+  return base;
+}
+
 function sectionFor(entry: ArionSection): Section {
   const node = entry.node ?? null;
 
@@ -136,11 +237,6 @@ function sectionFor(entry: ArionSection): Section {
           [LOCK_PROP]: {
             label: entry.label || "Custom section — built on the site",
             reason: entry.reason || "custom",
-            why: entry.adoptReasonText || entry.adoptWhy || null,
-            preview: entry.adoptPreview || null,
-            adoptable: !!entry.adoptable,
-            adoptKindLabel: entry.adoptKindLabel || null,
-            adoptConfidence: entry.adoptConfidenceLabel || null,
             index: entry.index,
           },
         })],
@@ -155,12 +251,7 @@ function sectionFor(entry: ArionSection): Section {
     const blocks: any[] = Array.isArray(fields.blocks) ? fields.blocks : [];
     const columns = Array.from({ length: layout }, (_, i) => ({
       id: `c_${entry.index}_${i}`,
-      widgets: blocks
-        .filter((b) => (Number(b?.col) || 0) === i)
-        .map((b) => {
-          const { kind, col, ...rest } = b || {};
-          return makeWidget(blockWidgetKind(String(kind || "paragraph")), rest);
-        }),
+      widgets: blocks.filter((b) => (Number(b?.col) || 0) === i).map(nodeForBlock),
     }));
     // A free section's node has nowhere to hang inside it — its widgets ARE
     // the blocks — so it rides on the section's own `meta`, which the engine
@@ -173,7 +264,12 @@ function sectionFor(entry: ArionSection): Section {
       padding: Number.isFinite(Number(freeStyle.padding)) ? Number(freeStyle.padding) : 0,
       headingFont: freeStyle.headingFont || "",
       columns,
-      meta: { [NODE_PROP]: node, [STYLE0_PROP]: asBuiltStyle(freeStyle) },
+      style: (fields as any).box || undefined,
+      meta: {
+        [NODE_PROP]: node,
+        [STYLE0_PROP]: asBuiltStyle(freeStyle),
+        [BOX0_PROP]: (fields as any).box || null,
+      },
     });
   }
 
@@ -182,9 +278,6 @@ function sectionFor(entry: ArionSection): Section {
   const widget = makeWidget(siteWidgetKindFor(entry.kind), {
     ...(entry.fields || {}),
     [NODE_PROP]: node,
-    // Carried so the inspector can offer "Undo adoption" for the 30 days the
-    // original bytes are kept. Stripped before a save, like every __ prop.
-    ...(entry.adoption ? { [ADOPTION_PROP]: entry.adoption } : {}),
     ...(entry.roleReview?.length ? { [ROLE_REVIEW_PROP]: entry.roleReview } : {}),
   });
   return makeSection({
@@ -199,7 +292,11 @@ function sectionFor(entry: ArionSection): Section {
     // `Section.padding` is a number and a section with no padding of its own
     // is built with 0, so comparing against the incoming `null` would report a
     // change the author never made.
-    meta: { [STYLE0_PROP]: asBuiltStyle(style) },
+    style: (entry.fields as any)?.box || undefined,
+    meta: {
+      [STYLE0_PROP]: asBuiltStyle(style),
+      [BOX0_PROP]: (entry.fields as any)?.box || null,
+    },
   });
 }
 
@@ -265,17 +362,25 @@ export function styleOf(s: Section): SectionStyle | undefined {
   return Object.keys(out).length ? out : undefined;
 }
 
+/** The section's own box, when the author changed it. `undefined` otherwise. */
+export function boxOf(s: Section): Record<string, any> | undefined {
+  const now = s.style && Object.keys(s.style).length ? s.style : null;
+  const before = ((s.meta as any)?.[BOX0_PROP] ?? null) as Record<string, any> | null;
+  if (JSON.stringify(now) === JSON.stringify(before)) return undefined;
+  return (now || {}) as Record<string, any>;
+}
+
 export function contentFieldsOf(s: Section): Record<string, any> {
   const blocks: any[] = [];
   s.columns.forEach((col, i) => {
     for (const w of col.widgets) {
       if (w.kind.startsWith("site_")) continue;
-      const { [NODE_PROP]: _drop, ...rest } = (w.props || {}) as any;
-      blocks.push({ kind: contentBlockKind(w.kind), col: i, ...rest });
+      blocks.push(blockFor(w, i));
     }
   });
   const style = styleOf(s);
-  return { layout: s.layout, blocks, ...(style ? { style } : {}) };
+  const box = boxOf(s);
+  return { layout: s.layout, blocks, ...(style ? { style } : {}), ...(box ? { box } : {}) };
 }
 
 /** Everything a section sends back, minus the props that are ours, not theirs. */
@@ -286,12 +391,13 @@ export function fieldsOf(s: Section): Record<string, any> | null {
   const w = sectionWidget(s);
   if (!w) return null;
   const {
-    [NODE_PROP]: _n, [LOCK_PROP]: _l, [ADOPTION_PROP]: _a, [ROLE_REVIEW_PROP]: _r, ...fields
+    [NODE_PROP]: _n, [LOCK_PROP]: _l, [ROLE_REVIEW_PROP]: _r, ...fields
   } = (w.props || {}) as any;
   // The section's own look comes off the SECTION, not the widget — the canvas
   // toolbar puts it there and the engine carries it through undo and reorder.
   const style = styleOf(s);
-  return { ...fields, ...(style ? { style } : {}) };
+  const box = boxOf(s);
+  return { ...fields, ...(style ? { style } : {}), ...(box ? { box } : {}) };
 }
 
 /**
@@ -301,7 +407,7 @@ export function fieldsOf(s: Section): Record<string, any> | null {
  * DUPLICATING A SECTION is the case: `cloneSection` gives the builder a fresh
  * section id, and the Elementor node inside it is a deep copy carrying the
  * ORIGINAL ids. Two nodes with one id is a page Elementor draws wrong, and two
- * with one handle is a page whose adoption records point at either.
+ * with one handle is a page Elementor cannot tell apart.
  *
  * Deterministic, from a counter, so the same page saved twice does not churn.
  */
@@ -408,12 +514,6 @@ export function toDraftPayload(doc: BuilderDocument): ArionSection[] {
       label: lock?.label || s.label || "Section",
       fields: lock ? null : fieldsOf(s),
       node,
-      ...(lock ? {
-        adoptable: !!lock.adoptable,
-        adoptKindLabel: lock.adoptKindLabel ?? null,
-        adoptWhy: lock.why ?? null,
-        adoptPreview: lock.preview ?? null,
-      } : {}),
     });
     index += 1;
   }

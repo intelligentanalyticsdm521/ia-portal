@@ -414,9 +414,19 @@ describe("D-30 · each surface speaks its own medium", () => {
     });
   }
 
-  test("the studio's pane talks about a picture, not a page", () => {
+  /* WAS "the studio's pane talks about a picture, not a page" — the pane's
+     `hint` line under the search box, in the adapter's words.
+
+     DELETED with the line itself (§11.13.1, D-165): the left panel is a
+     title, a search box and the widget groups, and nothing else. The reference
+     editor puts no sentence there. D-30's rule is untouched everywhere it
+     still applies — the tests above and below this one are its other
+     surfaces — and the studio's own words about dropping a layer are on
+     each widget's tooltip, which comes from the registry. */
+  test("the studio's pane is the widget list and nothing else (D-165)", () => {
     const src = SRC("builder/adapters/mybrand/StudioBuilder.tsx");
-    assert.match(src, /hint="Click one to drop it on the picture/);
+    assert.doesNotMatch(src, /hint="/, "the pane grew a hint line again");
+    assert.match(src, /<WidgetPane adapter="brand" onInsert=\{onInsert\} \/>/);
   });
 
   test("no vendor name reaches any of these screens", () => {

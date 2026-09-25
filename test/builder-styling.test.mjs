@@ -31,7 +31,8 @@ import {
 import {
   RATIO_PRESETS, emailColumnWidths, emailStyleDeclarations, gridTemplateFor, hasStyle,
   isTypographic, layerFor, normaliseRatios, readStyle, resetKeys, resolveStyle, seedFromPadding,
-  setSide, sidesAreLinked, sidesToCss, styleBlockFor, widgetStyleClass, withLayer,
+  setSide, sidesAreLinked, sidesToCss, styleBlockFor, unitsOffered, widgetStyleClass, withLayer,
+  PX_ONLY_BUILDERS, SIZE_UNITS,
 } from "../src/builder/style.ts";
 import { makeContext, renderSection, renderDocument } from "../src/builder/render.ts";
 import {
@@ -649,42 +650,84 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
   const shell = readSrc("builder/BuilderShell.tsx");
   const pane = readSrc("builder/WidgetPane.tsx");
 
-  /* THREE HALVES NOW, not two (§11.12, D-156): a BOX is a third kind of thing
-     that can be selected, and it gets its own two groups above the widget's.
-     The slices are taken from the markers rather than from position, so adding
-     a group cannot silently pass by shifting everything along. */
-  const groupOrder = () => [...inspector.matchAll(/<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|AdvancedGroup)/g)]
-    .map((m) => m[2] || m[1]);
+  /* THE THREE TABS (§11.13.1, D-165). Every group in the inspector declares
+     which tab it is in, and the assertions below read THAT rather than the
+     order of the file — a group that lost its `shownTab` guard would render in
+     all three tabs at once, which is the defect these pin. */
+  const GROUP_RE = /<(Group title="([^"]+)"|SpacingGroup|TypographyGroup|ResponsiveGroup)/g;
+  /* The file cut at every `shownTab === "…"` marker: every group between one
+     marker and the next belongs to that tab. Reading the markers rather than
+     counting lines is what makes "one guard was dropped" a red test instead of
+     a silently shifted list. */
+  const byTab = (() => {
+    const out = { content: [], style: [], advanced: [] };
+    const cuts = [...inspector.matchAll(/(?:shownTab|pageTab) === "(content|style|advanced)"/g)];
+    cuts.forEach((m, i) => {
+      const chunk = inspector.slice(m.index, i + 1 < cuts.length ? cuts[i + 1].index : inspector.length);
+      for (const g of chunk.matchAll(GROUP_RE)) out[m[1]].push(g[2] || g[1]);
+    });
+    return out;
+  })();
+  const groupsIn = (tab) => byTab[tab];
 
-  test("a BOX gets Layout then Style, above everything else (D-156)", () => {
-    const order = groupOrder();
-    assert.deepEqual(order.slice(0, order.indexOf("Content")), ["Layout", "Style"]);
+  test("EVERY group is behind a tab — none renders in all three", () => {
+    // The mutation that matters: drop one `shownTab ===` guard and that group
+    // appears on Content, Style and Advanced at once.
+    const all = [...inspector.matchAll(GROUP_RE)].map((m) => m[2] || m[1]);
+    const behind = [...groupsIn("content"), ...groupsIn("style"), ...groupsIn("advanced")];
+    assert.equal(all.length, behind.length,
+      `${all.length} groups, ${behind.length} behind a tab: ${all.filter((g) => !behind.includes(g))}`);
   });
 
-  test("a widget gets Content, Typography, Spacing, Advanced — in that order", () => {
-    const order = groupOrder();
-    const widgetHalf = order.slice(order.indexOf("Content"), order.lastIndexOf("Layout"));
-    assert.deepEqual(widgetHalf, ["Content", "TypographyGroup", "SpacingGroup", "AdvancedGroup"]);
+  test("a BOX's first tab is LAYOUT and its Style tab is its edge (D-165)", () => {
+    assert.match(inspector, /\{box && shownTab === "content" && \(/);
+    assert.match(inspector, /\{box && shownTab === "style" && \(/);
+    assert.match(inspector, /first=\{widget && !box \? "Content" : "Layout"\}/);
   });
 
-  test("a section gets Layout, Spacing, Style, Typography, Page — in that order", () => {
-    const order = groupOrder();
-    assert.deepEqual(order.slice(order.lastIndexOf("Layout")), ["Layout", "SpacingGroup", "Style", "Typography", "Page"]);
+  test("a widget: its own name · Style is Typography · Advanced is Layout and Responsive", () => {
+    // The first section is NAMED AFTER THE WIDGET (D-172) — Heading, Image,
+    // Button — as the reference names it; "Content" is the TAB.
+    assert.match(inspector, /<Group title=\{def \? widgetLabel\(def, p\.adapter\) : "Content"\}/);
+    assert.ok(groupsIn("style").includes("TypographyGroup"), "Typography is not on Style");
+    const adv = groupsIn("advanced");
+    assert.ok(adv.includes("SpacingGroup") && adv.includes("ResponsiveGroup"), `Advanced holds ${adv}`);
+  });
+
+  test("a section: Layout · Background and Typography · Layout and Page", () => {
+    // The section's first group is called Container, as the reference calls it.
+    assert.ok(groupsIn("content").includes("Container"), "the section's first group is not Container");
+    assert.ok(groupsIn("style").includes("Background"), "the section's background is not on Style");
+    assert.ok(groupsIn("advanced").includes("Page"), "the page break is not on Advanced");
+  });
+
+  test("the section's own groups show ONLY when the section is selected (D-165)", () => {
+    // WAS: every section group repeated under every widget's, in one scroll,
+    // with two groups called "Layout" arguing. The reference shows the element
+    // you clicked and nothing else.
+    assert.match(inspector, /\{!widget && \(/);
   });
 
   test("a box has NO Content group and NO Typography group (D-156)", () => {
     // It holds things; it does not say anything. Both are guarded by `!box`,
     // and a mutation that drops either guard shows an empty Content panel on a
     // box, which is a control that lies.
-    assert.match(inspector, /\{!box && \(\s*<Group title="Content"/);
-    assert.match(inspector, /\{!box && isTypographic\(widget\.kind\)/);
+    assert.match(inspector, /\{!box && shownTab === "content" && \(\s*<Group title=\{def \?/);
+    assert.match(inspector, /\{!box && shownTab === "style" && isTypographic\(widget\.kind\)/);
   });
 
-  test("every group can be reset and every group collapses", () => {
+  test("every group collapses, and NO group header carries a reset (D-172)", () => {
     assert.match(groups.value ?? groups, /aria-expanded=\{open\}/);
-    assert.match(groups, /aria-label=\{`Reset \$\{title\}`\}/);
+    // ABSENT: the eraser in every section header, titled "Put layout back to
+    // the default on every screen size". The reference has a reset on a POPOVER
+    // control — Typography, Text Stroke, Text Shadow — and nowhere else, so a
+    // destructive button on every row of the panel was ours.
+    assert.ok(!groups.includes("aria-label={`Reset ${title}`}"),
+      "the per-section eraser is back in every group header");
+    assert.ok(!groups.includes("<RotateCcw"), "the eraser glyph is back");
+    // PRESENT: the handlers stay, for the popover controls that will want one.
     const resets = (inspector.match(/onReset=/g) || []).length;
-    assert.ok(resets >= 7, `only ${resets} groups offer a reset`);
+    assert.ok(resets >= 7, `only ${resets} groups hand in a reset`);
   });
 
   test("ONE device state — the inspector edits what the preview is showing", () => {
@@ -693,7 +736,13 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     assert.match(shell, /device=\{preview\}/);
     assert.match(shell, /onDevice=\{setPreview\}/);
     assert.equal((shell.match(/useState<PreviewKey>/g) || []).length, 1);
-    assert.doesNotMatch(inspector, /useState/, "the inspector must not keep a device of its own");
+    // The inspector keeps ONE piece of state and it is which TAB is showing
+    // (D-165). Never a device: two device states is exactly the drift this
+    // pass exists to delete.
+    assert.doesNotMatch(inspector, /useState<Device>/, "the inspector keeps a device of its own");
+    assert.doesNotMatch(inspector, /useState\(preview/, "the inspector keeps a device of its own");
+    assert.equal((inspector.match(/useState</g) || []).length, 1,
+      "the inspector grew a second piece of state");
   });
 
   test("the pane drags, the canvas draws the line, the shell holds the payload", () => {
@@ -729,9 +778,21 @@ describe("the inspector and the canvas are wired the way §11.8 says", () => {
     }
   });
 
-  test("the keyboard path stays — HTML5 drag never fires on touch", () => {
-    assert.match(inspector, /title="Move this up inside its column"/);
-    assert.match(inspector, /title="Move this down inside its column"/);
+  test("Up / Down / Remove are NOT in the panel — they are right-click (D-172)", () => {
+    // ABSENT: the three-button row at the foot of every Content section.
+    // Nothing like it is in the reference panel; ordering is a drag or the
+    // Structure window and deleting is the right-click menu, so the row was a
+    // second home for verbs the menu already owns.
+    assert.doesNotMatch(inspector, /title="Move this up inside its column"/,
+      "the Up button is back in the panel");
+    assert.doesNotMatch(inspector, /title="Move this down inside its column"/,
+      "the Down button is back in the panel");
+    assert.doesNotMatch(inspector, /onMoveWidget/, "the panel can still reorder a widget");
+    // PRESENT INSTEAD: the menu owns both, and the panel keeps only the one
+    // thing it has to say — WHY a locked part cannot be removed.
+    const menu = readSrc("builder/builderMenu.ts");
+    assert.match(menu, /"delete"/, "the menu lost Delete");
+    assert.match(inspector, /Required on every marketing email/);
   });
 
   test("the email inspector says what it cannot promise", () => {
@@ -765,5 +826,65 @@ describe("diff.ts needs no change, and that is the point", () => {
   test("a document nobody styled is still identical to itself", () => {
     const a = plainDoc();
     assert.equal(hasStyle(a.sections[0].style), false);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   12. A UNIT THE EMITTER THROWS AWAY IS NOT OFFERED (B-168 land, b168/demo)
+   ══════════════════════════════════════════════════════════════════════════
+
+   The unit switcher is new; the emitters are not. arion's container emitter
+   writes every size as `{ unit: 'px', size }` and the landing page's inline
+   boxes go through `render.containerLayoutCss`, which writes px too — so a box
+   set to `100vh` in those two builders would be PUBLISHED as `100px`: the
+   author watches the control work and the page comes out a different shape.
+
+   A CONTROL THAT CHANGES NOTHING ON THE PUBLISHED PAGE IS A DEFECT, so those
+   two builders offer px alone. ONE rule, in one place, read by `Slider` —
+   never an `if` at each size control. Delete a builder from the list the day
+   its emitter carries the unit.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("the unit switcher only offers what the builder can publish", () => {
+  const GAPS = ["px", "%", "em", "rem", "vw"];
+
+  test("the two builders whose emitters write px get px, and only px", () => {
+    // MUTATION: return `units` unchanged → red here, and a published website
+    // silently reads 100vh as 100px.
+    assert.deepEqual(PX_ONLY_BUILDERS.slice().sort(), ["landing", "website"]);
+    for (const a of PX_ONLY_BUILDERS) {
+      assert.deepEqual(unitsOffered(a, GAPS), ["px"], `${a} still offers a unit it cannot publish`);
+      assert.deepEqual(unitsOffered(a, ["px", "em", "rem", "vh"]), ["px"]);
+    }
+  });
+
+  test("PRESENCE: the builders the Portal's own renderer draws keep all of them", () => {
+    // The proposal's PDF and the newsletter's mailbox are drawn by the Portal
+    // and by the two mirrors that copy it; the unit reaches the canvas today.
+    for (const a of ["proposal", "email", "brand"]) {
+      assert.deepEqual(unitsOffered(a, GAPS), GAPS, `${a} lost a unit it can draw`);
+    }
+    assert.deepEqual(unitsOffered(undefined, GAPS), GAPS, "a panel with no builder lost its units");
+    // …and every unit offered anywhere is one `sizeCss` knows.
+    for (const u of GAPS) assert.ok(SIZE_UNITS.includes(u), `sizeCss cannot write ${u}`);
+  });
+
+  test("a control with ONE unit is stating it, not offering a choice", () => {
+    // Width says px or % because Content Width already decided which, and
+    // arion's emitter carries that pair. Narrowing it to [] would leave the
+    // switcher blank and the slider unitless.
+    assert.deepEqual(unitsOffered("website", ["%"]), ["%"]);
+    assert.deepEqual(unitsOffered("website", ["px"]), ["px"]);
+  });
+
+  test("the Slider reads the rule rather than each call site repeating it", () => {
+    const groups = readFileSync(path.join(SRC, "builder", "StyleGroups.tsx"), "utf8");
+    assert.match(groups, /const offered = unitsOffered\(adapter, units\);/);
+    // ABSENT: a per-control if. The panel hands Slider the reference's full
+    // list and the rule does the narrowing, in one place.
+    const inspector = readFileSync(path.join(SRC, "builder", "Inspector.tsx"), "utf8");
+    assert.ok(!/adapter === "website"|adapter === "landing"/.test(inspector),
+      "a size control decides for itself which units to offer again");
+    assert.match(inspector, /units=\{\["px", "%", "em", "rem", "vw"\]\}/);
   });
 });
