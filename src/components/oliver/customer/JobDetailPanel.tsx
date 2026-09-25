@@ -30,6 +30,8 @@ interface JobDetail {
   total?: number;
   /** A pending customer reschedule request (GET /jobs/:id) — the customer-side colour. */
   rescheduleRequested?: boolean | null;
+  /** An open dispatch offer nobody has answered yet (GET /jobs/:id). */
+  openOffer?: { workerNames: string[]; expiresAt?: string | null } | null;
   assignedWorkers?: Array<{
     assignmentId?: string;
     id: string;
@@ -441,9 +443,19 @@ function JobLayout(p: JobLayoutProps) {
                 </div>
               </div>
               {(job.assignedWorkers ?? []).length === 0 ? (
-                <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
-                  No workers assigned yet. Click "+ Add worker" below to dispatch one to this job.
-                </div>
+                job.openOffer && job.openOffer.workerNames.length ? (
+                  /* 2026-09-25 (register oliver-job-view-does-not-show-an-open-offer): an
+                     offer the crew has not answered used to read as "No workers
+                     assigned yet", as if nothing had been done. */
+                  <div style={{ fontSize: 11, color: "#6D28D9", padding: "8px 0" }}>
+                    Offered to {job.openOffer.workerNames.join(", ")}, waiting for an answer
+                    {job.openOffer.expiresAt ? ` (until ${new Date(job.openOffer.expiresAt).toLocaleString()})` : ""}. Nobody is assigned until someone accepts.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
+                    No workers assigned yet. Click "+ Add worker" below to dispatch one to this job.
+                  </div>
+                )
               ) : (
                 (job.assignedWorkers ?? []).map((w) => (
                   <AssignmentRow
