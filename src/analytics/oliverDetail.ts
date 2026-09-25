@@ -1,8 +1,10 @@
 // oliverDetail.ts — OLIVER dimensioned detail reports (line items, each trended).
 //
 // Which service line, which aging bucket, which crew, which customer — the
-// operational depth under OLIVER's sections. Client-generated demo until the
-// OLIVER metrics endpoint ships.
+// operational depth under OLIVER's sections. This is the SAMPLE set: it is
+// drawn only while the metrics fetch is in flight or a business has no rows.
+// The real reports come from LUMEN GET /api/v1/ia-insights/metrics?product=oliver
+// (24 of them since 2026-09-25, D-BK17) and are read by the pages as payload.detail.
 
 import { genSeries } from "./demoSeries";
 import type { DetailPayload, DetailReport, DetailItem } from "./detail";

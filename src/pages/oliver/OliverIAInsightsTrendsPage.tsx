@@ -3,7 +3,8 @@
 // (GET /api/v1/ia-insights/metrics?product=oliver — live SQL over
 // oliver.invoice/job/quote); the seeded demo generator is only the fallback
 // while the fetch is in flight or the tenant has no rows. Line-item detail
-// stays demo until dimensioned capture lands.
+// (payload.detail) is real from the same endpoint — 24 reports since D-BK17,
+// 2026-09-25; the demo set draws only when the metrics fell back to demo too.
 
 import { useMemo } from "react";
 import { useAppState } from "../../app/AppState";
