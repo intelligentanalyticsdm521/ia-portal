@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ScheduleJobModal } from "../ScheduleJobModal";
 import { Button, StatusBadge } from "../ui";
+import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 
 interface JobDetail {
@@ -340,6 +341,7 @@ function JobLayout(p: JobLayoutProps) {
           <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
             <StatusDropdown
               currentStatus={job.status}
+              hasWorker={(job.assignedWorkers?.length ?? 0) > 0}
               busy={!!(p.busy && p.busy.startsWith("status:"))}
               onChange={p.changeStatus}
             />
@@ -645,31 +647,25 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // force=true flag (sent from the iadm_portal surface) skips the state-
 // machine validation.
 // ─────────────────────────────────────────────────────────────────────────────
-function statusStyle(status: string): { bg: string; fg: string } {
-  switch (status) {
-    case "inquiry":     return { bg: "#F3E8FF", fg: "#7E22CE" };
-    case "quoted":      return { bg: "#E0E7FF", fg: "#4338CA" };
-    case "scheduled":   return { bg: "#DBEAFE", fg: "#1E40AF" };
-    case "dispatched":  return { bg: "#CFFAFE", fg: "#0E7490" };
-    case "assigned":    return { bg: "#CFFAFE", fg: "#0E7490" };
-    case "in_progress": return { bg: "#FEF3C7", fg: "#B45309" };
-    case "completed":   return { bg: "#D1FAE5", fg: "#047857" };
-    case "invoiced":    return { bg: "#DBEAFE", fg: "#1E40AF" };
-    case "paid":        return { bg: "#D1FAE5", fg: "#047857" };
-    case "cancelled":   return { bg: "#FEE2E2", fg: "#B91C1C" };
-    default:            return { bg: "#F1F5F9", fg: "#475569" };
-  }
+// The one job colour map (src/oliver/jobStatusColors) — so the status pill
+// here matches the card that was clicked on a calendar or the Job Board.
+// This panel does not know about a pending reschedule request, so it colours
+// by status + whether a worker is on the job.
+function statusStyle(status: string, hasWorker?: boolean): { bg: string; fg: string } {
+  const c = jobColor({ kind: "job", status, hasWorker: hasWorker ?? null });
+  return { bg: c.soft, fg: c.softText };
 }
 
 function StatusDropdown({
-  currentStatus, busy, onChange,
+  currentStatus, hasWorker, busy, onChange,
 }: {
   currentStatus: string;
+  hasWorker?: boolean;
   busy: boolean;
   onChange: (s: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const c = statusStyle(currentStatus);
+  const c = statusStyle(currentStatus, hasWorker);
   const label = ALL_STATUSES.find((s) => s.key === currentStatus)?.label || currentStatus;
 
   return (
@@ -698,7 +694,7 @@ function StatusDropdown({
             zIndex: 100, minWidth: 180, padding: 4,
           }}>
             {ALL_STATUSES.map((s) => {
-              const sc = statusStyle(s.key);
+              const sc = statusStyle(s.key, hasWorker);
               const isCurrent = s.key === currentStatus;
               return (
                 <button

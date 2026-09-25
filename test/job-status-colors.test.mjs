@@ -105,6 +105,7 @@ test("every job calendar and the Job Board pills read the one map", () => {
     "Job Board week view": read("components", "oliver", "JobWeekCalendar.tsx"),
     "Dashboard full calendar": read("components", "oliver", "customer", "CalendarModal.tsx"),
     "Dashboard Weekly Glance": read("pages", "oliver", "OliverDashboardPage.tsx"),
+    "Job panel status pill": read("components", "oliver", "customer", "JobDetailPanel.tsx"),
   };
   for (const [name, src] of Object.entries(users)) {
     assert.match(src, /oliver\/jobStatusColors/, `${name} must colour jobs from src/oliver/jobStatusColors`);
