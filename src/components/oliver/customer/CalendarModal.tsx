@@ -346,7 +346,7 @@ export function CalendarModal({
               // A booking still waiting for confirmation is not a job yet: it
               // opens where it is confirmed. It used to do nothing at all —
               // Brandon's "I can't click the multi-service fixture job" (W-OB-05).
-              else navigate("/app/services/oliver_service_requests");
+              else navigate(`/app/services/oliver_service_requests?request=${encodeURIComponent(String(ev.id).replace(/^booking:/, ""))}`);
             }}
             onEmptySlotClick={launchNewJobAtSlot}
           />

@@ -422,7 +422,7 @@ export function OliverJobBoardPage() {
           reloadKey={boardVersion}
           hints={jobHints}
           onOpenJob={setDetailId}
-          onOpenRequest={() => navigate("/app/services/oliver_service_requests")}
+          onOpenRequest={(slotId) => navigate(slotId ? `/app/services/oliver_service_requests?request=${encodeURIComponent(slotId)}` : "/app/services/oliver_service_requests")}
           fullCalendarHref="/app/services/oliver_schedule"
         />
       ) : view === "list" ? (

@@ -43,7 +43,9 @@ interface Props {
   /** Open a job — the Job Board passes the handler its List rows use. */
   onOpenJob: (jobId: string) => void;
   /** Open a booking request that is not a job yet (confirmed on Service Requests). */
-  onOpenRequest: () => void;
+  // A booking request card opens THAT request on Service Requests (2026-09-25,
+  // Brandon W-OB-05 / calendar walk step 13): the slot id rides in the link.
+  onOpenRequest: (slotId?: string) => void;
   /** Facts from the board's own rows, keyed by lower-case job id — used when
    *  the calendar feed does not carry them. */
   hints?: JobHints;
@@ -268,7 +270,7 @@ export function JobWeekCalendar({ locationId, reloadKey, onOpenJob, onOpenReques
                         <button
                           key={e.id}
                           type="button"
-                          onClick={() => (jobId ? onOpenJob(jobId) : onOpenRequest())}
+                          onClick={() => (jobId ? onOpenJob(jobId) : onOpenRequest(e.id.replace(/^booking:/, "")))}
                           className="absolute overflow-hidden rounded px-1.5 py-0.5 text-left text-[10px] leading-tight shadow-sm hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[#1A7DB5]"
                           style={{
                             top: Math.max(0, top) + 1,

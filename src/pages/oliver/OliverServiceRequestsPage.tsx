@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation } from "../../lib/oliverLocations";
@@ -135,6 +135,17 @@ export function OliverServiceRequestsPage() {
   }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
+
+  // ?request=<slot id> (a booking-request card on the Job Board calendar, the
+  // Schedule or the Dashboard calendar) opens that one request, then drops the
+  // parameter so a refresh does not reopen it. 2026-09-25, Brandon W-OB-05.
+  const location = useLocation();
+  useEffect(() => {
+    const wanted = new URLSearchParams(location.search).get("request");
+    if (!wanted || loading) return;
+    if (requests.some((r) => (r.id || r.job_id) === wanted)) setPickedId(wanted);
+    navigate(location.pathname, { replace: true });
+  }, [location.search, location.pathname, loading, requests, navigate]);
 
   async function bulkAdvance(toStatus: "quoted" | "cancelled") {
     const ids = Array.from(selected);

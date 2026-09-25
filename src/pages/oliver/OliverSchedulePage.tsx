@@ -63,7 +63,7 @@ export function OliverSchedulePage() {
     if (jobId) setFocusJobId(jobId);
     // A booking still waiting for confirmation is not a job yet; it is
     // confirmed (or declined) on Service Requests.
-    else if (e.kind === "booking") navigate("/app/services/oliver_service_requests");
+    else if (e.kind === "booking") navigate(`/app/services/oliver_service_requests?request=${encodeURIComponent(e.id.replace(/^booking:/, ""))}`);
   }, [navigate]);
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
