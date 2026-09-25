@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation } from "../../lib/oliverLocations";
@@ -32,6 +32,36 @@ interface RequestDetail extends ServiceRequest {
   preferred_date?: string;
 }
 
+// 2026-09-25 (Brandon's walk W-OB-06): "it let me accept it but I can't see the
+// request in service requests anymore." Confirm turns a booking request into a
+// job and the row left the list with nothing naming the job. The page now opens
+// on Open (unchanged) with Confirmed / Declined / Cancelled beside it, read from
+// GET /booking/decided (last 90 days, booking requests AND inquiry jobs), and a
+// confirmed row links to the job it became.
+type RequestView = "open" | "confirmed" | "declined" | "cancelled";
+
+/** A request that has been decided — the GET /booking/decided row shape. */
+interface DecidedRequest extends ServiceRequest {
+  kind: "booking" | "inquiry";
+  outcome: "confirmed" | "declined" | "cancelled";
+  decided_at?: string;
+  /** Who called it off, when the record says; null when it does not. */
+  cancelled_by?: "business" | "customer" | null;
+  job_status?: string | null;
+}
+
+/** What PATCH /booking/slots/:id/confirm answers (the fields this page reads). */
+interface ConfirmResult {
+  job_id?: string;
+  job_number?: string;
+  promotion_error?: string;
+}
+
+/** The job's own drawer on the Job Board — the link every job pointer here uses. */
+function jobHref(jobId: string) {
+  return `/app/services/oliver_job_board?focus=${encodeURIComponent(jobId)}`;
+}
+
 function fmtRelative(d?: string) {
   if (!d) return "—";
   const ms = Date.now() - new Date(d).getTime();
@@ -48,6 +78,13 @@ function fmtRelative(d?: string) {
   return new Date(d).toLocaleDateString();
 }
 
+/** "today" / "3 days ago" / "on 9/1/2026" — reads after "Confirmed", "Declined". */
+function whenPhrase(d?: string) {
+  if (!d) return "";
+  const rel = fmtRelative(d);
+  return /^\d/.test(rel) ? `on ${rel}` : rel;
+}
+
 export function OliverServiceRequestsPage() {
   const { get, patch, ready } = useOliverApi();
   // Multi-location: the header picker scopes the inbox (both sources).
@@ -61,6 +98,13 @@ export function OliverServiceRequestsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState<"quote" | "cancel" | null>(null);
   const [bulkResult, setBulkResult] = useState<{ kind: "quote" | "cancel"; ok: number; failed: number } | null>(null);
+  // Open is the default and behaves exactly as before; the other three read
+  // the decided list, fetched alongside so the chips can carry their counts.
+  const [view, setView] = useState<RequestView>("open");
+  const [decided, setDecided] = useState<DecidedRequest[]>([]);
+  const [decidedFailed, setDecidedFailed] = useState(false);
+  // Set by the booking drawer's Confirm; stays until dismissed or replaced.
+  const [confirmedNotice, setConfirmedNotice] = useState<ConfirmResult | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -69,9 +113,14 @@ export function OliverServiceRequestsPage() {
       //   1. /jobs?status=inquiry → traditional service requests from portal/ARION/Zapier/etc.
       //   2. /booking/pending → Standard-tier booking submissions awaiting tenant confirmation.
       // Both flow into the same inbox so staff has one place to triage incoming demand.
-      const [jobs, bookings] = await Promise.all([
+      // 3. /booking/decided → what left the inbox in the last 90 days, by outcome.
+      //    Its own failure flag: a problem there never empties the Open list.
+      const [jobs, bookings, decidedRes] = await Promise.all([
         get<ServiceRequest[]>(withLocation("/jobs?status=inquiry", loc.selectedLocationId)).catch(() => [] as ServiceRequest[]),
         get<ServiceRequest[]>(withLocation("/booking/pending", loc.selectedLocationId)).catch(() => [] as ServiceRequest[]),
+        get<DecidedRequest[]>(withLocation("/booking/decided", loc.selectedLocationId))
+          .then((rows) => ({ rows: Array.isArray(rows) ? rows : [], failed: false }))
+          .catch(() => ({ rows: [] as DecidedRequest[], failed: true })),
       ]);
       const merged = [...(jobs || []), ...(bookings || [])].sort((a, b) => {
         const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -79,6 +128,8 @@ export function OliverServiceRequestsPage() {
         return tb - ta; // newest first
       });
       setRequests(merged);
+      setDecided(decidedRes.rows);
+      setDecidedFailed(decidedRes.failed);
     } catch (err) { setError(err); }
     finally { setLoading(false); }
   }, [get, loc.selectedLocationId]);
@@ -115,6 +166,33 @@ export function OliverServiceRequestsPage() {
       r.customerNotes?.toLowerCase().includes(q)
     );
   }, [requests, search]);
+
+  // Confirmed / Declined / Cancelled — the same search, over the decided list.
+  const filteredDecided = useMemo(() => {
+    const rows = view === "open" ? [] : decided.filter((d) => d.outcome === view);
+    if (!search.trim()) return rows;
+    const q = search.toLowerCase();
+    return rows.filter((r) =>
+      r.title?.toLowerCase().includes(q) ||
+      r.customerName?.toLowerCase().includes(q) ||
+      r.customerEmail?.toLowerCase().includes(q) ||
+      r.customerNotes?.toLowerCase().includes(q) ||
+      r.job_number?.toLowerCase().includes(q)
+    );
+  }, [decided, view, search]);
+
+  const decidedCount = (o: DecidedRequest["outcome"]) => decided.filter((d) => d.outcome === o).length;
+  const viewPills = [
+    { key: "open", label: "Open", count: requests.length },
+    { key: "confirmed", label: "Confirmed", count: decidedCount("confirmed") },
+    { key: "declined", label: "Declined", count: decidedCount("declined") },
+    { key: "cancelled", label: "Cancelled", count: decidedCount("cancelled") },
+  ];
+
+  function changeView(next: string) {
+    setView(next as RequestView);
+    setSelected(new Set()); // bulk actions belong to Open only
+  }
 
   // Source label normalization — covers the historical sources + new lead intake routes
   function sourceLabel(s?: string): { label: string; bg: string; color: string } {
@@ -228,6 +306,62 @@ export function OliverServiceRequestsPage() {
     { key: "status", header: "Status", render: (r) => <StatusBadge status={r.status} /> },
   ];
 
+  // Decided views: the request, who, what happened and when, and — for a
+  // confirmed one — the job it became, as a link to that job on the Job Board.
+  function outcomeCell(r: DecidedRequest) {
+    const when = whenPhrase(r.decided_at);
+    const exact = r.decided_at ? new Date(r.decided_at).toLocaleString() : undefined;
+    if (r.outcome === "confirmed") {
+      return (
+        <div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#065F46" }} title={exact}>Confirmed {when}</div>
+          {r.job_id && r.job_number ? (
+            <Link
+              to={jobHref(r.job_id)}
+              onClick={(e) => e.stopPropagation()}
+              style={{ fontSize: 11, color: "#1A7DB5", fontWeight: 600 }}
+            >
+              Now {r.job_number} on Jobs
+            </Link>
+          ) : (
+            <div style={{ fontSize: 10, color: "#5A7A8A" }}>No job linked</div>
+          )}
+        </div>
+      );
+    }
+    const label = r.outcome === "declined"
+      ? (r.cancelled_by === "customer" ? "Withdrawn by the customer" : "Declined")
+      : `Cancelled${r.cancelled_by === "customer" ? " by the customer" : r.cancelled_by === "business" ? " by your team" : ""}`;
+    return (
+      <div style={{ fontSize: 11, fontWeight: 600, color: "#B91C1C" }} title={exact}>
+        {label} {when}
+      </div>
+    );
+  }
+
+  // Same Request / Customer / Preferred date / Source cells as Open; Outcome
+  // takes the place of Received + Status.
+  const sharedColumn = (key: string): Column<DecidedRequest>[] => columns.filter((c) => c.key === key);
+  const decidedColumns: Column<DecidedRequest>[] = [
+    ...sharedColumn("title"),
+    ...sharedColumn("customer"),
+    {
+      key: "outcome",
+      header: "Outcome",
+      sortable: true,
+      sortAccessor: (r) => r.decided_at ?? "",
+      render: outcomeCell,
+    },
+    ...sharedColumn("preferred"),
+    ...sharedColumn("source"),
+  ];
+
+  const decidedEmpty: Record<Exclude<RequestView, "open">, string> = {
+    confirmed: "No requests were confirmed in the last 90 days.",
+    declined: "No requests were declined in the last 90 days.",
+    cancelled: "No confirmed requests were cancelled in the last 90 days.",
+  };
+
   return (
     <OliverPageWrapper title="Service Requests" subtitle="Inbound job inquiries" error={error} loading={loading}>
       <PageHeader
@@ -303,19 +437,69 @@ export function OliverServiceRequestsPage() {
         </div>
       )}
 
-      {!requests.length ? (
+      {/* Open (default) | Confirmed | Declined | Cancelled — always shown, so the
+          history is reachable even when nothing is waiting. */}
+      <FilterBar
+        pills={viewPills}
+        activePill={view}
+        onPillChange={changeView}
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Search title, customer, email, or notes…"
+      />
+
+      {confirmedNotice && (
+        <div className="card" style={{
+          background: confirmedNotice.job_number ? "#D1FAE5" : "#FEF3C7",
+          border: `1px solid ${confirmedNotice.job_number ? "#6EE7B7" : "#FCD34D"}`,
+          marginBottom: 8,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 12, color: confirmedNotice.job_number ? "#065F46" : "#92400E" }}>
+              {confirmedNotice.job_id && confirmedNotice.job_number ? (
+                <>
+                  Confirmed — now{" "}
+                  <Link to={jobHref(confirmedNotice.job_id)} style={{ color: "#065F46", fontWeight: 700, textDecoration: "underline" }}>
+                    {confirmedNotice.job_number} on Jobs
+                  </Link>
+                </>
+              ) : (
+                <>Confirmed, but the job was not created. Add it on the Job Board.</>
+              )}
+            </div>
+            <Button variant="ghost" onClick={() => setConfirmedNotice(null)}>Dismiss</Button>
+          </div>
+        </div>
+      )}
+
+      {view !== "open" ? (
+        decidedFailed ? (
+          <div className="card" style={{ background: "#FEF3C7", border: "1px solid #FCD34D", fontSize: 12, color: "#92400E" }}>
+            Confirmed, declined and cancelled requests could not be loaded just now. Reload the page to try again.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 11, color: "#5A7A8A", marginBottom: 8 }}>
+              Decided in the last 90 days, newest first.
+            </div>
+            <DataTable
+              key={view}
+              rows={filteredDecided}
+              columns={decidedColumns}
+              rowKey={(r) => `${r.kind}:${r.id}`}
+              onRowClick={view === "confirmed" ? (r) => { if (r.job_id) navigate(jobHref(r.job_id)); } : undefined}
+              initialSort={{ key: "outcome", direction: "desc" }}
+              emptyMessage={search.trim() ? "No requests match this search." : decidedEmpty[view]}
+            />
+          </>
+        )
+      ) : !requests.length ? (
         <EmptyState
           title="No pending service requests"
           description="When customers submit a job request from your customer portal, it will appear here for you to review, schedule, or convert into a quote."
         />
       ) : (
         <>
-          <FilterBar
-            search={search}
-            onSearchChange={setSearch}
-            searchPlaceholder="Search title, customer, email, or notes…"
-          />
-
           {bulkResult && (
             <div className="card" style={{ background: "#D1FAE5", border: "1px solid #6EE7B7", marginBottom: 8 }}>
               <div style={{ fontSize: 12, color: "#065F46" }}>
@@ -370,6 +554,7 @@ export function OliverServiceRequestsPage() {
               onClose={() => setPickedId(null)}
               api={{ get, patch }}
               onActionComplete={reload}
+              onConfirmed={setConfirmedNotice}
             />
           );
         }
@@ -454,12 +639,14 @@ interface BookingRow extends ServiceRequest {
 }
 
 function BookingDetailDrawer({
-  row, onClose, api, onActionComplete,
+  row, onClose, api, onActionComplete, onConfirmed,
 }: {
   row: BookingRow;
   onClose: () => void;
   api: { get: <T>(p: string) => Promise<T>; patch: <T>(p: string, b: unknown) => Promise<T> };
   onActionComplete: () => void;
+  /** Hands the page the job the booking became, for "Confirmed — now JOB-… on Jobs". */
+  onConfirmed: (result: ConfirmResult) => void;
 }) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | "reschedule" | null>(null);
   const [rescheduleMode, setRescheduleMode] = useState(false);
@@ -470,7 +657,8 @@ function BookingDetailDrawer({
     if (!confirm("Confirm this booking? The guest will receive a confirmation email.")) return;
     setBusy("confirm"); setError(null);
     try {
-      await api.patch(`/booking/slots/${row.id}/confirm`, {});
+      const result = await api.patch<ConfirmResult>(`/booking/slots/${row.id}/confirm`, {});
+      onConfirmed(result || {});
       onActionComplete();
       onClose();
     } catch (e) {
