@@ -26,10 +26,19 @@ export function Button({ variant = "primary", size = "md", loading, children, di
     opacity: disabled || loading ? 0.55 : 1,
   } as React.CSSProperties;
 
+  // secondary and ghost read the modal header's foreground tokens (set only
+  // inside IadmModal's dark header — see HEADER_FG_VARS there) and fall back to
+  // their usual ink-on-white everywhere else. Without this a ghost button in a
+  // dark header was #0B1C24 on #0B1C24 (Brandon W-OB-05: "nothing in the head
+  // on the calendars is black").
   const variants: Record<Variant, React.CSSProperties> = {
     primary:   { background: "#0C4A60", color: "#fff" },                                                  // ia-core-blue
-    secondary: { background: "#fff", color: "#0B1C24", border: "1px solid rgba(45,156,219,0.28)" },        // outline
-    ghost:     { background: "transparent", color: "#0B1C24" },
+    secondary: {                                                                                           // outline
+      background: "var(--iadm-head-btn-bg, #fff)",
+      color: "var(--iadm-head-fg, #0B1C24)",
+      border: "1px solid var(--iadm-head-btn-border, rgba(45,156,219,0.28))",
+    },
+    ghost:     { background: "transparent", color: "var(--iadm-head-fg, #0B1C24)" },
     danger:    { background: "#dc2626", color: "#fff" },
   };
 

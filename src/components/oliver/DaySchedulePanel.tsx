@@ -22,6 +22,8 @@ import { Plus, Clock } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { NewEntityLauncher } from "./customer/NewEntityLauncher";
+import { jobColor, factsFromUnifiedEvent } from "../../oliver/jobStatusColors";
+import { layoutLanes } from "../../oliver/calendarLanes";
 
 interface Slot { startUtc: string; endUtc: string; available: boolean }
 interface SlotsResp { slots: Slot[]; using_default_hours: boolean }
@@ -35,12 +37,24 @@ export interface DayEvent {
   end?: string | null;
   color: string;
   ref_url?: string | null;
+  status?: string | null;
+  job_title?: string | null;
+  customer_name?: string | null;
+  worker_count?: number | null;
+  reschedule_requested?: boolean | null;
 }
 
 interface Props {
   dayKey: string;
   events: DayEvent[];
   onDone: () => void;
+  /**
+   * Open what a block stands for (2026-09-25, Brandon W-OB-05: "I can't click
+   * the … job to open"). The blocks used to be links to ref_url — a job link
+   * the Job Board ignored and a booking link to the Booking setup page — so
+   * nothing opened. The Schedule page passes the job panel here.
+   */
+  onOpenEvent?: (e: DayEvent) => void;
 }
 
 const DURATIONS = [30, 60, 90, 120, 180, 240, 480];
@@ -53,7 +67,7 @@ const hhmm = (d: Date) => d.toLocaleTimeString([], { hour: "numeric", minute: "2
 const ROW_H = 26;
 const SLOT_MIN = 30;
 
-export function DaySchedulePanel({ dayKey, events, onDone }: Props) {
+export function DaySchedulePanel({ dayKey, events, onDone, onOpenEvent }: Props) {
   const { get, post } = useOliverApi();
   const api = useMemo(() => ({ get, post }), [get, post]);
 
@@ -225,21 +239,47 @@ export function DaySchedulePanel({ dayKey, events, onDone }: Props) {
               );
             })}
 
-            {/* Jobs already on the day */}
-            {jobEvents.map((e) => {
+            {/* Jobs already on the day. Two at the same time sit side by side
+                (they used to stack, and the one underneath could not be
+                clicked). Colour = the one job map (src/oliver/jobStatusColors). */}
+            {layoutLanes(jobEvents, (e) => ({
+              start: new Date(e.start).getTime(),
+              end: e.end ? new Date(e.end).getTime() : NaN,
+            })).map(({ item: e, lane, lanes }) => {
               const top = topFor(e.start);
               const end = e.end ? topFor(e.end) : top + ROW_H;
               const height = Math.max(ROW_H - 2, end - top - 2);
               if (top < 0 || top > rows * ROW_H) return null;
-              return (
+              const c = jobColor(factsFromUnifiedEvent(e));
+              const name = e.kind === "job" ? (e.job_title || e.title) : "Booking request";
+              const who = e.customer_name ? ` · ${e.customer_name}` : "";
+              const text = `${hhmm(new Date(e.start))} ${name}${who}`;
+              const tip = `${text}\n${c.label}: ${c.meaning}`;
+              const place = {
+                top: top + 1, height, background: c.solid, color: c.onSolid,
+                left: `calc(${(lane / lanes) * 100}% + 4px)`,
+                width: `calc(${100 / lanes}% - 10px)`,
+              };
+              return onOpenEvent ? (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={(ev) => { ev.stopPropagation(); onOpenEvent(e); }}
+                  className="absolute overflow-hidden rounded px-1.5 py-0.5 text-left text-[10px] font-medium hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[#1A7DB5]"
+                  style={place}
+                  title={`${tip}\n${e.kind === "job" ? "Click to open the job" : "Click to confirm it on Service Requests"}`}
+                >
+                  {text}
+                </button>
+              ) : (
                 <a
                   key={e.id}
                   href={e.ref_url || undefined}
-                  className="absolute left-1 right-2 overflow-hidden rounded px-1.5 py-0.5 text-[10px] font-medium text-white no-underline"
-                  style={{ top: top + 1, height, background: e.color }}
-                  title={`${e.title} — ${hhmm(new Date(e.start))}`}
+                  className="absolute overflow-hidden rounded px-1.5 py-0.5 text-[10px] font-medium no-underline"
+                  style={place}
+                  title={tip}
                 >
-                  {hhmm(new Date(e.start))} {e.title}
+                  {text}
                 </a>
               );
             })}

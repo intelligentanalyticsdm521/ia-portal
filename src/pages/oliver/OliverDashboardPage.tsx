@@ -17,6 +17,7 @@ import { Sparkline } from "../../components/iainsights/Sparkline";
 import { SetupHints, type SetupHint } from "../../components/SetupHints";
 import { Sparkles, ArrowUpRight, Calendar as CalendarIcon, Users as UsersIcon, Globe, Zap, MessageSquare } from "lucide-react";
 import { CalendarModal } from "../../components/oliver/customer/CalendarModal";
+import { jobColor, factsFromScheduleEvent } from "../../oliver/jobStatusColors";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 // F-Stripe-Client-Side (2026-06-23) — dual-path Stripe Connect picker.
 // Shown above all other dashboard content when the tenant hasn't yet
@@ -918,6 +919,7 @@ interface WeeklyGlanceEvent {
   customer_name?: string | null;
   worker_id?: string | null;
   worker_name?: string | null;
+  reschedule_requested?: boolean | null;
 }
 
 function WeeklyGlance({
@@ -1090,9 +1092,10 @@ function WeeklyGlance({
                   </span>
                   <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                     {dayEvents.slice(0, 3).map((ev) => {
-                      const c = ev.type === "booking"
-                        ? { bg: "#F3E8FF", fg: "#7E22CE" } // bookings: purple
-                        : weeklyGlanceStatusColor(ev.status);
+                      // The one job colour map (src/oliver/jobStatusColors):
+                      // the same colour this job has on every calendar.
+                      const jc = jobColor(factsFromScheduleEvent(ev));
+                      const c = { bg: jc.solid, fg: jc.onSolid };
                       const t = ev.scheduled_start
                         ? new Date(ev.scheduled_start).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })
                         : "";
@@ -1101,7 +1104,8 @@ function WeeklyGlance({
                         ev.title || "(untitled)",
                         ev.customer_name ? `· ${ev.customer_name}` : "",
                         ev.worker_name ? `· ${ev.worker_name}` : "",
-                        ev.type === "booking" ? "· booking" : "",
+                        ev.type === "booking" ? "· booking request" : "",
+                        `· ${jc.label}`,
                       ].filter(Boolean).join(" ");
                       return (
                         <span
@@ -1138,18 +1142,4 @@ function WeeklyGlance({
       </div>
     </div>
   );
-}
-
-function weeklyGlanceStatusColor(status: string): { bg: string; fg: string } {
-  switch (status) {
-    case "scheduled":   return { bg: "#DBEAFE", fg: "#1E40AF" };
-    case "assigned":
-    case "dispatched":  return { bg: "#CFFAFE", fg: "#0E7490" };
-    case "in_progress": return { bg: "#FEF3C7", fg: "#B45309" };
-    case "completed":   return { bg: "#D1FAE5", fg: "#047857" };
-    case "invoiced":    return { bg: "#DBEAFE", fg: "#1E40AF" };
-    case "paid":        return { bg: "#D1FAE5", fg: "#047857" };
-    case "cancelled":   return { bg: "#FEE2E2", fg: "#B91C1C" };
-    default:            return { bg: "#F1F5F9", fg: "#475569" };
-  }
 }

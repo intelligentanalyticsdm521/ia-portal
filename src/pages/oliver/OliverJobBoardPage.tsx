@@ -8,6 +8,9 @@ import {
 } from "../../components/oliver/ui";
 import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
 import { NewEntityLauncher } from "../../components/oliver/customer/NewEntityLauncher";
+import { JobWeekCalendar, type JobHints } from "../../components/oliver/JobWeekCalendar";
+import { JobStatusPill } from "../../components/oliver/JobColors";
+import { jobColor, factsFromJobRow, JOB_COLORS } from "../../oliver/jobStatusColors";
 import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import { useOliverLocations } from "../../hooks/useOliverLocations";
@@ -25,6 +28,9 @@ interface Job {
   customerName: string;
   status: string;
   scheduledDate?: string | null;
+  /** A pending reschedule request from the customer (GET /jobs, 2026-09-25).
+   *  Orange in the one colour map. Absent on an older API — read as no. */
+  rescheduleRequested?: boolean | null;
   total: number;
   revenue?: number;
   laborCost?: number;
@@ -117,6 +123,7 @@ export function OliverJobBoardPage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
 
   const { get, post, patch, del, ready } = useOliverApi();
+  const navigate = useNavigate();
   // Multi-location: the header picker scopes the board (location_id on
   // /jobs). "All locations" sends nothing — identical to today.
   const loc = useOliverLocations();
@@ -133,7 +140,8 @@ export function OliverJobBoardPage() {
   const [profitFilter, setProfitFilter] = useState("");
   const [search, setSearch] = useState("");
   // Default Kanban — easier to see at a glance per founder request 2026-05-25.
-  const [view, setView] = useState<"list" | "kanban">("kanban");
+  // Calendar (2026-09-25, Brandon W-OB-05): the week, Mon–Sun, same jobs.
+  const [view, setView] = useState<"list" | "kanban" | "calendar">("kanban");
   // 2026-05-25 — "+ New job" now opens the NewEntityLauncher (customer-first
   // picker), then routes the user into the CustomerModal at the chosen
   // section's create panel. The old inline JobCreateForm is gone.
@@ -145,30 +153,49 @@ export function OliverJobBoardPage() {
     subject?: { kind: "company" | "person"; id: string } | null;
   } | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
+  // Bumped on every board load, so the Calendar view refetches its week when
+  // a job is changed from the panel (the same moment List and Kanban redraw).
+  const [boardVersion, setBoardVersion] = useState(0);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       const data = await get<Job[]>(withLocation("/jobs?per_page=200", loc.selectedLocationId));
       setJobs(data || []);
+      setBoardVersion((v) => v + 1);
     } catch (e) { setError(e); }
     finally { setLoading(false); }
   }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
 
-  // Deep-link: ?focus=<job_id> opens the JobDetailDrawer immediately.
+  // Deep-link: ?focus=<job_id> opens the job's panel immediately.
   // Used by the Service Requests detail drawer's "Open in job board" action.
+  // ?job=<job_id> is accepted too: the calendars' "Open →" links used it for
+  // months and the board ignored it, so the job never opened (W-OB-05).
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    const focus = searchParams.get("focus");
+    const focus = searchParams.get("focus") || searchParams.get("job");
     if (focus) {
       setDetailId(focus);
       const next = new URLSearchParams(searchParams);
       next.delete("focus");
+      next.delete("job");
       setSearchParams(next, { replace: true });
     }
   }, [searchParams, setSearchParams]);
+
+  // What the board already knows about each job's worker and reschedule
+  // state, handed to the week view so its colours match the pills even
+  // where the calendar feed does not carry those facts.
+  const jobHints: JobHints = useMemo(() => {
+    const m: JobHints = new Map();
+    for (const j of jobs) {
+      const f = factsFromJobRow(j);
+      m.set(String(j.id).toLowerCase(), { hasWorker: f.hasWorker, customerAttention: f.customerAttention });
+    }
+    return m;
+  }, [jobs]);
 
   // Board-visible jobs apply the rolling 7-day window to the Closed bucket
   // BEFORE any user filters run. This keeps the board feeling current and
@@ -255,7 +282,7 @@ export function OliverJobBoardPage() {
         </div>
       ),
     },
-    { key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status, render: (j) => <StatusBadge status={j.status} /> },
+    { key: "status", header: "Status", sortable: true, sortAccessor: (j) => j.status, render: (j) => <JobStatusPill status={j.status} facts={factsFromJobRow(j)} /> },
     ...(loc.multi ? [{
       key: "location", header: "Location", sortable: true, sortAccessor: (j: Job) => j.locationName ?? "",
       render: (j: Job) => <span className="text-xs text-slate-600">{j.locationName || "—"}</span>,
@@ -309,6 +336,7 @@ export function OliverJobBoardPage() {
             <div className="ptabs" style={{ marginBottom: 0 }}>
               <button className={`ptab${view === "list" ? " active" : ""}`} onClick={() => setView("list")}>List</button>
               <button className={`ptab${view === "kanban" ? " active" : ""}`} onClick={() => setView("kanban")}>Kanban</button>
+              <button className={`ptab${view === "calendar" ? " active" : ""}`} onClick={() => setView("calendar")} title="This week's jobs on a calendar">Calendar</button>
             </div>
             <Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>
           </div>
@@ -381,6 +409,15 @@ export function OliverJobBoardPage() {
           title="No jobs yet"
           description="Jobs appear here when customers submit service requests, or when you create them manually."
           action={<Button variant="primary" onClick={() => setLauncherOpen(true)}>+ New job</Button>}
+        />
+      ) : view === "calendar" ? (
+        <JobWeekCalendar
+          locationId={loc.selectedLocationId}
+          reloadKey={boardVersion}
+          hints={jobHints}
+          onOpenJob={setDetailId}
+          onOpenRequest={() => navigate("/app/services/oliver_service_requests")}
+          fullCalendarHref="/app/services/oliver_schedule"
         />
       ) : view === "list" ? (
         <>
@@ -735,6 +772,9 @@ function KanbanCard({
   // happen. Quotes/Closed don't need a worker.
   const needsWorker = bucket === "scheduled" || bucket === "in_progress";
   const workers = job.assignedWorkers || [];
+  // The one status → colour map (src/oliver/jobStatusColors): the same colour
+  // this job has on the calendars, as a stripe down the card's left edge.
+  const colour = jobColor(factsFromJobRow(job));
   return (
     <div
       draggable
@@ -744,8 +784,8 @@ function KanbanCard({
       className={`bg-white rounded-lg ring-1 ring-gray-200 p-3 shadow-sm hover:shadow-md transition cursor-grab active:cursor-grabbing ${
         isDragging ? "opacity-30" : ""
       }`}
-      style={{ minHeight: 110 }}
-      title="Drag to move between columns, or click to open"
+      style={{ minHeight: 110, borderLeft: `4px solid ${colour.solid}` }}
+      title={`${colour.label}: ${colour.meaning} Drag to move between columns, or click to open.`}
     >
       <div className="text-sm font-medium text-oliver-teal line-clamp-2" style={{ minHeight: 36 }}>
         {job.title || "(untitled)"}
@@ -768,7 +808,7 @@ function KanbanCard({
             ))}
           </select>
         ) : (
-          bucket === 'closed' && <StatusBadge status={job.status} />
+          bucket === 'closed' && <JobStatusPill status={job.status} facts={factsFromJobRow(job)} />
         )}
         {(job.isRecurring || job.recurringJobId) && (
           <span className="rounded-full bg-purple-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-800">
@@ -781,8 +821,20 @@ function KanbanCard({
           </span>
         )}
         {needsWorker && workers.length === 0 && (
-          <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+            style={{ background: JOB_COLORS.business_attention.soft, color: JOB_COLORS.business_attention.softText }}
+          >
             Unassigned
+          </span>
+        )}
+        {job.rescheduleRequested && (
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide"
+            style={{ background: JOB_COLORS.customer_attention.soft, color: JOB_COLORS.customer_attention.softText }}
+            title="The customer asked to move this job — decide it on the Reschedule Queue"
+          >
+            Reschedule asked
           </span>
         )}
       </div>

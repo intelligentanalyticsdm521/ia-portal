@@ -10,12 +10,17 @@
 // numbers match what's on the grid.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation } from "../../lib/oliverLocations";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader } from "../../components/oliver/ui";
-import { UnifiedCalendarGrid, type UnifiedEvent } from "../../components/UnifiedCalendarGrid";
+import { UnifiedCalendarGrid, type UnifiedEvent, type EventPresentation } from "../../components/UnifiedCalendarGrid";
+import { CustomerModal } from "../../components/oliver/customer/CustomerModal";
+import { JobColorGuide } from "../../components/oliver/JobColors";
+import { jobIdOf } from "../../components/oliver/JobWeekCalendar";
+import { jobColor, factsFromUnifiedEvent } from "../../oliver/jobStatusColors";
 import { NeedsSchedulingRail } from "../../components/oliver/NeedsSchedulingRail";
 import { AssignWorkerPanel } from "../../components/oliver/AssignWorkerPanel";
 import { DaySchedulePanel } from "../../components/oliver/DaySchedulePanel";
@@ -27,10 +32,39 @@ function ymd(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+// How a job or booking chip looks on this page: the one job colour map
+// (src/oliver/jobStatusColors — Brandon's green / yellow / orange / blue), the
+// time and the job's own title rather than a truncated "JOB-99…".
+function presentOliverEvent(e: UnifiedEvent): EventPresentation {
+  const c = jobColor(factsFromUnifiedEvent(e));
+  const time = new Date(e.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const name = e.kind === "job" ? (e.job_title || e.title) : "Booking request";
+  const who = e.customer_name ? ` · ${e.customer_name}` : "";
+  const num = e.kind === "job" && e.job_number ? `${e.job_number} · ` : "";
+  return {
+    background: c.solid,
+    color: c.onSolid,
+    label: `${time} ${name}`,
+    tip: `${time} · ${num}${name}${who}\n${c.label}: ${c.meaning}`,
+  };
+}
+
 export function OliverSchedulePage() {
   const insightsPayload = useProductInsightsPayload('oliver').payload;
-  const { get, patch, ready } = useOliverApi();
+  const { get, post, patch, del, ready } = useOliverApi();
+  const navigate = useNavigate();
   const loc = useOliverLocations();
+  // The job opened from the calendar — the same job panel the Job Board's
+  // List rows open (Brandon W-OB-05: "in the full calendar I can't click the
+  // … job to open"). A chip click opens it; so does a block in the day view.
+  const [focusJobId, setFocusJobId] = useState<string | null>(null);
+  const openEvent = useCallback((e: { id: string; kind: string; job_id?: string | null }) => {
+    const jobId = jobIdOf(e);
+    if (jobId) setFocusJobId(jobId);
+    // A booking still waiting for confirmation is not a job yet; it is
+    // confirmed (or declined) on Service Requests.
+    else if (e.kind === "booking") navigate("/app/services/oliver_service_requests");
+  }, [navigate]);
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
@@ -148,7 +182,9 @@ export function OliverSchedulePage() {
         <KpiCard label="Today" value={todayCount} color="#FEC82C" />
         <KpiCard label="Upcoming (60d)" value={upcomingCount} color="#3B82F6" />
         <KpiCard label="Jobs" value={jobCount} color="#3B82F6" />
-        <KpiCard label="Bookings" value={bookingCount} color="#FEC82C" />
+        {/* A confirmed booking is shown as its job (calendarUnified.js), so
+            what is left under bookings is requests waiting to be confirmed. */}
+        <KpiCard label="Booking requests" value={bookingCount} color="#FEC82C" />
       </div>
 
       {scheduleNote && (
@@ -181,6 +217,8 @@ export function OliverSchedulePage() {
               locationId={loc.selectedLocationId}
               onDropJob={scheduleJobOnDay}
               reloadKey={reloadKey}
+              present={presentOliverEvent}
+              onEventClick={openEvent}
               // Clicking a day opens a real day calendar — hours down the side,
               // jobs in place, free time you can click into. Only OLIVER passes
               // this; the Command Center's day modal stays the plain event list.
@@ -189,12 +227,23 @@ export function OliverSchedulePage() {
                   dayKey={dayKey}
                   events={dayEvents}
                   onDone={() => { onDone(); setReloadKey((k) => k + 1); loadKpis(); }}
+                  onOpenEvent={openEvent}
                 />
               )}
             />
+            <JobColorGuide />
           </div>
         </div>
       </div>
+
+      {focusJobId && (
+        <CustomerModal
+          focusJobId={focusJobId}
+          onClose={() => setFocusJobId(null)}
+          onChanged={() => { setReloadKey((k) => k + 1); loadKpis(); }}
+          api={{ get, post, patch, del }}
+        />
+      )}
     </OliverPageWrapper>
   );
 }

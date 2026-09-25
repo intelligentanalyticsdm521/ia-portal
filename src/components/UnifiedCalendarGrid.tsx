@@ -29,6 +29,22 @@ export interface UnifiedEvent {
   contact_uuid?: string | null;
   ref_url?: string | null;
   color: string;
+  // OLIVER job facts (oliver-api calendarUnified.js, 2026-09-25) — the Schedule
+  // page colours a job by these. Absent on other kinds and on an older API.
+  job_id?: string | null;
+  job_number?: string | null;
+  job_title?: string | null;
+  customer_name?: string | null;
+  worker_count?: number | null;
+  reschedule_requested?: boolean | null;
+}
+
+/** How a consumer wants one chip drawn. */
+export interface EventPresentation {
+  background: string;
+  color: string;
+  label?: string;
+  tip?: string;
 }
 
 interface Props {
@@ -64,6 +80,15 @@ interface Props {
    * them schedules field work.
    */
   renderDayBody?: (dayKey: string, events: UnifiedEvent[], onDone: () => void) => React.ReactNode;
+  /**
+   * 2026-09-25 (Brandon W-OB-05) — how a chip looks, and what a click on it
+   * does, both arrive as PROPS for the same reason as onDropJob: OLIVER colours
+   * jobs by its status map and opens the job on a click; the Command Center
+   * passes neither and keeps its kind colours and its click-opens-the-day.
+   */
+  present?: (e: UnifiedEvent) => EventPresentation;
+  /** When supplied, a click on a chip opens that event instead of the day. */
+  onEventClick?: (e: UnifiedEvent) => void;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -94,7 +119,7 @@ function addDays(d: Date, n: number) {
   return r;
 }
 
-export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey, renderDayBody }: Props) {
+export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, reloadKey, renderDayBody, present, onEventClick }: Props) {
   const { get, ready } = useOliverApi();
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
@@ -227,9 +252,19 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
           const dayEvents = eventsByDay[dayKey] || [];
 
           return (
-            <button
+            // A div with the button role, not a <button>: the chips inside are
+            // buttons of their own (a click on a job opens the job), and a
+            // button may not contain another.
+            <div
               key={dayKey}
+              role="button"
+              tabIndex={0}
+              aria-label={`Open ${day.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}`}
               onClick={() => setOpenDay(dayKey)}
+              onKeyDown={(ev) => {
+                if (ev.target !== ev.currentTarget) return;
+                if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); setOpenDay(dayKey); }
+              }}
               // Drop handlers only bind when a handler was passed. On the
               // Command Center there is none, so this stays an ordinary button.
               onDragOver={onDropJob ? (e) => { e.preventDefault(); setDragOverDay(dayKey); } : undefined}
@@ -275,10 +310,16 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
                     ? e.id.slice("job:".length)
                     : null;
                   const canDrag = !!onDropJob && !!jobId;
+                  const look = present?.(e);
+                  const label = look?.label ?? e.title;
+                  const tip = look?.tip ?? e.title;
+                  const Chip = onEventClick ? "button" : "div";
                   return (
-                    <div
+                    <Chip
                       key={e.id}
-                      title={canDrag ? `${e.title} — drag to another day to reschedule` : e.title}
+                      type={onEventClick ? "button" : undefined}
+                      onClick={onEventClick ? (ev: React.MouseEvent) => { ev.stopPropagation(); onEventClick(e); } : undefined}
+                      title={canDrag ? `${tip} — click to open, drag to another day to reschedule` : tip}
                       draggable={canDrag}
                       onDragStart={canDrag ? (ev) => {
                         ev.stopPropagation();
@@ -293,20 +334,20 @@ export function UnifiedCalendarGrid({ kinds, className, locationId, onDropJob, r
                         if (e.end) ev.dataTransfer.setData("application/x-oliver-job-end", e.end);
                         ev.dataTransfer.effectAllowed = "move";
                       } : undefined}
-                      className={`text-[9px] truncate rounded px-1 py-px font-medium text-white ${
-                        canDrag ? "cursor-grab active:cursor-grabbing" : ""
-                      }`}
-                      style={{ background: e.color }}
+                      className={`block w-full text-left text-[9px] truncate rounded px-1 py-px font-medium ${
+                        canDrag ? "cursor-grab active:cursor-grabbing" : onEventClick ? "cursor-pointer" : ""
+                      } ${onEventClick ? "hover:brightness-95 focus:outline-none focus:ring-2 focus:ring-[#1A7DB5]" : ""}`}
+                      style={{ background: look?.background ?? e.color, color: look?.color ?? "#fff" }}
                     >
-                      {e.title}
-                    </div>
+                      {label}
+                    </Chip>
                   );
                 })}
                 {dayEvents.length > 3 && (
                   <div className="text-[9px] text-slate-500 px-1">+{dayEvents.length - 3} more</div>
                 )}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>

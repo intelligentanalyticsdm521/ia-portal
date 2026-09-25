@@ -77,6 +77,32 @@ export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
 /** Tailwind blue-600 — the "Core Blue" primary across the platform. */
 export const CORE_BLUE = "#2563eb";
 
+/**
+ * The ink header's foreground, published as CSS custom properties so anything
+ * drawn inside the header reads it instead of hard-coding a colour.
+ *
+ * 2026-09-25 (Brandon, walk W-OB-05): "the month/day is black and hard to read
+ * the buttons are also black … make sure that nothing in the head on the
+ * calendars is black." The OLIVER Button's ghost variant painted #0B1C24 — the
+ * header's own background colour — so the calendar's ‹ › and ← Month were
+ * invisible, and every other page that puts a ghost button in a modal header
+ * had the same trap. The Button now reads these (with its old colours as the
+ * fallback), so the fix lives here once, not per page.
+ *
+ * The modal's root resets them, so a modal opened from inside a header (or a
+ * body) never inherits the dark-header values.
+ */
+export const HEADER_FG_VARS = {
+  "--iadm-head-fg": "#FFFFFF",
+  "--iadm-head-btn-bg": "rgba(255,255,255,0.10)",
+  "--iadm-head-btn-border": "rgba(255,255,255,0.35)",
+} as React.CSSProperties;
+const HEADER_FG_RESET = {
+  "--iadm-head-fg": "initial",
+  "--iadm-head-btn-bg": "initial",
+  "--iadm-head-btn-border": "initial",
+} as React.CSSProperties;
+
 export function IadmModal({
   open, onClose, product, eyebrow, title, subtitle,
   headerActions, footer, size = "lg", z, children,
@@ -118,7 +144,7 @@ export function IadmModal({
       role="dialog"
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: "rgba(0,0,0,0.5)", ...(z === undefined ? null : { zIndex: z }) }}
+      style={{ ...HEADER_FG_RESET, background: "rgba(0,0,0,0.5)", ...(z === undefined ? null : { zIndex: z }) }}
       onMouseDown={onBackdropDown}
       onMouseUp={onBackdropUp}
     >
@@ -135,8 +161,8 @@ export function IadmModal({
       >
         {/* Ink gradient header */}
         <div
-          className="flex items-center justify-between gap-3 px-5 py-3 text-white"
-          style={{ background: "linear-gradient(to right, #0B1C24, #1a3540)" }}
+          className="flex items-center justify-between gap-3 px-5 py-3"
+          style={{ ...HEADER_FG_VARS, color: "var(--iadm-head-fg)", background: "linear-gradient(to right, #0B1C24, #1a3540)" }}
         >
           <div className="min-w-0">
             <div

@@ -19,10 +19,14 @@
  * the user stays in one mental model: jobs always live under a customer.
  */
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useOliverApi } from "../../../hooks/useOliverApi";
 import { DetailDrawer, Button } from "../ui";
 import { CustomerModal } from "./CustomerModal";
 import { NewEntityLauncher } from "./NewEntityLauncher";
+import { JobColorGuide } from "../JobColors";
+import { jobColor, factsFromScheduleEvent } from "../../../oliver/jobStatusColors";
+import { layoutLanes } from "../../../oliver/calendarLanes";
 
 interface CalendarEvent {
   id: string;
@@ -37,25 +41,16 @@ interface CalendarEvent {
   worker_id?: string | null;
   worker_name?: string | null;
   contact_id?: string | null;
+  /** A pending reschedule request from the customer (2026-09-25). */
+  reschedule_requested?: boolean | null;
 }
 
-const STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  scheduled:    { bg: "#DBEAFE", fg: "#1E40AF" },
-  assigned:     { bg: "#CFFAFE", fg: "#0E7490" },
-  dispatched:   { bg: "#CFFAFE", fg: "#0E7490" },
-  in_progress:  { bg: "#FEF3C7", fg: "#B45309" },
-  completed:    { bg: "#D1FAE5", fg: "#047857" },
-  invoiced:     { bg: "#DBEAFE", fg: "#1E40AF" },
-  paid:         { bg: "#D1FAE5", fg: "#047857" },
-  cancelled:    { bg: "#FEE2E2", fg: "#B91C1C" },
-  inquiry:      { bg: "#F3E8FF", fg: "#7E22CE" },
-  quoted:       { bg: "#E0E7FF", fg: "#4338CA" },
-};
-const BOOKING_COLOR = { bg: "#F3E8FF", fg: "#7E22CE" };
-// The drawer header is the dark teal gradient; the month label and the ghost
-// ‹ › / ← Month buttons were #0B1C24 on #0B1C24 — invisible (Brandon, W-OB-05:
-// "nothing in the head on the calendars is black").
-const ON_DARK = { color: "#fff", fontSize: 14, fontWeight: 600 } as const;
+// The drawer header is the dark ink gradient. The month label inherits the
+// header's foreground and the ghost ‹ › / ← Month buttons read the header's
+// foreground token (IadmModal HEADER_FG_VARS) — they were #0B1C24 on #0B1C24,
+// invisible (Brandon, W-OB-05: "nothing in the head on the calendars is black").
+// The arrows get a size bump so they read as buttons.
+const ARROW = { fontSize: 14, fontWeight: 600 } as const;
 const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 // Day View hour range — 6am to 10pm. Future enhancement: pull from
@@ -65,9 +60,12 @@ const DAY_VIEW_END_HOUR = 22;
 const HOUR_HEIGHT_PX = 56; // 56px per hour → 30min visible to the eye
 
 // ─── tiny helpers ────────────────────────────────────────────────────────────
+// The one job colour map (src/oliver/jobStatusColors) — Brandon's green /
+// yellow / orange / blue, the same colours as the Schedule page and the Job
+// Board. Replaces this file's own status table (bookings were purple).
 function eventColor(ev: CalendarEvent) {
-  if (ev.type === "booking") return BOOKING_COLOR;
-  return STATUS_COLORS[ev.status] || { bg: "#F1F5F9", fg: "#475569" };
+  const c = jobColor(factsFromScheduleEvent(ev));
+  return { bg: c.solid, fg: c.onSolid, label: c.label, meaning: c.meaning };
 }
 function eventStart(ev: CalendarEvent): Date | null {
   const raw = ev.scheduled_start || ev.date;
@@ -124,6 +122,7 @@ export function CalendarModal({
   initialDate?: string;
 }) {
   const { get, post, patch, del, ready } = useOliverApi();
+  const navigate = useNavigate();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -288,22 +287,22 @@ export function CalendarModal({
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {view === "month" ? (
               <>
-                <Button variant="ghost" onClick={prevMonth} aria-label="Previous month" style={ON_DARK}>‹</Button>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", minWidth: 140, textAlign: "center" }}>
+                <Button variant="ghost" onClick={prevMonth} aria-label="Previous month" title="Previous month" style={ARROW}>‹</Button>
+                <div style={{ fontSize: 13, fontWeight: 600, minWidth: 140, textAlign: "center" }}>
                   {monthLabel}
                 </div>
-                <Button variant="ghost" onClick={nextMonth} aria-label="Next month" style={ON_DARK}>›</Button>
-                <Button variant="secondary" onClick={gotoToday}>Today</Button>
+                <Button variant="ghost" onClick={nextMonth} aria-label="Next month" title="Next month" style={ARROW}>›</Button>
+                <Button variant="secondary" onClick={gotoToday} title="Back to today">Today</Button>
               </>
             ) : (
               <>
-                <Button variant="ghost" onClick={() => setView("month")} style={ON_DARK}>← Month</Button>
-                <Button variant="ghost" onClick={prevDay} aria-label="Previous day" style={ON_DARK}>‹</Button>
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#fff", minWidth: 200, textAlign: "center" }}>
+                <Button variant="ghost" onClick={() => setView("month")} title="Back to the month">← Month</Button>
+                <Button variant="ghost" onClick={prevDay} aria-label="Previous day" title="Previous day" style={ARROW}>‹</Button>
+                <div style={{ fontSize: 13, fontWeight: 600, minWidth: 200, textAlign: "center" }}>
                   {selectedDay.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                 </div>
-                <Button variant="ghost" onClick={nextDay} aria-label="Next day" style={ON_DARK}>›</Button>
-                <Button variant="secondary" onClick={gotoToday}>Today</Button>
+                <Button variant="ghost" onClick={nextDay} aria-label="Next day" title="Next day" style={ARROW}>›</Button>
+                <Button variant="secondary" onClick={gotoToday} title="Back to today">Today</Button>
               </>
             )}
           </div>
@@ -339,11 +338,16 @@ export function CalendarModal({
             events={selectedDayEvents}
             onEventClick={(ev) => {
               if (ev.type === "job") setFocusJobId(ev.id);
-              // booking clicked → no-op for now; future: open booking detail
+              // A booking still waiting for confirmation is not a job yet: it
+              // opens where it is confirmed. It used to do nothing at all —
+              // Brandon's "I can't click the multi-service fixture job" (W-OB-05).
+              else navigate("/app/services/oliver_service_requests");
             }}
             onEmptySlotClick={launchNewJobAtSlot}
           />
         )}
+
+        <JobColorGuide />
 
         {loading && (
           <div style={{ marginTop: 14, textAlign: "center", color: "#5A7A8A", fontSize: 12 }}>
@@ -462,7 +466,7 @@ function MonthGrid({
                       <button
                         key={ev.id}
                         onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
-                        title={`${t} · ${ev.title}${ev.customer_name ? ` · ${ev.customer_name}` : ""}${ev.type === "booking" ? " (booking)" : ""}`}
+                        title={`${t} · ${ev.title}${ev.customer_name ? ` · ${ev.customer_name}` : ""}${ev.type === "booking" ? " (booking request)" : ""}\n${c.label}: ${c.meaning}`}
                         style={{
                           background: c.bg, color: c.fg,
                           border: "none", textAlign: "left",
@@ -620,7 +624,12 @@ function DayTimeline({
                 position: "absolute", top: 28, left: 0, right: 0,
                 height: totalHeight, pointerEvents: "none",
               }}>
-                {colEvents.map((ev) => {
+                {/* Two jobs at the same time sit side by side; stacked, the one
+                    underneath could not be clicked (W-OB-05). */}
+                {layoutLanes(colEvents, (ev) => ({
+                  start: eventStart(ev)?.getTime() ?? NaN,
+                  end: eventEnd(ev)?.getTime() ?? NaN,
+                })).map(({ item: ev, lane, lanes }) => {
                   const pos = eventPosition(ev);
                   if (!pos) return null;
                   const c = eventColor(ev);
@@ -633,7 +642,8 @@ function DayTimeline({
                       style={{
                         position: "absolute",
                         top: pos.top, height: pos.height,
-                        left: 4, right: 4,
+                        left: `calc(${(lane / lanes) * 100}% + 4px)`,
+                        width: `calc(${100 / lanes}% - 8px)`,
                         background: c.bg, color: c.fg,
                         border: `1px solid ${c.fg}33`,
                         borderRadius: 4,
@@ -645,11 +655,11 @@ function DayTimeline({
                         overflow: "hidden",
                         display: "flex", flexDirection: "column", gap: 1,
                       }}
-                      title={`${ev.title}${ev.customer_name ? ` · ${ev.customer_name}` : ""}`}
+                      title={`${ev.title}${ev.customer_name ? ` · ${ev.customer_name}` : ""}\n${c.label}: ${c.meaning}\n${ev.type === "booking" ? "Click to confirm it on Service Requests" : "Click to open the job"}`}
                     >
                       <div style={{ fontSize: 10, opacity: 0.85 }}>
                         {start ? fmtTime(start) : ""}{end ? `–${fmtTime(end)}` : ""}
-                        {ev.type === "booking" ? " · booking" : ""}
+                        {ev.type === "booking" ? " · booking request" : ""}
                       </div>
                       <div style={{ fontWeight: 600, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis" }}>
                         {ev.title}
