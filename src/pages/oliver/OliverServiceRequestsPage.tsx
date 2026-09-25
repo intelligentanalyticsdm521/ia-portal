@@ -113,6 +113,8 @@ export function OliverServiceRequestsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState<"quote" | "cancel" | null>(null);
   const [bulkResult, setBulkResult] = useState<{ kind: "quote" | "cancel"; ok: number; failed: number } | null>(null);
+  // The bulk yes/no lives in the bar (2026-09-25); it was a browser confirm().
+  const [bulkAsk, setBulkAsk] = useState<"quoted" | "cancelled" | null>(null);
   // Open is the default and behaves exactly as before; the other three read
   // the decided list, fetched alongside so the chips can carry their counts.
   const [view, setView] = useState<RequestView>("open");
@@ -165,8 +167,7 @@ export function OliverServiceRequestsPage() {
   async function bulkAdvance(toStatus: "quoted" | "cancelled") {
     const ids = Array.from(selected);
     if (!ids.length) return;
-    const label = toStatus === "quoted" ? "mark as quoted" : "cancel";
-    if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${ids.length} request${ids.length === 1 ? "" : "s"}?`)) return;
+    setBulkAsk(null);
     setBulkBusy(toStatus === "quoted" ? "quote" : "cancel");
     setBulkResult(null);
     let ok = 0;
@@ -590,15 +591,29 @@ export function OliverServiceRequestsPage() {
                 <div style={{ fontSize: 12, color: "#0C4A60" }}>
                   <strong>{selected.size}</strong> selected
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
-                  <Button variant="ghost" onClick={() => bulkAdvance("cancelled")} disabled={!!bulkBusy}>
-                    {bulkBusy === "cancel" ? "Cancelling…" : `Cancel ${selected.size}`}
-                  </Button>
-                  <Button variant="primary" onClick={() => bulkAdvance("quoted")} disabled={!!bulkBusy}>
-                    {bulkBusy === "quote" ? "Updating…" : `Mark ${selected.size} as quoted`}
-                  </Button>
-                </div>
+                {bulkAsk ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "#0C4A60" }}>
+                      {bulkAsk === "cancelled"
+                        ? `Cancel ${selected.size} request${selected.size === 1 ? "" : "s"}? The customer${selected.size === 1 ? " is" : "s are"} not told.`
+                        : `Mark ${selected.size} request${selected.size === 1 ? "" : "s"} as quoted?`}
+                    </span>
+                    <Button variant={bulkAsk === "cancelled" ? "ghost" : "primary"} onClick={() => bulkAdvance(bulkAsk)} disabled={!!bulkBusy}>
+                      {bulkAsk === "cancelled" ? `Yes, cancel ${selected.size === 1 ? "it" : "them"}` : `Yes, mark ${selected.size === 1 ? "it" : "them"}`}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setBulkAsk(null)} disabled={!!bulkBusy}>Back</Button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+                    <Button variant="ghost" onClick={() => setBulkAsk("cancelled")} disabled={!!bulkBusy}>
+                      {bulkBusy === "cancel" ? "Cancelling…" : `Cancel ${selected.size}`}
+                    </Button>
+                    <Button variant="primary" onClick={() => setBulkAsk("quoted")} disabled={!!bulkBusy}>
+                      {bulkBusy === "quote" ? "Updating…" : `Mark ${selected.size} as quoted`}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
