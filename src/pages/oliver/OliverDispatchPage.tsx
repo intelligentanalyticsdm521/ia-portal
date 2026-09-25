@@ -99,6 +99,17 @@ export function OliverDispatchPage() {
 
   useEffect(() => { if (ready) load(); }, [ready, load]);
 
+  // The crew answers on their phone, not here: re-read quietly every 30 s
+  // while this tab is visible, so "Offered to …" turns into "Assigned to …" or
+  // "Declined by …" without the dispatcher leaving the page.
+  useEffect(() => {
+    if (!ready) return;
+    const t = window.setInterval(() => {
+      if (document.visibilityState === "visible") load(true);
+    }, 30_000);
+    return () => window.clearInterval(t);
+  }, [ready, load]);
+
   async function handleOffer(jobId: string) {
     const workerId = selectedWorker[jobId];
     if (!workerId) return;
