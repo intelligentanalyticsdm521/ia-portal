@@ -307,8 +307,14 @@ export function OliverBookingPage() {
       // useOliverApi already strips the { data: … } envelope — declaring it here
       // and reading `.data` is the portal's most repeated bug
       // (test/no-double-unwrap.test.mjs).
+      //
+      // ?self_bookable=1 — only services the owner marked "Self-bookable by
+      // customers" in the Service Catalog. Without it the picker also offered
+      // the platform's own lead products that LUMEN lead billing writes into
+      // the catalog so lead purchases can be invoiced ("SPARK Leads - Pay per
+      // lead" …, is_self_bookable 0), and a ticked one went onto the public page.
       try {
-        const offs = await get<CatalogOffering[]>("/catalog/offerings");
+        const offs = await get<CatalogOffering[]>("/catalog/offerings?self_bookable=1");
         setOfferings((offs || []).filter((o) =>
           o.is_active !== false && (o.offering_type ?? "service") === "service"));
       } catch {
@@ -1232,8 +1238,9 @@ function BookingPageEditor({
                   </div>
                   {offerings.length === 0 ? (
                     <p className="mt-2 text-xs text-slate-500">
-                      No services in your catalog yet. Add one in Service Catalog and it will appear here.
-                      Until then the page books one generic appointment at the length above.
+                      No bookable services yet. In Service Catalog, turn on "Self-bookable by customers"
+                      for a service and it will appear here. Until then the page books one generic
+                      appointment at the length above.
                     </p>
                   ) : (
                     <>
