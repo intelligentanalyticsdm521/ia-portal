@@ -135,6 +135,12 @@ interface BookingPage {
   form_fields?: BookingFormField[];
   /** service_offering_id[] the page sells. The editor round-trips this. */
   services?: string[];
+  /** Where the services customers pick come from (migration 219): the Service
+   *  Catalog (`services` above), job scopes, or a custom list. */
+  service_source?: ServiceSource;
+  /** The owner's job scopes AND custom entries, each tagged with its kind. Both
+   *  are kept whichever source is chosen, so switching back loses nothing. */
+  custom_services?: ServiceListItem[];
   // Read-only, computed by the API — what is actually IN FORCE right now.
   effective_availability_windows?: AvailabilityWindow[];
   effective_hours_source?: "override" | "settings" | "default";
@@ -148,6 +154,21 @@ interface BookingFormField {
   type: "text" | "textarea" | "tel" | "email" | "number" | "checkbox" | "select";
   required?: boolean;
   options?: string[];
+}
+
+/** Where a page's services come from. */
+type ServiceSource = "catalog" | "scope" | "custom";
+
+/** One job scope or custom entry — a name, a length, a description, and (custom
+ *  only) an optional price. Stored in booking_page.custom_services_json. */
+interface ServiceListItem {
+  key: string;
+  kind: "scope" | "custom";
+  name: string;
+  minutes: number;
+  description: string | null;
+  price_cents: number | null;
+  sort?: number;
 }
 
 /** A service from the catalog, for the picker. */
@@ -188,11 +209,53 @@ const COMMON_TIMEZONES = [
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120];
 const BUFFER_OPTIONS = [0, 5, 10, 15, 30];
-const JOB_CATEGORIES = [
-  { value: "project", label: "Project (one-off scope)" },
-  { value: "field_service", label: "Field service (recurring/onsite)" },
-  { value: "retainer", label: "Retainer (ongoing engagement)" },
+/** Brandon, 25 Sep 2026 (Test 4.3): "project/job scope, product and service
+ *  catalog, then if we need something else like custom". One choice, three
+ *  lists; the public page and the customer portal offer whichever is chosen. */
+const SOURCE_OPTIONS: { value: ServiceSource; label: string; hint: string }[] = [
+  { value: "scope", label: "Job scopes", hint: "Kinds of work you name yourself, each with a length and a description." },
+  { value: "catalog", label: "Products & services catalog", hint: "Pick from your Service Catalog. Each brings its own length and price." },
+  { value: "custom", label: "Custom", hint: "Your own list, like a walkthrough or a project appointment, with an optional price." },
 ];
+
+/** A key for a new entry. The API keeps it, or replaces one it cannot use. */
+function newItemKey(kind: "scope" | "custom"): string {
+  return `${kind === "scope" ? "s" : "c"}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+// A job-scope or custom list opens with EMPTY rows the owner fills in, never
+// with somebody else's words. Brandon, 25 Sep 2026: "don't default descriptions
+// in there based on literally what I said. They should just be like black with
+// an gneralize placeholder text. booking type one - describe the type of
+// booking here / booking type two - describe the type of booking here / etc."
+// A row with no name is not saved and does not count.
+const ORDINALS = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"];
+function bookingTypePlaceholder(n: number): string {
+  return `Booking type ${ORDINALS[n] ?? n + 1}`;
+}
+const EMPTY_ROW_MINUTES = [30, 60, 90];
+
+function emptyRows(kind: "scope" | "custom"): ServiceListItem[] {
+  return EMPTY_ROW_MINUTES.map((minutes) => ({
+    key: newItemKey(kind), kind, name: "", minutes, description: "", price_cents: null,
+  }));
+}
+
+/** The list with three empty rows added for `kind` when it has none. */
+function withEmptyRows(list: ServiceListItem[], kind: ServiceSource): ServiceListItem[] {
+  if (kind === "catalog" || list.some((i) => i.kind === kind)) return list;
+  return [...list, ...emptyRows(kind)];
+}
+
+/** One of the business's own service categories (oliver.service_category, the
+ *  Service Categories page). A booking page files its jobs under one. */
+interface ServiceCategory {
+  category_id: string;
+  name: string;
+}
+
+/** The Service category select's "add one" choice. Not a category. */
+const ADD_CATEGORY = "__add_category__";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Small pure helpers — page address, the website button, share links, clipboard
@@ -278,7 +341,7 @@ function useCopied() {
 // The library — one card per booking page
 // ─────────────────────────────────────────────────────────────────────────────
 export function OliverBookingPage() {
-  const { get, patch, del } = useOliverApi();
+  const { get, post, patch, del } = useOliverApi();
 
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [pages, setPages] = useState<BookingPageRow[]>([]);
@@ -286,6 +349,8 @@ export function OliverBookingPage() {
   // The services this business sells, for the editor's picker. Loaded once here
   // so opening a page does not refetch the catalog every time.
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
+  // The business's own service categories, for the editor's "Service category".
+  const [categories, setCategories] = useState<ServiceCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   const [notice, setNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -322,6 +387,21 @@ export function OliverBookingPage() {
         setOfferings([]);
       }
 
+      // The business's own categories (Settings → Service Categories — the one
+      // store). A business with none is given four defaults to start from, as
+      // ordinary rows it can rename or remove there.
+      try {
+        let cats = await get<ServiceCategory[]>("/service-categories");
+        if (!Array.isArray(cats) || cats.length === 0) {
+          cats = await post<ServiceCategory[]>("/service-categories/defaults", {});
+        }
+        setCategories(Array.isArray(cats) ? cats : []);
+      } catch {
+        // A category read failure must not stop the owner editing the page;
+        // the select then offers the page's own current category and "+ Add".
+        setCategories([]);
+      }
+
       const pagesRes = await get<BookingPageRow[] | { data?: BookingPageRow[] }>("/booking/pages");
       const list = Array.isArray(pagesRes) ? pagesRes : (pagesRes?.data ?? []);
       setPages(list);
@@ -339,7 +419,7 @@ export function OliverBookingPage() {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [get]);
+  }, [get, post]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -458,6 +538,8 @@ export function OliverBookingPage() {
           takenSlugs={takenSlugs}
           orgSettings={orgSettings}
           offerings={offerings}
+          categories={categories}
+          onCategoryAdded={(c) => setCategories((cur) => [...cur, c])}
           onClose={() => setEditing(null)}
           onSaved={() => { void load(true); }}
         />
@@ -585,12 +667,14 @@ function BookingPageCard({
 // The editor — every section it always had, one booking page at a time
 // ─────────────────────────────────────────────────────────────────────────────
 function BookingPageEditor({
-  pageId, takenSlugs, orgSettings, offerings, onClose, onSaved,
+  pageId, takenSlugs, orgSettings, offerings, categories, onCategoryAdded, onClose, onSaved,
 }: {
   pageId: string | null;
   takenSlugs: string[];
   orgSettings: OrgSettings | null;
   offerings: CatalogOffering[];
+  categories: ServiceCategory[];
+  onCategoryAdded: (c: ServiceCategory) => void;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -621,12 +705,20 @@ function BookingPageEditor({
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  /** Bumped after every save so the Live preview reloads what was just saved. */
+  const [previewNonce, setPreviewNonce] = useState(0);
   const { copiedKey, copy } = useCopied();
   const topRef = useRef<HTMLDivElement | null>(null);
   // Read inside loadPage without making it (and its effect) re-run each time the
   // library behind refreshes its list.
   const takenRef = useRef(takenSlugs);
   takenRef.current = takenSlugs;
+  const categoriesRef = useRef(categories);
+  categoriesRef.current = categories;
+  /** The inline "+ Add a category…" row: null = closed. */
+  const [newCategory, setNewCategory] = useState<string | null>(null);
+  const [categoryBusy, setCategoryBusy] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
 
   // Calendar sync lives in <CalendarSyncCard>, which owns its own state: it
   // is two independent provider rows now (Microsoft 365 + Google), each with
@@ -651,6 +743,8 @@ function BookingPageEditor({
       if (!id) {
         const fresh = defaultBookingPage();
         fresh.slug = uniquePageSlug(slugifyPageName(fresh.title), takenRef.current);
+        // Filed under the business's first category until the owner picks one.
+        fresh.job_type = categoriesRef.current[0]?.name || fresh.job_type;
         setBookingPage(null);
         setDraft(fresh);
         setBaseline(JSON.stringify(fresh));
@@ -669,6 +763,13 @@ function BookingPageEditor({
           : (first.availability_windows || []),
         form_fields: Array.isArray(first.form_fields) ? first.form_fields : [],
         services: Array.isArray(first.services) ? first.services : [],
+        service_source: first.service_source || "catalog",
+        // A page offering job scopes or a custom list whose list is empty opens
+        // with the empty placeholder rows, the same as choosing it does.
+        custom_services: withEmptyRows(
+          Array.isArray(first.custom_services) ? first.custom_services : [],
+          first.service_source || "catalog",
+        ),
       };
       setBookingPage(hydrated);
       setDraft(hydrated);
@@ -747,6 +848,13 @@ function BookingPageEditor({
         // Which of the business's services the page sells. services_json has
         // been read by the public API since F-48 and never written by this page.
         services: draft.services ?? [],
+        // Where the services come from, and the owner's job scopes and custom
+        // entries — both lists, whichever is chosen, so switching back later
+        // finds them. A row nobody typed a name into is not saved.
+        service_source: draft.service_source ?? "catalog",
+        custom_services: (draft.custom_services ?? [])
+          .filter((i) => i.name.trim())
+          .map((i, n) => ({ ...i, name: i.name.trim(), sort: n + 1 })),
         // The business's clock (null = follow the location), where the hours come
         // from, and whether the guest is asked where the work is.
         timezone: draft.timezone ?? null,
@@ -771,6 +879,7 @@ function BookingPageEditor({
         setToast("Published. Your booking page is live — its link, website button, embed code and QR code are in \"Your booking link\" below.");
         if (created?.booking_page_id) setCurrentId(created.booking_page_id);
       }
+      setPreviewNonce((n) => n + 1);
       onSaved();
     } catch (e) {
       // 402 (a second page below Pro) and 409 (that page address is taken)
@@ -861,6 +970,39 @@ function BookingPageEditor({
     });
   }
 
+  // ── Where the services come from (migration 219) ──────────────────────────
+  // Choosing a source never throws a list away: the catalog ticks, the job
+  // scopes and the custom entries all stay on the draft and are all saved.
+  function chooseSource(source: ServiceSource) {
+    setDraft((d) => {
+      if (!d) return d;
+      // An empty job-scope or custom list opens with three empty rows
+      // ("Booking type one", "two", "three") for the owner to fill in.
+      return { ...d, service_source: source, custom_services: withEmptyRows(d.custom_services ?? [], source) };
+    });
+  }
+
+  function addListItem(kind: "scope" | "custom") {
+    setDraft((d) => (d ? {
+      ...d,
+      custom_services: [
+        ...(d.custom_services ?? []),
+        { key: newItemKey(kind), kind, name: "", minutes: 30, description: "", price_cents: null },
+      ],
+    } : d));
+  }
+
+  function updateListItem(key: string, patch: Partial<ServiceListItem>) {
+    setDraft((d) => (d ? {
+      ...d,
+      custom_services: (d.custom_services ?? []).map((i) => (i.key === key ? { ...i, ...patch } : i)),
+    } : d));
+  }
+
+  function removeListItem(key: string) {
+    setDraft((d) => (d ? { ...d, custom_services: (d.custom_services ?? []).filter((i) => i.key !== key) } : d));
+  }
+
   function addQuestion() {
     setDraft((d) => (d ? {
       ...d,
@@ -890,6 +1032,49 @@ function BookingPageEditor({
   // page has no API row yet, so it has no computed hours to show; the business
   // profile's hours reach it the moment it is published.
   const effectiveWindows = (bookingPage?.effective_availability_windows as AvailabilityWindow[]) ?? [];
+
+  // The list the page offers, and how many — the "N selected" count follows it.
+  const serviceSource: ServiceSource = draft?.service_source ?? "catalog";
+  const listItems = serviceSource === "catalog"
+    ? []
+    : (draft?.custom_services ?? []).filter((i) => i.kind === serviceSource);
+  const offeredCount = serviceSource === "catalog"
+    ? (draft?.services?.length ?? 0)
+    : listItems.filter((i) => i.name.trim() && Number(i.minutes) >= 5).length;
+
+  // ── Service category: the business's own list ─────────────────────────────
+  // The page's current category stays in the list even if it is not one of the
+  // business's (a page saved before categories were the business's own), so
+  // opening a page never silently re-files its jobs.
+  const currentCategory = draft?.job_type || "";
+  const categoryNames = categories.map((c) => c.name);
+  const categoryOptions = currentCategory && !categoryNames.some((n) => n.toLowerCase() === currentCategory.toLowerCase())
+    ? [currentCategory, ...categoryNames]
+    : categoryNames;
+
+  async function addCategory() {
+    const name = (newCategory || "").trim();
+    if (!name) { setCategoryError("Type a name for the category."); return; }
+    const existing = categories.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    if (existing) {
+      setDraftField("job_type", existing.name);
+      setNewCategory(null); setCategoryError(null);
+      return;
+    }
+    setCategoryBusy(true); setCategoryError(null);
+    try {
+      // The business's own list — the same store the Service Categories page
+      // edits. Never a second list on the booking page.
+      const created = await post<ServiceCategory>("/service-categories", { name });
+      onCategoryAdded({ category_id: created.category_id, name: created.name || name });
+      setDraftField("job_type", created.name || name);
+      setNewCategory(null);
+    } catch (e) {
+      setCategoryError(apiErrorMessage(e));
+    } finally {
+      setCategoryBusy(false);
+    }
+  }
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -1130,15 +1315,60 @@ function BookingPageEditor({
                     />
                   </Field>
                   <Field label="Service category">
+                    {/* The business's OWN categories (Settings → Service
+                        Categories), not a list we picked for them. Brandon, 25
+                        Sep 2026: "the service category should be customizable.
+                        like we shouldn't just pick for them. I'm fine with some
+                        defaults but then we need to be able to let them make
+                        their own category." */}
                     <select
-                      value={draft?.job_category || "project"}
-                      onChange={(e) => setDraftField("job_category", e.target.value)}
+                      value={newCategory !== null ? ADD_CATEGORY : currentCategory}
+                      onChange={(e) => {
+                        if (e.target.value === ADD_CATEGORY) { setNewCategory(""); setCategoryError(null); return; }
+                        setNewCategory(null);
+                        setDraftField("job_type", e.target.value);
+                      }}
                       className={inputCls}
+                      aria-label="Service category"
                     >
-                      {JOB_CATEGORIES.map((c) => (
-                        <option key={c.value} value={c.value}>{c.label}</option>
-                      ))}
+                      {categoryOptions.length === 0 && <option value="">No categories yet</option>}
+                      {categoryOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                      <option value={ADD_CATEGORY}>+ Add a category…</option>
                     </select>
+                    {newCategory !== null && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={newCategory}
+                          onChange={(e) => { setNewCategory(e.target.value); setCategoryError(null); }}
+                          // Enter adds a typed name. An empty box ignores it: the
+                          // Enter that picked "+ Add a category…" from the list
+                          // lands here too, and must not answer with an error.
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter") return;
+                            e.preventDefault();
+                            if ((newCategory || "").trim()) void addCategory();
+                          }}
+                          className="min-w-0 flex-1 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+                          placeholder="New category name"
+                          aria-label="New category name"
+                          maxLength={50}
+                        />
+                        <button type="button" onClick={() => void addCategory()} disabled={categoryBusy}
+                                className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 disabled:opacity-50">
+                          {categoryBusy ? "Adding…" : "Add"}
+                        </button>
+                        <button type="button" onClick={() => { setNewCategory(null); setCategoryError(null); }}
+                                className="text-xs text-slate-600 underline hover:text-slate-900">
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                    {categoryError && <p className="mt-1 text-xs text-red-700">{categoryError}</p>}
+                    <p className="mt-1 text-xs text-slate-500">
+                      What a booked job is filed under. Your categories live in Settings, Service Categories.
+                    </p>
                   </Field>
                   <Field label="Duration">
                     <select
@@ -1222,49 +1452,161 @@ function BookingPageEditor({
                   />
                 </Field>
 
-                {/* Which services are on the page (OLIVER pack 1).
-                    services_json has been read by the public booking API since F-48 and
-                    was never writable here, so a page selling more than one thing could
-                    only be built by hand against the API. Each service brings its own
-                    duration and its own price to the booking page. */}
+                {/* WHERE DO THE SERVICES COME FROM (migration 219).
+                    Brandon, 25 Sep 2026 (Test 4.3): "project/job scope, product and
+                    service catalog, then if we need something else like custom
+                    fields. Then this should dynamically adjust the service customers
+                    can pick from." One choice, three lists: the booking site and the
+                    customer portal's Book a visit offer whichever is chosen, and a
+                    job scope or custom entry books at its own length and names the
+                    job it becomes. */}
                 <div className="mt-5 pt-4 border-t border-slate-200">
-                  <div className="flex items-baseline justify-between">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Where do the services come from?
+                  </label>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Where do the services come from?">
+                    {SOURCE_OPTIONS.map((o) => {
+                      const on = serviceSource === o.value;
+                      return (
+                        <button
+                          key={o.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={on}
+                          onClick={() => chooseSource(o.value)}
+                          className={`rounded-md border-2 px-3 py-2 text-left transition ${
+                            on ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:border-slate-300"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <span className={`inline-block h-3.5 w-3.5 flex-shrink-0 rounded-full border-2 ${
+                              on ? "border-amber-500 bg-amber-400" : "border-slate-300 bg-white"
+                            }`} />
+                            {o.label}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-slate-500">{o.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="mt-4 flex items-baseline justify-between">
                     <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
                       Services customers can pick
                     </label>
-                    <span className="text-xs text-slate-500">
-                      {(draft?.services?.length ?? 0)} selected
-                    </span>
+                    <span className="text-xs text-slate-500">{offeredCount} selected</span>
                   </div>
-                  {offerings.length === 0 ? (
-                    <p className="mt-2 text-xs text-slate-500">
-                      No bookable services yet. In Service Catalog, turn on "Self-bookable by customers"
-                      for a service and it will appear here. Until then the page books one generic
-                      appointment at the length above.
-                    </p>
+
+                  {serviceSource === "catalog" ? (
+                    offerings.length === 0 ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        No bookable services yet. In Service Catalog, turn on "Self-bookable by customers"
+                        for a service and it will appear here. Until then the page books one generic
+                        appointment at the length above.
+                      </p>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-slate-500">
+                          Tick the ones customers should be able to choose. Each brings its own length and
+                          price. Leave them all unticked to book one generic appointment.
+                        </p>
+                        <div className="mt-2 grid gap-1 sm:grid-cols-2">
+                          {offerings.map((o) => {
+                            const on = (draft?.services ?? []).includes(o.offering_id);
+                            return (
+                              <label key={o.offering_id} className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2">
+                                <input type="checkbox" checked={on} className="mt-0.5 h-4 w-4"
+                                       onChange={(e) => toggleService(o.offering_id, e.target.checked)} />
+                                <span className="text-sm">
+                                  <span className="font-medium">{o.name}</span>
+                                  {o.default_duration_minutes ? (
+                                    <span className="block text-xs text-slate-500">{o.default_duration_minutes} min</span>
+                                  ) : null}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )
                   ) : (
                     <>
                       <p className="mt-1 text-xs text-slate-500">
-                        Tick the ones customers should be able to choose. Each brings its own length and
-                        price. Leave them all unticked to book one generic appointment.
+                        {serviceSource === "scope"
+                          ? "Kinds of work customers can ask for, each with its length and a short description. Type a name to add one; a row left without a name is not saved."
+                          : "Your own list, for things you don't want to tie to your exact products, like a walkthrough or a project appointment. The price is optional and shows only when \"Show the price on the booking page?\" below allows it."}
                       </p>
-                      <div className="mt-2 grid gap-1 sm:grid-cols-2">
-                        {offerings.map((o) => {
-                          const on = (draft?.services ?? []).includes(o.offering_id);
-                          return (
-                            <label key={o.offering_id} className="flex items-start gap-2 rounded-md border border-slate-200 px-3 py-2">
-                              <input type="checkbox" checked={on} className="mt-0.5 h-4 w-4"
-                                     onChange={(e) => toggleService(o.offering_id, e.target.checked)} />
-                              <span className="text-sm">
-                                <span className="font-medium">{o.name}</span>
-                                {o.default_duration_minutes ? (
-                                  <span className="block text-xs text-slate-500">{o.default_duration_minutes} min</span>
-                                ) : null}
-                              </span>
-                            </label>
-                          );
-                        })}
+                      <div className="mt-2 space-y-2">
+                        {listItems.map((item, rowIndex) => (
+                          <div key={item.key} className="rounded-md border border-slate-200 p-3">
+                            <div className={`grid gap-3 ${serviceSource === "custom" ? "sm:grid-cols-[1fr_110px_120px_auto]" : "sm:grid-cols-[1fr_110px_auto]"}`}>
+                              <div>
+                                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Name</label>
+                                <input
+                                  type="text"
+                                  value={item.name}
+                                  onChange={(e) => updateListItem(item.key, { name: e.target.value })}
+                                  className={inputCls}
+                                  placeholder={bookingTypePlaceholder(rowIndex)}
+                                  maxLength={120}
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Minutes</label>
+                                <input
+                                  type="number"
+                                  min={5}
+                                  max={720}
+                                  step={5}
+                                  value={Number.isFinite(item.minutes) ? item.minutes : ""}
+                                  onChange={(e) => updateListItem(item.key, { minutes: e.target.value === "" ? NaN : Number(e.target.value) })}
+                                  className={inputCls}
+                                  aria-label={`Minutes for ${item.name || "this service"}`}
+                                />
+                              </div>
+                              {serviceSource === "custom" && (
+                                <div>
+                                  <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Price (optional)</label>
+                                  <PriceInput
+                                    cents={item.price_cents}
+                                    onChange={(cents) => updateListItem(item.key, { price_cents: cents })}
+                                    label={`Price for ${item.name || "this service"}`}
+                                  />
+                                </div>
+                              )}
+                              <div className="flex items-end pb-2">
+                                <button type="button" onClick={() => removeListItem(item.key)}
+                                        className="text-xs text-red-700 underline hover:text-red-900">
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                            <div className="mt-2">
+                              <label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                                Description (shown under the name)
+                              </label>
+                              <textarea
+                                rows={2}
+                                value={item.description ?? ""}
+                                onChange={(e) => updateListItem(item.key, { description: e.target.value })}
+                                className={inputCls}
+                                placeholder="Describe the type of booking here"
+                                maxLength={500}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
+                      {listItems.length === 0 && (
+                        <p className="mt-2 text-xs text-slate-500">
+                          Nothing on the list yet. Until you add one, the page books one generic appointment
+                          at the length above.
+                        </p>
+                      )}
+                      <button type="button" onClick={() => addListItem(serviceSource === "scope" ? "scope" : "custom")}
+                              className="mt-3 rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium hover:bg-slate-50">
+                        {serviceSource === "scope" ? "+ Add a job scope" : "+ Add a service"}
+                      </button>
                     </>
                   )}
                 </div>
@@ -1615,6 +1957,7 @@ function BookingPageEditor({
                 >
                   <div className="rounded-md overflow-hidden border-2 border-slate-200 bg-white">
                     <iframe
+                      key={previewNonce}
                       src={bookingUrl}
                       title="Booking preview"
                       className="w-full"
@@ -1726,6 +2069,31 @@ function CopyButton({
   );
 }
 
+/** A dollar price typed as text, handed back as whole cents (null = no price).
+ *  Keeps its own text so "12." stays on screen while the owner is typing. */
+function PriceInput({ cents, onChange, label }: { cents: number | null; onChange: (cents: number | null) => void; label: string }) {
+  const [text, setText] = useState(cents == null ? "" : String(cents / 100));
+  return (
+    <div className="mt-1 flex rounded-md border border-slate-300 overflow-hidden focus-within:ring-1 focus-within:ring-amber-400">
+      <span className="flex items-center px-2 bg-slate-50 border-r border-slate-300 text-sm text-slate-600">$</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={text}
+        aria-label={label}
+        placeholder="None"
+        onChange={(e) => {
+          const t = e.target.value.replace(/[^0-9.]/g, "");
+          setText(t);
+          const n = Number.parseFloat(t);
+          onChange(t.trim() === "" || !Number.isFinite(n) ? null : Math.round(n * 100));
+        }}
+        className="w-full min-w-0 px-2 py-2 text-sm focus:outline-none"
+      />
+    </div>
+  );
+}
+
 /** Read-only code to look at before copying. Selecting it selects all of it. */
 function CodeBox({ label, value }: { label: string; value: string }) {
   return (
@@ -1769,6 +2137,9 @@ function defaultBookingPage(): BookingPage {
     collect_service_address: true,
     form_fields: [],
     services: [],
+    // Today's behaviour until the owner chooses otherwise: the catalog picker.
+    service_source: "catalog",
+    custom_services: [],
     confirmation_message: null,
     brand_color: null,
     logo_url: null,

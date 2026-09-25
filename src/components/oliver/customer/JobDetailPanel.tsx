@@ -17,6 +17,8 @@ import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../Catal
 interface JobDetail {
   id: string;
   title?: string;
+  /** The service category the job is filed under (oliver.job.job_type). */
+  jobType?: string | null;
   customerName?: string;
   jobNumber?: string;
   customerEmail?: string;
@@ -631,6 +633,7 @@ function DetailsTab({
         <InfoCell label="Status" value={job.status} />
         <InfoCell label="Scheduled start" value={job.scheduledDate ? new Date(job.scheduledDate).toLocaleString() : "—"} />
         <InfoCell label="Scheduled end" value={job.scheduledEnd ? new Date(job.scheduledEnd).toLocaleString() : "—"} />
+        <InfoCell label="Service category" value={job.jobType || "—"} />
       </div>
       {job.description && (
         <div style={{ marginTop: 12 }}>

@@ -951,6 +951,8 @@ function KanbanCard({
 interface JobDetail {
   id: string;
   title?: string;
+  /** The service category the job is filed under (oliver.job.job_type). */
+  jobType?: string | null;
   customerName?: string;
   customerEmail?: string;
   status: string;
@@ -1115,6 +1117,7 @@ function JobDetailDrawer({ jobId, onClose, onChanged, api }: {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <StatusBadge status={job.status} />
         {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
+        {job.jobType && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Service category: <strong>{job.jobType}</strong></span>}
         {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Quote/invoice total: <strong>{fmtMoney(job.total)}</strong></span>}
       </div>
 
