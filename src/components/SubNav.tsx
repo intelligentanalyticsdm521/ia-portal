@@ -152,6 +152,9 @@ const OLIVER_NAV: SubNavConfig = {
         // Dispatch was built (OliverDispatchPage, 249 lines) and had no nav
         // entry at all, so worker assignment was unreachable from the nav.
         { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch", minTier: "standard" },
+        // 2026-09-25 (D-BK9): the Reschedule Queue existed but had no way in
+        // except top-bar search; a customer's move request sat unseen.
+        { key: "oliver_reschedule_requests", label: "Reschedule Queue", route: "/app/services/oliver_reschedule_requests", minTier: "standard" },
         { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive", minTier: "standard" },
       ],
     },
