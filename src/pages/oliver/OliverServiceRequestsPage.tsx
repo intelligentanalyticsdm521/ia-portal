@@ -36,7 +36,7 @@ interface RequestDetail extends ServiceRequest {
 // request in service requests anymore." Confirm turns a booking request into a
 // job and the row left the list with nothing naming the job. The page now opens
 // on Open (unchanged) with Confirmed / Declined / Cancelled beside it, read from
-// GET /booking/decided (last 90 days, booking requests AND inquiry jobs), and a
+// GET /booking/decided (last 30 days, booking requests AND inquiry jobs), and a
 // confirmed row links to the job it became.
 type RequestView = "open" | "confirmed" | "declined" | "cancelled";
 
@@ -113,7 +113,7 @@ export function OliverServiceRequestsPage() {
       //   1. /jobs?status=inquiry → traditional service requests from portal/ARION/Zapier/etc.
       //   2. /booking/pending → Standard-tier booking submissions awaiting tenant confirmation.
       // Both flow into the same inbox so staff has one place to triage incoming demand.
-      // 3. /booking/decided → what left the inbox in the last 90 days, by outcome.
+      // 3. /booking/decided → what left the inbox in the last 30 days, by outcome.
       //    Its own failure flag: a problem there never empties the Open list.
       const [jobs, bookings, decidedRes] = await Promise.all([
         get<ServiceRequest[]>(withLocation("/jobs?status=inquiry", loc.selectedLocationId)).catch(() => [] as ServiceRequest[]),
@@ -357,9 +357,9 @@ export function OliverServiceRequestsPage() {
   ];
 
   const decidedEmpty: Record<Exclude<RequestView, "open">, string> = {
-    confirmed: "No requests were confirmed in the last 90 days.",
-    declined: "No requests were declined in the last 90 days.",
-    cancelled: "No confirmed requests were cancelled in the last 90 days.",
+    confirmed: "No requests were confirmed in the last 30 days.",
+    declined: "No requests were declined in the last 30 days.",
+    cancelled: "No confirmed requests were cancelled in the last 30 days.",
   };
 
   return (
@@ -480,7 +480,7 @@ export function OliverServiceRequestsPage() {
         ) : (
           <>
             <div style={{ fontSize: 11, color: "#5A7A8A", marginBottom: 8 }}>
-              Decided in the last 90 days, newest first.
+              Decided in the last 30 days, newest first.
             </div>
             <DataTable
               key={view}
