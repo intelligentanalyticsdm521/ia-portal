@@ -376,7 +376,11 @@ export function CustomerModal({
 
   // Title + subtitle for the drawer header. While we're resolving job→customer
   // these stay placeholder so the modal still opens.
-  const title = detail ? contactName(detail) : (resolveErr ? "Couldn't load" : "Loading customer…");
+  // 2026-09-25 (Brandon, walk 3.5): a job whose customer record is gone used to
+  // leave this drawer on "Loading customer…" with a 404 line and no job. The job
+  // is still a job; it opens, with a banner saying the customer is missing.
+  const customerMissing = !!(loadErr || resolveErr) && !detail && !!focusedJobId;
+  const title = detail ? contactName(detail) : (customerMissing ? "Customer record missing" : (resolveErr ? "Couldn't load" : "Loading customer…"));
   const subtitle = detail
     ? [
         detail.email,
@@ -425,7 +429,14 @@ export function CustomerModal({
         </div>
       )}
 
-      {!detail || !activity ? (
+      {customerMissing ? (
+        <>
+          <div style={{ background: "#FEF3C7", border: "1px solid #FCD34D", color: "#78350F", borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 14 }}>
+            This job's customer record is missing, so the customer's other work cannot be shown. The job itself is below.
+          </div>
+          <JobDetailPanel jobId={focusedJobId as string} api={api} onChanged={() => { onChanged?.(); }} />
+        </>
+      ) : !detail || !activity ? (
         <div style={{ color: "#5A7A8A", padding: 20 }}>Loading customer…</div>
       ) : (
         <>
