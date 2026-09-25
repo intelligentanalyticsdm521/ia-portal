@@ -132,7 +132,9 @@ interface Activity {
 }
 
 function contactName(c: ContactDetail): string {
-  return c.company_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "—";
+  // display_name carries the customer record's name (reload() sets it from
+  // rec.name and leaves first/last null) — without it the header read the email.
+  return c.company_name || c.display_name || `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || c.email || "—";
 }
 function fmtMoney(n?: number | null) {
   return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -300,8 +302,15 @@ export function CustomerModal({
     let live = true;
     api.get<{ data?: { kind?: "company" | "person"; lumen_id?: number } }>(`/customers/oliver/${customerId}`)
       .then((r) => {
-        const d = (r as { data?: { kind?: "company" | "person"; lumen_id?: number } })?.data;
-        if (live && d?.kind && d?.lumen_id != null) setSubject({ kind: d.kind, id: String(d.lumen_id) });
+        // useOliverApi already strips the {data} envelope (lib/oliverApi.ts), so
+        // the body IS the record; accept the wrapped shape too, like the /jobs
+        // read above. Reading only `.data` left every job-card click on
+        // "Loading customer…" forever (pane test 25 Sep).
+        type Resolved = { kind?: "company" | "person"; lumen_id?: number };
+        const d = ((r as { data?: Resolved })?.data ?? r) as Resolved | undefined;
+        if (!live) return;
+        if (d?.kind && d?.lumen_id != null) setSubject({ kind: d.kind, id: String(d.lumen_id) });
+        else setLoadErr("Could not resolve this customer.");
       })
       .catch((e) => {
         // Saying so beats an empty page: a customer OLIVER cannot resolve is a
