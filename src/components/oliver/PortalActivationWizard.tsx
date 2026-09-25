@@ -5,12 +5,12 @@
 // OliverPortalsHubPage when the user clicks "Edit portal" and the portal
 // is_published === false. Once finished, the tenant has:
 //   1. Their subdomain slug confirmed (prefilled from business name)
-//   2. Design configured (logo, colors, header/footer)
+//   2. Look explained (customer portal: style, brand, buttons — the Look tab)
 //   3. Signup form fields chosen
 //   4. Workflow rules set
 //   5. Portal marked published (subdomain bound + visible to the world)
 //
-// Re-uses the existing tab components (DesignTab / SignupFormBuilder /
+// Re-uses the existing tab components (Look / SignupFormBuilder /
 // DomainTab / WorkflowTab) so there's a single source of truth for the
 // editors. The wizard just sequences them with Next/Back nav + progress
 // bar + a final "Publish" step.
@@ -47,7 +47,7 @@ function slugify(s: string): string {
 
 const STEPS: { key: WizStep; label: string; icon: typeof Brush }[] = [
   { key: "name",     label: "Name",     icon: Globe },
-  { key: "design",   label: "Design",   icon: Brush },
+  { key: "design",   label: "Look",     icon: Brush },
   { key: "signup",   label: "Signup",   icon: FileText },
   { key: "workflow", label: "Workflow", icon: Settings },
   { key: "publish",  label: "Publish",  icon: Rocket },
@@ -164,22 +164,26 @@ export function PortalActivationWizard({
             />
           )}
 
-          {step === "design" && (
+          {step === "design" && (portalKind === "customer" ? (
             <div className="text-center text-xs text-slate-600">
-              <p className="mb-3">Branding, colors, logo, and copy live on the <strong>Design</strong> tab of the portal editor.</p>
-              <p className="text-[11px] text-slate-500">After publishing, you can re-edit the design any time without re-launching this wizard.</p>
+              <p className="mb-3">How your portal looks, and what your customers can do in it, is chosen on the <strong>Look</strong> tab of the portal editor.</p>
+              <p className="text-[11px] text-slate-500">After publishing, you can change the look any time without re-launching this wizard.</p>
               <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-4 text-left text-[11px]">
-                <strong>What you'll set:</strong>
+                <strong>What you'll choose:</strong>
                 <ul className="list-disc list-inside mt-1 space-y-0.5">
-                  <li>Primary + accent colors</li>
-                  <li>Logo URL</li>
-                  <li>Button corner radius + font</li>
-                  <li>Header / footer copy</li>
-                  <li>Custom CSS (Pro+ only)</li>
+                  <li>One of five styles: Fresh, Friendly, Sturdy, Grounded or Polished</li>
+                  <li>Your own brand colours and fonts on top (Standard and above)</li>
+                  <li>Which buttons and functions your customers get</li>
+                  <li>All of it in a live phone preview before you save</li>
                 </ul>
               </div>
             </div>
-          )}
+          ) : (
+            <div className="text-center text-xs text-slate-600">
+              <p className="mb-3">The crew app keeps its standard look, so there is nothing to choose here.</p>
+              <p className="text-[11px] text-slate-500">Your customer portal's look is chosen on its own <strong>Look</strong> tab.</p>
+            </div>
+          ))}
 
           {step === "signup" && (
             <div className="text-center text-xs text-slate-600">

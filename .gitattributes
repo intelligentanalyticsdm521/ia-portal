@@ -12,3 +12,7 @@ test/fixtures/website-section-kinds.json text eol=lf
 # provably the same renderer while the two files are the same bytes.
 test/fixtures/email-render-cases.json text eol=lf
 test/fixtures/landing-render-cases.json text eol=lf
+# src/pages/oliver/look/presets.ts is the Portal's copy of the customer portal's
+# src/look/presets.ts (CUSTOMER_PORTAL_LOOK_SCOPE_2026-09-25 §5.1); a test in each
+# repo asserts the two are byte-identical. Same pin, same reason as above.
+src/pages/oliver/look/presets.ts text eol=lf
