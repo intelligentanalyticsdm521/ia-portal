@@ -114,7 +114,10 @@ export function StellaImportsPage() {
       <DbError error={error} />
       <StellaTabs
         tabs={[{ key: "upload", label: "Upload" }, { key: "history", label: "Import history" }]}
-        active={tab} onChange={setTab}
+        // 2026-09-25 (register stella-db-manager-import-history-does-not-refresh-
+        // until-reload): the history tab re-reads the batches every time it is
+        // opened, so a batch made or decided on the Upload tab is there at once.
+        active={tab} onChange={(k) => { setTab(k); if (k === "history") loadHistory(); }}
       />
 
       {tab === "upload" ? (
