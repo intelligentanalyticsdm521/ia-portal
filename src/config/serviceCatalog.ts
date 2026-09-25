@@ -240,8 +240,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_billing_overview', displayName: 'Billing Overview', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_billing_overview', description: 'Stripe-style billing dashboard: gross volume, outstanding, MRR, and recent payments.' },
   { key: 'oliver_usage', displayName: 'Plan & Pricing', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_usage', description: 'OLIVER tier comparison + live plan total. See your current seats/jobs usage and switch tiers.' },
   { key: 'oliver_fees', displayName: 'Fees', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_fees', description: 'Full processing-fee breakdown by tier — Stripe portion, platform portion, and per-transaction caps.' },
-  { key: 'oliver_client_experience', displayName: 'Client Experience', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_client_experience', description: 'Client Experience add-on — Essentials / Growth / Authority. White-label design editor, automations, retention tools.' },
-  { key: 'oliver_portal_designer', displayName: 'Portal Designer', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_designer', description: 'White Label Design Editor — control portal buttons, labels, fonts, header/footer, and custom CSS (Client Experience add-on).' },
+  { key: 'oliver_client_experience', displayName: 'Client Experience', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_client_experience', description: 'Client Experience add-on — Essentials / Growth / Authority. Automations and retention tools.' },
   // LOCKED 2026-05-26 r2 — Workflow & Automations is the new nav home for
   // the Automations engine (Pro+ rule library + tenant message customization).
   // Replaces the deprecated Client Experience add-on stub; routes to the
@@ -250,7 +249,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_addons', displayName: 'Add-ons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_addons', description: 'Stack-on subscriptions: SMS Essentials/Growth/Authority for operational notifications. Future: per-tenant native mobile apps.' },
   { key: 'oliver_portal_domains', displayName: 'Portals & Domains', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_domains', description: 'Customer + crew portal URLs. Default subdomains (xxx.customer.ia-dm.com) free; bring your own domain on Pro+.' },
   // F-114 — Unified Customer & Crew portals hub (replaces 3 scattered surfaces).
-  { key: 'oliver_portals_hub', displayName: 'Customer & Crew Portals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portals_hub', description: 'Single hub to manage both portals — design, signup form, domain binding, and workflow rules.' },
+  { key: 'oliver_portals_hub', displayName: 'Customer & Crew Portals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portals_hub', description: 'Single hub to manage both portals — the customer portal look, signup form, domain binding, and workflow rules.' },
   // F-70 + F-72 + F-63 — Workflow Settings (reschedule policy, post-booking
   // actions, customer signup form config).
   { key: 'oliver_workflow_settings', displayName: 'Workflow Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_settings', description: 'Reschedule policy + after-booking actions (auto-invoice, confirmation email, auto-assign) + the customer signup form library.' },

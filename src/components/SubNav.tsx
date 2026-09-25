@@ -1186,8 +1186,8 @@ function getDefaultSection(path: string): string | null {
   // it must NOT resolve to the Billing section any more or the wrong nav group
   // opens. oliver_proposals is Billing.
   if (path.includes("/oliver_quotes") || path.includes("/oliver_proposals") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
-  // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
-  if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
+  // F-114 — Portals hub + legacy Portals & Domains live in the W&A group. (The Portal Designer page was deleted 2026-09-25; its job is the hub's Look tab.)
+  if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
   if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_platform") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";
