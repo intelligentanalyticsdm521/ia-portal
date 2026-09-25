@@ -9,6 +9,7 @@
  * CustomerModal can render them at the bottom.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ScheduleJobModal } from "../ScheduleJobModal";
 import { Button, StatusBadge } from "../ui";
 import { jobColor } from "../../../oliver/jobStatusColors";
@@ -333,6 +334,7 @@ type JobTab = "details" | "lines" | "workers" | "activity" | "proof";
 function JobLayout(p: JobLayoutProps) {
   const [tab, setTab] = useState<JobTab>("details");
   const { job, jobId } = p;
+  const navigate = useNavigate();
 
   return (
     <div>
@@ -520,6 +522,10 @@ function JobLayout(p: JobLayoutProps) {
                   {p.scheduledDate ? "Reschedule" : "Schedule job"}
                 </Button>
                 <Button variant="secondary" onClick={p.startEditDetails}>Edit details</Button>
+                {/* 2026-09-25: the only "+ Create invoice" from a job lived in a
+                    drawer nothing rendered any more. The Invoices page already
+                    takes ?from_job and pre-seeds the customer and the job. */}
+                <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${encodeURIComponent(jobId)}`)}>+ Create invoice</Button>
                 <div style={{ fontSize: 10, color: "#94A3B8", textAlign: "center", marginTop: 4 }}>
                   Status moves via the pill above ↑
                 </div>
