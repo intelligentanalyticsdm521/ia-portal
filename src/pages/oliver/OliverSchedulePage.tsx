@@ -67,6 +67,11 @@ export function OliverSchedulePage() {
   }, [navigate]);
   const [events, setEvents] = useState<UnifiedEvent[]>([]);
   const [loading, setLoading] = useState(true);
+  // The page-wide "Loading…" is for the first load only: OliverPageWrapper
+  // swaps the whole page for it, so a refetch after a drop or a change in the
+  // job panel unmounted the calendar — it jumped back to this month and the
+  // open day closed. Later refetches update the tiles in place.
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<unknown>(null);
   // One counter drives both panes: a drop reloads the calendar AND the rail, so
   // the job leaves the queue at the same moment it appears on a day.
@@ -105,6 +110,7 @@ export function OliverSchedulePage() {
       setError(err);
     } finally {
       setLoading(false);
+      setLoadedOnce(true);
     }
   }, [get, ready, windowStart, windowEnd, loc.selectedLocationId]);
 
@@ -170,7 +176,7 @@ export function OliverSchedulePage() {
   const jobCount = events.filter((e) => e.kind === "job").length;
 
   return (
-    <OliverPageWrapper title="Schedule" subtitle="Jobs + booking-page reservations" error={error} loading={loading}>
+    <OliverPageWrapper title="Schedule" subtitle="Jobs + booking-page reservations" error={error} loading={loading && !loadedOnce}>
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_booked_ahead', label: 'Booked ahead' },
         { id: 'oliver_job_reliability', label: 'Ran clean vs not' },

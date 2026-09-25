@@ -156,6 +156,12 @@ export function OliverJobBoardPage() {
   // Bumped on every board load, so the Calendar view refetches its week when
   // a job is changed from the panel (the same moment List and Kanban redraw).
   const [boardVersion, setBoardVersion] = useState(0);
+  // The page-wide "Loading…" is for the FIRST load only. OliverPageWrapper
+  // swaps the whole page for it, so showing it on every refetch unmounted the
+  // open job panel and the Calendar view — a worker assigned from the panel
+  // threw the week back to today (W-OB-05 follow-up). Later loads swap the
+  // rows in place.
+  const [loadedOnce, setLoadedOnce] = useState(false);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -164,7 +170,7 @@ export function OliverJobBoardPage() {
       setJobs(data || []);
       setBoardVersion((v) => v + 1);
     } catch (e) { setError(e); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setLoadedOnce(true); }
   }, [get, loc.selectedLocationId]);
 
   useEffect(() => { if (ready) reload(); }, [ready, reload]);
@@ -321,7 +327,7 @@ export function OliverJobBoardPage() {
   ];
 
   return (
-    <OliverPageWrapper title="Job Board" subtitle="Active and recent jobs" error={error} loading={loading}>
+    <OliverPageWrapper title="Job Board" subtitle="Active and recent jobs" error={error} loading={loading && !loadedOnce}>
       <ReportBar product="oliver" detail={insightsPayload?.detail} reports={[
         { id: 'oliver_job_status', label: 'Jobs by status' },
         { id: 'oliver_jobs_by_service', label: 'Jobs by service' },

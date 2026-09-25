@@ -144,11 +144,16 @@ export function JobWeekCalendar({ locationId, reloadKey, onOpenJob, onOpenReques
 
   const todayKey = ymd(new Date());
   const isThisWeek = weekStart.getTime() === mondayOf(new Date()).getTime();
+  // "Mon 21 – Sun 27 Sep 2026" / "Mon 28 Sep – Sun 4 Oct 2026". Built by hand:
+  // toLocaleDateString with weekday + day gives "21 Mon" in en-US.
   const rangeLabel = (() => {
     const last = addDays(weekStart, DAYS - 1);
-    const sameMonth = weekStart.getMonth() === last.getMonth();
-    const a = weekStart.toLocaleDateString(undefined, { weekday: "short", day: "numeric", ...(sameMonth ? {} : { month: "short" }) });
-    const b = last.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+    const wd = (d: Date) => d.toLocaleDateString(undefined, { weekday: "short" });
+    const mon = (d: Date) => d.toLocaleDateString(undefined, { month: "short" });
+    const sameYear = weekStart.getFullYear() === last.getFullYear();
+    const sameMonth = sameYear && weekStart.getMonth() === last.getMonth();
+    const a = `${wd(weekStart)} ${weekStart.getDate()}${sameMonth ? "" : ` ${mon(weekStart)}`}${sameYear ? "" : ` ${weekStart.getFullYear()}`}`;
+    const b = `${wd(last)} ${last.getDate()} ${mon(last)} ${last.getFullYear()}`;
     return `${a} – ${b}`;
   })();
   const totalH = (endHour - startHour) * HOUR_H;
