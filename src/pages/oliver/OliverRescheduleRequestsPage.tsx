@@ -12,6 +12,8 @@ interface RescheduleRequest {
   job_title: string;
   job_scheduled_at: string | null;
   requested_by: string;
+  /** The customer's (or worker's) name, from the API. */
+  requested_by_name?: string | null;
   original_at: string;
   proposed_at: string;
   reason: string | null;
@@ -31,6 +33,19 @@ const FILTER_PILLS = [
   { key: "approved", label: "Approved" },
   { key: "declined", label: "Declined" },
 ];
+
+/** What approve / decline answer: whether the customer's email was queued. */
+interface DecisionResult {
+  ok?: boolean;
+  schedule_notice?: { sent?: boolean; reason?: string } | null;
+}
+
+/** Say whether the customer was actually emailed; never assume it. */
+function emailedLine(res: DecisionResult | null | undefined): string {
+  const n = res?.schedule_notice;
+  if (n?.sent) return " and the customer has been emailed.";
+  return `. No email went to the customer${n?.reason ? ` (${n.reason.replace(/_/g, " ")})` : ""}.`;
+}
 
 function fmtDateTime(d?: string | null) {
   if (!d) return "—";
@@ -56,6 +71,9 @@ export function OliverRescheduleRequestsPage() {
   const [search, setSearch] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
+  // The row whose Decline is waiting for "Yes, decline". Inline rather than a
+  // browser confirm(): the customer is told, so it deserves a real second step.
+  const [confirmDecline, setConfirmDecline] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     setLoading(true); setError(null);
@@ -87,15 +105,16 @@ export function OliverRescheduleRequestsPage() {
     return requests.filter((r) =>
       (r.job_title || "").toLowerCase().includes(q) ||
       (r.requested_by || "").toLowerCase().includes(q) ||
+      (r.requested_by_name || "").toLowerCase().includes(q) ||
       (r.reason || "").toLowerCase().includes(q));
   }, [requests, search]);
 
   async function approve(r: RescheduleRequest) {
     setBusy(r.request_id);
     try {
-      await post(`/reschedule-requests/${r.request_id}/approve`);
-      setFlash(`Approved — "${r.job_title}" rescheduled.`);
-      setTimeout(() => setFlash(null), 3000);
+      const res = await post<DecisionResult>(`/reschedule-requests/${r.request_id}/approve`);
+      setFlash(`Approved. "${r.job_title}" is moved${emailedLine(res)}`);
+      setTimeout(() => setFlash(null), 8000);
       reload();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Approve failed");
@@ -103,12 +122,12 @@ export function OliverRescheduleRequestsPage() {
   }
 
   async function decline(r: RescheduleRequest) {
-    if (!confirm(`Decline reschedule request for "${r.job_title}"?`)) return;
+    setConfirmDecline(null);
     setBusy(r.request_id);
     try {
-      await post(`/reschedule-requests/${r.request_id}/decline`);
-      setFlash(`Declined.`);
-      setTimeout(() => setFlash(null), 3000);
+      const res = await post<DecisionResult>(`/reschedule-requests/${r.request_id}/decline`);
+      setFlash(`Declined. "${r.job_title}" keeps its time${emailedLine(res)}`);
+      setTimeout(() => setFlash(null), 8000);
       reload();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Decline failed");
@@ -127,7 +146,12 @@ export function OliverRescheduleRequestsPage() {
     },
     {
       key: "requested_by", header: "Requested by",
-      render: (r) => <span style={{ fontSize: 11, color: "#0B1C24" }}>{r.requested_by}</span>,
+      render: (r) => (
+        <div>
+          <div style={{ fontSize: 11, color: "#0B1C24", fontWeight: 600 }}>{r.requested_by_name || r.requested_by}</div>
+          {r.requested_by_name && <div style={{ fontSize: 10, color: "#5A7A8A" }}>{r.requested_by}</div>}
+        </div>
+      ),
     },
     {
       key: "original", header: "Original time",
@@ -161,12 +185,20 @@ export function OliverRescheduleRequestsPage() {
     },
     {
       key: "actions", header: "", align: "right",
-      render: (r) => r.status === "pending" ? (
+      render: (r) => r.status !== "pending" ? null : confirmDecline === r.request_id ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
+          <span style={{ fontSize: 11, color: "#991B1B", whiteSpace: "nowrap" }}>Decline and keep the original time?</span>
+          <div style={{ display: "flex", gap: 6 }}>
+            <Button variant="secondary" size="sm" onClick={() => decline(r)} disabled={busy === r.request_id}>Yes, decline</Button>
+            <Button variant="ghost" size="sm" onClick={() => setConfirmDecline(null)} disabled={busy === r.request_id}>Keep</Button>
+          </div>
+        </div>
+      ) : (
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
           <Button variant="secondary" size="sm" onClick={() => approve(r)} disabled={busy === r.request_id}><CheckCircle2 size={11} color="#059669" /> Approve</Button>
-          <Button variant="ghost" size="sm" onClick={() => decline(r)} disabled={busy === r.request_id}><XCircle size={11} color="#dc2626" /></Button>
+          <Button variant="ghost" size="sm" onClick={() => setConfirmDecline(r.request_id)} disabled={busy === r.request_id} aria-label="Decline" title="Decline"><XCircle size={11} color="#dc2626" /> Decline</Button>
         </div>
-      ) : null,
+      ),
     },
   ];
 

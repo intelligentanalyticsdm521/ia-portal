@@ -38,6 +38,10 @@ interface OwnerAlerts {
 const KIND_LABELS: Record<string, string> = {
   "booking.requested": "Someone requests a booking",
   "booking.confirmed": "A booking is confirmed",
+  // 2026-09-25 — the API has sent these three; the card printed the raw key.
+  "booking.cancelled": "A customer cancels a booking",
+  "booking.rescheduled": "A customer moves a booking",
+  "reschedule.requested": "A customer asks to move a visit",
   "quote.accepted": "A quote is accepted",
   "invoice.paid": "An invoice is paid",
   "support_ticket.created": "A customer opens a support ticket",
