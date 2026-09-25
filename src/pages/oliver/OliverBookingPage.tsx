@@ -1465,12 +1465,23 @@ function BookingPageEditor({
                 {/* ONE HOME FOR THE HOURS. Inheriting is the default; editing a day below
                     is the deliberate act of overriding. */}
                 {(draft?.hours_source ?? "inherit") === "inherit" ? (
-                  <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
-                    These are your opening hours from <a href="/app/settings" className="underline">your business profile</a> —
-                    change them there and this page follows. Editing a day below makes this page keep its own,
-                    narrower hours instead.
-                    {isNew && " A new page shows them here once it is published."}
-                  </div>
+                  bookingPage?.effective_hours_source === "default" ? (
+                    // The API fell back to the platform's standard week because the
+                    // business profile has no hours. Saying "from your business
+                    // profile" here pointed the owner at a page with nothing on it.
+                    <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                      Your <a href="/app/settings" className="underline">business profile</a> has no opening hours yet, so
+                      this page uses the standard week shown below. Add your hours there and this page follows.
+                      Editing a day below makes this page keep its own hours instead.
+                    </div>
+                  ) : (
+                    <div className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                      These are your opening hours from <a href="/app/settings" className="underline">your business profile</a> —
+                      change them there and this page follows. Editing a day below makes this page keep its own,
+                      narrower hours instead.
+                      {isNew && " A new page shows them here once it is published."}
+                    </div>
+                  )
                 ) : (
                   <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                     <span>
