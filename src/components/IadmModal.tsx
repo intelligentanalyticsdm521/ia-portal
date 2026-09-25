@@ -173,7 +173,7 @@ export function IadmModal({
             </div>
             <h2 className="mt-0.5 truncate text-base font-semibold">{title}</h2>
             {subtitle && (
-              <div className="mt-0.5 truncate text-[11px] text-white/60">{subtitle}</div>
+              <div className={typeof subtitle === "string" ? "mt-0.5 truncate text-[11px] text-white/60" : "relative z-30 mt-0.5 text-[11px] text-white/60"}>{subtitle}</div>
             )}
           </div>
           <div className="flex items-center gap-2 flex-shrink-0">
