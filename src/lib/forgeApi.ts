@@ -41,6 +41,20 @@ export interface ListResult<T = Record<string, unknown>> {
   data: T[];
 }
 
+/**
+ * The same rows the list route returns, with no page in them. A separate route
+ * rather than `pageSize=25000` on the list: the list is what a screen renders
+ * and is capped for that reason, and an export that worked only because the cap
+ * happened to be loose would break the day the cap moved.
+ */
+export interface ExportResult<T = Record<string, unknown>> {
+  entity: string;
+  total: number;
+  /** The row ceiling was hit — the file is a subset and must say so. */
+  truncated: boolean;
+  data: T[];
+}
+
 export interface DashboardStats {
   clients: number;
   active_assistance: number;
@@ -163,6 +177,18 @@ export const listEntity = <T = Record<string, unknown>>(
   entity: EntityKey,
   query: Record<string, string | number | boolean | undefined> = {}
 ) => request<ListResult<T>>(p, `/forge/${entity}${qs(query)}`);
+
+/**
+ * Every row a set of list parameters matches, for a file. Takes the SAME query
+ * as listEntity — search, sort, filters, includeArchived — minus the paging, so
+ * the file holds the list the person is looking at rather than a second,
+ * differently-filtered list that happens to share a name.
+ */
+export const exportEntity = <T = Record<string, unknown>>(
+  p: ForgeParams,
+  entity: EntityKey,
+  query: Record<string, string | number | boolean | undefined> = {}
+) => request<ExportResult<T>>(p, `/forge/${entity}/export${qs(query)}`);
 
 export const getEntityRow = <T = Record<string, unknown>>(p: ForgeParams, entity: EntityKey, id: string | number) =>
   request<{ data: T }>(p, `/forge/${entity}/${id}`).then((r) => r.data);

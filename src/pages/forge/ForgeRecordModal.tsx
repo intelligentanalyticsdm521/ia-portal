@@ -30,6 +30,8 @@ import {
 } from '../../lib/forgeApi';
 import { Button, EmptyState, Pill, statusTone } from './ForgeLayout';
 import { FORGE_ENTITIES, cellValue, humanizeValue, shortDate } from './forgeConfig';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { EntityForm } from './ForgeEntityPage';
 import { describeError, useForgeApi, useForgeLookups } from './useForge';
 
@@ -174,6 +176,25 @@ export function ForgeRecordModal({
 
   const title = row ? String(row[cfg.primaryField] ?? `${cfg.singular} ${recordId}`) : cfg.singular;
 
+  /* ONE record's children as a file — this client's services, this funder's
+     applications. The same mechanism as the list screens, with two differences
+     that come from where it sits: the rows are already in memory (the effect
+     above pages them to completion, so there is nothing to fetch), and the
+     foreign key that got us here is dropped because it holds the same parent on
+     every row. The table shows six columns for width; the file carries every
+     field the child entity declares, because a spreadsheet has no right edge. */
+  const exportChild = useCallback(async (def: { entity: EntityKey; foreignKey: string; title: string }) => {
+    const rcfg = FORGE_ENTITIES[def.entity];
+    downloadCsv(
+      csvFilename(`${title} ${def.title}`),
+      toCsvText(
+        rcfg.fields.filter((f) => f.key !== def.foreignKey),
+        related[def.entity] ?? [],
+        (r, f) => csvBlankIfDash(cellValue(r, f))
+      )
+    );
+  }, [related, title]);
+
   const tabs = [
     { key: 'overview', label: 'Overview' },
     ...relatedDefs.map((d) => ({ key: d.entity, label: `${d.title} (${(related[d.entity] ?? []).length})` })),
@@ -308,7 +329,13 @@ export function ForgeRecordModal({
                 const cols = rcfg.fields.filter((f) => f.inList && f.key !== def.foreignKey).slice(0, 6);
                 return (
                   <div key={def.entity}>
-                    <div className="mb-3 flex justify-end">
+                    <div className="mb-3 flex justify-end gap-2">
+                      <ForgeExportButton
+                        subject={`these ${def.title.toLowerCase()}`}
+                        disabled={rows.length === 0}
+                        onExport={() => exportChild(def)}
+                        onError={setError}
+                      />
                       <Button onClick={() => setCreating({ entity: def.entity, initial: { [def.foreignKey]: recordId } })}>
                         New {rcfg.singular}
                       </Button>
