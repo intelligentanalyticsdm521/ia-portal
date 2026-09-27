@@ -10,6 +10,8 @@ import {
   listReports, runReport, type ReportResult, type ReportSummary,
 } from '../../lib/forgeApi';
 import { ForgeLayout, Card, Button, EmptyState, Pill } from './ForgeLayout';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { useForgeApi, describeError } from './useForge';
 import { moneyExact, shortDate } from './forgeConfig';
 
@@ -39,14 +41,21 @@ const humanize = (s: string) =>
     .replace(/\bFy\b/g, 'FY').replace(/\bRoi\b/g, 'ROI').replace(/\bIrs\b/g, 'IRS')
     .replace(/\bLybunt\b/g, 'LYBUNT').replace(/\bSybunt\b/g, 'SYBUNT');
 
-function renderCell(column: string, value: unknown) {
-  if (value === null || value === undefined || value === '') return <span className="text-slate-400">—</span>;
+/** The three columns whose values are a state, drawn as a pill rather than text. */
+const PILL_COLUMNS = new Set(['lapse_status', 'pipeline_stage', 'restriction_class']);
+
+/**
+ * The TEXT of a report cell. The table draws it and the CSV writes it, so the
+ * decision is made once here — otherwise the two drift and a board member's
+ * spreadsheet says `with_donor_restriction` where the screen said "With donor
+ * restriction", or 2027 where the screen said FY2027.
+ */
+function cellText(column: string, value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
   if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (column === 'lapse_status' || column === 'pipeline_stage' || column === 'restriction_class') {
-    const tone = value === 'current' || value === 'received' ? 'green'
-      : value === 'LYBUNT' || value === 'awaiting_decision' || value === 'awarded_not_received' ? 'amber'
-        : value === 'SYBUNT' ? 'red' : 'slate';
-    return <Pill tone={tone}>{value === 'LYBUNT' || value === 'SYBUNT' ? value : humanize(String(value))}</Pill>;
+  if (PILL_COLUMNS.has(column)) {
+    const s = String(value);
+    return s === 'LYBUNT' || s === 'SYBUNT' ? s : humanize(s);
   }
   switch (kindOf(column)) {
     case 'plainInt': return String(value);
@@ -62,6 +71,17 @@ function renderCell(column: string, value: unknown) {
       return /^[a-z][a-z0-9]*(_[a-z0-9]+)+$/.test(s) ? humanize(s) : s;
     }
   }
+}
+
+function renderCell(column: string, value: unknown) {
+  if (value === null || value === undefined || value === '') return <span className="text-slate-400">—</span>;
+  if (PILL_COLUMNS.has(column)) {
+    const tone = value === 'current' || value === 'received' ? 'green'
+      : value === 'LYBUNT' || value === 'awaiting_decision' || value === 'awarded_not_received' ? 'amber'
+        : value === 'SYBUNT' ? 'red' : 'slate';
+    return <Pill tone={tone}>{cellText(column, value)}</Pill>;
+  }
+  return cellText(column, value);
 }
 
 /** Numeric columns are right-aligned so a reader can compare down a column. */
@@ -122,24 +142,23 @@ export function ForgeReportsPage() {
     return [...out.entries()];
   }, [catalogue]);
 
-  /* CSV is built in the browser from what is already on screen, so what a
-     board member receives is exactly what the staff member saw. */
-  const downloadCsv = useCallback(() => {
+  /* Built in the browser from what is already on screen, so what a board member
+     receives is exactly what the staff member saw — the same column names, the
+     same formatting, and no tenant_id, which the table hides.
+     The writer itself is now the shared one every FORGE screen uses. The copy
+     that lived here wrote no byte-order mark (accented donor names arrived in
+     Excel mangled), broke lines with LF, and did nothing about a value starting
+     with `=` — a report is the file most likely to be forwarded outside the
+     organization, so it was the worst place to keep those three. */
+  const exportCsv = useCallback(async () => {
     if (!result) return;
-    const esc = (v: unknown) => {
-      const s = v === null || v === undefined ? '' : String(v);
-      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    };
-    const csv = [
-      result.columns.join(','),
-      ...result.data.map((row) => result.columns.map((c) => esc(row[c])).join(',')),
-    ].join('\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${result.key}-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const columns = result.columns
+      .filter((c) => c !== 'tenant_id')
+      .map((c) => ({ key: c, label: humanize(c) }));
+    downloadCsv(
+      csvFilename(result.key),
+      toCsvText(columns, result.data, (row, col) => csvBlankIfDash(cellText(col.key, row[col.key])))
+    );
   }, [result]);
 
   const activeReport = catalogue.find((r) => r.key === active);
@@ -151,9 +170,14 @@ export function ForgeReportsPage() {
       loading={loading}
       loadingLabel="Loading reports…"
       error={error}
-      actions={result && result.data.length > 0
-        ? <Button onClick={downloadCsv}>Download CSV</Button>
-        : undefined}
+      actions={(
+        <ForgeExportButton
+          subject="this report"
+          disabled={!result || result.data.length === 0}
+          onExport={exportCsv}
+          onError={setError}
+        />
+      )}
     >
       <div className="grid gap-6 lg:grid-cols-[16rem,1fr]">
         <div className="space-y-4">

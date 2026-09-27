@@ -20,7 +20,7 @@
 import type { EntityKey } from '../../lib/forgeApi';
 
 /** A screen is either one of the bespoke pages, or a registry-driven entity list. */
-export type ForgeScreenKind = 'overview' | 'reports' | 'receipts' | 'setup' | 'entity' | 'attention';
+export type ForgeScreenKind = 'overview' | 'reports' | 'receipts' | 'setup' | 'entity';
 
 export interface ForgeScreen {
   /** URL segment under the software root. '' is the software's landing screen. */
@@ -61,9 +61,12 @@ export const FORGE_SOFTWARE: ForgeSoftware[] = [
       'Case management and fundraising for non-profits — who you serve, what they receive, and where the money comes from.',
     screens: [
       { path: '', label: 'Overview', kind: 'overview' },
-      // Sits directly under Overview because it is a work surface, not a
-      // data source — it is where you go to find out what is waiting on you.
-      { path: 'attention', label: 'Needs attention', kind: 'attention' },
+      /* "Needs attention" lived here until 2026-09-27. It was the queue for one
+         thing only — the services whose assistance link the migration could not
+         confirm — and MS Moments worked it to zero (verified: 0 flagged rows of
+         883). A permanent nav entry for a finished one-off is a screen that
+         says "nothing here" forever, so it is gone. The flag itself stays in
+         the schema and on the record, for Phase 2's person collapse. */
 
       // Programme — who the organisation serves and what it gives them.
       { path: 'clients', label: 'Clients', kind: 'entity', entity: 'clients' },

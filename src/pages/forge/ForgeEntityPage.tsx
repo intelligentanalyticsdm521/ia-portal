@@ -8,12 +8,16 @@ import { IadmModal } from '../../components/IadmModal';
 import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
 import {
-  archiveEntityRow, createEntityRow, listEntity, updateEntityRow,
+  archiveEntityRow, createEntityRow, exportEntity, listEntity, updateEntityRow,
   type EntityKey, type ListResult,
 } from '../../lib/forgeApi';
 import { Button, Card, EmptyState, ForgeLayout, Pill, statusTone } from './ForgeLayout';
-import { FORGE_ENTITIES, cellValue, humanizeValue, isNumericField, money, type FieldDef } from './forgeConfig';
+import {
+  FORGE_ENTITIES, cellValue, humanizeValue, isNumericField, money, moneyExact, shortDate, type FieldDef,
+} from './forgeConfig';
 import { ForgeEntityPicker } from './ForgeEntityPicker';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { ForgeRecordModal } from './ForgeRecordModal';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
 
@@ -79,6 +83,9 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  /* Said out loud after an export that could not hold everything — see below.
+     Not an error: the file downloaded and is correct as far as it goes. */
+  const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [creating, setCreating] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -110,6 +117,10 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
     let cancelled = false;
     setLoading(true);
     setError(null);
+    /* The notice belongs to the view that was exported. Changing the search,
+       a filter or the sort makes a new view, and a warning about the last
+       file would then be describing rows that are no longer on screen. */
+    setNotice(null);
     withParams((p) => listEntity(p, entity, {
       page, pageSize: PAGE_SIZE, q: q || undefined,
       sort: sort ? `${sort.col} ${sort.dir}` : undefined,
@@ -122,6 +133,66 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   }, [ready, withParams, entity, page, q, includeArchived, filters, sort, refreshKey, cfg.title]);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  /* THE FILE IS THE LIST, NOT THE PAGE.
+     A customer asked for their active volunteers so they could email them and
+     there was no way to get the list out of the software at all. The 25 rows
+     on screen are a window onto the answer, not the answer — so this sends the
+     same search, filters, sort and show-archived to a route that pages nothing
+     and returns every matching row.
+     Columns are every field the entity declares, in config order, formatted by
+     the same cellValue the table uses: a date reads "Sep 8, 2025" in the file
+     because that is what it reads on screen, a lookup reads "Awaiting decision"
+     rather than awaiting_decision, and money carries its currency. */
+  const exportCsv = useCallback(async () => {
+    const r = await withParams((p) => exportEntity(p, entity, {
+      q: q || undefined,
+      sort: sort ? `${sort.col} ${sort.dir}` : undefined,
+      includeArchived: includeArchived || undefined, ...filters,
+    }));
+    /* The file's columns are the screen's fields with two deliberate
+       differences. A period becomes its two real dates: a spreadsheet answers
+       "everything ending before December" from an end column and cannot answer
+       it from the text "Sep 8, 2025 – Dec 31, 2025". And money keeps its cents —
+       the grid rounds to whole dollars to stay narrow, which is the right trade
+       on screen and the wrong one in a file someone reconciles against a bank
+       statement or files with a funder. */
+    /* One column per COLUMN, not per field definition. A period is declared
+       twice on purpose — once as the list's single "Period" cell and once as
+       the form's Start and End — so expanding the period and then walking the
+       rest of the fields wrote both dates twice, under two sets of headers. */
+    const coveredByPeriod = new Set(
+      cfg.fields.filter((f) => f.type === 'daterange' && f.endKey)
+        .flatMap((f) => [f.key, f.endKey as string])
+    );
+    const columns = cfg.fields.flatMap((f) => {
+      if (f.type === 'daterange' && f.endKey) {
+        const endKey = f.endKey;
+        return [
+          { label: `${f.label} start`, cell: (row: Record<string, unknown>) => shortDate(row[f.key]) },
+          { label: `${f.label} end`, cell: (row: Record<string, unknown>) => shortDate(row[endKey]) },
+        ];
+      }
+      if (coveredByPeriod.has(f.key)) return [];
+      return [{
+        label: f.label,
+        cell: (row: Record<string, unknown>) => (f.type === 'money' ? moneyExact(row[f.key]) : cellValue(row, f)),
+      }];
+    });
+    downloadCsv(
+      csvFilename(cfg.title),
+      toCsvText(columns, r.data, (row, col) => csvBlankIfDash(col.cell(row)))
+    );
+    /* A file that quietly holds less than was asked for is the one failure mode
+       nobody notices until they act on it, so it is stated in rows. */
+    setNotice(
+      r.truncated
+        ? `This file holds ${r.data.length.toLocaleString()} rows — the export limit.${
+          r.total > r.data.length ? ` ${r.total.toLocaleString()} rows match in total.` : ''
+        } Narrow the list with the search box or a filter to get the rest.`
+        : null
+    );
+  }, [withParams, entity, q, sort, includeArchived, filters, cfg]);
 
   const save = useCallback(async (values: Record<string, unknown>, id?: string | number) => {
     /* SHOW THE USER THE RECORD THEY JUST MADE.
@@ -180,7 +251,19 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
       title={cfg.title}
       subtitle={cfg.subtitle}
       error={error}
-      actions={<Button variant="primary" onClick={() => setCreating(true)}>New {cfg.singular}</Button>}
+      actions={(
+        <>
+          <ForgeExportButton
+            subject={`the ${cfg.title.toLowerCase()} export`}
+            /* Nothing to write a file about — and the list has not arrived at
+               all until `result` does. */
+            disabled={!result || result.total === 0}
+            onExport={exportCsv}
+            onError={setError}
+          />
+          <Button variant="primary" onClick={() => setCreating(true)}>New {cfg.singular}</Button>
+        </>
+      )}
     >
       <Card>
         <div className="flex flex-wrap items-end gap-3">
@@ -245,6 +328,12 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
               </div>
             );
           })}
+        </div>
+      )}
+
+      {notice && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {notice}
         </div>
       )}
 
@@ -369,7 +458,6 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
                                 <span className="min-w-0 truncate">{text}</span>
                               )}
                               {i === 0 && archived && <Pill>Archived</Pill>}
-                              {i === 0 && Boolean(row.needs_review) && <Pill tone="amber">Needs review</Pill>}
                             </div>
                           </td>
                         );

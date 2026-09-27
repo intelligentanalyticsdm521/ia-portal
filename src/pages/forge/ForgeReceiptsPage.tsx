@@ -12,6 +12,8 @@ import {
   type ReceiptGenerateResult, type ReceiptRow,
 } from '../../lib/forgeApi';
 import { ForgeLayout, Card, Button, EmptyState, Pill } from './ForgeLayout';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { useForgeApi, describeError } from './useForge';
 import { moneyExact, shortDate } from './forgeConfig';
 
@@ -32,6 +34,57 @@ interface DueRow {
   acknowledge_by: string;
 }
 
+/**
+ * WHY this gift is owed an acknowledgement — one answer, used by the pill in the
+ * table and by the export. Written once because the two must agree: a queue
+ * worked from a spreadsheet and a queue worked from the screen are the same
+ * queue, and "Required" means the IRS requires it.
+ */
+function dueReason(d: DueRow): { label: string; tone: 'slate' | 'amber' } {
+  if (d.gift_kind === 'in_kind') return { label: 'Non-cash', tone: 'slate' };
+  if (d.needs_quid_pro_quo_statement === 1) return { label: 'Quid pro quo', tone: 'amber' };
+  if (d.needs_written_ack === 1) return { label: 'Required', tone: 'amber' };
+  return { label: 'Courtesy', tone: 'slate' };
+}
+
+/**
+ * Explicit columns rather than the row shape: `receipts-due` returns fourteen
+ * fields and this file exists to be worked from — who, how much, why it is owed
+ * and by when. The donor's email is in the file and not in the table because the
+ * first thing anyone does with this list is write to them, which is the whole
+ * reason exports exist.
+ */
+const DUE_COLUMNS = [
+  { label: 'Donor', value: (d: DueRow) => d.donor_name },
+  { label: 'Donor email', value: (d: DueRow) => d.donor_email ?? '' },
+  { label: 'Received', value: (d: DueRow) => csvBlankIfDash(shortDate(d.received_on)) },
+  { label: 'Tax year', value: (d: DueRow) => String(d.tax_year) },
+  { label: 'Amount', value: (d: DueRow) => csvBlankIfDash(moneyExact(d.amount)) },
+  /* Same rule as the table: the organisation does not value donated property,
+     so a non-cash gift carries no deductible figure — here that is an empty
+     cell rather than a dash someone could mistake for a zero. */
+  {
+    label: 'Deductible',
+    value: (d: DueRow) => (d.gift_kind === 'in_kind' ? '' : csvBlankIfDash(moneyExact(d.deductible_amount))),
+  },
+  { label: 'Why', value: (d: DueRow) => dueReason(d).label },
+  { label: 'Needed by', value: (d: DueRow) => csvBlankIfDash(shortDate(d.acknowledge_by)) },
+];
+
+/** What was issued, in the words the screen uses for it. */
+const ISSUED_COLUMNS = [
+  { label: 'Number', value: (r: ReceiptRow) => r.receipt_no },
+  { label: 'Donor', value: (r: ReceiptRow) => r.donor_name },
+  { label: 'Donor email', value: (r: ReceiptRow) => r.donor_email ?? '' },
+  { label: 'Kind', value: (r: ReceiptRow) => (r.receipt_kind === 'year_end' ? 'Annual statement' : 'Per gift') },
+  { label: 'Tax year', value: (r: ReceiptRow) => (r.tax_year === null ? '' : String(r.tax_year)) },
+  { label: 'Total', value: (r: ReceiptRow) => csvBlankIfDash(moneyExact(r.total_amount)) },
+  { label: 'Deductible', value: (r: ReceiptRow) => csvBlankIfDash(moneyExact(r.deductible_amount)) },
+  /* issued_at is a timestamp, not a calendar date, so it is formatted the way
+     the table formats it rather than through shortDate. */
+  { label: 'Issued', value: (r: ReceiptRow) => (r.issued_at ? new Date(r.issued_at).toLocaleDateString() : '') },
+];
+
 export function ForgeReceiptsPage() {
   const { ready, withParams } = useForgeApi();
   const [due, setDue] = useState<DueRow[]>([]);
@@ -51,7 +104,13 @@ export function ForgeReceiptsPage() {
     let cancelled = false;
     setLoading(true);
     Promise.all([
-      withParams((p) => runReport<DueRow>(p, 'receipts-due')),
+      /* The report route's own default caps at 1,000 rows. That is a sensible
+         default for a screen and the wrong one for an obligation: an
+         acknowledgement queue that silently stops at a thousand is a queue you
+         work to empty while gifts 1,001 onward stay unacknowledged — and the
+         file exported from it would be short by exactly the rows nobody knew
+         about. 5,000 is the route's own ceiling. */
+      withParams((p) => runReport<DueRow>(p, 'receipts-due', { limit: 5000 })),
       withParams((p) => listReceipts(p)),
     ])
       .then(([d, r]) => { if (!cancelled) { setDue(d.data); setIssued(r); } })
@@ -100,6 +159,23 @@ export function ForgeReceiptsPage() {
       console.error(err);
     }
   }, [withParams]);
+
+  /* Both queues are already in memory — the page fetched them to render them —
+     so exporting reads state instead of asking the API a second question it has
+     already answered. */
+  const exportDue = useCallback(async () => {
+    downloadCsv(
+      csvFilename('acknowledgements-outstanding'),
+      toCsvText(DUE_COLUMNS, due, (d, col) => col.value(d))
+    );
+  }, [due]);
+
+  const exportIssued = useCallback(async () => {
+    downloadCsv(
+      csvFilename('acknowledgements-issued'),
+      toCsvText(ISSUED_COLUMNS, issued, (r, col) => col.value(r))
+    );
+  }, [issued]);
 
   const ackCount = due.filter((d) => d.needs_written_ack === 1).length;
   const qpqCount = due.filter((d) => d.needs_quid_pro_quo_statement === 1).length;
@@ -186,7 +262,17 @@ export function ForgeReceiptsPage() {
         </Card>
       )}
 
-      <Card title="Outstanding">
+      <Card
+        title="Outstanding"
+        action={(
+          <ForgeExportButton
+            subject="the outstanding acknowledgements"
+            disabled={due.length === 0}
+            onExport={exportDue}
+            onError={setError}
+          />
+        )}
+      >
         {due.length === 0 ? (
           <EmptyState>Every gift on record has been acknowledged.</EmptyState>
         ) : (
@@ -203,34 +289,44 @@ export function ForgeReceiptsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {due.map((d) => (
-                  <tr key={d.donation_id} className="hover:bg-slate-50">
-                    <td className="py-2 pr-4 font-medium text-slate-800">{d.donor_name}</td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-slate-600">{shortDate(d.received_on)}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums text-slate-700">{moneyExact(d.amount)}</td>
-                    <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
-                      {/* The organisation does not value donated property, so
-                          no deductible figure is shown for a non-cash gift. */}
-                      {d.gift_kind === 'in_kind'
-                        ? <span className="text-slate-400" title="The donor determines the value of donated property">—</span>
-                        : moneyExact(d.deductible_amount)}
-                    </td>
-                    <td className="py-2 pr-4">
-                      {d.gift_kind === 'in_kind' ? <Pill>Non-cash</Pill>
-                        : d.needs_quid_pro_quo_statement === 1 ? <Pill tone="amber">Quid pro quo</Pill>
-                          : d.needs_written_ack === 1 ? <Pill tone="amber">Required</Pill>
-                            : <Pill>Courtesy</Pill>}
-                    </td>
-                    <td className="whitespace-nowrap py-2 pr-4 text-slate-600">{shortDate(d.acknowledge_by)}</td>
-                  </tr>
-                ))}
+                {due.map((d) => {
+                  const why = dueReason(d);
+                  return (
+                    <tr key={d.donation_id} className="hover:bg-slate-50">
+                      <td className="py-2 pr-4 font-medium text-slate-800">{d.donor_name}</td>
+                      <td className="whitespace-nowrap py-2 pr-4 text-slate-600">{shortDate(d.received_on)}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-700">{moneyExact(d.amount)}</td>
+                      <td className="py-2 pr-4 text-right tabular-nums text-slate-700">
+                        {/* The organisation does not value donated property, so
+                            no deductible figure is shown for a non-cash gift. */}
+                        {d.gift_kind === 'in_kind'
+                          ? <span className="text-slate-400" title="The donor determines the value of donated property">—</span>
+                          : moneyExact(d.deductible_amount)}
+                      </td>
+                      <td className="py-2 pr-4">
+                        <Pill tone={why.tone}>{why.label}</Pill>
+                      </td>
+                      <td className="whitespace-nowrap py-2 pr-4 text-slate-600">{shortDate(d.acknowledge_by)}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         )}
       </Card>
 
-      <Card title={`Issued (${issued.length})`}>
+      <Card
+        title={`Issued (${issued.length})`}
+        action={(
+          <ForgeExportButton
+            subject="the issued acknowledgements"
+            disabled={issued.length === 0}
+            onExport={exportIssued}
+            onError={setError}
+          />
+        )}
+      >
         {issued.length === 0 ? (
           <EmptyState>No acknowledgements have been issued yet.</EmptyState>
         ) : (
