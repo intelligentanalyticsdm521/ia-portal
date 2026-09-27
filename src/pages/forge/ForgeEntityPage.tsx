@@ -4,6 +4,7 @@
  * PHP files; this is that idea with types, real pagination and a proper form.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Download, Plus, Rows3, Upload } from 'lucide-react';
 import { IadmModal } from '../../components/IadmModal';
 import { useSearchParams } from 'react-router-dom';
 import { Link } from 'react-router-dom';
@@ -17,6 +18,8 @@ import {
 } from './forgeConfig';
 import { ForgeEntityPicker } from './ForgeEntityPicker';
 import { ForgeExportButton } from './ForgeExportButton';
+import { ForgeImportModal } from './ForgeImportModal';
+import { ForgeBulkAddModal } from './ForgeBulkAddModal';
 import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { ForgeRecordModal } from './ForgeRecordModal';
 import { describeError, useDebounced, useForgeApi, useForgeLookups } from './useForge';
@@ -88,6 +91,8 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
   const [notice, setNotice] = useState<string | null>(null);
   const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
   const [creating, setCreating] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [bulkAdding, setBulkAdding] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const q = useDebounced(search);
@@ -251,17 +256,30 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
       title={cfg.title}
       subtitle={cfg.subtitle}
       error={error}
+      /* Export · Import · Bulk add · New X — the same order, left to right, as
+         SPARK Contacts. One header shape across the platform means a person who
+         has learned one list screen has learned all of them. */
       actions={(
         <>
           <ForgeExportButton
             subject={`the ${cfg.title.toLowerCase()} export`}
+            label={<><Download className="h-3.5 w-3.5" /> Export CSV</>}
+            busyLabel={<><Download className="h-3.5 w-3.5" /> Preparing…</>}
             /* Nothing to write a file about — and the list has not arrived at
                all until `result` does. */
             disabled={!result || result.total === 0}
             onExport={exportCsv}
             onError={setError}
           />
-          <Button variant="primary" onClick={() => setCreating(true)}>New {cfg.singular}</Button>
+          <Button onClick={() => setImporting(true)}>
+            <Upload className="h-3.5 w-3.5" /> Import
+          </Button>
+          <Button onClick={() => setBulkAdding(true)}>
+            <Rows3 className="h-3.5 w-3.5" /> Bulk add
+          </Button>
+          <Button variant="primary" onClick={() => setCreating(true)}>
+            <Plus className="h-3.5 w-3.5" /> New {cfg.singular}
+          </Button>
         </>
       )}
     >
@@ -518,6 +536,22 @@ export function ForgeEntityPage({ entity, detailBase }: { entity: EntityKey; det
           onSave={save}
         />
       )}
+
+      <ForgeImportModal
+        entity={entity}
+        open={importing}
+        onClose={() => setImporting(false)}
+        /* Whatever landed is on screen before the modal is closed — an import
+           that says "142 added" over an unchanged list reads as a lie. */
+        onImported={refresh}
+      />
+
+      <ForgeBulkAddModal
+        entity={entity}
+        open={bulkAdding}
+        onClose={() => setBulkAdding(false)}
+        onSaved={refresh}
+      />
     </ForgeLayout>
   );
 }

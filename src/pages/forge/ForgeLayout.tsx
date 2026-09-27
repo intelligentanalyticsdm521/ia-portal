@@ -100,7 +100,10 @@ export function Button({ children, onClick, variant = 'secondary', size = 'md', 
   type?: 'button' | 'submit';
   disabled?: boolean;
 }>) {
-  const base = `rounded-lg font-medium shadow-sm transition disabled:opacity-50 ${
+  /* inline-flex, so a button can carry an icon beside its label and have the two
+     sit on one baseline — the header row (Export, Import, Bulk add, New X) reads
+     as a row of controls rather than four different shapes. */
+  const base = `inline-flex items-center gap-1.5 rounded-lg font-medium shadow-sm transition disabled:opacity-50 ${
     size === 'sm' ? 'px-2.5 py-1 text-xs' : 'px-3 py-2 text-sm'
   }`;
   const styles = {

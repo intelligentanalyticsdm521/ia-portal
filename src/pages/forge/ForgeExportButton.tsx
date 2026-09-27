@@ -11,7 +11,7 @@
  * "New Client" and "Preview" looking like what it is — one more control on the
  * screen, keyboard-reachable in the same tab order.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Button } from './ForgeLayout';
 import { describeError } from './useForge';
 
@@ -29,8 +29,8 @@ export function ForgeExportButton({
   onError: (message: string) => void;
   /** Named in that failure message, in the voice describeError already uses. */
   subject: string;
-  label?: string;
-  busyLabel?: string;
+  label?: ReactNode;
+  busyLabel?: ReactNode;
   /** Nothing to export — an empty list, or a list that has not arrived yet. */
   disabled?: boolean;
   variant?: 'primary' | 'secondary' | 'danger';
