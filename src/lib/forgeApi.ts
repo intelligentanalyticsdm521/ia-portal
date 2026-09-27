@@ -190,6 +190,41 @@ export const exportEntity = <T = Record<string, unknown>>(
   query: Record<string, string | number | boolean | undefined> = {}
 ) => request<ExportResult<T>>(p, `/forge/${entity}/export${qs(query)}`);
 
+/** One row of a spreadsheet, keyed by field key (or the entity's id column). */
+export type ImportRow = Record<string, string | number | null>;
+
+export interface ImportPreview {
+  counts: { create: number; update: number; error: number; warning: number };
+  rows: Array<{
+    index: number;
+    action: 'create' | 'update' | 'error';
+    matchedId: string | null;
+    errors: string[];
+    warnings: string[];
+  }>;
+  /** Columns the entity has no home for. Named, never silently dropped. */
+  ignoredColumns: string[];
+}
+
+export interface ImportResult {
+  created: number;
+  updated: number;
+  failed: number;
+  errors: Array<{ index: number; message: string }>;
+  ignoredColumns: string[];
+}
+
+/** The API's own ceiling per request; the caller batches to it. */
+export const IMPORT_BATCH = 500;
+
+/** What WOULD happen. Writes nothing. */
+export const previewImport = (p: ForgeParams, entity: EntityKey, rows: ImportRow[]) =>
+  request<ImportPreview>(p, `/forge/${entity}/import/preview`, { method: 'POST', body: { rows } });
+
+/** Do it. Same classification, performed. */
+export const commitImport = (p: ForgeParams, entity: EntityKey, rows: ImportRow[]) =>
+  request<ImportResult>(p, `/forge/${entity}/import`, { method: 'POST', body: { rows } });
+
 export const getEntityRow = <T = Record<string, unknown>>(p: ForgeParams, entity: EntityKey, id: string | number) =>
   request<{ data: T }>(p, `/forge/${entity}/${id}`).then((r) => r.data);
 
