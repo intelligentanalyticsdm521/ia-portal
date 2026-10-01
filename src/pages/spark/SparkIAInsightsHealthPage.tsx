@@ -34,7 +34,7 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import type { IAInsightsHeaderData } from "../../components/iainsights/types";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
-import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { platformHealth, priorIntelligence, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { insightsDemoAllowed } from "../../components/insights/insightsDemo";
 import { InsightsEmpty, InsightsError, InsightsLoading, SampleDataBadge } from "../../components/insights/InsightsStateView";
 import { SPARK_INSIGHT_SOURCES } from "../../components/insights/sparkInsightSources";
@@ -60,7 +60,7 @@ export function SparkIAInsightsHealthPage() {
     if (!metrics) return null;
     const trendDs = buildSparkDashboards(metrics);
     const intelDs = buildIntelligenceMirror(metrics, SPARK_MIRROR).dashboards;
-    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
+    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE, priorIntelligence(metrics, SPARK_MIRROR));
 
     // CROSS-PRODUCT: only when we have real numbers from the other products too.
     // demoBusinessPulse invents a series for any payload that is null, which made

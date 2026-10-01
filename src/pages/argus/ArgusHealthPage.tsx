@@ -22,7 +22,7 @@ import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliver
 import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "../../analytics/argusDashboards";
 import { buildIntelligenceMirror, ARGUS_MIRROR } from "../../analytics/intelligenceMirror";
 import { businessPulse, type DashboardScore } from "../../analytics/scoring";
-import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { platformHealth, priorIntelligence, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
@@ -56,7 +56,7 @@ export function ArgusHealthPage() {
     const argusPayload = demoArgusMetrics(seed);
     const trendDs = buildArgusDashboards(argusPayload, platforms);
     const intelDs = buildIntelligenceMirror(argusPayload, ARGUS_MIRROR).dashboards;
-    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
+    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE, priorIntelligence(argusPayload, ARGUS_MIRROR));
     const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
 
     const headerData: IAInsightsHeaderData = {

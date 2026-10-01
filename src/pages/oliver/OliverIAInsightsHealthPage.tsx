@@ -18,7 +18,7 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import type { IAInsightsHeaderData } from "../../components/iainsights/types";
 import { buildOliverDashboards, demoOliverMetrics } from "../../analytics/oliverDashboards";
 import { buildIntelligenceMirror, OLIVER_MIRROR } from "../../analytics/intelligenceMirror";
-import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { platformHealth, priorIntelligence, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
@@ -36,7 +36,7 @@ export function OliverIAInsightsHealthPage() {
     const payload = oliverPayload || demoOliverMetrics(seed);
     const trendDs = buildOliverDashboards(payload);
     const intelDs = buildIntelligenceMirror(payload, OLIVER_MIRROR).dashboards;
-    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
+    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE, priorIntelligence(payload, OLIVER_MIRROR));
     const bp = demoBusinessPulse(seed, { arionPayload, sparkPayload, oliverPayload });
     return {
       product: "oliver",
