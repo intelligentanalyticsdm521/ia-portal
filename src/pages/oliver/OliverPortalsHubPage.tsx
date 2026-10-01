@@ -24,17 +24,16 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../components/oliver/SignupFormBuilder";
 import { PortalActivationWizard } from "../../components/oliver/PortalActivationWizard";
-import { PortalLayoutTab } from "../../components/oliver/PortalLayoutTab";
 import { AppLinksCard } from "../../components/oliver/AppLinksCard";
 import { LookTab, useLookEditor } from "./look/LookTab";
 import { lookPreviewSrc } from "./look/lookModel";
 import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
-  AlertTriangle, CheckCircle2, Clock, Palette, Layers,
+  AlertTriangle, CheckCircle2, Clock, Palette,
 } from "lucide-react";
 
 type PortalKind = "customer" | "crew";
-type Tab = "look" | "signup" | "layout" | "domain" | "workflow";
+type Tab = "look" | "signup" | "domain" | "workflow";
 
 interface PortalStatus {
   subdomain_slug: string | null;
@@ -283,8 +282,6 @@ function PortalEditorModal({
   const tabs: Array<{ key: Tab; label: string; icon: typeof Brush }> = [
     ...(hasLook ? [{ key: "look" as Tab, label: "Look", icon: Palette }] : []),
     { key: "signup",   label: "Signup form", icon: FileText },
-    // F-114 Phase 3 — constrained WYSIWYG layout builder.
-    { key: "layout",   label: "Layout",      icon: Layers },
     { key: "domain",   label: "Domain",      icon: Globe },
     { key: "workflow", label: "Workflow",    icon: Settings },
   ];
@@ -368,7 +365,6 @@ function PortalEditorModal({
         ) : (
           <div className="flex-1 overflow-y-auto p-5">
             {tab === "signup" && <SignupTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
-            {tab === "layout" && <PortalLayoutTab portalKind={portalKind} accent={accent} onSaved={onSaved} />}
             {tab === "domain" && <DomainTabStub portalKind={portalKind} status={status} accent={accent} onSaved={onSaved} />}
             {tab === "workflow" && <WorkflowTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
           </div>
@@ -428,8 +424,10 @@ function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
       .catch(() => setConfig(null));
   }, [ready, get]);
 
-  // SignupFormBuilder is a modal that takes over the screen — we always-mount
-  // it when this tab is active and let the user save inline.
+  // 30 Sep 2026 (Brandon, Section 21: "sign up form I can't close it, cancel it
+  // or save anything"): the builder used to open as a second window inside this
+  // one, with a Cancel that did nothing. It now renders as this tab's own panel,
+  // with one Save button at the bottom; the window's Done closes everything.
   if (!config) return <div className="text-xs text-slate-500">Loading signup form…</div>;
 
   return (
@@ -445,9 +443,10 @@ function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind
 
       <SignupFormBuilder
         open={true}
+        inline
         config={config}
         saving={saving}
-        onClose={() => { /* no-op — modal is always-open inside the tab */ }}
+        onClose={() => { /* inline: the window's own Done closes it */ }}
         onSave={async (next) => {
           setSaving(true);
           try {
