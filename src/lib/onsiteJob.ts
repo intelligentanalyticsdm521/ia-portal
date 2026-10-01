@@ -141,6 +141,40 @@ export function readChangeOrders(resp: unknown): ChangeOrderRow[] {
   return rows.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")));
 }
 
+/**
+ * The job's agreed lines from the same GET (`agreed_lines`, by line_item_id):
+ * what a change order may take off. The API answers with these because a job
+ * agreed by quote bills the quote's lines, not the job's own — so these, not
+ * the job's line items, are what a removal names. Empty when not sent.
+ */
+export function readAgreedLines(resp: unknown): JobLine[] {
+  let o: unknown = resp;
+  if (o && typeof o === "object" && !Array.isArray(o) && (o as Record<string, unknown>).data && typeof (o as Record<string, unknown>).data === "object") {
+    o = (o as Record<string, unknown>).data;
+  }
+  const raw = o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>).agreed_lines : null;
+  if (!Array.isArray(raw)) return [];
+  const out: JobLine[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const l = r as Record<string, unknown>;
+    const id = str(pick(l, "line_item_id", "lineItemId", "id"));
+    if (!id) continue;
+    out.push({
+      id,
+      description: str(l.description) || "(no description)",
+      quantity: num(l.quantity) ?? 0,
+      unit_price: num(pick(l, "unit_price", "unitPrice")) ?? 0,
+      ...(num(pick(l, "line_total", "lineTotal")) !== null ? { line_total: num(pick(l, "line_total", "lineTotal")) as number } : {}),
+    });
+  }
+  return out;
+}
+
+/** Open a draft for the customer's signature (the office route). */
+export const presentChangeOrderPath = (jobId: string, changeOrderId: string) =>
+  `${changeOrdersPath(jobId)}/${encodeURIComponent(changeOrderId)}/present`;
+
 const STATUS_WORDS: Record<string, string> = {
   draft: "Draft",
   presented: "Waiting for the customer",
@@ -190,11 +224,14 @@ export interface JobLine {
   description: string;
   quantity: number;
   unit_price: number;
+  /** The server's own line total when it sent one (it wins over quantity × price). */
+  line_total?: number;
   discount_type?: "percent" | "fixed" | null;
   discount_value?: number | null;
 }
 
-function lineAmount(it: { quantity: number; unit_price: number; discount_type?: string | null; discount_value?: number | null }): number {
+function lineAmount(it: { quantity: number; unit_price: number; line_total?: number; discount_type?: string | null; discount_value?: number | null }): number {
+  if (typeof it.line_total === "number" && Number.isFinite(it.line_total)) return cents(it.line_total);
   const gross = Number(it.quantity || 0) * Number(it.unit_price || 0);
   if (it.discount_type === "percent") return cents(gross - gross * (Math.min(100, Math.max(0, Number(it.discount_value) || 0)) / 100));
   if (it.discount_type === "fixed") return cents(gross - Math.min(gross, Math.max(0, Number(it.discount_value) || 0)));
@@ -229,11 +266,13 @@ export function changeOrderProblem(reason: string, adds: readonly EditorLine[], 
 
 /**
  * The POST /jobs/:id/change-orders body (contract Phase C, G5): a reason and
- * the lines — added lines as `{ kind: 'add', description, unit_price,
- * quantity }` (with `offering_id` when the line came from the catalogue, so
- * the API can tie it back), removed lines as `{ kind: 'remove',
+ * the lines — added lines as typed lines `{ kind: 'add', description,
+ * unit_price, quantity }`, removed lines as `{ kind: 'remove',
  * job_line_item_id }`. The office sets its own prices, as it does on the
- * job's own line items.
+ * job's own line items, so a line picked from the catalogue is sent as the
+ * typed line the office sees: sending its `offering_id` would make the API
+ * re-price it from the catalogue (lib/changeOrder.js parseChangeOrderBody)
+ * and the customer would be asked to sign a price the office never saw.
  */
 export function changeOrderBody(reason: string, adds: readonly EditorLine[], removeIds: readonly string[]) {
   return {
@@ -244,7 +283,6 @@ export function changeOrderBody(reason: string, adds: readonly EditorLine[], rem
         description: String(l.description).trim(),
         quantity: Number(l.quantity),
         unit_price: cents(Number(l.unit_price)),
-        ...(l.service_offering_id ? { offering_id: l.service_offering_id } : {}),
       })),
       ...removeIds.map((id) => ({ kind: "remove" as const, job_line_item_id: id })),
     ],
@@ -252,19 +290,19 @@ export function changeOrderBody(reason: string, adds: readonly EditorLine[], rem
 }
 
 /** After Save: what happens next, in a sentence. */
-export function changeOrderSavedNote(resp: unknown): string {
-  const d = resp && typeof resp === "object" ? ((resp as Record<string, unknown>).data ?? resp) as Record<string, unknown> : {};
-  const link = str(d?.customer_link);
-  return link
-    ? "Change order saved. The customer signs it from their link before it changes the job."
-    : "Change order saved. It changes the job once the customer signs it.";
+export function changeOrderSavedNote(_resp: unknown): string {
+  return "Change order saved as a draft. Press \"Open for the customer to sign\" when it is ready; the job changes only once the customer signs.";
 }
 
+/** After "Open for the customer to sign". */
+export const PRESENTED_NOTE =
+  "Open for signing. Copy the customer's signing link and send it to them, or the crew can show it on the tablet.";
+
 /** A failed load or save as a sentence. */
-export function changeOrderError(what: "load" | "save", e: unknown): string {
-  return what === "load"
-    ? `Could not load the change orders: ${apiErrorMessage(e)}`
-    : `The change order was not saved: ${apiErrorMessage(e)}`;
+export function changeOrderError(what: "load" | "save" | "present", e: unknown): string {
+  if (what === "load") return `Could not load the change orders: ${apiErrorMessage(e)}`;
+  if (what === "present") return `The change order was not opened for signing: ${apiErrorMessage(e)}`;
+  return `The change order was not saved: ${apiErrorMessage(e)}`;
 }
 
 // ── 2. completion signature setting ───────────────────────────────────────

@@ -125,21 +125,32 @@ test("Save checks: a reason, at least one line, sane quantities and prices, no d
   assert.equal(lib.changeOrderProblem("Take the hedge off", [], ["L1"]), null);
 });
 
-test("the POST body: reason + add lines (offering_id when from the catalogue) + remove lines by job_line_item_id", () => {
+test("the POST body: reason + typed add lines at the office's price (no offering_id, so the API never re-prices) + remove lines by job_line_item_id", () => {
   const body = lib.changeOrderBody("  Back fence  ", [add({ service_offering_id: "OFF1", unit_price: 30.005 }), add({ description: "Haul away", quantity: 1, unit_price: 45 })], ["L9"]);
   assert.deepEqual(body, {
     reason: "Back fence",
     lines: [
-      { kind: "add", description: "Fence line", quantity: 2, unit_price: 30.01, offering_id: "OFF1" },
+      { kind: "add", description: "Fence line", quantity: 2, unit_price: 30.01 },
       { kind: "add", description: "Haul away", quantity: 1, unit_price: 45 },
       { kind: "remove", job_line_item_id: "L9" },
     ],
   });
 });
 
-test("saved note says the customer signs before the job changes; errors are sentences", () => {
-  assert.match(lib.changeOrderSavedNote({ customer_link: "https://x" }), /signs it from their link/);
-  assert.match(lib.changeOrderSavedNote({}), /once the customer signs/);
+test("the agreed lines a change may take off come from the same GET, by line_item_id; the server's line total wins", () => {
+  const resp = { agreed_lines: [{ line_item_id: "Q1", description: "Mow", quantity: 1, unit_price: 80, line_total: 72 }, { description: "no id" }], agreed_total: 72, change_orders: [] };
+  assert.deepEqual(lib.readAgreedLines(resp), [{ id: "Q1", description: "Mow", quantity: 1, unit_price: 80, line_total: 72 }]);
+  assert.deepEqual(lib.readAgreedLines({ data: resp }).map((l) => l.id), ["Q1"]);
+  assert.deepEqual(lib.readAgreedLines([]), []);
+  assert.equal(lib.changeOrderDelta([], lib.readAgreedLines(resp)), -72, "the agreed line's own total, not 1 × 80");
+  assert.equal(lib.presentChangeOrderPath("J1", "CO1"), "/jobs/J1/change-orders/CO1/present");
+});
+
+test("saved note: a draft until opened for signing; errors are sentences", () => {
+  assert.match(lib.changeOrderSavedNote({}), /draft/);
+  assert.match(lib.changeOrderSavedNote({}), /Open for the customer to sign/);
+  assert.match(lib.PRESENTED_NOTE, /signing link/);
+  assert.match(lib.changeOrderError("present", new Error("x")), /^The change order was not opened for signing/);
   assert.match(lib.changeOrderError("save", new Error("OLIVER API 400: {\"error\":\"bad\",\"message\":\"Reason is required.\"}")), /^The change order was not saved: Reason is required\./);
   assert.match(lib.changeOrderError("load", new Error("boom")), /^Could not load the change orders/);
 });
@@ -199,6 +210,15 @@ test("job modal: the change orders card sits under the line items and is given t
   assert.match(jobPanel, /tab === "lines" && \(\s*<ChangeOrdersCard/);
   assert.match(jobPanel, /savedLineItems=\{originalLineItems\}/);
   assert.match(jobPanel, /jobLines=\{p\.savedLineItems\}/);
+});
+
+test("change orders card: removals name the agreed lines from the GET; a draft opens for signing; the link is offered only once open", () => {
+  assert.match(card, /setAgreed\(readAgreedLines\(r\)\)/);
+  assert.match(card, /const removable: JobLine\[\] = agreed\.length \? agreed : jobLines\.filter/);
+  assert.match(card, /api\.post<unknown>\(presentChangeOrderPath\(jobId, row\.id\), \{\}\)/);
+  assert.match(card, /row\.status === "draft" && !disabled && \(/);
+  assert.match(card, />?\s*\{presenting === row\.id \? "Opening…" : "Open for the customer to sign"\}/);
+  assert.match(card, /row\.customerLink && row\.status === "presented" && \(/);
 });
 
 test("change orders card: GET and POST on the office route, the same line editor, every listed field shown", () => {

@@ -8,8 +8,15 @@
  * "New change order" opens an editor with the same line editor the job's line
  * items use (catalogue or custom lines) plus a tick list of the job's current
  * lines to take off, and posts to POST /jobs/:id/change-orders — the office
- * route of the same API the crew app uses. A change order changes the job's
- * lines only when the customer signs it (the API applies it on accept).
+ * route of the same API the crew app uses. A saved change order is a draft;
+ * "Open for the customer to sign" (POST …/:coId/present) lets the customer
+ * sign it from their link or on the crew's tablet, and only then does it
+ * change the job's lines (the API applies it on accept).
+ *
+ * The lines a change order may take off are the job's AGREED lines from the
+ * same GET (`agreed_lines`) — for a job agreed by quote those are the quote's
+ * lines, not the job's own line items — falling back to the job's saved lines
+ * only when the API sends none.
  *
  * Pure rules live in lib/onsiteJob.ts (test/onsite-job.test.mjs).
  */
@@ -19,25 +26,26 @@ import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
 import {
   changeOrderBody, changeOrderDelta, changeOrderError, changeOrderProblem, changeOrderSavedNote,
   changeOrderSignedLine, changeOrderStatusLabel, changeOrderStatusTone, changeOrdersPath,
-  deltaLabel, money, readChangeOrders, type ChangeOrderRow,
+  deltaLabel, money, presentChangeOrderPath, PRESENTED_NOTE, readAgreedLines, readChangeOrders,
+  type ChangeOrderRow, type JobLine,
 } from "../../../lib/onsiteJob";
 
 export function ChangeOrdersCard({
-  jobId, api, jobLines, jobTotal, disabled, onChanged,
+  jobId, api, jobLines, disabled, onChanged,
 }: {
   jobId: string;
   api: {
     get: <T>(p: string) => Promise<T>;
     post: <T>(p: string, b?: unknown) => Promise<T>;
   };
-  /** The job's saved lines (what a change order can take off). */
+  /** The job's saved lines — what a change order can take off when the API sends no agreed lines. */
   jobLines: LineItem[];
-  /** The job's saved line total, for the "new total" preview. */
-  jobTotal: number;
   disabled?: boolean;
   onChanged?: () => void;
 }) {
   const [rows, setRows] = useState<ChangeOrderRow[] | null>(null);
+  const [agreed, setAgreed] = useState<JobLine[]>([]);
+  const [presenting, setPresenting] = useState<string | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [reason, setReason] = useState("");
@@ -53,6 +61,7 @@ export function ChangeOrdersCard({
     try {
       const r = await api.get<unknown>(changeOrdersPath(jobId));
       setRows(readChangeOrders(r));
+      setAgreed(readAgreedLines(r));
     } catch (e) {
       setRows([]);
       setLoadErr(changeOrderError("load", e));
@@ -61,7 +70,7 @@ export function ChangeOrdersCard({
 
   useEffect(() => { void load(); }, [load]);
 
-  const removable = jobLines.filter((l) => !!l.id);
+  const removable: JobLine[] = agreed.length ? agreed : jobLines.filter((l) => !!l.id);
   const removed = removable.filter((l) => removeIds.includes(l.id as string));
   const delta = changeOrderDelta(adds, removed);
 
@@ -84,6 +93,19 @@ export function ChangeOrdersCard({
       setProblem(changeOrderError("save", e));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function present(row: ChangeOrderRow) {
+    setPresenting(row.id); setNote(null); setLoadErr(null);
+    try {
+      await api.post<unknown>(presentChangeOrderPath(jobId, row.id), {});
+      setNote(PRESENTED_NOTE);
+      await load();
+    } catch (e) {
+      setLoadErr(changeOrderError("present", e));
+    } finally {
+      setPresenting(null);
     }
   }
 
@@ -159,8 +181,7 @@ export function ChangeOrdersCard({
           )}
 
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 16, marginTop: 12, fontSize: 12 }} data-testid="change-order-preview">
-            <span style={{ color: "#5A7A8A" }}>Change: <strong style={{ color: "#0B1C24", fontFamily: "monospace" }}>{deltaLabel(delta)}</strong></span>
-            <span style={{ color: "#5A7A8A" }}>New job total: <strong style={{ color: "#0B1C24", fontFamily: "monospace" }}>{money(jobTotal + delta)}</strong></span>
+            <span style={{ color: "#5A7A8A" }}>Change before tax: <strong style={{ color: "#0B1C24", fontFamily: "monospace" }}>{deltaLabel(delta)}</strong></span>
           </div>
 
           {problem && (
@@ -212,7 +233,17 @@ export function ChangeOrdersCard({
                   <span>Declined on {new Date(row.decidedAt).toLocaleString()}</span>
                 )}
                 {row.createdAt && <span>Made {new Date(row.createdAt).toLocaleString()}</span>}
-                {row.customerLink && (row.status === "draft" || row.status === "presented") && (
+                {row.status === "draft" && !disabled && (
+                  <button
+                    type="button"
+                    onClick={() => { void present(row); }}
+                    disabled={presenting !== null}
+                    style={{ background: "none", border: "none", padding: 0, color: "#1A7DB5", cursor: "pointer", fontSize: 11, fontWeight: 600, textDecoration: "underline" }}
+                  >
+                    {presenting === row.id ? "Opening…" : "Open for the customer to sign"}
+                  </button>
+                )}
+                {row.customerLink && row.status === "presented" && (
                   <button
                     type="button"
                     onClick={() => { void copyLink(row); }}

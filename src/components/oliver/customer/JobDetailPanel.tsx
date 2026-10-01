@@ -450,7 +450,6 @@ function JobLayout(p: JobLayoutProps) {
               jobId={jobId}
               api={p.api}
               jobLines={p.savedLineItems}
-              jobTotal={p.savedLineItems.reduce((s, it) => s + computeLineTotal(it), 0)}
               disabled={p.isTerminal}
             />
           )}
