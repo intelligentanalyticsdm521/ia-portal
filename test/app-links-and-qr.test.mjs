@@ -56,8 +56,7 @@ test('all three apps are offered, on their permanent hosts', () => {
 test('the QR code comes from our own API, never a third-party image host', () => {
   const card = read(...CARD);
   assert.match(card, /\/public\/portal\/\$\{encodeURIComponent\(slug\)\}\/qr/);
-  assert.match(card, /\$\{qrBase\}\.png\?app=\$\{kind\}/);
-  assert.match(card, /\$\{qrBase\}\.svg\?app=\$\{kind\}/, 'a printer needs the vector');
+  assert.match(card, /\$\{qrBase\}\.png\?app=\$\{kind\}&size=256/, 'the code on the card is our own PNG');
 
   // Any absolute http(s) URL in this file that is not ours would be the bug.
   const withoutComments = card.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -70,10 +69,20 @@ test('the QR code comes from our own API, never a third-party image host', () =>
   }
 });
 
-test('both QR formats are offered as downloads, with a filename', () => {
+test('one Share button per app: the phone’s share sheet when there is one, else Email / Text / Copy (30 Sep 2026)', () => {
+  // Brandon: "the download buttons don't do anything. I'd probably just change that to a share
+  // button and then they can text it if on a mobile or email it" — the PNG / SVG downloads are gone.
   const card = read(...CARD);
-  assert.match(card, /download=\{`\$\{slug\}-\$\{kind\}-qr\.png`\}/);
-  assert.match(card, /download=\{`\$\{slug\}-\$\{kind\}-qr\.svg`\}/);
+  assert.doesNotMatch(card, /download=\{/, 'no download links are left on the card');
+  assert.match(card, /<ShareButton url=\{url\} name=\{meta\.name\} \/>/);
+  assert.match(card, /typeof navigator\.share === "function"/);
+  assert.match(card, /navigator\.share\(\{ title: name, text: name, url \}\)/);
+  assert.match(card, /href=\{`mailto:\?subject=/);
+  assert.match(card, /href=\{`sms:\?&body=/);
+  assert.match(card, /Copy the link/);
+  // On a dev machine Open goes to the dev ports; in production to the three permanent hosts.
+  assert.match(card, /const DEV_PORTS: Record<AppKind, number> = \{ customer: 5175, crew: 5176, booking: 5407 \}/);
+  assert.match(card, /if \(onDevMachine\(\)\) return `http:\/\/localhost:\$\{DEV_PORTS\[kind\]\}\/\$\{slug\}\/`;/);
 });
 
 test('the install instructions are two different sentences, and neither says "one tap"', () => {

@@ -302,7 +302,7 @@ function PortalEditorModal({
       product="oliver"
       eyebrow={`${portalKind === "customer" ? "CUSTOMER" : "CREW"} PORTAL · EDIT`}
       title={`${portalKind === "customer" ? "Customer" : "Crew"} portal settings`}
-      subtitle={hasLook ? "Look, signup form, layout, domain and workflow." : "Signup form, layout, domain and workflow."}
+      subtitle={hasLook ? "Look, signup form, domain and workflow." : "Signup form, domain and workflow."}
       size="info"
       footer={
         <>
