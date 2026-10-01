@@ -13,7 +13,7 @@
 //                    Lead Inbox and Suppressed Domains — one row per search
 //                    (name, categories, area, last run) with "Run again";
 //                    clicking a row opens the search screen filled in from it;
-//                    "No saved searches yet" and the New B2B Lead Search button
+//                    "No saved searches yet" and the New B2B Lead Run button
 //                    when there are none.
 //   Replace = delete the old Saved Lead Searches page is gone (file, route key,
 //                    nav entry); its address sends people to the Saved Searches
@@ -165,7 +165,7 @@ test("Save as new search never touches the original: it needs a different name a
   assert.match(NEW_PAGE, /onClick=\{\(\) => handleSaveProfile\("save"\)\}/);
   assert.match(NEW_PAGE, /const sameNameAsOpen = !!editing && profileName\.trim\(\)\.toLowerCase\(\) === editing\.name\.trim\(\)\.toLowerCase\(\);/);
   assert.match(NEW_PAGE, /disabled=\{!profileName\.trim\(\) \|\| savingProfile \|\| sameNameAsOpen\}/);
-  assert.match(NEW_PAGE, />Give the new search a different name\.</);
+  assert.match(NEW_PAGE, />To save it as a new search, give it a different name\.</);
   assert.match(NEW_PAGE, /Save as new search/);
 });
 
@@ -196,7 +196,9 @@ test("a row says the area: cities and radius, or ZIP codes", () => {
 
 test("a row says when it last ran and how many leads it found", () => {
   assert.match(lib.lastRunLine(HOME, "en-US"), /^Last run Oct 1, 2026 · 12 leads found$/);
-  assert.equal(lib.lastRunLine({ ...HOME, last_run_at: null }), "Not run yet");
+  assert.equal(lib.lastRunLine({ ...HOME, last_run_at: null, last_run_lead_count: null }), "Not run yet");
+  assert.equal(lib.lastRunLine({ ...HOME, last_run_at: null, last_run_lead_count: 4 }), "4 leads found last time",
+    "a run started from the form leaves no date, but its result is known");
   assert.match(lib.lastRunLine({ ...HOME, last_run_lead_count: 1 }, "en-US"), /· 1 lead found$/);
 });
 
@@ -217,7 +219,7 @@ test("the tab lists one row per saved search: name, categories, area, last run, 
   assert.match(html, />Commercial Services - Des Moines</);
   assert.match(html, />Cleaning Services · Security Services</);
   assert.equal((html.match(/> Run again</g) || []).length, 2);
-  assert.match(html, /> New B2B Lead Search</);
+  assert.match(html, /> New B2B Lead Run</);
 });
 
 test("the row itself is the control that opens the search (one per row, beside Run again)", () => {
@@ -228,10 +230,10 @@ test("the row itself is the control that opens the search (one per row, beside R
   assert.match(src, /onClick=\{\(\) => onRunAgain\(s\)\}/);
 });
 
-test("with none: 'No saved searches yet' and the New B2B Lead Search button", () => {
+test("with none: 'No saved searches yet' and the New B2B Lead Run button", () => {
   const html = list([]);
   assert.match(html, />No saved searches yet</);
-  assert.match(html, /> New B2B Lead Search</);
+  assert.match(html, /> New B2B Lead Run</);
   assert.doesNotMatch(html, /saved-search-row/);
 });
 

@@ -922,7 +922,7 @@ export function SparkLeadGenNewPage() {
     <SparkPageShell
       title={editing ? `Editing: ${editing.name}` : "New B2B Lead Search"}
       subtitle={editing
-        ? "Change anything below, then Save to update this search, or Start Search to run it"
+        ? "Change anything, then Save it or Start Search"
         : "Find verified B2B leads — see exactly what you're searching for before you pay"}
       help="Set your categories, location, and search mode. Pick more than one category and the search asks each of them in turn. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost and estimated runtime, and tells you when a search looks too strict to fill your order. Nothing runs (and you're not charged) until you click Start Search."
       actions={
@@ -1541,7 +1541,7 @@ export function SparkLeadGenNewPage() {
             <p className="text-[12px] text-slate-500">
               {editing
                 ? <>Save updates &ldquo;{editing.name}&rdquo;. Save as new search keeps it as it was and adds a new saved search.</>
-                : "Find it again at the top of the Lead Inbox. Re-run it any time without setting it up again."}
+                : "Find it again on the Saved Searches tab of the Lead Inbox. Run it again any time without setting it up again."}
             </p>
             <div>
               <label className="text-[10px] uppercase font-semibold text-slate-500">Name</label>
@@ -1554,7 +1554,7 @@ export function SparkLeadGenNewPage() {
               />
             </div>
             {editing && sameNameAsOpen && (
-              <p className="text-[11px] text-slate-500">Give the new search a different name.</p>
+              <p className="text-[11px] text-slate-500">To save it as a new search, give it a different name.</p>
             )}
             <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button onClick={() => setShowSaveModal(false)} className="text-sm px-3 py-1.5 rounded border border-slate-200">Cancel</button>

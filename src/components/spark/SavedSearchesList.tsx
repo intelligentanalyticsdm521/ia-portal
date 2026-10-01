@@ -5,7 +5,7 @@
 // categories it asks, the area (cities / radius), when it last ran and how many
 // leads it found, and "Run again". CLICKING A ROW opens New B2B Lead Search
 // filled in from that search, ready to change, run or save. "New B2B Lead
-// Search" starts a fresh one.
+// Run" (the same words as the Lead Inbox tab's button) starts a fresh one.
 //
 // Presentational only: the Lead Inbox's tab owns the fetch and the handlers, so
 // this renders from props and is pinned by
@@ -15,7 +15,7 @@
 // server (the job needs one). They are kept apart behind one line, so the
 // searches a person NAMED are what the tab shows.
 import { useState } from "react";
-import { Play, Plus, Trash2, ChevronRight } from "lucide-react";
+import { Play, Sparkles, Trash2, ChevronRight } from "lucide-react";
 import {
   type SavedSearch, categoriesLine, areaLine, lastRunLine, splitSavedSearches,
 } from "../../lib/leadgenSavedSearch";
@@ -51,8 +51,8 @@ function Row({ s, runningId, onOpen, onRunAgain, onDelete }: {
         className="group flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-orange-50"
       >
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-semibold text-slate-900 group-hover:text-[#B84817]">{s.name}</span>
-          <span className="block truncate text-[12px] text-slate-600">{categoriesLine(s)}</span>
+          <span className="block break-words text-sm font-semibold text-slate-900 group-hover:text-[#B84817]">{s.name}</span>
+          <span className="block break-words text-[12px] text-slate-600">{categoriesLine(s)}</span>
           <span className="block truncate text-[11px] text-slate-500">{areaLine(s)}</span>
           <span className="block text-[11px] text-slate-400">{lastRunLine(s)}</span>
         </span>
@@ -93,7 +93,7 @@ export function SavedSearchesList({
       onClick={onNewSearch}
       className="inline-flex min-h-[36px] items-center gap-1 rounded bg-[#EF6C33] px-3 py-1 text-[12px] font-medium text-white hover:bg-[#D85F2A]"
     >
-      <Plus className="h-3.5 w-3.5" /> New B2B Lead Search
+      <Sparkles className="h-3.5 w-3.5" /> New B2B Lead Run
     </button>
   );
 

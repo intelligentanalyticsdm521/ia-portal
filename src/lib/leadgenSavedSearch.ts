@@ -200,9 +200,14 @@ export function areaLine(p: SavedSearch): string {
   return parts.length ? parts.join(" · ") : "No area set";
 }
 
-/** "Last run 1 Oct 2026 · 12 leads found" / "Not run yet". */
+/** "Last run 1 Oct 2026 · 12 leads found" / "4 leads found last time" / "Not run yet". */
 export function lastRunLine(p: SavedSearch, locale?: string): string {
-  if (!p.last_run_at) return "Not run yet";
+  const n0 = p.last_run_lead_count;
+  if (!p.last_run_at) {
+    // A run started from the form (not "Run again") leaves no date on the
+    // saved search, but its result is still known.
+    return typeof n0 === "number" ? `${n0} lead${n0 === 1 ? "" : "s"} found last time` : "Not run yet";
+  }
   const d = new Date(p.last_run_at);
   const date = Number.isNaN(d.getTime())
     ? String(p.last_run_at)

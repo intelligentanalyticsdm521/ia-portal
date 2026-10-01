@@ -113,7 +113,7 @@ const TAB_INFO: Record<TabKey, { title: string; body: React.ReactNode }> = {
         <ul className="list-disc pl-5 space-y-1">
           <li><strong>Run again</strong> — run a saved search exactly as it was saved.</li>
           <li>Click a search to open it, change anything, and run it — or <strong>Save</strong> the changes, or <strong>Save as new search</strong> to keep the original as it was.</li>
-          <li>Start a fresh one with <strong>New B2B Lead Search</strong>.</li>
+          <li>Start a fresh search with the orange button at the top of the tab.</li>
         </ul>
         <p className="text-xs text-slate-500 pt-1">
           Every run is billed per delivered lead, the same as a new search.
