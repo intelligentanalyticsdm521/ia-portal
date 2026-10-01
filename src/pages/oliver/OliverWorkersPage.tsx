@@ -8,6 +8,10 @@ import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation, parseIdList, locationNameOf, type OliverLocation } from "../../lib/oliverLocations";
 import { addSelfNote, addSelfFailureNote, sameWorkerId, type AddSelfResult } from "../../lib/crewSelf";
 import {
+  CREW_PERMISSIONS, permissionLoadError, permissionPatchBody, permissionSaveError, permissionSaveNote, readCrewPermissions,
+  type CrewPermissionKey,
+} from "../../lib/onsiteJob";
+import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
 } from "../../components/oliver/ui";
@@ -572,6 +576,12 @@ function WorkerDrawer({ workerId, onClose, onSaved, api, locations, defaultLocat
 
       {!isNew && (
         <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
+          <CrewPermissionsPanel workerId={worker.id} firstName={worker.first_name} api={api} />
+        </section>
+      )}
+
+      {!isNew && (
+        <section className="mt-6 space-y-3 pt-4 border-t border-gray-200">
           <CalendarSyncPanel workerId={worker.id} api={api} />
         </section>
       )}
@@ -620,6 +630,88 @@ function WorkerDrawer({ workerId, onClose, onSaved, api, locations, defaultLocat
         <p className="text-xs text-slate-500">Save to apply changes. Auto-scheduling uses these windows + existing job assignments to place new requests.</p>
       </section>
     </DetailDrawer>
+  );
+}
+
+// On-site flow Phase C (G9): what this worker may do in the crew app on site.
+// Four switches, each saved the moment it is flipped through PATCH
+// /workers/:id (not the drawer's Save), and "Saved" only when the answer
+// carries the value sent. Read from GET /workers/:id, whose row carries the
+// four columns; a switch the server did not send is shown disabled with a
+// sentence rather than a guessed default. Owners and admins can always do
+// all four (the API says so on GET /employee/me).
+function CrewPermissionsPanel({ workerId, firstName, api }: {
+  workerId: string; firstName: string; api: WorkerDrawerApi;
+}) {
+  const [perms, setPerms] = useState<Record<CrewPermissionKey, boolean | null> | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
+  const [busyKey, setBusyKey] = useState<CrewPermissionKey | null>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    setPerms(null); setLoadErr(null); setNote(null);
+    api.get<unknown>(`/workers/${workerId}`)
+      .then((w) => { if (live) setPerms(readCrewPermissions(w)); })
+      .catch((e) => { if (live) setLoadErr(permissionLoadError(e)); });
+    return () => { live = false; };
+  }, [api, workerId]);
+
+  async function flip(key: CrewPermissionKey, value: boolean) {
+    setBusyKey(key); setNote(null);
+    try {
+      const resp = await api.patch<unknown>(`/workers/${workerId}`, permissionPatchBody(key, value));
+      const said = permissionSaveNote(key, value, resp, firstName);
+      setNote(said);
+      if (said.ok) setPerms((cur) => (cur ? { ...cur, [key]: value } : cur));
+    } catch (e) {
+      setNote({ ok: false, text: permissionSaveError(e) });
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  const unknown = !!perms && CREW_PERMISSIONS.some((p) => perms[p.key] === null);
+
+  return (
+    <div data-testid="crew-permissions">
+      <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">On site, in the crew app</h3>
+      <p className="text-xs text-slate-500 mt-1">
+        What {firstName.trim() || "this worker"} may do on the tablet. Each switch saves when you flip it. Owners and admins can always do all four.
+      </p>
+      {loadErr && <div className="mt-2 rounded-lg bg-red-50 ring-1 ring-red-200 px-3 py-2 text-xs text-red-800" role="alert">{loadErr}</div>}
+      {!perms && !loadErr && <div className="mt-2 text-xs text-slate-500">Loading…</div>}
+      {perms && (
+        <div className="mt-3 space-y-2">
+          {CREW_PERMISSIONS.map((p) => {
+            const v = perms[p.key];
+            return (
+              <label key={p.key} className="flex items-start gap-3 rounded-lg ring-1 ring-gray-200 px-3 py-2">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  aria-checked={v === true}
+                  checked={v === true}
+                  disabled={v === null || busyKey !== null}
+                  onChange={(e) => { void flip(p.key, e.target.checked); }}
+                  className="mt-0.5"
+                />
+                <span className="flex-1">
+                  <span className="block text-sm font-medium text-slate-800">{p.label}{busyKey === p.key ? " — saving…" : ""}</span>
+                  <span className="block text-xs text-slate-500">{p.help}</span>
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+      {unknown && (
+        <p className="mt-2 text-xs text-slate-500">Some switches are not available yet: the server did not say whether they are on.</p>
+      )}
+      {note && (
+        <div className={`mt-2 text-xs ${note.ok ? "text-emerald-700" : "text-red-700"}`} role={note.ok ? "status" : "alert"}>{note.text}</div>
+      )}
+    </div>
   );
 }
 
