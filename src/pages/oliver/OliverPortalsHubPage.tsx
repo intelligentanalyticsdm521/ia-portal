@@ -33,6 +33,10 @@ import {
   depositSaveNote, depositSaveError,
 } from "../../lib/onsiteMoney";
 import {
+  COMPLETION_OFF_NOTICE, completionPatchPart, completionSaveProblem, completionSavedSentence,
+  completionSignatureFromSettings,
+} from "../../lib/onsiteJob";
+import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
   AlertTriangle, CheckCircle2, Clock, Palette,
 } from "lucide-react";
@@ -809,7 +813,7 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
 }
 
 // ── WorkflowTabStub → inline workflow rules (F-114 Phase 2) ───────────────
-type WorkflowShape = { reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string; default_deposit_percent?: number | null };
+type WorkflowShape = { reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string; default_deposit_percent?: number | null; require_completion_signature?: boolean };
 
 const WORKFLOW_DEFAULTS: WorkflowShape = {
   reschedule_mode: "admin_approval",
@@ -834,6 +838,13 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
   // Save as the other workflow rules. `undefined` = not loaded yet.
   const [depositStored, setDepositStored] = useState<number | null | undefined>(undefined);
   const [depositText, setDepositText] = useState("");
+  // On-site flow Phase C (G6): "Ask the customer to sign when a job is
+  // finished" — oliver.tenant_settings.require_completion_signature, ON by
+  // default, on GET / PATCH /workflow-settings under the API's name. `null` =
+  // the server did not send the field (the switch is not offered then);
+  // `undefined` = not loaded yet. Turning it off shows the notice, and the
+  // change only lands on Save workflow — the second tap.
+  const [completion, setCompletion] = useState<boolean | null | undefined>(undefined);
 
   useEffect(() => {
     if (!ready) return;
@@ -843,6 +854,7 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
         const v = depositPercentFromSettings(r);
         setDepositStored(v);
         setDepositText(depositPercentText(v));
+        setCompletion(completionSignatureFromSettings(r));
       })
       .catch(() => setWf(null));
   }, [ready, get]);
@@ -852,6 +864,8 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
   const reset = () => {
     if (!window.confirm("Reset workflow rules to the platform defaults? You'll still need to click Save to persist.")) return;
     setWf({ ...WORKFLOW_DEFAULTS });
+    // The platform default is ON (oliver 227: DEFAULT 1).
+    if (completion !== null && completion !== undefined) setCompletion(true);
   };
 
   const save = async () => {
@@ -861,7 +875,7 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
     if (!deposit.ok) { setSavedOk(false); setSavedMsg(deposit.message); return; }
     setSaving(true);
     try {
-      await patch("/workflow-settings", workflowPatchBody(wf, deposit.value));
+      await patch("/workflow-settings", { ...workflowPatchBody(wf, deposit.value), ...completionPatchPart(completion ?? null) });
     } catch (e) {
       setSavedOk(false);
       setSavedMsg(depositSaveError(e));
@@ -874,6 +888,9 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
     try {
       const back = await get<WorkflowShape>("/workflow-settings");
       note = depositSaveNote(deposit.value, back);
+      const completionProblem = completionSaveProblem(completion ?? null, back);
+      if (note.ok && completionProblem) note = { ok: false, text: completionProblem };
+      else if (note.ok && completion !== null && completion !== undefined) note = { ok: true, text: `${note.text} ${completionSavedSentence(completion)}` };
       if (note.ok) { setWf(back); setDepositStored(deposit.value); }
     } catch {
       note = { ok: false, text: "Workflow rules sent, but they could not be read back to check. Close and reopen this window to see what was kept." };
@@ -962,6 +979,31 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
         <p className="text-[11px] text-slate-500">
           The customer is offered this deposit on the crew's tablet and on the quote link after signing. It is charged to their card and taken off the final bill. Leave it empty to ask for no deposit.
         </p>
+      </div>
+
+      <div className="rounded-md border border-slate-200 bg-white p-3 space-y-2" data-testid="completion-signature">
+        <div className="text-[10px] uppercase font-semibold text-slate-500">When a job is finished</div>
+        <label className="flex items-center gap-2 text-xs">
+          <input
+            type="checkbox"
+            checked={completion !== false}
+            onChange={(e) => setCompletion(e.target.checked)}
+            disabled={completion === null || completion === undefined || saving}
+          />
+          <span>Ask the customer to sign when a job is finished</span>
+        </label>
+        {completion === null ? (
+          <p className="text-[11px] text-slate-500">This setting is not available yet: the server did not say whether it is on.</p>
+        ) : (
+          <p className="text-[11px] text-slate-500">
+            Before the crew marks a job finished, the customer sees what was done, the photos and the total on the tablet (or on their phone from a link) and signs.
+          </p>
+        )}
+        {completion === false && (
+          <p role="status" data-testid="completion-off-notice" className="rounded border border-amber-300 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-900">
+            {COMPLETION_OFF_NOTICE}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">
