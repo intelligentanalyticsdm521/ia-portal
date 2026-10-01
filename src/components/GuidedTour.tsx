@@ -655,12 +655,6 @@ export const SPARK_QUICK_TOUR: TourDef = {
       placement: "right",
     },
     {
-      title: "Sales — Saved Searches",
-      body: "Re-run a search profile you already built without retyping anything. Each run honors lifetime per-tenant uniqueness so you never get the same domain twice.",
-      targetSelector: "a[href='/app/spark/leadgen/saved']",
-      placement: "right",
-    },
-    {
       title: "Sales — Pipelines & Deals",
       body: "Drag opportunities through stages. Pipelines is the config; Deals is the day-to-day view.",
       targetSelector: "a[href='/app/services/spark_pipelines']",

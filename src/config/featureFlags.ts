@@ -84,6 +84,5 @@ export const FEATURE_GATING_ENABLED = true;
 // inline in serviceCatalog) so the lock lives with the flag it depends on.
 export const LEADGEN_LOCKED_KEYS: readonly string[] = [
   'spark_leadgen_new',   // New Lead Search (the garbage-producing form)
-  'spark_leadgen_saved', // Saved Lead Searches
   'spark_search_profiles', // Search Profiles (saved lead-search configs)
 ];

@@ -314,7 +314,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   // SPARK Lead Gen V1 (F-150/F-163) — Option 3 live-preview lead search flow
   { key: 'spark_leadgen_new', displayName: 'New B2B Lead Search', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/b2b_new', description: 'Build a B2B lead search with a live preview panel — see expanded keywords, resolved cities, estimated cost, and runtime before you pay.' },
-  { key: 'spark_leadgen_saved', displayName: 'Saved Lead Searches', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/saved', description: 'Saved Lead Gen profiles. Re-run any with one click.' },
+  // Saved lead searches (2026-10-01) are the Lead Inbox's Saved Searches tab — no page of their own.
   { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
   // Tenant-level tuning surface for the 6-dimension contact score weights.
   // Six sliders that must sum to 100; live re-rank preview of the top 20

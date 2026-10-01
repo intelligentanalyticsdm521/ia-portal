@@ -20,6 +20,7 @@ import { LeadAttributionCard } from "../../components/spark/LeadAttributionCard"
 // P5 — hand the "you have N new leads" toast to the SPARK shell, which shows it
 // after the redirect to the inbox.
 import { stashRunComplete } from "../../components/spark/NewLeadsBanner";
+import { SAVED_SEARCHES_PATH } from "../../lib/leadgenSavedSearch";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
   ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw, Receipt, Lock,
@@ -347,7 +348,7 @@ export function SparkLeadGenJobPage() {
             <ArrowLeft className="h-3 w-3" /> New search
           </button>
           <button
-            onClick={() => navigate("/app/spark/leadgen/saved")}
+            onClick={() => navigate(SAVED_SEARCHES_PATH)}
             className="text-xs px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           >
             Saved searches
