@@ -6,6 +6,7 @@ import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation, parseIdList, locationNameOf, type OliverLocation } from "../../lib/oliverLocations";
+import { addSelfNote, addSelfFailureNote, sameWorkerId, type AddSelfResult } from "../../lib/crewSelf";
 import {
   PageHeader, FilterBar, DataTable, DetailDrawer, EmptyState, Button,
   StatusBadge, type Column,
@@ -94,6 +95,34 @@ export function OliverWorkersPage() {
       setInviting(null);
     }
   }
+  // On-site flow v1 (1 Oct 2026) — an owner-operator works in the Portal for
+  // the office and in the crew app on site, and the crew app only lets in
+  // people on the crew list. One button puts the signed-in admin on it.
+  const [addingSelf, setAddingSelf] = useState(false);
+
+  async function addYourself() {
+    setAddingSelf(true);
+    setInviteNote(null);
+    try {
+      const r = await post<AddSelfResult>("/workers/me", {});
+      // The email the crew app will know them by is the crew member's own —
+      // read it back from the list rather than guess it from the sign-in.
+      let email: string | null = null;
+      if (r && r.worker_id) {
+        try {
+          const list = await get<Worker[]>("/workers");
+          email = (list || []).find((w) => sameWorkerId(w.id, r.worker_id))?.email ?? null;
+        } catch { /* the note still says what happened; it names no email */ }
+      }
+      setInviteNote(addSelfNote(r, email));
+      await reload();
+    } catch (e) {
+      setInviteNote(addSelfFailureNote(e));
+    } finally {
+      setAddingSelf(false);
+    }
+  }
+
   const loc = useOliverLocations();
   const [workers, setWorkers] = useState<Worker[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,7 +235,15 @@ export function OliverWorkersPage() {
       <PageHeader
         title="Team"
         subtitle="Manage your workers and their weekly availability"
-        actions={<Button variant="primary" onClick={() => setEditingId("new")}>+ Add worker</Button>}
+        actions={
+          <>
+            <Button variant="secondary" onClick={() => void addYourself()} disabled={addingSelf}
+              title="Put yourself on the crew list so you can use the crew app on your own jobs">
+              {addingSelf ? "Adding…" : "Add yourself as a crew member"}
+            </Button>
+            <Button variant="primary" onClick={() => setEditingId("new")}>+ Add worker</Button>
+          </>
+        }
       />
 
       {inviteNote && (
