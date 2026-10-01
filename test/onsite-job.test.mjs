@@ -260,3 +260,19 @@ test("nothing here shows a cost", () => {
     assert.ok(!/console\.(log|info|debug)/.test(src), name);
   }
 });
+
+test("job modal: the line items read the unwrapped array (useOliverApi strips { data }), the wrapped shape too", () => {
+  // Pane test 1 Oct: FIX-9001 has 3 lines and the tab said "No line items yet",
+  // because the panel read `items?.data` from a body that was already the array.
+  assert.match(jobPanel, /const itemList: PersistedLineItem\[\] = Array\.isArray\(items\)/);
+  assert.ok(!/\(items\?\.data \|\| \[\]\)\.map/.test(jobPanel), "the old .data-only read is gone");
+});
+
+test("the $0 'Change order: …' header an accepted change leaves on the job is not offered to take off", () => {
+  const resp = { agreed_lines: [
+    { line_item_id: "H", description: "Change order: Back fence", quantity: 1, unit_price: 0, line_total: 0 },
+    { line_item_id: "L", description: "Spring Cleanup", quantity: 1, unit_price: 240, line_total: 240 },
+    { line_item_id: "P", description: "Change order: priced (not a header)", quantity: 1, unit_price: 10, line_total: 10 },
+  ] };
+  assert.deepEqual(lib.readAgreedLines(resp).map((l) => l.id), ["L", "P"]);
+});

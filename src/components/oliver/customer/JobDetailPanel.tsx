@@ -127,7 +127,15 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       ]);
       const jobData = (j as any)?.data ?? j;
       setJob(jobData);
-      const itemRows = (items?.data || []).map((it) => ({
+      // useOliverApi already strips the { data } envelope, so the body IS the
+      // array. Reading only `.data` left this tab at "No line items yet" on
+      // every job that had lines (pane test 1 Oct, FIX-9001 with 3 lines) —
+      // and "Save line items" then replaced the job's real lines with only
+      // what was typed. Accept the wrapped shape too, like the job read above.
+      const itemList: PersistedLineItem[] = Array.isArray(items)
+        ? (items as PersistedLineItem[])
+        : ((items as { data?: PersistedLineItem[] })?.data ?? []);
+      const itemRows = itemList.map((it) => ({
         id: it.id,
         description: it.description,
         quantity: Number(it.quantity),

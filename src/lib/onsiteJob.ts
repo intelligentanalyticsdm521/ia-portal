@@ -160,6 +160,9 @@ export function readAgreedLines(resp: unknown): JobLine[] {
     const l = r as Record<string, unknown>;
     const id = str(pick(l, "line_item_id", "lineItemId", "id"));
     if (!id) continue;
+    // The $0 "Change order: {reason}" header an accepted change leaves on the
+    // job is a section title on the invoice, not work to take off.
+    if (isChangeOrderHeader(l)) continue;
     out.push({
       id,
       description: str(l.description) || "(no description)",
@@ -169,6 +172,13 @@ export function readAgreedLines(resp: unknown): JobLine[] {
     });
   }
   return out;
+}
+
+/** The $0 "Change order: …" section header line an accepted change order adds to the job. */
+export function isChangeOrderHeader(line: Record<string, unknown>): boolean {
+  const total = num(pick(line, "line_total", "lineTotal"));
+  const price = num(pick(line, "unit_price", "unitPrice"));
+  return /^Change order:/i.test(str(line.description)) && (total ?? price ?? 0) === 0;
 }
 
 /** Open a draft for the customer's signature (the office route). */
