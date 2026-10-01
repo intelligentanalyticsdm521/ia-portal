@@ -6,11 +6,12 @@
 //      modal, read from GET /payments/contacts/:id/methods (the default card
 //      when one is marked, else the first).
 //   2. "Ask for a deposit when a quote is signed: __ %" on the portal
-//      settings window's Workflow tab, written to
-//      oliver.tenant_settings.default_deposit_percent through PATCH /settings
-//      as `defaultDepositPercent` (the same shape as `defaultTaxRate`, the
-//      other percent that route writes to that row). Empty = no deposit asked.
-//   3. "Deposit received" on the Invoices list rows that have one.
+//      settings window's Workflow tab: oliver.tenant_settings.
+//      default_deposit_percent, read from GET /workflow-settings and written
+//      through PATCH /workflow-settings as `default_deposit_percent` (the
+//      API's name is canonical — decided 1 Oct). Empty = no deposit asked.
+//   3. "Deposit received" on the Invoices list rows that have one, read from
+//      the GET /invoices row's `depositReceived`.
 //
 // Only Stripe's brand and last four ever appear here — never a card number.
 
@@ -69,15 +70,16 @@ export const CARD_CHECK_FAILED = "Could not check for a card on file.";
 
 // ── 2. default deposit percent ────────────────────────────────────────────
 
+/** The API's field name for the default deposit, on GET and PATCH /workflow-settings. */
+export const DEPOSIT_PERCENT_FIELD = "default_deposit_percent" as const;
+
 /**
- * What GET /settings says the default deposit is. `defaultDepositPercent` is
- * the route's camelCase; the snake_case column name is accepted too so a
- * route that echoes the row as stored still reads. Null = no deposit asked.
+ * What GET /workflow-settings says the default deposit is
+ * (`default_deposit_percent`). Null = no deposit asked.
  */
 export function depositPercentFromSettings(settings: unknown): number | null {
   if (!settings || typeof settings !== "object") return null;
-  const s = settings as Record<string, unknown>;
-  const raw = s.defaultDepositPercent !== undefined ? s.defaultDepositPercent : s.default_deposit_percent;
+  const raw = (settings as Record<string, unknown>)[DEPOSIT_PERCENT_FIELD];
   if (raw === null || raw === undefined || raw === "") return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
@@ -111,22 +113,32 @@ export function parseDepositPercent(text: string): DepositPercentParse {
   return { ok: true, value: n };
 }
 
-/** The PATCH /settings body for the deposit. */
-export function depositPatchBody(value: number | null): { defaultDepositPercent: number | null } {
-  return { defaultDepositPercent: value };
+/** The PATCH /workflow-settings body for the deposit alone. */
+export function depositPatchBody(value: number | null): { default_deposit_percent: number | null } {
+  return { [DEPOSIT_PERCENT_FIELD]: value };
 }
 
 /**
- * The sentence after saving. "Saved" only when the API's echo carries the
- * value we sent — a route that ignored the field would otherwise answer
- * "Saved." over nothing (the 2026-09-01 address bug on this same route).
+ * The one PATCH /workflow-settings body the Workflow tab's Save sends: the
+ * workflow rules as loaded/edited, the read-only `effective_reschedule_mode`
+ * left out, and the deposit as typed (null clears it).
  */
-export function depositSaveNote(sent: number | null, echoed: unknown): { ok: boolean; text: string } {
-  const back = depositPercentFromSettings(echoed);
-  const hasField = !!echoed && typeof echoed === "object"
-    && ("defaultDepositPercent" in (echoed as object) || "default_deposit_percent" in (echoed as object));
+export function workflowPatchBody<T extends object>(wf: T, deposit: number | null): Omit<T, "effective_reschedule_mode"> & { default_deposit_percent: number | null } {
+  const { effective_reschedule_mode: _ignored, ...rest } = wf as T & { effective_reschedule_mode?: unknown };
+  return { ...(rest as Omit<T, "effective_reschedule_mode">), ...depositPatchBody(deposit) };
+}
+
+/**
+ * The sentence after saving. PATCH /workflow-settings answers { ok: true }
+ * only, so `readBack` is GET /workflow-settings after the save: "Saved" only
+ * when it carries the value we sent — a route that ignored the field would
+ * otherwise answer "Saved." over nothing.
+ */
+export function depositSaveNote(sent: number | null, readBack: unknown): { ok: boolean; text: string } {
+  const back = depositPercentFromSettings(readBack);
+  const hasField = !!readBack && typeof readBack === "object" && DEPOSIT_PERCENT_FIELD in (readBack as object);
   if (!hasField || back !== sent) {
-    return { ok: false, text: "The deposit setting was not saved — the server did not keep it. Try again, or tell us if it keeps happening." };
+    return { ok: false, text: "Workflow rules saved, but the deposit setting was not kept by the server. Try again, or tell us if it keeps happening." };
   }
   return {
     ok: true,
@@ -138,21 +150,23 @@ export function depositSaveNote(sent: number | null, echoed: unknown): { ok: boo
 
 /** A failed save as a sentence (the API's own when it wrote one). */
 export function depositSaveError(e: unknown): string {
-  return `The deposit setting was not saved: ${apiErrorMessage(e)}`;
+  return `The workflow rules were not saved: ${apiErrorMessage(e)}`;
 }
 
 // ── 3. deposit received on invoice rows ───────────────────────────────────
 
+/** The API's field name for the deposit on a GET /invoices row. */
+export const DEPOSIT_RECEIVED_FIELD = "depositReceived" as const;
+
 /**
- * The deposit an invoice row carries, or null. Read from `depositAmount` on
- * the GET /invoices row (camelCase like the rest of that row); a positive
- * number only — 0, null, a missing field or a string that is not a number
- * shows nothing.
+ * The deposit an invoice row carries, or null. Read from `depositReceived` on
+ * the GET /invoices row (the API's name — decided 1 Oct); a positive number
+ * only — 0, null, a missing field or a string that is not a number shows
+ * nothing.
  */
 export function depositReceivedOf(row: unknown): number | null {
   if (!row || typeof row !== "object") return null;
-  const r = row as Record<string, unknown>;
-  const raw = r.depositAmount !== undefined ? r.depositAmount : r.deposit_amount;
+  const raw = (row as Record<string, unknown>)[DEPOSIT_RECEIVED_FIELD];
   if (raw === null || raw === undefined || raw === "") return null;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;

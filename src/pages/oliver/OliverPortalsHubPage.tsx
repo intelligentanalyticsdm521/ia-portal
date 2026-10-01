@@ -29,7 +29,7 @@ import { AppLinksCard } from "../../components/oliver/AppLinksCard";
 import { LookTab, useLookEditor } from "./look/LookTab";
 import { lookPreviewSrc } from "./look/lookModel";
 import {
-  depositPercentFromSettings, depositPercentText, parseDepositPercent, depositPatchBody,
+  depositPercentFromSettings, depositPercentText, parseDepositPercent, workflowPatchBody,
   depositSaveNote, depositSaveError,
 } from "../../lib/onsiteMoney";
 import {
@@ -809,7 +809,7 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
 }
 
 // ── WorkflowTabStub → inline workflow rules (F-114 Phase 2) ───────────────
-type WorkflowShape = { reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string };
+type WorkflowShape = { reschedule_mode: string; reschedule_advance_notice_hours: number; reschedule_cutoff_hours: number; reschedule_max_count: number; booking_auto_create_invoice: string; booking_auto_send_confirmation: boolean; booking_auto_assign_worker: string; default_deposit_percent?: number | null };
 
 const WORKFLOW_DEFAULTS: WorkflowShape = {
   reschedule_mode: "admin_approval",
@@ -829,23 +829,22 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
   const [savedOk, setSavedOk] = useState(true);
   // On-site flow Phase B (1 Oct 2026): "Ask for a deposit when a quote is
   // signed: __ %". Lives on oliver.tenant_settings.default_deposit_percent and
-  // is written through PATCH /settings (defaultDepositPercent), not
-  // /workflow-settings — so it loads and saves on its own, and the one Save
-  // button sends it only when it changed. `undefined` = not loaded yet.
+  // travels on GET / PATCH /workflow-settings as `default_deposit_percent`
+  // (the API's name is canonical — decided 1 Oct). It rides the same one
+  // Save as the other workflow rules. `undefined` = not loaded yet.
   const [depositStored, setDepositStored] = useState<number | null | undefined>(undefined);
   const [depositText, setDepositText] = useState("");
-  const [depositLoadError, setDepositLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
-    get<WorkflowShape>("/workflow-settings").then((r) => setWf(r)).catch(() => setWf(null));
-    get<unknown>("/settings")
+    get<WorkflowShape>("/workflow-settings")
       .then((r) => {
+        setWf(r);
         const v = depositPercentFromSettings(r);
         setDepositStored(v);
         setDepositText(depositPercentText(v));
       })
-      .catch(() => setDepositLoadError("The deposit setting could not be loaded, so it cannot be changed just now. Close and reopen this window to try again."));
+      .catch(() => setWf(null));
   }, [ready, get]);
 
   if (!wf) return <div className="text-xs text-slate-500">Loading workflow…</div>;
@@ -862,30 +861,26 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
     if (!deposit.ok) { setSavedOk(false); setSavedMsg(deposit.message); return; }
     setSaving(true);
     try {
-      await patch("/workflow-settings", wf);
+      await patch("/workflow-settings", workflowPatchBody(wf, deposit.value));
     } catch (e) {
       setSavedOk(false);
-      setSavedMsg(`Error: ${(e as Error).message}`);
+      setSavedMsg(depositSaveError(e));
       setSaving(false);
       return;
     }
-    let text = "Saved.";
-    let ok = true;
-    if (depositStored !== undefined && deposit.value !== depositStored) {
-      try {
-        const echoed = await patch<unknown>("/settings", depositPatchBody(deposit.value));
-        const note = depositSaveNote(deposit.value, echoed);
-        ok = note.ok;
-        text = note.ok ? note.text : `Workflow rules saved. ${note.text}`;
-        if (note.ok) setDepositStored(deposit.value);
-      } catch (e) {
-        ok = false;
-        text = `Workflow rules saved. ${depositSaveError(e)}`;
-      }
+    // PATCH answers { ok: true } only, so the deposit is read back from
+    // GET /workflow-settings: "Saved" only when the server kept what we sent.
+    let note: { ok: boolean; text: string };
+    try {
+      const back = await get<WorkflowShape>("/workflow-settings");
+      note = depositSaveNote(deposit.value, back);
+      if (note.ok) { setWf(back); setDepositStored(deposit.value); }
+    } catch {
+      note = { ok: false, text: "Workflow rules sent, but they could not be read back to check. Close and reopen this window to see what was kept." };
     }
-    setSavedOk(ok);
-    setSavedMsg(text);
-    if (ok) setTimeout(() => setSavedMsg(null), 4000);
+    setSavedOk(note.ok);
+    setSavedMsg(note.text);
+    if (note.ok) setTimeout(() => setSavedMsg(null), 4000);
     onSaved();
     setSaving(false);
   };
@@ -967,7 +962,6 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
         <p className="text-[11px] text-slate-500">
           The customer is offered this deposit on the crew's tablet and on the quote link after signing. It is charged to their card and taken off the final bill. Leave it empty to ask for no deposit.
         </p>
-        {depositLoadError && <p className="text-[11px] text-red-700">{depositLoadError}</p>}
       </div>
 
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">

@@ -33,7 +33,7 @@ interface InvoiceRow {
   stripePaymentLink?: string | null;
   /** On-site flow Phase B: the quote deposit booked against this invoice, when
    *  there is one. Read through depositReceivedOf (lib/onsiteMoney.ts). */
-  depositAmount?: number | null;
+  depositReceived?: number | null;
 }
 
 interface InvoiceLineItem {

@@ -5,13 +5,16 @@
 //   · Customer modal header and job modal: "Card on file •••• 1234" when any
 //     (GET /payments/contacts/:id/methods).
 //   · Portal settings window → Workflow tab: "Ask for a deposit when a quote
-//     is signed: __ %" writes tenant_settings.default_deposit_percent through
-//     the existing settings PATCH (PATCH /settings, defaultDepositPercent —
-//     the same shape as defaultTaxRate on that route).
-//   · Invoices list: "Deposit received" on rows that have one.
+//     is signed: __ %" reads and writes tenant_settings.default_deposit_percent
+//     through GET / PATCH /workflow-settings as `default_deposit_percent`.
+//   · Invoices list: "Deposit received" on rows that have one, from the
+//     GET /invoices row's `depositReceived`.
+//
+// DECIDED 1 Oct: the API's names are canonical and the Portal adapts. The
+// agreement test below names both fields; oliver-api pins the same two.
 //
 // What is tested: lib/onsiteMoney.ts for real (which card is named, the
-// percent box rules, the "Saved" that needs the echo, the row deposit), and
+// percent box rules, the "Saved" that needs the read-back, the row deposit), and
 // source pins for the badge, the two modals, the Workflow tab and the list.
 //
 // Run:  npm test   (node --import ./scripts/test-ts-loader.mjs --test test)
@@ -61,11 +64,31 @@ test("the badge's words: 'Card on file •••• 1234', the brand in the hove
 
 // ── default deposit percent ───────────────────────────────────────────────
 
-test("the stored percent reads from GET /settings (camelCase, or the column name)", () => {
-  assert.equal(lib.depositPercentFromSettings({ defaultDepositPercent: 25 }), 25);
-  assert.equal(lib.depositPercentFromSettings({ defaultDepositPercent: "12.50" }), 12.5);
-  assert.equal(lib.depositPercentFromSettings({ default_deposit_percent: 30 }), 30);
-  assert.equal(lib.depositPercentFromSettings({ defaultDepositPercent: null }), null, "NULL = no deposit asked");
+test("API agreement: default_deposit_percent on /workflow-settings, depositReceived on the invoices list", () => {
+  // The two names oliver-api serves (routes/workflowSettings.js GET/PATCH,
+  // routes/invoices.js GET / list). Renaming either side breaks this test.
+  assert.equal(lib.DEPOSIT_PERCENT_FIELD, "default_deposit_percent");
+  assert.equal(lib.DEPOSIT_RECEIVED_FIELD, "depositReceived");
+  // A GET /workflow-settings payload as the API sends it reads...
+  assert.equal(lib.depositPercentFromSettings({ reschedule_mode: "admin_approval", default_deposit_percent: 25 }), 25);
+  // ...and the Save body carries the same name back.
+  assert.deepEqual(lib.depositPatchBody(25), { default_deposit_percent: 25 });
+  // A GET /invoices row as the API sends it reads.
+  assert.equal(lib.depositReceivedOf({ id: "i1", amount: 500, depositReceived: 125 }), 125);
+  // The names that were never served are not read.
+  assert.equal(lib.depositPercentFromSettings({ defaultDepositPercent: 25 }), null);
+  assert.equal(lib.depositReceivedOf({ depositAmount: 125 }), null);
+  // The screens use the lib, not a field name of their own.
+  assert.match(hub, /get<WorkflowShape>\("\/workflow-settings"\)/);
+  assert.ok(!/["'`]\/settings["'`]/.test(hub), "the Workflow tab no longer talks to /settings");
+  assert.match(invoices, /depositReceived\?: number \| null;/);
+  assert.ok(!/depositAmount/.test(invoices));
+});
+
+test("the stored percent reads from GET /workflow-settings", () => {
+  assert.equal(lib.depositPercentFromSettings({ default_deposit_percent: 25 }), 25);
+  assert.equal(lib.depositPercentFromSettings({ default_deposit_percent: "12.50" }), 12.5);
+  assert.equal(lib.depositPercentFromSettings({ default_deposit_percent: null }), null, "NULL = no deposit asked");
   assert.equal(lib.depositPercentFromSettings({}), null);
   assert.equal(lib.depositPercentFromSettings(null), null);
   assert.equal(lib.depositPercentText(null), "");
@@ -89,35 +112,39 @@ test("the percent box: empty clears; 1–100; two decimals at most; a typed % is
   assert.match(lib.parseDepositPercent("150").message, /between 1% and 100%/);
 });
 
-test("the PATCH /settings body is defaultDepositPercent, null to clear", () => {
-  assert.deepEqual(lib.depositPatchBody(25), { defaultDepositPercent: 25 });
-  assert.deepEqual(lib.depositPatchBody(null), { defaultDepositPercent: null });
+test("the PATCH /workflow-settings body: the rules, the deposit as default_deposit_percent (null to clear), no read-only field", () => {
+  assert.deepEqual(lib.depositPatchBody(25), { default_deposit_percent: 25 });
+  assert.deepEqual(lib.depositPatchBody(null), { default_deposit_percent: null });
+  const loaded = { reschedule_mode: "admin_approval", effective_reschedule_mode: "admin_approval", reschedule_max_count: 2, default_deposit_percent: 10 };
+  assert.deepEqual(lib.workflowPatchBody(loaded, 25), { reschedule_mode: "admin_approval", reschedule_max_count: 2, default_deposit_percent: 25 });
+  assert.deepEqual(lib.workflowPatchBody(loaded, null), { reschedule_mode: "admin_approval", reschedule_max_count: 2, default_deposit_percent: null });
+  // Reset to defaults (no deposit field at all) still sends the deposit as typed.
+  assert.deepEqual(lib.workflowPatchBody({ reschedule_mode: "disabled" }, 30), { reschedule_mode: "disabled", default_deposit_percent: 30 });
 });
 
-test("'Saved' only when the echo carries what was sent — an ignored field is said, not hidden", () => {
-  assert.deepEqual(lib.depositSaveNote(25, { tenantName: "X", defaultDepositPercent: 25 }), {
+test("'Saved' only when the read-back carries what was sent — an ignored field is said, not hidden", () => {
+  assert.deepEqual(lib.depositSaveNote(25, { reschedule_mode: "admin_approval", default_deposit_percent: 25 }), {
     ok: true, text: "Saved. Customers are asked for a 25% deposit when they sign a quote.",
   });
-  assert.deepEqual(lib.depositSaveNote(null, { defaultDepositPercent: null }), {
+  assert.deepEqual(lib.depositSaveNote(null, { default_deposit_percent: null }), {
     ok: true, text: "Saved. No deposit is asked for when a quote is signed.",
   });
-  const ignored = lib.depositSaveNote(25, { tenantName: "X" });
+  const ignored = lib.depositSaveNote(25, { reschedule_mode: "admin_approval" });
   assert.equal(ignored.ok, false, "a route that does not know the field must not answer Saved");
-  assert.match(ignored.text, /was not saved/);
-  assert.equal(lib.depositSaveNote(25, { defaultDepositPercent: 20 }).ok, false);
+  assert.match(ignored.text, /not kept/);
+  assert.equal(lib.depositSaveNote(25, { default_deposit_percent: 20 }).ok, false);
   assert.equal(lib.depositSaveNote(null, null).ok, false);
-  assert.match(lib.depositSaveError(new Error('OLIVER API 400: {"error":"invalid_default_deposit_percent","message":"The deposit must be between 1 and 100."}')),
-    /^The deposit setting was not saved: The deposit must be between 1 and 100\.$/);
+  assert.match(lib.depositSaveError(new Error('OLIVER API 400: {"error":"invalid_deposit_percent","message":"The deposit must be between 1 and 100."}')),
+    /^The workflow rules were not saved: The deposit must be between 1 and 100\.$/);
 });
 
 // ── deposit received on invoice rows ──────────────────────────────────────
 
 test("a row's deposit: a positive number only", () => {
-  assert.equal(lib.depositReceivedOf({ depositAmount: 125 }), 125);
-  assert.equal(lib.depositReceivedOf({ depositAmount: "62.505" }), 62.51);
-  assert.equal(lib.depositReceivedOf({ deposit_amount: 40 }), 40);
+  assert.equal(lib.depositReceivedOf({ depositReceived: 125 }), 125);
+  assert.equal(lib.depositReceivedOf({ depositReceived: "62.505" }), 62.51);
   for (const v of [0, null, undefined, "", "abc", -10]) {
-    assert.equal(lib.depositReceivedOf({ depositAmount: v }), null, String(v));
+    assert.equal(lib.depositReceivedOf({ depositReceived: v }), null, String(v));
   }
   assert.equal(lib.depositReceivedOf({}), null);
   assert.equal(lib.depositReceivedLabel(1250), "Deposit received $1,250.00");
@@ -149,16 +176,13 @@ test("customer modal header and job modal both carry the badge", () => {
   assert.match(jobPanel, /<CardOnFileBadge contactId=\{job\.contactId\} api=\{p\.api\} \/>/);
 });
 
-test("Workflow tab: the deposit box, loaded from GET /settings, saved through PATCH /settings only when changed", () => {
+test("Workflow tab: the deposit box, loaded with GET /workflow-settings, saved on the same PATCH, read back before 'Saved'", () => {
   assert.match(hub, /Ask for a deposit when a quote is signed:/);
-  assert.match(hub, /get<unknown>\("\/settings"\)/);
-  assert.match(hub, /setDepositStored\(v\);\s*setDepositText\(depositPercentText\(v\)\);/);
+  assert.match(hub, /const v = depositPercentFromSettings\(r\);\s*setDepositStored\(v\);\s*setDepositText\(depositPercentText\(v\)\);/);
   assert.match(hub, /const deposit = parseDepositPercent\(depositText\);\s*if \(!deposit\.ok\) \{ setSavedOk\(false\); setSavedMsg\(deposit\.message\); return; \}/);
-  assert.match(hub, /depositStored !== undefined && deposit\.value !== depositStored/);
-  assert.match(hub, /patch<unknown>\("\/settings", depositPatchBody\(deposit\.value\)\)/);
-  assert.match(hub, /const note = depositSaveNote\(deposit\.value, echoed\);/);
-  // Not through /workflow-settings — that route writes other columns.
-  assert.ok(!/patch\("\/workflow-settings", \{[^}]*eposit/.test(hub));
+  assert.match(hub, /await patch\("\/workflow-settings", workflowPatchBody\(wf, deposit\.value\)\);/);
+  assert.match(hub, /const back = await get<WorkflowShape>\("\/workflow-settings"\);\s*note = depositSaveNote\(deposit\.value, back\);/);
+  assert.match(hub, /default_deposit_percent\?: number \| null \}/);
   // A failed load disables the box instead of offering to overwrite it with empty.
   assert.match(hub, /disabled=\{depositStored === undefined \|\| saving\}/);
   // Errors are red, not the success green.
@@ -170,7 +194,7 @@ test("Invoices list: 'Deposit received' under the amount on rows that have one",
   assert.match(invoices, /const deposit = depositReceivedOf\(r\);/);
   assert.match(invoices, /\{deposit !== null && \(/);
   assert.match(invoices, /\{depositReceivedLabel\(deposit\)\}/);
-  assert.match(invoices, /depositAmount\?: number \| null;/);
+  assert.match(invoices, /depositReceived\?: number \| null;/);
 });
 
 test("nothing here names a card number or a cost", () => {
