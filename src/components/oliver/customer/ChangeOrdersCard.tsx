@@ -55,6 +55,9 @@ export function ChangeOrdersCard({
   const [problem, setProblem] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  // When the browser refuses the clipboard (pane test 1 Oct: nothing happened
+  // on the click), the link is shown to copy by hand instead of failing silently.
+  const [linkShown, setLinkShown] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadErr(null);
@@ -114,9 +117,11 @@ export function ChangeOrdersCard({
     try {
       await navigator.clipboard.writeText(row.customerLink);
       setCopied(row.id);
+      setLinkShown(null);
       setTimeout(() => setCopied(null), 2500);
     } catch {
       setCopied(null);
+      setLinkShown(row.id);
     }
   }
 
@@ -251,6 +256,18 @@ export function ChangeOrdersCard({
                   >
                     {copied === row.id ? "Link copied" : "Copy the customer's signing link"}
                   </button>
+                )}
+                {row.customerLink && row.status === "presented" && linkShown === row.id && (
+                  <span data-testid="change-order-link" style={{ flexBasis: "100%", color: "#0B1C24" }}>
+                    Your browser did not allow copying. Select the link and copy it:{" "}
+                    <input
+                      readOnly
+                      value={row.customerLink}
+                      onFocus={(e) => e.currentTarget.select()}
+                      aria-label="The customer's signing link"
+                      style={{ width: "100%", marginTop: 4, fontSize: 11, fontFamily: "monospace", border: "1px solid #CBD5E1", borderRadius: 4, padding: "3px 6px" }}
+                    />
+                  </span>
                 )}
               </div>
             </div>

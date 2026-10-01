@@ -276,3 +276,9 @@ test("the $0 'Change order: …' header an accepted change leaves on the job is 
   ] };
   assert.deepEqual(lib.readAgreedLines(resp).map((l) => l.id), ["L", "P"]);
 });
+
+test("copying the signing link never fails silently: a refused clipboard shows the link to copy by hand", () => {
+  assert.match(card, /\} catch \{\s*setCopied\(null\);\s*setLinkShown\(row\.id\);/);
+  assert.match(card, /linkShown === row\.id && \(/);
+  assert.match(card, /Your browser did not allow copying\. Select the link and copy it:/);
+});
