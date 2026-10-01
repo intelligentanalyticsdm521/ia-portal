@@ -10,6 +10,7 @@
 // books start. It is a journal entry like the others, which is why it lives here
 // rather than in a nav slot of its own.
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Trash2, Check } from "lucide-react";
 import { StellaShell, StellaTabs, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
 import { useStellaApi } from "../../../hooks/useStellaApi";
@@ -27,8 +28,14 @@ type JEntry = {
   memo: string | null; is_adjusting: boolean; period_locked: boolean; total_debit: number; lines: JLine[];
 };
 
+// ?tab= opens a tab directly — Overview → Finish setup → "Import a bank
+// statement" lands on Bank Reconciliation, where the statement import lives.
+const ACCOUNTING_TABS = ["opening", "journal", "reconcile", "audit"];
+
 export function StellaAccountingPage() {
-  const [tab, setTab] = useState("journal");
+  const [params] = useSearchParams();
+  const asked = params.get("tab") || "";
+  const [tab, setTab] = useState(ACCOUNTING_TABS.includes(asked) ? asked : "journal");
   return (
     <StellaShell
       title="Accounting"
