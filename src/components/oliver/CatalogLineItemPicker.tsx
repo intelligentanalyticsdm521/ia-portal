@@ -54,6 +54,9 @@ interface CatalogOffering {
   }>;
 }
 
+/** The narrowest the Service description box may get, in px (M7). */
+export const SERVICE_MIN_WIDTH = 180;
+
 function fmtMoney(n: number) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
@@ -62,10 +65,13 @@ export function CatalogLineItemPicker({
   items,
   onChange,
   disabled,
+  hideDiscount = false,
 }: {
   items: LineItem[];
   onChange: (items: LineItem[]) => void;
   disabled?: boolean;
+  /** Leave out the Discount column (a change order line cannot carry one). */
+  hideDiscount?: boolean;
 }) {
   const { get, ready } = useOliverApi();
   const [offerings, setOfferings] = useState<CatalogOffering[]>([]);
@@ -156,13 +162,19 @@ export function CatalogLineItemPicker({
           No line items yet. Add services from your catalog or enter custom lines.
         </div>
       ) : (
+        // The Service box keeps a readable width (SERVICE_MIN_WIDTH) and the
+        // table scrolls sideways inside its own box when the window is narrower
+        // than the columns — instead of the fixed-width columns squeezing the
+        // description to 39px (pane walk 1 Oct, M7: "Downspout extension"
+        // showed as "tension").
+        <div style={{ overflowX: "auto" }} data-testid="line-items-scroll">
         <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
           <thead>
             <tr style={{ borderBottom: "1px solid #E5E7EB", color: "#5A7A8A" }}>
               <th style={{ textAlign: "left", padding: "6px 0", fontWeight: 600 }}>Service</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 70 }}>Qty</th>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 110 }}>Unit price</th>
-              <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 150 }}>Discount</th>
+              {!hideDiscount && <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 150 }}>Discount</th>}
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600, width: 110 }}>Line total</th>
               <th style={{ width: 40 }} />
             </tr>
@@ -181,7 +193,7 @@ export function CatalogLineItemPicker({
                       onChange={(e) => updateItem(idx, { description: e.target.value })}
                       placeholder="Service description"
                       disabled={disabled}
-                      style={{ width: "100%", border: "none", padding: "4px 0", fontSize: 12, color: "#0B1C24", background: "transparent" }}
+                      style={{ width: "100%", minWidth: SERVICE_MIN_WIDTH, border: "none", padding: "4px 0", fontSize: 12, color: "#0B1C24", background: "transparent" }}
                     />
                     {it.service_offering_id && (
                       <div style={{ fontSize: 10, color: "#1A7DB5", marginTop: 1 }}>
@@ -206,7 +218,7 @@ export function CatalogLineItemPicker({
                       style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
                     />
                   </td>
-                  <td style={{ padding: "8px" }}>
+                  {!hideDiscount && <td style={{ padding: "8px" }}>
                     <div style={{ display: "flex", gap: 4 }}>
                       <select
                         value={discountType}
@@ -235,7 +247,7 @@ export function CatalogLineItemPicker({
                         style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
                       />
                     </div>
-                  </td>
+                  </td>}
                   <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: "#0B1C24" }}>
                     {fmtMoney(lineTotal)}
                   </td>
@@ -255,7 +267,7 @@ export function CatalogLineItemPicker({
               );
             })}
             <tr>
-              <td colSpan={4} style={{ padding: "10px 8px", textAlign: "right", fontSize: 12, color: "#5A7A8A", fontWeight: 600 }}>
+              <td colSpan={hideDiscount ? 3 : 4} style={{ padding: "10px 8px", textAlign: "right", fontSize: 12, color: "#5A7A8A", fontWeight: 600 }}>
                 Subtotal
               </td>
               <td style={{ padding: "10px 8px", textAlign: "right", fontFamily: "monospace", fontWeight: 700, color: "#0B1C24" }}>
@@ -265,7 +277,7 @@ export function CatalogLineItemPicker({
             </tr>
             {totalDuration > 0 && (
               <tr>
-                <td colSpan={4} style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#5A7A8A" }}>
+                <td colSpan={hideDiscount ? 3 : 4} style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#5A7A8A" }}>
                   Estimated duration
                 </td>
                 <td style={{ padding: "0 8px 6px", textAlign: "right", fontSize: 10, color: "#1A7DB5" }}>
@@ -276,6 +288,7 @@ export function CatalogLineItemPicker({
             )}
           </tbody>
         </table>
+        </div>
       )}
 
       {!disabled && (

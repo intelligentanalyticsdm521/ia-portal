@@ -18,6 +18,20 @@ import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
 import { depositReceivedOf, depositReceivedLabel } from "../../lib/onsiteMoney";
+import { isChangeOrderHeader } from "../../lib/onsiteJob";
+
+/**
+ * The $0 "Change order: {reason}" line an accepted change order leaves on the
+ * job (and so on its invoice) is a section title over the change's lines, not
+ * a $0.00 line of work (pane walk 1 Oct, M10): full width, no quantity or price.
+ */
+function ChangeOrderHeaderRow({ description }: { description: string }) {
+  return (
+    <div className="px-3 pt-3 pb-1 bg-slate-50 border-b border-gray-100" data-testid="change-order-header">
+      <div className="text-[11px] font-bold uppercase tracking-wide text-slate-600">{description}</div>
+    </div>
+  );
+}
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -986,7 +1000,9 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
                   </span>
                   <span className="text-xs font-bold tabular-nums text-slate-800">{fmtMoney(g.subtotal)}</span>
                 </div>
-                {g.lines.map((li) => (
+                {g.lines.map((li) => isChangeOrderHeader(li) ? (
+                  <ChangeOrderHeaderRow key={li.line_item_id} description={li.description} />
+                ) : (
                   <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center border-b border-gray-100 ${li.is_tax ? "bg-amber-50/50" : ""}`}>
                     <div className="col-span-7">
                       <div className="text-sm text-slate-800">{li.description}</div>
@@ -1014,7 +1030,9 @@ function InvoiceDetailDrawer({ invoiceId, onClose, onChanged, api }: DrawerProps
           </div>
         ) : (
           <div className="rounded-lg ring-1 ring-gray-200 divide-y divide-gray-100 mb-5">
-            {(inv.line_items ?? []).map((li) => (
+            {(inv.line_items ?? []).map((li) => isChangeOrderHeader(li) ? (
+              <ChangeOrderHeaderRow key={li.line_item_id} description={li.description} />
+            ) : (
               <div key={li.line_item_id} className={`px-3 py-2 grid grid-cols-12 gap-2 items-center ${li.is_tax ? "bg-amber-50/50" : ""}`}>
                 <div className="col-span-7">
                   <div className="text-sm text-slate-800">{li.description}</div>

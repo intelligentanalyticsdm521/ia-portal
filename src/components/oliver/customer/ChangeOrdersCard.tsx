@@ -24,7 +24,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "../ui";
 import { CatalogLineItemPicker, type LineItem } from "../CatalogLineItemPicker";
 import {
-  changeOrderBody, changeOrderDelta, changeOrderError, changeOrderProblem, changeOrderSavedNote,
+  changeOrderBody, changeOrderDeclinedLine, changeOrderDelta, changeOrderError, changeOrderProblem, changeOrderSavedNote,
   changeOrderSignedLine, changeOrderStatusLabel, changeOrderStatusTone, changeOrdersPath,
   deltaLabel, money, presentChangeOrderPath, PRESENTED_NOTE, readAgreedLines, readChangeOrders,
   type ChangeOrderRow, type JobLine,
@@ -161,7 +161,10 @@ export function ChangeOrdersCard({
           />
 
           <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", margin: "12px 0 6px" }}>Add to the job</div>
-          <CatalogLineItemPicker items={adds} onChange={setAdds} />
+          {/* A change order line cannot carry a discount (changeOrderProblem), so
+              the Discount column is left out: it took 150px and left the
+              Service box 39px wide (pane walk 1 Oct, M7). */}
+          <CatalogLineItemPicker items={adds} onChange={setAdds} hideDiscount />
 
           <div style={{ fontSize: 12, fontWeight: 600, color: "#0B1C24", margin: "14px 0 6px" }}>Take off the job</div>
           {removable.length === 0 ? (
@@ -208,6 +211,7 @@ export function ChangeOrdersCard({
         rows.map((row) => {
           const tone = changeOrderStatusTone(row.status);
           const signed = changeOrderSignedLine(row);
+          const declined = changeOrderDeclinedLine(row);
           return (
             <div key={row.id} style={{ borderTop: "1px solid #F1F5F9", padding: "10px 0" }} data-testid="change-order-row">
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
@@ -234,8 +238,10 @@ export function ChangeOrdersCard({
               )}
               <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 4, fontSize: 11, color: "#5A7A8A" }}>
                 {signed && <span data-testid="change-order-signed" style={{ color: "#166534" }}>{signed}</span>}
-                {!signed && row.status === "declined" && row.decidedAt && (
-                  <span>Declined on {new Date(row.decidedAt).toLocaleString()}</span>
+                {declined && (
+                  <span data-testid="change-order-declined" style={{ color: "#991B1B" }}>
+                    {declined}{row.decidedAt ? ` · ${new Date(row.decidedAt).toLocaleString()}` : ""}
+                  </span>
                 )}
                 {row.createdAt && <span>Made {new Date(row.createdAt).toLocaleString()}</span>}
                 {row.status === "draft" && !disabled && (

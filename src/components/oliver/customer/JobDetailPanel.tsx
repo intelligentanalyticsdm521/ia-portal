@@ -16,6 +16,7 @@ import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 import { CardOnFileBadge } from "./CardOnFileBadge";
 import { ChangeOrdersCard } from "./ChangeOrdersCard";
+import { jobMoney, jobOffersCreateInvoice, jobTakesChangeOrders } from "../../../lib/onsiteJob";
 
 interface JobDetail {
   id: string;
@@ -79,9 +80,11 @@ const ALL_STATUSES: Array<{ key: string; label: string }> = [
   { key: "cancelled",   label: "Cancelled" },
 ];
 
-function fmtMoney(n?: number | null) {
-  return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-}
+// Always with cents ("$643.50", never "$643.5" — pane walk 1 Oct, B3). The
+// job total itself is the server's (GET /jobs/:id `total`: the invoice, else
+// the agreed total — the quote plus every accepted change order); this only
+// prints it, it never re-derives it.
+const fmtMoney = jobMoney;
 function toLocalDtInput(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -458,7 +461,7 @@ function JobLayout(p: JobLayoutProps) {
               jobId={jobId}
               api={p.api}
               jobLines={p.savedLineItems}
-              disabled={p.isTerminal}
+              disabled={p.isTerminal || !jobTakesChangeOrders(job)}
             />
           )}
 
@@ -551,7 +554,11 @@ function JobLayout(p: JobLayoutProps) {
                 {/* 2026-09-25: the only "+ Create invoice" from a job lived in a
                     drawer nothing rendered any more. The Invoices page already
                     takes ?from_job and pre-seeds the customer and the job. */}
-                <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${encodeURIComponent(jobId)}`)}>+ Create invoice</Button>
+                {/* Not on a job that is finished and invoiced: the API refuses it
+                    (pane walk 1 Oct, M8). */}
+                {jobOffersCreateInvoice(job) && (
+                  <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${encodeURIComponent(jobId)}`)}>+ Create invoice</Button>
+                )}
                 <div style={{ fontSize: 10, color: "#94A3B8", textAlign: "center", marginTop: 4 }}>
                   Status moves via the pill above ↑
                 </div>
@@ -822,12 +829,12 @@ function JobProfitabilityCard({
         <div>
           <div className="card-ttl" style={{ margin: 0 }}>Profitability</div>
           <div className="card-sub" style={{ marginTop: 2 }}>
-            {revenue > 0 ? `$${revenue.toLocaleString()}` : "$0"} collected · {totalHours.toFixed(1)}h logged · ${laborCost.toLocaleString()} labor
+            {jobMoney(revenue)} collected · {totalHours.toFixed(1)}h logged · {jobMoney(laborCost)} labor
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 24, fontWeight: 700, color: profit >= 0 ? "#059669" : "#DC2626", fontFamily: "monospace" }}>
-            {profit >= 0 ? "" : "−"}${Math.abs(profit).toLocaleString()}
+            {jobMoney(profit)}
           </div>
           <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
             {margin != null ? `${margin}% margin` : "profit"}

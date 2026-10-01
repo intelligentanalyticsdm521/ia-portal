@@ -48,6 +48,16 @@ export function money(n: number): string {
   return `$${v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/**
+ * Money on the office job window, always with cents: "$643.50", "−$12.00".
+ * The job panel printed "$643.5" (pane walk 1 Oct, 6.1): it formatted with no
+ * minimum decimals. The figure itself is the server's — this only prints it.
+ */
+export function jobMoney(n: number | null | undefined): string {
+  const v = cents(Number(n ?? 0));
+  return v < 0 ? `−${money(v)}` : money(v);
+}
+
 /** The change in price, signed: "+$120.00", "−$40.00", "$0.00". */
 export function deltaLabel(n: number): string {
   const v = cents(n);
@@ -83,6 +93,8 @@ export interface ChangeOrderRow {
   createdAt: string | null;
   decidedAt: string | null;
   customerLink: string | null;
+  /** What the customer typed when they declined (oliver.change_order.decline_reason, migration 228), or null. */
+  declineReason: string | null;
 }
 
 function readLine(raw: unknown): ChangeOrderLine | null {
@@ -122,7 +134,54 @@ export function readChangeOrder(raw: unknown): ChangeOrderRow | null {
     createdAt: str(pick(o, "created_at", "createdAt")) || null,
     decidedAt: str(pick(o, "accepted_at", "acceptedAt", "declined_at", "declinedAt")) || null,
     customerLink: str(pick(o, "customer_link", "customerLink")) || null,
+    declineReason: str(pick(o, "decline_reason", "declineReason")) || null,
   };
+}
+
+/**
+ * The declined row's line: "Declined — Not this season, maybe next spring", or
+ * "Declined" when the customer gave no reason. Null for any other status.
+ * (Pane walk 1 Oct, B4: the reason the customer typed was lost and the row
+ * said only "Declined".)
+ */
+export function changeOrderDeclinedLine(row: Pick<ChangeOrderRow, "status" | "declineReason">): string | null {
+  if (row.status !== "declined") return null;
+  return row.declineReason ? `Declined — ${row.declineReason}` : "Declined";
+}
+
+// ── what the job window offers, by where the job is ───────────────────────
+
+/** The job statuses a change order may be written on — oliver-api lib/changeOrder.js CHANGEABLE_JOB_STATUSES. */
+export const CHANGEABLE_JOB_STATUSES = ["scheduled", "dispatched", "assigned", "in_progress"] as const;
+
+type JobForActions = {
+  status?: string | null;
+  invoices?: Array<{ status?: string | null }> | null;
+};
+
+/** An invoice that still counts: anything but void or cancelled (the API's jobHasLiveInvoice). */
+export function jobHasLiveInvoice(job: JobForActions): boolean {
+  return (job.invoices ?? []).some((i) => !["void", "cancelled"].includes(String(i?.status ?? "").toLowerCase()));
+}
+
+/**
+ * "New change order" is offered only where the API would take one: a job that
+ * is scheduled, dispatched, assigned or in progress and has no live invoice
+ * (lib/changeOrder.js changeableJobRefusal). Pane walk 1 Oct, M8: it was
+ * offered on a completed, invoiced job and the API refused it.
+ */
+export function jobTakesChangeOrders(job: JobForActions): boolean {
+  return (CHANGEABLE_JOB_STATUSES as readonly string[]).includes(String(job.status ?? "")) && !jobHasLiveInvoice(job);
+}
+
+/**
+ * "+ Create invoice" is not offered once the job is finished AND invoiced —
+ * completed with a live invoice, or already invoiced / paid. (M8.)
+ */
+export function jobOffersCreateInvoice(job: JobForActions): boolean {
+  const status = String(job.status ?? "");
+  if (status === "invoiced" || status === "paid") return false;
+  return !(status === "completed" && jobHasLiveInvoice(job));
 }
 
 /** The list, unwrapped or in { data } / { data: { change_orders } }; newest first. */
@@ -175,7 +234,8 @@ export function readAgreedLines(resp: unknown): JobLine[] {
 }
 
 /** The $0 "Change order: …" section header line an accepted change order adds to the job. */
-export function isChangeOrderHeader(line: Record<string, unknown>): boolean {
+export function isChangeOrderHeader(raw: object): boolean {
+  const line = raw as Record<string, unknown>;
   const total = num(pick(line, "line_total", "lineTotal"));
   const price = num(pick(line, "unit_price", "unitPrice"));
   return /^Change order:/i.test(str(line.description)) && (total ?? price ?? 0) === 0;
