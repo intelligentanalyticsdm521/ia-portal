@@ -180,9 +180,10 @@ test("Workflow tab: the deposit box, loaded with GET /workflow-settings, saved o
   assert.match(hub, /Ask for a deposit when a quote is signed:/);
   assert.match(hub, /const v = depositPercentFromSettings\(r\);\s*setDepositStored\(v\);\s*setDepositText\(depositPercentText\(v\)\);/);
   assert.match(hub, /const deposit = parseDepositPercent\(depositText\);\s*if \(!deposit\.ok\) \{ setSavedOk\(false\); setSavedMsg\(deposit\.message\); return; \}/);
-  assert.match(hub, /await patch\("\/workflow-settings", workflowPatchBody\(wf, deposit\.value\)\);/);
+  // Phase C adds the completion switch to the same body (test/onsite-job.test.mjs).
+  assert.match(hub, /await patch\("\/workflow-settings", \{ \.\.\.workflowPatchBody\(wf, deposit\.value\),/);
   assert.match(hub, /const back = await get<WorkflowShape>\("\/workflow-settings"\);\s*note = depositSaveNote\(deposit\.value, back\);/);
-  assert.match(hub, /default_deposit_percent\?: number \| null \}/);
+  assert.match(hub, /default_deposit_percent\?: number \| null[;}]/);
   // A failed load disables the box instead of offering to overwrite it with empty.
   assert.match(hub, /disabled=\{depositStored === undefined \|\| saving\}/);
   // Errors are red, not the success green.
