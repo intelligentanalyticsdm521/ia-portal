@@ -7,9 +7,10 @@
 //   - signup-form portion of oliver_workflow_settings
 //
 // Layout: two side-by-side cards (Customer Portal + Crew Portal) showing
-// status + URL + "Edit portal" button. Clicking Edit opens an info-size
-// modal (F-107) with the tabs Look (customer portal only) / Signup form /
-// Layout / Domain / Workflow.
+// status + URL + "Edit portal" button. Clicking Edit opens the extra-large
+// modal ("xl", 90vw × 90vh — Brandon, 1 Oct 2026: "since there is so much
+// with this customer portal settings … lets make this our extra large modal")
+// with the tabs Look (customer portal only) / Signup form / Domain / Workflow.
 //
 // 2026-09-25 (CUSTOMER_PORTAL_LOOK_SCOPE §5.3 C): the Design tab became Look
 // (./look/LookTab.tsx) — five styles, the brand switch, Buttons & functions and
@@ -262,6 +263,66 @@ function PortalCard({
 
 // ── The editor modal ──────────────────────────────────────────────────────────
 
+// ── Signup form editor state (1 Oct 2026) ─────────────────────────────────
+//
+// Lives in the window, not the tab, for the same reason the look does: the
+// footer's "Save signup form" sits beside Done (Brandon: "I missed it because
+// you have to scroll down to do it"), and an edit survives a trip to another
+// tab. The tab's panel (SignupFormBuilder inline) is controlled by this draft.
+interface SignupEditor {
+  config: SignupConfigFull | null;
+  draft: SignupConfigFull | null;
+  setDraft: (next: SignupConfigFull) => void;
+  dirty: boolean;
+  saving: boolean;
+  /** "Saved." for a moment after a save; the footer shows it. */
+  savedMsg: string | null;
+  error: string | null;
+  save: () => Promise<void>;
+}
+
+function copyConfig(c: SignupConfigFull): SignupConfigFull {
+  return { ...c, fields: [...c.fields], custom_fields: [...c.custom_fields] };
+}
+
+function useSignupEditor(onSaved: () => void): SignupEditor {
+  const { get, patch, ready } = useOliverApi();
+  const [config, setConfig] = useState<SignupConfigFull | null>(null);
+  const [draft, setDraft] = useState<SignupConfigFull | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!ready) return;
+    get<SignupConfigFull>("/customer-signup/config")
+      .then((r) => { setConfig(r); setDraft(copyConfig(r)); })
+      .catch(() => { setConfig(null); setError("The signup form could not be loaded. Close the window and try again."); });
+  }, [ready, get]);
+
+  const dirty = !!config && !!draft && JSON.stringify(draft) !== JSON.stringify(config);
+
+  const save = useCallback(async () => {
+    if (!draft || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await patch<SignupConfigFull>("/customer-signup/config", draft);
+      setConfig(saved);
+      setDraft(copyConfig(saved));
+      setSavedMsg("Saved.");
+      setTimeout(() => setSavedMsg(null), 3000);
+      onSaved();
+    } catch {
+      setError("The signup form could not be saved. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }, [draft, saving, patch, onSaved]);
+
+  return { config, draft, setDraft, dirty, saving, savedMsg, error, save };
+}
+
 function PortalEditorModal({
   portalKind, status, initialTab, onClose, onSaved,
 }: {
@@ -278,6 +339,7 @@ function PortalEditorModal({
   // The Look tab's state lives here, not in the tab, so an unsaved choice
   // survives a trip to another tab and the footer can say so.
   const look = useLookEditor(hasLook);
+  const signup = useSignupEditor(onSaved);
 
   const tabs: Array<{ key: Tab; label: string; icon: typeof Brush }> = [
     ...(hasLook ? [{ key: "look" as Tab, label: "Look", icon: Palette }] : []),
@@ -286,9 +348,13 @@ function PortalEditorModal({
     { key: "workflow", label: "Workflow",    icon: Settings },
   ];
 
-  // Closing with an unsaved look asks first, like the booking page editor.
+  // Closing with an unsaved look or signup form asks first, like the booking page editor.
+  const unsavedLook = look.dirty && !look.saving;
+  const unsavedSignup = signup.dirty && !signup.saving;
+  const unsavedWhat = unsavedLook && unsavedSignup ? "look and signup form" : unsavedLook ? "look" : "signup form";
+  const unsavedTabs = [look.dirty && "Look", signup.dirty && "Signup form"].filter(Boolean).join(" and ");
   function requestClose() {
-    if (look.dirty && !look.saving) setConfirmClose(true);
+    if (unsavedLook || unsavedSignup) setConfirmClose(true);
     else onClose();
   }
 
@@ -304,9 +370,25 @@ function PortalEditorModal({
       eyebrow={`${portalKind === "customer" ? "CUSTOMER" : "CREW"} PORTAL · EDIT`}
       title={`${portalKind === "customer" ? "Customer" : "Crew"} portal settings`}
       subtitle={hasLook ? "Look, signup form, domain and workflow." : "Signup form, domain and workflow."}
-      size="info"
+      size="xl"
       footer={
         <>
+          {tab === "signup" && (
+            <>
+              <span className={`mr-auto text-xs ${signup.error ? "text-red-700" : "text-slate-500"}`}>
+                {signup.saving ? "Saving…" : signup.error ? signup.error : signup.savedMsg ? signup.savedMsg : signup.dirty ? "Unsaved changes" : "All changes saved"}
+              </span>
+              <button
+                type="button"
+                onClick={() => { void signup.save(); }}
+                disabled={!signup.draft || signup.saving}
+                title="Save this signup form for your customers"
+                className="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
+              >
+                {signup.saving ? "Saving…" : "Save signup form"}
+              </button>
+            </>
+          )}
           {tab === "look" ? (
             <>
               <span className="mr-auto text-xs text-slate-500">
@@ -336,7 +418,11 @@ function PortalEditorModal({
               </button>
             </>
           ) : (
-            look.dirty && <span className="mr-auto text-xs text-slate-500">Unsaved changes on the Look tab</span>
+            unsavedTabs && (tab !== "signup" || look.dirty) && (
+              <span className="mr-auto text-xs text-slate-500">
+                {tab === "signup" ? "Unsaved changes on the Look tab" : `Unsaved changes on the ${unsavedTabs} tab${look.dirty && signup.dirty ? "s" : ""}`}
+              </span>
+            )
           )}
           <IadmButton variant="ghost" onClick={requestClose}>Done</IadmButton>
         </>
@@ -356,7 +442,7 @@ function PortalEditorModal({
                 }`}
               >
                 <Icon className="h-3.5 w-3.5" /><span>{t.label}</span>
-                {t.key === "look" && look.dirty && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
+                {((t.key === "look" && look.dirty) || (t.key === "signup" && signup.dirty)) && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Unsaved changes" />}
               </button>
             );
           })}
@@ -367,9 +453,14 @@ function PortalEditorModal({
           <div className="min-h-0 flex-1 overflow-hidden">
             <LookTab editor={look} previewSrc={customerPreviewSrc(status)} accent={accent} />
           </div>
+        ) : tab === "signup" ? (
+          // The signup panel is three columns as tall as the window, each
+          // scrolling on its own; Save is in the footer beside Done.
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <SignupTab portalKind={portalKind} editor={signup} />
+          </div>
         ) : (
           <div className="flex-1 overflow-y-auto p-5">
-            {tab === "signup" && <SignupTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
             {tab === "domain" && <DomainTabStub portalKind={portalKind} status={status} accent={accent} onSaved={onSaved} />}
             {tab === "workflow" && <WorkflowTabStub portalKind={portalKind} accent={accent} onSaved={onSaved} />}
           </div>
@@ -384,7 +475,7 @@ function PortalEditorModal({
         product="oliver"
         eyebrow="OLIVER · CUSTOMER PORTAL"
         title="Close without saving?"
-        subtitle="Your portal's look"
+        subtitle={`Your portal's ${unsavedWhat}`}
         size="confirm"
         z={60}
         footer={
@@ -401,7 +492,7 @@ function PortalEditorModal({
         }
       >
         <div className="p-5 text-sm leading-relaxed text-slate-700">
-          You changed your customer portal's look and have not saved it. If you close now, those changes are lost and your customers keep the look you saved before.
+          You changed your customer portal's {unsavedWhat} and have not saved it. If you close now, those changes are lost and your customers keep what you saved before.
         </div>
       </IadmModal>
     )}
@@ -415,59 +506,40 @@ function PortalEditorModal({
 // /portal-* pages. Each loads its own slice on mount, edits in place, and
 // PATCHes on Save. (Look is ./look/LookTab.tsx; Layout is PortalLayoutTab.)
 
-// ── SignupTabStub → inline signup form builder (F-114 Phase 2) ────────────
-function SignupTabStub({ portalKind, accent, onSaved }: { portalKind: PortalKind; accent: string; onSaved: () => void }) {
-  const { get, patch, ready } = useOliverApi();
-  const [config, setConfig] = useState<SignupConfigFull | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [savedMsg, setSavedMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!ready) return;
-    get<SignupConfigFull>("/customer-signup/config")
-      .then((r) => setConfig(r))
-      .catch(() => setConfig(null));
-  }, [ready, get]);
-
-  // 30 Sep 2026 (Brandon, Section 21: "sign up form I can't close it, cancel it
-  // or save anything"): the builder used to open as a second window inside this
-  // one, with a Cancel that did nothing. It now renders as this tab's own panel,
-  // with one Save button at the bottom; the window's Done closes everything.
-  if (!config) return <div className="text-xs text-slate-500">Loading signup form…</div>;
+// ── SignupTab → the signup form builder as a panel of the window ──────────
+//
+// 30 Sep 2026 (Brandon, Section 21: "sign up form I can't close it, cancel it
+// or save anything"): the builder used to open as a second window inside this
+// one, with a Cancel that did nothing. 1 Oct: its draft and Save moved up into
+// the window (useSignupEditor), so "Save signup form" sits in the footer next
+// to Done and the panel fills the extra-large window.
+function SignupTab({ portalKind, editor }: { portalKind: PortalKind; editor: SignupEditor }) {
+  if (editor.error && !editor.config) return <div className="p-5 text-xs text-red-700">{editor.error}</div>;
+  if (!editor.config) return <div className="p-5 text-xs text-slate-500">Loading signup form…</div>;
 
   return (
-    <div className="space-y-3">
-      <div>
+    <>
+      <div className="shrink-0 px-5 pt-4">
         <h3 className="text-sm font-semibold text-slate-900">Signup form</h3>
         <p className="text-xs text-slate-600">
           {portalKind === "customer"
-            ? "Fields a customer fills out to create their portal account."
-            : "Fields a worker fills out when invited (customer-portal builder shares this config)."}
+            ? "Fields a customer fills out to create their portal account. Save with the button at the bottom right."
+            : "Fields a worker fills out when invited (customer-portal builder shares this config). Save with the button at the bottom right."}
         </p>
       </div>
-
-      <SignupFormBuilder
-        open={true}
-        inline
-        config={config}
-        saving={saving}
-        onClose={() => { /* inline: the window's own Done closes it */ }}
-        onSave={async (next) => {
-          setSaving(true);
-          try {
-            const saved = await patch<SignupConfigFull>("/customer-signup/config", next);
-            setConfig(saved);
-            setSavedMsg("Saved.");
-            setTimeout(() => setSavedMsg(null), 3000);
-            onSaved();
-          } finally {
-            setSaving(false);
-          }
-        }}
-      />
-      {savedMsg && <div className="text-xs text-emerald-700">{savedMsg}</div>}
-      <div className="text-[10px] text-slate-400">Accent: <span className="inline-block w-3 h-3 rounded-full align-middle ml-1" style={{ background: accent }} /></div>
-    </div>
+      <div className="min-h-0 flex-1">
+        <SignupFormBuilder
+          open
+          inline
+          config={editor.config}
+          draft={editor.draft}
+          onDraftChange={editor.setDraft}
+          saving={editor.saving}
+          onClose={() => { /* inline: the window's own Done closes it */ }}
+          onSave={() => editor.save()}
+        />
+      </div>
+    </>
   );
 }
 

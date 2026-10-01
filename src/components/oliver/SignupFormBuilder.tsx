@@ -13,7 +13,7 @@
 // Reorder uses ↑↓ buttons (not HTML5 drag-drop) for cross-browser
 // reliability; a future enhancement can layer drag in without changing
 // the data model.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus, Trash2, ArrowUp, ArrowDown, Search, Save, Lock,
 } from "lucide-react";
@@ -66,16 +66,32 @@ interface Props {
   /** Render as a plain panel inside another window instead of a window of its own. */
   inline?: boolean;
   saving?: boolean;
+  /**
+   * Inline only (1 Oct 2026, Brandon: "the save signup form button can we move
+   * that next to done. I missed it because you have to scroll down to do it").
+   * The window that holds this panel owns the draft: it puts "Save signup
+   * form" in its own footer beside Done, and the draft survives a trip to
+   * another tab. When `draft` is given the panel renders no Save of its own.
+   */
+  draft?: SignupConfig | null;
+  onDraftChange?: (next: SignupConfig) => void;
 }
 
-export function SignupFormBuilder({ open, config, onClose, onSave, saving, inline = false }: Props) {
-  const [draft, setDraft] = useState<SignupConfig | null>(null);
+export function SignupFormBuilder({ open, config, onClose, onSave, saving, inline = false, draft: draftProp, onDraftChange }: Props) {
+  const controlled = inline && draftProp !== undefined;
+  const [innerDraft, setInnerDraft] = useState<SignupConfig | null>(null);
+  const draft = controlled ? draftProp : innerDraft;
+  const setDraft = useCallback((next: SignupConfig | null | ((d: SignupConfig | null) => SignupConfig | null)) => {
+    if (!controlled) { setInnerDraft(next); return; }
+    const v = typeof next === "function" ? next(draftProp ?? null) : next;
+    if (v) onDraftChange?.(v);
+  }, [controlled, draftProp, onDraftChange]);
   const [query, setQuery] = useState("");
   const [customDraft, setCustomDraft] = useState<Partial<CustomField>>({ kind: "text", enabled: true, required: false });
 
   useEffect(() => {
-    if (open && config) setDraft({ ...config, fields: [...config.fields], custom_fields: [...config.custom_fields] });
-  }, [open, config]);
+    if (!controlled && open && config) setInnerDraft({ ...config, fields: [...config.fields], custom_fields: [...config.custom_fields] });
+  }, [controlled, open, config]);
 
   const categories = useMemo(() => unique((draft?.fields || []).map(categoryOf)), [draft]);
 
@@ -160,16 +176,13 @@ export function SignupFormBuilder({ open, config, onClose, onSave, saving, inlin
     setCustomDraft({ kind: "text", enabled: true, required: false });
   };
 
-  const saveButton = (
-    <IadmButton variant="primary" onClick={() => onSave(draft)} disabled={!!saving}>
-      <Save className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save signup form"}
-    </IadmButton>
-  );
-
   if (inline) {
+    // The panel fills the window's body: three columns as tall as the window,
+    // each scrolling on its own. Save lives in the window's footer (controlled)
+    // — or, for a caller that gave no draft, at the bottom of the panel.
     return (
-      <div className="flex flex-col gap-3">
-        <div className="min-h-[520px]">
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">
       <div className="grid grid-cols-12 gap-4 h-full p-4">
         {/* ── LEFT: Library ───────────────────────────────────────────────── */}
         <div className="col-span-4 flex flex-col h-full min-h-0 rounded-lg border border-slate-200 bg-white">
@@ -325,7 +338,13 @@ export function SignupFormBuilder({ open, config, onClose, onSave, saving, inlin
         </div>
       </div>
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-slate-200 pt-3">{saveButton}</div>
+        {!controlled && (
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <IadmButton variant="primary" onClick={() => onSave(draft)} disabled={!!saving}>
+              <Save className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save signup form"}
+            </IadmButton>
+          </div>
+        )}
       </div>
     );
   }

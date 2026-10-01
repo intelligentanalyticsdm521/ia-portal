@@ -76,7 +76,10 @@ export const MODAL_SIZES: Record<IadmModalSize, ModalDims> = {
   lg: { width: "min(1200px, 94vw)", height: "80vh" },
 
   // 2026-06-27 — consultant workspace: ClientTenantModal embeds the client's
-  // whole Portal in an iframe.
+  // whole Portal in an iframe. 2026-10-01 — also the OLIVER portal settings
+  // window (Look / Signup form / Domain / Workflow), Brandon's call: "since
+  // there is so much with this customer portal settings, layout and forms and
+  // whatnot, lets make this our extra large modal".
   xl: { width: "90vw", height: "90vh" },
 
   // 2026-09-15 — THE builder surface (SD-010 addendum).
