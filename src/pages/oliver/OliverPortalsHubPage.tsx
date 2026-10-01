@@ -292,7 +292,8 @@ function PortalEditorModal({
     else onClose();
   }
 
-  const saveBlocked = !look.dirty || look.saving || look.problems.length > 0;
+  const wordingBlocked = Object.keys(look.wordingProblems).length > 0;
+  const saveBlocked = !look.dirty || look.saving || look.problems.length > 0 || wordingBlocked;
 
   return (
     <>
@@ -324,7 +325,11 @@ function PortalEditorModal({
                 type="button"
                 onClick={() => { void look.save(); }}
                 disabled={saveBlocked}
-                title={look.problems.length > 0 ? "Some colours are too hard to read to save; see the warning above" : "Save this look for your customers"}
+                title={look.problems.length > 0
+                  ? "Some colours are too hard to read to save; see the warning above"
+                  : wordingBlocked
+                    ? "A wording line can't be saved as it is; see the note under it in Wording"
+                    : "Save this look for your customers"}
                 className="rounded-md bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-40"
               >
                 {look.saving ? "Saving…" : "Save look"}

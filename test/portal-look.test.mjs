@@ -221,7 +221,7 @@ describe("buttons and functions (D-CP8)", () => {
 describe("the saved choice (portal_design.customer)", () => {
   test("an empty or old row reads as the defaults; custom CSS is not part of it", () => {
     const c = choiceFromSaved({ primary_color: "#123456", custom_css: ".x{}", header_text: "Hi" });
-    assert.deepEqual(Object.keys(c).sort(), ["features", "preset", "use_brand"]);
+    assert.deepEqual(Object.keys(c).sort(), ["features", "preset", "use_brand", "wording"]);
     assert.equal(c.preset, "fresh");
     assert.equal(c.use_brand, true);
     assert.deepEqual(c.features, normalizeFeatures({}));
@@ -258,7 +258,8 @@ describe("resolvePreviewLook — what the preview is painted with (oliver-api re
 
   test("the preset alone: its tokens, in the §5.1 shape", () => {
     const look = resolvePreviewLook(choiceFromSaved({ preset: "grounded", use_brand: false }), brand, on);
-    assert.deepEqual(Object.keys(look).sort(), ["colors", "features", "fonts", "powered_by", "preset", "shape", "use_brand"]);
+    // §5.1's keys, plus the resolved wording (D-CP10, test/portal-wording.test.mjs).
+    assert.deepEqual(Object.keys(look).sort(), ["colors", "features", "fonts", "powered_by", "preset", "shape", "use_brand", "wording"]);
     assert.deepEqual(look.colors, PRESETS.grounded.colors);
     assert.deepEqual(look.fonts, PRESETS.grounded.fonts);
     assert.deepEqual(look.shape, PRESETS.grounded.shape);
@@ -407,7 +408,9 @@ describe("the Look tab's save and the editor around it", () => {
     const tab = read("src/pages/oliver/look/LookTab.tsx");
     assert.match(tab, /const DESIGN_PATH = "\/portals\/design\?kind=customer";/);
     assert.match(tab, /patch<unknown>\(DESIGN_PATH, body\)/);
-    assert.match(tab, /const body: LookChoice = \{\s*preset: draft\.preset,[\s\S]*?use_brand:[\s\S]*?features: normalizeFeatures\(draft\.features\),\s*\};/);
+    // The body is lookSaveBody's { preset, use_brand, features, wording };
+    // its shape is tested in test/portal-wording.test.mjs.
+    assert.match(tab, /const body = lookSaveBody\(draft, allowances\.brand\);/);
   });
 
   test("the editor says 'Unsaved changes' and asks before closing, like the booking editor", () => {
