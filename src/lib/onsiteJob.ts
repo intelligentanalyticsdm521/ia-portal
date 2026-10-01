@@ -175,13 +175,24 @@ export function jobTakesChangeOrders(job: JobForActions): boolean {
 }
 
 /**
- * "+ Create invoice" is not offered once the job is finished AND invoiced —
- * completed with a live invoice, or already invoiced / paid. (M8.)
+ * Finished AND invoiced: completed with a live invoice, or already invoiced /
+ * paid. The invoice holds the job's lines from here, so the job window offers
+ * no "+ Create invoice" (M8) and its line-item editor is read-only (re-click
+ * of the 1 Oct walk: the editor stayed fully editable after the buttons beside
+ * it were hidden).
  */
-export function jobOffersCreateInvoice(job: JobForActions): boolean {
+export function jobFinishedAndInvoiced(job: JobForActions): boolean {
   const status = String(job.status ?? "");
-  if (status === "invoiced" || status === "paid") return false;
-  return !(status === "completed" && jobHasLiveInvoice(job));
+  if (status === "invoiced" || status === "paid") return true;
+  return status === "completed" && jobHasLiveInvoice(job);
+}
+
+/** The one line the job window's Line items card shows when its lines are locked. */
+export const JOB_LINES_LOCKED_LINE = "This job is finished and invoiced; its lines can't change.";
+
+/** "+ Create invoice" is not offered once the job is finished AND invoiced. (M8.) */
+export function jobOffersCreateInvoice(job: JobForActions): boolean {
+  return !jobFinishedAndInvoiced(job);
 }
 
 /** The list, unwrapped or in { data } / { data: { change_orders } }; newest first. */

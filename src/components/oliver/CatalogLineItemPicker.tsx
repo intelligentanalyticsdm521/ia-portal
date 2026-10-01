@@ -56,6 +56,14 @@ interface CatalogOffering {
 
 /** The narrowest the Service description box may get, in px (M7). */
 export const SERVICE_MIN_WIDTH = 180;
+/**
+ * The narrowest the Qty and Unit price boxes may get, in px. At an 800px
+ * window the change-order editor squeezed them to 20px and 27px and their
+ * values could not be read (re-click of the 1 Oct walk); with these floors the
+ * table scrolls sideways inside its box instead.
+ */
+export const QTY_MIN_WIDTH = 56;
+export const UNIT_PRICE_MIN_WIDTH = 96;
 
 function fmtMoney(n: number) {
   return `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -207,7 +215,8 @@ export function CatalogLineItemPicker({
                       type="number" min={0} step="0.25" value={it.quantity}
                       onChange={(e) => updateItem(idx, { quantity: Number(e.target.value) || 0 })}
                       disabled={disabled}
-                      style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12 }}
+                      aria-label="Qty"
+                      style={{ width: "100%", minWidth: QTY_MIN_WIDTH, boxSizing: "border-box", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12 }}
                     />
                   </td>
                   <td style={{ padding: "8px" }}>
@@ -215,7 +224,8 @@ export function CatalogLineItemPicker({
                       type="number" min={0} step="0.01" value={it.unit_price}
                       onChange={(e) => updateItem(idx, { unit_price: Number(e.target.value) || 0 })}
                       disabled={disabled}
-                      style={{ width: "100%", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
+                      aria-label="Unit price"
+                      style={{ width: "100%", minWidth: UNIT_PRICE_MIN_WIDTH, boxSizing: "border-box", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4, padding: "4px 6px", fontSize: 12, fontFamily: "monospace" }}
                     />
                   </td>
                   {!hideDiscount && <td style={{ padding: "8px" }}>
@@ -248,7 +258,7 @@ export function CatalogLineItemPicker({
                       />
                     </div>
                   </td>}
-                  <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: "#0B1C24" }}>
+                  <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace", fontWeight: 600, color: "#0B1C24", whiteSpace: "nowrap" }}>
                     {fmtMoney(lineTotal)}
                   </td>
                   <td style={{ padding: "8px", textAlign: "center" }}>

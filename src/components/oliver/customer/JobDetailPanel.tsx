@@ -16,7 +16,9 @@ import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 import { CardOnFileBadge } from "./CardOnFileBadge";
 import { ChangeOrdersCard } from "./ChangeOrdersCard";
-import { jobMoney, jobOffersCreateInvoice, jobTakesChangeOrders } from "../../../lib/onsiteJob";
+import {
+  JOB_LINES_LOCKED_LINE, jobFinishedAndInvoiced, jobMoney, jobOffersCreateInvoice, jobTakesChangeOrders,
+} from "../../../lib/onsiteJob";
 
 interface JobDetail {
   id: string;
@@ -351,6 +353,10 @@ function JobLayout(p: JobLayoutProps) {
   const [tab, setTab] = useState<JobTab>("details");
   const { job, jobId } = p;
   const navigate = useNavigate();
+  // A finished, invoiced job's lines belong to its invoice: the editor is
+  // read-only, as on a paid or cancelled job (isTerminal), and says why.
+  const linesLocked = jobFinishedAndInvoiced(job);
+  const linesReadOnly = p.isTerminal || linesLocked;
 
   return (
     <div>
@@ -441,16 +447,21 @@ function JobLayout(p: JobLayoutProps) {
                   <div className="card-ttl">Line items</div>
                   <div className="card-sub">
                     {p.lineItems.length} item{p.lineItems.length === 1 ? "" : "s"} · subtotal {fmtMoney(p.lineItemsSubtotal)}
-                    {p.lineItems.length > 0 && " · job total recomputed on save"}
+                    {p.lineItems.length > 0 && !linesReadOnly && " · job total recomputed on save"}
                   </div>
                 </div>
-                {p.lineItemsDirty && !p.isTerminal && (
+                {p.lineItemsDirty && !linesReadOnly && (
                   <Button variant="primary" onClick={p.saveLineItems} disabled={p.busy === "save-lines"}>
                     {p.busy === "save-lines" ? "Saving…" : "Save line items"}
                   </Button>
                 )}
               </div>
-              <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={p.isTerminal} />
+              {linesLocked && (
+                <div data-testid="job-lines-locked" style={{ margin: "4px 0 10px", fontSize: 12, color: "#5A7A8A" }}>
+                  {JOB_LINES_LOCKED_LINE}
+                </div>
+              )}
+              <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={linesReadOnly} />
             </div>
           )}
           {/* On-site flow Phase C (G5): change orders under the job's lines —
