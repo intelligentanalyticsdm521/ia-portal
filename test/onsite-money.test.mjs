@@ -153,13 +153,14 @@ test("a row's deposit: a positive number only", () => {
 // ── the wiring ────────────────────────────────────────────────────────────
 
 test("badge: reads the methods list once per contact; nothing while loading or with no card; a sentence on failure", () => {
-  assert.match(badge, /api\.get<unknown>\(`\/payments\/contacts\/\$\{contactId\}\/methods`\)/);
+  // Through the shared read (lib/cardMethods, pane walk M12: one request per open).
+  assert.match(badge, /fetchMethodsOnce\(apiRef\.current\.get, contactId\)/);
   assert.match(badge, /setCard\(pickCardOnFile\(readMethods\(r\)\)\)/);
   assert.match(badge, /\.catch\(\(\) => \{ if \(live\) setFailed\(true\); \}\)/);
   assert.match(badge, /\{CARD_CHECK_FAILED\}/);
   assert.match(badge, /if \(!card\) return null;/);
   assert.match(badge, /\{cardOnFileLabel\(card\)\}/);
-  assert.match(badge, /\}, \[contactId, api\]\);/);
+  assert.match(badge, /\}, \[contactId, round\]\);/);
 });
 
 test("badge: takes the dark header's foreground, ink elsewhere — never a hard-coded ink in a header", () => {

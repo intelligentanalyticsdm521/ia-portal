@@ -5,7 +5,9 @@
  * from the one-time link, or in the office) before pressing Charge.
  *
  * Reads GET /payments/contacts/:id/methods (the same list PaymentMethodsCard
- * shows) once per contact. Nothing while loading; nothing when there is no
+ * shows) once per contact, through lib/cardMethods fetchMethodsOnce — the
+ * same request the Payment methods card shares — and reads again when a card
+ * is added or removed there. Nothing while loading; nothing when there is no
  * card; a short sentence when the lookup failed, because a missing badge
  * would read as "no card" when we simply do not know.
  *
@@ -13,7 +15,8 @@
  * header it is light, and anywhere else (the job panel) it is ink — the rule
  * test/job-status-colors.test.mjs enforces for everything in a dark header.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { fetchMethodsOnce, onMethodsChanged } from "../../../lib/cardMethods";
 import {
   CARD_CHECK_FAILED, cardOnFileLabel, cardOnFileTitle, pickCardOnFile, readMethods, type SavedCard,
 } from "../../../lib/onsiteMoney";
@@ -26,16 +29,26 @@ export function CardOnFileBadge({
 }) {
   const [card, setCard] = useState<SavedCard | null>(null);
   const [failed, setFailed] = useState(false);
+  const [round, setRound] = useState(0);
+  // The api object may be rebuilt on every render of the window; the read is
+  // keyed on the customer, not on it.
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
+  useEffect(() => {
+    if (!contactId) return;
+    return onMethodsChanged(contactId, () => setRound((n) => n + 1));
+  }, [contactId]);
 
   useEffect(() => {
     setCard(null); setFailed(false);
     if (!contactId) return;
     let live = true;
-    api.get<unknown>(`/payments/contacts/${contactId}/methods`)
+    fetchMethodsOnce(apiRef.current.get, contactId)
       .then((r) => { if (live) setCard(pickCardOnFile(readMethods(r))); })
       .catch(() => { if (live) setFailed(true); });
     return () => { live = false; };
-  }, [contactId, api]);
+  }, [contactId, round]);
 
   if (failed) {
     return (
