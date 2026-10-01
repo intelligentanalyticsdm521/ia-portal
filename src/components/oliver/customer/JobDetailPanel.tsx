@@ -123,7 +123,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
     try {
       const [j, items] = await Promise.all([
         api.get<JobDetail | { data: JobDetail }>(`/jobs/${jobId}`),
-        api.get<{ data: PersistedLineItem[] }>(`/jobs/${jobId}/line-items`).catch(() => ({ data: [] })),
+        api.get<PersistedLineItem[] | { data?: PersistedLineItem[] }>(`/jobs/${jobId}/line-items`).catch(() => [] as PersistedLineItem[]),
       ]);
       const jobData = (j as any)?.data ?? j;
       setJob(jobData);
