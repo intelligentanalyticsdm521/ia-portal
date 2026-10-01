@@ -41,7 +41,9 @@ function visibleText(src) {
 test("the Conversation panel is one tab bolted onto the existing lead modal", () => {
   assert.match(modal, /import \{ LeadChatPanel \} from "\.\/LeadChatPanel"/);
   assert.match(modal, /\{ key: "conversation", label: "Conversation", icon: MessageSquare \}/);
-  assert.match(modal, /\{tab === "conversation" && lead && \(\s*<LeadChatPanel leadId=\{lead\.id\} onChanged=\{onChanged\} \/>/);
+  // After a reply the modal reloads the lead (Overview shows Contacted at once,
+  // 71ee0f8) and then tells the inbox.
+  assert.match(modal, /\{tab === "conversation" && lead && \(\s*<LeadChatPanel leadId=\{lead\.id\} onChanged=\{\(\) => \{ void load\(\); onChanged\?\.\(\); \}\} \/>/);
   // Beside the Responder tab, not instead of it.
   assert.match(modal, /\{ key: "responder", label: "Responder", icon: Sparkles \}/);
 });
