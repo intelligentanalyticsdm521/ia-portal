@@ -26,6 +26,8 @@ import {
 import {
   type ExpandedKeyword, withTypedTopics, mergeExpansions, categoryPayloadFrom,
 } from "../../lib/leadgenCategories";
+// 2026-10-01 — a picked category's topics sit under its chip.
+import { LeadGenCategoryTopics } from "../../components/spark/LeadGenCategoryTopics";
 import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
   X, ChevronDown, Check, Tag, Snowflake, Building2, Info, CreditCard, CalendarClock,
@@ -217,9 +219,6 @@ interface ComboProps<T> {
    *  hands the typed text back (label from customLabel). */
   onPickCustom?: (value: string) => void;
   customLabel?: (value: string) => string;
-  /** A second, differently-typed suggestion list rendered under its own heading
-   *  (e.g. matching search TOPICS while the user is in the CATEGORY box). */
-  secondary?: { title: string; items: { key: string; label: React.ReactNode }[]; onPick: (key: string) => void };
   emptyText?: string;
   /** Enter key. Brandon 2026-09-04: "it says press Enter to add it as a custom
    *  term, but it doesn't accept me pressing enter" — it was never wired. */
@@ -228,7 +227,7 @@ interface ComboProps<T> {
 
 function AutocompleteCombo<T>({
   placeholder, value, onChange, results, loading, onPick, renderItem, disabled, icon,
-  onPickCustom, customLabel, secondary, emptyText, onEnter,
+  onPickCustom, customLabel, emptyText, onEnter,
 }: ComboProps<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -269,7 +268,7 @@ function AutocompleteCombo<T>({
           {loading && (
             <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
           )}
-          {!loading && results.length === 0 && value.trim() && !onPickCustom && !(secondary && secondary.items.length) && (
+          {!loading && results.length === 0 && value.trim() && !onPickCustom && (
             <div className="px-3 py-2 text-xs text-slate-400">{emptyText || "No matches — press Enter to add it as a custom term."}</div>
           )}
           {results.map((r, i) => (
@@ -282,21 +281,6 @@ function AutocompleteCombo<T>({
               {renderItem(r)}
             </button>
           ))}
-          {!loading && secondary && secondary.items.length > 0 && (
-            <>
-              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide font-semibold text-slate-400 border-t border-slate-100">{secondary.title}</div>
-              {secondary.items.map((it) => (
-                <button
-                  key={it.key}
-                  type="button"
-                  onClick={() => { secondary.onPick(it.key); setOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-orange-50 hover:text-orange-900 flex items-center justify-between"
-                >
-                  {it.label}
-                </button>
-              ))}
-            </>
-          )}
           {!loading && onPickCustom && value.trim().length >= 2 && (
             <button
               type="button"
@@ -378,6 +362,10 @@ export function SparkLeadGenNewPage() {
   const toggleTerm = (term: string) => setExcludedTerms((prev) => { const n = new Set(prev); if (n.has(term)) n.delete(term); else n.add(term); return n; });
   const toggleCity = (id: number) => setExcludedCityIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const activeKw = useMemo(() => previewKw.filter((k) => !excludedTerms.has(k.term)), [previewKw, excludedTerms]);
+  // A category's own topics: the expansion's rows filed under it (first claim
+  // wins across categories — the same attribution the job uses).
+  const sameName = (a: string | null | undefined, b: string) => (a || "").trim().toLowerCase() === b.trim().toLowerCase();
+  const topicsFor = (c: CategoryHit) => previewKw.filter((k) => sameName(k.category, c.name));
   const activeCities = useMemo(() => previewLoc.cities.filter((c) => !excludedCityIds.has(c.city_id)), [previewLoc, excludedCityIds]);
 
   // Tenant billing facts — package, included/remaining leads this period, the
@@ -479,22 +467,11 @@ export function SparkLeadGenNewPage() {
     return () => { cancelled = true; };
   }, [debouncedCat, get, ready, catTop25Only]);
 
-  // Search TOPICS that match what is typed in the CATEGORY box — so "snow" shows
-  // "snow removal services" even though no category matches (Brandon 2026-09-04).
-  const [catTermSuggestions, setCatTermSuggestions] = useState<TermHit[]>([]);
-  useEffect(() => {
-    if (!ready || catTop25Only || debouncedCat.trim().length < 2) { setCatTermSuggestions([]); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await get<{ data: TermHit[] }>(`/api/v1/leadgen/terms/autocomplete?q=${encodeURIComponent(debouncedCat)}`);
-        if (!cancelled) setCatTermSuggestions((r?.data || []).slice(0, 6));
-      } catch {
-        if (!cancelled) setCatTermSuggestions([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [debouncedCat, get, ready, catTop25Only]);
+  // 2026-10-01 (Brandon): the category box lists CATEGORIES ONLY. It used to
+  // list matching search TOPICS under its own heading as well, and picking one
+  // ("electrician schools", a topic from another category) turned the topic into
+  // a custom category. A topic is typed in the Search Topics box; a category's
+  // own topics are shown under its chip once it is picked.
 
   // Term autocomplete (scoped to category if present).
   useEffect(() => {
@@ -803,18 +780,6 @@ export function SparkLeadGenNewPage() {
     });
     setCatQuery("");
   }
-  // A search TOPIC picked from the category box: custom category named after it,
-  // and the taxonomy term itself (positive id) becomes the seed for expansion.
-  function pickTermAsCategory(t: TermHit) {
-    if (form.categories.some((x) => x.name.toLowerCase() === t.term.toLowerCase())) { setCatQuery(""); return; }
-    const already = form.terms.some((x) => x.id === t.id || x.term.toLowerCase() === t.term.toLowerCase());
-    setForm({
-      ...form,
-      categories: [...form.categories, { id: 0, name: t.term, industry_id: null, custom: true }],
-      terms: already ? form.terms : [...form.terms, t],
-    });
-    setCatQuery("");
-  }
   function addCity(c: CityHit) {
     if (form.cities.some((x) => x.id === c.id)) return;
     setForm({ ...form, cities: [...form.cities, c] });
@@ -941,17 +906,27 @@ export function SparkLeadGenNewPage() {
           {/* Business Categories (A13 — more than one per run) */}
           <Section
             title="Business Categories"
-            hint="Add one or more. Each category brings its own search topics, and the search asks them in turn so one category cannot crowd out another. Remove any topic you don't want in the preview pane."
+            hint="Add one or more. Each category brings its own search topics, shown under it — remove any you don't want searched. The search asks the categories in turn so one cannot crowd out another."
           >
+            {/* 2026-10-01 — each category's topics directly under its chip, from
+                the same expansion and the same excludedTerms as the Live Preview,
+                so a topic removed here leaves the right pane's count at once. */}
             {form.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
+              <div className="space-y-2 mb-3" data-testid="picked-categories">
                 {form.categories.map((c) => (
-                  <Chip
-                    key={`${c.id}:${c.name}`}
-                    label={c.custom ? `${c.name} · custom` : c.name}
-                    onRemove={() => removeCategory(c)}
-                    icon={<Building2 className="h-3 w-3" />}
-                  />
+                  <div key={`${c.id}:${c.name}`} className="rounded-lg border border-slate-200 bg-slate-50/40 p-2.5">
+                    <Chip
+                      label={c.custom ? `${c.name} · custom` : c.name}
+                      onRemove={() => removeCategory(c)}
+                      icon={<Building2 className="h-3 w-3" />}
+                    />
+                    <LeadGenCategoryTopics
+                      topics={topicsFor(c)}
+                      excluded={excludedTerms}
+                      loading={previewKwLoading}
+                      onToggle={toggleTerm}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -986,11 +961,6 @@ export function SparkLeadGenNewPage() {
                     </span>
                   )}
                   icon={<Building2 className="h-3.5 w-3.5" />}
-                  secondary={catTermSuggestions.length ? {
-                    title: "Search topics that match",
-                    items: catTermSuggestions.map((t) => ({ key: String(t.id), label: <span className="flex-1 flex items-center gap-2"><Tag className="h-3 w-3 text-slate-400" /><span>{t.term}</span></span> })),
-                    onPick: (key) => { const t = catTermSuggestions.find((x) => String(x.id) === key); if (t) pickTermAsCategory(t); },
-                  } : undefined}
                   onPickCustom={catTop25Only ? undefined : pickCustomCategory}
                   customLabel={(v) => `Use "${v}" as a custom category`}
                   onEnter={onCategoryEnter}
