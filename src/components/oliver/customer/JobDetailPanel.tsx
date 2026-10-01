@@ -14,6 +14,7 @@ import { ScheduleJobModal } from "../ScheduleJobModal";
 import { Button, StatusBadge } from "../ui";
 import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
+import { CardOnFileBadge } from "./CardOnFileBadge";
 
 interface JobDetail {
   id: string;
@@ -363,6 +364,8 @@ function JobLayout(p: JobLayoutProps) {
             />
             {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
             {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Total: <strong>{fmtMoney(job.total)}</strong></span>}
+            {/* On-site flow Phase B: the customer's saved card, before anyone charges. */}
+            <CardOnFileBadge contactId={job.contactId} api={p.api} />
           </div>
         </div>
       </div>

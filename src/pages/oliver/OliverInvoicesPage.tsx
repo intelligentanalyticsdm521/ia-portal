@@ -17,6 +17,7 @@ import { ReportBar } from '../../components/insights/ReportBar';
 import { useProductInsightsPayload } from '../../hooks/useProductInsightsPayload';
 import { useOliverLocations } from "../../hooks/useOliverLocations";
 import { withLocation, rowLocationId, rowLocationName, locationNameOf } from "../../lib/oliverLocations";
+import { depositReceivedOf, depositReceivedLabel } from "../../lib/onsiteMoney";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,6 +31,9 @@ interface InvoiceRow {
   issuedAt: string;
   dueDate?: string | null;
   stripePaymentLink?: string | null;
+  /** On-site flow Phase B: the quote deposit booked against this invoice, when
+   *  there is one. Read through depositReceivedOf (lib/onsiteMoney.ts). */
+  depositAmount?: number | null;
 }
 
 interface InvoiceLineItem {
@@ -340,7 +344,20 @@ export function OliverInvoicesPage() {
       align: "right",
       sortable: true,
       sortAccessor: (r) => Number(r.amount),
-      render: (r) => <span className="font-medium tabular-nums">{fmtMoney(r.amount)}</span>,
+      render: (r) => {
+        // On-site flow Phase B: "Deposit received" under the amount on a row
+        // whose quote deposit was booked against it — the customer owes the
+        // rest, not the whole.
+        const deposit = depositReceivedOf(r);
+        return (
+          <span className="inline-flex flex-col items-end">
+            <span className="font-medium tabular-nums">{fmtMoney(r.amount)}</span>
+            {deposit !== null && (
+              <span className="text-[11px] text-emerald-700 tabular-nums" data-testid="deposit-received">{depositReceivedLabel(deposit)}</span>
+            )}
+          </span>
+        );
+      },
     },
     {
       key: "status",
