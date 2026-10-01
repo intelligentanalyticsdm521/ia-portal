@@ -59,9 +59,17 @@ describe("step 1 — Connect your bank and card", () => {
     const s = bankStep({ configured: false, itemCount: 0 });
     assert.equal(s.done, false);
     assert.equal(s.route, "/app/services/stella_ledger_accounting?tab=reconcile");
-    assert.equal(s.linkLabel, "Accounting → Import a bank statement");
-    assert.match(s.detail, /import a bank statement/);
+    assert.equal(s.linkLabel, "Accounting → Bank Reconciliation");
+    assert.match(s.detail, /use Import a bank statement/);
     assert.doesNotMatch(s.detail, /plaid/i, "no vendor name in the sentence");
+  });
+
+  test("keys not switched on but a connection already on file: ticked, and still points at the statement import", () => {
+    const s = bankStep({ configured: false, itemCount: 1 });
+    assert.equal(s.done, true);
+    assert.equal(s.route, "/app/services/stella_ledger_accounting?tab=reconcile");
+    assert.match(s.detail, /1 connection is on file/);
+    assert.match(s.detail, /Import a bank statement/);
   });
 
   test("status unreadable: a reminder pointing at the Bank page, not a tick", () => {

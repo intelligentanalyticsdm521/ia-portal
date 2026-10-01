@@ -80,15 +80,21 @@ export function bankStep(status: PlaidStatusInput | null): StellaSetupStep {
   const done = count > 0;
   // Automatic connection not switched on here (dev, or before keys): the way
   // in is a statement import, and the step says so rather than pointing at a
-  // greyed-out button.
-  if (status && !status.configured && !done) {
+  // greyed-out button. The tick still follows itemCount — a connection already
+  // on file is a connection.
+  if (status && !status.configured) {
     return {
       key: "bank",
       label: "Connect your bank and card",
-      detail: "Automatic bank connection isn't switched on yet, so import a bank statement to bring your transactions in.",
-      done: false,
+      detail: done
+        ? `${count} ${count === 1 ? "connection is" : "connections are"} on file, but automatic bank connection isn't switched on yet — open a reconciliation and use Import a bank statement for new transactions.`
+        : "Automatic bank connection isn't switched on yet — open a reconciliation and use Import a bank statement to bring your transactions in.",
+      done,
       route: STELLA_SETUP_ROUTES.statementImport,
-      linkLabel: "Accounting → Import a bank statement",
+      // The import lives inside a reconciliation, so the link names the tab it
+      // really lands on (clicked 1 Oct: the list of reconciliations, not an
+      // import screen).
+      linkLabel: "Accounting → Bank Reconciliation",
     };
   }
   return {
