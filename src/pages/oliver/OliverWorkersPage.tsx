@@ -677,7 +677,7 @@ function CrewPermissionsPanel({ workerId, firstName, api }: {
     <div data-testid="crew-permissions">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">On site, in the crew app</h3>
       <p className="text-xs text-slate-500 mt-1">
-        What {firstName.trim() || "this worker"} may do on the tablet. Each switch saves when you flip it. Owners and admins can always do all four.
+        What {firstName.trim() || "this worker"} may do on the tablet. Each box saves when you tick or untick it. Owners and admins can always do all four.
       </p>
       {loadErr && <div className="mt-2 rounded-lg bg-red-50 ring-1 ring-red-200 px-3 py-2 text-xs text-red-800" role="alert">{loadErr}</div>}
       {!perms && !loadErr && <div className="mt-2 text-xs text-slate-500">Loading…</div>}
@@ -689,8 +689,6 @@ function CrewPermissionsPanel({ workerId, firstName, api }: {
               <label key={p.key} className="flex items-start gap-3 rounded-lg ring-1 ring-gray-200 px-3 py-2">
                 <input
                   type="checkbox"
-                  role="switch"
-                  aria-checked={v === true}
                   checked={v === true}
                   disabled={v === null || busyKey !== null}
                   onChange={(e) => { void flip(p.key, e.target.checked); }}

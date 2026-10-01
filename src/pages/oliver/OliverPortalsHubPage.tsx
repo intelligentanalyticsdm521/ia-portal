@@ -863,6 +863,7 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
 
   const reset = () => {
     if (!window.confirm("Reset workflow rules to the platform defaults? You'll still need to click Save to persist.")) return;
+    setSavedMsg(null);
     setWf({ ...WORKFLOW_DEFAULTS });
     // The platform default is ON (oliver 227: DEFAULT 1).
     if (completion !== null && completion !== undefined) setCompletion(true);
@@ -897,13 +898,18 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
     }
     setSavedOk(note.ok);
     setSavedMsg(note.text);
-    if (note.ok) setTimeout(() => setSavedMsg(null), 4000);
+    // The confirmation stays until the next edit (pane walk 1 Oct, M4: it
+    // vanished after 4 s, before anyone could read it).
     onSaved();
     setSaving(false);
   };
 
+  // Any edit in the tab clears the last message: a red "between 1% and 100%"
+  // goes as soon as the box is corrected, and a green "Saved." stays until the
+  // next change (pane walk 1 Oct, M4). Change events bubble, so one handler on
+  // the tab sees every box, list and tick.
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" onChange={() => setSavedMsg(null)} data-testid="workflow-tab">
       <div>
         <h3 className="text-sm font-semibold text-slate-900">Workflow rules</h3>
         <p className="text-xs text-slate-600">Customer-initiated reschedules + what happens automatically after a booking confirms.</p>
