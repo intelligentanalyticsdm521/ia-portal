@@ -9,7 +9,11 @@
  *      style's own heading font, one line on how it feels, and a swatch strip;
  *   2. "Use my brand colours and fonts" (Standard and above), which lays the
  *      Brand Identity kit over the style;
- *   3. Buttons & functions: which of the ten features customers get.
+ *   3. Buttons & functions: which of the ten features customers get;
+ *   4. Wording (D-CP10): six lines of the portal in the business's own words
+ *      (the line under its name, the home greeting, the two home buttons, the
+ *      change-of-time card, the footer). An empty line shows the standard text,
+ *      which is the field's grey placeholder.
  *
  * The right-hand side is the REAL customer portal in a phone (390×780) or
  * desktop (1024 wide) frame at <portal>/?look=preview. It signs in as a sample
@@ -19,7 +23,7 @@
  * reload. Only the unsaved preview is resolved here; the look customers get is
  * resolved by oliver-api from what Save look stores:
  *
- *   PATCH /portals/design?kind=customer   { preset, use_brand, features }
+ *   PATCH /portals/design?kind=customer   { preset, use_brand, features, wording }
  *
  * The GET and PATCH answers also carry the plan's allowances (brand colours
  * Standard+, "Powered by OLIVER" off Pro+) and the brand kit oliver-api merges
@@ -37,6 +41,10 @@ import { apiErrorMessage } from "../../../lib/apiErrorMessage";
 import { PRESETS, PRESET_INFO, PRESET_KEYS, type PresetKey } from "./presets";
 import {
   FEATURES,
+  STANDARD_WORDING,
+  WORDING_FIELDS,
+  WORDING_KEYS,
+  WORDING_MAX,
   allowancesFromSaved,
   brandFromSaved,
   chosenBrandColour,
@@ -46,15 +54,23 @@ import {
   isLookReady,
   lookMessage,
   lookProblems,
+  lookSaveBody,
   normalizeFeatures,
+  normalizeWording,
   resolvePreviewLook,
   sameChoice,
+  wordingErrorFromApi,
+  wordingProblems,
   type BrandForLook,
   type FeatureKey,
   type LookAllowances,
   type LookChoice,
   type LookProblem,
-  type PortalLook,
+  type LookWording,
+  type PreviewLook,
+  type WordingError,
+  type WordingField,
+  type WordingKey,
 } from "./lookModel";
 
 const DESIGN_PATH = "/portals/design?kind=customer";
@@ -72,10 +88,14 @@ export interface LookEditor {
   saveError: string | null;
   toast: string | null;
   dirty: boolean;
-  /** The resolved look the preview is painted with. */
-  look: PortalLook | null;
+  /** The resolved look the preview is painted with, wording included. */
+  look: PreviewLook | null;
   /** Pairs under 4.5:1. Save is off while there are any. */
   problems: LookProblem[];
+  /** Wording lines the save would refuse, by key. Save is off while there are any. */
+  wordingProblems: Partial<Record<WordingKey, string>>;
+  /** The last save's 400 wording_invalid: the line it names and the API's sentence. */
+  wordingError: WordingError | null;
   /** What the plan includes, as oliver-api decides it. */
   allowances: LookAllowances;
   /** The brand kit oliver-api merges from; null when it sent none. */
@@ -83,6 +103,9 @@ export interface LookEditor {
   setPreset: (p: PresetKey) => void;
   setUseBrand: (on: boolean) => void;
   setFeature: (k: FeatureKey, on: boolean) => void;
+  setWording: (k: WordingKey, text: string) => void;
+  /** "Use the standard wording": all six lines back to the standard text. */
+  clearWording: () => void;
   save: () => Promise<void>;
   discard: () => void;
 }
@@ -105,6 +128,7 @@ export function useLookEditor(enabled: boolean): LookEditor {
   const [loadNonce, setLoadNonce] = useState(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [wordingError, setWordingError] = useState<WordingError | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
@@ -145,25 +169,24 @@ export function useLookEditor(enabled: boolean): LookEditor {
     [draft, brand, allowances],
   );
   const problems = useMemo(() => (look ? lookProblems(look.colors) : []), [look]);
+  const wordingIssues = useMemo(() => (draft ? wordingProblems(draft.wording) : {}), [draft]);
+  const wordingBlocked = Object.keys(wordingIssues).length > 0;
   const dirty = !!draft && !!saved && !sameChoice(draft, saved);
 
   const edit = useCallback((fn: (d: LookChoice) => LookChoice) => {
     setToast(null);
     setSaveError(null);
+    setWordingError(null);
     setDraft((d) => (d ? fn(d) : d));
   }, []);
 
   const save = useCallback(async () => {
-    if (!draft || saving || problems.length) return;
+    if (!draft || saving || problems.length || wordingBlocked) return;
     setSaving(true);
     setSaveError(null);
+    setWordingError(null);
     setToast(null);
-    const body: LookChoice = {
-      preset: draft.preset,
-      // Below Standard the switch is off on screen; send what is on screen.
-      use_brand: draft.use_brand && allowances.brand,
-      features: normalizeFeatures(draft.features),
-    };
+    const body = lookSaveBody(draft, allowances.brand);
     try {
       const r = await patch<unknown>(DESIGN_PATH, body);
       const answered = r && typeof r === "object" && "preset" in (r as object);
@@ -176,16 +199,21 @@ export function useLookEditor(enabled: boolean): LookEditor {
       }
       setToast("Saved. Your customers see this look the next time they open your portal.");
     } catch (e) {
-      // 400 look_unreadable names the pair; 403 feature_not_available names the plan.
-      setSaveError(apiErrorMessage(e));
+      // 400 look_unreadable names the pair; 403 feature_not_available names the
+      // plan; 400 wording_invalid names the line, and its sentence is printed
+      // under that field (the Wording card) instead of in the banner.
+      const wording = wordingErrorFromApi(e);
+      setWordingError(wording);
+      setSaveError(wording ? null : apiErrorMessage(e));
     } finally {
       setSaving(false);
     }
-  }, [draft, saving, problems.length, allowances.brand, patch, brand]);
+  }, [draft, saving, problems.length, wordingBlocked, allowances.brand, patch, brand]);
 
   const discard = useCallback(() => {
     setDraft(saved);
     setSaveError(null);
+    setWordingError(null);
     setToast(null);
   }, [saved]);
 
@@ -193,9 +221,13 @@ export function useLookEditor(enabled: boolean): LookEditor {
     saved, draft, loadError,
     reload: () => setLoadNonce((n) => n + 1),
     saving, saveError, toast, dirty, look, problems, allowances, brand,
+    wordingProblems: wordingIssues, wordingError,
     setPreset: (p) => edit((d) => ({ ...d, preset: p })),
     setUseBrand: (on) => edit((d) => ({ ...d, use_brand: on })),
     setFeature: (k, on) => edit((d) => ({ ...d, features: normalizeFeatures({ ...d.features, [k]: on }) })),
+    // Kept as typed (spaces and all) so a word can be finished; trimmed on save.
+    setWording: (k, text) => edit((d) => ({ ...d, wording: { ...d.wording, [k]: text } })),
+    clearWording: () => edit((d) => ({ ...d, wording: normalizeWording(null) })),
     save, discard,
   };
 }
@@ -335,6 +367,8 @@ export function LookTab({
               : "Your portal carries no “Powered by OLIVER” line on your plan."}
           </p>
         </section>
+
+        <WordingCard editor={editor} wording={draft.wording} />
       </div>
 
       {/* ── Right: the live preview ───────────────────────────────────── */}
@@ -491,6 +525,114 @@ function BrandSwitch({ editor, on }: { editor: LookEditor; on: boolean }) {
   );
 }
 
+// ── Wording (D-CP10) ───────────────────────────────────────────────────────
+
+function wordingInputId(key: WordingKey): string {
+  return `look-wording-${key}`;
+}
+
+/**
+ * Six lines in the business's own words. Each field shows the standard text
+ * as its grey placeholder, so an empty field reads as "the standard"; every
+ * keystroke repaints the preview. A save the API refuses (400 wording_invalid)
+ * prints the API's sentence under the line it names and puts the cursor there.
+ */
+function WordingCard({ editor, wording }: { editor: LookEditor; wording: LookWording }) {
+  const apiError = editor.wordingError;
+  useEffect(() => {
+    if (!apiError) return;
+    if (!apiError.key) {
+      // No line named: bring the card, and the sentence at its top, into view.
+      document.getElementById("look-wording")?.scrollIntoView({ block: "start", behavior: "smooth" });
+      return;
+    }
+    const el = document.getElementById(wordingInputId(apiError.key));
+    if (!el) return;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.focus({ preventScroll: true });
+  }, [apiError]);
+
+  const allStandard = WORDING_KEYS.every((k) => !wording[k].trim());
+
+  return (
+    <section id="look-wording" aria-labelledby="look-wording-heading">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 id="look-wording-heading" className="text-sm font-semibold text-slate-900">Wording</h3>
+        <button
+          type="button"
+          onClick={editor.clearWording}
+          disabled={allStandard}
+          title={allStandard ? "Your portal already uses the standard wording" : "Put all six lines back to the standard wording"}
+          className="text-xs font-semibold text-slate-700 underline hover:text-slate-900 disabled:cursor-default disabled:text-slate-400 disabled:no-underline"
+        >
+          Use the standard wording
+        </button>
+      </div>
+      <p className="mb-3 text-xs text-slate-600">
+        Put a few of the lines your customers read in your own words. Leave a line empty to keep the standard words shown in grey. The preview changes as you type.
+      </p>
+      {apiError && !apiError.key && (
+        <div role="alert" className="mb-3 rounded-md border-2 border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">{apiError.message}</div>
+      )}
+      <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 bg-white">
+        {WORDING_FIELDS.map((f) => (
+          <WordingInput
+            key={f.key}
+            field={f}
+            value={wording[f.key]}
+            problem={apiError?.key === f.key ? apiError.message : editor.wordingProblems[f.key] ?? null}
+            onChange={(text) => editor.setWording(f.key, text)}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WordingInput({
+  field, value, problem, onChange,
+}: {
+  field: WordingField;
+  value: string;
+  problem: string | null;
+  onChange: (text: string) => void;
+}) {
+  const id = wordingInputId(field.key);
+  const hintId = `${id}-hint`;
+  const problemId = `${id}-problem`;
+  const count = value.length;
+  const describedBy = [field.hint ? hintId : null, problem ? problemId : null].filter(Boolean).join(" ") || undefined;
+  return (
+    <div className="px-3 py-2.5">
+      <div className="flex items-baseline justify-between gap-3">
+        <label htmlFor={id} className="text-sm font-medium text-slate-900">{field.label}</label>
+        <span
+          className={`shrink-0 text-[11px] tabular-nums ${count >= WORDING_MAX ? "font-semibold text-amber-700" : "text-slate-400"}`}
+          title={`${count} of ${WORDING_MAX} characters`}
+        >
+          {count}/{WORDING_MAX}
+        </span>
+      </div>
+      <p className="text-xs text-slate-500">{field.where}</p>
+      <input
+        id={id}
+        type="text"
+        value={value}
+        maxLength={WORDING_MAX}
+        placeholder={STANDARD_WORDING[field.key]}
+        onChange={(e) => onChange(e.target.value)}
+        aria-invalid={problem ? true : undefined}
+        aria-describedby={describedBy}
+        className={`mt-1.5 w-full rounded-md border bg-white px-2.5 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 ${
+          problem ? "border-red-400 focus:ring-red-200" : "border-slate-300 focus:border-slate-400 focus:ring-slate-200"
+        }`}
+      />
+      {field.hint && <p id={hintId} className="mt-1 text-[11px] text-slate-500">{field.hint}</p>}
+      {problem && <p id={problemId} role="alert" className="mt-1 text-xs text-red-700">{problem}</p>}
+    </div>
+  );
+}
+
 // ── Live preview (contract §5.2) ───────────────────────────────────────────
 
 const FRAMES: Record<Device, { w: number; h: number }> = {
@@ -504,7 +646,7 @@ function LookPreview({
   src, look, device, setDevice,
 }: {
   src: string | null;
-  look: PortalLook;
+  look: PreviewLook;
   device: Device;
   setDevice: (d: Device) => void;
 }) {
