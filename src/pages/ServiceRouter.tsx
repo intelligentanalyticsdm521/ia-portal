@@ -141,9 +141,6 @@ const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkfl
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsReportsPage = lazyNamed(() => import('./spark/SparkIAInsightsReportsPage'), 'SparkIAInsightsReportsPage');
-// IL step 8 — the monthly "what worked" report. The email links here, so the
-// route key and the path in services/il/findingsTemplate.js must stay in step.
-const SparkWhatWorkedPage = lazyNamed(() => import('./spark/SparkWhatWorkedPage'), 'SparkWhatWorkedPage');
 const ReportsHubPage = lazyNamed(() => import('../components/insights/ReportsHubPage'), 'ReportsHubPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
 const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsightsHealthPage'), 'OliverIAInsightsHealthPage');
@@ -974,7 +971,6 @@ function ServiceRouterInner() {
       case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
       case 'spark_ia_insights_reports': sparkPage = <SparkIAInsightsReportsPage />; break;
-      case 'spark_what_worked': sparkPage = <SparkWhatWorkedPage />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;

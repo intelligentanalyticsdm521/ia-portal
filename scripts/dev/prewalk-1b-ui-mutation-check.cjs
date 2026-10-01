@@ -43,10 +43,6 @@ const M=[
   from:'      {!refused && <div className="grid gap-3 sm:grid-cols-4">',
   to:'      {<div className="grid gap-3 sm:grid-cols-4">',
   expect:"a refusal shows no zeros and no 'nobody has a number yet'"},
- {id:"empty_sections_dropped",file:"src/pages/spark/SparkWhatWorkedPage.tsx",
-  from:"    const coverage = report?.coverage;",
-  to:"    const coverage = null;",
-  expect:"the report has a place for every section, measured or not"},
 ];
 let caught=0;
 for(const m of M){

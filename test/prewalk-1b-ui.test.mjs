@@ -1,5 +1,5 @@
 // Pre-walk fixes 1b — the Portal half of the client-visible defects the pass-1
-// tester logged. Source-pinning, like il8-findings-ui.test.mjs: these are
+// tester logged. Source-pinning: these are
 // wiring and wording facts a typecheck cannot see.
 //
 // What has to stay true:
@@ -9,9 +9,10 @@
 //   • Platform Admin → Agents never renders a bare GUID as a business's whole
 //     name (walk row AG13);
 //   • Platform Admin → Phone lines renders a REFUSAL as a refusal — no zeros,
-//     no "no business has a live number yet";
-//   • "What worked" draws every section of the report, and says why one is
-//     empty rather than leaving it out.
+//     no "no business has a live number yet".
+//
+// The "What worked" pins that lived here went with the surface (Brandon,
+// 1 Oct 2026: never scoped); test/what-worked-removed.test.mjs pins it gone.
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -34,9 +35,6 @@ const inboxCopy = copyOnly(inbox);
 const agents = copyOnly(read("pages/admin/AgentsAcrossBusinessesPage.tsx"));
 const phoneLines = read("pages/admin/PhoneLinesPage.tsx");
 const phoneCopy = copyOnly(phoneLines);
-const whatWorked = read("pages/spark/SparkWhatWorkedPage.tsx");
-const whatWorkedCopy = copyOnly(whatWorked);
-const findingsApi = read("lib/ilFindingsApi.ts");
 
 /* ── 1. the Lead Inbox counts the inbox ─────────────────────────────────── */
 
@@ -107,33 +105,3 @@ test("a refusal shows no zeros and no 'nobody has a number yet'", () => {
     "a failed read must leave nothing behind for a later render to count");
 });
 
-/* ── 4. "What worked" draws every section ───────────────────────────────── */
-
-test("the report has a place for every section, measured or not", () => {
-  assert.match(findingsApi, /coverage\?: IlFindingCoverage\[\]/);
-  assert.match(whatWorked, /const coverage = report\?\.coverage;/);
-  assert.match(whatWorkedCopy, /g\.waitingFor \|\| "Nothing to measure here this month\."/);
-});
-
-test("a section this plan does not include says 'Comes with Pro', not 'no data'", () => {
-  assert.match(whatWorkedCopy, /g\.gated === "pro"/);
-  assert.match(whatWorkedCopy, /Comes with Pro\./);
-});
-
-test("a month with no paragraph says why, rather than dropping it in silence", () => {
-  assert.match(whatWorked, /function narrativeAbsenceLine/);
-  assert.match(whatWorked, /report\.narrative_available && !report\.narrative && report\.run/);
-  // The reader is told the check exists — that is the reason the paragraph is
-  // trustworthy when it IS there.
-  assert.match(whatWorkedCopy, /did not pass our own check/);
-});
-
-test("the absence line never shows the engine's own status word", () => {
-  const copy = whatWorkedCopy;
-  for (const jargon of ["rejected_unverified_number", "budget_spent", "not_configured", "no_findings"]) {
-    // The status STRINGS may appear as switch labels; what must never appear is
-    // one of them inside text the owner reads.
-    const inText = new RegExp(`>[^<]*${jargon}[^<]*<`);
-    assert.doesNotMatch(copy, inText, `${jargon} reached the screen`);
-  }
-});

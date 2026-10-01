@@ -645,11 +645,6 @@ const SPARK_NAV: SubNavConfig = {
         // intelligence stays ARGUS-only.
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" }, minTier: "pro" },
         { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
-        // IL step 8 — the monthly "what worked" report. EVERY tier: gating depth
-        // is the rule and a hidden report cannot sell an upgrade
-        // (`reference_report_tier_model`). The page itself says in words which
-        // parts come with Standard and which with Pro.
-        { key: "spark_what_worked", label: "What Worked", route: "/app/services/spark_what_worked" },
       ],
     },
   ],
