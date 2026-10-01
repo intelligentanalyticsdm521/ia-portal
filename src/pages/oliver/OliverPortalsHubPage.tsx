@@ -29,6 +29,10 @@ import { AppLinksCard } from "../../components/oliver/AppLinksCard";
 import { LookTab, useLookEditor } from "./look/LookTab";
 import { lookPreviewSrc } from "./look/lookModel";
 import {
+  depositPercentFromSettings, depositPercentText, parseDepositPercent, depositPatchBody,
+  depositSaveNote, depositSaveError,
+} from "../../lib/onsiteMoney";
+import {
   Users, Wrench, ExternalLink, Globe, Settings, Brush, FileText,
   AlertTriangle, CheckCircle2, Clock, Palette,
 } from "lucide-react";
@@ -822,10 +826,26 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
   const [wf, setWf] = useState<WorkflowShape | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [savedOk, setSavedOk] = useState(true);
+  // On-site flow Phase B (1 Oct 2026): "Ask for a deposit when a quote is
+  // signed: __ %". Lives on oliver.tenant_settings.default_deposit_percent and
+  // is written through PATCH /settings (defaultDepositPercent), not
+  // /workflow-settings — so it loads and saves on its own, and the one Save
+  // button sends it only when it changed. `undefined` = not loaded yet.
+  const [depositStored, setDepositStored] = useState<number | null | undefined>(undefined);
+  const [depositText, setDepositText] = useState("");
+  const [depositLoadError, setDepositLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ready) return;
     get<WorkflowShape>("/workflow-settings").then((r) => setWf(r)).catch(() => setWf(null));
+    get<unknown>("/settings")
+      .then((r) => {
+        const v = depositPercentFromSettings(r);
+        setDepositStored(v);
+        setDepositText(depositPercentText(v));
+      })
+      .catch(() => setDepositLoadError("The deposit setting could not be loaded, so it cannot be changed just now. Close and reopen this window to try again."));
   }, [ready, get]);
 
   if (!wf) return <div className="text-xs text-slate-500">Loading workflow…</div>;
@@ -836,17 +856,38 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
   };
 
   const save = async () => {
+    // The deposit box is checked first, so a typo stops the save before
+    // anything is written rather than half-way through it.
+    const deposit = parseDepositPercent(depositText);
+    if (!deposit.ok) { setSavedOk(false); setSavedMsg(deposit.message); return; }
     setSaving(true);
     try {
       await patch("/workflow-settings", wf);
-      setSavedMsg("Saved.");
-      setTimeout(() => setSavedMsg(null), 3000);
-      onSaved();
     } catch (e) {
+      setSavedOk(false);
       setSavedMsg(`Error: ${(e as Error).message}`);
-    } finally {
       setSaving(false);
+      return;
     }
+    let text = "Saved.";
+    let ok = true;
+    if (depositStored !== undefined && deposit.value !== depositStored) {
+      try {
+        const echoed = await patch<unknown>("/settings", depositPatchBody(deposit.value));
+        const note = depositSaveNote(deposit.value, echoed);
+        ok = note.ok;
+        text = note.ok ? note.text : `Workflow rules saved. ${note.text}`;
+        if (note.ok) setDepositStored(deposit.value);
+      } catch (e) {
+        ok = false;
+        text = `Workflow rules saved. ${depositSaveError(e)}`;
+      }
+    }
+    setSavedOk(ok);
+    setSavedMsg(text);
+    if (ok) setTimeout(() => setSavedMsg(null), 4000);
+    onSaved();
+    setSaving(false);
   };
 
   return (
@@ -907,8 +948,30 @@ function WorkflowTabStub({ portalKind: _portalKind, accent, onSaved }: { portalK
         </label>
       </div>
 
+      <div className="rounded-md border border-slate-200 bg-white p-3 space-y-2" data-testid="deposit-default">
+        <div className="text-[10px] uppercase font-semibold text-slate-500">Deposits</div>
+        <label className="flex items-center gap-2 text-xs">
+          <span>Ask for a deposit when a quote is signed:</span>
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label="Deposit percent asked when a quote is signed"
+            value={depositText}
+            onChange={(e) => setDepositText(e.target.value)}
+            disabled={depositStored === undefined || saving}
+            placeholder="none"
+            className="w-20 text-xs px-2 py-1 rounded border border-slate-300 text-right"
+          />
+          <span>%</span>
+        </label>
+        <p className="text-[11px] text-slate-500">
+          The customer is offered this deposit on the crew's tablet and on the quote link after signing. It is charged to their card and taken off the final bill. Leave it empty to ask for no deposit.
+        </p>
+        {depositLoadError && <p className="text-[11px] text-red-700">{depositLoadError}</p>}
+      </div>
+
       <div className="flex items-center justify-between pt-2 border-t border-slate-200">
-        {savedMsg && <span className="text-xs text-emerald-700">{savedMsg}</span>}
+        {savedMsg && <span className={`text-xs ${savedOk ? "text-emerald-700" : "text-red-700"}`} role={savedOk ? "status" : "alert"}>{savedMsg}</span>}
         <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
