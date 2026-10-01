@@ -15,6 +15,7 @@ import { Button, StatusBadge } from "../ui";
 import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
 import { CardOnFileBadge } from "./CardOnFileBadge";
+import { ChangeOrdersCard } from "./ChangeOrdersCard";
 
 interface JobDetail {
   id: string;
@@ -268,6 +269,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       startEditDetails={startEditDetails} saveDetails={saveDetails} cancelEditDetails={() => setEditingDetails(false)}
       setSchedulingOpen={setSchedulingOpen} scheduledDate={job?.scheduledDate}
       lineItems={lineItems} setLineItems={setLineItems}
+      savedLineItems={originalLineItems}
       lineItemsDirty={lineItemsDirty} lineItemsSubtotal={lineItemsSubtotal}
       saveLineItems={saveLineItems}
       isTerminal={isTerminal}
@@ -321,6 +323,8 @@ type JobLayoutProps = {
   cancelEditDetails: () => void;
   lineItems: LineItem[];
   setLineItems: (items: LineItem[]) => void;
+  /** The job's lines as saved — what a change order can take off. */
+  savedLineItems: LineItem[];
   lineItemsDirty: boolean;
   lineItemsSubtotal: number;
   saveLineItems: () => Promise<void>;
@@ -437,6 +441,18 @@ function JobLayout(p: JobLayoutProps) {
               </div>
               <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={p.isTerminal} />
             </div>
+          )}
+          {/* On-site flow Phase C (G5): change orders under the job's lines —
+              what was added or taken off after the price was agreed, and who
+              signed it. "New change order" posts to the office route. */}
+          {tab === "lines" && (
+            <ChangeOrdersCard
+              jobId={jobId}
+              api={p.api}
+              jobLines={p.savedLineItems}
+              jobTotal={p.savedLineItems.reduce((s, it) => s + computeLineTotal(it), 0)}
+              disabled={p.isTerminal}
+            />
           )}
 
           {tab === "workers" && (
