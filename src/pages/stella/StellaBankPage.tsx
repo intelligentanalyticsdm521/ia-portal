@@ -16,12 +16,25 @@
 //   (c) items exist → list with institution, connected date, last synced, a
 //       per-item "Sync now", and the "Personal card — business use"
 //       designation chip (UI-only for now — see PERSONAL-USE TODO below).
+//
+// THE BANK SENDS YOU BACK (1 Oct 2026). Banks that sign you in on their own
+// site (Chase, Capital One, Amex, Bank of America …) leave this page and come
+// back to it with ?oauth_state_id=… on the address. Link can only finish if it
+// is opened again with the SAME link token plus that address, so the token is
+// kept in sessionStorage when Link first opens (lib/plaidReturn.ts). On a
+// return: a fresh token → Link reopens at once with receivedRedirectUri and
+// finishes exactly like an ordinary connect; no usable token → one plain line
+// to start again. Either way the token is forgotten and oauth_state_id is
+// taken off the address afterwards.
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CreditCard, Landmark, RefreshCw, Wallet } from "lucide-react";
 import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from "react-plaid-link";
 import { Button } from "../../components/oliver/ui";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
+import {
+  clearToken, readReturn, rememberToken, stripReturnParam, type PlaidReturn, type TokenStorage,
+} from "../../lib/plaidReturn";
 
 // { data } envelope is unwrapped by stellaApi.
 interface PlaidStatus {
@@ -61,6 +74,28 @@ function friendlyPlaidError(e: unknown): string {
     return "Plaid isn't configured on this environment yet — the connect flow unlocks once sandbox keys land.";
   }
   return msg;
+}
+
+// sessionStorage can throw (blocked site data, some private windows); a page
+// that cannot keep the token simply reads every return as expired.
+function linkTokenStore(): TokenStorage | null {
+  try {
+    return typeof window !== "undefined" ? window.sessionStorage : null;
+  } catch {
+    return null;
+  }
+}
+
+// Take oauth_state_id off the address without a navigation (and without
+// dropping React Router's history entry state), so a refresh does not try to
+// finish the connection a second time.
+function stripReturnFromAddress() {
+  try {
+    const next = stripReturnParam(window.location.href);
+    if (next !== window.location.href) window.history.replaceState(window.history.state, "", next);
+  } catch {
+    /* address stays as it is — harmless */
+  }
 }
 
 /**
@@ -122,14 +157,17 @@ function SwitchToggle({
  */
 function PlaidLinkLauncher({
   token,
+  receivedRedirectUri,
   onSuccess,
   onExit,
 }: {
   token: string;
+  /** Only when the bank has just sent the person back: the address it sent them to. */
+  receivedRedirectUri?: string;
   onSuccess: (publicToken: string | null, metadata: PlaidLinkOnSuccessMetadata) => void;
   onExit: (message?: string) => void;
 }) {
-  const { open, ready, error } = usePlaidLink({ token, onSuccess, onExit: () => onExit() });
+  const { open, ready, error } = usePlaidLink({ token, receivedRedirectUri, onSuccess, onExit: () => onExit() });
 
   useEffect(() => {
     if (ready) open();
@@ -159,6 +197,27 @@ export function StellaBankPage() {
   // designated item default to needs-reimbursement. (The overnight verify
   // caught the earlier UI-only local state that never saved.)
   const [designating, setDesignating] = useState<string | null>(null);
+  // Read ONCE, on the first render, before anything strips the address.
+  const [bankReturn] = useState<PlaidReturn>(() =>
+    typeof window === "undefined" ? { kind: "none" } : readReturn(window.location.href, linkTokenStore(), Date.now())
+  );
+  // The address the bank sent the person back to — handed to Link while the
+  // returned connection finishes, then dropped.
+  const [receivedRedirectUri, setReceivedRedirectUri] = useState<string | null>(null);
+  const [returnExpired, setReturnExpired] = useState(false);
+
+  // Act on the return once: reopen Link with the kept token, or say it expired.
+  useEffect(() => {
+    if (bankReturn.kind === "resume") {
+      setReceivedRedirectUri(bankReturn.receivedRedirectUri);
+      setLinkToken(bankReturn.token);
+      setConnecting(true);
+    } else if (bankReturn.kind === "expired") {
+      clearToken(linkTokenStore());
+      stripReturnFromAddress();
+      setReturnExpired(true);
+    }
+  }, [bankReturn]);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -201,10 +260,14 @@ export function StellaBankPage() {
   // (b) live connect: link token → Plaid Link → exchange → reload.
   const startConnect = useCallback(async () => {
     setActionError(null);
+    setReturnExpired(false);
+    setReceivedRedirectUri(null);
     setConnecting(true);
     try {
       const r = await post<{ link_token: string; expiration?: string }>("/ledger/plaid/link-token");
       if (!r?.link_token) throw new Error("Plaid didn't return a link token.");
+      // Kept for the bank that sends the person back (lib/plaidReturn.ts).
+      rememberToken(linkTokenStore(), r.link_token, Date.now());
       setLinkToken(r.link_token);
     } catch (e) {
       setConnecting(false);
@@ -215,6 +278,9 @@ export function StellaBankPage() {
   const onLinkSuccess = useCallback(
     async (publicToken: string | null, metadata: PlaidLinkOnSuccessMetadata) => {
       setLinkToken(null);
+      setReceivedRedirectUri(null);
+      clearToken(linkTokenStore());
+      stripReturnFromAddress();
       if (!publicToken) {
         setConnecting(false);
         setActionError("Plaid Link closed without a public token — nothing was connected.");
@@ -238,6 +304,9 @@ export function StellaBankPage() {
 
   const onLinkExit = useCallback((message?: string) => {
     setLinkToken(null);
+    setReceivedRedirectUri(null);
+    clearToken(linkTokenStore());
+    stripReturnFromAddress();
     setConnecting(false);
     if (message) setActionError(message);
   }, []);
@@ -291,6 +360,22 @@ export function StellaBankPage() {
         )
       }
     >
+      {returnExpired && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#FFFAEB", color: "#92400E", border: "1px solid #FEDF89", borderRadius: 8, lineHeight: 1.5 }}>
+          <span>The bank sent you back, but the connection had expired. Start again.</span>
+          <Button
+            variant="primary"
+            size="sm"
+            style={configured ? { background: STELLA_INDIGO } : undefined}
+            onClick={startConnect}
+            disabled={!status || !configured || connecting}
+            title={status && !configured ? "Plaid keys are not configured on this environment yet" : undefined}
+          >
+            Connect a bank or card
+          </Button>
+        </div>
+      )}
+
       {actionError && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 8, lineHeight: 1.5 }}>
           <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -419,7 +504,14 @@ export function StellaBankPage() {
       </div>
 
       {/* Plaid Link mounts only while a fetched link token is in hand */}
-      {linkToken && <PlaidLinkLauncher token={linkToken} onSuccess={onLinkSuccess} onExit={onLinkExit} />}
+      {linkToken && ready && (
+        <PlaidLinkLauncher
+          token={linkToken}
+          receivedRedirectUri={receivedRedirectUri || undefined}
+          onSuccess={onLinkSuccess}
+          onExit={onLinkExit}
+        />
+      )}
     </StellaShell>
   );
 }
