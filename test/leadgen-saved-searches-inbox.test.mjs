@@ -184,7 +184,17 @@ test("a row names every category the search asks, in one short line", () => {
   assert.equal(lib.categoriesLine(HOME), "Electricians · Plumbers · snow removal");
   assert.equal(lib.categoriesLine({ ...HOME, category_names: [] }), "Electricians · Plumbers · snow removal",
     "falls back to the categories JSON");
-  assert.equal(lib.categoriesLine({ ...HOME, category_names: [], categories: [], customer_category_id: null }), "No category");
+  assert.equal(lib.categoriesLine({ ...HOME, category_names: [], categories: [], customer_category_id: null, expanded_terms: [] }), "No category");
+  // A topics-first search names its first topics (Brandon, 2 Oct 2026: the
+  // topics live in Search Topics, not in twelve category chips).
+  assert.equal(
+    lib.categoriesLine({ ...HOME, category_names: [], categories: [], customer_category_id: null, expanded_terms: ["residential electricians", "plumbers", "hvac contractors", "roofers", "painters"] }),
+    "residential electricians · plumbers · hvac contractors +2 more topics",
+  );
+  assert.equal(
+    lib.categoriesLine({ ...HOME, category_names: [], categories: [], customer_category_id: null, expanded_terms: ["dentists", "optometrists"] }),
+    "dentists · optometrists",
+  );
 });
 
 test("a row says the area: cities and radius, or ZIP codes", () => {

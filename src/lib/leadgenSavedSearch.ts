@@ -182,7 +182,13 @@ export function categoriesLine(p: SavedSearch): string {
   const cats = (p.category_names && p.category_names.length
     ? p.category_names
     : savedCategoriesOf(p).map((c) => c.name)).filter(Boolean);
-  return cats.length ? cats.join(" · ") : "No category";
+  if (cats.length) return cats.join(" · ");
+  // A topics-first search (no category, the topics typed or saved straight
+  // into Search Topics) says what it searches, not "No category".
+  const topics = (p.expanded_terms || []).map((t) => String(t).trim()).filter(Boolean);
+  if (!topics.length) return "No category";
+  const shown = topics.slice(0, 3).join(" · ");
+  return topics.length > 3 ? `${shown} +${topics.length - 3} more topics` : shown;
 }
 
 /** "IA · 4 cities · 15 mi radius" / "IA · 1 city · exact" / "IA · 2 ZIP codes". */
