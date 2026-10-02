@@ -103,7 +103,7 @@ export function parsePlace(json: string | object | null | undefined): LeadPlace 
 }
 
 /**
- * "9 miles from Des Moines" · "less than a mile from Des Moines" · null when it
+ * "9 miles from Des Moines" · "right next to Des Moines" · null when it
  * was not measured. Distances are town centre to town centre, so a business in
  * the centre town itself gets no distance (the Address field already names it).
  */
@@ -112,7 +112,10 @@ export function distanceLine(place: LeadPlace | null): string | null {
   const where = place.anchor.split(",")[0].trim();
   if (!where) return null;
   if (place.miles < 1 && (place.city || "").trim().toLowerCase() === where.toLowerCase()) return null;
-  if (place.miles < 1) return `less than a mile from ${where}`;
+  // Town centre to town centre: a different town whose centre is under a mile
+  // away is "right next to" the anchor, never "less than a mile from" it (LUMEN
+  // locality.js says the same).
+  if (place.miles < 1) return `right next to ${where}`;
   const n = Math.round(place.miles);
   return `${n} mile${n === 1 ? "" : "s"} from ${where}`;
 }

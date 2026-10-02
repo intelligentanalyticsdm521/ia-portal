@@ -12,6 +12,7 @@
 //   · stopReasonWords — drop the save_failed entry     → "every stop reason" RED
 //   · SparkLeadModal — remove the label                → "From their website" RED
 //   · fitSkipPhrases — "could not be confirmed"        → "as a fit" RED
+//   · stopReasonWords — drop email_lookup_unavailable  → "every stop reason" RED (second review, 2 Oct 2026)
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -24,6 +25,7 @@ const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 // Every budget_stop_reason LUMEN's searchOrchestrator / enrichBatch can write.
 const LUMEN_REASONS = ["hunter_cap", "hunter_balance", "hunter_rate_limited", "hunter_verifier_balance", "verifier_unavailable", "save_failed",
+  "email_lookup_unavailable", "verifier_cannot_confirm", "verification_unavailable",
   "cse_cap", "brave_cap", "you_cap", "mojeek_cap", "exa_cap"];
 
 test("every stop reason says what really happened, in plain words", () => {
@@ -33,11 +35,17 @@ test("every stop reason says what really happened, in plain words", () => {
     assert.doesNotMatch(`${w.title} ${w.body}`, /hunter|google|brave|tenant|api|internal|_/i, `${r}: no vendor names, codes or jargon`);
   }
   // Not every stop is a cap: an outage or a failed save never claims a "safety limit".
-  for (const r of ["hunter_balance", "hunter_rate_limited", "hunter_verifier_balance", "verifier_unavailable", "save_failed"]) {
+  for (const r of ["hunter_balance", "hunter_rate_limited", "hunter_verifier_balance", "verifier_unavailable", "save_failed",
+    "email_lookup_unavailable", "verifier_cannot_confirm", "verification_unavailable"]) {
     assert.doesNotMatch(stopReasonWords(r).body, /safety limit|5 times|10 web searches/, r);
     assert.match(stopReasonWords(r).body, /Nothing more was spent once that happened\./, r);
   }
   assert.match(stopReasonWords("save_failed").title, /could not be saved/);
+  // The 2 Oct 2026 second review: each new stop has its own sentence, never the fallback "safety limit".
+  assert.match(stopReasonWords("email_lookup_unavailable").title, /email lookup was not answering/);
+  assert.match(stopReasonWords("verifier_cannot_confirm").body, /could not tell/);
+  assert.match(stopReasonWords("verification_unavailable").body, /last checks we run on each lead/);
+  for (const r of ["email_lookup_unavailable", "verifier_cannot_confirm", "verification_unavailable"]) assert.notEqual(stopReasonWords(r).title, "a safety limit", r);
   assert.match(stopReasonWords("verifier_unavailable").body, /confirms each email stopped answering/);
   assert.match(stopReasonWords("hunter_cap").body, /5 times the leads you asked for/);
   assert.match(stopReasonWords("brave_cap").body, /10 web searches/);

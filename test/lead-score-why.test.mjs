@@ -12,6 +12,7 @@
 //   · parseRelevance — keep services on not_checked   → "a lead the check could not review" RED
 //   · fitSkipPhrases — drop the unsure count          → "the run banner counts the website check" RED
 //   · distanceLine — round "less than a mile" to 0     → "the distance reads as a person would say it" RED
+//   · distanceLine — "less than a mile from" another town → "the distance reads as a person would say it" RED (second review, 2 Oct 2026)
 //   · addressSourceLine — name the database vendor     → "where the address came from, in plain words" RED
 //   · parsePlace — accept a negative or text distance  → "a place the run did not measure" RED
 //   · the inbox City cell dropped                     → "the list has a City column" RED
@@ -110,7 +111,7 @@ test("the place: the town for the list, the distance beside the area line", () =
 test("the distance reads as a person would say it", () => {
   const at = (miles, city = "Altoona") => distanceLine({ city, state: "IA", source: "model", miles, anchor: "Des Moines, IA" });
   assert.equal(at(0, "Des Moines"), null, "the centre town itself: town-to-town distances cannot say more, the Address field names it");
-  assert.equal(at(0.6, "Pleasant Hill"), "less than a mile from Des Moines");
+  assert.equal(at(0.6, "Pleasant Hill"), "right next to Des Moines", "another town under a mile away: centre-to-centre distances cannot say less than a mile");
   assert.equal(at(1.2), "1 mile from Des Moines");
   assert.equal(at(29.6), "30 miles from Des Moines");
 });

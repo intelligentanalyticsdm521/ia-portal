@@ -18,6 +18,7 @@
 //   • the long steps carry a line that changes, and the saved count
 //
 // MUTATION CHECKS (each broken on purpose, seen red, restored):
+//   · WAITING_LINES — "Asking Hunter for businesses" back → "Brandon's lines are on the page" RED (no vendor names, second review)
 //   · PHASE_ORDER — put "expanding_keywords" back      → "no stop for a step that never runs" RED
 //   · STEP_TO_PHASE — map "scoring" to "enriching"      → "scoring is its own stop" RED
 //   · WAITING_LINES — drop Brandon's three lines        → "Brandon's lines are on the page" RED
@@ -69,6 +70,9 @@ test("Brandon's lines are on the page, and every running phase has more than one
   assert.ok(all.includes("Adding expansive researched links"));
   assert.ok(all.includes("Buttoning everything up so it's glorious"));
   for (const p of ["queued", "discovery", "placing", "reading", "checking", "enriching", "scoring"]) assert.ok(WAITING_LINES[p].length >= 3, p);
+  // No vendor names on screen (2 Oct 2026 second review): the steps say what happens, not whose service does it.
+  for (const p of PHASE_ORDER) assert.doesNotMatch(PHASE_LABELS[p].help, /hunter|google|brave|anthropic|claude/i, p);
+  for (const line of all) assert.doesNotMatch(line, /hunter|google|brave|anthropic|claude/i, line);
 });
 
 test("the saved count reads '37 of 100 saved so far' and says nothing before the first save", () => {

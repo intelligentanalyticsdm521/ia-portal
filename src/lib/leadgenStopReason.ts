@@ -46,6 +46,19 @@ const WORDS: Record<string, StopReasonWords> = {
     title: "new leads could not be saved",
     body: `New leads could not be saved to your inbox, so we stopped. ${NOTHING_MORE} Try again later.`,
   },
+  // The 2 Oct 2026 second review: three more stops after a few failures in a row.
+  email_lookup_unavailable: {
+    title: "the email lookup was not answering",
+    body: `The service we use to look up emails stopped answering, so we stopped. ${NOTHING_MORE} Try again later.`,
+  },
+  verifier_cannot_confirm: {
+    title: "emails could not be confirmed",
+    body: `The service that confirms each email kept saying it could not tell, so new leads could not be confirmed and we stopped. ${NOTHING_MORE} Try again later.`,
+  },
+  verification_unavailable: {
+    title: "the final checks were not answering",
+    body: `The last checks we run on each lead before it is saved stopped answering, so we stopped. ${NOTHING_MORE} Try again later.`,
+  },
 };
 
 const WEB_SEARCH_CAP: StopReasonWords = {

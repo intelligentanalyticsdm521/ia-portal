@@ -44,7 +44,7 @@ export const PHASE_ORDER: JobPhase[] = [
 
 export const PHASE_LABELS: Record<JobPhase, { label: string; help: string }> = {
   queued:    { label: "Getting ready",        help: "Loading your saved search, your suppression list and the businesses you already have." },
-  discovery: { label: "Finding businesses",   help: "Hunter's business records for each city in your area, then the web for your topics." },
+  discovery: { label: "Finding businesses",   help: "Business records for each city in your area, then the web for your topics." },
   placing:   { label: "Checking each one",    help: "Free checks before anything is spent: is it a real business, is its website live, can it receive email?" },
   reading:   { label: "Reading websites",     help: "Each business's own homepage is read once for its phone, its address and the towns it names. Anything outside your area is set aside." },
   checking:  { label: "Right kind of business", help: "Is it the kind of business you searched for, working in your area? Directories, suppliers, head offices and schools are set aside before any email is looked up." },
@@ -72,7 +72,7 @@ export const STEP_TO_PHASE: Record<string, JobPhase> = {
 /** Something to read while the long steps run — one line every few seconds. */
 export const WAITING_LINES: Record<JobPhase, string[]> = {
   queued:    ["Reading your saved search", "Checking what you already have", "Lining up the cities in your radius"],
-  discovery: ["Asking Hunter for businesses in each city", "Searching the web for your topics", "Collecting candidates, one city at a time"],
+  discovery: ["Looking up businesses in each city", "Searching the web for your topics", "Collecting candidates, one city at a time"],
   placing:   ["Making sure everything is bonita", "Setting aside unions, schools and suppliers", "Making sure each website is live", "Checking each one can receive email"],
   reading:   ["Reading each business's homepage", "Picking up the phone number and address they publish", "Checking the towns each website names"],
   checking:  ["Making sure each one does the work you searched for", "Setting aside directories, suppliers and head offices", "Checking each one works in your area"],
