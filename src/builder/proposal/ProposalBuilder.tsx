@@ -1291,7 +1291,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
             title="Document Name"
             style={{
               background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
-              color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 420, padding: "0 0 2px",
+              color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", width: "100%", minWidth: 0, padding: "0 0 2px",
+              overflow: "hidden", textOverflow: "ellipsis",
             }}
           />
         }

@@ -373,7 +373,10 @@ export function OliverProposalsPage({ embedded = false, createSignal = 0, create
 
       {showCreate && (
         <CreateProposalDrawer
-          onClose={() => setShowCreate(false)}
+          /* Exit after a Save Draft: the draft is in the database and must be
+             in the list (found clicking the builder release, 2 Oct 2026 - the
+             row appeared only after a reload). One list read on every close. */
+          onClose={() => { setShowCreate(false); void reload(); }}
           onCreated={async (msg) => {
             setShowCreate(false);
             await reload();

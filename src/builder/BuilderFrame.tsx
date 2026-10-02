@@ -469,8 +469,13 @@ export function BuilderFrame(p: BuilderFrameProps) {
               flex: "1 1 auto", minWidth: 0, display: "flex", alignItems: "center",
               justifyContent: "center", gap: 10,
             }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0, maxWidth: 420 }}>
-                <div style={{ minWidth: 0, fontSize: 13, fontWeight: 600 }} data-builder-doctitle>
+              {/* The name box: up to 420px, and it SHRINKS before anything
+                  else does (flex 1 1, minWidth 0, overflow hidden). With a
+                  customer that has four locations as chips in the bar, the
+                  name used to keep its width and run under the device
+                  switcher (found 2 Oct 2026, 1440px). */}
+              <div style={{ display: "flex", alignItems: "center", gap: 2, flex: "1 1 auto", minWidth: 0, maxWidth: 420, overflow: "hidden" }}>
+                <div style={{ flex: "1 1 auto", minWidth: 0, overflow: "hidden", fontSize: 13, fontWeight: 600 }} data-builder-doctitle>
                   {p.title}
                 </div>
                 {p.onPageSettings && (
@@ -482,7 +487,7 @@ export function BuilderFrame(p: BuilderFrameProps) {
                   </button>
                 )}
               </div>
-              {!narrow && previewToggle}
+              {!narrow && <div style={{ flex: "0 0 auto" }}>{previewToggle}</div>}
             </div>
 
             {/* ── RIGHT: Finder, Structure, Preview, then the verb ──────── */}

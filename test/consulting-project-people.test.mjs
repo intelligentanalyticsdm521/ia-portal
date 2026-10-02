@@ -468,8 +468,9 @@ describe("CPP-T2/T3: the builder header puts its buttons on a second row before 
     assert.match(frame, /data-builder-doctitle/, "the page name lives in the strip");
     const modal = read("components/IadmModal.tsx");
     assert.match(modal, /data-header-wrap=\{wrapHeader && !chrome \? "1" : undefined\}/, "the wrap attribute is never set on a strip");
+    assert.match(frame, /maxWidth: 420, overflow: "hidden"/, "the name box is up to 420px and shrinks first");
     const builder = read("builder/proposal/ProposalBuilder.tsx");
-    assert.match(builder, /minWidth: 420/, "the title box is the width the header keeps for it");
+    assert.match(builder, /width: "100%", minWidth: 0, padding: "0 0 2px"/, "the name fills the box the strip keeps for it, never forcing its width");
   });
 });
 

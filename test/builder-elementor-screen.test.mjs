@@ -498,7 +498,9 @@ describe("SCREEN LAW 7 — the top bar is the reference editor's", () => {
     assert.match(frame, /const Icon = d\.key === "desktop" \? Monitor : d\.key === "tablet" \? Tablet : Smartphone;/);
     // ...and it is RENDERED, in the centre group beside the name. A switcher
     // that is only defined is a switcher nobody can press.
-    assert.match(frame, /\{!narrow && previewToggle\}/);
+    // 2 Oct 2026: the switcher sits in a box that never shrinks (flex 0 0
+    // auto), so a long name with a four-location customer cannot run under it.
+    assert.match(frame, /\{!narrow && <div style=\{\{ flex: "0 0 auto" \}\}>\{previewToggle\}<\/div>\}/);
     assert.match(frame, /borderBottom: `2px solid \$\{on \? "#FFFFFF" : "transparent"\}`/);
   });
 
