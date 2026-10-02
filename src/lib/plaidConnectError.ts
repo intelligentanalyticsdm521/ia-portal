@@ -36,10 +36,11 @@ export const PLAID_SENTENCES = {
   connect: "The bank connection couldn't start — please try again.",
   finish: "The bank connection couldn't be finished — please try again.",
   sync: "That account couldn't sync just now — please try again.",
+  disconnect: "We couldn't reach the bank network to disconnect that account, so it is still connected — please try again in a few minutes.",
   closedEarly: "The bank window closed before an account was connected, so nothing changed.",
 } as const;
 
-export type PlaidAction = "connect" | "finish" | "sync";
+export type PlaidAction = "connect" | "finish" | "sync" | "disconnect";
 
 /**
  * The provider's code behind a failed bank-connection call, or null.
