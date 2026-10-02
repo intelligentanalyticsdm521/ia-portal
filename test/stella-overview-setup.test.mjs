@@ -321,13 +321,19 @@ describe("one checklist drawing, and the links land where they say", () => {
     assert.doesNotMatch(view, /function Row\(/);
   });
 
-  test("the Overview reads every step's signal from the API", () => {
-    const page = read("pages/stella/StellaOverviewPage.tsx");
+  test("the Overview reads every step's signal from the API (through the one shared loader)", () => {
+    // 2 Oct 2026: the reads moved to stellaSetupLoad.ts so the STELLA
+    // Dashboard reads the same six signals rather than a copy of them.
+    const loader = read("pages/stella/stellaSetupLoad.ts");
     for (const p of ["/ledger/plaid/status", "/ledger/plaid/items", "/ledger/coa", "/ledger/tax-rates",
       "/ledger/transactions?status=categorized&limit=1", "/ledger/transactions?status=reconciled&limit=1"]) {
-      assert.ok(page.includes(`"${p}"`), p);
+      assert.ok(loader.includes(`"${p}"`), p);
     }
-    assert.match(page, /packDownloaded\(browserStorage\(\), businessId\)/);
+    assert.match(loader, /accountantPackDownloaded: packDownloaded\(storage, businessId\)/);
+    const page = read("pages/stella/StellaOverviewPage.tsx");
+    assert.match(page, /loadStellaSetup\(\{ get, getFull \}, browserStorage\(\), businessId\)/);
+    // The Accounts card still lists the connections only once one exists.
+    assert.match(page, /s\.plaidStatus && s\.plaidStatus\.itemCount > 0 && s\.plaidItems \? s\.plaidItems : \[\]/);
   });
 
   test("Accounting opens the tab ?tab= names; Reports opens the pack on ?open=accountant_pack", () => {

@@ -759,6 +759,16 @@ const STELLA_NAV: SubNavConfig = {
   tagline: "Ledger & Unit Economics",
   groups: [
     {
+      // 2 Oct 2026 — the PRODUCT Dashboard, first and on its own, exactly the
+      // shape of OLIVER / SPARK / ARION (a label-less group holding one
+      // "Dashboard" item). Being the first item makes it what STELLA's rail
+      // icon opens (first-item-wins in AppShell.defaultRouteFor). Brandon:
+      // "Each feature has an overview and then STELLA is supposed to have it's
+      // own dashboard/overview. all the other platforms call it a dashboard."
+      label: "",
+      items: [{ key: "stella_dashboard", label: "Dashboard", route: "/app/services/stella_dashboard" }],
+    },
+    {
       // 2026-07-30 consolidation — founder capped every sub-nav at 8 items.
       // 18 → 6: Income/Recurring are Transactions tabs, Receipts is a modal
       // hint on Transactions, Mileage + Materials merged (two tabs), the
@@ -766,9 +776,10 @@ const STELLA_NAV: SubNavConfig = {
       // and Bank Connections + Period Close moved to the SETTINGS hub.
       label: "Ledger", icon: CreditCard, collapsible: true, sectionId: "stella_ledger",
       items: [
-        // Overview FIRST (2026-07-30 design pass) — it is both the Ledger
-        // landing and, via first-item-wins in AppShell.defaultRouteFor,
-        // STELLA's default landing. Group sits at 7 items — under the 8 cap.
+        // Overview FIRST (2026-07-30 design pass) — the Ledger feature's
+        // overview and the group's landing (clicking "Ledger" opens it).
+        // Since 2 Oct 2026 it is no longer STELLA's default landing — the
+        // Dashboard group above is. Group sits at 8 items — the cap.
         { key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview" },
         { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox" },
         { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
