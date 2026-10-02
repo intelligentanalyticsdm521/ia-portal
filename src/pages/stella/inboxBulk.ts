@@ -20,6 +20,14 @@
 export const INBOX_PAGE_SIZE = 100;
 /** The most ids one POST /ledger/transactions/bulk accepts. */
 export const BULK_MAX = 200;
+/**
+ * How many ids the page sends per request. Smaller than the API's limit on
+ * purpose: each line is its own database transaction on the server, so 200 in
+ * one request can run long enough to be cut off in transit, with no word on
+ * screen meanwhile. 50 at a time finishes well inside that, and the bar can
+ * say how far it has got.
+ */
+export const BULK_BATCH = 50;
 
 /** The fields of a GET /ledger/inbox row this file reads. */
 export interface InboxRowLite {
@@ -27,9 +35,8 @@ export interface InboxRowLite {
   direction: string; // inflow | outflow
   status: string; // needs_categorization | flagged
   description?: string | null;
+  posted_date?: string | null;
   can_mark_personal?: boolean | number | null;
-  is_reimbursable?: boolean | number | null;
-  reimbursed_at?: string | null;
 }
 
 export type BulkAction = "categorize" | "personal";
@@ -61,17 +68,37 @@ export function canMarkPersonal(r: Pick<InboxRowLite, "direction" | "can_mark_pe
   return r.direction === "outflow";
 }
 
+/** The HTTP status a failed call carries (lib/stellaApi.ts stellaError), or null when no answer came. */
+function httpStatus(e: unknown): number | null {
+  if (!(e instanceof Error)) return null;
+  const status = Number((e as Error & { status?: unknown }).status);
+  return Number.isFinite(status) && status > 0 ? status : null;
+}
+
 /**
  * The sentence to show for a failed call, or "" when there is none fit to
- * show: STELLA's refusals (4xx) carry a plain sentence (lib/stellaApi.ts makes
- * it the message); a server failure (5xx) or a non-Error throw may carry
- * internals, so the caller's own words are used instead.
+ * show. Only STELLA's own refusals (an HTTP 4xx answer) carry a sentence
+ * written for a person (lib/stellaApi.ts makes it the message). A server
+ * failure (5xx) may carry internals; an error with no HTTP answer at all is
+ * the browser's ("Failed to fetch"); a non-Error throw has nothing to say. In
+ * each of those the caller's own words are used instead.
  */
 export function plainReason(e: unknown): string {
-  if (!(e instanceof Error)) return "";
-  const status = Number((e as Error & { status?: unknown }).status);
-  if (Number.isFinite(status) && status >= 500) return "";
-  return e.message || "";
+  const status = httpStatus(e);
+  if (status === null || status >= 500) return "";
+  return (e as Error).message || "";
+}
+
+/**
+ * Did the server possibly do the work even though the page got no answer?
+ * True when nothing came back (the connection dropped, the tab slept) or a
+ * gateway answered in the server's place (502/503/504 — the request may still
+ * be running behind it). The server works through every line it was given, so
+ * "nothing was changed" would then be a guess, and often a wrong one.
+ */
+export function answerLost(e: unknown): boolean {
+  const status = httpStatus(e);
+  return status === null || status >= 502;
 }
 
 /** Split a selection into the rows Personal applies to and a count of the rest. */
@@ -83,6 +110,44 @@ export function personalSplit<T extends InboxRowLite>(rows: T[]): { eligible: T[
 /** The sentence a skipped money-in line gets, wherever it is said. */
 export const MONEY_IN_PERSONAL_RULE =
   "money coming in can be marked personal only when it came from a card you've set as a personal card under Bank and card accounts";
+
+/* ── One category for lines going both ways ─────────────────────────────── */
+
+export type CategoryType = string | null | undefined; // asset | liability | equity | revenue | expense
+
+/**
+ * Which picked lines "Assign to this category" applies to.
+ *
+ * One category for everything picked, unless the pick MIXES money in and money
+ * out and the category is an income or an expense one. Then the lines going
+ * the other way are left out — counted, never dropped silently — because a
+ * card payment (money in) filed under Meals posts as business cash coming in
+ * and understates the expense, and a charge filed under income is the same
+ * mistake turned round. A pick that is all one way is assigned as picked: five
+ * refunds into Materials is a real thing to do.
+ */
+export function assignSplit<T extends Pick<InboxRowLite, "direction">>(
+  rows: T[],
+  categoryType: CategoryType
+): { eligible: T[]; skipped: number; skippedSide: "in" | "out" | null; moneyIn: number; moneyOut: number } {
+  const moneyIn = rows.filter((r) => r.direction === "inflow").length;
+  const moneyOut = rows.length - moneyIn;
+  const mixed = moneyIn > 0 && moneyOut > 0;
+  if (mixed && categoryType === "expense") {
+    return { eligible: rows.filter((r) => r.direction !== "inflow"), skipped: moneyIn, skippedSide: "in", moneyIn, moneyOut };
+  }
+  if (mixed && categoryType === "revenue") {
+    return { eligible: rows.filter((r) => r.direction === "inflow"), skipped: moneyOut, skippedSide: "out", moneyIn, moneyOut };
+  }
+  return { eligible: rows, skipped: 0, skippedSide: null, moneyIn, moneyOut };
+}
+
+/** Why the lines assignSplit left out were left out, as a clause. */
+export function assignSkipRule(side: "in" | "out" | null): string {
+  return side === "out"
+    ? "money going out doesn't belong in an income category, so assign those on their own"
+    : "money coming in doesn't belong in an expense category, so assign those on their own";
+}
 
 /* ── Selection ──────────────────────────────────────────────────────────── */
 
@@ -150,10 +215,11 @@ export function bulkBody(action: BulkAction, ids: string[], coaAccountId?: strin
     : { transaction_ids: ids, action };
 }
 
-/** Ids in batches the API accepts (it refuses more than BULK_MAX at once). */
-export function chunkIds(ids: string[], size = BULK_MAX): string[][] {
+/** Ids in batches of BULK_BATCH (never more than the API's BULK_MAX). */
+export function chunkIds(ids: string[], size = BULK_BATCH): string[][] {
+  const step = Math.max(1, Math.min(size, BULK_MAX));
   const out: string[][] = [];
-  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  for (let i = 0; i < ids.length; i += step) out.push(ids.slice(i, i + step));
   return out;
 }
 
@@ -172,26 +238,47 @@ export function mergeAnswers(answers: Array<Partial<BulkAnswer> | null | undefin
 export const BULK_PATH = "/ledger/transactions/bulk";
 
 /**
- * Send one bulk action: one POST per BULK_MAX ids, in order. A batch whose
- * request fails stops the sending, and how many never went is returned
- * (with the error's own sentence) so the result line can say so.
+ * What did not come back from a bulk action. `lost` is true when the batch
+ * that failed may have been worked through anyway (no answer, or a gateway's)
+ * — then `uncertain` of the lines might have changed and nobody can say which.
+ * The batches after it were never sent.
+ */
+export interface BulkUnsent {
+  count: number;
+  reason: string;
+  lost?: boolean;
+  /** Of `count`, the lines in the batch whose answer was lost (0 when it was heard). */
+  uncertain?: number;
+}
+
+/**
+ * Send one bulk action: one POST per BULK_BATCH ids, in order, reporting
+ * progress after each. A batch whose request fails stops the sending; what
+ * was not confirmed is returned so the result line can say so truthfully.
  */
 export async function sendBulk(
   post: (path: string, body: unknown) => Promise<unknown>,
   action: BulkAction,
   ids: string[],
-  coaAccountId?: string | null
-): Promise<{ answer: BulkAnswer; unsent: { count: number; reason: string } | null }> {
+  coaAccountId?: string | null,
+  onProgress?: (sent: number, total: number) => void
+): Promise<{ answer: BulkAnswer; unsent: BulkUnsent | null }> {
   const answers: Array<Partial<BulkAnswer> | null> = [];
-  let unsent: { count: number; reason: string } | null = null;
+  let unsent: BulkUnsent | null = null;
   const batches = chunkIds(ids);
+  let sent = 0;
   for (let i = 0; i < batches.length; i++) {
     try {
       answers.push((await post(BULK_PATH, bulkBody(action, batches[i], coaAccountId))) as Partial<BulkAnswer> | null);
+      sent += batches[i].length;
+      onProgress?.(sent, ids.length);
     } catch (e) {
+      const lost = answerLost(e);
       unsent = {
         count: batches.slice(i).reduce((n, b) => n + b.length, 0),
         reason: plainReason(e),
+        lost,
+        uncertain: lost ? batches[i].length : 0,
       };
       break;
     }
@@ -222,36 +309,106 @@ function asClause(sentence: string): string {
   return s;
 }
 
-/** Failed rows grouped by the reason the API gave, largest group first. */
-export function refusalGroups(answer: BulkAnswer): Array<{ count: number; reason: string }> {
-  const counts = new Map<string, number>();
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+/**
+ * The months a set of dates fall in, in words:
+ *   ["2026-07-15", "2026-08-02"] → "July and August 2026"
+ *   ["2025-12-30", "2026-01-04"] → "December 2025 and January 2026"
+ */
+export function monthList(dates: Array<string | null | undefined>): { text: string; count: number } {
+  const keys = [...new Set(dates.map((d) => String(d || "").slice(0, 7)))]
+    .filter((k) => /^\d{4}-(0[1-9]|1[0-2])$/.test(k))
+    .sort();
+  if (!keys.length) return { text: "", count: 0 };
+  const year = (k: string) => k.slice(0, 4);
+  const sameYear = keys.every((k) => year(k) === year(keys[0]));
+  const names = keys.map((k) => {
+    const m = MONTH_NAMES[Number(k.slice(5, 7)) - 1];
+    return sameYear ? m : `${m} ${year(k)}`;
+  });
+  const joined = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return { text: sameYear ? `${joined} ${year(keys[0])}` : joined, count: keys.length };
+}
+
+/**
+ * The refusals the API names with a short code, each said once for however
+ * many lines it covers ("3 are in months you've closed …") instead of once per
+ * distinct sentence. `n` is how many lines; `months` the months they fall in.
+ */
+const KNOWN_REFUSALS: Record<string, (n: number, months: { text: string; count: number }) => string> = {
+  period_closed: (n, m) => {
+    const several = m.count > 1 || (m.count === 0 && n > 1);
+    return `${plural(n, "is", "are")} in ${several ? "months" : "a month"} you've closed${m.text ? ` (${m.text})` : ""}`
+      + ` — reopen ${several ? "those months" : "that month"} under Period Close to change ${plural(n, "it", "them")}`;
+  },
+  not_in_inbox: (n) => `${plural(n, "was", "were")} no longer waiting in your inbox`,
+  already_void: (n) => `${plural(n, "was", "were")} voided, so ${plural(n, "it's", "they're")} already out of your books`,
+  not_found: () => "could not be found — refresh the page and try again",
+  personal_not_allowed: (n) => `${plural(n, "is", "are")} money coming in, which ${MONEY_IN_PERSONAL_RULE.replace(/^money coming in /, "")}`,
+};
+
+export interface RefusalGroup {
+  count: number;
+  /** For a known refusal, what follows the count ("were no longer waiting in your inbox"); otherwise the API's sentence as a clause. */
+  reason: string;
+  known: boolean;
+}
+
+/**
+ * Failed rows grouped by WHY, largest group first. A refusal the API names
+ * with a code is grouped by that code (so two closed months are one reason,
+ * with both months named from the rows' own dates); anything else by its
+ * sentence; a failure with neither gets the generic words.
+ */
+export function refusalGroups(answer: BulkAnswer, datesById?: Map<string, string | null | undefined>): RefusalGroup[] {
+  const groups = new Map<string, { known: string | null; clause: string; ids: string[] }>();
   const failures = answer.results.filter((r) => !r.ok);
   for (const f of failures) {
-    const reason = asClause(f.message || "") || GENERIC_REFUSAL;
-    counts.set(reason, (counts.get(reason) || 0) + 1);
+    const code = f.error && KNOWN_REFUSALS[f.error] ? f.error : null;
+    const clause = code ? "" : asClause(f.message || "") || GENERIC_REFUSAL;
+    const key = code ? `code:${code}` : `text:${clause}`;
+    const g = groups.get(key) || { known: code, clause, ids: [] };
+    g.ids.push(String(f.transaction_id));
+    groups.set(key, g);
   }
   // The answer counted more failures than it described: those still get said.
   const undescribed = Math.max(0, answer.failed - failures.length);
-  if (undescribed) counts.set(GENERIC_REFUSAL, (counts.get(GENERIC_REFUSAL) || 0) + undescribed);
-  return [...counts.entries()]
-    .map(([reason, count]) => ({ count, reason }))
+  if (undescribed) {
+    const key = `text:${GENERIC_REFUSAL}`;
+    const g = groups.get(key) || { known: null, clause: GENERIC_REFUSAL, ids: [] };
+    for (let i = 0; i < undescribed; i++) g.ids.push("");
+    groups.set(key, g);
+  }
+  return [...groups.values()]
+    .map((g) => ({
+      count: g.ids.length,
+      known: g.known !== null,
+      reason: g.known
+        ? KNOWN_REFUSALS[g.known](g.ids.length, monthList(g.ids.map((id) => datesById?.get(id))))
+        : g.clause,
+    }))
     .sort((a, b) => b.count - a.count);
 }
 
 /**
  * The one line said after a bulk action.
  *   "Marked 42 personal."
- *   "Assigned 9 to Vehicle & Fuel. 2 could not be changed: the month they belong to is closed."
+ *   "Assigned 9 to Vehicle & Fuel. 2 are in a month you've closed (July 2026) — reopen that month under Period Close to change them."
  *   "Marked 40 personal. 2 were left as they are: money coming in can be marked personal only when …"
  */
 export function bulkResultSentence(input: {
   action: BulkAction;
   categoryName?: string | null;
   answer: BulkAnswer;
-  /** Selected rows Personal does not apply to — never sent, always counted. */
+  /** Selected rows the action does not apply to — never sent, always counted. */
   skipped?: number;
-  /** Rows whose batch never reached the API (the request itself failed). */
-  unsent?: { count: number; reason?: string | null } | null;
+  /** Why those were left out (defaults to the money-in Personal rule). */
+  skippedWhy?: string;
+  /** What did not come back (see BulkUnsent). */
+  unsent?: BulkUnsent | null;
+  /** posted_date per transaction_id — names the months a closed-period refusal falls in. */
+  datesById?: Map<string, string | null | undefined>;
 }): string {
   const { action, answer } = input;
   const skipped = input.skipped || 0;
@@ -267,17 +424,29 @@ export function bulkResultSentence(input: {
     );
   }
 
-  const groups = refusalGroups(answer);
+  const groups = refusalGroups(answer, input.datesById);
   const refused = groups.reduce((n, g) => n + g.count, 0);
   if (refused) {
-    const why = groups.length === 1
-      ? groups[0].reason
-      : groups.map((g) => `${g.count}: ${g.reason}`).join("; ");
-    parts.push(`${refused} could not be changed: ${why}.`);
+    if (groups.length === 1) {
+      const g = groups[0];
+      parts.push(g.known ? `${refused} ${g.reason}.` : `${refused} could not be changed: ${g.reason}.`);
+    } else {
+      const each = groups.map((g) => (g.known ? `${g.count} ${g.reason}` : `${g.count}: ${g.reason}`)).join("; ");
+      parts.push(`${refused} could not be changed: ${each}.`);
+    }
   }
 
-  if (unsent) {
-    const why = asClause(unsent.reason || "") || "we couldn't reach STELLA";
+  if (unsent && unsent.lost) {
+    // No answer came back for a batch the server may well have worked through:
+    // say so, and point at the list (it is reloaded straight after) instead
+    // of guessing "nothing was changed".
+    const uncertain = Math.min(unsent.uncertain ?? unsent.count, unsent.count);
+    const never = unsent.count - uncertain;
+    let s = `We lost the connection, so we can't tell whether ${uncertain === 1 ? "1 line" : `${uncertain} lines`} changed`;
+    if (never > 0) s += `, and ${never} more ${plural(never, "was", "were")} not sent`;
+    parts.push(`${s}. The list below shows what is still waiting.`);
+  } else if (unsent) {
+    const why = asClause(unsent.reason || "") || "something went wrong on our side";
     parts.push(
       done || refused
         ? `${unsent.count} ${plural(unsent.count, "was", "were")} not changed: ${why}. Try ${plural(unsent.count, "it", "those")} again.`
@@ -286,7 +455,7 @@ export function bulkResultSentence(input: {
   }
 
   if (skipped) {
-    parts.push(`${skipped} ${plural(skipped, "was", "were")} left as ${plural(skipped, "it is", "they are")}: ${MONEY_IN_PERSONAL_RULE}.`);
+    parts.push(`${skipped} ${plural(skipped, "was", "were")} left as ${plural(skipped, "it is", "they are")}: ${input.skippedWhy || MONEY_IN_PERSONAL_RULE}.`);
   }
 
   if (!done && !refused && !unsent) {
@@ -298,7 +467,7 @@ export function bulkResultSentence(input: {
 /** The in-page question before a bulk "Mark N personal" (asked once, never a browser box). */
 export function bulkPersonalQuestion(eligible: number, skipped: number): string {
   const head = `Mark ${eligible} personal? ${plural(eligible, "It leaves", "They leave")} your business books and every report. ` +
-    `You can bring any of them back from Transactions → Personal.`;
+    `You can bring ${plural(eligible, "it", "any of them")} back${eligible === 1 ? "" : " one at a time"} from Transactions → Personal.`;
   if (!skipped) return head;
   return `${head} ${skipped} of the ${eligible + skipped} you picked ${plural(skipped, "is", "are")} money coming in and will be left as ${plural(skipped, "it is", "they are")}.`;
 }
@@ -334,27 +503,46 @@ export function mergePage<T extends { transaction_id: string }>(loaded: T[], pag
   return [...loaded, ...page.filter((r) => !seen.has(r.transaction_id))];
 }
 
+/**
+ * What "Show more" does with the page it read.
+ *  - New rows: append them; the total never drops below what is on screen.
+ *  - No new rows although the queue says there are more: the queue moved
+ *    under us (a bank sync added lines at the top, so this offset returned
+ *    rows already shown). Reload from the top instead of leaving a "Show more"
+ *    that adds nothing and new lines that never appear.
+ */
+export function showMoreOutcome<T extends { transaction_id: string }>(
+  loaded: T[],
+  page: { rows: T[]; total: number }
+): { kind: "append"; rows: T[]; total: number } | { kind: "reload" } {
+  const rows = mergePage(loaded, page.rows);
+  if (rows.length === loaded.length && page.total > loaded.length) return { kind: "reload" };
+  return { kind: "append", rows, total: Math.max(page.total, rows.length) };
+}
+
+/**
+ * The note beside the list when the search box or a filter hides some of what
+ * is loaded — and, while not all of the queue is loaded, that the rest is not
+ * searched or filtered yet. Never fewer lines than exist without saying so.
+ */
+export function shownNote(s: { search: string; filterLabel: string | null; shown: number; loaded: number; more: number }): string {
+  const searching = s.search.trim().length > 0;
+  if (!searching && !s.filterLabel) return "";
+  const rest = s.more > 0 ? ` — Show more below to ${searching ? "search" : "see"} the rest` : "";
+  if (searching) return `${s.shown} of the ${s.loaded} shown match${rest}`;
+  return `${s.shown} of the ${s.loaded} shown ${plural(s.shown, "is", "are")} ${String(s.filterLabel).toLowerCase()}${rest}`;
+}
+
 /* ── Undo of a single "Personal" ────────────────────────────────────────── */
 
 /**
  * The PATCH /ledger/transactions/:id body that puts a line marked Personal
- * back exactly where it was: its old status (needs_categorization or flagged).
- * Marking a line personal clears its "needs reimbursement" flag on the server,
- * so a line that had one gets it back too.
+ * back exactly where it was: its old status (needs_categorization or flagged),
+ * and nothing else. Marking a line personal no longer touches its "needs
+ * reimbursement" flag on the server, so there is nothing else to put back.
  */
-export function undoPersonalBody(r: Pick<InboxRowLite, "status" | "is_reimbursable" | "reimbursed_at">): {
-  status: "needs_categorization" | "flagged";
-  is_reimbursable?: true;
-  reimbursed_at?: string | null;
-} {
-  const body: { status: "needs_categorization" | "flagged"; is_reimbursable?: true; reimbursed_at?: string | null } = {
-    status: r.status === "flagged" ? "flagged" : "needs_categorization",
-  };
-  if (r.is_reimbursable === true || r.is_reimbursable === 1) {
-    body.is_reimbursable = true;
-    body.reimbursed_at = r.reimbursed_at ?? null;
-  }
-  return body;
+export function undoPersonalBody(r: Pick<InboxRowLite, "status">): { status: "needs_categorization" | "flagged" } {
+  return { status: r.status === "flagged" ? "flagged" : "needs_categorization" };
 }
 
 /* ── The category picker, when there is nothing to pick ─────────────────── */

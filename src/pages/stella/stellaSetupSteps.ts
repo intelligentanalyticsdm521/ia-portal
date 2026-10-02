@@ -176,8 +176,8 @@ export function coaStep(coa: CoaAccountInput[] | null): StellaSetupStep {
     detail: done
       ? "You've made the list your own."
       : empty
-        ? "Set up the list of accounts your money is sorted into — the standard set for a service business is one click."
-        : "Look over the accounts your money is sorted into, and rename, add or hide any that don't fit.",
+        ? "Set up the categories your money is sorted into — the standard set for a service business is one click."
+        : "Look over the categories your money is sorted into, and rename, add or hide any that don't fit.",
     done,
     route: STELLA_SETUP_ROUTES.coa,
     linkLabel: "Ledger → Chart of Accounts",
@@ -206,7 +206,7 @@ export function firstStatementStep(bookedCount: number | null): StellaSetupStep 
     label: "Review your first statement",
     detail: done
       ? "Transactions are being booked — keep the Inbox clear as new ones arrive."
-      : "Go through the transactions waiting in the Inbox and give each one an account.",
+      : "Go through the transactions waiting in the Inbox and give each one a category.",
     done,
     route: STELLA_SETUP_ROUTES.inbox,
     linkLabel: "Ledger → Inbox",

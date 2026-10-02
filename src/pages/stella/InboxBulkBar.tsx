@@ -4,14 +4,17 @@
 //
 // One bar, two actions: a category picker with "Assign N to this category",
 // and "Mark N personal" — which asks once, here in the page (the Bank page's
-// inline "Yes, disconnect" style), naming the count. Money-in lines Personal
-// does not apply to are counted out loud before and after, never dropped
-// silently.
+// inline "Yes, disconnect" style), naming the count. Lines an action does not
+// apply to (money in for Personal; the other direction when a pick mixes money
+// in and out and the category is an income or expense one) are counted out
+// loud before and after, never dropped silently. While a batch is being sent
+// the bar says how far it has got, and the answer is said HERE as well — the
+// bar is sticky, so the answer is on screen wherever the owner has scrolled.
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "../../components/oliver/ui/Button";
 import { STELLA_INDIGO, STELLA_LAVENDER } from "./stellaTheme";
-import { MONEY_IN_PERSONAL_RULE, bulkPersonalQuestion } from "./inboxBulk";
+import { MONEY_IN_PERSONAL_RULE, assignSkipRule, bulkPersonalQuestion } from "./inboxBulk";
 import { STELLA_SETUP_ROUTES } from "./stellaSetupSteps";
 
 const linkButton = {
@@ -54,6 +57,11 @@ export function InboxBulkBar({
   picker,
   categoryPicked,
   onAssign,
+  assignEligible,
+  assignSkipped = 0,
+  assignSkippedSide = null,
+  moneyIn = 0,
+  moneyOut = 0,
   personalEligible,
   personalSkipped,
   asking,
@@ -61,6 +69,8 @@ export function InboxBulkBar({
   onConfirmPersonal,
   onCancelPersonal,
   busy,
+  progress = null,
+  result = null,
 }: {
   /** Rows on screen right now (after the search box and the filter). */
   shownCount: number;
@@ -75,6 +85,14 @@ export function InboxBulkBar({
   picker: ReactNode;
   categoryPicked: boolean;
   onAssign: () => void;
+  /** Selected rows "Assign" applies to (defaults to every selected row). */
+  assignEligible?: number;
+  /** Selected rows "Assign" leaves out, and which way their money goes. */
+  assignSkipped?: number;
+  assignSkippedSide?: "in" | "out" | null;
+  /** How the selection splits by direction (for the "mixed" note). */
+  moneyIn?: number;
+  moneyOut?: number;
   /** Selected rows Personal applies to, and the ones it does not. */
   personalEligible: number;
   personalSkipped: number;
@@ -84,8 +102,15 @@ export function InboxBulkBar({
   onConfirmPersonal: () => void;
   onCancelPersonal: () => void;
   busy: "categorize" | "personal" | null;
+  /** Lines sent so far while an action runs. */
+  progress?: { sent: number; total: number } | null;
+  /** The answer to the last action, said inside the bar. */
+  result?: ReactNode;
 }) {
   const none = selectedCount === 0;
+  const assignCount = assignEligible ?? selectedCount;
+  const sofar = progress && progress.total > 0 ? ` ${progress.sent} of ${progress.total}` : "";
+  const lines = (n: number) => (n === 1 ? "line" : "lines");
   return (
     <div
       data-bulk-bar="1"
@@ -133,16 +158,16 @@ export function InboxBulkBar({
           size="sm"
           style={{ background: STELLA_INDIGO }}
           onClick={onAssign}
-          disabled={none || !categoryPicked || busy !== null}
+          disabled={none || !categoryPicked || busy !== null || assignCount === 0}
           loading={busy === "categorize"}
         >
           {busy === "categorize"
-            ? "Assigning…"
+            ? `Assigning…${sofar}`
             : none
               ? "Assign to this category"
               : !categoryPicked
                 ? "Pick a category first"
-                : `Assign ${selectedCount} to this category`}
+                : `Assign ${assignCount} to this category`}
         </Button>
         <span style={{ fontSize: 11, color: "#94A3B8" }}>or</span>
         <Button
@@ -152,7 +177,7 @@ export function InboxBulkBar({
           disabled={personalEligible === 0 || busy !== null || asking}
           loading={busy === "personal"}
         >
-          {busy === "personal" ? "Marking…" : none ? "Mark personal" : `Mark ${personalEligible} personal`}
+          {busy === "personal" ? `Marking…${sofar}` : none ? "Mark personal" : `Mark ${personalEligible} personal`}
         </Button>
         {!none && personalEligible === 0 && (
           <span style={{ fontSize: 11, color: "#5A7A8A" }}>
@@ -165,6 +190,21 @@ export function InboxBulkBar({
           </span>
         )}
       </div>
+
+      {!none && moneyIn > 0 && moneyOut > 0 && (
+        <div data-bulk-mixed="1" style={{ marginTop: 8, fontSize: 11, color: "#5A7A8A", lineHeight: 1.5 }}>
+          You picked {moneyIn} money-in and {moneyOut} money-out {lines(moneyIn + moneyOut)}.
+          {categoryPicked && assignSkipped > 0
+            ? ` Assigning leaves the ${assignSkipped} money-${assignSkippedSide === "out" ? "out" : "in"} ${lines(assignSkipped)} as ${assignSkipped === 1 ? "it is" : "they are"}: ${assignSkipRule(assignSkippedSide)}.`
+            : ""}
+        </div>
+      )}
+
+      {result && (
+        <div data-bulk-result="1" role="status" style={{ marginTop: 10, paddingTop: 10, borderTop: `1px solid ${STELLA_LAVENDER}`, fontSize: 12, lineHeight: 1.5 }}>
+          {result}
+        </div>
+      )}
 
       {asking && personalEligible > 0 && (
         <div

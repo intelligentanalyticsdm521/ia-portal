@@ -19,9 +19,11 @@
 // then assign it to a category or personal item"): "Bulk assign" turns on
 // selection mode — a checkbox per row, shift-click for a range, "Select all N
 // shown", and one bar (InboxBulkBar) with "Assign N to this category" and
-// "Mark N personal". Each is one POST /ledger/transactions/bulk (per 200
-// lines), the answer is said in one line from the per-row messages, the list
-// reloads, and selection mode stays on for the next batch.
+// "Mark N personal". Each is sent as POST /ledger/transactions/bulk, 50 lines
+// a request with the bar counting how far it has got; the answer is said in
+// one line (in the sticky bar, so it is on screen wherever the owner has
+// scrolled) from the per-row reasons, the list reloads, and selection mode
+// stays on for the next batch.
 //
 // Never a dead control: if there are no categories, or they failed to load,
 // the row says so in words with the way to the categories page — never a
@@ -39,8 +41,9 @@ import { CategoryNote, InboxBulkBar } from "./InboxBulkBar";
 import { STELLA_SETUP_ROUTES } from "./stellaSetupSteps";
 import {
   INBOX_PAGE_SIZE, EMPTY_SELECTION, MONEY_IN_PERSONAL_RULE,
-  canMarkPersonal, plainReason, personalSplit, clickRow, selectAllShown, allShownSelected, selectedShown,
-  sendBulk, bulkResultSentence, queueLine, moreToLoad,
+  canMarkPersonal, plainReason, personalSplit, assignSplit, assignSkipRule,
+  clickRow, selectAllShown, allShownSelected, selectedShown,
+  sendBulk, bulkResultSentence, queueLine, moreToLoad, showMoreOutcome, shownNote,
   readInboxEnvelope, mergePage, undoPersonalBody, categoryProblem,
   type BulkAction, type InboxSelection,
 } from "./inboxBulk";
@@ -60,8 +63,8 @@ interface InboxItem {
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
   // True for money out; for money in only when the line came from a bank
-  // connection the owner marked as a personal card.
-  can_mark_personal?: boolean | null;
+  // connection the owner marked as a personal card. (A SQL BIT: true/false or 1/0.)
+  can_mark_personal?: boolean | number | null;
   // STELLA pack 2, item 3 — what the ledger LEARNED from the owner correcting
   // rows like this one before. A suggestion, never an answer: nothing is
   // applied until somebody presses Categorize, because setting the category is
@@ -294,6 +297,7 @@ export function StellaLedgerInboxPage() {
   const [bulkCoa, setBulkCoa] = useState("");
   const [askPersonal, setAskPersonal] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<BulkAction | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ sent: number; total: number } | null>(null);
 
   // Pre-select what we learned, so accepting a suggestion is ONE press and
   // disagreeing with it is a normal change of the same picker. A suggestion
@@ -384,6 +388,10 @@ export function StellaLedgerInboxPage() {
     () => coa.filter((a) => a.is_active !== false && a.is_active !== 0),
     [coa]
   );
+  // One category for a pick that mixes money in and out: the lines going the
+  // other way from an income/expense category are left out, and counted.
+  const bulkCoaType = activeCoa.find((a) => a.coa_account_id === bulkCoa)?.type ?? null;
+  const assign = useMemo(() => assignSplit(picked, bulkCoaType), [picked, bulkCoaType]);
   const pickerProblem = categoryProblem({
     loading: coaState === "loading",
     failed: coaState === "failed",
@@ -397,8 +405,14 @@ export function StellaLedgerInboxPage() {
     setLoadingMore(true);
     try {
       const page = await inboxPage(rows.length);
-      setRows((prev) => mergePage(prev, page.rows));
-      setTotal(page.total);
+      const next = showMoreOutcome(rows, page);
+      if (next.kind === "reload") {
+        // The queue moved under us (new lines at the top): read it again from the top.
+        await load(rows.length + INBOX_PAGE_SIZE);
+        return;
+      }
+      setRows(next.rows);
+      setTotal(next.total);
       preselect(page.rows);
     } catch (e) {
       setNotice({ tone: "problem", text: `We couldn't load more lines: ${sentenceOf(e, "please try again")}` });
@@ -465,8 +479,8 @@ export function StellaLedgerInboxPage() {
     }
   }
 
-  // Undo puts the line back exactly as it was: its old status, and its
-  // "needs reimbursement" flag if it had one (marking personal clears it).
+  // Undo puts the line back exactly as it was: its old status (marking a line
+  // personal leaves its "needs reimbursement" flag alone, so that is all).
   async function undoPersonal(r: InboxItem) {
     setBusy(r.transaction_id);
     try {
@@ -481,26 +495,33 @@ export function StellaLedgerInboxPage() {
   }
 
   async function runBulk(action: BulkAction) {
-    const targets = action === "personal" ? personal.eligible : picked;
-    const skipped = action === "personal" ? personal.skipped : 0;
+    const targets = action === "personal" ? personal.eligible : assign.eligible;
+    const skipped = action === "personal" ? personal.skipped : assign.skipped;
+    const skippedWhy = action === "personal" ? MONEY_IN_PERSONAL_RULE : assignSkipRule(assign.skippedSide);
     if (!targets.length) return;
     if (action === "categorize" && !bulkCoa) return;
     const categoryName = action === "categorize"
       ? activeCoa.find((a) => a.coa_account_id === bulkCoa)?.name || null
       : null;
+    // The dates name the months a closed-period refusal falls in.
+    const datesById = new Map(targets.map((r) => [r.transaction_id, r.posted_date]));
     setAskPersonal(false);
     setBulkBusy(action);
+    setBulkProgress({ sent: 0, total: targets.length });
     setNotice(null);
-    // One POST /ledger/transactions/bulk per 200 lines; only ever the category
-    // picked in the bar, never a suggestion.
-    const { answer, unsent } = await sendBulk(post, action, targets.map((r) => r.transaction_id), bulkCoa);
+    // POST /ledger/transactions/bulk, 50 lines a request, counted on the bar;
+    // only ever the category picked in the bar, never a suggestion.
+    const { answer, unsent } = await sendBulk(post, action, targets.map((r) => r.transaction_id), bulkCoa,
+      (sent, all) => setBulkProgress({ sent, total: all }));
+    // Red whenever something did not go through, so a refusal is noticed.
     setNotice({
-      tone: answer.done > 0 ? "ok" : "problem",
-      text: bulkResultSentence({ action, categoryName, answer, skipped, unsent }),
+      tone: answer.done > 0 && !answer.failed && !unsent ? "ok" : "problem",
+      text: bulkResultSentence({ action, categoryName, answer, skipped, skippedWhy, unsent, datesById }),
     });
     // Selection mode stays on for the next batch; the picks start fresh.
     setSel(EMPTY_SELECTION);
     setBulkBusy(null);
+    setBulkProgress(null);
     await load(Math.max(INBOX_PAGE_SIZE, rows.length));
   }
 
@@ -621,27 +642,34 @@ export function StellaLedgerInboxPage() {
             )}
             {/* Always rendered so row actions align (Brandon's walkthrough
                 note, 2026-08-14) — greyed out where "personal" doesn't apply,
-                with the reason on it. */}
-            <button
-              type="button"
-              onClick={() => personalOk && markPersonal(r)}
-              disabled={!personalOk || busy === r.transaction_id}
-              title={
-                personalOk
-                  ? "This is personal — take it out of your business books"
-                  : `Can't mark this personal: ${MONEY_IN_PERSONAL_RULE}`
-              }
-              style={{
-                padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
-                whiteSpace: "nowrap",
-                border: personalOk ? "1px solid #CBD5E1" : "1px solid #E2E8F0",
-                background: personalOk ? "#fff" : "#F8FAFC",
-                color: personalOk ? "#475569" : "#CBD5E1",
-                cursor: personalOk ? "pointer" : "not-allowed",
-              }}
-            >
-              Personal
-            </button>
+                with the reason in WORDS under it: a tooltip on a disabled
+                button often never shows, and never on a phone. */}
+            <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+              <button
+                type="button"
+                onClick={() => personalOk && markPersonal(r)}
+                disabled={!personalOk || busy === r.transaction_id}
+                title={personalOk ? "This is personal — take it out of your business books" : undefined}
+                style={{
+                  padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
+                  whiteSpace: "nowrap",
+                  border: personalOk ? "1px solid #CBD5E1" : "1px solid #E2E8F0",
+                  background: personalOk ? "#fff" : "#F8FAFC",
+                  color: personalOk ? "#475569" : "#CBD5E1",
+                  cursor: personalOk ? "pointer" : "not-allowed",
+                }}
+              >
+                Personal
+              </button>
+              {!personalOk && (
+                <span data-personal-why="1" style={{ fontSize: 10, color: "#5A7A8A", maxWidth: 170, textAlign: "right", lineHeight: 1.35 }}>
+                  Money in is personal only from a card set as personal under{" "}
+                  <Link to={STELLA_SETUP_ROUTES.bank} style={{ color: STELLA_INDIGO, fontWeight: 600 }}>
+                    Bank and card accounts
+                  </Link>
+                </span>
+              )}
+            </span>
           </div>
         );
       },
@@ -661,11 +689,40 @@ export function StellaLedgerInboxPage() {
       raw_source: r.raw_source,
       is_reimbursable: r.is_reimbursable,
       reimbursed_at: r.reimbursed_at,
+      // The detail window offers Personal on the same rule as the row.
+      direction: r.direction,
+      can_mark_personal: r.can_mark_personal,
     };
   }
 
   const more = moreToLoad(total, rows.length);
   const bulkDirection = picked.length && picked.every((r) => r.direction === "inflow") ? "inflow" : "outflow";
+  const filterLabel = filter === "all" ? null : FILTER_PILLS.find((p) => p.key === filter)?.label || null;
+  const note = shownNote({ search, filterLabel, shown: filtered.length, loaded: rows.length, more });
+  const noticeBox = notice ? (
+    <div
+      role="status"
+      style={{
+        display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+        padding: "10px 14px", fontSize: 12, lineHeight: 1.5, borderRadius: 8,
+        ...(notice.tone === "ok"
+          ? { background: "#EEF0FB", color: "#3730A3", border: `1px solid ${STELLA_INDIGO}33` }
+          : { background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA" }),
+      }}
+    >
+      <span style={{ flex: 1, minWidth: 200 }}>{notice.text}</span>
+      {notice.undo && (
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => notice.undo && undoPersonal(notice.undo)}
+          disabled={busy === notice.undo.transaction_id}
+        >
+          {busy === notice.undo.transaction_id ? "Putting it back…" : "Undo"}
+        </Button>
+      )}
+    </div>
+  ) : null;
 
   return (
     <StellaShell
@@ -679,30 +736,9 @@ export function StellaLedgerInboxPage() {
       error={error}
       loading={loading && !rows.length}
     >
-      {notice && (
-        <div
-          role="status"
-          style={{
-            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
-            padding: "10px 14px", marginBottom: 12, fontSize: 12, lineHeight: 1.5, borderRadius: 8,
-            ...(notice.tone === "ok"
-              ? { background: "#EEF0FB", color: "#3730A3", border: `1px solid ${STELLA_INDIGO}33` }
-              : { background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA" }),
-          }}
-        >
-          <span style={{ flex: 1, minWidth: 200 }}>{notice.text}</span>
-          {notice.undo && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => notice.undo && undoPersonal(notice.undo)}
-              disabled={busy === notice.undo.transaction_id}
-            >
-              {busy === notice.undo.transaction_id ? "Putting it back…" : "Undo"}
-            </Button>
-          )}
-        </div>
-      )}
+      {/* In selection mode the answer is said inside the sticky bar instead,
+          so it is on screen wherever the owner has scrolled to. */}
+      {noticeBox && !selecting && <div style={{ marginBottom: 12 }}>{noticeBox}</div>}
 
       {!rows.length && !loading ? (
         <EmptyState
@@ -719,10 +755,9 @@ export function StellaLedgerInboxPage() {
               aria-label="Search inbox transactions"
               style={{ width: 300, maxWidth: "100%", padding: "7px 10px", fontSize: 12, border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 6, color: "#0B1C24" }}
             />
-            {search.trim() && (
-              <span style={{ fontSize: 11, color: "#5A7A8A" }}>
-                {filtered.length} of the {rows.length} shown match
-                {more > 0 ? " — Show more below to search further" : ""}
+            {note && (
+              <span data-shown-note="1" style={{ fontSize: 11, color: "#5A7A8A" }}>
+                {note}
               </span>
             )}
             <span style={{ flex: 1 }} />
@@ -760,6 +795,11 @@ export function StellaLedgerInboxPage() {
               }
               categoryPicked={!!bulkCoa && !pickerProblem}
               onAssign={() => runBulk("categorize")}
+              assignEligible={assign.eligible.length}
+              assignSkipped={assign.skipped}
+              assignSkippedSide={assign.skippedSide}
+              moneyIn={assign.moneyIn}
+              moneyOut={assign.moneyOut}
               personalEligible={personal.eligible.length}
               personalSkipped={personal.skipped}
               asking={askPersonal}
@@ -767,6 +807,8 @@ export function StellaLedgerInboxPage() {
               onConfirmPersonal={() => runBulk("personal")}
               onCancelPersonal={() => setAskPersonal(false)}
               busy={bulkBusy}
+              progress={bulkProgress}
+              result={noticeBox}
             />
           )}
           {/* Shift-click picks a range; it must not also paint text. */}

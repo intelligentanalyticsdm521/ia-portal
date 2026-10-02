@@ -241,7 +241,7 @@ export const STELLA_PAGES: PageContentMap = {
     ],
   },
   stella_ledger_coa: {
-    title: "Chart of Accounts — the backbone of every report",
+    title: "Categories — the list every report is built from",
     body:
       "The buckets your money is sorted into, pre-seeded for a service business so you're not designing an accounting system from scratch. Every categorize action and every report line traces back to one of these accounts.",
     onPage: [

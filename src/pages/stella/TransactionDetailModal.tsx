@@ -11,9 +11,11 @@
 // show "job_number — title"). Tagged expenses become DIRECT job costs in the
 // allocation engine; untagged overhead spreads by revenue share.
 // Actions: Mark reimbursed (PATCH reimbursed_at=now), Void (confirm() then
-// PATCH status:'void'), "This is a personal expense" on expense rows (confirm()
-// then PATCH status:'personal' — excluded from every report/total; personal
-// rows lock like void and offer "Add back to business books" → 'categorized'),
+// PATCH status:'void'), "This is a personal expense" — offered on the same rule
+// as the Inbox row (can_mark_personal: money out, and money in from a card set
+// as personal) and done AT ONCE, no browser box (2 Oct 2026): it PATCHes
+// status:'personal', the window stays open saying so, and "Add back to
+// business books" right there is the undo (personal rows lock like void).
 // Save (PATCH the edited fields). The caller reloads its list when
 // onClose(changed=true) fires.
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +27,7 @@ import { jobOptionLabel, type CoaAccount, type JobLite } from "./RecordTransacti
 // STELLA pack 1, item 9 — split an existing register line (this modal is also
 // what the Inbox opens, so splitting works from the review queue too).
 import { SplitEditor, emptySplit, splitsReady, splitsForApi, type SplitLine } from "./SplitEditor";
+import { canMarkPersonal } from "./inboxBulk";
 
 /** Minimal row shape the modal needs — Transactions rows satisfy it directly;
  *  Inbox items are mapped into it by the caller. */
@@ -43,6 +46,10 @@ export interface DetailTxn {
   job_id?: string | null;
   job_number?: string | null;
   job_title?: string | null;
+  /** inflow | outflow — from the row when it has one, else from the amount's sign. */
+  direction?: string | null;
+  /** The Inbox's rule for Personal (true/false or a 1/0 BIT); absent → money out only. */
+  can_mark_personal?: boolean | number | null;
 }
 
 const STATUS_PILL: Record<string, { bg: string; color: string }> = {
@@ -161,6 +168,11 @@ export function TransactionDetailModal({
 
   const amount = toNum(txn.amount_signed);
   const isExpense = amount < 0;
+  // Personal follows the same rule as the Inbox row's own Personal button.
+  const personalAllowed = canMarkPersonal({
+    direction: txn.direction || (isExpense ? "outflow" : "inflow"),
+    can_mark_personal: txn.can_mark_personal,
+  });
   const isVoid = status === "void";
   // Personal (Brandon's walkthrough, 2026-08-13): the expense is excluded from
   // the business books entirely — fields lock like void, but an "Add back to
@@ -245,15 +257,16 @@ export function TransactionDetailModal({
     }
   }
 
+  // At once — no browser box. The window stays open and says so, and the
+  // "Add back to business books" button it now shows is the undo.
   async function markPersonal() {
-    if (!confirm("Exclude this from your business books? It stays on the bank record but leaves every report and total.")) return;
     setBusy("personal");
     setErr(null);
     try {
       await patch(`/ledger/transactions/${txn.transaction_id}`, { status: "personal" });
       setStatus("personal");
+      setSavedNote("Marked personal — it's out of your business books and every report. Changed your mind? Press Add back to business books.");
       changedRef.current = true;
-      onClose(true);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not mark this personal. Please try again.");
     } finally {
@@ -267,8 +280,9 @@ export function TransactionDetailModal({
     try {
       // Verify finding: a personal row with NO account must go back to the
       // Inbox review queue, not straight to 'categorized' — otherwise it sits
-      // account-less forever with nothing prompting categorization.
-      const target = coaAccountId ? "categorized" : "needs_categorization";
+      // account-less forever with nothing prompting categorization. A line
+      // that was flagged when this window opened goes back to flagged.
+      const target = txn.status === "flagged" ? "flagged" : coaAccountId ? "categorized" : "needs_categorization";
       await patch(`/ledger/transactions/${txn.transaction_id}`, { status: target });
       setStatus(target);
       changedRef.current = true;
@@ -357,16 +371,16 @@ export function TransactionDetailModal({
               >
                 {busy === "void" ? "Voiding…" : "Void"}
               </button>
-              {isExpense && (
+              {personalAllowed && (
                 <button
                   type="button"
                   onClick={markPersonal}
                   disabled={busy != null}
-                  title="Exclude this expense from your business books — it stays on the bank record but leaves every report and total"
+                  title="Take this out of your business books — it stays on the bank record but leaves every report and total"
                   className="inline-flex items-center gap-1 rounded px-3 py-1.5 text-xs font-semibold transition-colors disabled:opacity-50"
                   style={{ background: "#fff", color: "#475569", border: "1px solid #CBD5E1" }}
                 >
-                  {busy === "personal" ? "Updating…" : "This is a personal expense"}
+                  {busy === "personal" ? "Updating…" : isExpense ? "This is a personal expense" : "This is personal"}
                 </button>
               )}
             </span>

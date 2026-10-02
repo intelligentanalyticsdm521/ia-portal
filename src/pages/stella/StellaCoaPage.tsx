@@ -224,8 +224,8 @@ export function StellaCoaPage() {
 
   return (
     <StellaShell
-      title="Chart of Accounts"
-      subtitle="Your seeded, customizable service-business chart of accounts — the backbone of every report."
+      title="Categories"
+      subtitle="The list your money is sorted into — your accountant calls it the chart of accounts. Rename, add or hide any; every report is built from it."
       showRecord
       actions={
         <Button variant="primary" style={{ background: STELLA_INDIGO }} onClick={() => setModal({ mode: "create" })}>

@@ -433,7 +433,7 @@ export function StellaBankPage() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>Connected accounts</div>
           {items.length === 0 && (
-            <span style={pill}>{configured ? "Ready to connect" : "Lands with bank feeds"}</span>
+            <span style={pill}>{configured ? "Ready to connect" : "Not available yet"}</span>
           )}
         </div>
 
@@ -446,7 +446,7 @@ export function StellaBankPage() {
             <div style={{ fontSize: 12, color: "#334155", lineHeight: 1.55, maxWidth: 380, margin: "0 auto" }}>
               {configured
                 ? "Nothing linked yet. Use Connect a bank or card to link your first account — transactions pull in automatically and queue in the Ledger Inbox for a one-tap review."
-                : "Connect your bank and cards to pull balances and transactions automatically. New activity lands in the Ledger Inbox for a one-tap review on your tier's cadence."}
+                : "Connecting your bank and cards isn't available on this account yet. Once it is, balances and transactions come in by themselves and wait in your Inbox for a quick review."}
             </div>
           </div>
         ) : (

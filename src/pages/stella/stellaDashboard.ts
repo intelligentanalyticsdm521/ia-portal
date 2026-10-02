@@ -158,10 +158,10 @@ export function inboxTile(overview: OverviewInput | null): NeedTile {
       ...base,
       state: "needs_you",
       headline: `${plural(n, "transaction", "transactions")} to review`,
-      detail: "Give each one an account and it leaves the queue.",
+      detail: "Give each one a category and it leaves the queue.",
     };
   }
-  return { ...base, state: "clear", headline: "Nothing to review", detail: "New transactions wait here until you've given them an account." };
+  return { ...base, state: "clear", headline: "Nothing to review", detail: "New transactions wait here until you've given them a category." };
 }
 
 /**

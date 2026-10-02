@@ -179,7 +179,7 @@ export function StellaOverviewView({
             <div style={cardTitle}>Accounts</div>
             {ov.accounts.length === 0 && plaidItems.length === 0 && (
               <span style={{ fontSize: 10, fontWeight: 700, color: STELLA_INDIGO, background: `${STELLA_INDIGO}14`, padding: "2px 8px", borderRadius: 99, whiteSpace: "nowrap" }}>
-                Lands with bank feeds
+                No bank connected yet
               </span>
             )}
           </div>
