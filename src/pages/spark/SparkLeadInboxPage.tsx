@@ -53,6 +53,7 @@ import { SavedSearchesList } from "../../components/spark/SavedSearchesList";
 import { type SavedSearch, NEW_SEARCH_PATH, editSearchPath } from "../../lib/leadgenSavedSearch";
 // 2 Oct 2026 — the run banner's counts for the website check
 import { fitSkipPhrases, fitSkipCount, notCheckedLine } from "../../lib/leadRunFit";
+import { parsePlace, cityLine } from "../../lib/leadScoreWhy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
@@ -514,6 +515,8 @@ interface Lead {
   locked?: boolean | number | null;
   contact_masked?: boolean;
   search_job_id?: number | null;
+  // 2 Oct 2026 — the run's place for the business (relevance_json.place): the City column.
+  relevance_json?: string | null;
 }
 
 function firstRefusalReason(json: string | null | undefined): string | null {
@@ -1152,6 +1155,7 @@ function LeadInboxTab() {
               </th>}
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">City</th>
               <th className="px-4 py-3">Lifecycle</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">
@@ -1246,6 +1250,10 @@ function LeadInboxTab() {
                     {l.phone || <span className="text-slate-400">—</span>}
                     {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
                   </td>
+                  {/* 2 Oct 2026 — the town from the business's own address, when the run found one. */}
+                  <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
+                    {cityLine(parsePlace(l.relevance_json)) || <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                   {/* "Source · via Channel" (post-capture L9). An Intake lead
                       shows the name the client gave the connection; a B2B
@@ -1329,7 +1337,7 @@ function LeadInboxTab() {
             })}
             {!loading && filteredLeads.length === 0 && (
               <tr>
-                <td colSpan={showIntel ? 9 : 8} className="px-4 py-12 text-center text-sm text-slate-500">
+                <td colSpan={showIntel ? 10 : 9} className="px-4 py-12 text-center text-sm text-slate-500">
                   {leads.length === 0
                     ? <>You haven't run a sweep yet. <a href="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
                     : `No leads match "${search}".`}
