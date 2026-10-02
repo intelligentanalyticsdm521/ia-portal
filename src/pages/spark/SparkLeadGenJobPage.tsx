@@ -309,7 +309,7 @@ export function SparkLeadGenJobPage() {
     <SparkPageShell
       title={status?.search_summary?.category ? `Search: ${status.search_summary.category}` : "Lead Gen Job"}
       subtitle={subtitle}
-      help="A search finds businesses, checks each one is real and in your area, finds a named person with a verified email, then scores and saves the lead with its reasons. Once complete, accept or reject leads to send the accepted ones to your contacts."
+      help="A search finds businesses, checks each one is real and in your area, reads its website to make sure it is the kind of business you asked for, finds a named person with a verified email for the best matches first, then scores and saves the lead with its reasons. Once complete, accept or reject leads to send the accepted ones to your contacts."
       error={error}
       loading={loading && !status}
       actions={

@@ -8,9 +8,13 @@
 //   · scoreWhyLine — return "" for an empty array     → "nothing when there is nothing to say" RED
 //   · scoreWhyLine — skip the capital                 → "the first phrase is capitalised" RED
 //   · localityLine — "unknown" → null                 → "an unplaced business says so" RED
+//   · scoreWhyLine — ignore `omit`                    → "the score line leaves out what the About block says" RED
+//   · parseRelevance — keep services on not_checked   → "a lead the check could not review" RED
+//   · fitSkipPhrases — drop the unsure count          → "the run banner counts the website check" RED
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scoreWhyLine, localityLine } from "../src/lib/leadScoreWhy.ts";
+import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases } from "../src/lib/leadScoreWhy.ts";
+import { fitSkipPhrases, fitSkipCount, notCheckedLine } from "../src/lib/leadRunFit.ts";
 
 test("the stored reasons become one line, the first phrase capitalised", () => {
   assert.equal(scoreWhyLine('["local business","phone found","generic info@ email","email verified"]'), "Local business · phone found · generic info@ email · email verified");
@@ -30,4 +34,53 @@ test("an unplaced business says so; a placed one says it is in your area", () =>
   assert.equal(localityLine("unknown"), "Could not confirm the area");
   assert.equal(localityLine(null), null);
   assert.equal(localityLine("elsewhere"), null);
+});
+
+// ── The website check (the lead search rewrite, 2 Oct 2026) ─────────────────
+// LUMEN stores what the check found on the lead (relevance_json) and appends
+// its sentence and services to score_reasons_json. The Overview shows them once,
+// in "About this business", and the score's line leaves them out.
+const CHECKED = JSON.stringify({
+  status: "checked", verdict: "pass", kind: "local_business", does_trade: "yes", serves_area: "yes",
+  services: ["Panel upgrades", "EV chargers"], audience: "both",
+  reason: "Licensed electrician in Grimes, IA serving the Des Moines area.", model: "x", cached: false,
+});
+
+test("a checked lead: one sentence and its services", () => {
+  const rel = parseRelevance(CHECKED);
+  assert.deepEqual(rel, { status: "checked", reason: "Licensed electrician in Grimes, IA serving the Des Moines area.", services: ["Panel upgrades", "EV chargers"] });
+  assert.deepEqual(relevancePhrases(rel), ["Licensed electrician in Grimes, IA serving the Des Moines area.", "offers: Panel upgrades, EV chargers"]);
+});
+
+test("a lead the check could not review says so, and carries no services", () => {
+  const rel = parseRelevance({ status: "not_checked", reason: "Not checked: the website could not be reviewed for this search.", services: ["x"] });
+  assert.equal(rel.status, "not_checked");
+  assert.match(rel.reason, /^Not checked/);
+  assert.deepEqual(rel.services, []);
+  assert.deepEqual(relevancePhrases(rel), ["not checked for relevance"]);
+  assert.equal(parseRelevance(null), null, "an intake lead or an older run has none");
+  assert.equal(parseRelevance("not json"), null);
+  assert.equal(parseRelevance('{"status":"weird"}'), null);
+});
+
+test("the score line leaves out what the About block already says", () => {
+  const stored = JSON.stringify(["local business", "phone found", "generic info@ email", "email verified",
+    "Licensed electrician in Grimes, IA serving the Des Moines area.", "offers: Panel upgrades, EV chargers"]);
+  assert.equal(scoreWhyLine(stored, relevancePhrases(parseRelevance(CHECKED))), "Local business · phone found · generic info@ email · email verified");
+  assert.match(scoreWhyLine(stored), /offers: Panel upgrades/, "without `omit` nothing is hidden");
+  assert.equal(scoreWhyLine(JSON.stringify(["not checked for relevance"]), ["not checked for relevance"]), null);
+});
+
+test("the run banner counts the website check in plain words", () => {
+  const summary = { skipped: { not_relevant: 3, relevance_unsure: 1 }, delivered_not_checked: 2 };
+  assert.deepEqual(fitSkipPhrases(summary), ["3 not the kind of business you searched for", "1 could not be confirmed"]);
+  assert.equal(fitSkipCount(summary), 4);
+  assert.equal(notCheckedLine(summary), "2 leads not checked: the website could not be reviewed, so they were saved on the other checks alone.");
+  assert.equal(notCheckedLine({ delivered_not_checked: 1 }), "1 lead not checked: the website could not be reviewed, so it was saved on the other checks alone.");
+  // A run from before the rewrite has none of these keys: nothing is said.
+  assert.deepEqual(fitSkipPhrases({ skipped: { no_email: 2 } }), []);
+  assert.equal(fitSkipCount({ skipped: {} }), 0);
+  assert.equal(notCheckedLine({}), null);
+  assert.equal(notCheckedLine(null), null);
+  for (const p of [...fitSkipPhrases(summary), notCheckedLine(summary)]) assert.doesNotMatch(p, /relevance|_|\bAI\b|Claude|model/i, p);
 });

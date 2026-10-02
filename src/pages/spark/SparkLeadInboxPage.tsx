@@ -51,6 +51,8 @@ import { rowSourceLabel, rowChannelLabel, sourceFacetLabel } from "../../lib/lea
 import { useLeadgenAccess } from "../../hooks/useLeadgenAccess";
 import { SavedSearchesList } from "../../components/spark/SavedSearchesList";
 import { type SavedSearch, NEW_SEARCH_PATH, editSearchPath } from "../../lib/leadgenSavedSearch";
+// 2 Oct 2026 — the run banner's counts for the website check
+import { fitSkipPhrases, fitSkipCount, notCheckedLine } from "../../lib/leadRunFit";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
@@ -463,7 +465,12 @@ interface RecentRun {
     delivered: number;
     flagged_review: number;
     from_cache: number;
-    skipped: { no_email: number; already_in_inbox: number; insert_failed: number; out_of_area?: number; not_a_business?: number };
+    skipped: {
+      no_email: number; already_in_inbox: number; insert_failed: number; out_of_area?: number; not_a_business?: number;
+      // 2 Oct 2026 — the website check, before any email is looked up (lib/leadRunFit.ts)
+      not_relevant?: number; relevance_unsure?: number;
+    };
+    delivered_not_checked?: number;
     target_count: number;
     raw_qualified: number;
   };
@@ -968,7 +975,7 @@ function LeadInboxTab() {
                     <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">{recentRun.summary?.flagged_review} flagged for review</span>
                   )}
                 </div>
-                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed + (recentRun.summary.skipped.out_of_area ?? 0) + (recentRun.summary.skipped.not_a_business ?? 0)) > 0 && (
+                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed + (recentRun.summary.skipped.out_of_area ?? 0) + (recentRun.summary.skipped.not_a_business ?? 0) + fitSkipCount(recentRun.summary)) > 0 && (
                   <div className="mt-1 text-xs text-emerald-800">
                     Skipped:
                     {recentRun.summary.skipped.already_in_inbox > 0 && (
@@ -984,10 +991,17 @@ function LeadInboxTab() {
                     {(recentRun.summary.skipped.not_a_business ?? 0) > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.not_a_business} not a business (unions, schools, suppliers, directories)</span>
                     )}
+                    {/* 2 Oct 2026 — the website check: neither is delivered or billed */}
+                    {fitSkipPhrases(recentRun.summary).map((p) => (
+                      <span key={p} className="ml-2" data-testid="run-fit-skip">· {p}</span>
+                    ))}
                     {recentRun.summary.skipped.insert_failed > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.insert_failed} other</span>
                     )}
                   </div>
+                )}
+                {notCheckedLine(recentRun.summary) && (
+                  <div className="mt-1 text-xs text-emerald-800" data-testid="run-not-checked">{notCheckedLine(recentRun.summary)}</div>
                 )}
                 {(recentRun.summary?.delivered ?? 0) < (recentRun.summary?.target_count ?? 0) && (
                   <div className="mt-1 text-xs text-emerald-800">
