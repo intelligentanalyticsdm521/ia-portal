@@ -361,7 +361,8 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 <div data-testid="lead-relevance">
                   <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">About this business</h3>
                   <div className="rounded-lg border border-slate-200 bg-white p-3">
-                    {relevance.reason && <p className="text-sm text-slate-800">{relevance.reason}</p>}
+                    {/* Written from the business's own (untrusted) website — said so, never stated as fact. */}
+                    {relevance.reason && <p className="text-sm text-slate-800"><span className="font-semibold text-slate-600">From their website:</span> {relevance.reason}</p>}
                     {relevance.services.length > 0 && (
                       <div className={relevance.reason ? "mt-2" : ""}>
                         <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Services on their website</div>

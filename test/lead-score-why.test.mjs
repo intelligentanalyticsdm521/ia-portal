@@ -73,7 +73,7 @@ test("the score line leaves out what the About block already says", () => {
 
 test("the run banner counts the website check in plain words", () => {
   const summary = { skipped: { not_relevant: 3, relevance_unsure: 1 }, delivered_not_checked: 2 };
-  assert.deepEqual(fitSkipPhrases(summary), ["3 not the kind of business you searched for", "1 could not be confirmed"]);
+  assert.deepEqual(fitSkipPhrases(summary), ["3 not the kind of business you searched for", "1 could not be confirmed as a fit"]);
   assert.equal(fitSkipCount(summary), 4);
   assert.equal(notCheckedLine(summary), "2 leads not checked: the website could not be reviewed, so they were saved on the other checks alone.");
   assert.equal(notCheckedLine({ delivered_not_checked: 1 }), "1 lead not checked: the website could not be reviewed, so it was saved on the other checks alone.");

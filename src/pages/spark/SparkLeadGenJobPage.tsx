@@ -21,6 +21,7 @@ import { LeadAttributionCard } from "../../components/spark/LeadAttributionCard"
 // after the redirect to the inbox.
 import { stashRunComplete } from "../../components/spark/NewLeadsBanner";
 import { SAVED_SEARCHES_PATH } from "../../lib/leadgenSavedSearch";
+import { stopReasonWords } from "../../lib/leadgenStopReason";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
   ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw, Receipt, Lock,
@@ -468,16 +469,13 @@ export function SparkLeadGenJobPage() {
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-rose-700 mt-0.5 flex-shrink-0" />
             <div>
-              <div className="text-sm font-semibold text-rose-900">
-                Run stopped early — {status.budget_stop_reason === "hunter_cap"
-                  ? "Hunter contact-lookup budget cap"
-                  : status.budget_stop_reason === "cse_cap"
-                    ? "Google search budget cap"
-                    : "internal budget cap"}
+              {/* 2 Oct 2026 — each stop reason says what really happened
+                  (lib/leadgenStopReason.ts); not every stop is a cap. */}
+              <div className="text-sm font-semibold text-rose-900" data-testid="run-stop-title">
+                Run stopped early — {stopReasonWords(status.budget_stop_reason).title}
               </div>
-              <p className="text-[12px] text-rose-800 mt-0.5">
-                We hit our hard safety cap of {status.budget_stop_reason === "hunter_cap" ? "5×" : "10×"} the requested target.
-                {" "}This protects you from runaway API charges. Narrow your terms or radius and try again.
+              <p className="text-[12px] text-rose-800 mt-0.5" data-testid="run-stop-body">
+                {stopReasonWords(status.budget_stop_reason).body}
               </p>
             </div>
           </div>
