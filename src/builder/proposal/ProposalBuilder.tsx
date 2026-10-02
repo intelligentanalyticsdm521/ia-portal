@@ -379,6 +379,38 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revision?.revisionId]);
 
+  /* ── A NEW proposal for a project starts addressed to its primary person ─
+   * "New proposal for this project" used to open with no customer, so the
+   * customer search sat open over the top of the panel until one was picked
+   * (verifier, 2 Oct 2026). The project already knows who it is for: its
+   * primary person's contact (Karrie, on MS Moments). Only a brand-new
+   * proposal, only when nothing is picked yet, and "change" still works. */
+  useEffect(() => {
+    if (!projectId || proposalId || revision || contactId) return;
+    let alive = true;
+    api.get<{ people?: Array<{ contact_uuid?: string | null; is_primary?: boolean | number; person_kind?: string;
+      display_name?: string | null; email?: string | null; company?: string | null }> }>(
+      `/consulting/projects/${projectId}/people`,
+    ).then((r) => {
+      if (!alive) return;
+      const people = Array.isArray(r?.people) ? r.people : [];
+      const primary = people.find((p) => (p.is_primary === true || p.is_primary === 1) && p.contact_uuid)
+        || people.find((p) => p.person_kind === "contact" && p.contact_uuid);
+      if (!primary?.contact_uuid) return;
+      const name = String(primary.display_name || "").trim();
+      setContactId(primary.contact_uuid);
+      setPickedContact({
+        contact_id: primary.contact_uuid,
+        first_name: name.split(" ")[0],
+        last_name: name.split(" ").slice(1).join(" "),
+        email: primary.email || undefined,
+        company_name: primary.company || undefined,
+      });
+    }).catch(() => undefined);
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, proposalId, revision?.revisionId]);
+
   /** What this document changes, measured against what the customer read. */
   const diff = useMemo(() => diffDocuments(baseDoc, revision ? doc : null), [baseDoc, doc, revision]);
 
