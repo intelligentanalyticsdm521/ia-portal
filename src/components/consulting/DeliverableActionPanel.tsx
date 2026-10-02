@@ -150,6 +150,13 @@ export interface DeliverableActionPanelProps {
    */
   onPay?: () => Promise<void> | void;
   /**
+   * Founder-only: the host asks WHO before anything is sent (the project
+   * modal's Deliverables tab opens RecipientPickerDialog and POSTs
+   * send-to-client with the people ticked). Without it, "Send to Client" posts
+   * straight away as before.
+   */
+  onSendToClient?: () => void;
+  /**
    * Host context — drives whether the Pay CTA is candidate-renderable.
    * 'sr' / 'standalone' never show Pay even when is_payment_trigger=1 (those
    * trigger payment via a different surface). Default 'standalone'.
@@ -173,6 +180,7 @@ export function DeliverableActionPanel({
   onApprove,
   onRequestRevision,
   onPay,
+  onSendToClient,
   context = "standalone",
   readOnly = false,
 }: DeliverableActionPanelProps) {
@@ -255,6 +263,7 @@ export function DeliverableActionPanel({
   }
 
   async function handleSendToClient() {
+    if (onSendToClient) { onSendToClient(); return; }
     setBusy(true);
     setError(null);
     try {
