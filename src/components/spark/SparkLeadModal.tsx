@@ -762,6 +762,10 @@ const ACTIVITY_LABELS: Record<string, string> = {
   moved_to_contacts: "Moved to Contacts",
   removed_from_inbox: "Removed from the inbox",
   email_sent: "Email sent",
+  // 2 Oct 2026 — every score and re-score says why, in one sentence.
+  found: "Found by a search",
+  scored: "Scored",
+  rescored: "Re-scored",
 };
 function activityLabel(key: string): string {
   return ACTIVITY_LABELS[key] || titleCase(key.replace(/_/g, " "));

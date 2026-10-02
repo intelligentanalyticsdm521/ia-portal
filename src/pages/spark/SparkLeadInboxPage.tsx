@@ -463,7 +463,7 @@ interface RecentRun {
     delivered: number;
     flagged_review: number;
     from_cache: number;
-    skipped: { no_email: number; already_in_inbox: number; insert_failed: number };
+    skipped: { no_email: number; already_in_inbox: number; insert_failed: number; out_of_area?: number; not_a_business?: number };
     target_count: number;
     raw_qualified: number;
   };
@@ -968,7 +968,7 @@ function LeadInboxTab() {
                     <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">{recentRun.summary?.flagged_review} flagged for review</span>
                   )}
                 </div>
-                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed) > 0 && (
+                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed + (recentRun.summary.skipped.out_of_area ?? 0) + (recentRun.summary.skipped.not_a_business ?? 0)) > 0 && (
                   <div className="mt-1 text-xs text-emerald-800">
                     Skipped:
                     {recentRun.summary.skipped.already_in_inbox > 0 && (
@@ -976,6 +976,13 @@ function LeadInboxTab() {
                     )}
                     {recentRun.summary.skipped.no_email > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.no_email} no email</span>
+                    )}
+                    {/* 2 Oct 2026 — a business placed in another state, or not a business at all, is not delivered */}
+                    {(recentRun.summary.skipped.out_of_area ?? 0) > 0 && (
+                      <span className="ml-2">· {recentRun.summary.skipped.out_of_area} outside your area</span>
+                    )}
+                    {(recentRun.summary.skipped.not_a_business ?? 0) > 0 && (
+                      <span className="ml-2">· {recentRun.summary.skipped.not_a_business} not a business (unions, schools, suppliers, directories)</span>
                     )}
                     {recentRun.summary.skipped.insert_failed > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.insert_failed} other</span>
