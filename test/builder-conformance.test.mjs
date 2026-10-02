@@ -24,7 +24,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import {
-  WIDGETS, WIDGETS_BY_KIND, controlOptions, controlSections, optionValue,
+  WIDGETS, WIDGETS_BY_KIND, controlOptions, controlSections, optionValue, widgetDescription,
 } from "../src/builder/registry.ts";
 import {
   CURRENCY_SYMBOLS, RIBBON_PRESETS, BINDING_CONTROLS, BOUND_KINDS,
@@ -302,7 +302,9 @@ describe("point 4 · the Binding section is on EVERY catalogue-bound widget", ()
     // MUTATION: remove `...BINDING_CONTROLS` from PRICE_LINE_DEF → red here.
     const shared = BINDING_CONTROLS.map((c) => c.key);
     assert.deepEqual(shared, ["_ia_source", "_ia_selection", "refresh", "on_empty", "overrides"]);
-    for (const kind of ["catalog_card", "price_line", "address_block", "totals"]) {
+    /* D-167 — the three record blocks are deleted and a database field is a
+       **Custom Field**, which carries the same Binding section. */
+    for (const kind of ["catalog_card", "price_line", "custom_field", "totals"]) {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
       const keys = def.controls.map((c) => c.key);
@@ -581,14 +583,24 @@ describe("point 5 · a document taxed at the business default SAYS so when there
 
 describe("point 1 · every key a box can hold is a key the Portal writes", () => {
   test("`html_tag` is settable, honoured, and only Elementor's own list", () => {
-    // MUTATION: delete the html_tag select from the Inspector's Layout group
+    // MUTATION: delete the HTML tag picker from the container's Layout group
     // → red here. It was honoured by the renderer and settable by nobody.
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
-    assert.ok(INSPECTOR.includes("data-box-html-tag"), "nothing in any UI sets what a box is drawn as");
-    assert.ok(INSPECTOR.includes("html_tag: e.target.value"), "the control writes into the wrong key");
+    //
+    // THE PANEL MOVED, AND THEN MOVED BACK (B-168, family F0, then the
+    // b168/demo merge). The Layout tab was written out inside Inspector.tsx;
+    // family F0 copied it into `ContainerLayoutGroup` in StyleGroups.tsx and
+    // nothing rendered the copy, so the copy is deleted and the one panel the
+    // author sees — the one THE SCREEN LAW pins row by row — is in
+    // Inspector.tsx. This reads where the control lives.
+    const PANEL = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
+    assert.ok(PANEL.includes("data-box-html-tag"), "nothing in any UI sets what a box is drawn as");
+    assert.ok(PANEL.includes("p.onPatchWidget({ html_tag: e.target.value })"),
+      "the control writes into the wrong key");
     // Every value the control offers is a value Elementor offers.
-    const offered = [...INSPECTOR.matchAll(/data-box-html-tag[\s\S]*?<\/select>/g)][0][0]
-      .match(/<option value="([^"]*)"/g).map((m) => m.slice(15, -1));
+    const tagAt = PANEL.indexOf("data-box-html-tag");
+    const offered = [...PANEL.slice(tagAt, tagAt + 900).matchAll(/<option value="([a-z]*)">/g)]
+      .map((m) => m[1]);
+    assert.ok(offered.length >= 10, "the HTML Tag control lost its options");
     for (const v of offered) {
       assert.ok(CONTAINER.controls.html_tag.options.includes(v),
         `the Layout group offers html_tag="${v}", which Elementor does not`);
@@ -661,21 +673,38 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
     // whose values are stored and were silently dropped on the way to a
     // website. This is the Portal's half of that contract — it writes all
     // seven — and the handoff names them for the arion side.
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
-    for (const [attr, key] of [
+    /* The box's panel is the one written out in Inspector.tsx (see the note in
+       the html_tag test above), so this reads there — and it reads each
+       control by the MARKER it carries rather than by a bare word, which is a
+       stronger guard than the substring check this used to be: `"width"`
+       appears in any React file by accident, `data-box-width` does not.
+       Same fifteen keys. */
+    const PANEL = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
+    for (const [marker, key] of [
       ["data-box-direction", "direction"], ["data-box-justify", "justify"],
       ["data-box-align", "alignItems"], ["data-box-wrap", "wrap"],
-      ["data-box-gap", "gap"], ["data-box-columns", "columns"],
-      ["data-box-html-tag", "html_tag"],
+      ["data-box-gap", "gap"], ["data-box-rowgap", "rowGap"], ["data-box-columns", "columns"],
+      ["data-box-rows", "rows"], ["data-box-autoflow", "autoFlow"],
+      ["data-box-layout", "direction (flex or grid)"], ["data-box-content-width", "contentWidth"],
+      ["data-box-width", "width"], ["data-box-minheight", "minHeight"],
+      ["data-box-overflow", "overflow"], ["data-box-html-tag", "html_tag"],
     ]) {
-      assert.ok(INSPECTOR.includes(attr), `no control writes \`${key}\``);
+      assert.ok(PANEL.includes(marker), `no control writes \`${key}\``);
     }
-    // …and `width` means exactly ONE thing in this repo: how wide a SECTION's
-    // content runs. No widget and no box carries a `width`, so nothing can
-    // persist the two meanings the audit found on one key.
+    // …and each of the four that are new here WRITES the key, not just draws.
+    for (const write of ["{ contentWidth:", "{ width: v }", "{ rowGap: v }", "rows:", "{ autoFlow:"]) {
+      assert.ok(PANEL.includes(write), `the panel draws but never writes: ${write}`);
+    }
+    // …and `width` still means exactly ONE thing per key. It now HAS a meaning
+    // on a style layer — how wide the box itself runs, the reference's Layout ▸
+    // Width — and how a box sits inside its parent is a DIFFERENT key,
+    // `selfWidth`, which is the whole of what audit point 1 was about: one key
+    // may not answer two questions.
     const STYLE = readFileSync(new URL("../src/builder/style.ts", import.meta.url), "utf8");
     const layer = STYLE.slice(STYLE.indexOf("export interface StyleLayer"), STYLE.indexOf("export interface ElementStyle"));
-    assert.ok(!/^\s*width\?:/m.test(layer), "a style layer gained a `width`, which already means something else");
+    assert.ok(/^\s{2}width\?: number;$/m.test(layer), "the box's own width is gone from the style layer");
+    assert.ok(/^\s{2}selfWidth\?: number;$/m.test(layer),
+      "how a box sits in its parent has to be its OWN key — one key, one meaning");
   });
 });
 
@@ -684,23 +713,38 @@ describe("point 1 · every key a box can hold is a key the Portal writes", () =>
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("point 9 · a person can add their own HTML", () => {
-  test("it is a widget, free, on the two surfaces that are HTML pages", () => {
-    // MUTATION: delete HTML_DEF from ATOM_WIDGET_DEFS → red here.
+  test("it is a widget, free, on the three surfaces that are made of markup", () => {
+    /* WIDENED 2026-09-19 (D-168, wave 2). It was website + landing.
+       `BUILDER_OFFERS_2026-09-19.json` lists `html` under `newsletter.elementor`
+       as well, and the offer file is the contract Brandon approved, so the
+       NEWSLETTER offers it and `f1-words/html.ts` draws it in a mailbox — the
+       gap F1's first wave wrote up as §6.4. A PROPOSAL still does not: the
+       offer file puts `html` under the proposal's
+       `not_offered_because_paper_cannot_do_them`. */
+    // MUTATION: delete HTML_DEF from the f1-words family → red here.
     const def = WIDGETS_BY_KIND.html;
     assert.ok(def, "58 of the 64 page bodies on the estate are one of these and nobody can add one");
-    assert.deepEqual(def.adapters.slice().sort(), ["landing", "website"]);
+    assert.deepEqual(def.adapters.slice().sort(), ["email", "landing", "website"]);
     assert.equal(def.tier, "free", "the free page engine's own widget was gated");
-    // …and NOT on a proposal or an email: arbitrary markup prints as nothing
-    // in a PDF and is what a mailbox reflows worst.
-    for (const a of ["proposal", "email", "brand"]) {
+    // …and NOT on a proposal or a design: arbitrary markup prints as nothing
+    // in a PDF and means nothing on a pixel canvas.
+    for (const a of ["proposal", "brand"]) {
       assert.ok(!def.adapters.includes(a), `raw markup is offered in the ${a} builder`);
     }
   });
 
   test("it says what it is in plain words, and names no vendor", () => {
     const def = WIDGETS_BY_KIND.html;
-    assert.equal(def.description, "Paste your own HTML. It goes on the page exactly as you type it.");
-    assert.doesNotMatch(def.description, /elementor|wordpress|widget/i);
+    /* PER BUILDER since wave 2: an email is not a page, so the newsletter's
+       sentence says "in the email". `widgetDescription` is the one reader of
+       either shape. */
+    assert.equal(widgetDescription(def, "website"),
+      "Paste your own HTML. It goes on the page exactly as you type it.");
+    assert.equal(widgetDescription(def, "email"),
+      "Paste your own HTML. It goes in the email exactly as you type it.");
+    for (const a of ["website", "landing", "email"]) {
+      assert.doesNotMatch(widgetDescription(def, a), /elementor|wordpress|widget/i);
+    }
   });
 
   test("the control is a code box, and the Inspector draws a live preview", () => {
@@ -711,9 +755,12 @@ describe("point 9 · a person can add their own HTML", () => {
     assert.equal(c[0].key, "html");
     assert.equal(c[0].type, "code");
     assert.match(c[0].help, /This is code/);
-    const INSPECTOR = readFileSync(new URL("../src/builder/Inspector.tsx", import.meta.url), "utf8");
-    assert.ok(INSPECTOR.includes("data-code-box"), "there is no code box");
-    assert.ok(INSPECTOR.includes("data-code-preview"), "there is no live preview");
+    /* The panel is drawn from the definition alone now (B-168 §C.1), so the
+       code box lives in `definitionControls.tsx` and the Inspector calls it on
+       all three tabs. Same markup, one file over. */
+    const PANEL = readFileSync(new URL("../src/builder/definitionControls.tsx", import.meta.url), "utf8");
+    assert.ok(PANEL.includes("data-code-box"), "there is no code box");
+    assert.ok(PANEL.includes("data-code-preview"), "there is no live preview");
   });
 
   test("the markup goes on the page unchanged, and an empty box draws nothing", () => {
@@ -764,8 +811,15 @@ describe("point 7 · three widget states, each with its own sentence", () => {
     }
   });
 
-  test("the three surfaces a client reads all carry WHICH state it is", () => {
-    for (const file of ["WidgetPane.tsx", "WidgetPicker.tsx", "SectionGallery.tsx"]) {
+  test("the TWO surfaces a client reads carry WHICH state it is — and the third is deleted", () => {
+    /* WAS "the three surfaces": the panel, the widget pop-up and the gallery.
+       `WidgetPicker.tsx` is deleted (2026-09-19) — widgets live in the left
+       panel and nowhere else — so a state it could disagree about is one fewer
+       place to keep in step. */
+    assert.throws(
+      () => readFileSync(new URL("../src/builder/WidgetPicker.tsx", import.meta.url), "utf8"),
+      /ENOENT/, "the widget pop-up is back, and with it a third copy of the three states");
+    for (const file of ["WidgetPane.tsx", "SectionGallery.tsx"]) {
       const src = readFileSync(new URL(`../src/builder/${file}`, import.meta.url), "utf8");
       assert.ok(src.includes('"data-widget-state"'), `${file} still has one bucket for two refusals`);
       assert.ok(src.includes('"data-widget-state": "offered"'), `${file} never says a row IS offered`);
@@ -829,7 +883,24 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
         },
       },
       { id: "w5", kind: "price_line", props: { name: "Salting", quantity: 2, unit_price: 85 } },
-      { id: "w6", kind: "address_block", props: { locationId: "loc-3", heading: "Site" } },
+      /* D-167 — a site block is a Container of **Custom Fields** now, and this
+         golden is the document AFTER that, because its whole job is "a document
+         already in the new names is not rebuilt". The old spelling is pinned by
+         the conversion test below it. */
+      {
+        id: "w6", kind: "container", props: {}, style: { direction: "column", gap: 6 },
+        children: [
+          { id: "w15", kind: "heading", props: { text: "Site", level: 3 } },
+          {
+            id: "w16", kind: "custom_field",
+            props: {
+              _ia_source: "lumen:customer", _ia_selection: null, refresh: "live",
+              on_empty: "hide", overrides: {}, _ia_snapshot: null,
+              field: "service_location.address", show_label: true, locationId: "loc-3",
+            },
+          },
+        ],
+      },
       { id: "w7", kind: "totals", props: { heading: "Your total" } },
       { id: "w8", kind: "html", props: { html: "<p>Book now</p>" } },
     ];
@@ -915,11 +986,20 @@ describe("point g · upgrade-on-open renames, and leaves everything else alone",
   });
 
   test("an address block keeps `locationId` — it is another repo's key too", () => {
+    /* D-167 — the block unpacks into a Container of Custom Fields, and EVERY
+       one of them carries the location id. oliver-api reads that key off the
+       stored document to open a job per site, so a field that dropped it is a
+       job opening with no address. */
     const d = deserialise(stored([
-      { id: "w1", kind: "address_block", props: { locationId: "LOC-4" } },
+      { id: "w1", kind: "service_location", props: { locationId: "LOC-4" } },
     ]));
-    const p = d.sections[0].columns[0].widgets[0].props;
-    assert.equal(p.locationId, "LOC-4", "the location id moved and a job would open with no address");
+    const box = d.sections[0].columns[0].widgets[0];
+    assert.equal(box.kind, "container", "the block did not unpack");
+    assert.ok(box.children.length, "the block unpacked into nothing");
+    for (const k of box.children) {
+      assert.equal(k.kind, "custom_field");
+      assert.equal(k.props.locationId, "loc-4", "the location id moved and a job would open with no address");
+    }
   });
 });
 

@@ -27,7 +27,7 @@ import assert from "node:assert/strict";
 
 import { deserialise, emptyDocument, makeSection, makeWidget, serialise } from "../src/builder/model.ts";
 import { WIDGETS_BY_KIND, widgetsFor } from "../src/builder/registry.ts";
-import { groupByTask } from "../src/builder/widgetTasks.ts";
+import { panelGroups } from "../src/builder/widgetGroups.ts";
 import { atomKindsAgree, ATOM_KINDS, resolveCatalogCard, tagOf } from "../src/builder/widgets/index.ts";
 import { makeContext, renderDocument, renderWidget, RENDERED_KINDS } from "../src/builder/render.ts";
 import { isTypographic } from "../src/builder/style.ts";
@@ -69,12 +69,30 @@ const edit = (d, extra = {}) => renderDocument(d, makeContext(d, { mode: "edit",
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("D-156 · every part of Brandon's sentence is its own widget", () => {
-  for (const kind of ["card", "catalog_card", "price_line", "totals", "address_block", "key_fact"]) {
+  /* D-165 CHANGED WHICH OF THESE IS A TILE, and the reasons are two.
+     `catalog_card` and `price_line` are the ATOMS that the **Product Cards**
+     and **Product Line Items** tiles drop, one per catalogue pick — offering
+     the atom beside its picker is a second door to one job, and the second one
+     skips the picker. `address_block` and `key_fact` are DELETED: an address on
+     a proposal is the CUSTOMER's or the SERVICE LOCATION's, and a key fact is a
+     line of text (§11.13.3). They still have to be one widget each, still
+     selectable and still drawn — that is what this block asks. */
+  /* D-167 TOOK THE THREE BLOCK WIDGETS OUT AGAIN. Customer, Service Location
+     and Business Info lasted one morning: a block of facts is a
+     special-purpose widget, and one fact is a **Custom Field**. */
+  /* B-168 LANDED: `card` IS NOT A TILE. `BUILDER_OFFERS_2026-09-19.json`
+     lists the proposal’s IA widgets and Card is not one of them, and it is
+     not an Elementor title either — the widget behind it is Elementor’s
+     PRICE TABLE, which family F6 lands under that name. So the kind stays
+     in the vocabulary and stays drawn, and the tile is gone. */
+  for (const kind of ["card", "catalog_card", "price_line", "totals", "custom_field"]) {
+    const OFFERED = ["totals", "custom_field"];
     test(`${kind} is one widget the proposal builder offers`, () => {
       const def = WIDGETS_BY_KIND[kind];
       assert.ok(def, `${kind} is not in the registry`);
       assert.ok(def.adapters.includes("proposal"));
-      assert.ok(!def.hidden, `${kind} is defined but never offered`);
+      assert.equal(!def.hidden, OFFERED.includes(kind),
+        `${kind}: a tile the panel should ${OFFERED.includes(kind) ? "show" : "not show"}`);
       // A widget with a count control is a widget with hidden sub-parts, which
       // is the thing D-156 (4) deleted.
       assert.ok(!def.count, `${kind} still asks "how many?"`);
@@ -108,29 +126,60 @@ describe("D-156 · every part of Brandon's sentence is its own widget", () => {
       assert.ok(!widgetsFor("proposal").some((w) => w.kind === kind));
     }
     // …and what replaced each one IS there.
-    for (const kind of ["card", "catalog_card", "address_block", "price_line", "key_fact", "totals"]) {
+    for (const kind of ["card", "catalog_card", "price_line", "totals"]) {
       assert.ok(WIDGETS_BY_KIND[kind], `${kind} should have replaced a composite and is missing`);
     }
+    /* D-165 went one further. `address_block` and `key_fact` were the other two
+       halves of those composites for a day; neither has an Elementor name and
+       neither is on the IA list, so both are deleted too — the address became
+       **Customer** or **Service Location** by its binding, and a key fact
+       became a line of text. Gone, not hidden, same rule. */
+    for (const kind of ["address_block", "key_fact"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
+    }
+    /* AND D-167 DELETED THE THREE THAT REPLACED IT, for the same rule. An
+       address is not a widget: it is a Custom Field pointed at
+       `service_location.address`, and a stored block unpacks into a Container
+       of those on open. */
+    for (const kind of ["customer", "service_location", "business_info", "terms"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} is still in the registry`);
+    }
+    assert.ok(WIDGETS_BY_KIND.custom_field, "the Custom Field that replaced all three is missing");
   });
 
   test("each one gets its own Typography group, not just Content", () => {
     // §11.12: "each widget: its own Content/Typography/Spacing/Advanced".
     // Spacing and Advanced are given to every widget by the Inspector; the
     // Typography group is the one that has to be asked for, by kind.
-    for (const k of ["card", "catalog_card", "price_line", "totals", "address_block", "key_fact"]) {
-      assert.ok(isTypographic(k), );
+    for (const k of ["card", "catalog_card", "price_line", "totals"]) {
+      assert.ok(isTypographic(k), k);
+    }
+    /* THE GAP IS CLOSED (S2→S1-1, integration 2026-09-19). The three record
+       widgets and D-165's standard set that carries words now have their
+       Typography group; this was a `false` assertion saying they did not, and
+       it is the line that told whoever fixed it to come back here. */
+    for (const k of ["service_location", "customer", "business_info",
+      "alert", "icon_box", "image_box", "star_rating", "counter", "progress_bar",
+      "tabs", "accordion", "toggle"]) {
+      assert.ok(isTypographic(k), `${k} has no Typography group`);
+    }
+    /* …and the ones that carry NO text do not get one. A Typography group over
+       a picture or a spacer is a control that does nothing, which is the same
+       defect as a missing one wearing the opposite face. */
+    for (const k of ["icon", "image", "divider", "spacer", "menu_anchor", "shortcode"]) {
+      assert.equal(isTypographic(k), false, `${k} has a Typography group over nothing to type`);
     }
   });
 
   test("they land in the group somebody would look in", () => {
-    const groups = groupByTask("proposal");
-    const money = groups.find((g) => g.task === "Products & services").widgets.map((w) => w.kind);
-    const who = groups.find((g) => g.task === "Customer & property").widgets.map((w) => w.kind);
-    for (const k of ["card", "catalog_card", "price_line", "totals"]) {
-      assert.ok(money.includes(k), `${k} is not under Products & services`);
-    }
-    for (const k of ["address_block", "key_fact"]) {
-      assert.ok(who.includes(k), `${k} is not under Customer & property`);
+    /* D-165: the panel's groups are Elementor's four, and everything that comes
+       out of a client's own records — their catalogue, their customer, their
+       sites — is in **Intelligent Analytics**, which is where a plugin's own
+       widgets sit in a real Elementor. */
+    const ia = panelGroups("proposal")
+      .find((g) => g.group === "Intelligent Analytics").widgets.map((w) => w.kind);
+    for (const k of ["product_cards", "product_line_items", "totals", "custom_field"]) {
+      assert.ok(ia.includes(k), `${k} is not under Intelligent Analytics`);
     }
   });
 });
@@ -489,8 +538,13 @@ describe("D-157 · subtotal, tax rate, discount, coupon", () => {
 
 describe("D-156 · the service address, and one short answer", () => {
   test("bound to a location, it prints the customer's own record", () => {
-    const w = makeWidget("address_block", { locationId: "loc-1" });
-    const d = doc([w]);
+    /* D-167 — an address is a **Custom Field** pointed at the site's address,
+       and `locationId` is still what says WHICH site. Two fields, because the
+       old block printed the name and the address and both must still reach a
+       page somebody signs. */
+    const name = makeWidget("custom_field", { field: "service_location.name", locationId: "loc-1" });
+    const w = makeWidget("custom_field", { field: "service_location.address", locationId: "loc-1" });
+    const d = doc([name, w]);
     const html = renderDocument(d, makeContext(d, {
       mode: "view",
       locations: { "loc-1": { name: "Riverside Plaza", address_line1: "44 Mill Road", city: "Columbus", state: "OH", postal_code: "43215" } },
@@ -500,14 +554,24 @@ describe("D-156 · the service address, and one short answer", () => {
   });
 
   test("typed, when the location does not exist yet", () => {
-    const w = makeWidget("address_block", { address: "44 Mill Road, Columbus", contact: "Ask for Dave" });
-    const html = view(doc([w]));
+    /* The author's own words live in `overrides`, on the field they belong to
+       — the ONE store F.2 owns, and the one the upgrade writes into. */
+    const w = makeWidget("custom_field", {
+      field: "service_location.address", overrides: { address: "44 Mill Road, Columbus" },
+    });
+    const w2 = makeWidget("custom_field", {
+      field: "service_location.site_contact", overrides: { site_contact: "Ask for Dave" },
+    });
+    const html = view(doc([w, w2]));
     assert.ok(html.includes("44 Mill Road, Columbus"));
     assert.ok(html.includes("Ask for Dave"));
   });
 
-  test("a key fact takes a merge tag, and an unfilled one is a chip for the author", () => {
-    const w = makeWidget("key_fact", { label: "Customer", value: "{{customer.name}}" });
+  test("a short answer takes a merge tag, and an unfilled one is a chip for the author", () => {
+    /* D-165 — `key_fact` is DELETED and a key fact is a line of text with its
+       label in bold (§11.13.3), so the merge tag now lives in a Text Editor.
+       The behaviour it was protecting is unchanged and is what this asks. */
+    const w = makeWidget("paragraph", { text: "**Customer** {{customer.name}}" });
     const d = doc([w]);
     assert.ok(renderDocument(d, makeContext(d, { mode: "view", merge: { "customer.name": "Rolling In It" } }))
       .includes("Rolling In It"));
@@ -515,8 +579,8 @@ describe("D-156 · the service address, and one short answer", () => {
   });
 
   test("an empty widget leaves nothing behind on the customer's page", () => {
-    assert.ok(!view(doc([makeWidget("key_fact", {})])).includes("bx-fact"));
-    assert.ok(!view(doc([makeWidget("address_block", {})])).includes("bx-address"));
+    assert.ok(!view(doc([makeWidget("paragraph", { text: "" })])).includes("bx-p"));
+    assert.ok(!view(doc([makeWidget("custom_field", { field: "service_location.address" })])).includes("bx-record-v"));
   });
 });
 
@@ -549,16 +613,22 @@ describe("D-156 · “Choose your plan” is a ready-made SECTION", () => {
 
   test("the property pattern is four widgets, not one block", () => {
     const [s] = propertySections();
+    /* D-167 — the address is one **Custom Field** per field of the site, flat,
+       so the author can delete the access notes without touching the address;
+       the rate card is priced lines, so what is on the page and what is in the
+       total are one list. */
     assert.deepEqual(s.columns[0].widgets.map((w) => w.kind),
-      ["heading", "address_block", "pricing_table", "totals"]);
+      ["heading", "heading", "custom_field", "custom_field", "custom_field", "custom_field", "price_line", "totals"]);
   });
 
-  test("at a glance is key facts, one widget each", () => {
+  test("at a glance is four short answers, one widget each", () => {
     const [s] = atAGlanceSections();
     const box = s.columns[0].widgets[0];
     assert.equal(box.kind, "container");
+    // D-165 — a key fact is a line of text with its label in bold.
     assert.deepEqual(box.children.map((w) => w.kind),
-      ["key_fact", "key_fact", "key_fact", "key_fact"]);
+      ["paragraph", "paragraph", "paragraph", "paragraph"]);
+    assert.match(box.children[0].props.text, /^\*\*Customer\*\* /);
   });
 
   test("the gallery offers all three, and says what each is for", () => {

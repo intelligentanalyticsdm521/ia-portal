@@ -47,9 +47,6 @@ export interface SiteFieldDeps {
   field: FieldContext;
   specsFor: (kind: string | null) => SectionFieldSpec[];
   /** Opens the before/after sheet. Writes nothing on its own. */
-  onAdopt: (index: number, sectionId: string, label: string) => void | Promise<void>;
-  /** Puts an adopted section back, byte for byte, within 30 days. */
-  onUndoAdoption: (adoptionId: string) => void | Promise<void>;
   /** "Change the look" — the same words in another layout of the same kind. */
   onSwapLook: (sectionId: string, kind: string, blueprintId: string | null, label: string) => void;
   /** The catalogue entry for a kind, so "change the look" knows what exists. */
@@ -127,7 +124,6 @@ export function SiteSectionFields({
   const variants = (deps.catalogFor(kind)?.variants || []).filter((v) => v.available);
   const blueprintId = blueprintOf(widget);
   const others = variants.filter((v) => v.blueprintId !== blueprintId);
-  const adoption = (widget.props as any)?.__adoption || null;
   const roleReview: Array<{ list: string; roles: string[]; why: string }> =
     Array.isArray((widget.props as any)?.__roleReview) ? (widget.props as any).__roleReview : [];
 
@@ -142,25 +138,6 @@ export function SiteSectionFields({
         >
           Change the look ({others.length})
         </button>
-      )}
-
-      {adoption?.adoptionId && adoption.canUndo && (
-        <div style={{ background: "#F1F5F9", border: "1px solid #CBD5E1", borderRadius: 8, padding: 10, fontSize: 11 }}>
-          <div style={{ fontWeight: 700, marginBottom: 4 }}>This section was built on the website.</div>
-          <div style={{ color: "#475569", marginBottom: 6 }}>
-            You took charge of it{adoption.adoptedAt ? ` on ${new Date(adoption.adoptedAt).toLocaleDateString()}` : ""}.
-            Undo puts back the original bytes exactly.
-          </div>
-          {/* It ASKED TWICE: this browser box, and then the adapter's own
-              question behind it. One press, one question — the adapter owns it,
-              because the adapter is the one that knows what the undo does and
-              can say it in the app's own dialog. This one is DELETED. */}
-          <button type="button" style={{ ...smallButton, minHeight: 36 }}
-            title="Put the original section back, exactly as it was"
-            onClick={() => { void deps.onUndoAdoption(String(adoption.adoptionId)); }}>
-            Undo adoption
-          </button>
-        </div>
       )}
 
       {/* "We could not tell which of these two boxes is which, so check this."
@@ -392,42 +369,16 @@ export function SiteLockedPanel({
           “{lock.preview}”
         </div>
       )}
-      {lock.adoptable ? (
-        <>
-          <div style={{ background: "#F0F9FF", border: "1px solid #BAE6FD", borderRadius: 8, padding: 10 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>
-              This looks like {lock.adoptKindLabel ? `a ${String(lock.adoptKindLabel).toLowerCase()}` : "a section we know"}
-              {lock.adoptConfidence ? ` (${lock.adoptConfidence} confidence)` : ""}.
-            </div>
-            <div style={{ fontSize: 11, color: "#475569" }}>
-              We can take charge of it so you can edit it here. You see the before and after first,
-              and you can undo it for 30 days.
-            </div>
-          </div>
-          {confirming ? (
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="abtn abtn-sky" style={{ minHeight: 36 }} disabled={busy}
-                title="Take charge of this section"
-                onClick={() => { setConfirming(false); void deps.onAdopt(Number(lock.index) || 0, sectionId, String(lock.label || "this section")); }}>
-                {busy ? "Working…" : "Yes, make it editable"}
-              </button>
-              <button type="button" style={{ ...smallButton, minHeight: 36 }} onClick={() => setConfirming(false)}
-                title="Leave it exactly as it is">Cancel</button>
-            </div>
-          ) : (
-            <button type="button" style={{ ...smallButton, minHeight: 36, display: "inline-flex", alignItems: "center", gap: 6 }}
-              disabled={busy} onClick={() => setConfirming(true)}
-              title="Take charge of this section so you can edit it here. Undoable for 30 days.">
-              <Unlock size={12} /> Make it editable
-            </button>
-          )}
-        </>
-      ) : (
-        <div style={{ fontSize: 11, color: "#64748B" }}>
-          {lock.why || "The builder could not work out what this section is, so it leaves it alone. "
-            + "You can add a new section above or below it, or ask us to rebuild the page."}
-        </div>
-      )}
+      <div style={{ fontSize: 11, color: "#64748B" }}>
+        {/* ADOPTION IS GONE (B-168, 2026-09-22). This panel used to offer
+            "Make it editable" — the promise to REPLACE the client's own
+            Elementor section with one of our archetypes. Every section is read
+            and editable now, so nothing routinely reaches this panel at all;
+            what is left is the honest sentence for a section the server could
+            not read even as blocks. */}
+        {lock.why || "The builder could not read this section at all, so it leaves it alone. "
+          + "You can add a new section above or below it, or ask us to change it."}
+      </div>
     </div>
   );
 }

@@ -78,6 +78,49 @@ export function productOf(tier: WidgetTier | undefined | null): string | null {
  */
 export const PLAN_SENTENCE = "Not on your website plan. It comes with ARION Standard and above.";
 
+/**
+ * THE PLAN SENTENCE, when the widget names the plan it needs.
+ *
+ * B-168 §C.1: a family def may carry `requires: { minTier }`, and Brandon
+ * decides in October which widgets sit behind which plan. When he does, that
+ * decision is a change to DATA — the `minTier` string on one row — and the
+ * sentence a client reads follows it without a rebuild. No `minTier` means the
+ * sentence we already had, so nothing shipped today reads differently.
+ */
+export function planSentence(minTier?: string | null): string {
+  const plan = String(minTier ?? "").trim();
+  return plan ? `Not on your website plan. It comes with ${plan} and above.` : PLAN_SENTENCE;
+}
+
+/**
+ * WHAT A WIDGET NEEDS, as a family writes it. See families/types.ts.
+ *
+ * Two fields, two different refusals, which is the whole reason it is not one
+ * field: `product` is ownership ("needs OLIVER"), `minTier` is plan ("comes
+ * with ARION Standard"). `reference_nav_visibility_semantics` forbids one word
+ * for both.
+ */
+export interface WidgetRequires {
+  product?: string;
+  minTier?: string;
+}
+
+/**
+ * THE GATE, from a definition — `tier`, `requires`, or free.
+ *
+ * ONE function, so the pane, the picker and the server mirror cannot each
+ * decide what `requires` meant. A `product` outranks a `minTier` because a
+ * business that does not own the product cannot buy a bigger plan out of it.
+ */
+export function gateOf(
+  def: { tier?: WidgetTier | null; requires?: WidgetRequires | null } | null | undefined,
+): WidgetTier {
+  const product = String(def?.requires?.product ?? "").trim().toLowerCase();
+  if (product) return `ia:${product}`;
+  if (String(def?.requires?.minTier ?? "").trim()) return "pro";
+  return (def?.tier || "free") as WidgetTier;
+}
+
 /** THE OWNERSHIP SENTENCE — a widget that reads a product's own data. */
 export function ownershipSentence(product: string): string {
   return `Needs ${product}, which this business does not have.`;
@@ -114,4 +157,28 @@ export function widgetState(
   refused: boolean | string | null | undefined,
 ): WidgetState {
   return widgetLock(tier, refused)?.reason ?? "offered";
+}
+
+/**
+ * THE SAME ANSWER, asked of a family DEFINITION.
+ *
+ * B-168 §C.1: a family declares `tier` and an optional `requires`, and this is
+ * the one door those two facts go through. It is `widgetLock` with the gate
+ * worked out by `gateOf` and the plan sentence allowed to name the plan the
+ * definition asked for — not a second seam. Three states, three sentences,
+ * still one place.
+ *
+ * Silence is never a refusal: `refused` false/absent means offered, because
+ * refusing on silence takes a widget away from a business that pays for it.
+ */
+export function defLock(
+  def: { tier?: WidgetTier | null; requires?: WidgetRequires | null } | null | undefined,
+  refused: boolean | string | null | undefined,
+): WidgetLock | null {
+  const gate = gateOf(def);
+  const lock = widgetLock(gate, refused);
+  if (!lock || lock.reason !== "plan") return lock;
+  /* The server's own sentence always wins; ours only fills the silence. */
+  if (typeof refused === "string" && refused.trim()) return lock;
+  return { ...lock, sentence: planSentence(def?.requires?.minTier) };
 }

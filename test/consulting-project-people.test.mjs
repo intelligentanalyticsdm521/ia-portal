@@ -457,9 +457,17 @@ describe("CPP-T2/T3: the builder header puts its buttons on a second row before 
     assert.match(html, /<div class="min-w-0">/);
   });
 
-  test("BuilderFrame turns it on for the wide layout (narrow has the bottom bar)", () => {
+  // 2 Oct 2026, builder release (D-172): the builder owns its whole top strip
+  // and hands it to the modal through `chrome`, so there is no header to wrap
+  // any more — the page name is centred in the strip and the buttons have
+  // their own left and right groups. Every other dialog keeps wrapHeader.
+  test("BuilderFrame hands the modal its own strip; a strip never wraps", () => {
     const frame = read("builder/BuilderFrame.tsx");
-    assert.match(frame, /size="builder"[\s\S]{0,300}wrapHeader=\{!narrow\}/);
+    assert.match(frame, /size="builder"[\s\S]{0,600}chrome=\{/, "the builder's modal gets the strip through chrome");
+    assert.doesNotMatch(frame, /wrapHeader=/, "a strip is one row by construction; wrapping is for header dialogs");
+    assert.match(frame, /data-builder-doctitle/, "the page name lives in the strip");
+    const modal = read("components/IadmModal.tsx");
+    assert.match(modal, /data-header-wrap=\{wrapHeader && !chrome \? "1" : undefined\}/, "the wrap attribute is never set on a strip");
     const builder = read("builder/proposal/ProposalBuilder.tsx");
     assert.match(builder, /minWidth: 420/, "the title box is the width the header keeps for it");
   });

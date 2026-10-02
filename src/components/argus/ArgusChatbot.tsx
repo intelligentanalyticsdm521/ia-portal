@@ -11,7 +11,7 @@
 // Phase 2 (not in this commit): if no intent matches above threshold, fall
 // back to a backend Claude call streaming the response. We leave a clear
 // hook for that — `tryServerFallback()`.
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { useNavigate } from "react-router-dom";
 import { MessageSquare, Send, X, ExternalLink, Play, Ticket, MousePointerClick } from "lucide-react";
 import { matchIntent, type ArgusIntent } from "./argusIntents";
@@ -20,6 +20,7 @@ import { useAppState } from "../../app/AppState";
 import { searchJourneySteps } from "../../journeys";
 import { launchJourneyStep } from "../walkthroughs/walkthroughLaunchBus";
 import { useSparkApi } from "../../hooks/useSparkApi";
+import { builderIsOpen, builderIsOpenOnServer, subscribeBuilderOpen } from "../../builder/builderOpen";
 
 type Sender = "user" | "argus";
 
@@ -279,10 +280,27 @@ export function ArgusChatbot() {
     setTimeout(() => launchJourneyStep(stepId, mode), 250);
   };
 
+  /**
+   * THE BUBBLE STEPS ASIDE WHILE A BUILDER IS OPEN (D-172, round 2).
+   *
+   * The reference editor has ONE door to its AI, in the top bar. Ours had two,
+   * and the second was this — `fixed bottom-5 right-5 z-[9000]`, so it floated
+   * OVER the builder modal for the whole time the builder was open.
+   *
+   * Round 1 asked the DOM during THIS component's render. Nothing makes this
+   * component re-render when a builder mounts, so the query ran once on a page
+   * with no builder in it, answered `false`, and the pill stayed — a guard that
+   * failed open. The shell PUBLISHES the fact now (`builder/builderOpen.ts`)
+   * and this is a real subscription: `useSyncExternalStore` re-renders the
+   * moment the count changes, in either direction.
+   */
+  const builderOpen = useSyncExternalStore(
+    subscribeBuilderOpen, builderIsOpen, builderIsOpenOnServer);
+
   return (
     <>
-      {/* Floating launch button (always visible) */}
-      {!open && (
+      {/* Floating launch button — not while a builder owns the screen. */}
+      {!open && !builderOpen && (
         <button
           type="button"
           onClick={() => setOpen(true)}

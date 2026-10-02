@@ -317,6 +317,51 @@ body {
 .arion-page .data-table th { text-align: left; padding: 5px 8px; font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1px solid rgba(45,156,219,0.1); }
 .arion-page .data-table td { padding: 8px; border-bottom: 1px solid rgba(45,156,219,0.07); color: var(--text-primary); }
 
+/* ── Website → Pages: WordPress's own Pages screen, in our colours ────────
+   Brandon, 2026-09-22: "can we make this look like what wordpress pages looks
+   like". Only the things inline styles cannot do live here: the row actions
+   that appear on hover and on keyboard focus, and the screen-reader labels on
+   the tick boxes. Everything else is on the elements in WebsitePages.tsx.
+
+   `.wpp-actions` is `visibility`, not `display`, so the row keeps its height
+   whether or not the mouse is over it — a table that grows a line under the
+   cursor is a table whose rows move away from the click.
+   ------------------------------------------------------------------------ */
+.arion-page .wpp-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+.arion-page .wpp-title { font-size: 22px; font-weight: 600; margin: 0; color: var(--text-primary); }
+.arion-page .wpp-where { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+.arion-page .wpp-bar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; justify-content: space-between; margin: 10px 0 6px; }
+.arion-page .wpp-status { display: flex; gap: 6px; flex-wrap: wrap; list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.arion-page .wpp-status li { display: flex; gap: 6px; align-items: center; }
+.arion-page .wpp-statuslink { background: none; border: 0; padding: 2px 0; font-size: 12px; cursor: pointer; color: var(--arion-sky-dark, #1668a5); }
+.arion-page .wpp-statuslink.is-on { font-weight: 700; color: var(--text-primary); }
+.arion-page .wpp-statuslink .wpp-n { color: var(--text-muted); font-weight: 400; }
+.arion-page .wpp-sep { color: var(--text-muted); }
+.arion-page .wpp-search { display: flex; gap: 6px; align-items: center; }
+.arion-page .wpp-tablenav { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 6px 0; }
+.arion-page .wpp-bulk { display: flex; gap: 6px; align-items: center; }
+.arion-page .wpp-pagination { display: flex; gap: 6px; align-items: center; }
+.arion-page .wpp-count { font-size: 12px; color: var(--text-muted); }
+.arion-page .wpp-table td { vertical-align: top; }
+.arion-page .wpp-cb { width: 28px; }
+.arion-page .wpp-rowtitle { background: none; border: 0; padding: 0; font-size: 13px; font-weight: 700; cursor: pointer; color: var(--arion-sky-dark, #1668a5); text-align: left; }
+.arion-page .wpp-rowtitle:hover { text-decoration: underline; }
+.arion-page .wpp-state { font-size: 12px; color: var(--text-muted); font-weight: 600; }
+.arion-page .wpp-author, .arion-page .wpp-date { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.arion-page .wpp-datelabel { color: var(--text-muted); }
+.arion-page .wpp-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 3px; visibility: hidden; }
+.arion-page .wpp-row:hover .wpp-actions,
+.arion-page .wpp-row:focus-within .wpp-actions { visibility: visible; }
+.arion-page .wpp-action { background: none; border: 0; padding: 0; font-size: 12px; cursor: pointer; color: var(--arion-sky-dark, #1668a5); text-decoration: none; }
+.arion-page .wpp-action:hover { text-decoration: underline; }
+.arion-page .wpp-action-bad { color: #b3261e; }
+.arion-page .wpp-action:disabled { color: var(--text-muted); cursor: default; text-decoration: none; }
+.arion-page .wpp-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* A phone has no hover, so the actions are simply always there. */
+@media (hover: none), (max-width: 700px) {
+  .arion-page .wpp-actions { visibility: visible; }
+}
+
 /* Badges */
 .arion-page .badge-ia { background: var(--arion-sky-tint); color: var(--arion-sky-dark); font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }
 .arion-page .badge-update { background: #FEF3C7; color: #92400E; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 3px; }

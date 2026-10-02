@@ -46,15 +46,17 @@ import { FOCUSABLE_SELECTOR, firstTabTarget, nextTrapIndex } from "../src/builde
 import {
   firstWords, hiddenOf, outline, rowLabel, sectionDropIndex, sectionRows,
 } from "../src/builder/navigatorModel.ts";
+import * as widgetGroups from "../src/builder/widgetGroups.ts";
 import {
-  DEFAULT_TASK, EMPTY_PAGE_CHOICES, TASK_BY_CATEGORY, TASK_GROUPS, flatMatches, groupByTask,
-  matchesWidgetQuery, taskFor, unmappedCategories,
-} from "../src/builder/widgetTasks.ts";
+  LAST_GROUP, PANEL_GROUPS, flatPanelMatches, groupFor,
+  matchesWidgetQuery, openGroups, panelGroups, rank, unmappedKinds,
+} from "../src/builder/widgetGroups.ts";
+import { STRUCTURE_PRESETS, structureSumsTo100 } from "../src/builder/AddSection.tsx";
 import {
   FIRST_RUN_STEPS, nextStep, shouldShowFirstRun,
 } from "../src/builder/firstRunModel.ts";
 import {
-  PROBLEMS_CTA, anchorSelector, firstWithFocus, focusSelector, problemsLabel,
+  PROBLEMS_CTA, anchorSelector, firstWithFocus, focusSelector,
 } from "../src/builder/problems.ts";
 import { DEFAULT_COPY, resolveCopy } from "../src/builder/copy.ts";
 import { WIDGETS, widgetsFor, WIDGET_CATEGORIES } from "../src/builder/registry.ts";
@@ -257,8 +259,15 @@ describe("the keyboard map (D-18)", () => {
 
   test("the help panel lists every shortcut the map answers", () => {
     const listed = SHORTCUT_HELP.map((r) => r.keys.toLowerCase().replace(/\s+/g, ""));
-    for (const need of ["ctrl+z", "ctrl+shift+z", "ctrl+s", "delete", "escape"]) {
+    for (const need of ["ctrl+z", "ctrl+shift+z", "ctrl+s", "delete", "escape",
+                        "ctrl+shift+y", "ctrl+shift+l", "shift+?"]) {
       assert.ok(listed.includes(need), `the panel never mentions ${need}`);
+    }
+    // ROUND 2 — the two rows that were OURS are gone. The reference has no
+    // slash command anywhere in its editor, and every row of its own table is
+    // a key chord, so "Right-click" was never one of them.
+    for (const gone of ["/", "right-click"]) {
+      assert.ok(!listed.includes(gone), `the invented shortcut row is back: ${gone}`);
     }
   });
 });
@@ -307,10 +316,13 @@ describe("the outline (D-12)", () => {
     assert.deepEqual(sectionRows(doc).map((r) => r.id), [a.id, b.id, c.id]);
   });
 
-  test("a row says what the widget ACTUALLY SAYS, not just its kind", () => {
-    // Eleven rows called "Paragraph" is not an outline.
-    assert.equal(rowLabel(makeWidget("heading", { text: "Scope of work" })), "Heading · Scope of work");
-    assert.equal(rowLabel(makeWidget("paragraph", {})), "Paragraph");
+  test("a row is the widget's NAME, as the reference writes it (D-172)", () => {
+    // WAS "a row says what the widget ACTUALLY SAYS": "Heading · Scope of
+    // work". The reference's rows are "Heading", "Text Editor" — the element's
+    // name, full stop — and the words are on the page where they can be read
+    // properly rather than clipped to forty characters in a 240px window.
+    assert.equal(rowLabel(makeWidget("heading", { text: "Scope of work" })), "Heading");
+    assert.equal(rowLabel(makeWidget("paragraph", {})), "Text Editor");
   });
 
   test("it reaches into a repeat for the first thing in it", () => {
@@ -356,81 +368,120 @@ describe("the outline (D-12)", () => {
    5. D-147 — the picker's groups and its search
    ══════════════════════════════════════════════════════════════════════════ */
 
-describe("the widget picker groups by the job (D-147)", () => {
-  test("the seven groups are the ones a home-services owner would name", () => {
-    assert.deepEqual([...TASK_GROUPS], [
-      "Customer & property", "Products & services", "Words", "Pictures & media",
-      "Signature & terms", "Layout", "More",
-    ]);
+/**
+ * THE PICKER'S GROUPS — Elementor's, since D-165 (§11.13.1).
+ *
+ * This block used to pin D-147's seven JOB groups (Customer & property,
+ * Products & services, Words, …). Brandon, 2026-09-19: the left panel is
+ * *"groups as accordions (Layout, Basic, Pro, General…)"* with *"Elementor's own
+ * widget names"*, and *"I don't need this over engineered."* So there is ONE
+ * grouping and it is the registry's own `category`; `TASK_BY_CATEGORY`,
+ * `TASK_BY_KIND` and the `task` field are deleted.
+ *
+ * The LIST itself — which builder offers what, by name and in order — is pinned
+ * in `test/builder-widget-set.test.mjs`. What is left here is the behaviour this
+ * file has always been about: the pane and the picker agree, and the search
+ * ranks a name above a mention.
+ */
+describe("the widget picker groups the way the panel does (D-165)", () => {
+  test("the groups are Elementor's four, and every category is one of them", () => {
+    assert.deepEqual([...PANEL_GROUPS], [...WIDGET_CATEGORIES]);
+    assert.deepEqual(unmappedKinds(), []);
   });
 
   test("Brandon's two sentences are answerable in one group each", () => {
     // "I need to be able to call products and services, I need to be able to
-    // add sections for service address or property address."
-    const property = groupByTask("proposal").find((g) => g.task === "Customer & property");
-    const money = groupByTask("proposal").find((g) => g.task === "Products & services");
-    // D-156: the property block came apart into an address, priced lines and a
-    // total. The ADDRESS is what answers "add a section for service address".
-    assert.ok(property.widgets.some((w) => w.kind === "address_block"),
-      "the service address is not under Customer & property");
-    assert.ok(money.widgets.some((w) => w.kind === "pricing_table"),
-      "the pricing table is not under Products & services");
+    // add sections for service address or property address." Both are in the
+    // Intelligent Analytics group, which is where a client would look for the
+    // things that come out of their own records.
+    const ia = panelGroups("proposal").find((g) => g.group === "Intelligent Analytics");
+    /* D-167 — "a section for the service address" is a SECTION TEMPLATE made
+       of Custom Fields, and the widget that shows the address is the Custom
+       Field. Both answers live in the Intelligent Analytics group. */
+    assert.ok(ia.widgets.some((w) => w.kind === "custom_field"),
+      "the service address is not in the Intelligent Analytics group");
+    assert.ok(ia.widgets.some((w) => w.kind === "product_line_items"),
+      "the catalogue picker is not in the Intelligent Analytics group");
   });
 
   test("every widget the pane offers lands in a group — nothing is dropped", () => {
     for (const adapter of ["proposal", "website", "email", "landing", "brand"]) {
-      const grouped = groupByTask(adapter).flatMap((g) => g.widgets.map((w) => w.kind)).sort();
+      const grouped = panelGroups(adapter).flatMap((g) => g.widgets.map((w) => w.kind)).sort();
       const offered = widgetsFor(adapter).map((w) => w.kind).sort();
       assert.deepEqual(grouped, offered, `${adapter}: the picker and the pane disagree about what exists`);
     }
   });
 
-  test("every category has a job, so nothing falls into More by accident", () => {
-    assert.deepEqual(unmappedCategories(), []);
-    for (const c of WIDGET_CATEGORIES) assert.ok(TASK_GROUPS.includes(TASK_BY_CATEGORY[c]), c);
-  });
-
-  test("a widget's own `task` on its registry entry wins over both maps", () => {
-    const fake = { kind: "made_up_thing", label: "x", description: "y", category: "Text", task: "Layout" };
-    assert.equal(taskFor(fake), "Layout");
-    assert.equal(taskFor({ ...fake, task: "Nonsense" }), "Words", "an unknown task falls back rather than inventing a group");
-    assert.equal(taskFor({ kind: "nope", label: "", description: "", category: "Information" }), DEFAULT_TASK);
+  test("a widget's group is its category, and nothing else decides it", () => {
+    for (const w of WIDGETS) assert.equal(groupFor(w), w.category, w.kind);
+    // A category the panel does not draw falls back rather than vanishing.
+    assert.equal(groupFor({ kind: "nope", label: "", description: "", category: "Nonsense" }), LAST_GROUP);
   });
 
   test("the search reads the sentence and the group name, not only the label", () => {
     const heading = WIDGETS.find((w) => w.kind === "heading");
     assert.equal(matchesWidgetQuery(heading, "heading"), true);
-    assert.equal(matchesWidgetQuery(heading, "words"), true, "the group name has to be searchable");
+    assert.equal(matchesWidgetQuery(heading, "basic"), true, "the group name has to be searchable");
     assert.equal(matchesWidgetQuery(heading, "zzz"), false);
   });
 
   test("EVERY word has to match, so two words narrow rather than widen", () => {
-    const pricing = WIDGETS.find((w) => w.kind === "pricing_table");
-    assert.equal(matchesWidgetQuery(pricing, "price table"), true);
-    assert.equal(matchesWidgetQuery(pricing, "price banana"), false);
+    const line = WIDGETS.find((w) => w.kind === "product_line_items");
+    assert.equal(matchesWidgetQuery(line, "product line"), true);
+    assert.equal(matchesWidgetQuery(line, "product banana"), false);
   });
 
   test("the picker's first card IS what Enter inserts", () => {
     // FOUND BY DRIVING IT: the grid drew registry order while Enter took the
     // ranked top, so the first card and the thing Enter added were two
     // different widgets.
-    const first = groupByTask("proposal", "pri")[0].widgets[0];
-    assert.equal(first.kind, flatMatches("proposal", "pri")[0].kind);
+    const first = panelGroups("proposal", "pro")[0].widgets[0];
+    assert.equal(first.kind, flatPanelMatches("proposal", "pro")[0].kind);
   });
 
-  test("a NAME beats a mention — 'property' finds the property widgets, not the merge field", () => {
-    // The slash command's Enter takes the first of these, so the order is not
-    // cosmetic: getting it wrong inserts the wrong thing without asking.
-    const hits = flatMatches("proposal", "property").map((w) => w.kind);
-    const merge = hits.indexOf("merge_field");
-    assert.match(flatMatches("proposal", "property")[0].label, /^Property/);
-    assert.ok(hits.indexOf("property_block") < merge, "the merge field outranked the property block");
-    assert.ok(hits.indexOf("property_plan") < merge, "the merge field outranked the property plan");
+  test("a NAME beats a mention — 'table' puts Table first in its own group", () => {
+    /* CHANGED AT LANDING (B-168), and the change is the panel, not the rule.
+       Elementor’s **Price Table** is on the proposal panel now, in the Pro
+       group, and the panel DRAWS Pro before Intelligent Analytics — so the
+       first tile a person sees for "table" is Price Table, and the flat list
+       says the same thing, because both read one order computed once
+       (`flatPanelMatches`). A flat list ranked a second time across groups is
+       the drift that function exists to stop.
+
+       The RULE is unchanged and still pinned, twice: the exact name outranks
+       a mention, and inside the group that holds it, Table is first. */
+    assert.ok(rank({ label: "Table", kind: "data_table" }, "table")
+      > rank({ label: "Price Table", kind: "price_table" }, "table"),
+      "an exact name no longer outranks a tile that merely contains the word");
+    const ia = panelGroups("proposal", "table")
+      .find((g) => g.group === "Intelligent Analytics");
+    assert.equal(ia.widgets[0].kind, "data_table");
+    const hits = flatPanelMatches("proposal", "table");
+    assert.ok(hits.some((h) => h.kind === "data_table"), "Table is not findable at all");
   });
 
-  test("the empty page's three choices point at three real groups", () => {
-    assert.equal(EMPTY_PAGE_CHOICES.length, 3);
-    for (const c of EMPTY_PAGE_CHOICES) assert.ok(TASK_GROUPS.includes(c.task), c.key);
+  test("the empty page's three choices are DELETED; the add area is what an empty page shows", () => {
+    /* WAS "the empty page's three choices point at three real groups" —
+       EMPTY_PAGE_CHOICES, three cards that each opened the widget pop-up
+       filtered to a group. Deleted 2026-09-19: an empty page shows the same
+       add area every other gap shows. */
+    assert.equal(widgetGroups.EMPTY_PAGE_CHOICES, undefined, "EMPTY_PAGE_CHOICES is back");
+    assert.ok(!/EMPTY_PAGE_CHOICES/.test(readSrc("builder/widgetGroups.ts")));
+    // PRESENT: the add area's own three views, and the "+" that starts them.
+    const add = readSrc("builder/AddSection.tsx");
+    assert.match(add, /data-builder-add="container"/);
+    assert.match(add, /data-builder-add="template"/);
+    assert.match(add, /Which layout would you like to use\?/);
+    assert.match(add, /Select your structure/);
+  });
+
+  test("every group starts open, so the widgets are not behind three shut headings", () => {
+    // Was "the first group only". Brandon opened the panel on 2026-09-19 and
+    // saw two tiles; the reference editor's panel shows them all.
+    const groups = panelGroups("proposal");
+    assert.ok(groups.length > 1, "there is only one group, so this proves nothing");
+    assert.deepEqual(openGroups(groups, ""), groups.map((g) => g.group));
+    assert.deepEqual(openGroups(groups, "price"), groups.map((g) => g.group));
   });
 });
 
@@ -499,10 +550,21 @@ describe("problems point at the page (D-03 / D-20 / D-35)", () => {
     assert.equal(firstWithFocus(undefined), null);
   });
 
-  test("the counter is written out, in plain words, singular and plural", () => {
-    assert.equal(problemsLabel(1), "1 detail still to fill in");
-    assert.equal(problemsLabel(5), "5 details still to fill in");
-    assert.equal(problemsLabel(0), "");
+  /* WAS "the counter is written out, in plain words, singular and plural".
+     `problemsLabel` IS DELETED (§11.13.2, integration 2026-09-19): the
+     Details group went and the "N details still to fill in" counter went with
+     it, because a counter is the group coming back in a new place. What is
+     left is the JUMP, and the button's own words. */
+  test("the counter's sentence is GONE from the engine, not moved", () => {
+    const src = readSrc("builder/problems.ts");
+    assert.ok(!/export function problemsLabel/.test(src), "problemsLabel is back");
+    // The explanation may SAY the words; nothing may return them. Checked as
+    // a returned/assigned string rather than as any mention, because deleting
+    // the note that records the deletion to satisfy a grep is how the reason
+    // gets lost (the main session's own correction to the Details gate).
+    assert.ok(!/(return|=)\s*`?["'`][^"'`]*still to fill in/.test(src),
+      "something still builds the counter's sentence");
+    // The jump stays, and so do the button's words: Send refuses and goes there.
     assert.match(PROBLEMS_CTA, /first/i);
   });
 });
@@ -581,12 +643,18 @@ describe("the canvas carries the chrome the walk asked for", () => {
   const canvas = readSrc("builder/Canvas.tsx");
   const addbar = readSrc("builder/AddBar.tsx");
 
-  test('a "+" strip sits between every two sections and after the last (D-11)', () => {
+  test('the strip between two sections is a DROP LINE with no "+" on it any more', () => {
+    /* WAS 'a "+" strip sits between every two sections and after the last'.
+       The pill that opened the widget pop-up is deleted (2026-09-19); the gap
+       between two containers shows nothing until something is dragged over it.
+       Adding is the add area's job — `AddSection`, in the page. */
+    assert.doesNotMatch(addbar, /data-builder-add="\+"/, "the + pill is back on the strip between sections");
+    assert.doesNotMatch(addbar, /<button/, "the drop line has a button on it again");
+    // PRESENT: the line itself, and the area that does the adding.
     assert.match(canvas, /<AddBar/);
-    assert.match(addbar, /data-builder-addbar/);
-    assert.match(addbar, /data-builder-add="\+"/);
-    // Above the first one as well, or there is nowhere to add a title band.
-    assert.match(canvas, /kind: "newSection", index: 0/);
+    assert.match(addbar, /data-builder-addbar="between"/);
+    assert.match(addbar, /bxc-addline/);
+    assert.match(canvas, /<AddSection/);
   });
 
   test("EVERY empty box offers its own spot, a column included (D-11, D-156)", () => {
@@ -596,8 +664,10 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /data-builder-addhere/);
     assert.match(canvas, /if \(box\.querySelector\("\[data-widget\]"\)\) continue;/);
     assert.match(canvas, /querySelectorAll<HTMLElement>\("\[data-bx-host\]"\)/);
-    // And a box that is NOT empty is not a dead end either.
-    assert.match(canvas, /data-builder-addin/);
+    // And a box that is NOT empty has NO "+" of its own: the corner button that
+    // fought its parent's for the same pixel is deleted, and a full box is
+    // added to by dragging into it or by selecting it and pressing a tile.
+    assert.doesNotMatch(canvas, /data-builder-addin/, "the corner + inside a full box is back");
   });
 
   test("THE SECTION TOOLBAR IS ON HOVER, not only on selection (D-12)", () => {
@@ -608,41 +678,87 @@ describe("the canvas carries the chrome the walk asked for", () => {
     assert.match(canvas, /\.bxc-sec:hover > \.bxc-toolbar/);
   });
 
-  test("the toolbar is the slim one: drag, up, down, duplicate, delete, settings", () => {
-    for (const title of [
-      "Drag to move this section", "Move this section up", "Move this section down",
-      "Duplicate this section", "Delete this section", "Settings for this section",
-    ]) assert.ok(canvas.includes(title), `the toolbar has no "${title}"`);
-    // And it carries none of the nine settings buttons any more — they live in
-    // the inspector, which is the one home for a setting.
-    for (const gone of ["Light or dark text", "Mark as Recommended", "Number this section (01"]) {
-      assert.ok(!canvas.includes(gone), `"${gone}" is back on the toolbar as well as in the inspector`);
+  test("the section handle is THREE buttons, top centre: add, edit, delete", () => {
+    /* WAS "the toolbar is the slim one: drag, up, down, duplicate, delete,
+       settings" — six. The reference editor's container handle has three, and
+       Move up / Move down / Duplicate are on right-click (`builderMenu.ts`),
+       which is where the reference keeps them. */
+    for (const gone of [
+      "Move this section up", "Move this section down", "Duplicate this section",
+      "Settings for this section", "Light or dark text", "Mark as Recommended",
+    ]) assert.ok(!canvas.includes(gone), `"${gone}" is back on the section handle`);
+    // PRESENT: the three, in Elementor's own words, in order.
+    // ROUND 2: the grip's tooltip is "Edit Container", full stop — the
+    // reference's own, with no sentence about the drag glued onto it.
+    assert.ok(!canvas.includes("Edit Container — drag to move it"),
+      "the grip explains the drag again");
+    for (const title of ["Add Container", 'title="Edit Container"', "Delete Container"]) {
+      assert.ok(canvas.includes(title), `the handle has no "${title}"`);
     }
+    const bar = canvas.slice(canvas.indexOf('<div className="bxc-toolbar"'), canvas.indexOf('ref={hostRef}'));
+    assert.equal((bar.match(/<button|<span/g) || []).length, 3, "the section handle is not three controls");
+    // And the one at the top centre, as in the reference, rather than floating
+    // over the first widget.
+    assert.match(canvas, /\.bxc-toolbar \{ position: absolute; top: -22px; left: 50%;/);
   });
 
-  test("every widget has a handle with drag, duplicate and delete (D-12)", () => {
+  test("a widget's handle is the GRIP alone, and a container's is grip + x (D-12)", () => {
+    /* WAS "every widget has a handle with drag, duplicate and delete". The six
+       coloured squares on every box — grip, duplicate, delete, eye, padlock,
+       more — are deleted (2026-09-19, Brandon: "confusing"). */
+    for (const gone of [
+      "Make a copy of this ${noun}, right underneath", "Remove this from the page",
+      "bxc-wtool-eye", "bxc-wtool-lock", "bxc-wtool-more",
+    ]) assert.ok(!canvas.includes(gone), `"${gone}" is back on the widget handle`);
+    // PRESENT: the handle, the grip in it, and the "x" only on a container.
     assert.match(canvas, /bxc-wtools/);
     assert.match(canvas, /\[data-widget\]:hover > \.bxc-wtools/);
-    assert.match(canvas, /Make a copy of this \$\{noun\}, right underneath/);
-    assert.match(canvas, /Remove this from the page/);
+    assert.match(canvas, /grip\.className = "bxc-grip"/);
+    assert.match(canvas, /if \(isBox && !locked\) \{/);
+    // ROUND 2: the handle NAMES the box the author picked, so the title is
+    // built rather than hardcoded — a Grid box reads "Delete Grid".
+    assert.ok(!/b\.title = "Delete Container"/.test(canvas), "every box is called Container again");
+    assert.match(canvas, /b\.title = `Delete \$\{boxName\}`/);
     // §11.12 — ONE loop, so a box wears the same handle as everything else and
     // only the words differ.
     assert.match(canvas, /const isBox = el\.dataset\.kind === "container"/);
+    // Everything the six buttons did is on right-click, and that menu is one
+    // module both doors ask.
+    assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/);
   });
 
-  test("a locked widget's handle SAYS WHY rather than doing nothing", () => {
-    assert.match(canvas, /onRefuse\?\.\(/);
-    assert.match(canvas, /you can change the wording, not remove it/);
+  test("a part the law puts there cannot be deleted, and the handle says why", () => {
+    /* WAS "a locked widget's handle SAYS WHY rather than doing nothing", which
+       read the refusal the deleted ✕ on a locked widget raised. A locked
+       container now grows no ✕ at all (`isBox && !locked`), and the sentence
+       moved to the one delete that is still drawn: the section handle's. */
+    assert.match(canvas, /disabled=\{required\}/);
+    assert.match(canvas, /the law asks for both, so it stays/);
+    assert.match(canvas, /const required = section\.columns\.some\(\(c\) => c\.widgets\.some\(\(w\) => w\.locked\)\)/);
   });
 
   test("the new thing is scrolled to and glows (D-11)", () => {
     assert.match(canvas, /scrollIntoView\(\{ block: "center", behavior: "smooth" \}\)/);
-    assert.match(canvas, /bxc-flash/);
+    // ABSENT: the two-second glow. The reference does nothing after an
+    // insert beyond the widget appearing (D-172). PRESENT: the scroll,
+    // which is not chrome — it is how the author finds what just landed.
+    assert.doesNotMatch(canvas, /bxc-flash/, "the orange glow on a new widget is back");
+    assert.doesNotMatch(canvas, /bxc-flash-fade/, "the fading tint is back");
+    assert.match(canvas, /el\.scrollIntoView\(\{ block: "center", behavior: "smooth" \}\)/);
   });
 
-  test("the empty page offers three choices, not a blank sheet (D-148)", () => {
-    assert.match(canvas, /data-builder-empty/);
-    assert.match(canvas, /emptyChoices/);
+  test("an empty page IS the add area, not three cards (D-148)", () => {
+    /* WAS "the empty page offers three choices, not a blank sheet" — the
+       `emptyChoices` cards, each opening the widget pop-up. Deleted: the add
+       area sits at the bottom of the page whether or not there is a page, so
+       an empty one and a full one offer the same door. */
+    assert.doesNotMatch(canvas, /emptyChoices/, "the three cards are back");
+    assert.doesNotMatch(canvas, /data-builder-empty/);
+    // PRESENT: the area is drawn OUTSIDE the section loop, so it is there with
+    // no sections at all.
+    const after = canvas.slice(canvas.indexOf("THE ADD AREA AT THE BOTTOM OF THE PAGE"));
+    assert.match(after, /<AddSection\s+onBlank=\{\(layout, preset\) => props\.onAddBlank\(doc\.sections\.length, layout, preset\)\}/);
+    assert.match(after, /onTemplate=\{\(\) => props\.onAddTemplate\(doc\.sections\.length\)\}/);
   });
 
   test("the section drag lands on the same strip the drop line uses", () => {
@@ -651,10 +767,16 @@ describe("the canvas carries the chrome the walk asked for", () => {
   });
 
   test("the phone still has everything, where dragging never fires", () => {
-    // HTML5 drag does not fire on touch. The buttons the phone pass pinned are
-    // still on the strip, and the toolbar's up/down are new ones beside them.
-    assert.match(canvas, /title="Add a blank section here"/);
-    assert.match(canvas, /title="Add a ready-made section here"/);
+    // HTML5 drag does not fire on touch, so every add has to be PRESSABLE.
+    // The add area is buttons all the way down: the round "+", the round
+    // folder, then Flexbox | Grid, then the eight structures.
+    const add = readSrc("builder/AddSection.tsx");
+    assert.match(add, /title="Add New Container"/);
+    assert.match(add, /title="Add Template"/);
+    assert.match(add, /data-addsection-choice="flex"/);
+    assert.match(add, /data-structure-preset=\{preset\.key\}/);
+    // And the empty container's "+" is a button too, not a drop target only.
+    assert.match(canvas, /b\.type = "button";[\s\S]{0,80}b\.className = "bxc-addhere"/);
   });
 });
 
@@ -692,17 +814,31 @@ describe("the frame never closes silently, and Tab stays inside (D-02 / D-19)", 
       "a second keyboard listener is a second set of rules");
   });
 
-  test('the "?" replays the walk-through and lists the shortcuts', () => {
-    assert.match(frame, /data-builder-help/);
-    assert.match(frame, /data-builder-shortcuts/);
-    assert.match(frame, /SHORTCUT_HELP\.map/);
+  test("the shortcuts live behind the MAIN MENU, and the panel is only shortcuts (D-172)", () => {
+    // ABSENT: the "?" in the top bar, and everything that was in the panel
+    // besides the table. The reference bar has no help button, and its
+    // shortcuts panel is a shortcuts panel.
+    assert.doesNotMatch(frame, /data-builder-help/, "the ? button is back in the top bar");
+    assert.doesNotMatch(frame, /How this works/, "the How this works heading is back");
+    assert.doesNotMatch(frame, /Press <strong>\+<\/strong> anywhere/, "the coaching paragraph is back");
+    // PRESENT: the menu the reference keeps that kind of thing behind, with
+    // the shortcuts and the walk-through as its rows, and Exit at the bottom.
+    assert.match(frame, /data-builder-mainmenu="open"/);
+    assert.match(frame, /data-mainmenu="shortcuts"/);
+    assert.match(frame, /data-mainmenu="walkthrough"/);
+    assert.match(frame, /data-mainmenu="exit"/);
+    assert.match(frame, /aria-label="Keyboard Shortcuts"/);
+    // ROUND 2: the table is split under the reference's own two headings,
+    // Actions and Panels, so it is read group by group rather than flat.
+    assert.ok(!/SHORTCUT_HELP\.map/.test(frame), "the shortcuts table is one flat list again");
+    assert.match(frame, /SHORTCUT_GROUPS\.map/);
+    assert.match(frame, /shortcutsIn\(group\)\.map/);
   });
 });
 
 describe("the shell wires the rebuild without a second mechanism", () => {
   const shell = readSrc("builder/BuilderShell.tsx");
   const pane = readSrc("builder/WidgetPane.tsx");
-  const picker = readSrc("builder/WidgetPicker.tsx");
 
   test("undo does NOT call the adapter from inside a state updater (D-40)", () => {
     // "Cannot update a component while rendering a different component."
@@ -721,37 +857,60 @@ describe("the shell wires the rebuild without a second mechanism", () => {
       "a spot was built by hand instead of asked for");
   });
 
-  test("THE PANE AND THE PICKER SHARE ONE VOCABULARY", () => {
-    assert.match(pane, /groupByTask\(adapter, query\)/);
-    assert.match(picker, /groupByTask\(p\.adapter, query\)/);
-    assert.doesNotMatch(picker, /WIDGETS\.filter/);
+  test("THERE IS ONE LIST OF WIDGETS, and it is the left panel", () => {
+    /* WAS "THE PANE AND THE PICKER SHARE ONE VOCABULARY" — two surfaces, one
+       grouping, because two groupings is how a panel and a pop-up start
+       disagreeing about where a widget lives. The pop-up is DELETED, which is
+       the stronger version of the same promise: there is nothing to disagree
+       with. */
+    assert.throws(() => readSrc("builder/WidgetPicker.tsx"), /ENOENT/, "WidgetPicker.tsx is back");
+    assert.doesNotMatch(shell, /WidgetPicker/, "the shell mounts a second list of widgets again");
+    for (const rel of ["builder/Canvas.tsx", "builder/AddSection.tsx", "builder/AddBar.tsx"]) {
+      assert.doesNotMatch(readSrc(rel), /data-widget-kind/, `${rel} draws a list of widgets on the page`);
+    }
+    // PRESENT: the one panel, asking the one grouping.
+    assert.match(pane, /panelGroups\(adapter, query\)/);
+    assert.match(pane, /data-widget-kind=\{w\.kind\}/);
   });
 
-  test("the pane, the picker and the slash command build a widget the SAME way", () => {
+  test("the pane and a drag build a widget the SAME way", () => {
     assert.match(shell, /const buildWidget = useCallback\(/);
     assert.equal((shell.match(/makeWidget\(def\.kind, props\)/g) || []).length, 1,
       "a second place that decides what a new widget starts with");
   });
 
-  test("the slash command's clear and insert are ONE document operation", () => {
-    // Two applies in one tick would compute the second from the stale `doc`
-    // prop and the typed "/pricing" would come straight back.
-    // V-1: the clear is now `editWidgetText`, which addresses the widget by
-    // NODE ID — the column scan the old line depended on could not reach a
-    // widget inside a box, so "/" was dead from the second level down.
-    //
-    // Read out of slashCommit ITSELF and not out of the whole file: the box
-    // door beside it clears the same way, so a file-wide match stayed green
-    // with the defect put back (found by mutating it, 2026-09-17).
-    const commit = shell.slice(shell.indexOf("const slashCommit ="), shell.indexOf("const slashCommitBox"));
-    assert.match(commit, /const cleared = editWidgetText\(doc, s\.widgetId, s\.path, ""\)/);
-    assert.match(commit, /apply\(insertNode\(cleared, spot\.hostId, spot\.index, made\)\)/);
+  test("the slash command is DELETED — no '/' handler anywhere in the builder", () => {
+    /* WAS "the slash command's clear and insert are ONE document operation".
+       "/" on an empty line opened the widget pop-up; both are gone
+       (2026-09-19). Nothing replaces it: the widgets are in the left panel,
+       which has its own search box. */
+    for (const rel of ["builder/BuilderShell.tsx", "builder/Canvas.tsx"]) {
+      const code = readSrc(rel);
+      assert.ok(!/slash/i.test(code), `${rel} still mentions a slash command`);
+      assert.ok(!/=== "\/"/.test(code), `${rel} still watches for a "/" keystroke`);
+    }
+    // PRESENT: the search box in the panel, which is how a widget is found by
+    // typing now.
+    assert.match(pane, /data-pane-search/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /placeholder="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /placeholder=\{PANE_SEARCH_PLACEHOLDER\}/);
   });
 
-  test("the counter is a BUTTON that goes somewhere (D-35)", () => {
-    const left = readSrc("builder/LeftPane.tsx");
-    assert.match(left, /data-builder-problems/);
-    assert.match(left, /onClick=\{p\.onJumpToProblem\}/);
+  /* WAS "the counter is a BUTTON that goes somewhere (D-35)" — the
+     "N details still to fill in" button at the top of the left pane.
+
+     LeftPane.tsx IS DELETED (§11.13.1, D-165): the left panel is the
+     widgets panel and nothing else, so the counter has no home there. The
+     JUMP itself is untouched and still pinned below — Send refuses a
+     document with blanks, names them and jumps to the blank ON THE PAGE,
+     which is §11.13.2's rule and the thing D-35 was actually about. */
+  test("the file the old left pane lived in is GONE, not hidden", () => {
+    assert.throws(() => readSrc("builder/LeftPane.tsx"), /ENOENT/,
+      "LeftPane.tsx is back");
+  });
+
+  test("the jump to the first blank still works, from the page (D-35)", () => {
     assert.match(shell, /function jumpToProblem\(\)/);
     assert.match(shell, /focusSelector\(problem\.focus!\)/);
   });
@@ -763,9 +922,16 @@ describe("the shell wires the rebuild without a second mechanism", () => {
     assert.match(toast, /getBoundingClientRect\(\)/);
   });
 
-  test("the outline is the pane's second tab, and hiding uses the styling pass's own flag", () => {
-    const left = readSrc("builder/LeftPane.tsx");
-    assert.match(left, /<Navigator/);
+  test("the outline is a FLOATING window, and hiding uses the styling pass's own flag", () => {
+    // §11.13.1 item 3 (D-165): "Structure" left the left panel. Same
+    // rows, same handlers, a window you can move and close — opened from
+    // the top bar and from Ctrl+I.
+    const nav = readSrc("builder/Navigator.tsx");
+    assert.match(nav, /export function StructureWindow/);
+    assert.match(nav, /data-builder-structure="open"/);
+    assert.match(nav, /data-structure-close/);
+    assert.match(shell, /<StructureWindow/);
+    assert.match(shell, /case "structure": setStructure\(\(v\) => !v\); return true;/);
     // M-21 folded the two copies of this into ONE `setHidden`, used by the
     // outline's eye, the widget handle's eye and the right-click menu — three
     // ways in, one writer. The flag is still the styling pass's own.
@@ -786,10 +952,10 @@ describe("the shell wires the rebuild without a second mechanism", () => {
 
 describe("no screen in the rebuild names another product", () => {
   const files = [
-    "builder/Canvas.tsx", "builder/AddBar.tsx", "builder/WidgetPicker.tsx", "builder/Navigator.tsx",
-    "builder/LeftPane.tsx", "builder/FirstRun.tsx", "builder/AnchoredToast.tsx",
+    "builder/Canvas.tsx", "builder/AddBar.tsx", "builder/Navigator.tsx",
+    "builder/AddSection.tsx", "builder/FirstRun.tsx", "builder/AnchoredToast.tsx",
     "builder/BuilderFrame.tsx", "builder/BuilderShell.tsx", "builder/WidgetPane.tsx",
-    "builder/widgetTasks.ts", "builder/copy.ts", "builder/problems.ts", "builder/firstRunModel.ts",
+    "builder/widgetGroups.ts", "builder/copy.ts", "builder/problems.ts", "builder/firstRunModel.ts",
     "builder/shortcuts.ts", "builder/navigatorModel.ts", "builder/insertPosition.ts",
   ];
   test("not Elementor, not Gutenberg, not Wix — in anything that renders", () => {

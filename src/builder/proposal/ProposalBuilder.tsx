@@ -17,8 +17,8 @@
  * OliverProposalsPage.tsx in the same pass. Same route, same list, same
  * buttons — a different editor behind them. "Replace means delete."
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, Sparkles, UserRound, Building2, MapPin, Plus, X } from "lucide-react";
 import { IadmModal } from "../../components/IadmModal";
 import { useBrandKit } from "../../brand/BrandKitProvider";
 import { useLumenApi } from "../../hooks/useLumenApi";
@@ -26,20 +26,48 @@ import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { BuilderShell } from "../BuilderShell";
 import type { BuilderProblem } from "../problems";
 import {
-  addSection, addWidget, deserialise, emptyDocument, makeWidget, setPropPath,
+  addSection, addWidget, deserialise, emptyColumn, emptyDocument, makeSection, makeWidget, setPropPath,
   // `patchNode` is THE ONE WRITER of a node's props, at any depth, with the
   // model's own rules on it (it comes from `treeOps`, re-exported here so
   // there is one door). See `patch` below for the walk this replaced.
   insertBeside, patchNode, removeWidgetsWhere, walkWidgets,
-  type BuilderDocument, type Section as BuilderSection, type Widget,
+  type BuilderDocument, type Section as BuilderSection, type Selection, type Widget,
 } from "../model";
+/* WHERE A PICK LANDS (G-2). The engine's one placement rule, so the catalogue
+   picker and a tile pressed in the left panel put things in the same place. */
+import { insertNodes } from "../insertPosition";
 import {
-  bindPlansToLocation, blankTokens, blanksRefusal, detailsMerge, detailsStartOpen,
-  documentLogo, parseMoney, plainLabel, readDetails, reconcileDetails, widgetForToken,
-  writeDetails, type DetailRow,
+  bindPlansToLocation, blankTokens, blanksRefusal, documentLogo, mergeValues, parseMoney,
+  plainLabel, setMergeValue, tokenHelp, widgetForToken,
 } from "./documentDetails";
+/* 11.13.2 — the three widgets that fill themselves from the database. They
+   are what the DELETED Details group is replaced by, so the adapter draws
+   them (`ctx.extra`) and keeps their live values in one place. */
+import { type RecordBook } from "./recordWidgets";
+/* D-167 — ONE widget shows ONE database field. The three block widgets it
+   replaced are deleted; a stored one unpacks into a Container of these on
+   open. The family folder is where the lander expects a widget to live. */
+import {
+  CUSTOM_FIELD_KIND, choiceOf, isRetyped, putCustomFieldBackProps, renderCustomFieldWith,
+} from "../widgets/families/ia/customField";
+/* D-168 — the offer file's nine section templates, each a Container tree of
+   normal widgets the author can pull apart. */
+import {
+  CLAUSE_TEMPLATE_KEY, PROPOSAL_SECTION_TEMPLATES, SECTION_TEMPLATE_TAGS,
+} from "./sectionTemplates";
+/* THE SECOND UPGRADE TABLE IS DELETED (integration, 2026-09-19).
+   `upgradeProposal.ts` converted six kinds on open; `src/builder/upgrade.ts`
+   converts eleven INSIDE `deserialise`, which is the one door a stored
+   document comes through. Two tables for one job, and they disagreed about
+   what an address block leaves behind — one wrote flat props the record
+   widgets never read. There is one now, and `openProposalDocument` /
+   `deserialise` already run it. */
+import {
+  isCatalogueTile, isPickerTile, nodesForClauses, nodesForPicks,
+  type CatalogueTileKind,
+} from "./catalogueTiles";
 import { PROPOSAL_ANCHORS, requestItemAnchor } from "./refusalAnchors";
-import { makeContext, type LocationLite, type RenderContext } from "../render";
+import { DOCUMENT_CSS, makeContext, renderDocument, type LocationLite, type RenderContext } from "../render";
 import { documentTotals, money } from "../totals";
 import { diffDocuments, diffSummary } from "../diff";
 import { locationsUsedBy, openProposalDocument, toWire } from "../proposalDoc";
@@ -54,7 +82,7 @@ import { sentMessage, sentToLine, type RecipientInput, type SentToRow } from "..
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
-  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker,
+  basisOf, buildPick, cadenceOf, fmtMoney, CatalogPicker, CatalogueMultiPicker,
   type CatalogOffering, type CatalogPrice,
 } from "../../components/oliver/ProposalCatalogPicker";
 /* D-156 — the atomic widgets. The adapter owns the controls only it can draw:
@@ -99,6 +127,7 @@ export interface ProposalBuilderProps {
   onSaved: (message: string) => void;
 }
 
+
 /** The customer's words, one line at a time, with a tick beside each. */
 interface RequestItem { text: string; done: boolean }
 
@@ -119,6 +148,62 @@ interface ContactRow {
 interface LocationRow extends LocationLite { is_default?: boolean }
 
 const rows = <T,>(r: any): T[] => (Array.isArray(r) ? r : r?.data ?? []);
+
+/**
+ * SAVE OPTIONS — the reference editor's chevron beside the verb (D-172).
+ *
+ * One button, one menu. It exists because the bar had three flat save buttons
+ * in it and the reference has none: Publish, then a chevron holding Save
+ * Draft, Save as Template and View Page. The rows are handed in, so the
+ * revision bar and the draft bar are the same control with different verbs and
+ * there is no second copy of the popover.
+ */
+function SaveOptions({ busy, children }: { busy: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ position: "relative", display: "inline-flex" }}>
+      <button
+        type="button"
+        data-save-options={open ? "open" : "closed"}
+        aria-label="Save Options"
+        aria-expanded={open}
+        title="Save Options"
+        disabled={busy}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 26, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+          background: "transparent", color: "#fff", cursor: busy ? "default" : "pointer",
+          opacity: busy ? 0.35 : 1,
+        }}
+      >
+        <ChevronDown size={14} />
+      </button>
+      {open && (
+        <>
+          <div onMouseDown={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 9490 }} />
+          <div role="menu" data-save-options-menu="open"
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute", top: 32, right: 0, zIndex: 9500, width: 210,
+              background: "#fff", border: "1px solid #E2E8F0", borderRadius: 8,
+              boxShadow: "0 18px 44px rgba(11,28,36,0.24)", padding: "5px 0",
+              display: "flex", flexDirection: "column",
+            }}>
+            {children}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** One row inside the Save Options menu. */
+const saveRow: React.CSSProperties = {
+  display: "block", width: "100%", textAlign: "left", border: "none",
+  background: "transparent", padding: "7px 12px", fontSize: 12.5,
+  color: "#0B1C24", cursor: "pointer",
+};
 
 export function ProposalBuilder({ api, proposalId = null, revision = null, projectId = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
@@ -186,8 +271,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
   }, []);
   /** D-36 — "Saved" said in the builder, because the builder STAYS OPEN now. */
   const [saved, setSaved] = useState<string | null>(null);
-  /** Which Details box the blanks counter is sending the author to. */
-  const [focusToken, setFocusToken] = useState<string | null>(null);
+  /* `focusToken` LIVED HERE and is deleted with the Details group: there is no
+     side box to put a caret in any more. `editingToken`, declared beside the
+     record book below, is the one piece of state that says "this token is
+     being typed", and the engine's own jump scrolls the page to the widget. */
   /**
    * The id of the row being edited, once one exists.
    *
@@ -330,7 +417,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
       }
       setPickedLocationIds((row.location_ids || []).map((x: string) => String(x).toLowerCase()));
       if (row.valid_until) setValidUntil(String(row.valid_until).slice(0, 10));
-      const opened = openProposalDocument(row) || emptyDocument();
+      // UPGRADE ON OPEN (11.13.3). Every kind the widget set deleted becomes
+      // the standard parts that say the same thing, the first time anybody
+      // opens the document. Same document by identity when there is nothing to
+      // convert, so a draft merely opened saves byte-identical.
+      const opened = (openProposalDocument(row) || emptyDocument());
       setDoc(applyBrandDefaults(opened, brandDefaults(kit)));
       setResetKey((k) => k + 1);
       setPicking(false);
@@ -361,7 +452,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
       if (p.valid_until) setValidUntil(String(p.valid_until).slice(0, 10));
       if (p.tax_rate != null) setTaxRate(String(Math.round(Number(p.tax_rate) * 10000) / 100));
       if (p.discount_amount != null) setDiscount(String(Number(p.discount_amount) || 0));
-      const opened = row.document ? deserialise(row.document) : emptyDocument();
+      const opened = (row.document ? deserialise(row.document) : emptyDocument());
       setDoc(opened);
       setBaseDoc(row.base_document ? deserialise(row.base_document) : null);
       setRequestItems(Array.isArray(row.request_items) ? row.request_items : []);
@@ -461,21 +552,124 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
     return merge;
   }, [contact, pickedLocations, validUntil, identity]);
 
-  /* ── The Details group: every blank is a field (D-03) ────────────────── */
+  /* ── THE RECORD BOOK — what the three dynamic widgets fill from ──────── */
   //
-  // The rows live ON the document (documentDetails.ts says where and why), so
-  // they save, close and reopen with it. `details` is the reconciled view the
-  // panel renders: one row per token the page uses that the customer pick does
-  // not already answer, plus any value the author typed for a token they have
-  // since deleted.
-  const details = useMemo(
-    () => reconcileDetails(doc, autoMerge, declaredDetails(doc)),
-    [doc, autoMerge],
-  );
-  const setDetail = useCallback((token: string, value: string) => {
-    setDoc((d) => writeDetails(d, reconcileDetails(d, autoMerge, declaredDetails(d))
-      .map((r) => (r.token === token ? { ...r, value } : r))));
-  }, [autoMerge]);
+  // 11.13.2: "Every widget bound to the customer, the service location or the
+  // business fills itself from the database the moment the customer is picked
+  // or changed." This is that database reading, in the ONE shape
+  // `recordWidgets.ts` draws from — so a re-pick is a new object here and
+  // every Customer / Service Location / Business Info block on the page
+  // refills on the next render. Nothing is copied ONTO the document, which is
+  // why changing the customer refills rather than leaving last week's name in
+  // the JSON; an edited field is an `overrides` entry and survives untouched.
+  const recordBook = useMemo<RecordBook>(() => {
+    const primary = pickedLocations[0];
+    const person = [contact?.first_name, contact?.last_name].filter(Boolean).join(" ");
+    const clean = (o: Record<string, string>) => {
+      const out: Record<string, string> = {};
+      for (const [k, v] of Object.entries(o)) if (String(v ?? "").trim()) out[k] = String(v);
+      return out;
+    };
+    return {
+      customer: clean({
+        name: contact?.company_name || person,
+        company: contact?.company_name || "",
+        contact: person,
+        email: contact?.email || "",
+        phone: (contact as any)?.phone || (contact as any)?.mobile_phone || "",
+        billing_address: addressLine(primary),
+      }),
+      service_location: clean({
+        name: primary?.name || "",
+        address: addressLine(primary),
+        site_contact: (primary as any)?.site_contact || "",
+        access_notes: primary?.access_notes || "",
+      }),
+      business_info: clean({
+        logo: identity.logoUrl || kit.logo_url || "",
+        name: identity.name || "",
+        phone: identity.phone || "",
+        email: identity.email || "",
+        licence: (identity as any).licence || "",
+      }),
+    };
+  }, [contact, pickedLocations, identity, kit]);
+
+  /**
+   * THE MERGE VALUE BEING TYPED, ON THE PAGE (11.13.2, item 3).
+   *
+   * A fact that lives in no record — a term date, a trigger depth — is a merge
+   * token where it appears in the sentence. Clicking its chip opens ONE box,
+   * beside the widget it is in; typing writes `settings.merge`, the store that
+   * never moved. There is no side list, and Send's refusal opens this same box
+   * on the first blank.
+   */
+  const [editingToken, setEditingToken] = useState<string | null>(null);
+
+  /**
+   * THE TWO TILES THAT LOAD PRODUCTS (11.13.2 item 4).
+   *
+   * Pressing **Product Cards** or **Product Line Items** in the pane does not
+   * insert a widget — it opens the ONE catalogue picker, multi-select, and
+   * what lands is one atomic `catalog_card` / `price_line` per pick. This is
+   * the tile that was pressed, or null when the picker is closed.
+   */
+  const [pickingCatalogue, setPickingCatalogue] = useState<CatalogueTileKind | null>(null);
+  /** The Terms tile's picker: saved clauses in, plain text out (11.13.2 item 5). */
+  const [pickingTerms, setPickingTerms] = useState(false);
+  /**
+   * WHAT IS SELECTED — the WHOLE selection, not just its section (G-2).
+   *
+   * This kept `s?.sectionId` alone, and the catalogue picker then had nothing
+   * finer than "which section" to aim at, so it appended a new section after
+   * that one and the priced lines came out at the foot of the page. The engine
+   * already knows where an insert goes (`insertPosition.ts`); it only needs to
+   * be told what the author has selected.
+   */
+  const [selection, setSelection] = useState<Selection>(null);
+  const selectedSectionId = selection?.sectionId ?? null;
+  /**
+   * WHAT A PICKER JUST PUT ON THE PAGE, handed back to the engine (R2-3).
+   *
+   * The engine selects, scrolls to and flashes anything IT inserts. A
+   * catalogue pick is the one insert it does not make — the tile opens this
+   * adapter's own picker — so the caret stayed BEHIND the lines that landed
+   * and everything added next went in above them. The round-2 scorer measured
+   * the harm as money: targets 03, 04 and 06 each print a Totals reading
+   * Subtotal $0.00 / Total $0.00 above the lines it should be adding up.
+   */
+  const [pickLanded, setPickLanded] = useState<Selection>(null);
+
+  /**
+   * PUT PICKED NODES ON THE PAGE — the one path both pickers take.
+   *
+   * The catalogue and the clause library each drop a handful of ordinary
+   * widgets, and they were two copies of the same six lines. One function, so
+   * "where does a pick land and where does the caret end up" has one answer.
+   *
+   * THE CARET GOES ON THE LAST ONE. A pick of three priced lines followed by a
+   * Totals has to put the Totals AFTER the lines; selecting the first would
+   * put the next insert between line 1 and line 2.
+   */
+  const placePicked = useCallback((nodes: Widget[], label: string) => {
+    if (!nodes.length) return;
+    const last = nodes[nodes.length - 1];
+    const landed = insertNodes(doc, selection, nodes);
+    if (landed.spot) {
+      setDoc(landed.doc);
+      // `landed.selection` and not one built here: the placement rule answers
+      // where the caret goes, so the two cannot disagree.
+      setPickLanded(landed.selection);
+      return;
+    }
+    // NO SECTION TO LAND IN — a brand-new document. Make one, the same way the
+    // add area does, and put the pick in it.
+    const section = makeSection({ label, columns: [{ ...emptyColumn(), widgets: nodes }] });
+    setDoc(addSection(doc, section));
+    setPickLanded({
+      kind: "widget", sectionId: section.id, columnIndex: 0, widgetIndex: nodes.length - 1, id: last.id,
+    });
+  }, [doc, selection]);
 
   /**
    * SECTION 10 IS ABOUT THE LOCATION THE DOCUMENT IS ABOUT (D-164).
@@ -491,10 +685,16 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
    * alone. The panel's own picker says which location it is and changes it.
    */
   const documentLocationId = pickedLocationIds[0] || "";
+  /* The ids THIS customer really has, as one string, so the effect below runs
+     when the customer changes and not on every render. */
+  const knownLocationIds = useMemo(
+    () => locations.map((l) => String(l.location_id).toLowerCase()).sort().join(","),
+    [locations]);
   useEffect(() => {
     if (!documentLocationId) return;
-    setDoc((d) => bindPlansToLocation(d, documentLocationId));
-  }, [documentLocationId]);
+    setDoc((d) => bindPlansToLocation(d, documentLocationId,
+      knownLocationIds ? knownLocationIds.split(",") : []));
+  }, [documentLocationId, knownLocationIds]);
 
   /**
    * A TOTALS WIDGET ON "YOUR BUSINESS RATE" FOLLOWS THE BUSINESS.
@@ -613,11 +813,25 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
     }
   }, [api]);
 
+  /**
+   * PREVIEW CHANGES (D-172, round 2) — the reference's eye, and its Save
+   * Options row "View Page", which are two doors to ONE thing.
+   *
+   * The reference's Preview Changes shows the page as its reader gets it. Ours
+   * had no such button in the bar at all: Preview existed only as a row inside
+   * Find. What it shows is the document through the ONE renderer in `view`
+   * mode — literally the customer's own copy, not an editor's impression of
+   * it — so there is nothing here that can drift from what gets sent.
+   */
+  const [previewing, setPreviewing] = useState(false);
+
   /* ── The one render context ──────────────────────────────────────────── */
   const ctx: RenderContext = useMemo(() => {
-    // The typed Details first, the customer pick over the top: the customer's
-    // own name is authoritative and is never something to type twice.
-    const merge: Record<string, string> = { ...detailsMerge(readDetails(doc)), ...autoMerge };
+    // What was typed on the page first, the customer pick over the top: the
+    // customer's own name is authoritative and is never something to type
+    // twice. `settings.merge` is still the ONE store (11.13.2) — only the
+    // control that writes it moved onto the page.
+    const merge: Record<string, string> = { ...mergeValues(doc), ...autoMerge };
 
     const locationMap: Record<string, LocationLite> = {};
     for (const l of locations) locationMap[String(l.location_id).toLowerCase()] = l;
@@ -645,13 +859,20 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
         contactLine: [identity.email, identity.phone].filter(Boolean).join(" · "),
       },
       locations: locationMap,
+      /* THE CUSTOM FIELD, drawn by the adapter because only the adapter has the
+         customer, the site and the business in its hand. `extra` is the
+         engine's own hook for exactly this (render.ts), so render.ts gains no
+         `case` and there is no second renderer table. Everywhere else — the
+         customer's own copy, the sent wire, a template preview — the family's
+         own renderer builds the book out of the context instead. */
+      extra: (w, c) => (w.kind === CUSTOM_FIELD_KIND ? renderCustomFieldWith(w, c, recordBook) : null),
       totals: documentTotals(doc, docMoney),
       // The ONE renderer draws the badges. The author's canvas and the
       // customer's revision page hand in the SAME map, so they cannot badge
       // different sections.
       ...(revision ? { changed: diff.sections } : {}),
     });
-  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff]);
+  }, [doc, autoMerge, locations, kit, identity, docMoney, offerings, revision, diff, recordBook]);
 
   const totals = ctx.totals;
 
@@ -758,29 +979,37 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
    */
   const blanks = useMemo(() => blankTokens(doc, ctx.merge), [doc, ctx.merge]);
 
-  /** Plain words for a token, as the Details group is showing them. ONE map,
-   *  read by the problems list and by both Send refusals. */
-  const detailLabels = useMemo(
-    () => Object.fromEntries(details.map((d) => [d.token, d.label])),
-    [details]);
+  /** Plain words for every token the page uses. ONE map, read by the problems
+   *  list, by both Send refusals and by the on-page editor's caption. The
+   *  TEMPLATE's own labels win, then the shipped clause packs, then the
+   *  platform's catalogue — `plainLabel` is the single ladder. */
+  const detailLabels = useMemo(() => {
+    const declared = declaredDetails(doc);
+    const out: Record<string, string> = {};
+    for (const [token, d] of Object.entries(declared)) out[token] = d.label;
+    return out;
+  }, [doc]);
 
   /**
-   * WHAT IS STILL MISSING, in the engine's shape (A-1 / N-1).
+   * THE LEFT-PANE COUNTER IS DELETED WITH THE GROUP IT SERVED (11.13.2).
    *
-   * One problem per blank the page still carries, in plain words, each pointing
-   * at the first widget that uses it — so the engine's counter button, its jump
-   * and the refusal beside Send all work here exactly as they do everywhere
-   * else. Stream B's own chip row is DELETED: the problems list is what says
-   * what is missing, and the Details boxes are where it is typed.
+   * Scope, in as many words: *"Deleted with the Details group: its component,
+   * **the 'still to fill in' counter in the left pane**, PACK_LABELS as a UI
+   * list."* The adapter no longer feeds the engine's `problems` list, so
+   * there is no counter and no second jump.
+   *
+   * ONE mechanism instead, and it is the one 11.13.2 names: **Send** refuses,
+   * says what is blank in plain words, and OPENS THE BOX on the first one
+   * where it appears on the page. A counter that lives beside a Send button
+   * that already says the same thing is a second place for the two to drift,
+   * which is how a document went out with two blank dates.
+   *
+   * `takeMeToTheBlank` is that jump. It is called by both Send buttons.
    */
-  const problems = useMemo<BuilderProblem[]>(() => blanks.map((token) => {
-    const at = widgetForToken(doc, token);
-    return {
-      id: `blank:${token}`,
-      message: `${plainLabel(token, detailLabels)} is still blank.`,
-      ...(at ? { focus: at } : {}),
-    };
-  }), [blanks, detailLabels, doc]);
+  const takeMeToTheBlank = useCallback(() => {
+    const first = blanks[0];
+    if (first) setEditingToken(first);
+  }, [blanks]);
 
   /**
    * Save the document.
@@ -813,8 +1042,10 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
       // the names are PLAIN WORDS now — "snow_trigger" was two of the four
       // names a first-time user was shown and told to go and find (D-03).
       // ONE sentence, written down in documentDetails.ts, so the revision's
-      // Send below cannot refuse in different words.
+      // Send below cannot refuse in different words — and the box opens on the
+      // first blank, on the page, which is the whole of 11.13.2's jump.
       refuse(anchor, blanksRefusal(blanks, detailLabels));
+      takeMeToTheBlank();
       return;
     }
     // Ask WHO before anything is saved or sent: Cancel leaves no trace.
@@ -909,6 +1140,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
     }
     if (send && blanks.length) {
       refuse(anchor, blanksRefusal(blanks, detailLabels));
+      takeMeToTheBlank();
       return;
     }
     setSaved(null); setRefusal(null); setBusy(true);
@@ -978,10 +1210,17 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
   if (picking) {
     return (
       <TemplateLibrary
+        /* NO EYEBROW (D-172, round 2). The reference has no eyebrow line
+           anywhere in the editor chrome, and the builder frame already passes
+           an empty one — but the gallery that opens FIRST still read
+           "OLIVER · DOCUMENT BUILDER" in small caps above its title, so the
+           very first thing the author saw was the one line the reference
+           never draws. Empty, not removed from the component: three other
+           callers of TemplateLibrary are not the builder. */
+        eyebrow=""
         open
         onClose={onClose}
         product="oliver"
-        eyebrow="OLIVER · Document builder"
         title="Start your document"
         subtitle="Every one of these opens in your colours with your details already on it. Pick the one closest to the job, change anything, and save it as your own."
         entries={libraryEntries}
@@ -997,38 +1236,64 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
         open
         onClose={onClose}
         adapter="proposal"
+        /* D-30's rule, in the one adapter that never took it up (R-1.4).
+           Without this the engine's own noun is "page", so the Add-section
+           pop-up offered "A ready-made page part" on a document somebody
+           signs, and the Page group offered to "Start a new page here" in the
+           engine's words rather than this builder's. */
+        copy={{
+          noun: "document",
+          nounPlural: "documents",
+          audience: "the customer who reads it",
+          paneHeading: "Add to this document",
+          paneHint: "Click one to add it where you are, or drag it onto the document.",
+          outlineHeading: "This document, top to bottom",
+          defaultFontLabel: "This document's own font",
+          pageBreakLabel: "Start a new page here",
+          emptyHeading: "What goes in this document?",
+          emptyHint: "Pick one to start. You can add the rest after.",
+          lockedReason: "This part has to stay on the document. You can change the wording inside it, but it cannot be removed.",
+        }}
         resetKey={resetKey}
-        eyebrow={revision
-          ? `OLIVER · Revision v${revMeta?.document_version ?? 2}${revMeta?.requested_by === "customer" ? " · asked for by the customer" : ""}`
-          : "OLIVER · Document builder"}
+        /* THE EYE IN THE BAR (D-172, round 2). `BuilderFrame` has drawn one
+           all along for any adapter that hands in a preview; the proposal
+           builder never did, so the reference's own Preview Changes button
+           was missing from the one builder the owner opens first. */
+        onPreviewDoc={() => setPreviewing(true)}
+        /* THE ADD AREA'S THIRD ROUND BUTTON and the Structure window's own
+           AI icon (D-172, round 2). The reference has a pink "Build with AI"
+           as the third button in its add area and an `ai-titles` icon in its
+           navigator's title bar; ours is Ask ARGUS in both, opening the SAME
+           door the bar's button opens. One door, three ways to it. */
+        onAskArgus={() => setAskOpen(true)}
+        /* OUR ANGIE: one door to the AI, in the bar (D-172). */
+        askArgus={
+          <button type="button" data-builder-argus onClick={() => setAskOpen(true)}
+            title="Ask ARGUS"
+            aria-label="Ask ARGUS"
+            style={{
+              display: "inline-flex", alignItems: "center", justifyContent: "center",
+              width: 28, height: 28, borderRadius: 4, border: "1px solid rgba(255,255,255,0.25)",
+              background: "transparent", color: "#FEC82C", cursor: "pointer",
+            }}>
+            <Sparkles size={15} />
+          </button>
+        }
         title={
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Title this document — e.g. Commercial Service Agreement"
-            title="The document's title. The customer sees it in their email and at the top of the page."
+            /* TWO WORDS (D-172, round 2). Every tooltip in the reference's bar
+               is one or two: Add Element, Angie, Page Settings, Finder,
+               Structure, Preview Changes, Save Options — driven 2026-09-19.
+               Ours explained what a title is, in a sentence, in the bar. */
+            title="Document Name"
             style={{
               background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
               color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 420, padding: "0 0 2px",
             }}
           />
-        }
-        subtitle={
-          <>
-            {/* Who it actually went to — the recorded send, not the contact
-                the row happens to point at now (scope 2026-10-01 §5). */}
-            {sentTo.length > 0 && (
-              <div data-sent-to="1" style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", marginBottom: 2 }}>
-                {sentToLine(sentTo)}
-              </div>
-            )}
-            <CustomerBar
-              search={contactSearch} onSearch={setContactSearch}
-              contact={contact} contacts={contacts}
-              onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
-              locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
-            />
-          </>
         }
         doc={doc}
         onChange={setDoc}
@@ -1040,15 +1305,36 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
         /* N-1 — the engine's problems mechanism, on the surface that needed it
            most. The counter in the pane, the jump, and the refusal beside the
            button that was pressed all come from these three props. */
-        problems={problems}
         refusal={refusal}
         onDismissRefusal={() => setRefusal(null)}
-        /* The engine scrolls the page to the blank; only this adapter knows
-           that the box it is typed into is in its own Details group. */
-        onFocusProblem={(problem) => {
-          const token = problem.id.startsWith("blank:") ? problem.id.slice(6) : "";
-          if (token) setFocusToken(token);
+        /* Clicking the chip the renderer draws round an unfilled merge tag is
+           how a value with no record behind it is typed (11.13.2 item 3). */
+        onTokenClick={(token) => setEditingToken(token)}
+        /* 11.13.2 item 4 — the two product tiles open the ONE picker instead
+           of inserting a widget. `false` is the engine's own "I handled it". */
+        onInsertWidget={(def) => {
+          if (!isPickerTile(def.kind)) return true;
+          setPickingCatalogue(def.kind as CatalogueTileKind);
+          return false;
         }}
+        /* THE NINE SECTION TEMPLATES (D-168). Add section — Template shows
+           exactly the offer file's list, and every one of them is a Container
+           tree of normal widgets the author can take apart. */
+        premade={PROPOSAL_SECTION_TEMPLATES}
+        premadeTags={SECTION_TEMPLATE_TAGS}
+        /* ...and placing **Terms and conditions** opens the clause picker, which
+           is where the deleted Terms TILE went. What it drops is still plain
+           Heading + Text Editor, with no live link back to the library: a term
+           somebody signed must not change because the library did. */
+        onPlaceSection={(t) => {
+          if (t.key === CLAUSE_TEMPLATE_KEY) setPickingTerms(true);
+          return true;
+        }}
+        onSelectionChange={(s) => setSelection(s ?? null)}
+        /* THE CARET FOLLOWS A PICK (R2-3). The other half of the line
+           above: what THIS adapter put on the page, handed to the engine so
+           it finishes the insert the way it finishes its own. */
+        selectLanded={pickLanded}
         /* N-2 — Ctrl+S. The "?" panel advertises it in every builder and this
            was the one that did not honour it. Save draft, which is what the
            other three do: it saves and stays open. */
@@ -1100,14 +1386,6 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
           if (id === "ask-argus") setAskOpen(true);
         }}
         onOpenTemplate={(t) => { const full = savedTemplates.find((x) => x.id === t.id); if (full) startFromSaved(full); }}
-        nextUp={null}
-        askArgus={
-          <button type="button" onClick={() => setAskOpen(true)}
-            title="Ask ARGUS to write, rewrite or build a section. Uses AI credits."
-            style={goldBtn}>
-            <Sparkles size={12} /> Ask ARGUS
-          </button>
-        }
         widgetExtras={(w, sectionId) => (
           <WidgetExtras
             widget={w} sectionId={sectionId} doc={doc} onChange={setDoc}
@@ -1155,20 +1433,50 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
           />
         )}
         headerActions={
-          revision ? (
+          <>
+            {/* THE CUSTOMER PICKER — one of the agreed differences from the
+                reference (D-165 (c)): the reference editor has no customer to
+                choose. It used to ride in the modal's `subtitle`, which the
+                reference bar has no room for, so it is a control in the bar. */}
+            {/* Who it actually went to — the recorded send, not the contact
+                the row happens to point at now (scope 2026-10-01 §5). */}
+            {sentTo.length > 0 && (
+              <div data-sent-to="1" title={sentToLine(sentTo)}
+                style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", maxWidth: 260, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {sentToLine(sentTo)}
+              </div>
+            )}
+            <CustomerBar
+              search={contactSearch} onSearch={setContactSearch}
+              contact={contact} contacts={contacts}
+              onPickContact={(id) => { setContactId(id); setPickedContact(contacts.find((c) => c.contact_id === id) || null); }}
+              locations={locations} picked={pickedLocationIds} onPickLocations={setPickedLocationIds}
+            />
+            {revision ? (
             <>
               <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
                 title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
                 <Sparkles size={13} /> Ask ARGUS
               </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => saveRevision(false)} disabled={busy} style={ghostBtn}
-                title="Save your changes without sending. The builder stays open and the customer still sees the version they were sent.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => { void saveRevision(false).then(() => onClose()); }}
-                disabled={busy} style={ghostBtn} title="Save and go back to the document.">
-                Save and close
-              </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => { void saveRevision(false); }} disabled={busy}
+                  title="Save Draft">
+                  {busy ? "Working…" : "Save Draft"}
+                </button>
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => { void saveRevision(false).then(() => onClose()); }} disabled={busy}
+                  title="Save and Close">
+                  Save and Close
+                </button>
+                {/* The reference's View Page, in both menus, so the two menus
+                    hold the same rows for the same job. */}
+                <button type="button" data-view-page="1" data-builder-anchor="preview" style={saveRow}
+                  onClick={() => setPreviewing(true)} disabled={busy}
+                  title="View Page">
+                  View Page
+                </button>
+              </SaveOptions>
               <button type="button" data-builder-anchor="send" onClick={() => saveRevision(true)} disabled={busy || diff.identical} style={orangeBtn}
                 title={diff.identical
                   ? "Nothing has changed yet — edit the document first"
@@ -1180,35 +1488,68 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setAskOpen(true)} style={goldBtn}
-                title="Ask ARGUS to write, rewrite or build a section. Uses AI credits.">
-                <Sparkles size={13} /> Ask ARGUS
-              </button>
-              <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate}
-                onClick={() => setNamingTemplate(true)} disabled={busy} style={ghostBtn}
-                title="Save this document's sections as a template you can start from next time">
-                Save as template
-              </button>
-              <button type="button" data-save-draft="1" data-builder-anchor="save" onClick={() => save(false, false)} disabled={busy} style={ghostBtn}
-                title="Save your work and carry on. The builder stays open.">
-                {busy ? "Working…" : "Save draft"}
-              </button>
-              <button type="button" data-save-close="1" data-builder-anchor="save-close" onClick={() => save(false, true)} disabled={busy} style={ghostBtn}
-                title="Save and go back to the list. You can open it again from the row.">
-                Save and close
-              </button>
+              {/* THE VERB, AND ONE CHEVRON BESIDE IT (D-172).
+                  The reference editor's bar ends with Publish and a "Save
+                  Options" chevron holding Save Draft, Save as Template and
+                  View Page. Ours had three flat buttons in the strip —
+                  "Save as template", "Save draft", "Save and close" — which is
+                  three of the four widest things in the bar. Ask ARGUS moved
+                  to the bar's own AI position, where the reference keeps
+                  Angie. */}
+              {/* ONE WORD ON THE VERB (D-172, round 3). DRIVEN: the
+                  reference's verb button reads "Update" and carries
+                  `title="Publish"` — one word, the action, no sentence, and no
+                  tooltip node of its own while hovering. Ours carried "Email
+                  the customer a link to this document", a sentence on the
+                  widest button in the bar. The blanks warning stays: that one
+                  says why the button will not do what it says. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-                title={blanks.length
-                  ? `${blanks.length} detail(s) are still blank`
-                  : attachedProjectId
-                    ? "Choose who on the project gets it, then email them a link to this document"
-                    : "Email the customer a link to this document"}>
+                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Send"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
+              <SaveOptions busy={busy}>
+                <button type="button" data-save-draft="1" data-builder-anchor="save" style={saveRow}
+                  onClick={() => save(false, false)} disabled={busy}
+                  title="Save Draft">
+                  {busy ? "Working…" : "Save Draft"}
+                </button>
+                {/* SAVE AND CLOSE STAYS, and it is THE SCREEN LAW that keeps
+                    it: `builder-elementor-screen.test.mjs` pins this row as a
+                    MENU row (that was D-36, and the law's own point is that
+                    the three save actions are rows in one chevron rather than
+                    three flat buttons in the strip). The round-2 sheet asked
+                    for it to be swapped for View Page; that would need the law
+                    edited, so View Page is ADDED beside it and the extra row
+                    is recorded as a difference instead. */}
+                <button type="button" data-save-close="1" data-builder-anchor="save-close" style={saveRow}
+                  onClick={() => save(false, true)} disabled={busy}
+                  title="Save and Close">
+                  Save and Close
+                </button>
+                <button type="button" data-builder-anchor={PROPOSAL_ANCHORS.saveTemplate} style={saveRow}
+                  onClick={() => setNamingTemplate(true)} disabled={busy}
+                  title="Save as Template">
+                  Save as Template
+                </button>
+                {/* THE REFERENCE'S THIRD ROW (D-172, round 2) — it shows the
+                    document as its reader gets it. The eye in the bar is the
+                    other door to it, and both run the SAME preview. */}
+                <button type="button" data-view-page="1" data-builder-anchor="preview" style={saveRow}
+                  onClick={() => setPreviewing(true)} disabled={busy}
+                  title="View Page">
+                  View Page
+                </button>
+              </SaveOptions>
             </>
-          )
+            )}
+          </>
         }
-        paneHeader={
+        /* PAGE SETTINGS (§11.13.1 item 2). The left panel is the widgets panel
+           and nothing else, so what is true of the DOCUMENT — what it totals,
+           that it saved, what the customer asked to change — is the right-hand
+           panel with nothing selected. The Inspector decides that, once, for
+           every adapter; this slot just hands it the words. */
+        documentExtras={
           <div style={{ fontSize: 11, color: "#5A7A8A", lineHeight: 1.4 }}>
             {/* THE SAME RULE THAT KEEPS THE TOTAL OFF THE PAPER (D-164).
                 `withTotalBeforeSignature` obeyed `pricedOnOneBasis` and this
@@ -1224,18 +1565,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
                 ? PER_EVENT_SENTENCE
                 : totals.total > 0 ? `Total ${money(totals.total, ctx.currency)}` : "No priced lines yet"}
             </div>
-            {/* D-35's chip row LIVED HERE and is deleted: the engine's own
-                "N details still to fill in / Take me to the first one" button
-                (LeftPane, from `problems`) is the one counter now, and two
-                counters over one fact is how they start disagreeing. The
-                Details BOXES stay — the list says what is missing, the boxes
-                are where it is typed. */}
-            <DetailsGroup
-              rows={details}
-              onSet={setDetail}
-              focusToken={focusToken}
-              onFocused={() => setFocusToken(null)}
-            />
+            {/* THE DETAILS GROUP LIVED HERE AND IS DELETED (11.13, 2026-09-19).
+                Brandon: "You have all this random details on the side. I never
+                asked for any of that." Every blank is typed where it appears
+                on the page now — the chip is the control — and the COUNTER
+                went with the boxes: there is no "N details still to fill in"
+                button anywhere. Send is the one refusal, it names the blanks
+                in plain words and it jumps to the first one ON THE PAGE.
+                Nothing renders a list of boxes. */}
             {saved && (
               <div data-saved-tick="1" style={{ color: "#047857", marginTop: 6, fontWeight: 600 }}>
                 ✓ {saved}
@@ -1257,6 +1594,106 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
           </div>
         }
       />
+
+      {/* 11.13.2 item 4 — the ONE catalogue picker, multi-select, opened by
+          the Product Cards / Product Line Items tiles. What it drops is atomic
+          `catalog_card` / `price_line` widgets, never a "products" widget. */}
+      {pickingCatalogue && (
+        <IadmModal
+          open
+          size="info"
+          product="oliver"
+          eyebrow="OLIVER · Products & services"
+          title={pickingCatalogue === "product_cards" ? "Add product cards" : "Add priced lines"}
+          onClose={() => setPickingCatalogue(null)}
+        >
+          <div style={{ padding: 16 }}>
+            <CatalogueMultiPicker
+              offerings={offerings}
+              loading={catalogueLoading}
+              what={pickingCatalogue === "product_cards" ? "cards" : "lines"}
+              onCancel={() => setPickingCatalogue(null)}
+              onAdd={(picks) => {
+                const nodes = nodesForPicks(pickingCatalogue, picks);
+                if (!nodes.length) { setPickingCatalogue(null); return; }
+                /* WHERE AN INSERT GOES (G-2), AND WHERE THE CARET GOES AFTER
+                   IT (R2-3). The engine's one placement rule: into the
+                   selected container, after the selected widget, or into the
+                   section the author is in — and then the caret sits on the
+                   last thing that landed, so the next thing goes after it and
+                   not above it. One Undo still takes the whole pick back,
+                   because the document is applied once. */
+                placePicked(nodes as Widget[],
+                  pickingCatalogue === "product_cards" ? "What we recommend" : "Your pricing");
+                setPickingCatalogue(null);
+                setSaved(`Added ${nodes.length === 1 && pickingCatalogue === "product_cards" ? picks.length : nodes.length} from your catalogue.`);
+              }}
+            />
+          </div>
+        </IadmModal>
+      )}
+
+      {/* 11.13.2 item 5 — Terms: pick saved clauses, and they land as plain
+          Text Editor widgets. No live link back to the library: a term
+          somebody signed must not change because the library did. */}
+      {pickingTerms && (
+        <IadmModal
+          open
+          size="info"
+          product="oliver"
+          eyebrow="OLIVER · Your saved terms"
+          title="Add terms"
+          onClose={() => setPickingTerms(false)}
+        >
+          <div style={{ padding: 16 }}>
+            <ClausePicker
+              clauses={clauses}
+              onCancel={() => setPickingTerms(false)}
+              onAdd={(picked) => {
+                const nodes = nodesForClauses(picked);
+                if (!nodes.length) { setPickingTerms(false); return; }
+                // Where an insert goes, and where the caret goes after it, for
+                // the same reason as the catalogue above: a term picked with
+                // the caret in a container belongs in that container, not in a
+                // new section at the end — and the next one belongs after it.
+                placePicked(nodes as Widget[], "Terms");
+                setPickingTerms(false);
+                setSaved(`Added ${picked.length} term${picked.length === 1 ? "" : "s"}. They are ordinary text now — edit them however you like.`);
+              }}
+            />
+          </div>
+        </IadmModal>
+      )}
+
+      {/* 11.13.2 item 3 — a fact that lives in no record, typed where it is.
+          ONE box, opened by clicking the chip on the page or by the Send
+          refusal's jump, writing the ONE store (`settings.merge`). */}
+      {editingToken && (
+        <TokenBox
+          token={editingToken}
+          label={plainLabel(editingToken, detailLabels)}
+          help={declaredDetails(doc)[editingToken]?.help || tokenHelp(editingToken)}
+          value={mergeValues(doc)[editingToken] || ""}
+          onSet={(v) => setDoc((d) => setMergeValue(d, editingToken, v))}
+          onClose={() => setEditingToken(null)}
+        />
+      )}
+
+      {/* PREVIEW CHANGES (D-172, round 2) — the document as its reader gets
+          it, through the ONE renderer in `view` mode. Not a second view of the
+          document: the same `renderDocument` the sent copy and the PDF are
+          built from, with the same context, so a preview that looks right and
+          a send that does not is impossible by construction. */}
+      {previewing && (
+        <IadmModal open onClose={() => setPreviewing(false)} product="oliver" eyebrow=""
+          title={title.trim() || "Preview"} size="builder" z={70}>
+          <div data-proposal-preview style={{ overflowY: "auto", height: "100%", background: "#E6ECF1", padding: "24px 0" }}>
+            <style>{DOCUMENT_CSS}</style>
+            <div style={{ width: "min(860px, 92%)", margin: "0 auto", background: "#fff", padding: 32, boxShadow: "0 8px 24px rgba(0,0,0,0.08)" }}
+              dangerouslySetInnerHTML={{ __html: renderDocument(doc, { ...ctx, mode: "view" }) }} />
+          </div>
+        </IadmModal>
+      )}
 
       {/* "Who gets this?" — a project's proposal is sent to the people ticked
           here, pre-ticked by the contractual rule (approver, else billing,
@@ -1421,6 +1858,26 @@ function CustomerBar({
   const label = (c: ContactRow) =>
     c.company_name || [c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || "";
 
+  /* FOUND BY DRIVING IT (D-172, 2026-09-19, :5189 at 1600x1000): with no
+     customer chosen this drew the search box AND all twenty-five matches, open,
+     in the top bar — because the list rendered on `contacts.length > 0` and
+     nothing else. It used to sit in the modal's subtitle, which had a row to
+     itself; the reference bar has one row. It is a PILL until it is pressed. */
+  if (!contact && !open) {
+    return (
+      <button type="button" data-customer-pill onClick={() => setOpen(true)}
+        title="Choose Customer"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5, flex: "0 0 auto",
+          background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
+          border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px",
+          fontSize: 11, cursor: "pointer",
+        }}>
+        <UserRound size={12} /> Choose customer
+      </button>
+    );
+  }
+
   if (contact && !open) {
     return (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -1464,17 +1921,19 @@ function CustomerBar({
       <UserRound size={12} />
       <input
         value={search}
-        autoFocus={open}
+        autoFocus
+        onBlur={() => window.setTimeout(() => setOpen(false), 150)}
         onChange={(e) => onSearch(e.target.value)}
         placeholder="Type a customer's name…"
-        title="Choose the customer once. Every merge field on the page fills from this."
+        title="Choose Customer"
         data-customer-search="1"
         style={{
           background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
           border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px", fontSize: 11, width: 240, outline: "none",
         }}
       />
-      {contacts.length > 0 && (
+      {/* The matches drop only while the box is being used. */}
+      {open && contacts.length > 0 && (
         <span style={{
           position: "absolute", top: "100%", left: 20, zIndex: 20, marginTop: 4, background: "#fff",
           border: "1px solid #CBD5E1", borderRadius: 6, boxShadow: "0 8px 24px rgba(0,0,0,.18)",
@@ -1557,8 +2016,12 @@ function WidgetExtras({
   // A property block needs BOTH: which location it is, and what is being done
   // there. The location picker used to sit in a later branch that an early
   // return never reached, so a block could be priced but never placed.
+  /* ONE "Which location" CONTROL, for every widget that is about a site
+     (D-33). 11.13.2's Service Location joins the two the upgrade converts,
+     rather than declaring a second select with the same label two panels
+     apart — which is the exact defect D-33 was opened for. */
   const locationPicker = (widget.kind === "property_plan" || widget.kind === "address_block"
-    || widget.kind === "address_block") ? (
+    || widget.kind === "service_location") ? (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={LBL}>Which location</span>
@@ -1606,6 +2069,46 @@ function WidgetExtras({
       )}
     </div>
   ) : null;
+
+  /* ── 11.13.2 — the three record-bound widgets ────────────────────────── */
+
+  if (widget.kind === CUSTOM_FIELD_KIND) {
+    const choice = choiceOf(p);
+    const retyped = isRetyped(p) && choice ? [choice.field] : [];
+    return (
+      <div data-record-panel={choice ? choice.record : ""} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {/* The ONE location control, shared with every other site widget. It is
+            null unless this field comes out of a SERVICE LOCATION: the document
+            has one customer and one business, chosen in the top bar, and a
+            picker for either would ask a question already answered. */}
+        {choice && choice.record === "service_location" ? locationPicker : null}
+        {/* PUT IT BACK, per field. F.2's own words and F.2's own writer, so a
+            field retyped on a Customer block is undone exactly the way a price
+            retyped on a product card is. */}
+        {retyped.length > 0 ? (
+          <div data-record-overrides="1" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={LBL}>{TYPED_NOT_LIVE}</span>
+            <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
+              These stopped following the record when you typed over them.
+            </div>
+            {retyped.map((key) => (
+              <button key={key} type="button" style={miniBtn} data-put-back={key}
+                title={`${PUT_IT_BACK} — this field follows your own record again`}
+                onClick={() => patch(putCustomFieldBackProps(p))}>
+                {PUT_IT_BACK}: {choice ? choice.label : key}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 10, color: "#5A7A8A", lineHeight: 1.4 }}>
+            This comes straight from your own records and changes when the customer
+            does. Type over it on the page and it stops following — you can put it
+            back from here.
+          </div>
+        )}
+      </div>
+    );
+  }
 
   /* ── D-156's atomic widgets ─────────────────────────────────── */
 
@@ -1845,10 +2348,10 @@ function WidgetExtras({
    panel nothing can ever open. */
 
 
-/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1). It was stream B's own
-   scroll-to-the-blank until the engine landed a shared problems mechanism; the
-   engine now selects the widget, scrolls the canvas to it and puts the caret in
-   this adapter's Details box through `onFocusProblem`. One jump, not two. */
+/* `scrollToToken` LIVED HERE and is deleted (A-1 / N-1), and so is the engine
+   problems feed that replaced it (11.13.2). There is ONE jump on this screen:
+   Send refuses, names the blanks in plain words and opens the box on the first
+   one where it appears on the page. See `takeMeToTheBlank`. */
 
 /* ══════════════════════════════════════════════════════════════════════════
    D-156 — the panels the atomic widgets need, and only the adapter can draw
@@ -1932,6 +2435,18 @@ function TagControls({ widget, patch }: { widget: Widget; patch: (props: Record<
  * "bullets" are the model's words rather than the author's. One map, beside
  * the sentence that reads them.
  */
+/**
+ * PLAIN WORDS FOR ONE RECORD FIELD — the label the page itself prints.
+ *
+ * "Put it back: name" was the raw key on a screen, which is the thing
+ * `plainLabel` exists to stop happening to merge tokens and had no equivalent
+ * here. The widget's own field list already holds the words, so there is one
+ * place they are written and the panel and the page cannot disagree.
+ */
+/* `recordFieldLabel` LIVED HERE and is DELETED (D-167). A Custom Field knows
+   its own field, so the panel reads the choice's label and there is nothing
+   to look up. */
+
 function plainFieldName(key: string): string {
   const NAMES: Record<string, string> = {
     title: "the name", heading: "the name",
@@ -2294,91 +2809,147 @@ function declaredDetails(doc: BuilderDocument): Record<string, { label: string; 
   return out;
 }
 
+/* THE DETAILS GROUP LIVED HERE AND IS DELETED (scope 11.13, 2026-09-19).
+
+   A group component drew a box per blank in the left pane. Brandon, on the fifth
+   telling: "You have all this random details on the side. I never asked for
+   any of that. The fields should be dynamic." Replace means delete, so the
+   component, its "N filled" collapse, its focus-a-box effect and the
+   focusToken state that drove it are gone rather than hidden behind a flag.
+
+   What a person does instead: a fact that lives in a RECORD is a Customer /
+   Service Location / Business Info widget that fills itself and is edited on
+   the page (recordWidgets.ts); a fact that lives in NO record is the chip the
+   renderer already draws round an unfilled merge tag, and TokenBox below is
+   the one box that opens when it is clicked. */
+
 /* ══════════════════════════════════════════════════════════════════════════
-   The Details group — D-03's answer
+   THE CLAUSE PICKER — the Terms tile's half (11.13.2 item 5)
    ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * Every blank the document carries, as a box with a plain-word label.
+ * Tick the terms that go on this document.
  *
- * Nothing in here is a token. "Service term starts", "Trigger depth", "Severe
- * event threshold" — the words a home-services owner would use — and one line
- * of help under any the template explained. Filled boxes collapse behind
- * "N filled", so a document with nine merge fields and two blanks shows the
- * two.
+ * Multi-select for the same reason the catalogue picker is: nobody adds one
+ * clause. The Add button says how many, and what lands is a Heading and a Text
+ * Editor per clause — ordinary text from the moment it is placed, which is
+ * what "plain text once placed" means and what stops a signed term changing
+ * because somebody edited the library.
  */
-function DetailsGroup({ rows, onSet, focusToken, onFocused }: {
-  rows: DetailRow[];
-  onSet: (token: string, value: string) => void;
-  focusToken: string | null;
-  onFocused: () => void;
+function ClausePicker({ clauses, onAdd, onCancel }: {
+  clauses: ClauseRow[];
+  onAdd: (picked: ClauseRow[]) => void;
+  onCancel: () => void;
 }) {
-  const [showFilled, setShowFilled] = useState(false);
-  const boxes = useRef<Record<string, HTMLInputElement | null>>({});
-  /* D-164 — A SHIPPED DEFAULT IS NOT HIDDEN BEHIND "1 filled". The snow & ice
-     agreement arrives with the trigger depth already at "2 inches" and the
-     group opened collapsed, so the one number the cover, the scope and the
-     storm example all quote was out of sight. Decided ONCE, when the rows
-     first arrive, by `detailsStartOpen` — not on every render, or typing into
-     the last blank box would fold the group up under the caret. */
-  const decided = useRef(false);
-
-  useEffect(() => {
-    if (decided.current || !rows.length) return;
-    decided.current = true;
-    if (detailsStartOpen(rows)) setShowFilled(true);
-  }, [rows]);
-
-  useEffect(() => {
-    if (!focusToken) return;
-    const el = boxes.current[focusToken];
-    if (el) { el.focus(); el.select(); }
-    onFocused();
-  }, [focusToken, onFocused]);
-
-  if (!rows.length) return null;
-  const blank = rows.filter((r) => !String(r.value ?? "").trim());
-  const filled = rows.filter((r) => String(r.value ?? "").trim());
-  const shown = showFilled ? rows : blank;
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+  const list = useMemo(
+    () => clauses.filter((c) => !q.trim() || String(c.title || "").toLowerCase().includes(q.trim().toLowerCase())),
+    [clauses, q]);
+  const picked = clauses.filter((c) => ticked.includes(String(c.clause_key)));
 
   return (
-    <div data-details-group="1" style={{
-      marginTop: 8, border: "1px solid #DBE7ED", background: "#fff",
-      borderRadius: 6, padding: "8px 9px",
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 6 }}>
-        <span style={{ ...LBL, color: "#0B1C24" }}>Details</span>
-        {filled.length > 0 && (
-          <button type="button" onClick={() => setShowFilled((v) => !v)}
-            title={showFilled ? "Show only the ones still blank" : "Show the ones already filled in too"}
-            style={{ background: "none", border: "none", color: "#1A7DB5", fontSize: 10, cursor: "pointer", padding: 0 }}>
-            {showFilled ? "Hide the filled ones" : `${filled.length} filled`}
-          </button>
+    <div data-clause-picker="1" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={LBL}>Which terms go on this document</span>
+      <input style={INPUT} value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder="Search your saved terms…" title="Search your clause library" data-clause-search="1" />
+      <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
+        {!clauses.length && (
+          <div style={{ fontSize: 11, color: "#5A7A8A" }}>
+            You have no saved terms yet. Write one on a document and press “Save this clause”, and it is here every time.
+          </div>
         )}
-      </div>
-      <div style={{ fontSize: 10, color: "#5A7A8A", margin: "2px 0 6px", lineHeight: 1.4 }}>
-        These are the blanks on the page. Type them here — never over the top of the words on the document.
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {shown.map((r) => (
-          <label key={r.token} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            <span style={{ fontSize: 11, fontWeight: 600, color: "#0B1C24" }}>{r.label}</span>
-            <input
-              ref={(el) => { boxes.current[r.token] = el; }}
-              data-detail-token={r.token}
-              style={{ ...INPUT, borderColor: String(r.value ?? "").trim() ? "#CBD5E1" : "#F59E0B" }}
-              value={r.value}
-              placeholder={r.help || `Type the ${r.label.toLowerCase()}`}
-              title={r.help || `${r.label} — it fills in wherever the document asks for it`}
-              onChange={(e) => onSet(r.token, e.target.value)}
-            />
-            {r.help && <span style={{ fontSize: 10, color: "#94A3B8" }}>{r.help}</span>}
+        {list.map((c) => (
+          <label key={String(c.clause_key)} data-clause={String(c.clause_key)}
+            style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 11, cursor: "pointer" }}>
+            <input type="checkbox" checked={ticked.includes(String(c.clause_key))}
+              title={`Put “${c.title}” on the page`}
+              onChange={() => setTicked((prev) => (prev.includes(String(c.clause_key))
+                ? prev.filter((k) => k !== String(c.clause_key))
+                : [...prev, String(c.clause_key)]))} />
+            <span>
+              <span style={{ fontWeight: 600, color: "#0B1C24" }}>{c.title}</span>
+              <span style={{ display: "block", color: "#5A7A8A" }}>
+                {String(c.body || "").slice(0, 120)}{String(c.body || "").length > 120 ? "…" : ""}
+              </span>
+            </span>
           </label>
         ))}
-        {!shown.length && (
-          <div style={{ fontSize: 11, color: "#047857" }}>Nothing is blank. This document is ready to send.</div>
+        {!list.length && !!clauses.length && (
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>
         )}
       </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" data-add-terms="1" disabled={!picked.length} style={miniBtn}
+          title={picked.length ? `Put ${picked.length} term(s) on the page as ordinary text` : "Tick a term first"}
+          onClick={() => onAdd(picked)}>
+          {picked.length ? `Add ${picked.length} term${picked.length === 1 ? "" : "s"}` : "Add terms"}
+        </button>
+        <button type="button" style={miniBtn} onClick={onCancel} title="Close without adding anything">Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ONE BOX A BLANK IS TYPED INTO (11.13.2 item 3)
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * A fact that lives in no record — a term date, a trigger depth, payment terms
+ * — has no widget to bind to, so it is a merge token in the sentence that
+ * needs it. The renderer already draws a CHIP round an unfilled token in edit
+ * mode (`tokenChips`, render.ts, D-03). This is what the chip opens.
+ *
+ * ── WHY IT IS A BOX AND NOT A CONTENTEDITABLE RUN ─────────────────────────
+ * The token is INSIDE a run of prose that is itself editable. Making the chip
+ * separately editable would put a second caret target inside the first, and
+ * the paragraph's own read-back (`innerText`) would then carry whatever was
+ * typed into it AS PROSE — destroying the merge field, which is the exact
+ * thing D-03 was opened for. One box, anchored to the page, writing
+ * `settings.merge`; the sentence keeps its token and fills wherever it appears.
+ *
+ * It scrolls the chip into view and highlights it, so "jump to the first
+ * blank" lands somewhere a person can see.
+ */
+function TokenBox({ token, label, help, value, onSet, onClose }: {
+  token: string;
+  label: string;
+  help: string;
+  value: string;
+  onSet: (value: string) => void;
+  onClose: () => void;
+}) {
+  const box = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    box.current?.focus();
+    box.current?.select();
+    const chip = document.querySelector<HTMLElement>(`.bx-tok[data-token="${CSS.escape(token)}"]`);
+    chip?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [token]);
+
+  return (
+    <div data-token-box={token} role="dialog" aria-label={label}
+      style={{
+        position: "fixed", right: 28, bottom: 92, zIndex: 3000, width: 320,
+        background: "#fff", border: "1px solid #CBD5E1", borderRadius: 8,
+        boxShadow: "0 10px 30px rgba(11,28,36,0.18)", padding: "10px 12px",
+      }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24" }}>{label}</span>
+        <button type="button" onClick={onClose} title="Close"
+          style={{ background: "none", border: "none", cursor: "pointer", color: "#5A7A8A", padding: 0 }}>
+          <X size={14} />
+        </button>
+      </div>
+      <div style={{ fontSize: 10, color: "#5A7A8A", margin: "2px 0 6px", lineHeight: 1.4 }}>
+        {help || "It fills in everywhere the document asks for it."}
+      </div>
+      <input ref={box} data-token-input={token} style={INPUT} value={value}
+        placeholder={help || `Type the ${label.toLowerCase()}`}
+        title={`${label} — typed once, filled everywhere it appears`}
+        onChange={(e) => onSet(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") onClose(); }} />
     </div>
   );
 }

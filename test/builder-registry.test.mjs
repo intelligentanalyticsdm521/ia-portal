@@ -22,7 +22,6 @@ import {
   WIDGET_CATEGORIES,
   BUILDER_ADAPTERS,
   widgetsFor,
-  groupForPane,
   widgetTooltip,
   widgetDescription,
   widgetLabel,
@@ -47,7 +46,30 @@ const SRC = path.join(process.cwd(), "src");
  *                exists to delete. `SiteInspectorExtras` renders from the
  *                server's spec; the registry only says what the SECTION is.
  */
-const NO_CONTROLS = new Set(["page_break", "columns"]);
+const NO_CONTROLS = new Set([
+  "page_break",
+  /* OPAQUE is a widget on the CLIENT'S OWN PAGE that arion-api has no row
+     for (B-168, 2026-09-22). It draws a placeholder saying what it is and
+     where to change it, and it is written back to the website byte for
+     byte. A control on it would be a setting for something we cannot read,
+     which is the one thing this widget exists to be honest about. */
+  "opaque",
+  /* INNER SECTION is a LAYOUT PRESET (B-168, family F0). Pressing it inserts a
+     row Container holding two Containers — `registry.LAYOUT_PRESETS` — and
+     from that moment the thing on the page is a container, whose panel is the
+     container's own three tabs. A control on the tile would be a setting for a
+     node that never exists. */
+  "inner-section",
+  /* D-165's three PANEL TILES. They are a catalogue picker with a name and an
+     icon, not a widget with properties: what an author sets is which products
+     or clauses they picked, and the atoms the picker drops carry those. A
+     control on a tile would be a setting for a thing never on the document.
+     See src/builder/proposal/catalogueTiles.ts. */
+  "product_cards", "product_line_items", "terms",
+  /* The four the WordPress plugin draws on the published site. Their settings
+     live in the plugin, which is the one place that can honour them. */
+  "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
+]);
 const isSiteSection = (kind) => kind.startsWith("site_");
 
 describe("every registered widget is complete", () => {
@@ -158,67 +180,89 @@ describe("the description is a sentence a business owner could read", () => {
 });
 
 describe("§3.2's union is registered", () => {
-  // The candidate list from the scope doc, by the kind we settled on.
+  /**
+   * THE VOCABULARY, AS D-165 LEFT IT (§11.13.3).
+   *
+   * This list was §3.2's candidate set and then grew a comment per branch. It
+   * is now the scope's own two lists — Elementor's standard widgets and the
+   * Intelligent Analytics ones — plus the kinds that are UNDERSTOOD and never
+   * offered, each of which is named in `HIDDEN` below with its reason.
+   *
+   * Thirteen kinds that used to be here are DELETED, not hidden: `doc_header`,
+   * `footer_note`, `merge_field`, `property_plan`, `pricing_table`, `callout`,
+   * `key_value_table`, `key_fact`, `address_block`, `map`, `columns`, and the
+   * old `testimonial` / `icon` entries, which are now declared in their own
+   * files. `upgrade.ts` converts every stored one on open and
+   * `test/builder-widget-set.test.mjs` proves nothing is lost.
+   */
   const REQUIRED = [
-    "heading", "paragraph", "image", "button", "divider", "spacer", "list",
-    "key_value_table", "data_table",
-    "callout", "totals", "signature", "footer_note", "merge_field", "form",
-    "map", "video", "social_links", "countdown", "testimonial", "logo_strip",
-    "pricing_table", "gallery",
-    // Added 2026-09-16 by §8 — the parts the Rolling In It agreement proved a
-    // document has and a web page does not. Each maps to a numbered item:
-    //   doc_header     §8 item 1 (header/title with style presets)
-    //   clauses        §8 item 3 (numbered clauses from the clause library)
-    //   property_plan  §8 item 5 (property service plan, crew-visible)
-    //   page_break, columns      document layout the canvas needs
-    //
-    // D-156 DELETED FOUR of the kinds this list used to require —
-    // `comparison_cards`, `property_block`, `key_facts` and `priced_line`.
-    // Each was a LUMP: several things locked inside one widget that nobody
-    // could select, move, style or delete on its own. They are `card` /
-    // `catalog_card`, `address_block` + `price_line` + `totals`, `key_fact`
-    // and `price_line` now, each its own widget in its own file, and the
-    // upgrade on the way in converts every stored document. The absence is
-    // asserted below, so a composite cannot quietly come back.
-    "doc_header", "clauses", "property_plan",
-    "page_break", "columns",
-    // Added 2026-09-16 by §5 step 5 — My Brand's Template Studio on the shared
-    // shell. Seven placed OBJECTS a pixel canvas has and a flowing page does
-    // not; the studio's other eight tools are registry entries that already
-    // existed (heading, paragraph, list, image, gallery, divider, button,
-    // callout), which is what stops the studio inventing a ninth vocabulary.
-    "brand_logo", "shape", "icon", "colour_block", "background", "qr_code",
-    "social_handle",
-    // Added 2026-09-16 by §4 step 3 — the WEBSITE adapter. One per ARION
-    // section kind (arion-api sectionSchema.js SECTION_KINDS), pinned against
-    // that list by website-builder.test.mjs through the shared fixture, plus
-    // `site_custom` for a section built on the website itself.
+    /* Not offered and not addable: what a client's page ALREADY holds.
+       `site_custom` carries a section the server could not read at all;
+       `opaque` is one widget inside a section we DID read (B-168). Both are
+       hidden, and both exist so a client's own work is never dropped. */
+    "opaque",
+    // Layout
+    "container", "grid",
+    // Basic
+    "heading", "image", "paragraph", "video", "button", "divider", "spacer", "google_maps", "icon",
+    /* Inner Section — the reference editor lists it under Basic and the offer
+       file offers it on the website and the landing page. It is a layout
+       PRESET: a row Container holding two Containers, which is what an inner
+       section is once the legacy section/column dialect is gone (B-168, F0). */
+    "inner-section",
+    // General
+    "image_box", "icon_box", "star_rating", "image_carousel", "basic_gallery", "list",
+    "counter", "progress_bar", "testimonial", "tabs", "accordion", "toggle",
+    /* ONE Social Icons, and its id is `social_links` (D-168 item 4). Two kinds
+       carried that label; the one that survives keeps the id the shipped
+       templates place and both goldens hold. See `SOCIAL_ICONS_DEF`. */
+    "social_links", "alert", "shortcode", "html", "menu_anchor",
+    /* B-168 f2-pictures: five of Elementor's own, all five in the offer file. The kind is pro_gallery because gallery is the hidden legacy Photo gallery below. */
+    "pro_gallery", "video_playlist", "audio", "lottie", "hotspot",
+    /* B-168 f1-words: the seven Elementor widgets of the words family, every one in the offer file. */
+    "blockquote", "animated_headline", "text_path", "table_of_contents", "code_highlight", "read_more", "sidebar",
+    /* B-168 f3: the five Elementor Pro widgets of the buttons, icons and panels family. */
+    "share_buttons", "call_to_action", "flip_box", "facebook_embed", "facebook_page",
+    /* B-168 f4-moving: Elementor's Progress Tracker, Pro, in the website and landing offers. */
+    "progress_tracker",
+    /* B-168 f5-sliders-reviews: Elementor's sliders and review widgets. ia_reviews is the database twin of Reviews. */
+    "media_carousel", "slides", "testimonial_carousel", "ia_reviews",
+    /* B-168 f6-money: Elementor's Price Table, Price List and the two payment buttons. */
+    "price_table", "price_list", "paypal_button", "stripe_button",
+    /* B-168 f7-data-lists: the Elementor widgets that draw a list out of data, plus the theme pieces the offer file gives the website. */
+    "archive_posts", "author_box", "loop_grid", "portfolio", "post_comments", "post_info",
+    "post_navigation", "posts", "search", "sitemap", "taxonomy_filter", "template",
+    "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title",
+    "theme_archive_title", "theme_post_featured_image", "theme_post_excerpt",
+    /* B-168 f8-contact-furniture: Elementor's Form, Login and Nav Menu. */
+    "login", "nav_menu",
+    // Intelligent Analytics
+    "product_cards", "product_line_items", "totals", "card", "catalog_card", "price_line",
+    "custom_field", "data_table", "clauses", "signature", "page_break",
+    "ia_posts", "reviews", "book_now",
+    /* B-168 F5 - the sliders family. Every one is in the offer file Brandon
+       approved on 2026-09-19 (D-168): Slides, Media Carousel and Testimonial
+       Carousel in the page builders' Pro column, IA Reviews in their IA one. */
+    "testimonial_carousel", "slides", "media_carousel", "ia_reviews",
+    "ia_form", "newsletter_signup", "hours_location",
+    "ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice", "ia_social_links",
+    // The studio's placed objects (§5 step 5). Not one of §11.13.3's four
+    // builders, so they keep their own words.
+    "brand_logo", "shape", "photo_grid", "line", "frame", "ia_review",
+    "colour_block", "background", "qr_code", "social_handle",
+    // Understood, never offered. Each one's reason is in registry.ts.
+    // `data_table` is OFFERED now (the offer file's proposal list), so it
+    // moved up into the Intelligent Analytics block above.
+    "site_custom",
     "site_hero", "site_services", "site_about", "site_pricing", "site_testimonials",
     "site_gallery", "site_team", "site_stats", "site_faq", "site_cta", "site_contact",
-    "site_content", "site_custom",
-    // Added 2026-09-16 by §7 — the email adapter's own parts, and the one a
-    // hosted landing page opens with. Each maps to a line of §7:
-    //   personal_note  "a personal note text widget that supports merge tags"
-    //   article_card   "article card" (the shape a newsletter is made of)
-    //   product_card   "product/pricing card (from Products & Services with
-    //                   cadence)"
-    //   email_footer   "footer with the required unsubscribe + physical
-    //                   address (never removable)"
-    //   hero           the landing page's "hero" in §7's web widget set
+    "site_content",
     "personal_note", "article_card", "product_card", "email_footer", "hero",
-    // Added 2026-09-17 by §11.12 — D-156's ATOMIC widgets, each declared in
-    // its own file under src/builder/widgets/ beside the function that draws
-    // it. They replace the composites: `card` + `catalog_card` for
-    // comparison_cards, `price_line` for priced_line, `address_block` for the
-    // address half of property_block, `key_fact` for a row of key_facts, and
-    // `totals`, which moved out of this file with its new tax / discount /
-    // coupon settings (D-157).
-    "card", "catalog_card", "price_line", "totals", "address_block", "key_fact",
-    // And 2026-09-17 by the conformance pass — catalogue point 9's free HTML
-    // box. The website emitter has published one since stream D; nobody could
-    // ADD one, and 58 of the 64 page bodies on the estate are one of these and
-    // nothing else (catalogue D.2).
-    "html",
+    "form", "gallery", "social_links", "countdown", "logo_strip",
+    /* `terms` WAS HERE and the TILE is DELETED (D-168): the approved offer
+       file does not list it, and the clause picker belongs to the **Terms and
+       conditions** section template now. `clauses` stays a KIND, because the
+       snow agreement places one and D-164 pins its numbering. */
   ];
 
   for (const kind of REQUIRED) {
@@ -277,14 +321,16 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // h, so "how much space below this" and "split this into two columns" have
     // nothing to act on. Naming the four here is what stops a later ALL from
     // quietly putting a spacer back in the Template Studio's pane.
-    for (const kind of ["spacer", "columns", "key_value_table", "data_table"]) {
+    for (const kind of ["spacer", "data_table"]) {
       assert.ok(
         !WIDGETS_BY_KIND[kind].adapters.includes("brand"),
         `${kind} means nothing on an absolute-pixel canvas`,
       );
     }
-    // Space and columns ARE what a flow is, so all four flow builders keep them.
-    for (const kind of ["spacer", "columns"]) {
+    // Space IS what a flow is, so all four flow builders keep it. `columns` is
+    // DELETED (§11.13.1: "No legacy section/column in the panel") — columns are
+    // a Container set to row, or a Grid.
+    for (const kind of ["spacer"]) {
       assert.deepEqual(
         [...WIDGETS_BY_KIND[kind].adapters].sort(),
         ["email", "landing", "proposal", "website"],
@@ -298,7 +344,8 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // is two columns of text, and a data table inside an email's own layout
     // tables is what Outlook reflows worst). registry.ts writes the three
     // reasons down once on SMALL_TABLES; this pins what is LEFT.
-    for (const kind of ["key_value_table", "data_table"]) {
+    // `key_value_table` is DELETED (D-165): a details list is lines of text.
+    for (const kind of ["data_table"]) {
       assert.deepEqual(
         [...WIDGETS_BY_KIND[kind].adapters].sort(),
         ["proposal"],
@@ -307,6 +354,16 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     }
   });
 
+  /* THE `WEBSITE_USES_A_SECTION_INSTEAD` TEST LIVED HERE and is rewritten
+     (D-165). Every kind it named — pricing_table, callout, key_value_table,
+     logo_strip, social_links, form, gallery, data_table, testimonial — is
+     either deleted or no longer a website tile, so the map it read is a map of
+     things that are not on the website pane anyway.
+
+     What still has to be true is the RULE behind it: the website pane offers
+     §11.13.3's list and nothing else. `test/builder-widget-set.test.mjs` pins
+     that list by name and in order, which is a stronger statement than "these
+     nine are absent". */
   test("a job another builder does its own way is not also a loose widget", () => {
     // The union of three branches' decisions, each of which took one builder
     // away from a widget for a reason that builder enforces. Asserted here as
@@ -327,8 +384,13 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // the one way to place a single card. A send keeps its `product_card`
     // composite, which is a LIST of things to show off, beside `catalog_card`,
     // which is ONE catalogue line — two kinds, asserted just below.
-    assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(),
-      ["email", "landing", "proposal", "website"]);
+    /* CHANGED AGAIN 2026-09-19 (D-165, §11.13.3). The IA column for email,
+       website and landing names **Product Cards** — the catalogue picker — and
+       does not name a typed Card. A tile on a list the scope does not have it
+       on is the invention this pass exists to stop, so `card` is the
+       proposal's. The kind is still DRAWN everywhere, so a send or a page that
+       already holds one is unchanged. */
+    assert.deepEqual([...WIDGETS_BY_KIND.card.adapters].sort(), ["proposal"]);
     // `catalog_card` is PROPOSAL-only again (2026-09-17, driven): every surface
     // can draw it, but only the proposal can say WHICH product - the catalogue
     // picker lives in that panel. Offering it in a send gave a card that could
@@ -341,14 +403,28 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     // name — so offering one would be a widget an author can place and never
     // publish. The catalogue asks for two of them on a site; they need the
     // emitter first.
-    assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(),
-      ["email", "landing", "proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.address_block.adapters].sort(),
-      ["email", "landing", "proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.key_fact.adapters].sort(),
-      ["email", "landing", "proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.pricing_table.adapters].sort(), ["proposal"]);
-    assert.deepEqual([...WIDGETS_BY_KIND.callout.adapters].sort(), ["brand", "proposal"]);
+    /* D-165 tightened these to §11.13.3's own lists. Totals is in the
+       PROPOSAL's IA column and nobody else's — a newsletter does not add
+       anything up. `address_block`, `key_fact`, `pricing_table` and `callout`
+       are DELETED; the first became Customer or Service Location by its
+       binding, and those two are the proposal's. */
+    assert.deepEqual([...WIDGETS_BY_KIND.totals.adapters].sort(), ["proposal"]);
+    /* D-167 — and the three that replaced the address block are themselves
+       gone. ONE widget shows one database field.
+
+       THE PROPOSAL AND MY BRAND (2026-09-22), and no more than those two. The
+       rule has not moved: a Custom Field must have a record to read. The
+       proposal has a CUSTOMER picked; the studio has the BUSINESS, and only
+       the business — `StudioBrand.record` from `GET /account/profile`, with
+       the chooser offering that group and saying so. A website page, a hosted
+       landing page and a send still have neither, which is still ask R-D4, and
+       this list is what would go red if somebody gave one of them the tile
+       without giving it a record. */
+    assert.deepEqual([...WIDGETS_BY_KIND.custom_field.adapters].sort(), ["brand", "proposal"]);
+    for (const gone of ["address_block", "key_fact", "pricing_table", "callout",
+      "customer", "service_location", "business_info", "terms"]) {
+      assert.equal(WIDGETS_BY_KIND[gone], undefined, `${gone} must be gone, not hidden`);
+    }
   });
 
   test("a widget no builder offers says so, rather than sitting in a pane", () => {
@@ -364,7 +440,11 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
   });
 
   test("the studio's own tools belong to the studio and nowhere else", () => {
-    for (const kind of ["brand_logo", "shape", "icon", "colour_block", "background", "qr_code", "social_handle"]) {
+    /* `icon` LEFT THIS LIST (D-165). The studio's "Icon" and Elementor's Icon
+       are the same widget — a symbol in a colour — so there is one of them now,
+       in the Basic group, offered to every builder. Two widgets for one job was
+       the collision; one is the fix. */
+    for (const kind of ["brand_logo", "shape", "colour_block", "background", "qr_code", "social_handle"]) {
       assert.deepEqual(WIDGETS_BY_KIND[kind].adapters, ["brand"], `${kind} is a placed object, not page furniture`);
     }
   });
@@ -374,7 +454,19 @@ describe("adapters keep a widget out of a builder that cannot render it", () => 
     const kinds = widgetsFor("brand").map((w) => w.kind);
     for (const kind of [
       "paragraph", "heading", "image", "brand_logo", "shape", "icon",
-      "colour_block", "background", "qr_code", "social_handle", "callout",
+      // `callout` is DELETED and its job is Elementor's **Alert** (D-165).
+      /* `callout` is DELETED and its job is Elementor's **Alert**; the studio's
+         `insertWidget` has no case for one yet, so the tile is not offered here
+         rather than being a button that does nothing (item S2 in the handoff). */
+      /* `colour_block`, `background` and `social_handle` LEFT THIS LIST on
+         2026-09-19 (B-168, D-168). The offer file's My Brand panel is ten
+         Elementor widgets plus five canvas pieces — shape, line, frame,
+         photo_grid, qr_code — and these three are none of them: a brand colour
+         is the background control on any element, and a social handle is a
+         line of text. They stay in the vocabulary (`hidden: true`) so a design
+         already carrying one still draws. `test/builder-offers.test.mjs` is
+         what says which of them may be a tile. */
+      "qr_code",
     ]) {
       assert.ok(kinds.includes(kind), `the studio's pane is missing ${kind}`);
     }
@@ -391,7 +483,11 @@ describe("guided counts — SD-010's \"how many cards?\"", () => {
       assert.equal(WIDGETS_BY_KIND[kind], undefined,
         `${kind} is superseded by D-156 and must be gone, not hidden`);
     }
-    for (const kind of ["card", "catalog_card", "price_line", "key_fact"]) {
+    // `key_fact` went the same way in D-165: a key fact is a line of text.
+    for (const kind of ["comparison_cards", "key_facts", "key_fact"]) {
+      assert.equal(WIDGETS_BY_KIND[kind], undefined, `${kind} must be gone, not hidden`);
+    }
+    for (const kind of ["card", "catalog_card", "price_line"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].count, `${kind} is one thing, not a list of them`);
     }
     // AND NOWHERE ELSE: not one widget in the whole registry asks how many of
@@ -418,32 +514,11 @@ describe("guided counts — SD-010's \"how many cards?\"", () => {
 });
 
 describe("the pane groups them", () => {
-  test("groupForPane returns categories in pane order, empties dropped", () => {
-    const groups = groupForPane("proposal");
-    const names = groups.map((g) => g.category);
-    assert.deepEqual(names, WIDGET_CATEGORIES.filter((c) => names.includes(c)));
-    for (const g of groups) assert.ok(g.widgets.length > 0, `${g.category} came back empty`);
-  });
-
-  test("a group only contains widgets that builder may use", () => {
-    for (const g of groupForPane("email")) {
-      for (const w of g.widgets) {
-        assert.ok(w.adapters.includes("email"), `${w.kind} is offered to the email builder and cannot render there`);
-        assert.equal(w.category, g.category);
-      }
-    }
-  });
-
-  test("search matches the DESCRIPTION, not just the label", () => {
-    // Nothing is CALLED "included"; the card's sentence says it. (It used to
-    // be "recommended" against comparison_cards, which D-156 superseded.)
-    const hits = groupForPane("proposal", "included").flatMap((g) => g.widgets.map((w) => w.kind));
-    assert.ok(hits.includes("card"), "searching the words people actually use must work");
-  });
-
-  test("an unmatched search returns nothing rather than everything", () => {
-    assert.deepEqual(groupForPane("proposal", "zzzzz"), []);
-  });
+  /* THE THREE `groupForPane` TESTS LIVED HERE and are DELETED (D-165).
+     That function was registry.ts's own copy of the grouping `widgetTasks`
+     already did, and the two were maintained beside each other. There is one
+     grouping now; `test/builder-widget-set.test.mjs` pins it, by name and in
+     order, for each of the four builders §11.13.3 names. */
 
   test("a picture is a real SVG data URI that decodes", () => {
     const uri = pictureFrom('<rect x="1" y="1" width="2" height="2"/>');
@@ -462,61 +537,84 @@ describe("the pane groups them", () => {
   });
 });
 
-describe("WidgetPane honours SD-010", () => {
+describe("WidgetPane is the widgets panel, and nothing else (D-165)", () => {
   const pane = readFileSync(path.join(SRC, "builder", "WidgetPane.tsx"), "utf8");
-  const picker = readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8");
 
   test("it reads the registry and keeps no list of its own", () => {
-    // §11.10 (D-147): the grouping moved to widgetTasks.ts, which groups the
-    // registry's own widgets by the JOB they do rather than by their category
-    // — and the PICKER calls the same function, so the pane and the "+" can
-    // never offer two different vocabularies. The rule is unchanged: no list
-    // of widgets is written down in this file.
+    // §11.13.1: the grouping moved to widgetGroups.ts, which groups the
+    // registry's own widgets the way the reference editor groups them —
+    // Layout / Basic / General / Intelligent Analytics. There is one caller
+    // now: the pop-up that used to make the same call is deleted, so the
+    // panel has nothing to disagree with. The rule is unchanged: no list of
+    // widgets in this file.
     assert.match(pane, /from "\.\/registry"/);
-    assert.match(pane, /groupByTask\(adapter, query\)/);
+    assert.match(pane, /panelGroups\(adapter, query\)/);
     assert.doesNotMatch(pane, /kind: ?"[a-z_]+"/, "the pane must not name a widget of its own");
   });
 
-  test("every widget button carries a tooltip AND an accessible name", () => {
-    // A LOCKED row says the reason instead, which is the accessible name that
-    // matters when the button cannot be pressed (R-D1).
-    assert.match(pane, /title=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
-    assert.match(pane, /aria-label=\{lock\?\.sentence \|\| widgetTooltip\(w, adapter\)\}/);
+  test("ONLY a locked tile carries a tooltip (D-172, round 2)", () => {
+    // Driven in the reference on 2026-09-19: hovering a tile reports
+    // `titleAttr: null` and no tooltip node anywhere — the name under the icon
+    // is the whole label. Ours put a full sentence on every single tile, so a
+    // panel meant to be SCANNED answered every glance with a paragraph.
+    assert.ok(!/title=\{lock\?\.sentence \|\| widgetTooltip/.test(pane),
+      "the sentence is back on every tile");
+    assert.ok(!/import \{ widgetTooltip/.test(pane), "the pane imports widgetTooltip again");
+    // PRESENT: the accessible name a tile you CANNOT press still needs — the
+    // reason, which is the only place the reference's panel explains itself
+    // (R-D1, and its own locked tile does the same).
+    assert.match(pane, /lock \? \{ title: lock\.sentence, "aria-label": lock\.sentence \}/);
+    assert.match(pane, /\{label\}/);
   });
 
-  test("it renders the picture, the label and the one line — in THIS builder's words", () => {
-    // N-4: the pane reads the resolved sentence, never `w.description`, which
-    // is now a map of one per builder for anything offered in more than one.
-    assert.match(pane, /src=\{w\.picture\}/);
-    assert.match(pane, /\{widgetLabel\(w, adapter\)\}/);
-    assert.match(pane, /\{lock\?\.sentence \|\| widgetDescription\(w, adapter\)\}/);
-    assert.doesNotMatch(pane, /\{w\.description\}/, "the pane prints the raw sentence");
+  test("a tile is an ICON OVER A NAME, two across — no picture, no paragraph", () => {
+    // What the real editor draws, looked at 2026-09-19. The picture strip and
+    // the one-line description are DELETED, not hidden: twenty-six rows of
+    // picture-plus-paragraph is four screens of a panel meant to be scanned.
+    // The sentence is the tooltip, which the test above pins.
+    assert.match(pane, /grid-cols-2/, "tiles are not two across");
+    assert.match(pane, /<WidgetIcon name=\{w\.icon\}/);
+    assert.match(pane, /\{label\}/);
+    assert.doesNotMatch(pane, /w\.picture/, "the picture strip is back");
+    assert.doesNotMatch(pane, /widgetDescription/, "the one-line description is back on the tile");
   });
 
-  test("it groups by the job, with a heading", () => {
-    // WAS `group.category` — "Information" and "Trust" are words a developer
-    // wrote down. §11.10 groups by "Customer & property" and "Products &
-    // services", which are the two sentences the business owner said.
-    assert.match(pane, /\{group\.task\}/);
-    assert.match(pane, /groups\.map\(\(group\)/);
+  test("the groups are ACCORDIONS, in the reference editor's order", () => {
+    assert.match(pane, /data-pane-group-toggle=\{g\.group\}/);
+    assert.match(pane, /aria-expanded=\{isOpen\}/);
+    assert.match(pane, /groups\.map\(\(g\)/);
   });
 
-  test("it has a search box", () => {
+  test("it has a title and a search box, and NOTHING else", () => {
     assert.match(pane, /type="search"/);
-    assert.match(pane, /aria-label="Search widgets"/);
+    // ABSENT / PRESENT (D-172): the reference editor's own placeholder.
+    assert.doesNotMatch(pane, /aria-label="Search widgets"/, "the search box is ours again");
+    assert.match(pane, /aria-label=\{PANE_SEARCH_PLACEHOLDER\}/);
+    assert.match(pane, /PANE_TITLE/);
+    // §11.13.1: no outline, no totals, no customer box, no templates list,
+    // no "still to fill in" counter, and no slot to inject one through.
+    for (const gone of [/<Navigator/, /data-builder-problems/, /header\?:/, /p\.header/, /hint\?:/]) {
+      assert.doesNotMatch(pane, gone, `the left panel grew something again: ${gone}`);
+    }
   });
 
   /* WAS "a widget with a count is ASKED before it is inserted".
      D-156 item 4 DELETED that control: it asked, before the thing was on the
      page, a number nobody could answer yet, and it only existed because the
      cards inside a composite could not be added or removed afterwards. They can
-     now — a card is a widget with the same duplicate and delete as everything
-     else. The assertion is inverted rather than removed, because "the question
-     is gone" is the thing that has to stay true. */
-  test("the 'how many?' question is gone from BOTH surfaces (D-156)", () => {
-    for (const [name, src] of [["pane", pane], ["picker", picker]]) {
-      assert.doesNotMatch(src, /w\.count\.label/, `${name}: still asks how many`);
-      assert.doesNotMatch(src, /setAsking/, `${name}: still holds the question's state`);
-    }
+     now — a card is a widget with the same duplicate and delete as
+     everything else. The assertion is inverted rather than removed, because
+     "the question is gone" is the thing that has to stay true. */
+  test("the 'how many?' question is gone, and so is the second surface that asked it (D-156)", () => {
+    /* WAS "gone from BOTH surfaces" — the panel and the widget pop-up. The
+       pop-up itself is deleted (2026-09-19), so the pair below is the absence
+       of the file and the absence of the question in the one panel left. */
+    assert.throws(
+      () => readFileSync(path.join(SRC, "builder", "WidgetPicker.tsx"), "utf8"),
+      /ENOENT/, "WidgetPicker.tsx is back, and it is the surface that used to ask");
+    assert.doesNotMatch(pane, /w\.count\.label/, "the pane still asks how many");
+    assert.doesNotMatch(pane, /setAsking/, "the pane still holds the question's state");
+    // PRESENT: pressing a tile inserts, with no question in between.
+    assert.match(pane, /onClick=\{\(\) => \{ if \(!lock\) onInsert\(w\); \}\}/);
   });
 });

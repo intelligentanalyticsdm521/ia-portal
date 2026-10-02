@@ -1,0 +1,313 @@
+{
+ "source": "BUILDER_WIDGET_CATALOG_2026-09-17.elementor.json + .pro.json",
+ "elementor_version": "4.2.4",
+ "note": "Panel order inside a group is Elementor registration order; confirmed against the live Playground editor 2026-09-19.",
+ "groups": {
+  "basic": [
+   {
+    "name": "heading",
+    "title": "Heading"
+   },
+   {
+    "name": "image",
+    "title": "Image"
+   },
+   {
+    "name": "text-editor",
+    "title": "Text Editor"
+   },
+   {
+    "name": "video",
+    "title": "Video"
+   },
+   {
+    "name": "button",
+    "title": "Button"
+   },
+   {
+    "name": "divider",
+    "title": "Divider"
+   },
+   {
+    "name": "spacer",
+    "title": "Spacer"
+   },
+   {
+    "name": "google_maps",
+    "title": "Google Maps"
+   },
+   {
+    "name": "icon",
+    "title": "Icon"
+   }
+  ],
+  "general": [
+   {
+    "name": "image-box",
+    "title": "Image Box"
+   },
+   {
+    "name": "icon-box",
+    "title": "Icon Box"
+   },
+   {
+    "name": "star-rating",
+    "title": "Star Rating"
+   },
+   {
+    "name": "image-carousel",
+    "title": "Image Carousel"
+   },
+   {
+    "name": "image-gallery",
+    "title": "Basic Gallery"
+   },
+   {
+    "name": "icon-list",
+    "title": "Icon List"
+   },
+   {
+    "name": "counter",
+    "title": "Counter"
+   },
+   {
+    "name": "progress",
+    "title": "Progress Bar"
+   },
+   {
+    "name": "testimonial",
+    "title": "Testimonial"
+   },
+   {
+    "name": "tabs",
+    "title": "Tabs"
+   },
+   {
+    "name": "accordion",
+    "title": "Accordion"
+   },
+   {
+    "name": "toggle",
+    "title": "Toggle"
+   },
+   {
+    "name": "social-icons",
+    "title": "Social Icons"
+   },
+   {
+    "name": "alert",
+    "title": "Alert"
+   },
+   {
+    "name": "audio",
+    "title": "SoundCloud"
+   },
+   {
+    "name": "shortcode",
+    "title": "Shortcode"
+   },
+   {
+    "name": "html",
+    "title": "HTML"
+   },
+   {
+    "name": "menu-anchor",
+    "title": "Menu Anchor"
+   },
+   {
+    "name": "sidebar",
+    "title": "Sidebar"
+   },
+   {
+    "name": "read-more",
+    "title": "Read More"
+   },
+   {
+    "name": "rating",
+    "title": "Rating"
+   },
+   {
+    "name": "text-path",
+    "title": "Text Path"
+   },
+   {
+    "name": "contact-buttons",
+    "title": "Single Chat"
+   },
+   {
+    "name": "floating-bars-var-1",
+    "title": "Floating Bar CTA"
+   }
+  ],
+  "layout": [
+   {
+    "name": "container",
+    "title": "Container"
+   },
+   {
+    "name": "container:grid",
+    "title": "Grid"
+   }
+  ]
+ },
+ "all_titles": [
+  "Accordion",
+  "Add To Cart",
+  "Additional Information",
+  "Alert",
+  "Animated Classic",
+  "Animated Headline",
+  "Archive Description",
+  "Archive Posts",
+  "Archive Products",
+  "Archive Title",
+  "Archives",
+  "Audio",
+  "Author Box",
+  "Basic Gallery",
+  "Block",
+  "Blockquote",
+  "Breadcrumbs",
+  "Business Card",
+  "Button",
+  "Calendar",
+  "Call to Action",
+  "Carousel",
+  "Cart",
+  "Categories",
+  "Checkout",
+  "Classic",
+  "Code Highlight",
+  "Component",
+  "Container",
+  "Countdown",
+  "Counter",
+  "Coupon",
+  "Custom Add To Cart",
+  "Custom HTML",
+  "Divider",
+  "Facebook Button",
+  "Facebook Comments",
+  "Facebook Embed",
+  "Facebook Page",
+  "Featured Image",
+  "Flip Box",
+  "Floating Bar CTA",
+  "Form",
+  "Gallery",
+  "Global",
+  "Google Maps",
+  "Grid",
+  "HTML",
+  "Heading",
+  "Hotspot",
+  "IA Mega Menu",
+  "IA Mobile Menu",
+  "IA OLIVER Invoice",
+  "IA Posts",
+  "IA Social Links",
+  "Icon",
+  "Icon Box",
+  "Icon List",
+  "Image",
+  "Image Box",
+  "Image Carousel",
+  "Info Button Box",
+  "Inner Section",
+  "Interactive",
+  "Links",
+  "Login",
+  "Loop Carousel",
+  "Loop Grid",
+  "Lottie",
+  "Media Carousel",
+  "Menu",
+  "Menu Anchor",
+  "Menu Cart",
+  "Meta",
+  "Minimalist",
+  "Mobile Bar",
+  "Multi Chat",
+  "My Account",
+  "Nav Menu",
+  "Navigation Menu",
+  "Off-Canvas",
+  "Page Title",
+  "Pages",
+  "Paragraph",
+  "PayPal Button",
+  "Portfolio",
+  "Portfolio Bio",
+  "Post Comments",
+  "Post Content",
+  "Post Excerpt",
+  "Post Info",
+  "Post Navigation",
+  "Post Title",
+  "Posts",
+  "Price List",
+  "Price Table",
+  "Product Categories",
+  "Product Data Tabs",
+  "Product Images",
+  "Product Meta",
+  "Product Price",
+  "Product Rating",
+  "Product Related",
+  "Product Stock",
+  "Product Title",
+  "Products",
+  "Progress Bar",
+  "Progress Tracker",
+  "Purchase Summary",
+  "Quick Access Bar",
+  "RSS",
+  "Rating",
+  "Read More",
+  "Recent Comments",
+  "Recent Posts",
+  "Resource Box",
+  "Reviews",
+  "SVG",
+  "Search",
+  "Search Form",
+  "Services",
+  "Share Buttons",
+  "Shield Security Plugin Badge",
+  "Short Description",
+  "Shortcode",
+  "Showcase",
+  "Sidebar",
+  "Single Chat",
+  "Site Logo",
+  "Site Title",
+  "Sitemap",
+  "Slides",
+  "Social Icons",
+  "SoundCloud",
+  "Spacer",
+  "Star Rating",
+  "Stripe Button",
+  "Table of Contents",
+  "Tabs",
+  "Tag Cloud",
+  "Taxonomy Filter",
+  "Template",
+  "Testimonial",
+  "Testimonial Carousel",
+  "Text",
+  "Text Editor",
+  "Text Path",
+  "Ticker",
+  "Toggle",
+  "Upsells",
+  "Vertical Links",
+  "Video",
+  "Video Playlist",
+  "WooCommerce Breadcrumbs",
+  "WooCommerce Notices",
+  "WooCommerce Pages",
+  "WordPress Menu",
+  "YouTube"
+ ]
+}

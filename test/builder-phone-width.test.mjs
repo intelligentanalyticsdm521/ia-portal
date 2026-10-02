@@ -145,8 +145,16 @@ describe("one breakpoint set, one preview-width state", () => {
     assert.equal(previewDevice("phone").width, 390);
     assert.equal(previewDevice("tablet").width, 768);
     assert.equal(previewDevice("desktop").width, null);
-    // Every button says what it does. SD-010.
-    for (const d of PREVIEW_DEVICES) assert.ok(d.title.length > 10, `${d.key} has no tooltip`);
+    // Every button says what it does. SD-010 — and, from D-172 round 2, it
+    // says the reference's own name with the breakpoint in it, because
+    // "tablet" is two widths and hiding on one is not hiding on the other.
+    for (const d of PREVIEW_DEVICES) assert.ok(d.title.length > 0, `${d.key} has no tooltip`);
+    assert.deepEqual(PREVIEW_DEVICES.map((d) => d.title),
+      ["Desktop", "Tablet Portrait (up to 1024px)", "Mobile Portrait (up to 767px)"]);
+    for (const clipped of ["Tablet", "Phone"]) {
+      assert.ok(!PREVIEW_DEVICES.some((d) => d.label === clipped),
+        `the clipped device name is back: ${clipped}`);
+    }
   });
 
   test("an unknown device is desktop, not a crash", () => {
@@ -175,7 +183,7 @@ describe("one breakpoint set, one preview-width state", () => {
   });
 
   test("the note above the page says which device and how wide", () => {
-    assert.equal(previewNote("phone", 780), "Phone · 390px");
+    assert.equal(previewNote("phone", 780), "Mobile Portrait · 390px");
     assert.equal(previewNote("desktop", 780), null, "desktop keeps the adapter's own note");
   });
 
@@ -237,28 +245,33 @@ describe("A1 · the document a customer signs on a phone", () => {
   });
 
   test("every table cell carries its own column heading", () => {
-    // The phone stylesheet drops the header row, so the heading has to ride
-    // IN the cell. Emitted on every surface — the canvas, the customer's page
-    // and a printed copy are one document, not three.
+    /* The phone stylesheet drops the header row, so the heading has to ride IN
+       the cell. Emitted on every surface — the canvas, the customer's page and
+       a printed copy are one document, not three.
+
+       This was a `pricing_table`, which D-165 deletes (§11.13.3: "the old
+       pricing table -> Product Line Items"). The one thing on a document that
+       still has columns is the plain **Table**, so it is the one that has to
+       carry them. */
     const d = doc([{
-      kind: "pricing_table",
-      props: { labelService: "Service", labelRate: "Customer rate", rows: [{ name: "Plowing", basis: "Per push", rate: "$185" }] },
+      kind: "data_table",
+      props: { columns: ["Service", "Basis", "Customer rate"], rows: [["Plowing", "Per push", "$185"]] },
     }]);
     const html = renderSection(d.sections[0], view(d));
-    assert.match(html, /<td class="bx-strong" data-label="Service"/);
+    assert.match(html, /<td data-label="Service"/);
     assert.match(html, /data-label="Basis"/);
     assert.match(html, /data-label="Customer rate"/);
   });
 
-  test("a rate card's money columns each carry a label", () => {
-    // This was `property_block`, whose own four-column table is DELETED with
-    // it (D-156): a property is a box now, and what it charges is either a
-    // rate card or a priced line per item. The rate card is the one with
-    // columns, so it is the one that has to name them above each value when
-    // the table stacks on a phone.
+  test("a plain table's columns each carry a label", () => {
+    /* This was `property_block`, then `pricing_table`, and both are DELETED
+       (D-156, then D-165). What is left with columns on a document is the plain
+       **Table**, and it is the one that has to name each column above its value
+       when the table stacks at 390px. The money that used to be in a rate card
+       is priced lines now, and a priced line is not a table at all. */
     const d = doc([{
-      kind: "pricing_table",
-      props: { heading: "What we charge here", rows: [{ name: "Plowing", basis: "per push", rate: "$185.00" }] },
+      kind: "data_table",
+      props: { columns: ["Service", "Basis", "Customer rate"], rows: [["Plowing", "per push", "$185.00"]] },
     }]);
     const html = renderSection(d.sections[0], view(d));
     for (const label of ["Service", "Basis", "Customer rate"]) {
@@ -277,8 +290,15 @@ describe("A1 · the document a customer signs on a phone", () => {
     // `max-width:900px` inline BEATS the stylesheet, so a big picture used to
     // push the whole document sideways on a phone.
     const d = doc([{ kind: "image", props: { src: "https://x.test/a.png", alt: "The yard", width: 900 } }]);
+    /* The style attribute carries more than the width since B-168 wave 2 gave
+       Image Elementor's whole Style tab, so this asks for the two declarations
+       rather than for the exact attribute. The RULE is unchanged and both
+       halves of it are still checked. A stored 900 is still read as pixels —
+       `widthCss` in families/f2-pictures/styling.ts is the one place that is
+       decided, and it says why. */
     const html = renderSection(d.sections[0], view(d));
-    assert.match(html, /style="width:900px;max-width:100%"/);
+    assert.match(html, /width:900px;/);
+    assert.match(html, /max-width:100%;/);
     assert.doesNotMatch(html, /max-width:900px/);
   });
 
@@ -464,20 +484,33 @@ describe("B · the builder itself on a narrow screen", () => {
     assert.match(frame, /\{drawer === "pane" \? p\.pane : p\.inspector\}/);
   });
 
-  test("the bottom bar carries Widgets, Settings, Undo, Redo and the adapter's own buttons", () => {
+  test("the bottom bar carries Widgets, Settings, History and the adapter's own buttons", () => {
     assert.match(frame, /data-builder-slot="bottombar"/);
     assert.match(frame, />\s*Widgets\s*</);
     assert.match(frame, />\s*Settings\s*</);
-    assert.match(frame, /\{undoRedo\("bar"\)\}/);
+    // ABSENT: the Undo / Redo pair. The reference editor's bar has neither
+    // (driven 2026-09-19) — undo is Ctrl+Z and the History panel (D-172).
+    // PRESENT: History, because a drawer layout still needs a thumb-sized way
+    // in to the thing that replaced them.
+    assert.doesNotMatch(frame, /\{undoRedo\("bar"\)\}/, "the undo/redo pair is back in the bottom bar");
+    assert.match(frame, /\{barHistory\(\)\}/);
     assert.match(frame, /\{p\.headerActions\}<\/div>/, "Save and Send have to be reachable by a thumb");
   });
 
-  test("the undo control is DEFINED once and shown in exactly one place", () => {
-    // SD-010's rule, kept while the control moves: one definition, one
-    // rendering — the header when there are panes, the bar when there are not.
-    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 1);
-    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 1);
-    assert.match(frame, /narrow \? null : undoRedo\("header"\)/);
+  test("Undo and Redo are the KEYBOARD, not two buttons in the bar", () => {
+    // ABSENT everywhere in the frame: the reference has no undo control at all.
+    assert.equal((frame.match(/title="Undo \(Ctrl\+Z\)"/g) || []).length, 0,
+      "the Undo button is back in the top bar");
+    assert.equal((frame.match(/title="Redo \(Ctrl\+Shift\+Z\)"/g) || []).length, 0,
+      "the Redo button is back in the top bar");
+    assert.doesNotMatch(frame, /<Undo2\b/, "the undo glyph is back");
+    assert.doesNotMatch(frame, /<Redo2\b/, "the redo glyph is back");
+    // PRESENT: the chords still reach the stack, which is the whole point —
+    // an advertised shortcut that does nothing is the D-18 defect.
+    const map = read("builder/shortcuts.ts");
+    assert.match(map, /"undo"/);
+    assert.match(map, /"redo"/);
+    assert.match(frame, /p\.onShortcut\?\.\(action\)/);
   });
 
   test("every control in the bar is at least 40px — a thumb, not a mouse", () => {

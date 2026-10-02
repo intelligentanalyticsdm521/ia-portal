@@ -47,20 +47,51 @@
  * PURE: strings in, string out. No React, no DOM, no fetch.
  */
 import type { BuilderDocument, Section, Widget } from "../../model";
+/* THE MAILBOX PRIMITIVES, in a module that imports nothing (B-168 wave 2).
+   They left this file so a FAMILY FOLDER can reach them: this file imports
+   `widgets/families`, so a family importing this file closes a cycle and
+   dies with "Cannot access 'F7_DATA_LISTS' before initialization". Same seam,
+   same shape, as the one `builder/esc.ts` closed for the escaper. Re-exported
+   below, so every existing caller is unchanged and there is still ONE of each. */
+import {
+  altTextFor, CONTENT_WIDTH, EMAIL_WIDTH, fluidRow, fontStack as stack, inlineSafe,
+  type FluidCell,
+} from "../../emailBox";
+export { altTextFor, CONTENT_WIDTH, EMAIL_WIDTH, fluidRow, inlineSafe };
+export type { FluidCell };
+
 import { fill, type FillMode, type MergeContext } from "../../merge";
 // THE TREE, read in ONE place (D-156): render.ts owns what a container is,
 // what its layout keys mean and how deep it may go. A mailbox draws it with
 // tables instead of flexbox, which is a difference in PAINT, never in model.
 import {
-  MAX_CONTAINER_DEPTH, childrenOf, containerFlow, containerLayout, isContainer,
-  type LocationLite,
+  MAX_CONTAINER_DEPTH, boldRuns, childrenOf, containerFlow, containerLayout, isContainer,
+  type LocationLite, type RenderContext,
 } from "../../render";
 // ONE catalogue and ONE resolver: the widget's own (stream B), never a second
 // lite shape that resolves a price its own way.
 import {
-  cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
-  snapshotToCardProps, tagOf,
+  addressFields, cardFields, currencyGlyph, priceWithoutSymbol, resolveCatalogCard,
+  snapshotToCardProps, socialRows, tagOf,
 } from "../../widgets";
+/* B-168 / D-168 item 5b — the families' MAILBOX half. One import, one call at
+   the top of the switch below, and no family ever opens this file. */
+import {
+  FAMILY_EMAIL_RENDERED_KINDS, renderEmailFamily, renderFamily, textEmailFamily,
+} from "../../widgets/families";
+/* …and the PAGE renderer as the last resort in the default branch, for a
+   family that is offered in the newsletter and has not written its mailbox
+   half yet. Safe because `checkEmailSafe` runs over every golden case and
+   names the widget that puts flex, grid or a class in a mailbox. */
+/* THE PICTURE READERS, from the family that owns these widgets (B-168 wave 2).
+   `image` and `image_box` were deepened to Elementor's own control keys, so the
+   picture is stored under `image` and the words under `title_text` /
+   `description_text` — and this file was reading `src`, `title` and
+   `description`. Reading through the family's own readers means ONE answer to
+   "what did the author choose" on every surface. */
+import {
+  altOf as picAlt, boxAlt, boxPicture, boxTitle, boxWords, captionOf, pictureOf,
+} from "../../widgets/families/f2-pictures/index";
 import type { CatalogOffering } from "../../../components/oliver/ProposalCatalogPicker";
 import { money, type DocumentTotals } from "../../totals";
 import {
@@ -71,89 +102,16 @@ import {
    The four rules, as constants
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The width every mail client has agreed on. Never exceeded. */
-export const EMAIL_WIDTH = 600;
 
-/** The font stack, in the order a mail client will find one. */
-const FALLBACK_STACK = "Helvetica, Arial, sans-serif";
 
 /** Layout properties no mail client can be trusted with. */
 export const FORBIDDEN_CSS = ["display:flex", "display:grid", "flex-direction", "grid-template", "position:absolute", "position:fixed"];
 
-/**
- * The gap between two things that sit beside each other. One number.
- *
- * Delivered as PADDING inside each column rather than as a spacer cell,
- * because a spacer cell has to become nothing when the columns stack and a
- * padding already is nothing extra.
- */
-const GUTTER = 16;
 
-/**
- * THE fluid-hybrid row — the ONLY way this renderer puts two things beside
- * each other.
- *
- * BUILDER_PLATFORM_SCOPE_2026-09-15 §13.1 rule 3 said 600px and never wider;
- * it did not say what happens at 390, and until 2026-09-16 the answer was
- * "nothing". A two-column section, an article beside its picture and a row of
- * product cards were `<td style="width:48%">`, and a percentage of a phone is
- * still a phone: two 150px columns of 14px text, which is the shape of an
- * email most people delete.
- *
- * Container queries do not exist in a mailbox and half of them strip <style>,
- * so a media query cannot be relied on either. The pattern that has worked
- * everywhere since 2015 is this one:
- *
- *   · each column is an inline-block DIV with `width:100%` and its own
- *     `max-width` in px. Side by side while they fit; wrapped — which is to
- *     say STACKED — as soon as they do not. No query of any kind;
- *   · the wrapping cell is `font-size:0` so the whitespace between two
- *     inline-blocks is not a visible gap, and each div sets its own size back;
- *   · Outlook on Windows ignores inline-block, so a `[if mso]` GHOST TABLE
- *     holds the same columns in a real table for it alone. Every other client
- *     sees the ghost table as a comment.
- *
- * The result is fluid all the way down with no breakpoint to get wrong, which
- * is why this is the one mechanism and there is no second one.
- */
-export interface FluidCell {
-  /** How wide this column may get, in px. The sum should be the content width. */
-  max: number;
-  html: string;
-  /** Editor markers (`data-col`), and only in the editor. */
-  attrs?: string;
-  /** Chrome for the column itself — a card's border, padding and background. */
-  cellStyle?: string;
-}
 
-export function fluidRow(cells: FluidCell[], opts: { margin?: string; gutter?: number } = {}): string {
-  const gutter = opts.gutter ?? GUTTER;
-  const pad = Math.round(gutter / 2);
-  const margin = opts.margin ?? "";
-  const ghostOpen = (c: FluidCell) => `<!--[if mso]><td width="${c.max}" valign="top"><![endif]-->`;
-  const body = cells.map((c, i) => {
-    const open = i === 0
-      ? `<!--[if mso]><table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td width="${c.max}" valign="top"><![endif]-->`
-      : ghostOpen(c);
-    const close = i === cells.length - 1 ? "" : `<!--[if mso]></td><![endif]-->`;
-    return open
-      + `<div${c.attrs || ""} style="display:inline-block;width:100%;max-width:${c.max}px;vertical-align:top;box-sizing:border-box;padding:0 ${pad}px;font-size:15px;line-height:1.6;text-align:left;">`
-      + `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0"><tr><td valign="top"${c.cellStyle ? ` style="${c.cellStyle}"` : ""}>${c.html}</td></tr></table>`
-      + `</div>`
-      + close;
-  }).join("");
-  // align="left" and not "center": side by side the columns fill the row
-  // exactly, so the two are identical there — but a column narrower than the
-  // row (an article's 180px picture) is STACKED on a phone, and a picture
-  // floating in the middle of a left-aligned email reads as a mistake.
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="${margin}"><tr><td align="left" style="font-size:0;line-height:0;">`
-    + body
-    + `<!--[if mso]></td></tr></table><![endif]-->`
-    + `</td></tr></table>`;
-}
 
-/** How wide the words are inside a normal section. The widgets' own assumption. */
-export const CONTENT_WIDTH = EMAIL_WIDTH - 48;
+
+
 
 /* ── One escaper. Same rules as the document renderer's. ─────────────────── */
 export function esc(s: unknown): string {
@@ -261,13 +219,7 @@ export function makeEmailContext(
   };
 }
 
-/** The chosen face, then the ones every client has. Never the same name twice. */
-function stack(face: string): string {
-  const first = String(face || "").trim();
-  const rest = FALLBACK_STACK.split(",").map((s) => s.trim())
-    .filter((s) => s.toLowerCase() !== first.toLowerCase());
-  return [first, ...rest].filter(Boolean).join(", ");
-}
+
 const headStack = (c: EmailRenderContext) => stack(c.headingFont);
 const bodyStack = (c: EmailRenderContext) => stack(c.bodyFont);
 
@@ -289,14 +241,9 @@ const bodyStack = (c: EmailRenderContext) => stack(c.bodyFont);
  * runs and stays that way. This is STRICTER than what the platform does
  * today, where a campaign's content_html is stored and mailed verbatim.
  */
-export function inlineSafe(escaped: string): string {
-  return String(escaped)
-    .replace(/&lt;(\/?)(strong|b|em|i)&gt;/gi, (_m, slash, tag) => `<${slash}${tag.toLowerCase()}>`)
-    .replace(/&lt;br\s*\/?&gt;/gi, "<br />")
-    .replace(/&lt;a href=&quot;((?:https?:\/\/|mailto:)[^"&<>\s]*)&quot;&gt;/gi,
-      (_m, href) => `<a href="${href}" style="color:inherit;text-decoration:underline;">`)
-    .replace(/&lt;\/a&gt;/gi, "</a>");
-}
+/* `inlineSafe` LIVES IN `builder/emailBox.ts` with the rest of the mailbox
+   primitives and is imported at the top of this file. Two waves each moved it
+   out of here, to two different modules; one allowlist, one module. */
 
 /** Merge-fill, escape, then re-permit the six inline tags. */
 function t(text: unknown, c: EmailRenderContext): string {
@@ -317,7 +264,10 @@ function paras(text: unknown, c: EmailRenderContext, path: string, style: string
       ? `<div style="${style}"${edit(path, c, "Type here…")}></div>`
       : "";
   }
-  const blocks = filled.split(/\n{2,}/).map((p) => inlineSafe(esc(p.trim())).replace(/\n/g, "<br />"));
+  /* `boldRuns` is the ENGINE's (render.ts), not a second copy: a short answer
+     reads "**Service term** 1 November" in a mailbox exactly as it does on the
+     page, and `<strong>` is the one tag every mail client on earth draws. */
+  const blocks = filled.split(/\n{2,}/).map((p) => boldRuns(inlineSafe(esc(p.trim()))).replace(/\n/g, "<br />"));
   if (c.mode === "edit") {
     return `<div style="${style}${c.typeCss ?? ""}"${edit(path, c)}>${blocks.map((b) => `<p style="margin:0 0 12px 0;">${b}</p>`).join("")}</div>`;
   }
@@ -338,7 +288,31 @@ export const EMAIL_RENDERED_KINDS = [
   // switch): it was DRAWN and missing from this list, which is the list the
   // suite checks the pane against — so widening the pane found it.
   "container", "card", "catalog_card", "price_line", "address_block", "key_fact", "totals",
+  /* D-165 — the two kinds the DOCUMENT renamed, drawn by the same two
+     functions as before, because a kind with two spellings is still one kind. */
+  "service_location", "customer",
+  /* `grid` is a LAYOUT PRESET and never a stored kind: the tile inserts a
+     `container` laid out as a grid, which `emBox` already draws as a fluid row.
+     Listed so the pane-versus-renderer test can see it is accounted for. */
+  "grid",
+  // D-165 §11.13.3 — the standard set every builder offers, each one drawn
+  // here as a TABLE rather than by the engine (see the switch below).
+  "icon", "icon_box", "image_box", "star_rating", "alert",
+  /* B-168 F5 — the newsletter's IA Reviews. Stacked, never a carousel: a
+     mailbox cannot swipe, so every review is on the page. */
+  "ia_reviews",
 ] as const;
+
+/**
+ * …AND EVERY KIND A FAMILY DRAWS IN A MAILBOX. D-168 item 5b.
+ *
+ * Derived, never typed: a family declares its mailbox renderer beside its page
+ * one and this list follows. `EMAIL_RENDERED_KINDS` above stays the hand-kept
+ * list of what THIS file draws, so a kind in neither still fails by name.
+ */
+export const EMAIL_DRAWN_KINDS: readonly string[] = [
+  ...EMAIL_RENDERED_KINDS, ...FAMILY_EMAIL_RENDERED_KINDS,
+];
 
 /** Deliberately not drawn: `columns` is the SECTION's column count. */
 export const EMAIL_UNRENDERED_KINDS = ["columns"] as const;
@@ -357,11 +331,48 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
   const type = hasStyle(w.style) ? typographyDeclarations(resolveStyle(w.style, "desktop").typography) : [];
   const c: EmailRenderContext = type.length ? { ...outer, typeCss: `${type.join(";")};` } : outer;
   const body = (() => {
-    switch (w.kind) {
+    /* B-168 / D-168 item 5b — THE FAMILIES, BEFORE THIS SWITCH, exactly as
+       LUMEN's `builderEmailRender.js` already asks them.
+       This door was missing and the `default` branch below returns the
+       "needs a newer version" note, which is NOT null — so `render.ts`'s
+       `renderFamily` was never reached in a newsletter and every family widget
+       the offer file gives the newsletter drew that note however well it was
+       built. f1-words (§6.4) and f6-money (§2.1) each found it separately. */
+    /* THE THREE HELPERS A MAILBOX RENDERER CANNOT DO WITHOUT, handed over on
+       the context — 2026-09-19, F5 deep pass.
+       A family folder may not import an adapter (families/types.ts says so, and
+       the import would close the same module cycle `esc.ts` was created to
+       break), so a family that draws a mailbox row had no way to merge-fill,
+       to escape to the mailbox's own allowlist, or to build the font stack. Its
+       choices were a second copy of `inlineSafe` in every family folder, or
+       this. LUMEN's `emailFamilies` already does exactly this, with a lazy
+       `require` of the engine, so there is one pattern and this is the ESM
+       half of it. Data-only fields stay data-only: these three are functions
+       the adapter owns and the family calls, never copies. */
+    const fam = renderEmailFamily(
+      { ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind },
+      { ...c, t, edit, bodyStack } as never,
+    );
+    if (fam != null) return fam;
+    switch (EMAIL_KIND_ALIASES[w.kind] || w.kind) {
       case "container": return emBox(w, c, depth);
       case "card": return emCard(emCardFields(p, c), c, emWidth(c));
       case "price_line": case "priced_line": return emPriceLine(p, c);
+      /* D-165 — the DOCUMENT renamed these two and this surface has not: a
+         proposal's address block is `service_location` now and a key fact is a
+         line of text, and `upgrade.ts` converts every stored one on the way in,
+         including the ones in a stored newsletter. One line each rather than a
+         second renderer, exactly as `price_line` / `priced_line` already do —
+         a kind with two spellings is still one kind. The full rename is item
+         S2 in `overnight-report/D165_HANDOFF_2026-09-19.md`. */
+      case "service_location":
       case "address_block": return emAddress(p, c);
+      /* A TYPED address block upgrades to `customer` (§11.13.3: "address_block
+         -> customer or service_location by its binding"), and a mailbox has to
+         keep drawing it. Same fields, same function — `emAddress` reads
+         `name` / `address` / `contact` / `notes`, and the Customer widget's
+         `billing_address` is read as the address. */
+      case "customer": return emAddress(p, c);
       case "key_fact": return emKeyFact(p, c);
       case "totals": return emTotals(p, c);
       case "heading": return emHeading(p, c);
@@ -386,13 +397,44 @@ export function renderEmailWidget(w: Widget, outer: EmailRenderContext, depth = 
       case "social_links": return emSocial(p, c, ALIGN(p.align, "center"));
       case "email_footer": return emFooter(p, c);
       case "countdown": return emCountdown(p, c);
-      case "testimonial": return emTestimonial(p, c);
-      default:
+      /* D-165 §11.13.3 — the standard set, each one a TABLE.
+       *
+       * THE ENGINE IS NOT ASKED HERE, and that is the decision. A first cut had
+       * the default branch fall back to `renderAtom` so nothing the panel
+       * offered could be silently blank; this suite's own guards refused it by
+       * name — "no mail client is asked to lay out a flex box or a grid" and
+       * "every style is inline; there is no stylesheet and no class". They are
+       * right, and the answer is the other one: a hand-written table renderer
+       * per kind, which is what these five are. */
+      case "icon": return emIcon(p, c);
+      case "icon_box": return emIconBox(p, c);
+      case "image_box": return emImageBox(p, c);
+      case "star_rating": return emStarRating(p, c);
+      case "alert": return emAlert(p, c);
+      default: {
+        /* B-168 §C.1 — THE TEN FAMILIES, asked before giving up.
+         *
+         * THE SAME ONE LINE `render.ts` ALREADY HAS, and the one the seams
+         * pass put in LUMEN's `builderEmailRender.js` and forgot here. Without
+         * it every family widget the offer file gives to the newsletter draws
+         * the "needs a newer version" note in the email builder, however well
+         * it is built — found by building f6-money's Price Table and Price
+         * List and watching the preview refuse them.
+         *
+         * A FAMILY RENDERER REACHING A MAILBOX MUST BE MAILBOX-SAFE: tables,
+         * inline styles, no flex, no grid, no class attribute. That is not a
+         * hope — `checkEmailSafe` runs over every golden case in
+         * test/email-builder.test.mjs and names the widget that breaks it.
+         * A family whose widgets are NOT offered in the newsletter never
+         * reaches this line at all, because the pane never puts them here. */
+        const fam = renderFamily(w, c as unknown as RenderContext);
+        if (fam != null) return fam;
         // Forward compatible, like migration 166's envelope: a widget from a
         // newer editor is INERT in the mailbox and explained on the canvas.
         return c.mode === "edit"
           ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:10px;color:#94A3B8;font-size:11px;font-family:${bodyStack(c)};">This part (“${esc(w.kind)}”) needs a newer version of the builder to show.</div>`
           : "";
+      }
     }
   })();
   if (!body && c.mode !== "edit") return "";
@@ -442,10 +484,27 @@ function emWidth(c: EmailRenderContext): number {
 function emBox(w: Widget, c: EmailRenderContext, depth: number): string {
   if (depth >= MAX_CONTAINER_DEPTH) return "";
   const layout = containerLayout(w);
-  const kids = childrenOf(w);
+  /* WHAT A MAILBOX CAN DO WITH THE REST OF THE CONTAINER PANEL (B-168, F0).
+     It draws the colour, the two gaps and the order; it leaves out the
+     gradient, the film, the slideshow, the overlay, the shape dividers,
+     overflow, position, sticky and the author's own CSS — none of which
+     survives Outlook, which renders through Word. Left out, never half-drawn:
+     a preview that promises a wave and delivers a straight edge is worse than
+     one that never offered it. */
+  const own = resolveStyle(w.style, "desktop");
+  // HIDE ON A COMPUTER, in the one place an email has. A mailbox is a single
+  // width and `resolveStyle` gives it the desktop answer, so a box the author
+  // hid there is not in the email at all — or the switch would lie here.
+  if (own.hidden) return "";
+  const kidsInOrder = childrenOf(w);
+  const kids = layout.reverse ? [...kidsInOrder].reverse() : kidsInOrder;
   if (!kids.length) return "";
   const p: any = w.props || {};
-  const bg = p.background_color ? colour(p.background_color, "") : "";
+  // The author's own background colour first — `props.background_color` is the
+  // older spelling and still arrives on stored documents.
+  // A gradient becomes its FIRST colour, which is the nearest true thing a
+  // mailbox can draw; a film and a slideshow become the colour behind them.
+  const bg = colour(own.background?.color || p.background_color, "");
   // A mailbox has one gap between two things, not a row gap and a column gap:
   // a stack is spaced by the ROW gap and a row by the COLUMN gap, which is
   // what each of those numbers means.
@@ -598,21 +657,29 @@ function emKeyFact(p: any, c: EmailRenderContext): string {
     + `</tr></table>`;
 }
 
-function emAddressLine(loc: LocationLite | undefined): string {
-  if (!loc) return "";
-  const l1 = loc.address_line1 ?? loc.address_line_1;
-  const l2 = loc.address_line2 ?? loc.address_line_2;
-  return [l1, l2, [loc.city, loc.state].filter(Boolean).join(", "), loc.postal_code]
-    .filter((x) => String(x ?? "").trim()).join(" \u00b7 ");
-}
+/* `emAddressLine` LIVED HERE and is DELETED (integration, 2026-09-19).
+   It joined a location's lines with a middot while `locationAddress`
+   (widgets/iaData.ts) joined them with a comma, so one address read two
+   ways depending on which surface drew it. `addressFields` is the one
+   reader and it uses the one formatter. */
 
+/**
+ * ONE READER for what a site block holds (integration, 2026-09-19).
+ *
+ * `addressFields` is the platform's single answer to "what does this widget
+ * say", and it reads all three places a value can be: the record widget's
+ * `overrides`, an older `address_block`'s flat props, and the location the
+ * widget is bound to. This function used to read the flat props only, so a
+ * block converted by the upgrade — which writes `overrides` — mailed a blank
+ * where the address was.
+ */
 function emAddress(p: any, c: EmailRenderContext): string {
-  const loc = c.locations?.[String(p?.locationId || "")];
-  const bound = !!loc;
-  const name = loc?.name || p?.name;
-  const line = emAddressLine(loc) || String(p?.address ?? "");
-  const contact = loc?.site_contact ?? p?.contact;
-  const access = loc?.access_notes ?? p?.access;
+  const f = addressFields(p, c.locations as any);
+  const bound = f.bound;
+  const name = f.name;
+  const line = f.address;
+  const contact = f.contact;
+  const access = f.notes;
   if (!name && !line && !contact && !access) return "";
   const meta = (label: string, value: unknown) => value
     ? `<div style="font-family:${bodyStack(c)};font-size:11px;color:#6B7280;margin-top:3px;"><span style="text-transform:uppercase;letter-spacing:.06em;font-weight:700;">${esc(label)}</span> ${t(value, c)}</div>` : "";
@@ -691,7 +758,9 @@ function emList(p: any, c: EmailRenderContext): string {
  * with images off still learns something. The test refuses `alt=""`.
  */
 function emImage(p: any, c: EmailRenderContext): string {
-  if (!p.src) {
+  const picture = pictureOf(p);
+  const caption = captionOf(p);
+  if (!picture) {
     return c.mode === "edit"
       ? `<div style="border:1px dashed #CBD5E1;border-radius:6px;padding:20px;text-align:center;color:#94A3B8;font-size:12px;font-family:${bodyStack(c)};">Choose a picture in the panel on the right.</div>`
       : "";
@@ -699,10 +768,11 @@ function emImage(p: any, c: EmailRenderContext): string {
   const align = ALIGN(p.align, "center");
   const width = Math.min(EMAIL_WIDTH - 48, Math.max(40, Number(p.width) || EMAIL_WIDTH - 48));
   const alt = esc(altTextFor(p));
-  const img = `<img src="${esc(p.src)}" alt="${alt}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;${align === "center" ? "margin:0 auto;" : ""}" />`;
-  const wrapped = p.url ? `<a href="${esc(p.url)}" style="text-decoration:none;">${img}</a>` : img;
-  const cap = p.caption || c.mode === "edit"
-    ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;text-align:${align};"${edit("caption", c, "Caption (optional)")}>${t(p.caption, c)}</div>` : "";
+  const img = `<img src="${esc(picture)}" alt="${alt}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;outline:none;text-decoration:none;${align === "center" ? "margin:0 auto;" : ""}" />`;
+  const href = p.url || (String(p.link_to ?? "") === "custom" ? p.link : "");
+  const wrapped = href ? `<a href="${esc(href)}" style="text-decoration:none;">${img}</a>` : img;
+  const cap = caption || c.mode === "edit"
+    ? `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;text-align:${align};"${edit("caption", c, "Caption (optional)")}>${t(caption, c)}</div>` : "";
   return `<div style="text-align:${align};margin:0 0 16px 0;">${wrapped}${cap}</div>`;
 }
 
@@ -713,15 +783,10 @@ function emImage(p: any, c: EmailRenderContext): string {
  * the MODEL as well as on the string — the builder warns before the send, and
  * the renderer never emits an empty alt.
  */
-export function altTextFor(p: any): string {
-  const explicit = String(p?.alt ?? "").trim();
-  if (explicit) return explicit;
-  const caption = String(p?.caption ?? "").trim();
-  if (caption) return caption;
-  const name = String(p?.src ?? "").split("?")[0].split("/").pop() || "";
-  const pretty = name.replace(/\.[a-z0-9]+$/i, "").replace(/[-_]+/g, " ").trim();
-  return pretty || "Picture";
-}
+/* `altTextFor` LIVES IN `builder/emailBox.ts` now, with the other mailbox
+   primitives, and is imported at the top of this file. Its ladder is the
+   family's: the author's own words, then the caption, then the file name made
+   readable, then "Picture" — never an empty `alt`. */
 
 /**
  * The button.
@@ -857,7 +922,10 @@ function emProducts(p: any, c: EmailRenderContext): string {
 }
 
 function emSocial(p: any, c: EmailRenderContext, align: string): string {
-  const declared: any[] = Array.isArray(p?.links) ? p.links.filter((l: any) => l?.url) : [];
+  /* BOTH SPELLINGS (D-168 item 4). One widget wears the label Social Icons
+     now; a newsletter saved before the merge stores `links` and a page saved
+     after it stores Elementor's own `social_icon_list`. */
+  const declared: any[] = socialRows(p).filter((l: any) => l?.url || l?.link);
   const links = declared.length ? declared : (c.business.social || []);
   if (!links.length) {
     return c.mode === "edit"
@@ -865,7 +933,7 @@ function emSocial(p: any, c: EmailRenderContext, align: string): string {
       : "";
   }
   const cells = links.slice(0, 8).map((l: any) =>
-    `<td style="padding:0 8px;"><a href="${esc(l.url)}" style="font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.accent};text-decoration:none;">${esc(l.label || "Follow")}</a></td>`).join("");
+    `<td style="padding:0 8px;"><a href="${esc(l.url || l.link)}" style="font-family:${bodyStack(c)};font-size:13px;font-weight:600;color:${c.accent};text-decoration:none;">${esc(l.label || "Follow")}</a></td>`).join("");
   return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="${align}" style="margin:0 auto;"><tr>${cells}</tr></table>`;
 }
 
@@ -887,16 +955,231 @@ function emCountdown(p: any, c: EmailRenderContext): string {
     + `</tr></table>`;
 }
 
-function emTestimonial(p: any, c: EmailRenderContext): string {
-  if (!String(p.quote ?? "").trim() && c.mode !== "edit") return "";
-  const stars = Math.max(0, Math.min(5, Number(p.rating) || 0));
-  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>`
-    + `<td style="padding:14px 16px;background:#F8FAFC;border-left:3px solid ${c.accent};">`
-    + `<div style="font-family:${bodyStack(c)};font-size:15px;line-height:1.6;color:${c.ink};font-style:italic;${c.typeCss ?? ""}"${edit("quote", c, "What they said")}>${t(p.quote, c)}</div>`
-    + (stars ? `<div style="font-family:${bodyStack(c)};font-size:13px;letter-spacing:2px;color:${c.accent};margin-top:6px;">${"&#9733;".repeat(stars)}</div>` : "")
-    + `<div style="font-family:${bodyStack(c)};font-size:12px;color:#6B7280;margin-top:6px;"${edit("attribution", c, "Who said it")}>${t(p.attribution, c)}</div>`
-    + `</td></tr></table>`;
+/* THE MAILBOX HALF OF `testimonial` AND `ia_reviews` MOVED into the
+   f5-sliders-reviews family (D-168 item 5b, deep pass 2026-09-19).
+
+   `emTestimonial` and `emIaReviews` were HERE. The family's definition of
+   Testimonial gained thirty-nine of Elementor's controls in the same pass
+   and this copy knew about none of them: an author who set a size, a
+   weight or a colour watched the canvas change and got none of it in the
+   mail. `familySurfaceGaps()` names exactly that — a widget offered on a
+   surface its family cannot draw on — and the answer is one owner per
+   widget on every surface, not a second renderer here.
+
+   They are `emailTestimonial` in
+   `widgets/families/f5-sliders-reviews/testimonial.ts` and `emailIaReviews`
+   in `.../reviews.ts`, called through `renderEmailFamily` above, which is
+   asked BEFORE this switch. Replace means delete, so the two functions are
+   gone rather than left unreachable.
+
+   THE PLAIN-TEXT HALF OF THE TWO STAYS IN THIS FILE, in the switch at the
+   bottom, and that is deliberate: the default arm reads the words back out
+   of the MARKUP, and this markup writes its stars as `&#9733;`, which
+   `textFromMarkup` does not decode — a plain-text part reading
+   "&#9733;&#9733;&#9733;" is worse than the two hand-written lines. */
+
+/* ══════════════════════════════════════════════════════════════════════════
+   D-165 — the standard widget set, in a mailbox (§11.13.3)
+
+   Icon · Icon Box · Image Box · Star Rating · Alert. Testimonial, Icon List
+   (`list`) and Social Icons (`social_links`) were already here and keep their
+   stored kind ids; the Elementor spellings reach them through ONE alias table
+   (`EMAIL_KIND_ALIASES`), the `price_line` / `priced_line` precedent.
+
+   All five are TABLES with inline styles. None of them uses a border radius,
+   a shadow, a flex box or a background image, because §"what a mailbox
+   allows" is enforced on every one of them by `assertEmailSafe`.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * AN ICON, WHERE THERE IS NO ICON FONT.
+ *
+ * A mailbox has no Font Awesome and a hosted page should not load one to draw
+ * a tick. The website publishes the author's icon NAME as Elementor's own
+ * `fas fa-<name>` (arion `elementorWidgets.js`, which already did exactly
+ * that for an icon box); here the same name becomes a real Unicode character
+ * from a small closed list — the names our own panel offers and nothing else.
+ * A value that is already a character (an emoji, which is what the website
+ * templates have always put in `icon_name`) is passed straight through, and
+ * anything unknown is a filled dot rather than the word "circle".
+ *
+ * Exported because the landing renderer draws the same widget the same way,
+ * and two tables of glyphs is two answers.
+ */
+export const ICON_GLYPHS: Record<string, string> = {
+  check: "✓", star: "★", phone: "☎", envelope: "✉", mail: "✉",
+  "map-marker-alt": "⚑", "map-pin": "⚑", clock: "⏱", "shield-alt": "⛨",
+  heart: "♥", "arrow-right": "→", bolt: "⚡", leaf: "❦", snowflake: "❄",
+  circle: "●", info: "ℹ", "exclamation-triangle": "⚠", times: "✕",
+};
+
+export function iconGlyph(name: unknown): string {
+  const raw = String(name ?? "").trim();
+  if (!raw) return ICON_GLYPHS.circle;
+  const key = raw.toLowerCase().replace(/^fa[srbl]?\s+fa-/, "").replace(/^fa-/, "");
+  if (ICON_GLYPHS[key]) return ICON_GLYPHS[key];
+  // Not one of ours and not an ASCII word: the author typed a character.
+  return /^[a-z0-9 _-]+$/i.test(raw) ? ICON_GLYPHS.circle : raw;
 }
+
+/** Elementor's four alert types, and the two colours each one draws with. */
+export const ALERT_TONES: Record<string, { bg: string; edge: string; ink: string }> = {
+  info: { bg: "#EFF6FF", edge: "#3B82F6", ink: "#1E3A8A" },
+  success: { bg: "#ECFDF5", edge: "#10B981", ink: "#065F46" },
+  warning: { bg: "#FFFBEB", edge: "#F59E0B", ink: "#78350F" },
+  danger: { bg: "#FEF2F2", edge: "#EF4444", ink: "#7F1D1D" },
+};
+
+export function alertTone(v: unknown): { bg: string; edge: string; ink: string } {
+  return ALERT_TONES[String(v ?? "").toLowerCase()] || ALERT_TONES.info;
+}
+
+/** One icon, on its own. `view` is Elementor's: default · stacked · framed. */
+function emIcon(p: any, c: EmailRenderContext): string {
+  const align = ALIGN(p.align, "center");
+  const size = Math.max(10, Math.min(96, Number(p.size) || 28));
+  const colr = colour(p.colour, c.accent);
+  const view = String(p.view || "default").toLowerCase();
+  const glyph = esc(iconGlyph(p.icon));
+  const pad = view === "default" ? 0 : Math.round(size * 0.45);
+  const cell = view === "stacked"
+    ? `background:${colr};color:#FFFFFF;`
+    : view === "framed" ? `border:2px solid ${colr};color:${colr};` : `color:${colr};`;
+  const inner = `<td align="center" valign="middle" style="${cell}padding:${pad}px;font-family:${bodyStack(c)};font-size:${size}px;line-height:1;">${glyph}</td>`;
+  const link = p.url
+    ? `<a href="${esc(p.url)}" style="text-decoration:none;color:inherit;">${glyph}</a>`
+    : null;
+  const body = link
+    ? inner.replace(`>${glyph}<`, `>${link}<`)
+    : inner;
+  return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" align="${align}" style="margin:0 0 12px 0;"><tr>${body}</tr></table>`;
+}
+
+/** The words of an icon box or an image box — one shape, two leading parts. */
+function emBoxWords(p: any, c: EmailRenderContext, align: string): string {
+  /* BOTH SPELLINGS. Elementor's own keys for an Image Box are `title_text` and
+     `description_text`, which is what the panel has written since D-165 and
+     what this file was NOT reading — so an Image Box built in the newsletter
+     builder reached the mailbox with no words at all. `boxTitle` / `boxWords`
+     read the new keys and the old ones, so every stored email is unchanged. */
+  const titleWords = boxTitle(p);
+  const descWords = boxWords(p);
+  const title = titleWords || c.mode === "edit"
+    ? `<div style="font-family:${headStack(c)};font-size:17px;font-weight:700;line-height:1.3;color:${c.ink};text-align:${align};margin:0 0 6px 0;${c.typeCss ?? ""}"${edit("title", c, "A short heading")}>${t(titleWords, c)}</div>`
+    : "";
+  const desc = descWords || c.mode === "edit"
+    ? `<div style="font-family:${bodyStack(c)};font-size:14px;line-height:1.6;color:#374151;text-align:${align};"${edit("description", c, "A line or two about it…")}>${t(descWords, c)}</div>`
+    : "";
+  const words = `${title}${desc}`;
+  const href = p.url || p.link;
+  return href && words ? `<a href="${esc(href)}" style="text-decoration:none;color:inherit;">${words}</a>` : words;
+}
+
+/**
+ * An icon with words. `position` is Elementor's: top · left · right.
+ *
+ * Top is a two-row table; left and right are a two-cell row with a px width
+ * on the icon cell, because a percentage column in Word is a column Word
+ * decides the width of.
+ */
+function emIconBox(p: any, c: EmailRenderContext): string {
+  const position = String(p.position || "top").toLowerCase();
+  const align = ALIGN(p.align, position === "top" ? "center" : "left");
+  const size = Math.max(10, Math.min(96, Number(p.size) || 28));
+  const colr = colour(p.colour, c.accent);
+  const glyph = `<div style="font-family:${bodyStack(c)};font-size:${size}px;line-height:1;color:${colr};text-align:${position === "top" ? align : "center"};">${esc(iconGlyph(p.icon))}</div>`;
+  const words = emBoxWords(p, c, position === "top" ? align : "left");
+  const table = (rows: string) =>
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;">${rows}</table>`;
+  if (position === "top") {
+    return table(`<tr><td style="padding:0 0 10px 0;">${glyph}</td></tr><tr><td valign="top">${words}</td></tr>`);
+  }
+  const iconCell = `<td valign="top" width="${size + 16}" style="width:${size + 16}px;padding:0 12px 0 0;">${glyph}</td>`;
+  const wordCell = `<td valign="top">${words}</td>`;
+  return table(`<tr>${position === "right" ? `${wordCell}${iconCell}` : `${iconCell}${wordCell}`}</tr>`);
+}
+
+/** A picture with words. The same two shapes, with an `<img>` in front. */
+function emImageBox(p: any, c: EmailRenderContext): string {
+  const position = String(p.position || "top").toLowerCase();
+  const align = ALIGN(p.align, position === "top" ? "center" : "left");
+  const width = position === "top"
+    ? Math.min(emWidth(c), Math.max(40, Number(p.width) || emWidth(c)))
+    : Math.max(40, Math.min(240, Number(p.width) || ARTICLE_PIC));
+  const boxSrc = boxPicture(p);
+  const pic = boxSrc
+    ? `<img src="${esc(boxSrc)}" alt="${esc(boxAlt(p))}" width="${width}" style="display:block;width:100%;max-width:${width}px;height:auto;border:0;" />`
+    : (c.mode === "edit"
+      ? `<div style="border:1px dashed #CBD5E1;padding:16px;text-align:center;color:#94A3B8;font-size:12px;font-family:${bodyStack(c)};">Choose a picture in the panel on the right.</div>`
+      : "");
+  const words = emBoxWords(p, c, position === "top" ? align : "left");
+  const table = (rows: string) =>
+    `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;">${rows}</table>`;
+  if (position === "top") {
+    return table(`<tr><td align="${align}" style="padding:0 0 10px 0;">${pic}</td></tr><tr><td valign="top">${words}</td></tr>`);
+  }
+  const picCell = `<td valign="top" width="${width}" style="width:${width}px;padding:0 12px 0 0;">${pic}</td>`;
+  const wordCell = `<td valign="top">${words}</td>`;
+  return table(`<tr>${position === "right" ? `${wordCell}${picCell}` : `${picCell}${wordCell}`}</tr>`);
+}
+
+/**
+ * A star rating.
+ *
+ * Elementor's control is `rating` out of `rating_scale` (5 or 10), and a half
+ * star is a real value there — so a half is drawn as a half, with the same
+ * Unicode the canvas uses rather than a picture a blocked-images mailbox
+ * would eat.
+ */
+function emStarRating(p: any, c: EmailRenderContext): string {
+  const scale = Number(p.scale) === 10 ? 10 : 5;
+  const rating = Math.max(0, Math.min(scale, Number(p.rating ?? scale)));
+  const align = ALIGN(p.align, "left");
+  const colr = colour(p.colour, c.accent);
+  let stars = "";
+  for (let i = 1; i <= scale; i += 1) {
+    stars += rating >= i ? "&#9733;" : (rating >= i - 0.5 ? "&#11242;" : "&#9734;");
+  }
+  const title = p.title || c.mode === "edit"
+    ? `<span style="font-family:${bodyStack(c)};font-size:14px;color:${c.ink};margin-right:8px;"${edit("title", c, "What this is a rating of")}>${t(p.title, c)}</span>`
+    : "";
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 12px 0;"><tr>`
+    + `<td align="${align}" style="font-family:${bodyStack(c)};font-size:18px;line-height:1.2;letter-spacing:2px;color:${colr};">${title}${stars}</td>`
+    + `</tr></table>`;
+}
+
+/**
+ * An alert — what the proposal builder called a call-out (§11.13.3: callout
+ * upgrades to it). Elementor's four types, and a dismiss control that a
+ * mailbox cannot honour, so it is never drawn here.
+ */
+function emAlert(p: any, c: EmailRenderContext): string {
+  const tone = alertTone(p.type);
+  const title = p.title || c.mode === "edit"
+    ? `<div style="font-family:${headStack(c)};font-size:15px;font-weight:700;line-height:1.3;color:${tone.ink};margin:0 0 4px 0;${c.typeCss ?? ""}"${edit("title", c, "What this says")}>${t(p.title, c)}</div>`
+    : "";
+  const body = paras(p.text ?? p.description, c, "text",
+    `font-family:${bodyStack(c)};font-size:14px;line-height:1.6;color:${tone.ink};`);
+  if (!title && !body) return "";
+  return `<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0 0 16px 0;"><tr>`
+    + `<td style="padding:12px 14px;background:${tone.bg};border-left:4px solid ${tone.edge};">${title}${body}</td>`
+    + `</tr></table>`;
+}
+
+/**
+ * ELEMENTOR'S SPELLING → THE KIND WE STORE (§11.13 shared vocabulary).
+ *
+ * "Internal kind ids that exist today KEEP their ids … what changes is the
+ * LABEL, the GROUP and the icon", and the NEW kinds take Elementor's slug.
+ * Three of the standard set already existed under our own name, so the
+ * Elementor slug resolves to the stored kind instead of becoming a second
+ * widget that draws the same thing.
+ */
+export const EMAIL_KIND_ALIASES: Record<string, string> = {
+  text_editor: "paragraph",
+  icon_list: "list",
+  social_icons: "social_links",
+};
 
 /* ══════════════════════════════════════════════════════════════════════════
    The footer that has to be there
@@ -1086,23 +1369,59 @@ ${pre}<table role="presentation" width="100%" cellspacing="0" cellpadding="0" bo
  * classifiers, which is the deliverability lesson this platform already paid
  * for once (ACS quota needs under 2% failure; ours was 22.6%).
  */
+/**
+ * THE WORDS OUT OF A PIECE OF MAILBOX HTML. D-168 item 5b, the text half.
+ *
+ * Not a parser and not trying to be: tags out, block edges become line breaks,
+ * entities back to characters. It exists so a family declares its mailbox
+ * renderer ONCE and the text/plain part follows, instead of ten families each
+ * writing a second set of sentences that drifts from the first.
+ */
+export function textFromMarkup(html: string): string[] {
+  return String(html ?? "")
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\/(p|div|tr|li|h[1-6]|table)>/gi, "\n")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+}
+
 export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): string {
   const out: string[] = [];
   const line = (s: unknown) => {
     const v = fill(String(s ?? ""), c.merge, c.mode).trim();
     if (v) out.push(v);
   };
+  /**
+   * THE WHOLE TREE, not the top of each column (D-156, fixed D-165).
+   *
+   * The text part walked `section.columns[].widgets[]` only, so an email whose
+   * words were inside a box — which is what every D-156 document is — mailed a
+   * text/plain part holding the footer and nothing else. An empty text part is
+   * exactly the bulk shape `reference_acs_email_reality` says costs us the
+   * quota, so this is a send defect, not a tidiness one.
+   */
+  const eachWidget = (list: Widget[], visit: (w: Widget) => void) => {
+    for (const w of list) {
+      if (isContainer(w)) { eachWidget(childrenOf(w), visit); continue; }
+      visit(w);
+    }
+  };
   for (const s of doc.sections) {
     if (s.visibility !== "customer") continue;
     for (const col of s.columns) {
-      for (const w of col.widgets) {
+      eachWidget(col.widgets, (w) => {
         const p: any = w.props || {};
-        switch (w.kind) {
+        switch (EMAIL_KIND_ALIASES[w.kind] || w.kind) {
           case "heading": line(String(p.text ?? "").toUpperCase()); out.push(""); break;
           case "paragraph": line(p.text); out.push(""); break;
           case "personal_note": line(p.greeting); line(p.text); line(p.signoff); out.push(""); break;
           case "list": for (const it of (Array.isArray(p.items) ? p.items : [])) line(`· ${it}`); out.push(""); break;
-          case "image": if (altTextFor(p) && p.src) line(`[${altTextFor(p)}]`); break;
+          case "image": if (pictureOf(p)) line(`[${altTextFor(p)}]`); break;
           case "button": if (p.label || p.url) line(`${String(p.label || "Open").trim()}: ${p.url || ""}`); out.push(""); break;
           case "divider": out.push("—————————————"); break;
           case "article_card":
@@ -1110,6 +1429,11 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
               line(a?.title); line(a?.excerpt); if (a?.url) line(a.url); out.push("");
             }
             break;
+          /* A card's words reach the text part too — it is a box on the page
+             and a line of prose in a mailbox that shows no HTML. */
+          case "card": case "catalog_card":
+            line([p.heading, p.price].filter(Boolean).join(" — "));
+            line(p.description); out.push(""); break;
           case "product_card":
             for (const x of (Array.isArray(p.items) ? p.items : [])) {
               line([x?.name, [x?.price, x?.cadence].filter(Boolean).join(" ")].filter(Boolean).join(" — "));
@@ -1117,6 +1441,26 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
             }
             break;
           case "testimonial": line(`"${String(p.quote ?? "")}"`); line(p.attribution); out.push(""); break;
+          /* B-168 F5 - IA Reviews. BOTH HALVES, always: a widget that draws
+             HTML and no text vanishes from the plain-text part, and an email
+             whose text part is a footer and nothing else is the bulk shape
+             that costs us the sending quota. Same bytes as LUMEN's copy in
+             src/lib/emailFamilies/f5-sliders-reviews.js. */
+          case "ia_reviews": {
+            const rows = Array.isArray(p.slides) && p.slides.length ? p.slides
+              : (Array.isArray(p.items) ? p.items : []);
+            const block = rows.map((r: any) => {
+              const quote = String((r?.content ?? r?.quote) || "").trim();
+              const who = String((r?.name ?? r?.author) || "").trim();
+              const stars = Math.max(0, Math.min(5, Math.round(Number(r?.rating) || 0)));
+              return [
+                quote ? `"${quote}"` : "",
+                [who, stars ? `${stars} out of 5` : ""].filter(Boolean).join(" - "),
+              ].filter(Boolean).join("\n");
+            }).filter(Boolean).join("\n\n");
+            if (block) { line(block); out.push(""); }
+            break;
+          }
           case "countdown": line(p.ends_at); break;
           case "social_links":
             for (const l of (Array.isArray(p.links) && p.links.length ? p.links : c.business.social || [])) line(`${l.label}: ${l.url}`);
@@ -1129,9 +1473,49 @@ export function renderEmailText(doc: BuilderDocument, c: EmailRenderContext): st
             line(`${p.unsubscribeLabel || "Unsubscribe"}: ${c.unsubscribeUrl}`);
             break;
           }
-          default: break;
+          /* D-165 §11.13.3 — the standard set reads as words too. */
+          case "icon": break;
+          case "icon_box": case "image_box":
+            line(p.title); line(p.description); out.push(""); break;
+          case "star_rating":
+            line([p.title, `${Number(p.rating ?? 0)} / ${Number(p.scale) === 10 ? 10 : 5}`].filter(Boolean).join(": "));
+            break;
+          case "alert":
+            line(p.title); line(p.text ?? p.description); out.push(""); break;
+          /* B-168 / D-168 item 5b — THE FAMILIES' PLAIN-TEXT HALF.
+             Both halves, always: a text part holding the footer and nothing
+             else is the bulk shape `reference_acs_email_reality` says costs us
+             the sending quota, and that is exactly what a newsletter made of
+             family widgets produced. The family writes ONE mailbox renderer and
+             the words are read back out of it, rather than every family writing
+             a second, drifting copy of its own sentences. */
+          default: {
+            const markup = renderEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+            /* A FAMILY MAY SAY IT IN ITS OWN WORDS. Reading the markup back is
+               right for a widget whose markup IS its words and wrong for one
+               whose markup is a PICTURE: a Video's mailbox half is a still and
+               a play mark, so the markup reads as "▶ Watch the video" and the
+               text part carries no address at all. LUMEN's `emailFamilies` has
+               had both halves since its first commit and refuses an `html`
+               with no `text`; this is the Portal's side of the same pair, and
+               the golden cases — byte-identical in both repos — catch the two
+               drifting apart. */
+            const own = textEmailFamily({ ...w, kind: EMAIL_KIND_ALIASES[w.kind] || w.kind }, c as never);
+            if (own != null) { line(own); break; }
+            if (markup != null) for (const l of textFromMarkup(markup)) line(l);
+            /* …and the page renderer as the last resort, the same order the
+               HTML half uses. BOTH HALVES OR NEITHER: a widget drawn in the
+               HTML part and missing here is an email whose text/plain
+               alternative is a footer and nothing else, which is the bulk
+               shape `reference_acs_email_reality` says costs us the quota. */
+            else {
+              const fam = renderFamily(w, { ...c, mode: "view" } as unknown as RenderContext);
+              if (fam != null) for (const l of textFromMarkup(fam)) line(l);
+            }
+            break;
+          }
         }
-      }
+      });
     }
   }
   if (!hasFooter(doc)) {

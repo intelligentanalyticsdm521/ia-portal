@@ -23,7 +23,7 @@
  * §7's whole instruction for campaigns.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Globe, Loader2, Mail, Send, ShoppingBag, Tag, Wand2 } from "lucide-react";
+import { Globe, Loader2, Send, ShoppingBag, Wand2 } from "lucide-react";
 import { IadmModal, IadmButton, PRODUCT_ACCENT } from "../../../components/IadmModal";
 // THE merge-tag control. The campaign composer's subject line, the SMS box and
 // the CTA editor all open this one; a second list of tags in the builder would
@@ -142,8 +142,8 @@ export function EmailBuilder(p: EmailBuilderProps) {
    * The unsubscribe footer is the last thing in an email and holds nothing
    * else. The walk added two product cards with nothing selected and they
    * landed BELOW it. One rule on the way in beats a guard on each of the seven
-   * ways a widget can arrive — the pane, a "+", a drag, the slash command, a
-   * pre-made section, a duplicate and an undo.
+   * ways a widget can arrive — a tile pressed in the pane, a tile dragged, the
+   * add area, a pre-made section, a duplicate and an undo.
    */
   const applyDoc = useCallback((next: BuilderDocument) => setDoc(settleFooter(next)), []);
   const [resetKey, setResetKey] = useState(0);
@@ -159,6 +159,13 @@ export function EmailBuilder(p: EmailBuilderProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
+  /* IS ANYTHING SELECTED? (D-165 §11.13.1) Page settings are what the right
+     panel shows when nothing is — the same rule Elementor follows, where the
+     page's own settings sit behind the page name and the widget's settings
+     replace them the moment you click a widget. */
+  /* The `selected` flag that gated `documentExtras` is GONE: the Inspector
+     draws page settings only when nothing is selected, so the adapter no
+     longer keeps a second copy of the selection to say the same thing. */
 
   /* ── The business, for the masthead and the footer ─────────────────────── */
   const [identity, setIdentity] = useState<EmailBusiness>({ name: "" });
@@ -369,7 +376,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
           open
           onClose={() => setPending(null)}
           product="spark"
-          eyebrow="SPARK · Email builder"
           title={`How many, for “${pendingTemplate.name}”?`}
           subtitle="Answered once, before the page is built. You can add or remove one at any time afterwards."
           size="info"
@@ -401,7 +407,12 @@ export function EmailBuilder(p: EmailBuilderProps) {
         open
         onClose={p.onClose}
         product="spark"
-        eyebrow="SPARK · Email builder"
+        /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow=""
         title="Start from a shape that already works"
         subtitle="Every one of these opens with your logo at the top and your unsubscribe footer at the bottom. Pick the one closest to what you want to say, then change anything on it."
         entries={libraryEntries}
@@ -416,7 +427,6 @@ export function EmailBuilder(p: EmailBuilderProps) {
       onClose={p.onClose}
       adapter="email"
       resetKey={resetKey}
-      eyebrow={p.eyebrow}
       doc={doc}
       onChange={applyDoc}
       ctx={shellCtx}
@@ -439,14 +449,11 @@ export function EmailBuilder(p: EmailBuilderProps) {
         outlineHeading: "This email, top to bottom",
         defaultFontLabel: "This email's own font",
         pageBreakLabel: "",
-        canvasHint: "Click anything to edit it. This is exactly what lands in the inbox.",
         emptyHeading: "What goes in this email?",
         emptyHint: "Pick one to start. You can add the rest after.",
         lockedReason: "The footer carries your unsubscribe link and your postal address \u2014 the law asks for both on every email you send \u2014 so it stays. You can change the wording in it.",
       }}
       onSave={() => void save()}
-      canvasHint="Click anything to edit it. This is exactly what lands in the inbox."
-      paperNote={`${EMAIL_WIDTH}px wide`}
       premade={EMAIL_PREMADE_SECTIONS}
       premadeTags={EMAIL_PREMADE_TAGS}
       swatches={[kit.colours.primary, kit.colours.secondary, kit.colours.accent, kit.colours.text, kit.colours.background]}
@@ -460,15 +467,13 @@ export function EmailBuilder(p: EmailBuilderProps) {
           style={titleInput}
         />
       }
-      subtitle={
-        <SubjectBar
-          subject={subject} onSubject={setSubject} subjectRef={subjectRef}
-          preheader={preheader} onPreheader={setPreheader}
-          contacts={contacts} previewId={previewId} onPreview={setPreviewId}
-        />
-      }
+      /* D-165 §11.13.1 — the subject, the preview line and who it is previewed
+         as have LEFT the top bar and the left pane. They are page settings
+         now, in the right-hand panel, which is where Elementor keeps the
+         settings that belong to the whole page rather than to one widget. */
       headerActions={
         <>
+          <StatusStrip note={note} err={err} said={said} blanks={blanks} unsafe={unsafe} />
           {p.extraActions}
           {p.onTestSend && (
             <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -491,14 +496,16 @@ export function EmailBuilder(p: EmailBuilderProps) {
           </button>
         </>
       }
-      paneHeader={
-        <PaneHeader
-          note={note} err={err} said={said}
-          blanks={blanks} unsafe={unsafe}
-          previewName={previewContact ? [previewContact.first_name, previewContact.last_name].filter(Boolean).join(" ") || previewContact.email || "" : null}
-        />
-      }
-      documentExtras={p.documentExtras}
+      documentExtras={(
+        <PageSettings
+          subject={subject} onSubject={setSubject} subjectRef={subjectRef}
+          preheader={preheader} onPreheader={setPreheader}
+          contacts={contacts} previewId={previewId} onPreview={setPreviewId}
+          blanks={blanks}
+        >
+          {p.documentExtras}
+        </PageSettings>
+      )}
       widgetExtras={(w) => (
         <WidgetExtras
           widget={w}
@@ -555,86 +562,128 @@ function Ask({ label, value, min, max, onChange, help }: {
    The subject line, which is not part of the page
    ══════════════════════════════════════════════════════════════════════════ */
 
-function SubjectBar({
+/**
+ * PAGE SETTINGS — the right panel, when nothing is selected.
+ *
+ * §11.13.1: the LEFT panel is widgets and nothing else, and "the email
+ * subject/preheader/sender … move to PAGE SETTINGS … as Elementor does". So
+ * the three things that belong to the WHOLE email — what it is called in the
+ * inbox, the grey line beside it, and who it is being previewed as — live
+ * here, beside the sender and the category the template row already put in
+ * this same slot (`documentExtras`, rendered as this panel's children).
+ *
+ * Nothing about the PAGE is typed in the left pane and nothing about the page
+ * is typed in the top bar: one home, and it is the one the author already
+ * clicks to change the thing they last selected.
+ */
+function PageSettings({
   subject, onSubject, subjectRef, preheader, onPreheader, contacts, previewId, onPreview,
+  blanks, children,
 }: {
   subject: string; onSubject: (v: string) => void;
   subjectRef: React.RefObject<HTMLInputElement>;
   preheader: string; onPreheader: (v: string) => void;
   contacts: ContactRow[]; previewId: string; onPreview: (id: string) => void;
+  blanks: string[];
+  children?: React.ReactNode;
 }) {
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 11 }}>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-        <Mail size={12} />
-        <input
-          ref={subjectRef}
-          value={subject}
-          onChange={(e) => onSubject(e.target.value)}
-          placeholder="Subject line — this is what they see first"
-          title="The subject line. Merge tags work here too: {{first name}}"
-          style={{ ...barInput, minWidth: 320 }}
-        />
-      </span>
-      <input
-        value={preheader}
-        onChange={(e) => onPreheader(e.target.value)}
-        placeholder="Preview line (optional)"
-        title="The grey line some mail apps show beside the subject."
-        style={{ ...barInput, minWidth: 220 }}
-      />
-      {contacts.length > 0 && (
-        <label style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
-          title="Choose a real contact and every personal detail on the page fills in with THEIR information, so you see what they will see.">
-          <Tag size={12} />
-          <select
-            value={previewId}
-            onChange={(e) => onPreview(e.target.value)}
-            style={{ ...barInput, minWidth: 180 }}
-          >
-            <option value="">Previewing as the first contact</option>
-            {contacts.map((c) => (
-              <option key={String(c.id ?? c.contact_id)} value={String(c.id ?? c.contact_id)}>
-                {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email}
-              </option>
-            ))}
-          </select>
+    <div data-page-settings="email" style={{ borderBottom: "1px solid #E2E8F0" }}>
+      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10, background: "#F8FAFC" }}>
+        <div style={PS_LABEL}>This email</div>
+
+        <label style={PS_FIELD}>
+          <span style={PS_LEGEND}>Subject line</span>
+          <input
+            ref={subjectRef}
+            value={subject}
+            onChange={(e) => onSubject(e.target.value)}
+            placeholder="This is what they see first"
+            title="The subject line. Merge tags work here too: {{first name}}"
+            style={PS_INPUT}
+          />
         </label>
-      )}
-    </span>
+
+        <label style={PS_FIELD}>
+          <span style={PS_LEGEND}>Preview line</span>
+          <input
+            value={preheader}
+            onChange={(e) => onPreheader(e.target.value)}
+            placeholder="Optional"
+            title="The grey line some mail apps show beside the subject."
+            style={PS_INPUT}
+          />
+        </label>
+
+        {contacts.length > 0 && (
+          <label style={PS_FIELD}
+            title="Choose a real contact and every personal detail on the page fills in with THEIR information, so you see what they will see.">
+            <span style={PS_LEGEND}>Show it as</span>
+            <select value={previewId} onChange={(e) => onPreview(e.target.value)} style={PS_INPUT}>
+              <option value="">The first contact on your list</option>
+              {contacts.map((c) => (
+                <option key={String(c.id ?? c.contact_id)} value={String(c.id ?? c.contact_id)}>
+                  {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {blanks.length > 0 && (
+          <div style={{ fontSize: 11, lineHeight: 1.45, color: "#B45309" }} title={blanks.join(", ")}>
+            {blanks.length} personal detail{blanks.length === 1 ? "" : "s"} could not be filled in for this
+            contact: {blanks.slice(0, 3).join(", ")}{blanks.length > 3 ? "…" : ""}
+          </div>
+        )}
+      </div>
+      {children}
+    </div>
   );
 }
 
+const PS_LABEL: React.CSSProperties = {
+  fontSize: 10, textTransform: "uppercase", letterSpacing: ".07em", fontWeight: 700, color: "#5A7A8A",
+};
+const PS_FIELD: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 3 };
+const PS_LEGEND: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "#0B1C24" };
+const PS_INPUT: React.CSSProperties = {
+  width: "100%", border: "1px solid #CBD5E1", borderRadius: 6, padding: "6px 8px",
+  fontSize: 12, fontFamily: "inherit", background: "#fff",
+};
+
 /* ══════════════════════════════════════════════════════════════════════════
-   The pane header — what is not ready
+   What just happened, beside the button that did it (D-165)
+
+   These lines used to sit at the top of the LEFT pane, which §11.13.1 now
+   says is widgets and nothing else. They belong beside the Save and Send a
+   test buttons: that is where the press was, and D-20 already says a refusal
+   appears at the control that was pressed rather than in a panel across the
+   screen.
    ══════════════════════════════════════════════════════════════════════════ */
 
-function PaneHeader({ note, err, said, blanks, unsafe, previewName }: {
+function StatusStrip({ note, err, said, unsafe }: {
   note: string | null; err: string | null; said: string | null;
-  blanks: string[]; unsafe: Array<{ rule: string; detail: string }>; previewName: string | null;
+  blanks: string[]; unsafe: Array<{ rule: string; detail: string }>;
 }) {
+  const line = err
+    ? { text: err, colour: "#B91C1C" }
+    : note
+      ? { text: note, colour: "#B45309" }
+      : unsafe.length
+        ? {
+          text: `${unsafe.length} thing${unsafe.length === 1 ? "" : "s"} a mail app would render badly: ${unsafe[0].detail}`,
+          colour: "#B91C1C",
+        }
+        : said
+          ? { text: said, colour: "#047857" }
+          : null;
+  if (!line) return null;
   return (
-    <div style={{ fontSize: 11, lineHeight: 1.45, display: "flex", flexDirection: "column", gap: 6 }}>
-      {previewName && (
-        <div style={{ color: "#5A7A8A" }}>
-          Showing it as <strong style={{ color: "#0B1C24" }}>{previewName}</strong> will see it.
-        </div>
-      )}
-      {note && <div style={{ color: "#B45309", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 4, padding: "6px 8px" }}>{note}</div>}
-      {blanks.length > 0 && (
-        <div style={{ color: "#B45309" }} title={blanks.join(", ")}>
-          {blanks.length} personal detail{blanks.length === 1 ? "" : "s"} could not be filled in for this contact: {blanks.slice(0, 3).join(", ")}
-          {blanks.length > 3 ? "…" : ""}
-        </div>
-      )}
-      {unsafe.length > 0 && (
-        <div style={{ color: "#B91C1C" }} title={unsafe.map((u) => u.detail).join("\n")}>
-          {unsafe.length} thing{unsafe.length === 1 ? "" : "s"} a mail app would render badly: {unsafe[0].detail}
-        </div>
-      )}
-      {err && <div style={{ color: "#B91C1C" }}>{err}</div>}
-      {said && <div style={{ color: "#047857" }}>{said}</div>}
-    </div>
+    <span data-builder-status style={{ fontSize: 11, color: line.colour, maxWidth: 320, lineHeight: 1.35 }}
+      title={line.text}>
+      {line.text}
+    </span>
   );
 }
 
@@ -989,10 +1038,6 @@ const titleInput: React.CSSProperties = {
   color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", minWidth: 320, padding: "0 0 2px",
 };
 
-const barInput: React.CSSProperties = {
-  background: "rgba(255,255,255,0.12)", color: "#fff", borderRadius: 999,
-  border: "1px solid rgba(255,255,255,0.25)", padding: "3px 10px", fontSize: 11, outline: "none",
-};
 
 const ghostBtn: React.CSSProperties = {
   display: "inline-flex", alignItems: "center", gap: 5, border: "1px solid rgba(255,255,255,0.3)",

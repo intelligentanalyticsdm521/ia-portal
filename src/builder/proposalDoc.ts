@@ -168,8 +168,13 @@ export function locationsUsedBy(doc: BuilderDocument): string[] {
   // one walk and it reaches every level.
   for (const { widget, section } of walkWidgets(doc)) {
     if (section.visibility !== "customer") continue;
+    /* D-165 ADDS `service_location`, which is what `address_block` became.
+       Additive on purpose: the old spellings stay because a document can reach
+       here without passing through `deserialise`, and a site that drops off
+       this list gets no job opened and no address on the customer's copy — the
+       exact defect this function was written to end. */
     if (widget.kind !== "property_block" && widget.kind !== "property_plan"
-      && widget.kind !== "address_block") continue;
+      && widget.kind !== "address_block" && widget.kind !== "service_location") continue;
     const id = String((widget.props as any)?.locationId || "").trim().toLowerCase();
     if (id && !out.includes(id)) out.push(id);
   }
@@ -276,7 +281,7 @@ function proposalSnapshot(
       quantity: f.quantity, unit_price: f.unitPrice, cadence: f.cadence,
     };
   }
-  if (w.kind === "address_block") {
+  if (w.kind === "service_location" || w.kind === "address_block") {
     const f = addressFields(w.props, ctx.locations);
     return f.bound
       ? { name: f.name, address: f.address, contact: f.contact, notes: f.notes }

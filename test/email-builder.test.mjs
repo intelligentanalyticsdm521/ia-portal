@@ -46,7 +46,7 @@ import { fill, tokensIn, unfilledTokens, lookup } from "../src/builder/merge.ts"
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, renderEmailWidget,
   makeEmailContext, checkEmailSafe, assertEmailSafe, altTextFor, contrastInk,
-  inlineSafe, hasFooter, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
+  inlineSafe, hasFooter, EMAIL_DRAWN_KINDS, EMAIL_RENDERED_KINDS, EMAIL_UNRENDERED_KINDS, EMAIL_WIDTH,
 } from "../src/builder/adapters/email/emailRender.ts";
 import {
   EMAIL_TEMPLATES, EMAIL_PREMADE_SECTIONS, emailTemplateByKey, startingEmail,
@@ -59,13 +59,16 @@ import {
 import {
   renderLandingPage, renderLandingSection, makeLandingContext, embedSnippet, originOf,
   upgradeLandingBlocks, openLandingDocument, defaultFormFields,
-  LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS,
+  LANDING_DRAWN_KINDS, LANDING_RENDERED_KINDS, LANDING_UNRENDERED_KINDS, LANDING_KIND_ALIASES,
 } from "../src/builder/adapters/landing/landingRender.ts";
 import {
   LANDING_TEMPLATES, LANDING_PREMADE_SECTIONS, landingTemplateByKey,
 } from "../src/builder/adapters/landing/landingTemplates.ts";
 import { widgetsFor, widgetDescription, WIDGETS_BY_KIND } from "../src/builder/registry.ts";
+import { isDeletedKind } from "../src/builder/upgrade.ts";
 import { repeatKeyFor } from "../src/builder/BuilderShell.tsx";
+
+import { FAMILY_RENDERED_KINDS } from "../src/builder/widgets/families/index.ts";
 
 const FIX = (name) => JSON.parse(readFileSync(path.join(process.cwd(), "test", "fixtures", name), "utf8"));
 const EMAIL = FIX("email-render-cases.json");
@@ -126,8 +129,13 @@ function kindsIn(doc) {
 describe("the renderer draws exactly what the fixture says", () => {
   test("the fixture covers every widget the email builder offers", () => {
     const covered = new Set(EMAIL.cases.flatMap((c) => kindsIn(c.doc)));
+    /* `grid` is a LAYOUT PRESET, never a stored kind — the tile inserts a
+       `container`, which forty cases cover — so there is nothing for a golden
+       case to hold. Named here rather than left out of the comparison, so a
+       widget that really has no case still fails. */
+    const NO_STORED_FORM = ["grid"];
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      .filter((k) => !covered.has(k) && !EMAIL_UNRENDERED_KINDS.includes(k) && !NO_STORED_FORM.includes(k));
     assert.deepEqual(missing, [], `no golden case for: ${missing.join(", ")}`);
   });
 
@@ -618,8 +626,20 @@ describe("the email builder never opens on a blank page", () => {
 
 describe("the email builder offers a restricted set, and draws all of it", () => {
   test("every widget it offers is a kind the email renderer draws", () => {
+    /* `EMAIL_DRAWN_KINDS`, not `EMAIL_RENDERED_KINDS`: the first is what THIS
+       FILE's switch draws and the second is that plus every kind a FAMILY
+       draws in a mailbox (b168/override item 5b). Reading the narrow one made
+       this go red on Blockquote and HTML, which the f1-words family draws
+       correctly — the list was stale, not the renderer. */
     const missing = widgetsFor("email").map((w) => w.kind)
-      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k));
+      // B-168 C.1 — A FAMILY WIDGET IS DRAWN BY THE FAMILY, in BOTH halves.
+      // emailRender.ts's default branch asks renderFamily before it gives up,
+      // and renderEmailText's default branch asks it again for the plain-text
+      // twin. Both lines arrived with f6-money and both are checked: the golden
+      // case for every family widget offered here carries its own html AND its
+      // own text, and checkEmailSafe runs over that html like any other.
+      .filter((k) => !EMAIL_RENDERED_KINDS.includes(k) && !EMAIL_UNRENDERED_KINDS.includes(k)
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, [], `offered but not rendered: ${missing.join(", ")}`);
   });
 
@@ -629,12 +649,41 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     // five — `card`, `catalog_card`, `totals`, `address_block`, `key_fact`,
     // each with its own golden case — so the pane offers them. A newsletter
     // with two product cards was unreachable until it did.
+    /* D-165 REPLACED §7's list with §11.13.3's, and cut it to what a MAILBOX
+       draws. Elementor's names, the mailbox's own ids:
+         **Product Cards** = `product_card` · **IA Posts** = `article_card`
+         **Unsubscribe Footer** = `email_footer` · **Social Icons** = `social_links`
+       — the shared vocabulary's first rule, an id that exists keeps its id and
+       takes the new label.
+       GONE: `personal_note` and `countdown` (no Elementor name, not on the IA
+       list), `card`, `totals`, `address_block` and `key_fact` (the proposal's,
+       §11.13.3), `columns` (a Container set to row).
+       ADDED AT INTEGRATION 2026-09-19: Icon, Icon Box, Image Box, Star Rating
+       and Alert, because `emailRender.ts` now has a TABLE renderer for each —
+       the thing they were waiting on. HELD BACK still, for the same reason and
+       no other: Reviews and Book Now.
+       ADDED BY B-168 f6-money: `price_table` and `price_list`, which the offer
+       file puts on the newsletter. They pass the same bar as the five above —
+       a TABLE renderer, no flex, no grid, no class, and a plain-text twin —
+       and they meet it from the FAMILY folder rather than from this file, now
+       that the default branch asks `renderFamily` in both halves. */
     assert.deepEqual(widgetsFor("email").map((w) => w.kind).sort(), [
-      "address_block", "article_card", "button", "card",
-      "columns", "countdown", "divider", "email_footer",
-      "heading", "image", "key_fact", "list", "paragraph", "personal_note",
-      "product_card", "social_links", "spacer", "testimonial", "totals",
-    ]);
+    /* ADDED BY B-168 WAVE 2: **Video**. It was in the offer file Brandon
+       approved all along — `newsletter.elementor` lists `video`, with the note
+       *"video shows as a clickable picture"* — and the tile was simply never
+       turned on. The f2-pictures family draws it as a real picture that is a
+       real link, which is the only thing a video can be in a mailbox. */
+    /* ADDED AT LANDING (B-168): **Blockquote** and **HTML** (f1-words),
+       **Price Table** and **Price List** (f6-money) and **Book Now** (f8,
+       the IA twin of Button) — every one of them on the offer file’s
+       `newsletter` list, and every one with a mailbox renderer in its own
+       family folder and a golden case in this file’s fixture. */
+      "alert", "article_card", "blockquote", "book_now", "button", "container",
+      "divider", "email_footer", "grid", "heading", "html", "ia_reviews", "icon",
+      "icon_box", "image", "image_box", "list", "paragraph", "price_list",
+      "price_table", "product_card", "social_links", "spacer", "star_rating",
+      "testimonial", "video",
+    ].sort());
   });
 
   test("what a mailbox cannot render is not offered", () => {
@@ -646,8 +695,32 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     // offered. A send's products are the newsletter's own `product_card`.
     // `price_line` stays — it is drawn when a converted document carries one
     // and never offered, because money in an email belongs in a Totals block.
-    for (const kind of ["form", "signature", "price_line", "data_table", "map", "gallery", "video", "pricing_table", "catalog_card"]) {
-      assert.ok(!WIDGETS_BY_KIND[kind].adapters.includes("email"), `${kind} is offered to the email builder`);
+    /* Six of the eleven kinds this list named are DELETED by D-165 —
+       `map`, `pricing_table` and the rest — so "not offered" is now "not there
+       at all". The rule is the same either way, and it is checked the same way:
+       nothing a mailbox cannot draw reaches the email panel. */
+    /* Icon, Icon Box, Image Box, Star Rating and Alert LEFT this list at
+       integration on 2026-09-19: each has a table renderer in this file now,
+       with its own golden case, so the rule "nothing a mailbox cannot draw" is
+       satisfied by drawing them rather than by hiding them. Reviews and Book
+       Now stay on it until they have one too. */
+    /* `video` LEFT this list in B-168 wave 2, and for the rule's own reason
+       rather than against it: the offer file gives the newsletter Video, and
+       the family now draws it as a picture that is a link. No mail client
+       plays a video and none is asked to. */
+    /* **Book Now** LEFT this list at landing: family f8 wrote its mailbox
+       renderer (`emailBookNow`), so the rule is satisfied by drawing it, the
+       way Icon and Alert were. Elementor’s own **Reviews** stays — the
+       newsletter is offered the IA twin `ia_reviews` instead. */
+    for (const kind of ["form", "signature", "price_line", "data_table", "gallery",
+      "catalog_card", "reviews"]) {
+      const def = WIDGETS_BY_KIND[kind];
+      if (!def) continue;
+      assert.ok(!def.adapters.includes("email"), `${kind} is offered to the email builder`);
+    }
+    for (const kind of ["map", "pricing_table", "countdown", "personal_note"]) {
+      const def = WIDGETS_BY_KIND[kind];
+      assert.ok(!def || def.hidden || !def.adapters.includes("email"), `${kind} is offered to the email builder`);
     }
     // …and the four composites are not "not offered" — they are DELETED
     // (D-156), so there is nothing left to offer.
@@ -668,20 +741,48 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
   });
 
   test("the landing builder offers §7's web set and draws all of it", () => {
-    assert.deepEqual(widgetsFor("landing").map((w) => w.kind).sort(), [
-      "button", "columns", "divider", "footer_note", "form", "gallery", "heading",
-      // `html` — catalogue point 9's free HTML box, added 2026-09-17. A landing
-      // page is an HTML page, so a pasted embed is exactly what the author
-      // means there; a proposal and an email do not offer it.
-      "hero", "html", "image", "list", "paragraph", "social_links", "spacer", "testimonial", "video",
-      // WIDENED 2026-09-17 (catalogue F.1). `landingRender` draws them all,
-      // and a landing page that cannot carry a card or its total is a landing
-      // page nobody can sell from. `catalog_card` is not here: nothing on a
-      // landing page can say which product it is (see the registry test).
-      "address_block", "card", "key_fact", "totals",
-    ].sort());
+    /* D-165 — §11.13.3: a landing page is *"the website's list without the
+       menus"*, which is Elementor's whole free panel plus the IA group. The
+       exact list, by NAME and in order, is pinned in
+       `test/builder-widget-set.test.mjs`; what this asserts is the thing this
+       file is for — that the page renderer draws every one of them. */
+    const site = widgetsFor("website").map((w) => w.kind);
+    /* D-168 added a third: the offer file lists IA OLIVER Invoice under
+       `website.ia` only, because a hosted landing page has no signed-in
+       customer to show an invoice to. */
+    /* …and the two PAYMENT buttons are website-and-landing BOTH, so they are
+       not in here; what IS site-only stays site-only. B-168 f6-money added
+       price_table, price_list, paypal_button and stripe_button to both lists,
+       which is what the offer file says, so this comparison is unchanged. */
+    /* …and at landing the offer file’s `website` list is longer than its
+       `landing` list by the site and blog pieces (f7-data-lists) and by four
+       more: Login, WordPress Menu, Sidebar and Read More. A hosted landing
+       page has no accounts, no theme menu, no sidebar and no rest-of-the-post.
+       This list is read out of the offer file, not decided here. */
+    const siteOnly = ["ia_mega_menu", "ia_mobile_menu", "ia_oliver_invoice",
+      "login", "nav_menu", "sidebar", "read_more", "search", "sitemap",
+      "archive_posts", "author_box", "post_comments", "post_info", "post_navigation",
+      "theme_site_logo", "theme_site_title", "theme_page_title", "theme_post_title",
+      "theme_post_excerpt", "theme_post_featured_image", "theme_archive_title"];
+    assert.deepEqual(widgetsFor("landing").map((w) => w.kind),
+      site.filter((k) => !siteOnly.includes(k)));
+    /* `social_icons` and `basic_gallery` are Elementor's SPELLINGS of
+       `social_links` and `gallery`: `LANDING_KIND_ALIASES` resolves them
+       before the switch, and the alias table is tested for exactly that in
+       builder-surfaces-d165. A slug cannot be both an alias and a rendered
+       kind, so the alias table is the third place a kind can be accounted
+       for. */
+    /* …and B-168 §C.1's TEN FAMILIES are the fourth place a kind is
+       accounted for. `landingRender.ts`'s default branch asks `renderFamily`
+       before it gives up — the same line `render.ts` has — so a family's
+       widget is drawn on a hosted page; it is just not drawn by the switch
+       `LANDING_RENDERED_KINDS` describes. */
     const missing = widgetsFor("landing").map((w) => w.kind)
-      .filter((k) => !LANDING_RENDERED_KINDS.includes(k) && !LANDING_UNRENDERED_KINDS.includes(k));
+
+      .filter((k) => !LANDING_DRAWN_KINDS.includes(k)
+        && !LANDING_UNRENDERED_KINDS.includes(k)
+        && !LANDING_KIND_ALIASES[k]
+        && !FAMILY_RENDERED_KINDS.includes(k));
     assert.deepEqual(missing, []);
   });
 
@@ -689,12 +790,45 @@ describe("the email builder offers a restricted set, and draws all of it", () =>
     const kinds = widgetsFor("proposal").map((w) => w.kind);
     // priced_line → price_line and property_block → address_block + price_line
     // + totals, both by D-156. The proposal builder still has all of it.
-    for (const k of ["doc_header", "clauses", "price_line", "totals", "signature", "address_block"]) {
+    /* D-165 — `doc_header` is a Container with an Image and a Heading, the
+       address block is **Service Location**, and the catalogue picker is
+       **Product Line Items**. The proposal still has all of it. */
+    /* `clauses` is NOT on this list any more (integration, 2026-09-19): its
+       KIND stays and still draws — the snow agreement places it and D-164 pins
+       its numbering — but its TILE is hidden, because §11.13.3 names ONE Terms
+       door and that is the `terms` picker. Two tiles reading "Terms" in one
+       panel is what the section exists to stop. */
+    /* D-168 — the Terms tile and the three record blocks are deleted; the
+       proposal shows a database fact with **Custom Field** and drops saved
+       clauses from the Terms and conditions section template. */
+    for (const k of ["totals", "signature", "custom_field", "product_line_items"]) {
       assert.ok(kinds.includes(k), `the proposal builder lost ${k}`);
     }
+    for (const k of ["terms", "customer", "service_location"]) {
+      assert.equal(kinds.includes(k), false, `${k} is not in the offer, so it is not a tile`);
+    }
+    /* B-168 LANDED — WHAT KEEPS A STORED ONE DRAWING IS THE UPGRADE, NOT A
+       HIDDEN REGISTRY ROW. The two record blocks are converted on the way in
+       (`upgrade.ts` DELETED_KINDS → a Container of Custom Fields), so the
+       registry is right to have no row for them. `terms` was never a stored
+       kind at all — the tile was an ACTION that dropped a Heading and a Text
+       Editor, and that action is the Terms and conditions section template
+       now. This asserts the door that really exists. */
+    for (const k of ["customer", "service_location"]) {
+      assert.ok(isDeletedKind({ id: "x", kind: k, props: {} }),
+        `a stored ${k} is not converted on open, so it stops drawing`);
+    }
+    assert.equal(kinds.includes("clauses"), false, "two Terms tiles in one panel");
+    assert.ok(WIDGETS_BY_KIND.clauses, "the clauses KIND was deleted, so stored agreements stop drawing");
+    /* `social_links` CAME OFF THIS LIST (D-168 item 4). It was here because the
+       kind was the mailbox's own Social Icons and a proposal had a different
+       widget with the same label; there is one widget now, and the offer file
+       gives Social Icons to the proposal builder by name. The other four are
+       still email-only shapes and still do not belong on paper. */
     for (const k of ["article_card", "product_card", "email_footer", "hero"]) {
       assert.ok(!kinds.includes(k), `${k} leaked into the proposal builder`);
     }
+    assert.ok(kinds.includes("social_links"), "the offer file gives a proposal Social Icons");
   });
 });
 

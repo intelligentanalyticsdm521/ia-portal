@@ -62,8 +62,12 @@ const MUTATIONS = [
   {
     name: "I5 a box is no longer a property, whatever address is in it",
     file: TOTALS,
-    from: "    const address = box.children.find((k) => k.kind === \"address_block\");\n    if (!address) return;",
-    to: "    const address = box.children.find((k) => k.kind === \"address_block\");\n    if (address) return;",
+    /* REPOINTED AT INTEGRATION 2026-09-19: a property box is marked by
+       `service_location` OR `address_block` now, over two lines, so the
+       `find` this used to quote is not one string any more. The refusal
+       below is the same guard and it is one line. */
+    from: "    if (!address) return;",
+    to: "    if (address) return;",
     test: INTEGRATION,
     expects: "a property is the BOX its address is in, and its subtotal is its own",
   },

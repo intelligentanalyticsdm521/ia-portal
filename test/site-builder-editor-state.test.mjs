@@ -159,7 +159,11 @@ test('the save payload sends every section in order, with no fields for a custom
 test('the row summary reads as words, never as a handle or JSON', () => {
   const s = fixture();
   assert.equal(sectionSummary(s[0]), 'Welcome');
-  assert.equal(sectionSummary(s[1]), 'Built on the website itself');
+  /* WAS 'Built on the website itself'. A section built on the website is read
+     into blocks now (B-168) and has no `headline` field, so it falls through to
+     the same line every headline-less section gets. The sentence is deleted
+     from the product, not moved. */
+  assert.equal(sectionSummary(s[1]), 'No headline yet');
   const blank = setSectionField(s, s[0].uid, 'headline', '   ');
   assert.equal(sectionSummary(blank[0]), 'No headline yet');
 });

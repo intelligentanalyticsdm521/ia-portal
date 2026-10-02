@@ -16,6 +16,11 @@
 //     withTotalBeforeSignature                         → the "no second total" row red
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
+/* D-167 — the ONE widget that shows ONE database field. */
+import {
+  CUSTOM_FIELD_CHOICES, customFieldProps, renderCustomFieldWith,
+} from "../src/builder/widgets/families/ia/customField.ts";
+import { makeContext } from "../src/builder/render.ts";
 import { readFileSync } from "node:fs";
 
 import { deserialise, emptyDocument, makeSection, makeWidget, serialise, walkWidgets } from "../src/builder/model.ts";
@@ -26,13 +31,13 @@ import {
   basisOf, cadenceOf, fmtMoney, unitFromLabel, buildPick,
 } from "../src/components/oliver/ProposalCatalogPicker.tsx";
 import {
-  LEGACY_DETAILS_KEY, blankTokens, blanksRefusal, detailsMerge, documentLogo, packDetail,
-  parseMoney, plainLabel, readDetails, readLegacyDetails, reconcileDetails, tokensUsedBy,
-  widgetForToken, writeDetails,
+  blankTokens, blanksRefusal, documentLogo, mergeValues, packDetail,
+  parseMoney, plainLabel, setMergeValue, tokensUsedBy, widgetForToken,
 } from "../src/builder/proposal/documentDetails.ts";
 
 
 const BUILDER = readFileSync(new URL("../src/builder/proposal/ProposalBuilder.tsx", import.meta.url), "utf8");
+const FRAME = readFileSync(new URL("../src/builder/BuilderFrame.tsx", import.meta.url), "utf8");
 const LIST = readFileSync(new URL("../src/pages/oliver/OliverQuotesProposalsPage.tsx", import.meta.url), "utf8");
 const RECORD = readFileSync(new URL("../src/pages/oliver/OliverProposalsPage.tsx", import.meta.url), "utf8");
 
@@ -236,181 +241,62 @@ function agreementDoc() {
   return { ...emptyDocument(), sections: [s] };
 }
 
-describe("D-03 · every blank the document carries is a field somewhere", () => {
-  const AUTO = { "customer.name": "Hope Ministries" };
-
-  test("a token the page uses and the customer pick cannot answer gets a row", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO);
-    const tokens = rows.map((r) => r.token);
-    assert.deepEqual(tokens, ["snow_trigger", "contract.start_date", "contract.end_date", "severe_event_threshold"]);
-  });
-
-  test("a token the customer pick ALREADY answers gets no row", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO);
-    assert.ok(!rows.some((r) => r.token === "customer.name"),
-      "the author is being asked to type the customer's own name");
-  });
-
-  test("NO ROW IS EVER LABELLED WITH A RAW TOKEN", () => {
-    // Two of the four names the failed Send printed were `snow_trigger` and
-    // `severe_event_threshold`. That is the sentence Brandon read out.
-    for (const r of reconcileDetails(agreementDoc(), AUTO)) {
-      assert.notEqual(r.label, r.token, `${r.token} is still shown as itself`);
-      assert.ok(!/[_.]/.test(r.label), `"${r.label}" still looks like a token`);
-      assert.ok(/^[A-Z]/.test(r.label), `"${r.label}" does not read like a label`);
+/* D-03's DETAILS GROUP TESTS LIVED HERE AND ARE DELETED (scope 11.13,
+   2026-09-19). The group they pinned - a reconciled row per blank, drawn as a
+   box in the left pane - was never in scope and is gone, so its tests go with
+   it rather than being left green against a deleted mechanism. What replaces
+   both is test/builder-dynamic-fields.test.mjs: a fact that lives in a record
+   is a Customer / Service Location / Business Info widget that fills itself,
+   and a fact that lives in no record is typed on the page. The two claims D-03
+   really made - "no raw token ever reaches a screen" and "what is typed
+   survives a save and a reopen" - are kept below, because they outlived the
+   group. */
+describe("D-03 - a blank is never a raw token, and what is typed survives", () => {
+  test("NO BLANK IS EVER NAMED WITH A RAW TOKEN", () => {
+    for (const token of tokensUsedBy(agreementDoc())) {
+      const label = plainLabel(token);
+      assert.ok(!/[{}_]/.test(label), `${token} reaches a screen as "${label}"`);
     }
-  });
-
-  test("the snow pack's two tokens get a contractor's words and a line of help", () => {
     assert.equal(plainLabel("snow_trigger"), "Trigger depth");
-    assert.equal(plainLabel("severe_event_threshold"), "Severe-event threshold");
     assert.match(packDetail("snow_trigger").help, /inches/);
   });
 
-  test("an unknown token still never reaches a screen raw", () => {
-    assert.equal(plainLabel("gate_access_window"), "Gate access window");
+  test("a value typed on the page survives save then reopen", () => {
+    const saved = setMergeValue(agreementDoc(), "snow_trigger", "2 inches");
+    const reopened = deserialise(serialise(saved));
+    assert.equal(mergeValues(reopened).snow_trigger, "2 inches");
   });
 
-  test("the platform's own tags keep the words the platform already uses", () => {
-    assert.equal(plainLabel("contract.start_date"), "Service term starts");
-  });
-
-  test("a typed value fills the token, and survives save → close → reopen", () => {
-    const rows = reconcileDetails(agreementDoc(), AUTO)
-      .map((r) => (r.token === "snow_trigger" ? { ...r, value: "2 inches" } : r));
-    const saved = writeDetails(agreementDoc(), rows);
-    const reopened = deserialise(JSON.parse(serialise(saved)));
-    assert.equal(detailsMerge(readDetails(reopened))["snow_trigger"], "2 inches");
-  });
-
-  test("the store is `settings.merge` \u2014 not a section, not a widget, so nothing can land in it", () => {
-    // It WAS a hidden `visibility:"internal"` section, and a widget added with
-    // nothing selected goes to the LAST section (D-11) \u2014 so three priced
-    // property blocks landed inside the store, were counted as internal, and
-    // vanished from the customer's copy, the PDF and the total. Then it was
-    // `sections[0].meta.detailValues`, which was safe but was a SECOND carrier
-    // beside `settings.merge` (N-7). One home now: the document's own settings,
-    // which is not a section, not a widget and not a render target.
-    // TWO sections, deliberately, so "first" and "last" are different places.
-    const base = agreementDoc();
-    const acceptance = makeSection({ label: "Acceptance" });
-    acceptance.columns[0].widgets = [makeWidget("signature", { heading: "Acceptance" })];
-    const two = { ...base, sections: [...base.sections, acceptance] };
-
-    const rows = reconcileDetails(two, AUTO).map((r) => ({ ...r, value: "2 inches" }));
-    const saved = writeDetails(two, rows);
-    assert.equal(saved.sections.length, two.sections.length,
-      "writing a detail added a section to the document");
-    assert.equal(typeof saved.settings.merge, "object", "the store is not on settings.merge");
-    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
-    assert.ok(!saved.sections.some((x) => x.meta?.[LEGACY_DETAILS_KEY]),
-      "a second carrier is still on a section's meta");
-    assert.ok(!saved.sections.some((x) => x.visibility === "internal"),
-      "the store is a section again");
-    // And it is never counted as a blank on the page. THE REAL GUARD, not a
-    // copy of its walk written out here: a test that re-implements the rule
-    // agrees with itself and not with the Send button (2026-09-18).
-    assert.equal(blankTokens(saved, AUTO).length, 4);
-  });
-
-  test("N-7 \u00b7 a document written the OLD way still opens with its values", () => {
-    // Tolerant read, one write. A trigger depth typed last week lives on
-    // `sections[0].meta.detailValues`; refusing to read it would blank it.
-    const doc = agreementDoc();
-    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
-    assert.equal(readLegacyDetails(doc)[0].value, "2 inches");
-    assert.equal(detailsMerge(readDetails(doc)).snow_trigger, "2 inches");
-    assert.equal(reconcileDetails(doc, AUTO).find((r) => r.token === "snow_trigger").value, "2 inches");
-  });
-
-  test("N-7 \u00b7 and the first save MOVES it, so there is never a second carrier", () => {
-    const doc = agreementDoc();
-    doc.sections[0].meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }] };
-    const saved = writeDetails(doc, readDetails(doc));
-    assert.equal(saved.settings.merge.snow_trigger, "2 inches");
-    assert.ok(!saved.sections[0].meta?.[LEGACY_DETAILS_KEY], "the old carrier was left behind");
-    // And what the engine's serialiser does with it survives the round trip.
-    const reopened = deserialise(JSON.parse(serialise(saved)));
-    assert.equal(reopened.settings.merge.snow_trigger, "2 inches");
-  });
-
-  test("N-7 \u00b7 a blank is not stored, so the gap rule still calls it blank", () => {
-    const saved = writeDetails(agreementDoc(), [
-      { token: "snow_trigger", label: "Trigger depth", value: "" },
-    ]);
-    assert.equal(saved.settings.merge, undefined);
-  });
-
-  test("N-1 \u00b7 every blank knows WHERE it is on the page", () => {
-    const at = widgetForToken(agreementDoc(), "snow_trigger");
-    assert.ok(at, "a blank with nowhere to go cannot be jumped to");
-    assert.ok(at.sectionId && at.widgetId);
-    assert.equal(widgetForToken(agreementDoc(), "not_on_this_page"), null);
-  });
-
-  test("there is ONE store however many sections the document has", () => {
-    const doc = agreementDoc();
-    const second = makeSection({ label: "Second" });
-    second.meta = { [LEGACY_DETAILS_KEY]: [{ token: "snow_trigger", label: "Trigger depth", value: "stale" }] };
-    const withStale = { ...doc, sections: [...doc.sections, second] };
-    const saved = writeDetails(withStale, [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
-    assert.equal(saved.sections.filter((x) => x.meta?.[LEGACY_DETAILS_KEY]).length, 0,
-      "an old carrier survived the write");
-    assert.equal(readDetails(saved)[0].value, "2 inches");
-  });
-
-  test("filling everything in empties the blanks counter — the wanted output APPEARS", () => {
-    const filled = { ...AUTO, snow_trigger: "2 inches", "contract.start_date": "1 November 2026", "contract.end_date": "31 March 2027", severe_event_threshold: "8 inches" };
-    assert.deepEqual(blankTokens(agreementDoc(), filled), []);
-  });
-
-  test("a document nobody has typed a detail into is the document it always was", () => {
-    const doc = agreementDoc();
-    assert.equal(serialise(writeDetails(doc, [])), serialise(doc));
-  });
-
-  test("a value typed for a token since deleted from the page is KEPT, not thrown away", () => {
-    // The author types a plowing rate, then deletes the paragraph that used it
-    // and undoes their mind. Throwing the number away because the token left
-    // the page for one keystroke is how work is lost.
-    const withValue = writeDetails(agreementDoc(), [{ token: "plow_rate", label: "Plowing rate", value: "$625" }]);
-    assert.equal(reconcileDetails(withValue, AUTO).find((r) => r.token === "plow_rate")?.value, "$625");
-  });
-
-  test("but an EMPTY row for a token that has left the page is dropped", () => {
-    const withEmpty = writeDetails(agreementDoc(), [{ token: "gate_code_note", label: "Gate code note", value: "" }]);
-    assert.ok(!reconcileDetails(withEmpty, AUTO).some((r) => r.token === "gate_code_note"));
-  });
-
-  test("tokensUsedBy reads the page and not the store", () => {
-    const saved = writeDetails(agreementDoc(), [{ token: "snow_trigger", label: "Trigger depth", value: "2 inches" }]);
-    assert.ok(tokensUsedBy(saved).includes("snow_trigger"));
-    assert.equal(tokensUsedBy(saved).filter((t) => t === "snow_trigger").length, 1);
+  test("typing nothing leaves the document byte-identical", () => {
+    const d = agreementDoc();
+    assert.equal(serialise(setMergeValue(d, "snow_trigger", "")), serialise(d));
   });
 });
 
-describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
-  test("the adapter registers into the ENGINE's problems list \u2014 and keeps no chips of its own", () => {
-    // A-1: the engine owns the counter-as-a-button and the jump. Stream B's
-    // chip row is DELETED; two counters over one fact is how they disagree.
-    assert.ok(BUILDER.includes("problems={problems}"), "the adapter passes no problems");
-    assert.ok(!BUILDER.includes("data-blank-chip"), "the second counter is still here");
-    assert.ok(!BUILDER.includes("scrollToToken("), "the second jump is still here");
+describe("11.13.2 - Send names the blanks and opens the box on the first one", () => {
+  test("THE LEFT-PANE COUNTER IS GONE, and so is the second jump", () => {
+    /* Scope 11.13.2: "Deleted with the Details group: DetailsGroup UI, the
+       'still to fill in' counter in the left pane, PACK_LABELS as a UI list."
+       Brandon, three times on 2026-09-19. A counter beside a Send button that
+       already says the same thing is a second place for the two to drift,
+       which is how a document went out with two blank dates. */
+    assert.ok(!BUILDER.includes("problems={problems}"), "the adapter still feeds the counter");
+    assert.ok(!BUILDER.includes("onFocusProblem"), "the second jump is still here");
+    assert.ok(!BUILDER.includes("data-blank-chip"), "a chip row came back");
+    assert.ok(!/<DetailsGroup/.test(BUILDER), "the group came back");
+    assert.ok(!/data-details-group/.test(BUILDER), "a list of boxes came back");
   });
 
-  test("each problem is one plain sentence and knows where it lives", () => {
-    assert.ok(BUILDER.includes("id: `blank:${token}`"));
-    assert.ok(BUILDER.includes("message: `${plainLabel(token, detailLabels)} is still blank.`"));
-    assert.ok(BUILDER.includes("const at = widgetForToken(doc, token);"));
+  test("Send jumps to the first blank, ON THE PAGE", () => {
+    // ONE jump, called by BOTH Send buttons - a new document and a revision.
+    assert.ok(BUILDER.includes("const takeMeToTheBlank = useCallback"));
+    assert.equal((BUILDER.match(/takeMeToTheBlank\(\);/g) || []).length, 2,
+      "one of the two Send buttons refuses without jumping");
+    assert.ok(BUILDER.includes("setEditingToken(first)"));
   });
 
-  test("the jump also puts the caret in the Details box, which is where it is typed", () => {
-    assert.ok(BUILDER.includes("onFocusProblem={(problem) => {"));
-    assert.ok(BUILDER.includes("if (token) setFocusToken(token);"));
-  });
-
-  test("the refusal message names them in plain words too", () => {
-    // EXECUTED, not grepped. The sentence has ONE writer now — the two Send
+  test("the refusal message names them in plain words", () => {
+    // EXECUTED, not grepped. The sentence has ONE writer - the two Send
     // buttons each carried their own copy of it, and a copy is where the two
     // come to say different things about the same blank (2026-09-18).
     const words = blanksRefusal(
@@ -418,7 +304,7 @@ describe("D-35 / N-1 \u00b7 the blanks counter names them and jumps", () => {
     assert.match(words, /Trigger depth/);
     assert.match(words, /Service term starts/);
     assert.ok(!/[{}_]/.test(words), `the refusal is not plain words: ${words}`);
-    assert.match(words, /Type them into the Details boxes on the left/,
+    assert.match(words, /Click the highlighted words on the page/,
       "the refusal still does not say where the fields are");
     assert.equal((BUILDER.match(/blanksRefusal\(/g) || []).length, 2,
       "a Send refusal is writing its own sentence again");
@@ -435,6 +321,7 @@ describe("N-1 \u00b7 D-20 in the proposal builder: the refusal is AT the button"
     assert.equal(count("send"), 2, "a Send button has no anchor — its refusal has nowhere to point");
     assert.equal(count("save"), 2, "a Save draft button has no anchor");
     assert.equal(count("save-close"), 2, "a Save and close button has no anchor");
+    assert.equal(count("preview"), 2, "a View Page row has no anchor");
   });
 
   test("the refusal is reported through the engine, not printed in the far-left pane", () => {
@@ -501,11 +388,30 @@ describe("D-04 · a saved draft opens in the builder from the row", () => {
 });
 
 describe("D-36 · Save draft stays in the builder, Save and close is its own button", () => {
-  test("both buttons exist and only one of them closes", () => {
+  test("both rows exist, only one closes, and the rows are Title Case (D-172 r2)", () => {
     assert.ok(BUILDER.includes('data-save-draft="1"'));
     assert.ok(BUILDER.includes('data-save-close="1"'));
     assert.ok(BUILDER.includes("onClick={() => save(false, false)}"), "Save draft still closes the builder");
     assert.ok(BUILDER.includes("onClick={() => save(false, true)}"));
+    /* D-172 round 2 — the reference writes its menu rows in Title Case and
+       its third row is View Page, which shows the document as its reader
+       gets it. Ours were sentence case and there was no View Page at all.
+       ABSENT: the sentence-case rows.
+       PRESENT: Title Case, View Page in BOTH menus, and an Exit on the
+       frame — the reference closes an editor from its main menu. */
+    for (const sentenceCase of [
+      'title="Save and go back to the list. You can open it again from the row."',
+      'title="Save your work and carry on. The builder stays open."',
+      'title="Save this revision and carry on."',
+      'title="Save and go back to the document."',
+    ]) {
+      assert.ok(!BUILDER.includes(sentenceCase), `a menu row explains itself in a sentence again: ${sentenceCase}`);
+    }
+    assert.ok((BUILDER.match(/Save and Close/g) || []).length >= 2, 'a Save and Close row is missing');
+    assert.ok((BUILDER.match(/Save as Template/g) || []).length >= 1, 'Save as Template is sentence case again');
+    assert.equal((BUILDER.match(/data-view-page="1"/g) || []).length, 2,
+      "View Page is missing from one of the two Save Options menus");
+    assert.ok(FRAME.includes("Exit"), "nothing closes the builder at all now");
   });
 
   test("staying open SAYS so — a tick, not silence", () => {
@@ -616,21 +522,29 @@ describe("D-37 · a template's sections arrive with real content", () => {
   test("the cover is not four blank rows — every fact on it says something", () => {
     // D-164: the four cover facts moved off "Agreement at a glance" and onto
     // the cover, which is where the client's draft puts them.
-    const box = doc().sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
-    const rows = box.children.map((w) => w.props);
-    assert.ok(rows.length >= 4, `the cover carries only ${rows.length} facts`);
-    assert.ok(rows.every((r) => String(r.label).trim() && String(r.value).trim()),
-      "a key-fact row is still blank");
+    /* D-165 — a key fact is a LINE OF TEXT with its label in bold, so the four
+       cover facts are four Text Editors in a row Container (§11.13.3). The
+       cover's FIRST box is the header row (logo + title); the facts are the
+       second. What this test protects is unchanged: four of them, each one
+       saying something. */
+    const boxes = doc().sections[0].columns[0].widgets.filter((w) => Array.isArray(w.children));
+    const facts = boxes[boxes.length - 1].children.map((w) => String(w.props.text || ""));
+    assert.ok(facts.length >= 4, `the cover carries only ${facts.length} facts`);
+    assert.ok(facts.every((t) => /^\*\*.+\*\*\s+\S/.test(t)), "a cover fact is a label with nothing after it");
   });
 
   test("\"Agreement at a glance\" is not an empty paragraph and an empty table", () => {
     const section = doc().sections.find((s) => s.label === "Agreement at a glance");
-    const [para, table] = section.columns[0].widgets;
+    /* D-165 — the glance table never was a rate card: three columns of WORDS,
+       no figure that feeds a total. It is the plain **Table** now, whose id the
+       shared vocabulary keeps, and the priced lines live on the pricing
+       schedule where the catalogue picker drops them. */
+    const [para, , table] = section.columns[0].widgets;
     assert.ok(String(para.props.text).length > 60, "the opening paragraph is still empty");
-    assert.equal(table.kind, "pricing_table");
+    assert.equal(table.kind, "data_table");
     assert.ok(table.props.rows.length >= 4, "the service table ships with no rows");
-    assert.ok(table.props.rows.every((r) => String(r.name).trim() && String(r.basis).trim() && String(r.rate).trim()),
-      "a row of the service table is blank");
+    assert.ok(table.props.rows.every((r) => r.every((cell) => String(cell).trim())),
+      "a cell of the service table is blank");
     // The four Service summary sentences, each its own paragraph.
     const paras = section.columns[0].widgets.filter((w) => w.kind === "paragraph");
     assert.ok(paras.length >= 5, `only ${paras.length} paragraphs on the glance page`);
@@ -640,8 +554,9 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("the merge fields are there, so they fill from the customer pick", () => {
     const d = doc();
-    const cover = d.sections[0].columns[0].widgets.find((w) => Array.isArray(w.children));
-    const values = cover.children.map((w) => w.props.value).join(" ");
+    const boxes = d.sections[0].columns[0].widgets.filter((w) => Array.isArray(w.children));
+    // D-165 — a cover fact is a Text Editor, so the tag is in `text`.
+    const values = boxes[boxes.length - 1].children.map((w) => w.props.text).join(" ");
     assert.match(values, /\{\{customer\.name\}\}/);
     assert.match(values, /\{\{property\.address\}\}/);
     const glance = JSON.stringify(d.sections.find((s) => s.label === "Agreement at a glance"));
@@ -652,12 +567,17 @@ describe("D-37 · a template's sections arrive with real content", () => {
     assert.equal(doc().settings.merge.snow_trigger, "2 inches");
   });
 
-  test("a callout with a title has a body — a heading is not an explanation", () => {
+  test("an Alert with a title has a body — a heading is not an explanation", () => {
+    /* D-165 — Elementor's name for a tinted panel that must not be skimmed past
+       is **Alert**, and the invented "Callout panel" is deleted. One panel is
+       one Alert now, so the rule is per widget rather than per row. */
     const severe = doc().sections.find((s) => s.label === "Severe weather and special conditions");
-    const callout = severe.columns[0].widgets.find((w) => w.kind === "callout");
-    for (const panel of callout.props.panels) {
-      assert.ok(String(panel.title).trim(), "a panel has no title");
-      assert.ok(String(panel.body).trim().length > 40, `"${panel.title}" still has no body`);
+    const alerts = severe.columns[0].widgets.filter((w) => w.kind === "alert");
+    assert.ok(alerts.length >= 1, "the severe-weather section lost its alert");
+    for (const a of alerts) {
+      assert.ok(String(a.props.alert_title).trim(), "an alert has no title");
+      assert.ok(String(a.props.alert_description).trim().length > 40,
+        `"${a.props.alert_title}" still has no body`);
     }
   });
 
@@ -666,7 +586,17 @@ describe("D-37 · a template's sections arrive with real content", () => {
     // template and picks a customer has a sendable agreement. No heading
     // without a paragraph, no paragraph that is a stub.
     const widgets = walkWidgets(doc()).map((x) => x.widget);
-    const paragraphs = widgets.filter((w) => w.kind === "paragraph");
+    /* D-165 put TWO new shapes into `paragraph`, and neither is a clause:
+       a SHORT ANSWER — "**Service term** 1 November – 30 April" — and a
+       LABELLED BLANK on the crew's sheet — "**Areas we plow** " — which §11.13.2
+       puts on the page deliberately: *"A value that lives in no record … is a
+       plain editable run on the page where it appears, with a placeholder in
+       edit mode and a blank rule on the customer's copy"*, and Send refuses a
+       document with blanks by walking the page. Both are bold-label lines, so
+       both are told apart from prose by their shape rather than by their
+       length, and the CLAUSES are held to the same bar they always were. */
+    const labelled = (w) => /^\*\*[^*]+\*\*/.test(String(w.props.text || ""));
+    const paragraphs = widgets.filter((w) => w.kind === "paragraph" && !labelled(w));
     assert.ok(paragraphs.length >= 35, `only ${paragraphs.length} clause paragraphs`);
     for (const w of paragraphs) {
       // 24, not 40: "Invoices are due {{payment_terms}}." is a whole clause
@@ -707,9 +637,18 @@ describe("D-37 · a template's sections arrive with real content", () => {
 
   test("\"Property service plan\" is not a bare heading that prints as an empty page", () => {
     const plan = doc().sections.find((s) => s.label === "Property service plan");
-    const rows = plan.columns[0].widgets.find((w) => w.kind === "property_plan").props.rows;
+    /* D-165 — `property_plan` is deleted (§11.13.3: "property plan -> Service
+       Location + Text Editor rows"). The location fills itself in from the
+       customer's own record; the crew's six questions are labelled lines on the
+       page, which is what stops section 10 printing as an empty sheet. */
+    /* D-167 — and the Service Location widget is itself deleted: the address
+       is one **Custom Field** per field, which the author can pull apart. */
+    const widgets = plan.columns[0].widgets;
+    const fields = widgets.filter((w) => w.kind === "custom_field"
+      && String(w.props.field || "").startsWith("service_location."));
+    assert.ok(fields.length >= 2, "the plan lost its service address");
+    const rows = widgets.filter((w) => w.kind === "paragraph" && /^\*\*[^*]+\*\*/.test(String(w.props.text || "")));
     assert.ok(rows.length >= 5, "the service plan still ships with no rows");
-    assert.ok(rows.every((r) => String(r.label).trim()), "a plan row has no label");
   });
 });
 
@@ -752,7 +691,12 @@ describe("D-33 · one control per thing", () => {
   test("\"Which location\" is declared ONCE — by the adapter, which knows the locations", () => {
     // `property_block` is DELETED (D-156) — a property is a box, and the
     // address block inside it is what is bound to a location.
-    for (const kind of ["address_block", "property_plan"]) {
+    // D-165 — the address block is `service_location` and `property_plan` is
+    // deleted; the rule is the same and the adapter still owns the picker.
+    /* D-167 — the address block is a **Custom Field**, and the rule is the
+       same: it carries `locationId` as a value and declares NO control for it,
+       because only the adapter knows this customer's sites. */
+    for (const kind of ["custom_field"]) {
       assert.ok(!WIDGETS_BY_KIND[kind].controls.some((c) => c.key === "locationId"),
         `${kind} still declares an empty locationId select, so the label prints twice`);
     }
@@ -760,8 +704,9 @@ describe("D-33 · one control per thing", () => {
   });
 
   test("no proposal widget declares a select with no options to fill it", () => {
-    for (const kind of ["price_line", "pricing_table", "card", "catalog_card", "totals",
-      "address_block", "property_plan", "key_fact", "clauses", "doc_header", "signature"]) {
+    for (const kind of ["price_line", "card", "catalog_card", "totals",
+      "custom_field", "clauses", "signature",
+      "icon", "icon_box", "image_box", "alert", "testimonial", "star_rating", "social_links"]) {
       for (const c of WIDGETS_BY_KIND[kind].controls || []) {
         if (c.type !== "select") continue;
         assert.ok(c.options?.length, `${kind}.${c.key} is a select with nothing in it`);
@@ -778,7 +723,25 @@ describe("D-39 · the title band has a logo control", () => {
   });
 
   test("the widget carries the choice, so it saves with the document", () => {
-    assert.ok("logoUrl" in WIDGETS_BY_KIND.doc_header.defaults);
+    /* D-165 — `doc_header` is deleted and a document header is a row Container
+       with an **Image** in it, so the picture the author chose is the Image's
+       own `src` and saves with the document exactly as before. `business_info`
+       carries the other half of D-39: use the brand logo, or a different one. */
+    /* Elementor’s own key is `image`, which family f2-pictures’ Image writes
+       (wave 2). `src` was ours. A stored `src` still draws — the family’s
+       reader accepts both spellings — and the DEFAULT is Elementor’s. */
+    assert.ok("image" in WIDGETS_BY_KIND.image.defaults);
+    /* D-167 — the other half of D-39 is a **Custom Field** pointed at
+       `business_info.logo`. Left alone it draws the mark from Brand Identity;
+       typed over, it is an override like any other retyped value, with
+       *Put it back*; and the label is the Show-label toggle. */
+    const logo = CUSTOM_FIELD_CHOICES.find((c) => c.key === "business_info.logo");
+    assert.ok(logo, "there is no way to put the business logo on a document");
+    assert.equal(logo.picture, true, "the logo would print as a web address");
+    const w = { props: customFieldProps("business_info.logo") };
+    const drawn = renderCustomFieldWith(w, makeContext(emptyDocument(), { mode: "view" }),
+      { business_info: { logo: "data:image/png;base64,AA" } });
+    assert.match(drawn, /<img src="data:image\/png;base64,AA"/);
   });
 
   test("documentLogo answers the three cases", () => {

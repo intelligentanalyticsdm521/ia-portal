@@ -162,13 +162,43 @@ function widgetLines(widget: Widget): LineTotal[] {
  */
 interface SiteBox { boxId: string; locationId: string; name: string; order: number }
 
+/** The child that says "this box is about a site", in any of its spellings. */
+function siteMarker(kids: readonly Node[]): Node | undefined {
+  return kids.find((k) => k.kind === "service_location" || k.kind === "address_block"
+    || (k.kind === "custom_field"
+      && String((k.props as any)?.field ?? "").startsWith("service_location.")));
+}
+
 function sitesInTree(doc: BuilderDocument): { of: Map<string, SiteBox>; boxes: SiteBox[] } {
   const boxes: SiteBox[] = [];
   const of = new Map<string, SiteBox>();
   walkNodes(doc, (hit) => {
     if (!isContainer(hit.node)) return;
     const box = hit.node as Container;
-    const address = box.children.find((k) => k.kind === "address_block");
+    /* WHICH KIND MARKS A PROPERTY BOX — BOTH SPELLINGS (D-165).
+       `address_block` is deleted from the panel and `upgrade.ts` turns every
+       stored one into `service_location` (or `customer`, by its binding), but
+       the email and landing renderers still hold the old kind and a document
+       can reach the totals without passing through `deserialise`. Reading both
+       is the same "one renderer, two spellings" `price_line` / `priced_line`
+       already uses, and it is what stops a per-property subtotal silently
+       becoming zero on the day the rename lands.
+
+       `customer` is NOT a property box: it is who the document is FOR, and
+       claiming the lines under it would put a site's money on the payer.
+
+       Mirrored in oliver-api's lib/documentModel.js `sitesInTree`. */
+    /* D-167 ADDED THE THIRD SPELLING, and it is the one every new document
+       uses: a site fact is a **Custom Field** whose chosen field starts
+       `service_location.`, and the upgrade puts those Custom Fields in a box
+       of their own inside the property box. So the marker is looked for among
+       the box's own children AND one level in — and no further, because a
+       property inside a property is a property, and the outermost wins.
+       A `customer.*` field is NOT a marker, for the reason above: it is who
+       the document is FOR, and claiming the lines under it would put a site's
+       money on the payer. */
+    const address = siteMarker(box.children) 
+      || box.children.filter(isContainer).map((k) => siteMarker((k as Container).children)).find(Boolean);
     if (!address) return;
     const ap: any = address.props || {};
     const headingChild: Node | undefined = box.children.find((k) => k.kind === "heading");

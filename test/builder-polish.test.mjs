@@ -125,7 +125,13 @@ describe("M-7 · what you've changed, as named steps you can travel to", () => {
     const panel = SRC("builder/HistoryPanel.tsx");
     assert.match(panel, /data-builder-history="1"/);
     assert.match(panel, /data-history-step=\{s\.index\}/);
-    assert.match(panel, /What you&rsquo;ve changed/);
+    // ABSENT: the coaching paragraph, and our own name for the panel.
+    // PRESENT: the reference editor's one word, "History" (D-172).
+    assert.doesNotMatch(panel, /Every step you have taken, newest first/,
+      "the coaching paragraph is back inside the history panel");
+    assert.doesNotMatch(panel, /What you&rsquo;ve changed<\/strong>/,
+      "the panel is called What you've changed again");
+    assert.match(panel, />History<\/strong>/);
   });
 });
 
@@ -134,19 +140,50 @@ describe("M-7 · what you've changed, as named steps you can travel to", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("M-8 · one menu, wherever it is opened from", () => {
-  test("a section's menu carries every verb the spec lists", () => {
-    const items = menuFor({ kind: "section", index: 1, total: 3, canPaste: true, canSaveBlock: true });
-    const actions = items.map((i) => i.action);
-    for (const want of ["edit", "duplicate", "copy", "paste", "moveUp", "moveDown",
-      "addAbove", "addBelow", "saveBlock", "showInOutline", "hide", "lock", "delete"]) {
-      assert.ok(actions.includes(want), `the menu has no "${want}"`);
+  test("the menu is the reference editor's twelve rows, in its order (D-172)", () => {
+    // Driven in a live Elementor on 2026-09-19: right-click a widget and read
+    // `.elementor-context-menu-list__item`. The capture is in
+    // overnight-report/elementor-reference/widgets/_zz_screen_round1.json.
+    // ROUND 2 re-drove it and found the list above was the WIDGET menu asked
+    // of a container. A container's own menu is fourteen rows: "Add New
+    // Container" third, "Save as a template" (badged New) instead of "Save as
+    // a global", which a container does not have at all.
+    const box = menuFor({ kind: "section", canPaste: true, canSaveBlock: true, name: "Container" });
+    assert.deepEqual(box.map((i) => i.action), ["edit", "duplicate", "addContainer", "copy", "paste",
+      "pasteStyle", "pasteInteractions", "pasteFromOtherSite", "resetStyle", "saveTemplate",
+      "saveDefault", "structure", "delete"]);
+    const widget = menuFor({ kind: "widget", canPaste: true, canSaveBlock: true, name: "Heading" });
+    assert.deepEqual(widget.map((i) => i.action), ["edit", "duplicate", "copy", "paste", "pasteStyle",
+      "pasteInteractions", "pasteFromOtherSite", "resetStyle", "saveGlobal", "saveDefault",
+      "structure", "delete"]);
+  });
+
+  test("the rows we invented are GONE from every kind of target", () => {
+    for (const facts of [{ kind: "section" }, { kind: "widget" }, { kind: "widget", container: true }]) {
+      const actions = menuFor(facts).map((i) => i.action);
+      for (const gone of ["moveUp", "moveDown", "addAbove", "addBelow", "saveBlock",
+                          "showInOutline", "group", "ungroup", "toRow", "toColumn",
+                          "toGrid", "lock", "unlock", "hide", "show"]) {
+        assert.ok(!actions.includes(gone), `${gone} is back in the menu`);
+      }
     }
   });
 
-  test("a widget is not offered the two things only a section has", () => {
-    const actions = menuFor({ kind: "widget" }).map((i) => i.action);
-    assert.ok(!actions.includes("addAbove"));
-    assert.ok(!actions.includes("addBelow"));
+  test("the first row is Edit <Element>, which the reference really does have", () => {
+    // One audit row claimed the reference has no Edit row. It does — checked,
+    // not remembered: its first row reads "Edit Text Editor".
+    assert.equal(menuFor({ kind: "widget", name: "Heading" })[0].label, "Edit Heading");
+    assert.equal(menuFor({ kind: "section" })[0].label, "Edit Container");
+  });
+
+  test("six rows print their chord, as the reference's do", () => {
+    const items = menuFor({ kind: "widget", canPaste: true });
+    const chords = Object.fromEntries(items.filter((i) => i.shortcut).map((i) => [i.action, i.shortcut]));
+    // ROUND 2: the reference's own glyphs, read off its menu on 2026-09-19.
+    assert.deepEqual(chords, {
+      duplicate: "^+D", copy: "^+C", paste: "^+V",
+      pasteStyle: "^+⇧+V", structure: "^+I", delete: "⌦",
+    });
   });
 
   test("Delete is last, separated and destructive", () => {
@@ -169,37 +206,58 @@ describe("M-8 · one menu, wherever it is opened from", () => {
       assert.equal(row.disabled, true, `${a} is not greyed on a locked part`);
       assert.match(row.reason, /every email you send/);
     }
-    const first = menuFor({ kind: "section", index: 0, total: 3 }).find((i) => i.action === "moveUp");
-    assert.equal(first.disabled, true);
-    assert.match(first.reason, /already the first/);
     const nothingCopied = menuFor({ kind: "widget", canPaste: false }).find((i) => i.action === "paste");
     assert.match(nothingCopied.reason, /Nothing has been copied/);
+    // The two rows the reference greys for a reason of its own.
+    const interactions = menuFor({ kind: "widget" }).find((i) => i.action === "pasteInteractions");
+    assert.equal(interactions.disabled, true);
+    assert.match(interactions.reason, /hover or click behaviour/);
+    const global = menuFor({ kind: "widget" }).find((i) => i.action === "saveGlobal");
+    assert.equal(global.disabled, true);
+    assert.match(global.reason, /not on this plan/);
   });
 
-  test("the eye and the padlock SAY which state they are in (M-21)", () => {
-    const shown = menuFor({ kind: "widget", deviceWord: "on phones" });
-    assert.ok(shown.some((i) => i.action === "hide" && /Hide this on phones/.test(i.label)));
-    assert.ok(shown.some((i) => i.action === "lock" && /Lock so it can't be deleted/.test(i.label)));
-    const hidden = menuFor({ kind: "widget", hidden: true, locked: true, deviceWord: "on phones" });
-    assert.ok(hidden.some((i) => i.action === "show" && /Show this on phones again/.test(i.label)));
-    assert.ok(hidden.some((i) => i.action === "unlock"));
-    assert.ok(!hidden.some((i) => i.action === "hide"), "both halves of the eye are offered at once");
-    assert.ok(!hidden.some((i) => i.action === "lock"), "both halves of the padlock are offered at once");
+  test("hiding and locking are NOT menu rows — the eye lives in the tree (D-172)", () => {
+    // ABSENT: the reference's menu has neither, so M-21's promise moved to the
+    // one surface the reference does put an eye on, the Structure window.
+    const any = menuFor({ kind: "widget", hidden: true, locked: true }).map((i) => i.action);
+    for (const gone of ["hide", "show", "lock", "unlock"]) {
+      assert.ok(!any.includes(gone), `${gone} is back in the menu`);
+    }
+    // PRESENT: a part the LAW locks is still refused, and still says why.
+    const locked = menuFor({ kind: "widget", locked: true, lockedReason: "It has to be on every email." });
+    assert.equal(locked.find((i) => i.action === "delete").disabled, true);
+    assert.match(locked.find((i) => i.action === "delete").reason, /every email/);
   });
 
-  test("“Save this as my own block” is only offered where it can be saved", () => {
-    assert.ok(!menuFor({ kind: "section" }).some((i) => i.action === "saveBlock"),
-      "a row that quietly does nothing is worse than a row that is not there");
-    assert.ok(menuFor({ kind: "section", canSaveBlock: true }).some((i) => i.action === "saveBlock"));
+  test('"Save as default" replaces our own wording, and is greyed where it cannot save', () => {
+    // The reference's row is "Save as default". "Save this as my own block" was
+    // ours, and it was on sections only.
+    const off = menuFor({ kind: "section" }).find((i) => i.action === "saveDefault");
+    assert.equal(off.disabled, true, "a row that quietly does nothing is worse than a greyed one");
+    assert.equal(off.label, "Save as default");
+    assert.ok(!menuFor({ kind: "section", canSaveBlock: true }).some((i) => i.action === "saveBlock"));
+    assert.ok(!menuFor({ kind: "section", canSaveBlock: true }).find((i) => i.action === "saveDefault").disabled);
   });
 
-  test("the page, the widget handle and the outline all open the SAME menu", () => {
+  test("RIGHT-CLICK and the outline open the SAME menu — and the handle's ⋯ is gone", () => {
+    /* WAS "the page, the widget handle and the outline all open the SAME
+       menu". The ⋯ was the sixth button on the widget handle, and the six
+       came off on 2026-09-19 (Brandon: "confusing"). Right-click is the one
+       door on the page, which is where the reference editor keeps it — so the
+       promise this test makes is unchanged and one surface shorter. */
     const canvas = SRC("builder/Canvas.tsx");
     const nav = SRC("builder/Navigator.tsx");
     const shell = SRC("builder/BuilderShell.tsx");
+    assert.ok(!canvas.includes("data-widget-more"), "the ⋯ is back on the widget handle");
+    // PRESENT: right-click anywhere on the page, and the outline's own ⋯.
     assert.match(canvas, /onContextMenu=\{\(e\) => \{/, "right-click does nothing on the page");
-    assert.match(canvas, /setAttribute\("data-widget-more", "1"\)/, "the widget handle has no ⋯");
-    assert.match(nav, /data-nav-more="1"/, "the outline row has no more menu");
+    assert.match(canvas, /onContextMenu\(\{ kind: "widget", path \}/, "right-click on a widget opens nothing");
+    assert.match(canvas, /onContextMenu\(\{ kind: "section", sectionId: section\.id \}/);
+    /* AND THE OUTLINE'S OWN ⋯ IS GONE TOO (D-172). The reference puts no
+       menu button on a row: right-click is the one door, on the page and in
+       the tree alike. ABSENT here, PRESENT above. */
+    assert.ok(!nav.includes('data-nav-more'), "the ⋯ is back on every outline row");
     // One builder of the items, one runner of them.
     assert.equal((shell.match(/menuFor\(\{/g) || []).length, 1, "the menu is built in two places");
     assert.equal((shell.match(/const runMenuAction = useCallback/g) || []).length, 1);
@@ -237,17 +295,40 @@ describe("M-21 · lock and hide say which they are", () => {
     assert.equal(isRequired(makeWidget("paragraph")), false);
   });
 
-  test("the outline row shows the state and can change it", () => {
+  test("the outline row has NO padlock — the reference's tree has no lock control", () => {
+    // ABSENT (D-172): the author's own switch, drawn on every row all the
+    // time. PRESENT: the model still refuses to unlock a part the LAW locks —
+    // which is the half of M-21 that protects the unsubscribe footer, and it
+    // is tested above by `setWidgetLocked`, not by a button.
     const nav = SRC("builder/Navigator.tsx");
-    assert.match(nav, /data-nav-locked=\{rowLocked \? "1" : "0"\}/);
-    assert.match(nav, /data-nav-locked="required"/, "a required part offers an unlock it cannot honour");
-    assert.match(nav, /<LockOpen size=\{11\} \/>/);
+    assert.ok(!nav.includes("data-nav-locked"), "the padlock is back on every outline row");
+    assert.ok(!nav.includes("LockOpen"), "the open padlock is back");
+    assert.ok(!nav.includes("onLockWidget?.("), "a row can lock a widget again");
+    // PRESENT: the eye, on hover, as the reference draws it.
+    assert.match(nav, /hoverId === row\.id \|\| hidden/);
   });
 
-  test("the widget handle carries both, with the state in the attribute", () => {
+  test("the padlock and the eye left the handle for the menu, and the state is still readable", () => {
+    /* WAS "the widget handle carries both, with the state in the attribute" —
+       an eye and a padlock among six buttons on every widget. Deleted
+       2026-09-19; the handle is the grip alone (a container also gets an "x").
+       M-21's promise — lock and hide SAY which they are — is kept by the two
+       surfaces that remain, so this is the absence and the presence together. */
     const canvas = SRC("builder/Canvas.tsx");
-    assert.match(canvas, /data-widget-hidden/);
-    assert.match(canvas, /data-widget-locked/);
+    for (const gone of ["data-widget-hidden", "data-widget-locked", "bxc-wtool-lock", "bxc-wtool-eye"]) {
+      assert.ok(!canvas.includes(gone), `"${gone}" is back on the widget handle`);
+    }
+    // PRESENT 1 — the menu is the reference's, and neither Lock nor Hide is in
+    // it (D-172). What the menu keeps is the refusal a LAW-locked part earns.
+    const menu = SRC("builder/builderMenu.ts");
+    assert.ok(!menu.includes('action: "hide"'), "Hide is back in the menu");
+    assert.ok(!menu.includes('action: "lock"'), "Lock is back in the menu");
+    assert.match(menu, /action: "delete", label: "Delete"/);
+    // PRESENT 2 — the outline row still SHOWS the state, which is where a
+    // hidden section is found again.
+    const nav = SRC("builder/Navigator.tsx");
+    assert.match(nav, /\{hidden \? <EyeOff size=\{12\} \/> : <Eye size=\{12\} \/>\}/);
+    assert.match(nav, /textDecoration: hidden \? "line-through" : "none"/);
   });
 
   test("the outline knows which parts the author may not unlock", () => {
@@ -286,11 +367,14 @@ describe("M-22 · one box: sections, then things to add, then what to do", () =>
       || kinds.indexOf("action") > kinds.indexOf("widget"));
   });
 
-  test("an empty box offers the ACTIONS, not a wall of everything", () => {
-    const rows = findResults("", input);
-    assert.ok(rows.length > 0);
-    assert.ok(rows.every((r) => r.kind === "action"));
-    assert.ok(rows.some((r) => r.actionId === "outline"));
+  test("an empty box shows NOTHING — the reference's finder is blank until you type", () => {
+    // ROUND 2, driven on 2026-09-19: `#elementor-finder__content` is empty
+    // until a character is typed. Ours opened onto a "DO THIS" list of nine
+    // rows, which is a menu wearing a search box.
+    assert.deepEqual(findResults("", input), []);
+    // PRESENT: the actions have not gone — they are found when they are asked for.
+    assert.ok(findResults("struct", input).some((r) => r.actionId === "outline"),
+      "Structure can no longer be found by typing it");
   });
 
   test("every word has to match, so two words narrow", () => {
@@ -321,9 +405,9 @@ describe("M-22 · one box: sections, then things to add, then what to do", () =>
     const offered = findResults("page", { ...input, actions: [creator] });
     assert.equal(offered.some((r) => r.actionId === "new-page"), false,
       "Find must never offer a row that makes a record (D-25)");
-    assert.equal(findResults("", { ...input, actions: [creator] })
+    assert.equal(findResults("page", { ...input, actions: [creator] })
       .some((r) => r.actionId === "new-page"), false,
-      "… including on the empty box, which lists the actions");
+      "… including when the author types its own name");
     for (const a of ALWAYS_ACTIONS) {
       assert.ok(!/^(new|create|add a page|make)/i.test(a.label),
         `Find offers "${a.label}", which makes a row from inside the editor — that is D-25`);

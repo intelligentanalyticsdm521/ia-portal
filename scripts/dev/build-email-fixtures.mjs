@@ -15,7 +15,7 @@
 import { writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { emptyDocument, makeSection, makeWidget, resetIds } from "../../src/builder/model.ts";
+import { deserialise, emptyDocument, makeSection, makeWidget, resetIds } from "../../src/builder/model.ts";
 import {
   renderEmailDocument, renderEmailSection, renderEmailText, makeEmailContext,
 } from "../../src/builder/adapters/email/emailRender.ts";
@@ -132,6 +132,24 @@ const emailCases = [
   widgetCase("image with alt", "image", { src: "https://cdn.example.test/lot.jpg", alt: "A cleared car park at dawn", caption: "Tuesday, 5am", width: 400, align: "Centre" }),
   widgetCase("image with no alt falls back to the caption", "image", { src: "https://cdn.example.test/lot.jpg", caption: "Tuesday, 5am" }),
   widgetCase("image with no alt and no caption falls back to the file name", "image", { src: "https://cdn.example.test/snow-plough_at-work.jpg" }),
+  /* B-168 wave 2 — THE SAME PICTURE, STORED THE WAY THE PANEL WRITES IT NOW.
+     Image carries Elementor's own `image` key and its caption is behind
+     `caption_source`. Without this case nothing would catch the mailbox going
+     back to reading `src` alone, which would blank every picture put in a
+     newsletter from today on. */
+  widgetCase("image stored the way the deepened panel writes it", "image", {
+    image: { url: "https://cdn.example.test/lot.jpg", id: "17" },
+    alt: "A cleared car park at dawn", caption_source: "custom", caption: "Tuesday, 5am",
+    width: 400, align: "Centre",
+  }),
+  /* …and the same for an Image Box, whose words are `title_text` and
+     `description_text`. The mailbox read `title` and `description`, so a box
+     built in the newsletter builder arrived with a picture and no words. */
+  widgetCase("image box stored the way the deepened panel writes it", "image_box", {
+    image: "https://cdn.example.test/crew.jpg", image_alt: "Two crew loading salt",
+    title_text: "The crew", description_text: "The same people, every visit.",
+    link: "https://example.test/crew", position: "left",
+  }),
   widgetCase("solid button", "button", { label: "Book a walk-through", url: "https://example.test/book", style: "Solid", align: "Centre" }),
   widgetCase("outline button, full width, own colour", "button", { label: "See the rates", url: "https://example.test/rates", style: "Outline", align: "Left", colour: "#FEC82C", width: "full", radius: 0 }),
   widgetCase("plain link button", "button", { label: "Skip for now", url: "https://example.test/skip", style: "Plain link" }),
@@ -165,6 +183,39 @@ const emailCases = [
   widgetCase("social links, from the business", "social_links", { links: [], align: "Centre" }),
   widgetCase("countdown shows the date", "countdown", { ends_at: "1 November 2026" }),
   widgetCase("review", "testimonial", { quote: "They were out before we opened.", attribution: "Hope Ministries", rating: 5 }),
+  /* B-168 F5 DEEP PASS — the same widget with Elementor's own Style tab used.
+     The case above is the UNTOUCHED one and its bytes have not moved, which is
+     the promise the deep pass made: every declaration is conditional. This one
+     proves the other half — that a colour, a size, a weight, an alignment, a
+     picture, a link and a job title all reach a real mailbox, under the keys
+     Elementor spells them with. Both repos run their own renderer against it. */
+  widgetCase("review, styled the way Elementor styles one", "testimonial", {
+    quote: "They were out before we opened.",
+    attribution: "Hope Ministries",
+    job: "Property manager",
+    image: "https://cdn.example.test/face.jpg",
+    link: "https://example.test/review",
+    align: "end",
+    rating: 5,
+    image_size: 64,
+    content_content_color: "#123456",
+    content_typography_font_size: 22,
+    content_typography_line_height: 1.4,
+    content_typography_font_weight: "700",
+    name_text_color: "#654321",
+    name_typography_text_transform: "uppercase",
+    name_typography_letter_spacing: 1,
+    job_typography_font_style: "italic",
+  }),
+  /* B-168 F5 - IA Reviews in a mailbox: stacked, never a carousel, because a
+     mailbox cannot swipe. Both spellings of the list are read; this case uses
+     the page engine own key. */
+  widgetCase("the business reviews", "ia_reviews", {
+    slides: [
+      { content: "They were out before we opened.", name: "Hope Ministries", rating: 5 },
+      { content: "Same crew every time.", name: "Cedar Ridge HOA", rating: 4 },
+    ],
+  }),
   widgetCase("footer", "email_footer", {
     businessName: "Rolling In It", address: "1200 Prairie Ave, Marshalltown, IA 50158",
     note: "You are getting this because you asked us about winter services.",
@@ -176,6 +227,99 @@ const emailCases = [
   widgetCase("narrow section", "paragraph", { text: "Held in." }, { width: "narrow" }),
   widgetCase("internal section never reaches the mailbox", "paragraph", { text: "A note to the crew." },
     { visibility: "internal" }),
+
+  /* ── D-165 §11.13.3 — the standard set, in a mailbox ──────────────────────
+     One case per NEW standard widget, plus one for the alias table, because
+     the Portal and LUMEN-API have to draw all of them byte for byte and a
+     widget with no golden is a widget the two copies may already disagree
+     about. Testimonial, Icon List (`list`) and Social Icons (`social_links`)
+     already had cases above and keep them. */
+  widgetCase("icon", "icon", { icon: "check", size: 32, align: "Centre" }),
+  widgetCase("icon, a name we do not know is a dot and never the word", "icon", { icon: "wombat", size: 28 }),
+  widgetCase("icon, stacked, in the author's own colour", "icon", { icon: "snowflake", view: "stacked", size: 24, colour: "#B45309", align: "Left" }),
+  widgetCase("icon box, icon above the words", "icon_box", {
+    icon: "clock", title: "24-hour response", description: "Somebody is on the road within the hour, every time.", align: "Centre",
+  }),
+  widgetCase("icon box, icon beside the words", "icon_box", {
+    icon: "shield-alt", position: "left", title: "Fully insured", description: "Certificates on file before we start.",
+  }),
+  widgetCase("image box", "image_box", {
+    src: "https://cdn.example.test/crew.jpg", alt: "Two crew loading salt",
+    title: "The crew", description: "The same people, every visit.",
+  }),
+  widgetCase("image box, picture beside the words", "image_box", {
+    src: "https://cdn.example.test/crew.jpg", alt: "Two crew loading salt", position: "left",
+    title: "The crew", description: "The same people, every visit.", url: "https://example.test/crew",
+  }),
+  /* B-168 wave 2 — VIDEO reaches a mailbox, as a picture that is a link. The
+     offer file gave the newsletter `video` all along; no mail client plays one,
+     so the family draws the poster the author chose with the words under it. */
+  widgetCase("video is a picture that is a link, because no mailbox plays one", "video", {
+    video_type: "youtube", youtube_url: "https://www.youtube.com/watch?v=abc123xyz",
+    image_overlay: "https://cdn.example.test/still.jpg",
+  }),
+  widgetCase("video with no picture is a plain, obvious link", "video", {
+    video_type: "youtube", youtube_url: "https://www.youtube.com/watch?v=abc123xyz",
+  }),
+  widgetCase("star rating", "star_rating", { rating: 4.5, scale: 5, title: "Our reviews", align: "Left" }),
+  widgetCase("star rating out of ten", "star_rating", { rating: 8, scale: 10, align: "Centre" }),
+  widgetCase("alert", "alert", { type: "warning", title: "Storm watch", text: "We are running the routes an hour early tomorrow." }),
+  widgetCase("alert, the plainest one", "alert", { text: "Prices hold until the end of the season." }),
+  widgetCase("the Elementor spelling reaches the kind we store", "social_icons", {
+    links: [{ label: "Facebook", url: "https://facebook.com/x" }], align: "Centre",
+  }),
+
+  /* ── B-168 / D-168 wave 2 — the f1-words FAMILY's two mailbox widgets ─────
+     `BUILDER_OFFERS_2026-09-19.json` gives the newsletter `blockquote` and
+     `html`; neither could be drawn in a mailbox before, so the tile was on the
+     panel and the canvas said "this part needs a newer version of the
+     builder". One golden each, so the Portal and LUMEN-API cannot drift, and
+     one for the boxed skin because it is a different cell entirely. */
+  widgetCase("blockquote", "blockquote", {
+    blockquote_skin: "border",
+    blockquote_content: "They cleared the lot before we opened.",
+    author_name: "Dana Reyes",
+  }),
+  widgetCase("blockquote, boxed, with its own colours", "blockquote", {
+    blockquote_skin: "boxed", blockquote_content: "Best winter we have had.",
+    author_name: "Site manager", box_background_color: "#EFF6FF",
+    content_text_color: "#0B1C24", alignment: "center",
+  }),
+  widgetCase("the author's own HTML, in a cell", "html", {
+    html: '<p style="margin:0">A block the author pasted.</p>',
+  }),
+
+  /* THE STYLE TAB, IN A REAL INBOX. Heading and Text Editor gained one in
+     wave 2 and the mailbox drew neither, so every control on it changed the
+     preview and not the email. These two cases carry the new keys, so the
+     Portal's canvas and LUMEN-API's send are held to the same bytes for them
+     rather than only for an untouched widget. */
+  widgetCase("heading with Elementor's Style tab set", "heading", {
+    text: "Before the first snow",
+    header_size: "h1",
+    size: "xxl",
+    title_color: "#B45309",
+    typography_text_transform: "uppercase",
+    typography_font_style: "italic",
+    typography_word_spacing: 3,
+    text_shadow_text_shadow_blur: 6,
+    text_shadow_text_shadow_color: "#0F172A",
+    blend_mode: "multiply",
+    align: "center",
+  }),
+  widgetCase("text editor with Elementor's Style tab set", "paragraph", {
+    text: "We cleared forty lots this week.\n\nSalt is in and the crews are booked.",
+    align: "center",
+    text_color: "#0B1C24",
+    paragraph_spacing: 20,
+    typography_text_transform: "capitalize",
+    /* The DROP CAP is set here on purpose and must NOT appear in the mailbox
+       bytes: it is a ::first-letter rule in a stylesheet, and an email has no
+       stylesheet. The golden is what says so. */
+    drop_cap: "yes",
+    drop_cap_view: "framed",
+    text_columns: "2",
+  }),
 ];
 
 /** Two columns, which is the one thing a widget case cannot show. */
@@ -411,6 +555,66 @@ const TREE_CASES = [
         }),
       ]),
     ])),
+
+  /* 7 — THE WHOLE CONTAINER PANEL (B-168, family F0), on one box.
+     Every control the reference editor gives a Container, set at once, so the
+     three renderers are held to what each of them does with it:
+       · a hosted LANDING page draws all of it — the background, the overlay,
+         the two shape dividers, the reversed order, the two gaps;
+       · a MAILBOX draws the colour, the two gaps and the order, and leaves out
+         the gradient, the film, the overlay, the shapes, overflow, position,
+         sticky and the author's own CSS, because none of them survives Outlook;
+       · and neither may THROW on a key it does not draw, which is the half a
+         "draws what it can" promise usually forgets.
+     Byte-identical in both repos, so LUMEN's copies are held to the same. */
+  treeCase("tree · a box wearing the whole container panel", box("b1", {
+    direction: "row-reverse",
+    justify: "evenly",
+    alignItems: "center",
+    gap: 24,
+    rowGap: 8,
+    wrap: true,
+    contentWidth: "full",
+    width: 90,
+    minHeight: 220,
+    overflow: "hidden",
+    background: {
+      type: "classic", color: "#F4F7F8", image: "https://cdn.example.test/bg.png",
+      position: "top center", repeat: "no-repeat", size: "cover",
+    },
+    overlay: { type: "gradient", color: "#0B1C24", colorB: "#0C4A60", angle: 135, opacity: 0.4, blend: "multiply" },
+    shapeTop: { shape: "waves", color: "#FFFFFF", height: 70, width: 110, flip: true },
+    shapeBottom: { shape: "tilt", color: "#F4F7F8", height: 50 },
+    alignSelf: "center",
+    order: 2,
+    selfWidth: 60,
+    zIndex: 3,
+    padding: { top: 24, right: 20, bottom: 24, left: 20 },
+    cssId: "the-box",
+    cssClasses: "tight two-up",
+    customCss: "selector { letter-spacing: .2px }",
+    sticky: "top",
+    stickyOffset: 12,
+    tablet: { gap: 16, rowGap: 6, minHeight: 180 },
+    phone: { direction: "column", gap: 12, hidden: true },
+  }, [
+    widget("w1", "heading", { text: "First in the document", level: "Section" }),
+    widget("w2", "paragraph", { text: "A reversed row puts this one first on the page." }),
+  ])),
+
+  /* 8 — A GRID that says how many rows and which way it fills, and a box
+     hidden on a COMPUTER only, which is the switch that did not exist. */
+  treeCase("tree · a grid with rows and auto flow, beside a box hidden on a computer",
+    box("b1", column(16), [
+      box("b2", { direction: "grid", columns: 3, rows: 2, autoFlow: "column", gap: 18 }, [
+        widget("w1", "paragraph", { text: "One" }),
+        widget("w2", "paragraph", { text: "Two" }),
+        widget("w3", "paragraph", { text: "Three" }),
+      ]),
+      box("b3", { direction: "column", gap: 8, hidden: true }, [
+        widget("w4", "paragraph", { text: "Phones and tablets only." }),
+      ]),
+    ])),
 ];
 
 for (const c of TREE_CASES) emailCases.push(c);
@@ -420,15 +624,22 @@ const emailFixture = {
   context: EMAIL_CTX,
   subject: "What's new this month",
   preheader: "A short note, and what we've been up to.",
-  cases: emailCases.map((c) => ({
-    name: c.name,
-    kind: c.kind,
-    doc: c.doc,
-    html: c.whole
-      ? renderEmailDocument(c.doc, makeEmailContext(c.doc, EMAIL_CTX), { subject: "What's new this month", preheader: "A short note, and what we've been up to." })
-      : renderEmailSection(c.doc.sections[0], makeEmailContext(c.doc, EMAIL_CTX)),
-    text: renderEmailText(c.doc, makeEmailContext(c.doc, EMAIL_CTX)),
-  })),
+  /* RENDERED FROM THE DESERIALISED DOCUMENT, which is what every reader does
+     — `deserialise` runs the card rename, so a fixture drawn from the raw
+     object was pinning bytes no surface actually produces. Found by the
+     Portal's own suite the first time a card's words reached the text part. */
+  cases: emailCases.map((c) => {
+    const doc = deserialise(c.doc);
+    return {
+      name: c.name,
+      kind: c.kind,
+      doc: c.doc,
+      html: c.whole
+        ? renderEmailDocument(doc, makeEmailContext(doc, EMAIL_CTX), { subject: "What's new this month", preheader: "A short note, and what we've been up to." })
+        : renderEmailSection(doc.sections[0], makeEmailContext(doc, EMAIL_CTX)),
+      text: renderEmailText(doc, makeEmailContext(doc, EMAIL_CTX)),
+    };
+  }),
 };
 
 /* ── Landing ─────────────────────────────────────────────────────────────── */
@@ -462,7 +673,49 @@ const landingCases = [
   lpCase("small print", "footer_note", { text: "Prices exclude tax." }),
   lpCase("social links", "social_links", { links: [{ label: "Facebook", url: "https://facebook.com/x" }] }),
   lpCase("review", "testimonial", { quote: "Never had to call twice.", attribution: "Hope Ministries" }),
+  /* B-168 F5 - NO LANDING GOLDENS FOR THE SLIDERS, and the reason is a SEAM
+     gap rather than a gap in the family. A golden in this file is checked in
+     to BOTH repos and LUMEN-API runs ITS OWN copy of the landing renderer
+     against it (src/lib/landingRender.js, seams audit SEAM-6-A). That copy
+     has no door to the ten families: LUMEN has an emailFamilies folder and
+     nothing like it for landing pages, so a family widget on a HOSTED landing
+     page draws "needs a newer version of the builder" there, while drawing
+     correctly in the Portal and publishing correctly through arion. Pinning a
+     golden the server cannot produce would only turn both suites red. The gap
+     is item F5-S1 in D168_HANDOFF_2026-09-19.md, and it belongs to every page
+     family, not just this one. */
   lpCase("a widget from a newer build is inert", "hologram", {}),
+
+  /* ── D-165 §11.13.3 — the standard set, and the page widgets with it ──────
+     One golden per widget, because the Portal and LUMEN-API draw each of them
+     twice and the fixture is the only thing that says the two agree. */
+  lpCase("icon", "icon", { icon: "check", size: 40 }),
+  lpCase("icon, framed", "icon", { icon: "snowflake", view: "framed", colour: "#B45309" }),
+  lpCase("icon box", "icon_box", { icon: "clock", title: "24-hour response", description: "Somebody is on the road within the hour." }),
+  lpCase("icon box, icon beside the words", "icon_box", { icon: "shield-alt", position: "left", title: "Fully insured", description: "Certificates on file." }),
+  lpCase("image box", "image_box", { src: "https://cdn.example.test/crew.jpg", alt: "The crew", title: "The crew", description: "The same people, every visit." }),
+  lpCase("star rating", "star_rating", { rating: 4.5, scale: 5, title: "Our reviews" }),
+  lpCase("alert", "alert", { type: "warning", title: "Storm watch", text: "Routes run an hour early tomorrow." }),
+  lpCase("counter", "counter", { value: 1240, prefix: "", suffix: "+", label: "Lots cleared last winter" }),
+  lpCase("progress bar", "progress_bar", { title: "Season booked", percent: 72 }),
+  lpCase("tabs", "tabs", { items: [{ title: "Commercial", body: "Lots, walks and salting." }, { title: "Residential", body: "Drives and paths." }] }),
+  lpCase("accordion", "accordion", { items: [{ title: "When do you come out?", body: "At a two-inch trigger." }, { title: "Do you salt?", body: "Yes, on every visit." }] }),
+  lpCase("a toggle opens nothing until it is pressed", "toggle", { items: [{ title: "The small print", body: "Prices exclude tax." }] }),
+  lpCase("image carousel", "image_carousel", { images: ["https://cdn.example.test/1.jpg", { src: "https://cdn.example.test/2.jpg", alt: "After" }] }),
+  /* B-168 wave 2 — the carousel's OWN key. `LANDING_KIND_ALIASES` used to send
+     `basic_gallery` to the legacy Photo gallery and this surface read `images`
+     for a carousel that stores `carousel`, so both drew an empty band on a
+     hosted page. Two cases, one for each. */
+  lpCase("image carousel, stored the way the panel writes it", "image_carousel", {
+    carousel: [{ url: "https://cdn.example.test/1.jpg", title: "Before" }, { url: "https://cdn.example.test/2.jpg", title: "After" }],
+  }),
+  lpCase("basic gallery", "basic_gallery", {
+    wp_gallery: [{ url: "https://cdn.example.test/a.jpg", caption: "Before" }, { url: "https://cdn.example.test/b.jpg", caption: "After" }],
+    gallery_columns: "2",
+  }),
+  lpCase("a place on the page to jump to", "menu_anchor", { anchor: "prices" }),
+  lpCase("a map is the address and a link, never an embed", "google_maps", { address: "1200 Prairie Ave, Marshalltown, IA" }),
+  lpCase("the Elementor spelling reaches the kind we store", "text_editor", { text: "Same widget, Elementor's name." }),
 ];
 
 function lpTwoColumn() {
@@ -562,14 +815,18 @@ const landingFixture = {
   note: "Generated by scripts/dev/build-email-fixtures.mjs. Byte-identical in Portal and LUMEN-API.",
   context: LANDING_CTX,
   meta: { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." },
-  cases: landingCases.map((c) => ({
-    name: c.name,
-    kind: c.kind,
-    doc: c.doc,
-    html: c.whole
-      ? renderLandingPage(c.doc, makeLandingContext(c.doc, LANDING_CTX), { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." })
-      : renderLandingSection(c.doc.sections[0], makeLandingContext(c.doc, LANDING_CTX)),
-  })),
+  /* The deserialised document, for the reason the email half gives. */
+  cases: landingCases.map((c) => {
+    const doc = deserialise(c.doc);
+    return {
+      name: c.name,
+      kind: c.kind,
+      doc: c.doc,
+      html: c.whole
+        ? renderLandingPage(doc, makeLandingContext(doc, LANDING_CTX), { title: "Snow & ice — Rolling In It", metaDescription: "Commercial plowing across central Iowa." })
+        : renderLandingSection(doc.sections[0], makeLandingContext(doc, LANDING_CTX)),
+    };
+  }),
 };
 
 const dir = path.join(process.cwd(), "test", "fixtures");

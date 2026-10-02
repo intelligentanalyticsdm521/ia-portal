@@ -7,6 +7,8 @@
  * as far as the eye can tell, nothing happened.
  *
  * ── THE RULE, IN ONE PLACE ────────────────────────────────────────────────
+ *   0. a CONTAINER is selected → INSIDE it, at the end (the reference editor's
+ *      rule: select a container, press a widget in the panel, it goes in)
  *   1. a WIDGET is selected  → insert directly AFTER it, IN ITS OWN BOX
  *   2. a SECTION is selected → append into that section's first column
  *   3. nothing selected      → the section the author is LOOKING AT
@@ -25,8 +27,9 @@
  *
  * Pure: no React, no DOM. The canvas measures; this decides.
  */
-import type { BuilderDocument, Selection } from "./model";
-import { findNode, hostChildren, nodeIdAt } from "./treeOps";
+import { carrierContainer } from "./model";
+import type { BuilderDocument, Node, Selection } from "./model";
+import { findNode, hostChildren, insertNode, isContainer, nodeIdAt } from "./treeOps";
 
 /**
  * WHERE AN INSERT GOES: a box, and an index in it.
@@ -90,6 +93,14 @@ export function insertSpotFor(
   if (selection?.kind === "widget") {
     const id = nodeIdAt(doc, selection);
     const hit = id ? findNode(doc, id) : null;
+    if (hit && isContainer(hit.node)) {
+      return {
+        hostId: hit.node.id,
+        sectionId: hit.sectionId,
+        columnIndex: hit.columnIndex,
+        index: hit.node.children.length,
+      };
+    }
     if (hit) {
       const siblings = hostChildren(doc, hit.parentId) ?? [];
       // AFTER the selected thing, among its OWN siblings — which is inside the
@@ -136,6 +147,58 @@ export function insertSpotFor(
 }
 
 /**
+ * SEVERAL THINGS, LANDING WHERE ONE WOULD (G-2, 2026-09-19).
+ *
+ * The catalogue picker drops one `price_line` per pick, and it used to drop
+ * them into a NEW SECTION appended after the selected one. So a rate table
+ * picked with the caret in the middle of a container came out after the
+ * heading, the bullets, the call-out and the contact tiles — the last thing on
+ * the page — and the customer read the document in an order the author did not
+ * build. The scorer measured it on two of the six targets.
+ *
+ * A pick is an insert. It lands where an insert lands, by the one rule above,
+ * in the order the picks were made, and one Undo takes the whole pick back
+ * because the caller applies the returned document once.
+ *
+ * `spot` comes back so the caller can flash the first thing that landed; it is
+ * null when nothing did, and the document is then unchanged by identity.
+ *
+ * ── AND WHERE THE CARET GOES AFTERWARDS (R2-3, 2026-09-20) ────────────────
+ * `selection` comes back too, and it is THE LAST NODE. Round 1 made a pick
+ * land where the author is; the caret then stayed BEHIND it, so the next thing
+ * added went in above the lines and the round-2 scorer's targets 03, 04 and 06
+ * each printed a Totals reading Subtotal $0.00 / Total $0.00 above the lines
+ * it should be adding up. The last and not the first: a caret on the first of
+ * three priced lines puts the next pick between line one and line two.
+ *
+ * It is answered HERE, and not by each caller, because "where does the caret
+ * end up after an insert" is the same question as "where does the insert go"
+ * and the two must not be able to disagree.
+ */
+export function insertNodes(
+  doc: BuilderDocument,
+  selection: Selection,
+  nodes: readonly Node[],
+  visibleSectionId?: string | null,
+): { doc: BuilderDocument; spot: InsertSpot | null; selection: Selection } {
+  if (!nodes.length) return { doc, spot: null, selection: null };
+  const spot = insertSpotFor(doc, selection, visibleSectionId);
+  if (!spot) return { doc, spot: null, selection: null };
+  let next = doc;
+  nodes.forEach((node, i) => { next = insertNode(next, spot.hostId, spot.index + i, node); });
+  // REFUSED, NOT SILENTLY DROPPED: `insertNode` returns the same document when
+  // the box is already as deep as boxes go. Saying so is the caller's job, and
+  // it cannot say it if this pretends something landed.
+  if (next === doc) return { doc, spot: null, selection: null };
+  const last = nodes[nodes.length - 1];
+  return {
+    doc: next,
+    spot,
+    selection: selectionAt({ ...spot, index: spot.index + nodes.length - 1 }, last.id),
+  };
+}
+
+/**
  * What is selected the moment the thing lands. Selected, so it can be typed into.
  *
  * `id` is passed in because the caller has just MINTED the node and therefore
@@ -157,6 +220,14 @@ export function firstSpotIn(doc: BuilderDocument, sectionId: string): InsertSpot
   const section = doc.sections.find((s) => s.id === sectionId);
   const column = section?.columns[0];
   if (!section || !column) return null;
+  /* INTO THE CONTAINER, NEVER BESIDE IT (D-172, round 2).
+     When the section is a CARRIER PAIR — its one column holding one container
+     and nothing else — the column is a level the author cannot see: it has no
+     handle, no outline and no row in Structure. Landing something there put it
+     at a level nobody could then select. The container is what the author sees
+     as the box, so it is what "the first place in this section" means. */
+  const carried = carrierContainer(section);
+  if (carried) return { hostId: carried.id, sectionId, columnIndex: 0, index: carried.children.length };
   return { hostId: column.id, sectionId, columnIndex: 0, index: column.widgets.length };
 }
 
@@ -168,61 +239,9 @@ export function firstSpotIn(doc: BuilderDocument, sectionId: string): InsertSpot
  */
 export const FLASH_MS = 2000;
 
-/* ══════════════════════════════════════════════════════════════════════════
-   WHERE A BOX'S OWN "+" SITS (V-3)
-   ══════════════════════════════════════════════════════════════════════════ */
-
-/** The "+" button's side, in px. The step below must clear it. */
-export const BOX_PLUS_SIZE = 22;
-
-/**
- * How far each level of box pulls its "+" in from the level outside it.
- *
- * Bigger than the button, so two buttons can never share a pixel — which is
- * the entire defect. 26 is 22 plus a 4px gap, the same gap the hover toolbar
- * leaves between its own buttons.
- */
-export const BOX_PLUS_STEP = 26;
-
-/**
- * WHERE ONE BOX'S "+" GOES — the one placement rule, at every depth.
- *
- * FOUND BY DRIVING IT (verifier, 2026-09-17, on `d156/integration`): a
- * non-empty box painted its "+" pinned to its own bottom-right corner at
- * `right:-11px; bottom:-11px; z-index:6`. A row that is the LAST child of a box
- * has the same bottom-right corner as its parent, so the two 22×22 buttons
- * landed on the identical pixel with the identical z — and the parent's, being
- * appended after the nested box in the DOM, painted on top. From the second
- * level down, "press + inside this box" silently added one level OUT: exactly
- * the gesture Brandon's sentence is made of ("then a text field under it"),
- * landing in the wrong host every time.
- *
- * The rule: the "+" hangs on ITS OWN box's bottom-right corner, pulled in by
- * one step per level of nesting, and stacked one above its parent's. Two boxes
- * in an ancestor chain therefore differ in BOTH position and z, so the click
- * reaches the box the author pointed at. Depth 0 — a box sitting directly in a
- * column — keeps the placement it has today, so the common case looks
- * unchanged.
- *
- * Pure arithmetic on a number, so the invariant that makes it correct (the
- * offsets are strictly increasing and never closer together than the button is
- * wide) is a `node --test` rather than something you check by squinting at two
- * overlapping circles.
- */
-export interface BoxPlusPlacement {
-  /** Distance from the box's right edge, px. Negative hangs outside it. */
-  right: number;
-  /** Distance from the box's bottom edge, px. */
-  bottom: number;
-  /** Above the parent box's own "+", always. */
-  zIndex: number;
-}
-
-export function boxPlusPlacement(depth: number): BoxPlusPlacement {
-  const level = Math.max(0, Math.floor(depth) || 0);
-  return {
-    right: -11 + level * BOX_PLUS_STEP,
-    bottom: -11,
-    zIndex: 6 + level,
-  };
-}
+/* A BOX'S OWN "+" IS GONE (2026-09-19). `boxPlusPlacement`, `BOX_PLUS_SIZE`
+   and `BOX_PLUS_STEP` placed a "+" on the corner of every box that already had
+   something in it (V-3). The reference editor has no such button: an EMPTY
+   container shows a "+" in its middle, drawn by the canvas (`bxc-addhere`), and
+   a full one is added to by dragging from the left panel or by selecting it and
+   pressing a tile. Nothing needs a placement rule, so there is not one. */

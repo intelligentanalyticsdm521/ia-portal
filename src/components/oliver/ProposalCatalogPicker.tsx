@@ -306,6 +306,206 @@ const PICK_BTN: React.CSSProperties = {
   padding: "2px 7px", fontSize: 10, cursor: "pointer",
 };
 
+/* ══════════════════════════════════════════════════════════════════════════
+   THE ONE CATALOGUE PICKER, MULTI-SELECT (scope 11.13.2, 2026-09-19)
+   ══════════════════════════════════════════════════════════════════════════
+
+   Brandon: "Then cards or line items that you can load the products from."
+
+   The **Product Cards** and **Product Line Items** tiles in the widget pane
+   open THIS, in multi-select: *whole catalogue / one category / picked items*,
+   and one atomic widget is dropped per pick. It is the same component and the
+   same list the per-widget pickers use — one picker on the platform, as F.1
+   asks — with a `select` mode that adds the checkboxes and the three scope
+   buttons. Two pickers is how the two started saying different things about a
+   price (the note above this one, 2026-09-17). */
+
+/** One thing the author picked: an offering and, where it has one, a price. */
+export interface CatalogueChoice {
+  offering: CatalogOffering;
+  price: CatalogPrice | null;
+}
+
+/** The three scopes, in Brandon's own words. Nothing else is offered. */
+export type CatalogueScope = "all" | "category" | "picked";
+
+/** A stable key for one offering+price pair. The checkbox's identity. */
+export function choiceKey(offeringId: string, priceId: string | null): string {
+  return `${offeringId}::${priceId || ""}`;
+}
+
+/**
+ * EVERY PICKABLE PAIR of a catalogue, in catalogue order.
+ *
+ * An offering with three prices is three choices, because a tier IS what the
+ * author picks — "Per-push Plowing" is not a thing anybody quotes, "Per-push
+ * Plowing, 2-3 inch push, $525" is. An offering with NO price is one choice
+ * with a null price, which drops a card at $0 the author types over; refusing
+ * to offer it would hide a service somebody sells.
+ */
+export function choicesOf(offerings: CatalogOffering[]): CatalogueChoice[] {
+  const out: CatalogueChoice[] = [];
+  for (const o of offerings) {
+    const prices = o.prices?.length ? o.prices : [null];
+    for (const p of prices) out.push({ offering: o, price: p });
+  }
+  return out;
+}
+
+/** The categories the catalogue actually has, in first-seen order. */
+export function categoriesOf(offerings: CatalogOffering[]): string[] {
+  const out: string[] = [];
+  for (const o of offerings) {
+    const c = (o.category_name || "").trim();
+    if (c && !out.includes(c)) out.push(c);
+  }
+  return out;
+}
+
+/**
+ * WHAT A SCOPE MEANS, as a list of choices. Pure, so it is a test and not a
+ * click-through.
+ *
+ * `all`      — every priced pair in the catalogue.
+ * `category` — every pair in the named category. An unknown or empty category
+ *              is NOTHING, never everything: "add one category" that silently
+ *              added the whole catalogue is the kind of quiet over-quote the
+ *              2026-08-25 defect note above was written for.
+ * `picked`   — exactly the boxes ticked, in catalogue order.
+ */
+export function choicesForScope(
+  offerings: CatalogOffering[],
+  scope: CatalogueScope,
+  category: string,
+  ticked: string[],
+): CatalogueChoice[] {
+  const all = choicesOf(offerings);
+  if (scope === "all") return all;
+  if (scope === "category") {
+    const want = (category || "").trim();
+    if (!want) return [];
+    return all.filter((c) => (c.offering.category_name || "").trim() === want);
+  }
+  const set = new Set(ticked);
+  return all.filter((c) => set.has(choiceKey(c.offering.offering_id, c.price?.price_id ?? null)));
+}
+
+export interface CatalogueMultiPickerProps {
+  offerings: CatalogOffering[];
+  /** What the tile that opened this is going to drop. Plain words, on screen. */
+  what: string;
+  loading?: boolean;
+  onAdd: (choices: CatalogueChoice[]) => void;
+  onCancel: () => void;
+}
+
+/**
+ * The multi-select picker the two IA tiles open.
+ *
+ * The "Add" button says HOW MANY it is about to add, because "whole catalogue"
+ * on a business with 79 offerings and 114 prices is a click that fills a page
+ * — and a person who can see "Add 114" before they press it does not make that
+ * mistake twice.
+ */
+export function CatalogueMultiPicker({ offerings, what, loading, onAdd, onCancel }: CatalogueMultiPickerProps) {
+  const [scope, setScope] = useState<CatalogueScope>("picked");
+  const [category, setCategory] = useState("");
+  const [ticked, setTicked] = useState<string[]>([]);
+  const [q, setQ] = useState("");
+
+  const categories = useMemo(() => categoriesOf(offerings), [offerings]);
+  const visible = useMemo(
+    () => choicesOf(offerings).filter((c) => !q.trim()
+      || c.offering.name.toLowerCase().includes(q.trim().toLowerCase())
+      || (c.price?.label || "").toLowerCase().includes(q.trim().toLowerCase())),
+    [offerings, q],
+  );
+  const chosen = useMemo(
+    () => choicesForScope(offerings, scope, category, ticked),
+    [offerings, scope, category, ticked],
+  );
+
+  const toggle = (key: string) => {
+    setScope("picked");
+    setTicked((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  };
+
+  const scopeBtn = (v: CatalogueScope, text: string, title: string) => (
+    <button type="button" data-scope={v} title={title}
+      onClick={() => setScope(v)}
+      style={{ ...PICK_BTN, ...(scope === v ? { borderColor: "#0B6E8C", color: "#0B6E8C", fontWeight: 700 } : {}) }}>
+      {text}
+    </button>
+  );
+
+  return (
+    <div data-catalogue-multi="1" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={PICK_LBL}>Pick what goes on the page</span>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {scopeBtn("all", "Whole catalogue", "Add every product and service you sell, at its catalogue price")}
+        {scopeBtn("category", "One category", "Add everything in one category")}
+        {scopeBtn("picked", "Just these", "Add only the ones you tick below")}
+      </div>
+      {scope === "category" && (
+        <select data-category-select="1" style={PICK_INPUT} value={category}
+          title="Which category goes on the page"
+          onChange={(e) => setCategory(e.target.value)}>
+          <option value="">Choose a category…</option>
+          {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+        </select>
+      )}
+      <input style={PICK_INPUT} value={q} onChange={(e) => setQ(e.target.value)}
+        placeholder="Search your services…" title="Search Products & Services" data-catalog-search="1" />
+      <div style={{ maxHeight: 240, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+        {loading && !offerings.length && (
+          <div data-catalogue-loading="1" style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Loading your catalogue…
+          </div>
+        )}
+        {!loading && !offerings.length && (
+          <div style={{ fontSize: 11, color: "#5A7A8A", padding: "6px 2px" }}>
+            Nothing in Products &amp; Services yet. Add what you sell there and it is here every time.
+          </div>
+        )}
+        {visible.map((c) => {
+          const key = choiceKey(c.offering.offering_id, c.price?.price_id ?? null);
+          const inScope = chosen.some((x) =>
+            choiceKey(x.offering.offering_id, x.price?.price_id ?? null) === key);
+          return (
+            <label key={key} data-choice={key}
+              style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#0B1C24", cursor: "pointer" }}>
+              <input type="checkbox" checked={inScope} onChange={() => toggle(key)}
+                title={`Put ${c.offering.name} on the page`} />
+              <span style={{ fontWeight: 600 }}>{c.offering.name}</span>
+              <span style={{ color: "#5A7A8A" }}>
+                {c.price
+                  ? `${c.price.label ? `${c.price.label} · ` : ""}${fmtMoney(Number(c.price.unit_amount ?? 0))}${cadenceOf(c.price) ? `, ${cadenceOf(c.price)}` : ""}`
+                  : "no price yet"}
+              </span>
+            </label>
+          );
+        })}
+        {!visible.length && !!offerings.length && (
+          <div style={{ fontSize: 11, color: "#94A3B8" }}>Nothing matches “{q}”.</div>
+        )}
+      </div>
+      <div style={{ display: "flex", gap: 6 }}>
+        <button type="button" data-add-picked="1" disabled={!chosen.length}
+          title={chosen.length
+            ? `Put ${chosen.length} ${what} on the page, at their catalogue prices`
+            : "Tick something first, or choose the whole catalogue"}
+          style={{ ...PICK_BTN, borderColor: "#EF6C33", color: chosen.length ? "#EF6C33" : "#94A3B8", fontWeight: 700 }}
+          onClick={() => onAdd(chosen)}>
+          {chosen.length ? `Add ${chosen.length} ${what}` : `Add ${what}`}
+        </button>
+        <button type="button" style={PICK_BTN} onClick={onCancel} title="Close without adding anything">
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function CatalogPicker({ offerings, label, onPick, onPickAll, bulkLabel, loading }: CatalogPickerProps) {
   const [q, setQ] = useState("");
   const list = useMemo(

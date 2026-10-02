@@ -269,14 +269,33 @@ function custom(p: any, ctx: RenderContext): string {
   return `<div class="sw-locked">
     <div class="sw-lockhead">
       <span class="sw-lockicon">🔒</span>
-      <span class="sw-locktitle">${esc(lock.label || "Custom section (kept as is)")}</span>
-      ${lock.adoptable ? `<span class="sw-lockchip" style="background:${esc(ctx.accent)}">Can be made editable</span>` : ""}
+      <span class="sw-locktitle">${esc(lock.label || "Kept exactly as it is")}</span>
     </div>
     ${preview ? `<div class="sw-lockpreview">“${esc(preview)}”</div>` : ""}
     <div class="sw-locknote">${esc(
-    lock.adoptable
-      ? `This looks like a ${String(lock.adoptKindLabel || "section").toLowerCase()}. Use “Make it editable” on the right — you can undo it for 30 days.`
-      : lock.why || "It stays exactly as it is. Publishing this page does not change one byte of it.",
+    lock.why || "It stays exactly as it is. Publishing this page does not change one byte of it.",
+  )}</div>
+  </div>`;
+}
+
+/**
+ * ONE WIDGET ON THE CLIENT'S PAGE THAT WE HAVE NO ROW FOR (B-168, 2026-09-22).
+ *
+ * Everything around it on the page is editable; this one is not, and it says
+ * so by name and says where it CAN be changed. It is written back to the
+ * website byte for byte, so it is never a hole in somebody's live page — which
+ * is the whole reason a page with one on it still opens.
+ */
+function opaque(p: any, _ctx: RenderContext): string {
+  const what = String(p.__widgetType || "").trim();
+  return `<div class="sw-locked">
+    <div class="sw-lockhead">
+      <span class="sw-lockicon">🔒</span>
+      <span class="sw-locktitle">${esc(what ? `Built with ${what}` : "Built on the website")}</span>
+    </div>
+    <div class="sw-locknote">${esc(
+    "This part was built on the website itself and we cannot change it here. "
+    + "It stays exactly as it is — edit it in WordPress, or ask us to change it.",
   )}</div>
   </div>`;
 }
@@ -315,6 +334,7 @@ const SITE_RENDERERS: Record<string, (p: any, ctx: RenderContext) => string> = {
   site_stats: stats,
   site_contact: contact,
   site_custom: custom,
+  opaque,
   video,
   map,
 };

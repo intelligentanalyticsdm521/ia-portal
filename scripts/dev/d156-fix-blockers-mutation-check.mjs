@@ -23,13 +23,17 @@ const MODEL = "src/builder/model.ts";
 const SHELL = "src/builder/BuilderShell.tsx";
 const PROPOSAL = "src/builder/proposal/ProposalBuilder.tsx";
 const EMAIL = "src/builder/adapters/email/EmailBuilder.tsx";
-const CANVAS = "src/builder/Canvas.tsx";
-const PLACE = "src/builder/insertPosition.ts";
 const RENDER = "src/builder/render.ts";
-const PICKER = "src/builder/WidgetPicker.tsx";
 
 const BLOCKERS = "test/builder-fix-blockers.test.mjs";
-const USABILITY = "test/builder-usability.test.mjs";
+
+/* SIX MUTATIONS WERE RETIRED ON 2026-09-19, because the code they put back no
+   longer exists to break: the slash command (V1c), a box's own corner "+" and
+   its placement rule (V3a, V3b, V3c) and the widget pop-up's box door (V3e,
+   V3f). The tests that caught them are now absence+presence pairs, which a
+   mutation harness cannot help with — you cannot revert a deletion by editing
+   one line. Removed rather than left SKIPping: a harness that reports six stale
+   checks every run is a harness nobody reads. */
 
 const MUTATIONS = [
   {
@@ -47,14 +51,6 @@ const MUTATIONS = [
     to: "    const next = doc.sections[0]?.columns[0]?.widgets.some((w) => w.id === widgetId)\n      ? editWidgetText(doc, widgetId, path, value) : doc;",
     test: BLOCKERS,
     expects: "no column scan is left in onEditText",
-  },
-  {
-    name: "V1c the slash command scans a column again",
-    file: SHELL,
-    from: '    const cleared = editWidgetText(doc, s.widgetId, s.path, "");',
-    to: '    const cleared = patchWidget(doc, here, setPropPath(widget.props, s.path, ""));',
-    test: USABILITY,
-    expects: "the slash command's clear and insert are ONE document operation",
   },
   {
     name: "V2a the proposal panel hand-rolls the walk again",
@@ -89,52 +85,12 @@ const MUTATIONS = [
     expects: "pressing it twice leaves ONE line",
   },
   {
-    name: "V3a every box's + is pinned to the same corner again",
-    file: PLACE,
-    from: "  return {\n    right: -11 + level * BOX_PLUS_STEP,\n    bottom: -11,\n    zIndex: 6 + level,\n  };",
-    to: "  return {\n    right: -11,\n    bottom: -11,\n    zIndex: 6,\n  };",
-    test: BLOCKERS,
-    expects: "no two boxes in an ancestor chain share a pixel or a layer",
-  },
-  {
-    name: "V3b the step no longer clears the button",
-    file: PLACE,
-    from: "export const BOX_PLUS_STEP = 26;",
-    to: "export const BOX_PLUS_STEP = 8;",
-    test: BLOCKERS,
-    expects: "no two boxes in an ancestor chain share a pixel or a layer",
-  },
-  {
-    name: "V3c the canvas stops asking how deep the box is",
-    file: CANVAS,
-    from: "      const place = boxPlusPlacement(level);",
-    to: "      const place = boxPlusPlacement(0);",
-    test: BLOCKERS,
-    expects: "THE CANVAS USES IT",
-  },
-  {
     name: "V3d the depth limit becomes two numbers again",
     file: RENDER,
     from: "export const MAX_CONTAINER_DEPTH = MAX_DEPTH;",
     to: "export const MAX_CONTAINER_DEPTH = 12;",
     test: BLOCKERS,
     expects: "the renderer's guard is the editor's own limit",
-  },
-  {
-    name: "V3e the slash picker loses its box door",
-    file: SHELL,
-    from: "              onPickBox={slashCommitBox}",
-    to: "",
-    test: BLOCKERS,
-    expects: "the slash command can ask for a Box, a Row or a Grid",
-  },
-  {
-    name: "V3f the Layout group disappears again when only a box matches",
-    file: PICKER,
-    from: '    if (!boxes.length || groups.some((g) => g.task === "Layout")) return groups;',
-    to: "    if (true) return groups;",
-    test: BLOCKERS,
-    expects: "a search that matches only a BOX still shows the Layout group",
   },
 ];
 

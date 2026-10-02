@@ -57,7 +57,12 @@ export function TemplateGallery(p: TemplateGalleryProps) {
       open={p.open}
       onClose={p.onClose}
       product="spark"
-      eyebrow="MY BRAND · DESIGN STUDIO"
+      /* NO EYEBROW ON A BUILDER DOOR (D-172, round 2) — the reference
+           has no eyebrow line anywhere in its editor chrome, and the builder
+           frame already passes an empty one. The gallery that opens BEFORE
+           the editor still read it, so the first thing on screen was the one
+           line the reference never draws. */
+        eyebrow=""
       title="What are you making?"
       subtitle="Every one of these opens already in your colours, your fonts and your logo. Change the words and it is yours."
       size="report"

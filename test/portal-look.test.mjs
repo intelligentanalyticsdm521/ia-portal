@@ -449,7 +449,12 @@ describe("the Portal Designer, the Welcome HTML scaffold and custom CSS are gone
 
   test("no custom CSS field anywhere in the Portal", () => {
     const offenders = [];
+    // The document builders are the one exception, on purpose: their Advanced
+    // tab carries Custom CSS because that is the Elementor model Brandon asked
+    // the builders to follow (builder scope §11.13.1, released 2 Oct 2026). The
+    // rule here is about the Portal's own screens and the customer portal look.
     const walk = (dir) => {
+      if (path.relative(ROOT, dir).split(path.sep).join("/") === "src/builder") return;
       for (const e of readdirSync(dir, { withFileTypes: true })) {
         const p = path.join(dir, e.name);
         if (e.isDirectory()) walk(p);
