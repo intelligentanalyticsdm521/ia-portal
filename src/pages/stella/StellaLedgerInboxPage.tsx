@@ -1,29 +1,49 @@
 // StellaLedgerInboxPage — Ledger → Inbox.
 //
 // The needs-review queue (status IN needs_categorization / flagged) — the core
-// bookkeeping UX. Reads GET /ledger/inbox (raw stella.[transaction] rows).
-// Quick-categorize: every needs_categorization row carries an inline SEARCHABLE
-// account combobox (Brandon's walkthrough, 2026-08-13: "a search option in the
-// ledger inbox so you can easily find an account") — a text input filtering the
-// COA list (expense accounts first for outflows, revenue first for inflows,
-// arrow/enter keyboard selection, click-away closes; built inline, no new dep)
-// plus a one-tap "Categorize" button that PATCHes /ledger/transactions/:id
-// with { coa_account_id, status: 'categorized' } — the row leaves the inbox on
-// success with a count-down flash. Outflow rows also carry a compact "Personal"
-// quick-action (PATCH status:'personal' — excluded from the books entirely; the
-// row leaves the inbox). A plain search box above the table filters the rows
-// themselves by counterparty/description/memo. Row click opens the
-// TransactionDetailModal (IadmModal standard) so a line can be memo'd / voided
-// / reimbursed without leaving the queue (inline controls stopPropagation so
-// they don't open it).
-// Duplicate / OCR-pending review reasons return with P3 receipt capture.
+// bookkeeping UX. Reads GET /ledger/inbox kept whole (getFull) so the real
+// total in pagination.total is the number on screen, 100 rows at a time with
+// "Show N more".
+//
+// One line at a time: every needs_categorization row carries an inline
+// SEARCHABLE category picker (Brandon's walkthrough, 2026-08-13: "a search
+// option in the ledger inbox so you can easily find an account") plus a
+// one-tap "Categorize" that PATCHes /ledger/transactions/:id with
+// { coa_account_id, status: 'categorized' }. "Personal" PATCHes
+// { status: 'personal' } at once — no browser box — and the line that says so
+// carries Undo, which PATCHes the line back to the status it had
+// (undoPersonalBody in inboxBulk.ts).
+//
+// Many at once (the owner, 2 Oct 2026: "I'd like to be able to once a week go
+// in and just hit bulk assign button and it allows me to check multiple items
+// then assign it to a category or personal item"): "Bulk assign" turns on
+// selection mode — a checkbox per row, shift-click for a range, "Select all N
+// shown", and one bar (InboxBulkBar) with "Assign N to this category" and
+// "Mark N personal". Each is one POST /ledger/transactions/bulk (per 200
+// lines), the answer is said in one line from the per-row messages, the list
+// reloads, and selection mode stays on for the next batch.
+//
+// Never a dead control: if there are no categories, or they failed to load,
+// the row says so in words with the way to the categories page — never a
+// greyed picker with no reason. Row click opens the TransactionDetailModal
+// (outside selection mode) so a line can be memo'd / split / voided.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, Button, FilterBar, type Column } from "../../components/oliver/ui";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ListChecks } from "lucide-react";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./StellaShell";
 import { TransactionDetailModal, type DetailTxn } from "./TransactionDetailModal";
 import type { CoaAccount } from "./RecordTransactionModal";
+import { CategoryNote, InboxBulkBar } from "./InboxBulkBar";
+import { STELLA_SETUP_ROUTES } from "./stellaSetupSteps";
+import {
+  INBOX_PAGE_SIZE, EMPTY_SELECTION, MONEY_IN_PERSONAL_RULE,
+  canMarkPersonal, plainReason, personalSplit, clickRow, selectAllShown, allShownSelected, selectedShown,
+  sendBulk, bulkResultSentence, queueLine, moreToLoad,
+  readInboxEnvelope, mergePage, undoPersonalBody, categoryProblem,
+  type BulkAction, type InboxSelection,
+} from "./inboxBulk";
 
 // GET /ledger/inbox row — raw stella.[transaction] columns (subset we use).
 interface InboxItem {
@@ -39,9 +59,12 @@ interface InboxItem {
   trust_flags?: string[] | null;
   is_reimbursable?: boolean | number | null;
   reimbursed_at?: string | null;
+  // True for money out; for money in only when the line came from a bank
+  // connection the owner marked as a personal card.
+  can_mark_personal?: boolean | null;
   // STELLA pack 2, item 3 — what the ledger LEARNED from the owner correcting
   // rows like this one before. A suggestion, never an answer: nothing is
-  // applied until somebody presses Categorize, because setting the account is
+  // applied until somebody presses Categorize, because setting the category is
   // what puts the line in the books.
   suggestion?: {
     coa_account_id: string;
@@ -54,6 +77,13 @@ interface InboxItem {
     source: string;
     why: string;
   } | null;
+}
+
+interface Notice {
+  tone: "ok" | "problem";
+  text: string;
+  /** A line just marked Personal — the notice offers Undo for it. */
+  undo?: InboxItem;
 }
 
 const STATUS_PILL: Record<string, { bg: string; color: string; label: string }> = {
@@ -83,10 +113,19 @@ function coaLabel(a: CoaAccount): string {
   return a.code ? `${a.code} — ${a.name}` : a.name;
 }
 
+function sentenceOf(e: unknown, fallback: string): string {
+  return plainReason(e) || fallback;
+}
+
+function leftLine(n: number): string {
+  return n <= 0 ? "Inbox zero — all caught up." : `${n} left to review.`;
+}
+
 /**
- * Inline searchable account combobox (house style, no dependency): a text
- * input filtering the COA list, dropdown of matches (row-direction accounts
- * first), ArrowUp/ArrowDown + Enter selection, Escape/click-away closes.
+ * Inline searchable category combobox (house style, no dependency): a text
+ * input filtering the category list, dropdown of matches (row-direction
+ * categories first), ArrowUp/ArrowDown + Enter selection, Escape/click-away
+ * closes.
  */
 function CoaCombobox({
   accounts,
@@ -169,9 +208,9 @@ function CoaCombobox({
       <input
         role="combobox"
         aria-expanded={open}
-        aria-label="Search accounts"
+        aria-label="Search categories"
         value={open ? query : selected ? coaLabel(selected) : ""}
-        placeholder={selected ? coaLabel(selected) : "Search accounts…"}
+        placeholder={selected ? coaLabel(selected) : "Search categories…"}
         onChange={(e) => {
           setQuery(e.target.value);
           if (!open) setOpen(true);
@@ -199,12 +238,12 @@ function CoaCombobox({
           }}
         >
           {matches.length === 0 ? (
-            <div style={{ padding: "8px 10px", fontSize: 11, color: "#94A3B8" }}>No accounts match "{query}"</div>
+            <div style={{ padding: "8px 10px", fontSize: 11, color: "#94A3B8" }}>No categories match "{query}"</div>
           ) : (
             matches.map((a, i) => (
               <div key={a.coa_account_id}>
-                {i === 0 && preferredCount > 0 && groupHeader(preferredType === "revenue" ? "Revenue" : "Expenses")}
-                {i === preferredCount && groupHeader("Other accounts")}
+                {i === 0 && preferredCount > 0 && groupHeader(preferredType === "revenue" ? "Income" : "Expenses")}
+                {i === preferredCount && groupHeader("Other categories")}
                 <button
                   type="button"
                   tabIndex={-1}
@@ -232,57 +271,96 @@ function CoaCombobox({
 }
 
 export function StellaLedgerInboxPage() {
-  const { get, patch, ready } = useStellaApi();
+  const { get, getFull, patch, post, ready } = useStellaApi();
   const [rows, setRows] = useState<InboxItem[]>([]);
+  // pagination.total from the API — the real size of the queue, not what is loaded.
+  const [total, setTotal] = useState(0);
   const [coa, setCoa] = useState<CoaAccount[]>([]);
+  const [coaState, setCoaState] = useState<"loading" | "ok" | "failed">("loading");
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [filter, setFilter] = useState("all");
   const [busy, setBusy] = useState<string | null>(null);
-  const [flash, setFlash] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [detail, setDetail] = useState<InboxItem | null>(null);
-  // Per-row pending COA pick for the inline quick-categorize combobox.
+  // Per-row pending category pick for the inline quick-categorize combobox.
   const [picks, setPicks] = useState<Record<string, string>>({});
   // Plain text filter over the inbox rows themselves (counterparty/description).
   const [search, setSearch] = useState("");
+  // Selection mode ("Bulk assign").
+  const [selecting, setSelecting] = useState(false);
+  const [sel, setSel] = useState<InboxSelection>(EMPTY_SELECTION);
+  const [bulkCoa, setBulkCoa] = useState("");
+  const [askPersonal, setAskPersonal] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<BulkAction | null>(null);
 
-  const reload = useCallback(async () => {
+  // Pre-select what we learned, so accepting a suggestion is ONE press and
+  // disagreeing with it is a normal change of the same picker. A suggestion
+  // that had to be typed out again would teach nobody anything.
+  const preselect = useCallback((page: InboxItem[]) => {
+    setPicks((prev) => {
+      const next = { ...prev };
+      for (const r of page) {
+        if (r.suggestion && !next[r.transaction_id]) next[r.transaction_id] = r.suggestion.coa_account_id;
+      }
+      return next;
+    });
+  }, []);
+
+  const inboxPage = useCallback(
+    async (offset: number) =>
+      readInboxEnvelope<InboxItem>(await getFull<unknown>(`/ledger/inbox?limit=${INBOX_PAGE_SIZE}&offset=${offset}`)),
+    [getFull]
+  );
+
+  // Load the queue from the top, 100 at a time, until `want` rows are on
+  // screen or the queue ends — so a reload after a batch keeps as much of the
+  // list showing as before.
+  const load = useCallback(async (want: number) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await get<InboxItem[]>("/ledger/inbox");
-      setRows(data || []);
-      // Pre-select what we learned, so accepting a suggestion is ONE press and
-      // disagreeing with it is a normal change of the same picker. A suggestion
-      // that had to be typed out again would teach nobody anything.
-      setPicks((prev) => {
-        const next = { ...prev };
-        for (const r of data || []) {
-          if (r.suggestion && !next[r.transaction_id]) next[r.transaction_id] = r.suggestion.coa_account_id;
-        }
-        return next;
-      });
+      let all: InboxItem[] = [];
+      let queueTotal = 0;
+      for (let offset = 0; offset < want; offset += INBOX_PAGE_SIZE) {
+        const page = await inboxPage(offset);
+        all = mergePage(all, page.rows);
+        queueTotal = page.total;
+        if (page.rows.length < INBOX_PAGE_SIZE) break;
+      }
+      setRows(all);
+      setTotal(Math.max(queueTotal, all.length));
+      preselect(all);
     } catch (e) {
       setError(e);
     } finally {
       setLoading(false);
     }
+  }, [inboxPage, preselect]);
+
+  useEffect(() => {
+    if (ready) load(INBOX_PAGE_SIZE);
+  }, [ready, load]);
+
+  // Categories once per page — feed every row's picker, the bulk bar, AND the
+  // detail modal (which skips its own fetch when handed a list). The API
+  // creates the standard categories on this first read for a business that
+  // never had any.
+  const loadCoa = useCallback(async () => {
+    setCoaState("loading");
+    try {
+      setCoa((await get<CoaAccount[]>("/ledger/coa")) || []);
+      setCoaState("ok");
+    } catch {
+      setCoa([]);
+      setCoaState("failed");
+    }
   }, [get]);
 
   useEffect(() => {
-    if (ready) reload();
-  }, [ready, reload]);
-
-  // COA once per page — feeds every row's quick-categorize select AND the
-  // detail modal (which skips its own fetch when handed a list).
-  useEffect(() => {
-    if (!ready) return;
-    let cancelled = false;
-    get<CoaAccount[]>("/ledger/coa")
-      .then((accounts) => { if (!cancelled) setCoa(accounts || []); })
-      .catch(() => { if (!cancelled) setCoa([]); });
-    return () => { cancelled = true; };
-  }, [get, ready]);
+    if (ready) loadCoa();
+  }, [ready, loadCoa]);
 
   const filtered = useMemo(() => {
     let out = rows;
@@ -298,15 +376,48 @@ export function StellaLedgerInboxPage() {
     return out;
   }, [rows, filter, search]);
 
-  function flashMsg(m: string) {
-    setFlash(m);
-    setTimeout(() => setFlash(null), 4000);
-  }
+  const shownIds = useMemo(() => filtered.map((r) => r.transaction_id), [filtered]);
+  const picked = useMemo(() => selectedShown(filtered, sel), [filtered, sel]);
+  const personal = useMemo(() => personalSplit(picked), [picked]);
 
   const activeCoa = useMemo(
     () => coa.filter((a) => a.is_active !== false && a.is_active !== 0),
     [coa]
   );
+  const pickerProblem = categoryProblem({
+    loading: coaState === "loading",
+    failed: coaState === "failed",
+    count: activeCoa.length,
+  });
+  const categoryNote = pickerProblem ? (
+    <CategoryNote problem={pickerProblem} onRetry={coaState === "failed" ? loadCoa : undefined} />
+  ) : null;
+
+  async function showMore() {
+    setLoadingMore(true);
+    try {
+      const page = await inboxPage(rows.length);
+      setRows((prev) => mergePage(prev, page.rows));
+      setTotal(page.total);
+      preselect(page.rows);
+    } catch (e) {
+      setNotice({ tone: "problem", text: `We couldn't load more lines: ${sentenceOf(e, "please try again")}` });
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  // A line that leaves the queue on screen; the total follows it.
+  function dropRow(id: string) {
+    setRows((prev) => prev.filter((x) => x.transaction_id !== id));
+    setTotal((t) => Math.max(0, t - 1));
+    setSel((s) => {
+      if (!s.ids.has(id)) return s;
+      const ids = new Set(s.ids);
+      ids.delete(id);
+      return { ids, anchor: s.anchor };
+    });
+  }
 
   async function categorize(r: InboxItem) {
     const coaAccountId = picks[r.transaction_id];
@@ -317,48 +428,96 @@ export function StellaLedgerInboxPage() {
         coa_account_id: coaAccountId,
         status: "categorized",
       });
-      const account = activeCoa.find((a) => a.coa_account_id === coaAccountId);
-      setRows((prev) => {
-        const next = prev.filter((x) => x.transaction_id !== r.transaction_id);
-        flashMsg(
-          `Categorized "${r.description || "transaction"}" → ${account?.name || "account"}. ` +
-          (next.length === 0 ? "Inbox zero — all caught up." : `${next.length} left to review.`)
-        );
-        return next;
+      const category = activeCoa.find((a) => a.coa_account_id === coaAccountId);
+      dropRow(r.transaction_id);
+      setNotice({
+        tone: "ok",
+        text: `Categorized "${r.description || "transaction"}" as ${category?.name || "that category"}. ${leftLine(total - 1)}`,
       });
       setPicks((prev) => {
         const { [r.transaction_id]: _gone, ...rest } = prev;
         return rest;
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Categorize failed");
+      setNotice({ tone: "problem", text: sentenceOf(e, "That line couldn't be categorized. Please try again.") });
     } finally {
       setBusy(null);
     }
   }
 
-  // "Personal" quick-action (Brandon's walkthrough, 2026-08-13) — exclude a
-  // personal charge from the books in one tap: PATCH status:'personal', the
-  // row leaves the inbox with a flash. Undo lives in the detail modal / the
-  // Transactions page's Personal filter ("Add back to business books").
+  // "Personal" (Brandon's walkthrough, 2026-08-13) — exclude a personal charge
+  // from the books in one tap, at once: no browser box. The line that says so
+  // offers Undo, so a slip costs one more press instead of a question every time.
   async function markPersonal(r: InboxItem) {
-    if (!confirm("Exclude this from your business books? It stays on the bank record but leaves every report and total.")) return;
     setBusy(r.transaction_id);
     try {
       await patch(`/ledger/transactions/${r.transaction_id}`, { status: "personal" });
-      setRows((prev) => {
-        const next = prev.filter((x) => x.transaction_id !== r.transaction_id);
-        flashMsg(
-          `Marked "${r.description || "transaction"}" personal — it's out of your books. ` +
-          (next.length === 0 ? "Inbox zero — all caught up." : `${next.length} left to review.`)
-        );
-        return next;
+      dropRow(r.transaction_id);
+      setNotice({
+        tone: "ok",
+        text: `Marked "${r.description || "transaction"}" personal — it's out of your books. ${leftLine(total - 1)}`,
+        undo: r,
       });
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Could not mark this personal");
+      setNotice({ tone: "problem", text: sentenceOf(e, "That line couldn't be marked personal. Please try again.") });
     } finally {
       setBusy(null);
     }
+  }
+
+  // Undo puts the line back exactly as it was: its old status, and its
+  // "needs reimbursement" flag if it had one (marking personal clears it).
+  async function undoPersonal(r: InboxItem) {
+    setBusy(r.transaction_id);
+    try {
+      await patch(`/ledger/transactions/${r.transaction_id}`, undoPersonalBody(r));
+      setNotice({ tone: "ok", text: `"${r.description || "That line"}" is back in your inbox.` });
+      await load(Math.max(INBOX_PAGE_SIZE, rows.length + 1));
+    } catch (e) {
+      setNotice({ tone: "problem", text: `We couldn't put it back: ${sentenceOf(e, "please try again")}` });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function runBulk(action: BulkAction) {
+    const targets = action === "personal" ? personal.eligible : picked;
+    const skipped = action === "personal" ? personal.skipped : 0;
+    if (!targets.length) return;
+    if (action === "categorize" && !bulkCoa) return;
+    const categoryName = action === "categorize"
+      ? activeCoa.find((a) => a.coa_account_id === bulkCoa)?.name || null
+      : null;
+    setAskPersonal(false);
+    setBulkBusy(action);
+    setNotice(null);
+    // One POST /ledger/transactions/bulk per 200 lines; only ever the category
+    // picked in the bar, never a suggestion.
+    const { answer, unsent } = await sendBulk(post, action, targets.map((r) => r.transaction_id), bulkCoa);
+    setNotice({
+      tone: answer.done > 0 ? "ok" : "problem",
+      text: bulkResultSentence({ action, categoryName, answer, skipped, unsent }),
+    });
+    // Selection mode stays on for the next batch; the picks start fresh.
+    setSel(EMPTY_SELECTION);
+    setBulkBusy(null);
+    await load(Math.max(INBOX_PAGE_SIZE, rows.length));
+  }
+
+  function toggle(r: InboxItem, shift: boolean) {
+    setSel((s) => clickRow(s, shownIds, r.transaction_id, shift));
+  }
+
+  function startSelecting() {
+    setSelecting(true);
+    setSel(EMPTY_SELECTION);
+    setAskPersonal(false);
+  }
+
+  function stopSelecting() {
+    setSelecting(false);
+    setSel(EMPTY_SELECTION);
+    setAskPersonal(false);
   }
 
   const columns: Column<InboxItem>[] = [
@@ -421,59 +580,73 @@ export function StellaLedgerInboxPage() {
           <span style={{ fontSize: 11, color: "#CBD5E1" }}>—</span>
         ),
     },
-    {
+  ];
+
+  // Outside selection mode each row carries its own controls. In selection
+  // mode the one bar above the table does the work, so the rows stay quiet and
+  // "What we think" is the last column — what you select by.
+  if (!selecting) {
+    columns.push({
       key: "categorize",
       header: "Quick categorize",
       align: "right",
       // stopPropagation so the inline controls don't ALSO open the row's
       // detail modal (rows are clickable — see onRowClick below).
-      render: (r) =>
-        r.status === "needs_categorization" ? (
+      render: (r) => {
+        if (r.status !== "needs_categorization") {
+          return <span style={{ fontSize: 11, color: "#94A3B8" }}>Open to review</span>;
+        }
+        const personalOk = canMarkPersonal(r);
+        return (
           <div data-tour="stella-inbox-quick-categorize" style={{ display: "flex", gap: 6, justifyContent: "flex-end", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-            <CoaCombobox
-              accounts={activeCoa}
-              direction={r.direction}
-              value={picks[r.transaction_id] || ""}
-              onChange={(id) => setPicks((prev) => ({ ...prev, [r.transaction_id]: id }))}
-              disabled={busy === r.transaction_id || !activeCoa.length}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => categorize(r)}
-              disabled={busy === r.transaction_id || !picks[r.transaction_id]}
-            >
-              <CheckCircle2 size={11} color="#059669" /> {busy === r.transaction_id ? "Saving…" : "Categorize"}
-            </Button>
+            {categoryNote ?? (
+              <>
+                <CoaCombobox
+                  accounts={activeCoa}
+                  direction={r.direction}
+                  value={picks[r.transaction_id] || ""}
+                  onChange={(id) => setPicks((prev) => ({ ...prev, [r.transaction_id]: id }))}
+                  disabled={busy === r.transaction_id}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => categorize(r)}
+                  disabled={busy === r.transaction_id || !picks[r.transaction_id]}
+                  title={picks[r.transaction_id] ? undefined : "Pick a category first"}
+                >
+                  <CheckCircle2 size={11} color="#059669" /> {busy === r.transaction_id ? "Saving…" : "Categorize"}
+                </Button>
+              </>
+            )}
             {/* Always rendered so row actions align (Brandon's walkthrough
-                note, 2026-08-14) — greyed out on inflows where "personal
-                expense" doesn't apply. */}
+                note, 2026-08-14) — greyed out where "personal" doesn't apply,
+                with the reason on it. */}
             <button
               type="button"
-              onClick={() => r.direction === "outflow" && markPersonal(r)}
-              disabled={r.direction !== "outflow" || busy === r.transaction_id}
+              onClick={() => personalOk && markPersonal(r)}
+              disabled={!personalOk || busy === r.transaction_id}
               title={
-                r.direction === "outflow"
-                  ? "This is a personal expense — exclude it from your business books"
-                  : "Only expenses can be marked personal — this is money in"
+                personalOk
+                  ? "This is personal — take it out of your business books"
+                  : `Can't mark this personal: ${MONEY_IN_PERSONAL_RULE}`
               }
               style={{
                 padding: "5px 10px", fontSize: 11, fontWeight: 600, borderRadius: 6,
                 whiteSpace: "nowrap",
-                border: r.direction === "outflow" ? "1px solid #CBD5E1" : "1px solid #E2E8F0",
-                background: r.direction === "outflow" ? "#fff" : "#F8FAFC",
-                color: r.direction === "outflow" ? "#475569" : "#CBD5E1",
-                cursor: r.direction === "outflow" ? "pointer" : "not-allowed",
+                border: personalOk ? "1px solid #CBD5E1" : "1px solid #E2E8F0",
+                background: personalOk ? "#fff" : "#F8FAFC",
+                color: personalOk ? "#475569" : "#CBD5E1",
+                cursor: personalOk ? "pointer" : "not-allowed",
               }}
             >
               Personal
             </button>
           </div>
-        ) : (
-          <span style={{ fontSize: 11, color: "#94A3B8" }}>Open to review</span>
-        ),
-    },
-  ];
+        );
+      },
+    });
+  }
 
   // Map an inbox item onto the DetailTxn shape the shared modal expects.
   function toDetailTxn(r: InboxItem): DetailTxn {
@@ -491,21 +664,43 @@ export function StellaLedgerInboxPage() {
     };
   }
 
+  const more = moreToLoad(total, rows.length);
+  const bulkDirection = picked.length && picked.every((r) => r.direction === "inflow") ? "inflow" : "outflow";
+
   return (
     <StellaShell
       title="Inbox"
-      subtitle="Review new transactions — pick an account and categorize in one tap, or open a row for the full detail."
+      subtitle="Review new transactions — pick a category for each line, or use Bulk assign to clear many at once."
       showRecord
       onRecorded={() => {
-        reload();
-        flashMsg("Recorded.");
+        load(Math.max(INBOX_PAGE_SIZE, rows.length + 1));
+        setNotice({ tone: "ok", text: "Recorded." });
       }}
       error={error}
       loading={loading && !rows.length}
     >
-      {flash && (
-        <div style={{ padding: 10, marginBottom: 12, fontSize: 12, background: "#EEF0FB", color: "#3730A3", border: `1px solid ${STELLA_INDIGO}33`, borderRadius: 6 }}>
-          {flash}
+      {notice && (
+        <div
+          role="status"
+          style={{
+            display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+            padding: "10px 14px", marginBottom: 12, fontSize: 12, lineHeight: 1.5, borderRadius: 8,
+            ...(notice.tone === "ok"
+              ? { background: "#EEF0FB", color: "#3730A3", border: `1px solid ${STELLA_INDIGO}33` }
+              : { background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA" }),
+          }}
+        >
+          <span style={{ flex: 1, minWidth: 200 }}>{notice.text}</span>
+          {notice.undo && (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => notice.undo && undoPersonal(notice.undo)}
+              disabled={busy === notice.undo.transaction_id}
+            >
+              {busy === notice.undo.transaction_id ? "Putting it back…" : "Undo"}
+            </Button>
+          )}
         </div>
       )}
 
@@ -526,18 +721,75 @@ export function StellaLedgerInboxPage() {
             />
             {search.trim() && (
               <span style={{ fontSize: 11, color: "#5A7A8A" }}>
-                {filtered.length} of {rows.length} transaction{rows.length === 1 ? "" : "s"}
+                {filtered.length} of the {rows.length} shown match
+                {more > 0 ? " — Show more below to search further" : ""}
               </span>
+            )}
+            <span style={{ flex: 1 }} />
+            <span data-queue-count="1" style={{ fontSize: 12, fontWeight: 700, color: "#0B1C24" }}>
+              {queueLine(total, rows.length)}
+            </span>
+            <Link to={STELLA_SETUP_ROUTES.coa} style={{ fontSize: 12, fontWeight: 600, color: STELLA_INDIGO }}>
+              Edit categories
+            </Link>
+            {!selecting && (
+              <Button data-tour="stella-inbox-bulk-assign" variant="primary" size="sm" style={{ background: STELLA_INDIGO }} onClick={startSelecting}>
+                <ListChecks size={12} /> Bulk assign
+              </Button>
             )}
           </div>
           <FilterBar pills={FILTER_PILLS} activePill={filter} onPillChange={setFilter} />
-          <DataTable
-            rows={filtered}
-            columns={columns}
-            rowKey={(r) => r.transaction_id}
-            onRowClick={(r) => setDetail(r)}
-            emptyMessage={search.trim() ? "No inbox rows match your search." : "Nothing to review in this filter."}
-          />
+          {selecting && (
+            <InboxBulkBar
+              shownCount={filtered.length}
+              selectedCount={picked.length}
+              allSelected={allShownSelected(sel, shownIds)}
+              onSelectAll={() => setSel((s) => selectAllShown(s, shownIds))}
+              onClear={() => { setSel(EMPTY_SELECTION); setAskPersonal(false); }}
+              onDone={stopSelecting}
+              picker={
+                categoryNote ?? (
+                  <CoaCombobox
+                    accounts={activeCoa}
+                    direction={bulkDirection}
+                    value={bulkCoa}
+                    onChange={setBulkCoa}
+                    disabled={bulkBusy !== null}
+                  />
+                )
+              }
+              categoryPicked={!!bulkCoa && !pickerProblem}
+              onAssign={() => runBulk("categorize")}
+              personalEligible={personal.eligible.length}
+              personalSkipped={personal.skipped}
+              asking={askPersonal}
+              onAskPersonal={() => setAskPersonal(true)}
+              onConfirmPersonal={() => runBulk("personal")}
+              onCancelPersonal={() => setAskPersonal(false)}
+              busy={bulkBusy}
+            />
+          )}
+          {/* Shift-click picks a range; it must not also paint text. */}
+          <div style={selecting ? { userSelect: "none" } : undefined}>
+            <DataTable
+              rows={filtered}
+              columns={columns}
+              rowKey={(r) => r.transaction_id}
+              onRowClick={(r, e) => (selecting ? toggle(r, e.shiftKey) : setDetail(r))}
+              selectedIds={selecting ? sel.ids : undefined}
+              onSelectionChange={selecting ? (ids) => setSel((s) => ({ ids, anchor: s.anchor })) : undefined}
+              onRowCheckboxClick={(r, e) => toggle(r, e.shiftKey)}
+              emptyMessage={search.trim() ? "No inbox rows match your search." : "Nothing to review in this filter."}
+            />
+          </div>
+          {more > 0 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 12 }}>
+              <span style={{ fontSize: 11, color: "#5A7A8A" }}>{queueLine(total, rows.length)}</span>
+              <Button variant="secondary" size="sm" onClick={showMore} disabled={loadingMore} loading={loadingMore}>
+                {loadingMore ? "Loading…" : `Show ${more} more`}
+              </Button>
+            </div>
+          )}
         </>
       )}
 
@@ -547,7 +799,7 @@ export function StellaLedgerInboxPage() {
           coa={coa.length ? coa : undefined}
           onClose={(changed) => {
             setDetail(null);
-            if (changed) reload();
+            if (changed) load(Math.max(INBOX_PAGE_SIZE, rows.length));
           }}
         />
       )}

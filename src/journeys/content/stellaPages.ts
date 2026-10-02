@@ -86,9 +86,16 @@ export const STELLA_PAGES: PageContentMap = {
       {
         title: "Categorize in one tap",
         body:
-          "Every uncategorized line carries its own account picker, expense accounts first for money out and revenue first for money in. Pick one, hit Categorize, and the row leaves the queue — no forms, no second screen.",
+          "Every uncategorized line carries its own category picker, expense categories first for money out and income first for money in. Pick one, hit Categorize, and the row leaves the queue. Personal takes a line out of your books at once, with Undo if you slip.",
         targetSelector: '[data-tour="stella-inbox-quick-categorize"]',
         placement: "left",
+      },
+      {
+        title: "Clear many at once",
+        body:
+          "Bulk assign puts a checkbox on every line. Tick them, or click one and shift-click another to pick everything between, then assign them all to one category or mark them all personal in one go.",
+        targetSelector: '[data-tour="stella-inbox-bulk-assign"]',
+        placement: "bottom",
       },
       {
         title: "Open a row for the personal stuff",

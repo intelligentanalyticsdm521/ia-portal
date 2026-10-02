@@ -1,5 +1,5 @@
 // Tabular data using ARION's .tbl pattern.
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type MouseEvent, type ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
@@ -15,7 +15,8 @@ interface Props<T> {
   rows: T[];
   columns: Column<T>[];
   rowKey: (row: T) => string;
-  onRowClick?: (row: T) => void;
+  // The click is passed too, so a page can read shiftKey (range selection).
+  onRowClick?: (row: T, e: MouseEvent<HTMLTableRowElement>) => void;
   rowClassName?: (row: T) => string;
   emptyMessage?: string;
   emptyAction?: ReactNode;
@@ -26,12 +27,16 @@ interface Props<T> {
   selectedIds?: Set<string>;
   onSelectionChange?: (ids: Set<string>) => void;
   isRowSelectable?: (row: T) => boolean;
+  // Optional: the page decides what a row checkbox click does (it gets the
+  // click, so shift-click can select a range). Without it the checkbox
+  // toggles that one row, as before.
+  onRowCheckboxClick?: (row: T, e: MouseEvent<HTMLInputElement>) => void;
 }
 
 export function DataTable<T>({
   rows, columns, rowKey, onRowClick, rowClassName,
   emptyMessage = "No records found.", emptyAction, initialSort,
-  selectedIds, onSelectionChange, isRowSelectable,
+  selectedIds, onSelectionChange, isRowSelectable, onRowCheckboxClick,
 }: Props<T>) {
   const selectable = !!(selectedIds && onSelectionChange);
   const [sort, setSort] = useState(initialSort ?? null);
@@ -142,7 +147,7 @@ export function DataTable<T>({
             return (
               <tr
                 key={id}
-                onClick={() => onRowClick?.(row)}
+                onClick={(e) => onRowClick?.(row, e)}
                 className={extra}
                 style={{
                   cursor: onRowClick ? "pointer" : undefined,
@@ -157,7 +162,8 @@ export function DataTable<T>({
                       <input
                         type="checkbox"
                         checked={isSelected}
-                        onChange={() => toggleRow(id)}
+                        onChange={onRowCheckboxClick ? () => {} : () => toggleRow(id)}
+                        onClick={onRowCheckboxClick ? (e) => onRowCheckboxClick(row, e) : undefined}
                         aria-label={`Select row ${id}`}
                       />
                     ) : null}

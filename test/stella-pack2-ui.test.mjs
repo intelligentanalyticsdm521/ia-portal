@@ -134,9 +134,13 @@ test("a suggestion is shown with the rule NAMED, and the page never saves it by 
   // nobody hovers: a suggestion whose reason is hidden cannot be argued with.
   assert.match(inbox, /color: "#94A3B8" \}\}>\{r\.suggestion\.why\}</);
   assert.match(inbox, /What we think/);
-  // The only write is the existing categorize() the human presses.
+  // The only writes are ones a human presses: Categorize, Personal, and the
+  // Undo of Personal (2 Oct 2026). The bulk route is pressed too — and only
+  // ever with the category the owner picked in the bar, never a suggestion.
   const applies = inbox.match(/patch\(`\/ledger\/transactions\/\$\{[^}]+\}`/g) || [];
-  assert.ok(applies.length <= 2, `the inbox writes the register from ${applies.length} places`);
+  assert.ok(applies.length <= 3, `the inbox writes the register from ${applies.length} places`);
+  assert.match(inbox, /sendBulk\(post, action, targets\.map\(\(r\) => r\.transaction_id\), bulkCoa\)/);
+  assert.doesNotMatch(inbox, /sendBulk\([^)]*suggestion/);
   assert.match(inbox, /Nothing is saved until you press Categorize/);
 });
 
