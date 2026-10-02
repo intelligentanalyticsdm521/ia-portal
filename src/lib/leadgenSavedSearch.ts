@@ -188,11 +188,15 @@ export function categoriesLine(p: SavedSearch): string {
 /** "IA · 4 cities · 15 mi radius" / "IA · 1 city · exact" / "IA · 2 ZIP codes". */
 export function areaLine(p: SavedSearch): string {
   const parts: string[] = [];
-  if (p.state) parts.push(p.state);
-  const cities = Array.isArray(p.cities) ? p.cities.length : Number(p.city_count) || 0;
+  const list = Array.isArray(p.cities) ? p.cities : [];
+  const cities = list.length || Number(p.city_count) || 0;
   const zips = (p.zip_codes || []).length;
+  // One anchor city is named ("Des Moines, IA · 30 mi radius" — the run
+  // searches every town within the radius); several are counted.
+  const oneCity = cities === 1 && list.length === 1 ? String(list[0]) : null;
+  if (p.state && !oneCity) parts.push(p.state);
   if (cities) {
-    parts.push(`${cities} cit${cities === 1 ? "y" : "ies"}`);
+    parts.push(oneCity || `${cities} cities`);
     const r = Number(p.radius_miles) || 0;
     parts.push(r > 0 ? `${r} mi radius` : "exact");
   }

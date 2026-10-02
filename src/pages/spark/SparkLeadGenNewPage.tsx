@@ -851,6 +851,9 @@ export function SparkLeadGenNewPage() {
     // Only the ACTIVE (not deselected) keywords and cities go to the job.
     expanded_terms: activeKw.map((t) => t.term),
     expanded_city_ids: activeCities.map((c) => c.city_id),
+    // 2026-10-01 — the server stores the ANCHOR cities + radius and expands
+    // them at every run; only a deselection makes it keep the exact list.
+    deselected_city_ids: [...excludedCityIds],
     search_mode: form.searchMode,
     state: form.state,
     city_ids: form.cities.map((c) => c.id),

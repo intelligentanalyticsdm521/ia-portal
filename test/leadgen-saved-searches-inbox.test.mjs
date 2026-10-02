@@ -189,7 +189,10 @@ test("a row names every category the search asks, in one short line", () => {
 
 test("a row says the area: cities and radius, or ZIP codes", () => {
   assert.equal(lib.areaLine(HOME), "IA · 4 cities · 15 mi radius · 1 ZIP code");
-  assert.equal(lib.areaLine({ ...HOME, cities: ["Des Moines, IA"], radius_miles: null, zip_codes: [] }), "IA · 1 city · exact");
+  // One anchor city is NAMED: the row reads as the person saved it (Brandon,
+  // 1 Oct 2026: "just put the city as Des Moines and 30 miles").
+  assert.equal(lib.areaLine({ ...HOME, cities: ["Des Moines, IA"], radius_miles: null, zip_codes: [] }), "Des Moines, IA · exact");
+  assert.equal(lib.areaLine({ ...HOME, cities: ["Des Moines, IA"], radius_miles: 30, zip_codes: [] }), "Des Moines, IA · 30 mi radius");
   assert.equal(lib.areaLine({ ...HOME, cities: [], city_count: 0, zip_codes: ["50309", "50310"] }), "IA · 2 ZIP codes");
   assert.equal(lib.areaLine({ ...HOME, state: null, cities: null, city_count: null, zip_codes: [] }), "No area set");
 });
