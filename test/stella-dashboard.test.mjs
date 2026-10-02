@@ -18,12 +18,26 @@
 //     check it — a failed read is never "nothing to do"
 //   • every shortcut is named exactly as the catalog / nav names it
 //
+// Independent review, 2 Oct 2026 — also true now:
+//   • the summary line never says "Nothing is waiting" over tiles we could not check
+//   • an accountant's rail target is in their own (filtered) nav, and their
+//     Dashboard shows no owner-only setup steps or shortcuts
+//   • overdue is decided by the due date on the viewer's calendar
+//   • two closed halves close a month; a month of only voided lines has
+//     nothing to close
+//   • a 403 that will not go away says so, instead of "fills in as soon as
+//     STELLA answers"
+//
 // MUTATION CHECKS (each broken on purpose, seen red, restored):
-//   · billsTile — count days_overdue >= 0 as overdue          → "an overdue bill …" RED
+//   · billOverdue — trust days_overdue over the due date      → "a bill due today is not overdue …" RED
 //   · closeTile — skip the lastMonthCount === null branch      → "last month's count unreadable …" RED
 //   · StellaDashboardView — draw the shortcuts above the tiles → "the order on the page" RED
 //   · SubNav STELLA_NAV — move the Dashboard group after Ledger → "Dashboard is the FIRST item" RED
 //   · STELLA_SHORTCUTS — rename "Database Manager" to "Data"   → "every shortcut label …" RED
+//   · needsSummary — drop the unknown count                   → "a mix of clear and couldn't-check …" RED
+//   · railRouteFor — use the unfiltered config                → "the accountant's rail target …" RED
+//   · setupStepsFor — return steps unfiltered                 → "an accountant's Dashboard …" RED
+//   · monthClosed — back to one period spanning the month     → "two closed halves …" RED
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -33,10 +47,12 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router-dom";
 
 import {
-  STELLA_DASHBOARD_ROUTES, STELLA_SHORTCUTS, DUE_SOON_DAYS,
-  inboxTile, billsTile, owedTile, closeTile, stellaNeedsYou,
-  lastMonthRange, addDays, localDateString, monthClosed,
+  STELLA_DASHBOARD_ROUTES, STELLA_SHORTCUTS, DUE_SOON_DAYS, STELLA_ACCESS_SENTENCES,
+  inboxTile, billsTile, owedTile, closeTile, stellaNeedsYou, billOverdue, needsSummary,
+  lastMonthRange, addDays, localDateString, monthClosed, lastMonthBookCount,
+  routeServiceKey, setupStepsFor, needsFor, shortcutsFor, accessFromFailures,
 } from "../src/pages/stella/stellaDashboard.ts";
+import { applyRoleNavFilter, firstNavRoute, railRouteFor } from "../src/components/navRoleFilter.ts";
 import { loadStellaSetup, STELLA_SETUP_READS, safeRead } from "../src/pages/stella/stellaSetupLoad.ts";
 import { stellaSetupSteps } from "../src/pages/stella/stellaSetupSteps.ts";
 import { fmtMoney } from "../src/pages/stella/stellaTheme.ts";
@@ -127,6 +143,19 @@ describe("tile — Bills (GET /ledger/ap-aging)", () => {
   test("an unreadable aging is 'couldn't check'", () => {
     assert.equal(billsTile(null, TODAY).state, "unknown");
   });
+  test("a bill due today is not overdue on the viewer's calendar, whatever the server's UTC date says", () => {
+    // 2 Oct 2026 review: days_overdue is counted from GETUTCDATE, so on a US
+    // evening a bill due today already came back as 1 day overdue.
+    const dueToday = { days_overdue: 1, balance_due: 50, due_date: TODAY };
+    assert.equal(billOverdue(dueToday, TODAY), false);
+    const t = billsTile({ bills: [dueToday] }, TODAY);
+    assert.equal(t.headline, "1 bill due this week");
+    // Yesterday's due date is overdue even if the server still said 0.
+    assert.equal(billOverdue({ days_overdue: 0, balance_due: 10, due_date: "2026-10-01" }, TODAY), true);
+    // No due date: the server's count is all there is.
+    assert.equal(billOverdue({ days_overdue: 3, balance_due: 10, due_date: null }, TODAY), true);
+    assert.equal(billOverdue({ days_overdue: 0, balance_due: 10, due_date: null }, TODAY), false);
+  });
 });
 
 /* ── Owed to you ─────────────────────────────────────────────────────────── */
@@ -175,6 +204,26 @@ describe("tile — Month-end close (GET /ledger/periods + last month's transacti
     assert.equal(closeTile([], null, TODAY).state, "unknown");
     assert.equal(closeTile(null, 4, TODAY).state, "unknown");
   });
+  test("two closed halves close a month; a gap between them does not", () => {
+    const first = { period_start: "2026-09-01", period_end: "2026-09-15", status: "closed" };
+    const second = { period_start: "2026-09-16T00:00:00.000Z", period_end: "2026-09-30T00:00:00.000Z", status: "closed" };
+    assert.equal(monthClosed([second, first], "2026-09-01", "2026-09-30"), true, "order does not matter");
+    assert.equal(closeTile([first, second], 9, TODAY).headline, "September 2026 is closed");
+    assert.equal(monthClosed([first, { ...second, period_start: "2026-09-17" }], "2026-09-01", "2026-09-30"), false, "the 16th is open");
+    assert.equal(monthClosed([first, { ...second, status: "open" }], "2026-09-01", "2026-09-30"), false);
+    // Overlaps and a closed year still count.
+    assert.equal(monthClosed([{ period_start: "2026-08-20", period_end: "2026-09-20", status: "closed" }, second], "2026-09-01", "2026-09-30"), true);
+    assert.equal(monthClosed([{ period_start: "2026-01-01", period_end: "2026-12-31", status: "CLOSED" }], "2026-09-01", "2026-09-30"), true);
+    assert.equal(monthClosed([], "2026-09-01", "2026-09-30"), false);
+  });
+  test("last month's count leaves out voided lines; a month of only voided lines has nothing to close", () => {
+    assert.equal(lastMonthBookCount(5, 5), 0);
+    assert.equal(closeTile([], lastMonthBookCount(5, 5), TODAY).headline, "Nothing to close");
+    assert.equal(lastMonthBookCount(7, 2), 5);
+    assert.equal(lastMonthBookCount(0, null), 0, "nothing at all needs no void count");
+    assert.equal(lastMonthBookCount(4, null), null, "lines there but the void count unreadable: unknown");
+    assert.equal(lastMonthBookCount(null, 0), null);
+  });
 });
 
 test("the four tiles, in order, each one plain sentence with a link and no code words", () => {
@@ -219,6 +268,30 @@ describe("loadStellaSetup — one list of reads for both pages", () => {
     assert.deepEqual(s.steps.map((x) => x.done), [true, true, true, true, true, false]);
   });
 
+  test("the accountant pack ticks from the download the API recorded, on any browser", async () => {
+    // 2 Oct 2026 review: it ticked from this browser's localStorage only.
+    const R = STELLA_SETUP_READS;
+    const recorded = await loadStellaSetup(fakeApi({ [R.packExports]: [{ audit_log_id: "a1", action: "export" }] }).api, null, "biz-1");
+    assert.equal(recorded.steps[5].key, "accountant_pack");
+    assert.equal(recorded.steps[5].done, true);
+    const none = await loadStellaSetup(fakeApi({ [R.packExports]: [] }).api, null, "biz-1");
+    assert.equal(none.steps[5].done, false);
+    // An older download remembered on this browser still counts.
+    const store = { getItem: () => "1700000000000", setItem() {} };
+    assert.equal((await loadStellaSetup(fakeApi({}).api, store, "biz-1")).steps[5].done, true);
+    assert.equal(R.packExports, "/ledger/audit-log?entity_table=stella.accountant_pack&action=export&limit=1");
+  });
+
+  test("a broken bank connection on /ledger/plaid/items keeps step 1 open", async () => {
+    const R = STELLA_SETUP_READS;
+    const s = await loadStellaSetup(fakeApi({
+      [R.plaidStatus]: { configured: true, itemCount: 1 },
+      [R.plaidItems]: [{ item_id: "i1", institution_name: "First Fixture Bank", status: "login_required", error_code: "ITEM_LOGIN_REQUIRED" }],
+    }).api, null, "biz-1");
+    assert.equal(s.steps[0].done, false);
+    assert.match(s.steps[0].detail, /needs attention/);
+  });
+
   test("every failed read is null and its step a reminder — never a throw, never a tick", async () => {
     const { api } = fakeApi({});
     const s = await loadStellaSetup(api, null, null);
@@ -241,15 +314,27 @@ const ALL_DONE = {
   bookedCount: 3, accountantPackDownloaded: true,
 };
 
-function render(setupSteps, needs) {
+function render(setupSteps, needs, allowedServiceKeys = null) {
   const err = console.error;
   console.error = () => {};
   try {
-    return renderToStaticMarkup(h(MemoryRouter, null, h(StellaDashboardView, { setupSteps, needs })));
+    return renderToStaticMarkup(h(MemoryRouter, null, h(StellaDashboardView, { setupSteps, needs, allowedServiceKeys })));
   } finally {
     console.error = err;
   }
 }
+
+// What oliver-api lib/accountantRole.js gives an accountant (2 Oct 2026, with
+// stella_dashboard added) — a fixture of the STELLA and Settings keys only.
+const ACCOUNTANT_KEYS = [
+  "stella_dashboard",
+  "stella_ledger_overview", "stella_ledger_inbox", "stella_ledger_transactions", "stella_ledger_vendors",
+  "stella_ledger_coa", "stella_ledger_mileage_materials", "stella_ledger_receipts", "stella_ledger_accounting",
+  "stella_ledger_reports", "stella_bills", "stella_assets", "stella_budgets",
+  "stella_settings_period_close", "stella_settings_sales_tax",
+  "stella_report_library", "stella_report_builder", "stella_report_dashboards", "stella_report_scheduled", "stella_report_exports",
+  "stella_db_registry", "stella_db_documents", "stella_db_import_history", "stella_db_compliance", "stella_db_tags",
+];
 
 const NEEDS = stellaNeedsYou({
   overview: { inboxCount: 3, owedToYou: 0 },
@@ -289,10 +374,13 @@ describe("StellaDashboardView — the order on the page", () => {
     assert.ok(html.includes('href="/app/services/stella_settings_sales_tax"'), "sales tax");
   });
 
-  test("eight shortcuts, one per feature area, each a link", () => {
+  test("nine shortcuts, one per main feature area, each a link; the plan badge where the nav shows one", () => {
     const html = render(null, NEEDS);
-    assert.equal((html.match(/data-shortcut="/g) || []).length, 8);
+    assert.equal((html.match(/data-shortcut="/g) || []).length, 9);
     for (const s of STELLA_SHORTCUTS) assert.ok(html.includes(`href="${s.route}"`), s.label);
+    assert.equal((html.match(/data-shortcut-tag="S"/g) || []).length, 2, "Database Manager and Custom Reporting");
+    assert.match(html, /The main parts of STELLA, one click away\./);
+    assert.doesNotMatch(html, /Every part of STELLA/);
   });
 
   test("every step done: the card folds to one line; while setup is being read, no card", () => {
@@ -303,6 +391,120 @@ describe("StellaDashboardView — the order on the page", () => {
   test("nothing waiting says so in words", () => {
     const calm = stellaNeedsYou({ overview: { inboxCount: 0, owedToYou: 0 }, apAging: { bills: [] }, periods: [], lastMonthCount: 0, today: TODAY });
     assert.match(render(null, calm), /Nothing is waiting on you right now/);
+  });
+
+  test("a mix of clear and couldn't-check tiles never reads as an all-clear", () => {
+    // 2 Oct 2026 review: plaid/status answered, the other reads failed, and four
+    // "Couldn't check right now" tiles sat under "Nothing is waiting on you".
+    const mixed = stellaNeedsYou({ overview: null, apAging: { bills: [] }, periods: null, lastMonthCount: null, today: TODAY });
+    assert.deepEqual(mixed.map((t) => t.state), ["unknown", "clear", "unknown", "unknown"]);
+    const line = needsSummary(mixed);
+    assert.equal(line, "Nothing waiting that we could check — 3 couldn't be checked right now.");
+    const html = render(null, mixed);
+    assert.doesNotMatch(html, /Nothing is waiting on you right now/);
+    assert.match(html, /3 couldn(&#x27;|')t be checked right now/);
+    // All four unreadable, and needs-you plus unknown.
+    const blind = stellaNeedsYou({ overview: null, apAging: null, periods: null, lastMonthCount: null, today: TODAY });
+    assert.equal(needsSummary(blind), "None of these could be checked right now — open each one to see it.");
+    assert.equal(needsSummary(NEEDS), "2 of 4 need a look, and 1 couldn't be checked right now.");
+    const one = stellaNeedsYou({ overview: { inboxCount: 1, owedToYou: 0 }, apAging: { bills: [] }, periods: [], lastMonthCount: 0, today: TODAY });
+    assert.equal(needsSummary(one), "1 of 4 needs a look.");
+  });
+});
+
+/* ── The accountant's Dashboard and rail ─────────────────────────────────── */
+
+describe("an accountant sees only what their own nav holds (2 Oct 2026 review)", () => {
+  test("the accountant's rail target is in their filtered nav — never a page their menu drops", () => {
+    const nav = {
+      productName: "STELLA",
+      groups: [
+        { label: "", items: [{ key: "stella_dashboard", label: "Dashboard", route: "/app/services/stella_dashboard" }] },
+        { label: "Ledger", items: [{ key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview" }] },
+      ],
+    };
+    // The list as it was before the fix: no stella_dashboard.
+    const before = ACCOUNTANT_KEYS.filter((k) => k !== "stella_dashboard");
+    const target = railRouteFor("stella", nav, before);
+    const menu = applyRoleNavFilter(nav, before).groups.flatMap((g) => g.items.map((i) => i.route));
+    assert.equal(target, "/app/services/stella_ledger_overview");
+    assert.ok(menu.includes(target), "the rail opens a page in the accountant's own menu");
+    // With the server list fixed, the accountant lands on the Dashboard.
+    assert.equal(railRouteFor("stella", nav, ACCOUNTANT_KEYS), "/app/services/stella_dashboard");
+    // An owner (null list) and an unfiltered product are first-item-wins.
+    assert.equal(railRouteFor("stella", nav, null), "/app/services/stella_dashboard");
+    assert.equal(railRouteFor("spark", nav, ["nothing"]), "/app/services/stella_dashboard");
+    assert.equal(firstNavRoute({ productName: "X", groups: [{ label: "", items: [] }] }), null);
+  });
+
+  test("AppShell takes the rail target from the role-filtered nav", () => {
+    const shell = read("components/AppShell.tsx");
+    assert.match(shell, /return railRouteFor\(key, SUB_NAV_CONFIGS\[key\], allowedServiceKeys\) \?\? "\/app\/overview";/);
+    assert.match(shell, /navigate\(defaultRouteFor\(key, effectiveIsFounder, roleInfo\.allowedServiceKeys\)\)/);
+    const filter = read("components/navRoleFilter.ts");
+    assert.match(filter, /export const ROLE_FILTERED_PRODUCTS: readonly string\[\] = \["oliver", "stella"\];/);
+  });
+
+  test("an accountant's Dashboard: no bank setup steps, no Unit Economics, Settings → Period Close", () => {
+    const steps = setupStepsFor(stellaSetupSteps(NOTHING_DONE), ACCOUNTANT_KEYS);
+    assert.deepEqual(steps.map((s) => s.key), ["coa", "sales_tax", "first_statement", "accountant_pack"]);
+    // Not-switched-on keys route step 1 to Accounting, which they DO have — it still goes (owner's act).
+    const offSteps = setupStepsFor(stellaSetupSteps({ ...NOTHING_DONE, plaidStatus: { configured: false, itemCount: 0 } }), ACCOUNTANT_KEYS);
+    assert.ok(!offSteps.some((s) => s.key === "bank"));
+    const cuts = shortcutsFor(ACCOUNTANT_KEYS);
+    assert.ok(!cuts.some((s) => s.key === "unit_economics"));
+    const settings = cuts.find((s) => s.key === "settings");
+    assert.equal(settings.route, "/app/services/stella_settings_period_close");
+    assert.equal(settings.detail, "Sales tax and period close.");
+    for (const s of cuts) assert.ok(ACCOUNTANT_KEYS.includes(routeServiceKey(s.route)), s.label);
+
+    const html = render(stellaSetupSteps(NOTHING_DONE), NEEDS, ACCOUNTANT_KEYS);
+    assert.ok(!html.includes('href="/app/services/stella_settings_bank"'), "no link to the bank page anywhere");
+    assert.ok(!html.includes('href="/app/services/stella_ue_margins"'), "no Unit Economics shortcut");
+    assert.doesNotMatch(html, /Connect your bank and card|Mark your personal card/);
+    assert.match(html, /0 of 4 done/);
+    assert.ok(html.includes('href="/app/services/stella_settings_period_close"'));
+  });
+
+  test("an owner sees everything; a tile whose page is not in the nav is not drawn", () => {
+    assert.equal(setupStepsFor(stellaSetupSteps(NOTHING_DONE), null).length, 6);
+    assert.equal(shortcutsFor(null), STELLA_SHORTCUTS);
+    assert.equal(shortcutsFor(null).find((s) => s.key === "settings").detail, "Bank and card accounts, sales tax and period close.");
+    assert.equal(needsFor(NEEDS, null).length, 4);
+    assert.deepEqual(needsFor(NEEDS, ACCOUNTANT_KEYS.filter((k) => k !== "stella_bills")).map((t) => t.key), ["inbox", "owed", "close"]);
+    assert.equal(setupStepsFor(null, ACCOUNTANT_KEYS), null);
+    assert.equal(routeServiceKey("/app/services/stella_bills?filter=open"), "stella_bills");
+  });
+
+  test("the page hands the person's nav allowlist to the view", () => {
+    const page = read("pages/stella/StellaDashboardPage.tsx");
+    assert.match(page, /const \{ roleInfo \} = useOliverRole\(\);/);
+    assert.match(page, /<StellaDashboardView setupSteps=\{setupSteps\} needs=\{needs\} allowedServiceKeys=\{roleInfo\.allowedServiceKeys\} \/>/);
+  });
+});
+
+/* ── A refusal that will not go away ─────────────────────────────────────── */
+
+describe("a 403 is not 'we couldn't reach your books just now'", () => {
+  test("STELLA not on the plan, or this person not given it, is told apart from a blip", () => {
+    assert.equal(accessFromFailures([{ type: "tier_gate", tierRequired: "standard" }]), "not_in_plan");
+    const denied = Object.assign(new Error("Your account has not been granted access to STELLA for this business."), { status: 403 });
+    assert.equal(accessFromFailures([new Error("Failed to fetch"), denied]), "no_access");
+    assert.equal(accessFromFailures([denied, { type: "tier_gate" }]), "not_in_plan");
+    assert.equal(accessFromFailures([Object.assign(new Error("x"), { status: 500 }), new Error("Failed to fetch")]), null);
+    assert.equal(accessFromFailures([]), null);
+    for (const k of Object.keys(STELLA_ACCESS_SENTENCES)) {
+      const s = STELLA_ACCESS_SENTENCES[k];
+      assert.match(s.detail, /[.]$/);
+      assert.doesNotMatch(`${s.title} ${s.detail}`, /tenant|403|[A-Z]{3,}_[A-Z]|as soon as/i);
+    }
+  });
+
+  test("the page shows the access sentence, not the retry card, when every read was refused for good", () => {
+    const page = read("pages/stella/StellaDashboardPage.tsx");
+    assert.match(page, /setAccess\(none \? accessFromFailures\(failures\) : null\);/);
+    assert.match(page, /\{unreachable && access \? \(/);
+    assert.match(page, /STELLA_ACCESS_SENTENCES\[access\]\.title/);
   });
 });
 
@@ -324,11 +526,22 @@ describe("names and wiring a typecheck cannot see", () => {
       assert.ok(fromCatalog || fromNav, `${s.label} is not a name the catalog or the nav uses`);
     }
     assert.deepEqual(STELLA_SHORTCUTS.map((s) => s.label),
-      ["Ledger", "Bills", "Assets", "Budgets", "Unit Economics", "Database Manager", "Reports", "Settings"]);
+      ["Ledger", "Bills", "Assets", "Budgets", "Unit Economics", "Database Manager", "Reports", "Custom Reporting", "Settings"]);
+  });
+
+  test("a gated shortcut carries the badge the nav shows on that area's first item", () => {
+    for (const s of STELLA_SHORTCUTS) {
+      const key = s.route.match(/\/app\/services\/([a-z_]+)/)[1];
+      // The STELLA nav, or (for Settings) the Settings nav.
+      const row = (stellaNav + settingsNav).match(new RegExp(`\\{ key: "${key}"[^\\n]*\\}`));
+      assert.ok(row, `${s.label}: ${key} is in the nav`);
+      const navTag = (row[0].match(/tag: \{ label: "([^"]+)"/) || [])[1];
+      assert.equal(s.tag, navTag, `${s.label}: badge matches the nav`);
+    }
   });
 
   test("a group shortcut opens what clicking that group's header opens — its first item", () => {
-    for (const [label, route] of [["Ledger", "stella_ledger_overview"], ["Unit Economics", "stella_ue_margins"], ["Database Manager", "stella_db_registry"]]) {
+    for (const [label, route] of [["Ledger", "stella_ledger_overview"], ["Unit Economics", "stella_ue_margins"], ["Database Manager", "stella_db_registry"], ["Custom Reporting", "stella_report_library"]]) {
       const at = stellaNav.indexOf(`label: "${label}", icon:`);
       const firstRoute = stellaNav.slice(at).match(/route: "\/app\/services\/([a-z_]+)"/)[1];
       assert.equal(firstRoute, route, label);
@@ -354,8 +567,10 @@ describe("names and wiring a typecheck cannot see", () => {
   });
 
   test("the rail icon opens a product's first nav item (first-item-wins)", () => {
-    const shell = read("components/AppShell.tsx");
-    assert.match(shell, /for \(const group of config\.groups\) \{\s*if \(group\.items\.length > 0\) return group\.items\[0\]\.route;/);
+    // 2 Oct 2026: the loop moved to navRoleFilter.firstNavRoute, which
+    // AppShell's defaultRouteFor reaches through railRouteFor.
+    const filter = read("components/navRoleFilter.ts");
+    assert.match(filter, /for \(const group of config\.groups\) \{\s*if \(group\.items\.length > 0\) return group\.items\[0\]\.route;/);
   });
 
   test("the Ledger keeps its own Overview as the Ledger group's first item", () => {
@@ -383,9 +598,11 @@ describe("names and wiring a typecheck cannot see", () => {
 
   test("the page reads each tile's answer from a real endpoint, and the setup through the shared loader", () => {
     const page = read("pages/stella/StellaDashboardPage.tsx");
-    for (const p of ['"/ledger/overview"', '"/ledger/ap-aging"', '"/ledger/periods"', "`/ledger/transactions?from=${start}&to=${end}&limit=1`"]) {
+    for (const p of ['"/ledger/overview"', '"/ledger/ap-aging"', '"/ledger/periods"', "`/ledger/transactions?from=${start}&to=${end}&limit=1`",
+      "`/ledger/transactions?from=${start}&to=${end}&status=void&limit=1`"]) {
       assert.ok(page.includes(p), p);
     }
+    assert.match(page, /lastMonthCount: lastMonthBookCount\(/);
     assert.match(page, /loadStellaSetup\(\{ get, getFull \}, browserStorage\(\), businessId\)/);
     // Once per visit: the effect keys on ready + the stable reload only.
     assert.match(page, /useEffect\(\(\) => \{\s*if \(ready\) reload\(\);\s*\}, \[ready, reload\]\);/);

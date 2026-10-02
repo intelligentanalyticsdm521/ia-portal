@@ -1,22 +1,28 @@
-// STELLA's product overview — the money numbers, then Finish setup.
+// STELLA's "Finish setting up" steps — and the Ledger Overview without them.
 //
 // Brandon, 1 Oct 2026: "STELLA is the only section that doesn't have its own
 // overview. All the rest have a main overview with the key points; this is
 // helpful for things like 'Finish Setup' that I need to do for STELLA to
 // connect my accounts through Plaid."
+// Brandon, 2 Oct 2026: STELLA's own Dashboard is "where the platform cross
+// features stuff lives, like finish set up". The independent review of the
+// same day found the six-step card on BOTH the Dashboard and Ledger →
+// Overview; it now lives only on the Dashboard.
 //
 // What has to stay true:
 //   • six steps, each ticked from the business's own data (never by hand),
 //     each a link to the screen that does it — stellaSetupSteps.ts
-//   • the card sits between the four money numbers and the charts
+//   • a bank connection that needs attention keeps step 1 open
 //   • the card folds to one line with "Show setup" once every step is done
+//   • Ledger → Overview draws no setup card and reads no setup signals
 //   • ONE checklist drawing, shared with SPARK — not a third copy
 //
 // MUTATION CHECKS (each broken on purpose, seen red, restored):
 //   · coaMadeOwn — drop the `updated_at` test        → "an edited account …" RED
 //   · bankStep — ignore `configured`                 → "keys not switched on …" RED
-//   · StellaOverviewView — draw <StellaFinishSetup> after the charts
-//                                                    → "between the KPI row and the charts" RED
+//   · bankStep — ignore the broken-connection count  → "a connection that needs attention …" RED
+//   · StellaOverviewView — draw <StellaFinishSetup> again
+//                                                    → "Ledger → Overview draws no setup card" RED
 //   · StellaFinishSetup — drop the `finished && !shown` branch
 //                                                    → "folds away … Show setup" RED
 import { test, describe } from "node:test";
@@ -33,9 +39,27 @@ import {
   stellaSetupSteps, allStepsDone, packKey, markPackDownloaded, packDownloaded,
 } from "../src/pages/stella/stellaSetupSteps.ts";
 import { StellaOverviewView } from "../src/pages/stella/StellaOverviewView.tsx";
+import { StellaFinishSetup } from "../src/pages/stella/StellaDashboardView.tsx";
 
 const SRC = path.join(process.cwd(), "src");
 const read = (rel) => readFileSync(path.join(SRC, rel), "utf8").replace(/\r\n/g, "\n");
+
+const NOTHING_DONE = {
+  plaidStatus: { configured: false, itemCount: 0 },
+  plaidItems: [],
+  coa: [{ created_at: "2026-09-01T10:00:00Z", updated_at: null }],
+  taxRates: [],
+  bookedCount: 0,
+  accountantPackDownloaded: false,
+};
+const ALL_DONE = {
+  plaidStatus: { configured: true, itemCount: 1 },
+  plaidItems: [{ is_personal_card: true, status: "active", error_code: null }],
+  coa: [{ created_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-03T10:00:00Z" }],
+  taxRates: [{ is_active: true }],
+  bookedCount: 3,
+  accountantPackDownloaded: true,
+};
 
 /* ── Step 1 — Connect your bank and card ─────────────────────────────────── */
 
@@ -76,6 +100,27 @@ describe("step 1 — Connect your bank and card", () => {
     const s = bankStep(null);
     assert.equal(s.done, false);
     assert.equal(s.route, STELLA_SETUP_ROUTES.bank);
+  });
+
+  test("a connection that needs attention keeps the step open, says so, and links to the Bank page", () => {
+    // 2 Oct 2026 review: itemCount counts every row not removed, so a feed the
+    // sync marked login_required read "Connected — new transactions come in on
+    // their own" while the Bank page said "Connection needs attention".
+    const status = { configured: true, itemCount: 1 };
+    const s = bankStep(status, [{ status: "login_required", error_code: "ITEM_LOGIN_REQUIRED" }]);
+    assert.equal(s.done, false);
+    assert.equal(s.detail, "A bank connection needs attention, so new transactions from it aren't coming in.");
+    assert.equal(s.route, "/app/services/stella_settings_bank");
+    assert.equal(s.linkLabel, "Settings → Bank and card accounts");
+    // A failed sync with no Plaid code still sets status 'error'.
+    assert.equal(bankStep(status, [{ status: "error", error_code: null }]).done, false);
+    const two = bankStep({ configured: true, itemCount: 3 }, [{ status: "error" }, { status: "active" }, { error_code: "ITEM_LOCKED" }]);
+    assert.match(two.detail, /^2 bank connections need attention/);
+    // Healthy connections tick as before.
+    assert.equal(bankStep(status, [{ status: "active", error_code: null }]).done, true);
+    // And the six-step builder hands the items in.
+    assert.equal(stellaSetupSteps({ ...ALL_DONE, plaidItems: [{ is_personal_card: true, status: "login_required" }] })[0].done, false);
+    assert.equal(stellaSetupSteps(ALL_DONE)[0].done, true);
   });
 });
 
@@ -179,7 +224,7 @@ describe("step 6 — Accountant pack", () => {
     assert.equal(accountantPackStep(false).linkLabel, "Reports → Accountant pack");
   });
 
-  test("the download is remembered per business on this browser", () => {
+  test("a download from this browser is also remembered per business (the API record is the main signal)", () => {
     const m = new Map();
     const store = { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, v) };
     assert.equal(packDownloaded(store, "biz-a"), false);
@@ -195,23 +240,6 @@ describe("step 6 — Accountant pack", () => {
 });
 
 /* ── The six together ────────────────────────────────────────────────────── */
-
-const NOTHING_DONE = {
-  plaidStatus: { configured: false, itemCount: 0 },
-  plaidItems: [],
-  coa: [{ created_at: "2026-09-01T10:00:00Z", updated_at: null }],
-  taxRates: [],
-  bookedCount: 0,
-  accountantPackDownloaded: false,
-};
-const ALL_DONE = {
-  plaidStatus: { configured: true, itemCount: 1 },
-  plaidItems: [{ is_personal_card: true }],
-  coa: [{ created_at: "2026-09-01T10:00:00Z", updated_at: "2026-09-03T10:00:00Z" }],
-  taxRates: [{ is_active: true }],
-  bookedCount: 3,
-  accountantPackDownloaded: true,
-};
 
 test("six steps, in order, each with a title, one sentence, a route and the words for it", () => {
   const steps = stellaSetupSteps(NOTHING_DONE);
@@ -234,46 +262,54 @@ test("six steps, in order, each with a title, one sentence, a route and the word
   assert.equal(allStepsDone([]), false);
 });
 
-/* ── The page order, rendered ────────────────────────────────────────────── */
+/* ── Ledger → Overview: no setup card ────────────────────────────────────── */
 
 const OV = {
   month: "2026-10", income: 1200, expenses: -300, net: 900, owedToYou: 0, inboxCount: 2,
   expensesByAccount: [], cashflow: [], upcomingRecurring: [], accounts: [],
 };
 
-function render(setupSteps) {
+function quiet(fn) {
   // react-router's <Link> warns about useLayoutEffect on the server; that is
   // noise for this test, not a finding.
   const err = console.error;
   console.error = () => {};
   try {
-    return renderToStaticMarkup(
-      h(MemoryRouter, null, h(StellaOverviewView, { ov: OV, month: "2026-10", isCurrentMonth: true, plaidItems: [], setupSteps })),
-    );
+    return fn();
   } finally {
     console.error = err;
   }
 }
 
-describe("StellaOverviewView — the order on the page", () => {
-  test("Finish setup sits between the KPI row and the charts", () => {
-    const html = render(stellaSetupSteps(NOTHING_DONE));
-    const kpi = html.indexOf('data-tour="stella-overview-kpis"');
-    const setup = html.indexOf('data-tour="stella-finish-setup"');
-    const charts = html.indexOf("Cash flow — last 8 weeks");
-    assert.ok(kpi >= 0 && setup >= 0 && charts >= 0, "all three are on the page");
-    assert.ok(kpi < setup, "the money numbers come first");
-    assert.ok(setup < charts, "the charts come after Finish setup");
-    // The four money numbers are all in the row above it.
-    for (const label of ["Money in", "Money out", "Net", "Owed to you"]) assert.ok(html.indexOf(label) < setup, label);
-    // The needs-review headline stays, below the card.
-    const hero = html.indexOf('data-tour="stella-overview-hero"');
-    assert.ok(setup < hero && hero < charts);
-  });
+function renderOverview() {
+  return quiet(() => renderToStaticMarkup(
+    h(MemoryRouter, null, h(StellaOverviewView, { ov: OV, month: "2026-10", isCurrentMonth: true, plaidItems: [] })),
+  ));
+}
 
+function renderSetup(steps) {
+  return quiet(() => renderToStaticMarkup(h(MemoryRouter, null, h(StellaFinishSetup, { steps }))));
+}
+
+describe("Ledger → Overview — the Ledger's own overview, without the setup card", () => {
+  test("Ledger → Overview draws no setup card: money numbers, then the headline, then the charts", () => {
+    const html = renderOverview();
+    assert.doesNotMatch(html, /stella-finish-setup/);
+    assert.doesNotMatch(html, /Finish setup|Finish setting up|of 6 done|Mark your personal card/);
+    const kpi = html.indexOf('data-tour="stella-overview-kpis"');
+    const hero = html.indexOf('data-tour="stella-overview-hero"');
+    const charts = html.indexOf("Cash flow — last 8 weeks");
+    assert.ok(kpi >= 0 && hero > kpi && charts > hero);
+    for (const label of ["Money in", "Money out", "Net", "Owed to you"]) assert.ok(html.indexOf(label) < hero, label);
+  });
+});
+
+/* ── The checklist card (drawn on the Dashboard) ─────────────────────────── */
+
+describe("StellaFinishSetup — the card", () => {
   test("the card shows the six steps, 0 of 6 done, each a link to its page", () => {
-    const html = render(stellaSetupSteps(NOTHING_DONE));
-    assert.match(html, />Finish setup</);
+    const html = renderSetup(stellaSetupSteps(NOTHING_DONE));
+    assert.match(html, />Finish setting up</);
     assert.match(html, /0 of 6 done/);
     for (const label of ["Connect your bank and card", "Mark your personal card", "Confirm your chart of accounts",
       "Set your sales-tax rate", "Review your first statement", "Accountant pack"]) {
@@ -286,13 +322,13 @@ describe("StellaOverviewView — the order on the page", () => {
   });
 
   test("a done step carries a tick", () => {
-    const html = render(stellaSetupSteps({ ...NOTHING_DONE, taxRates: [{ is_active: true }], bookedCount: 4 }));
+    const html = renderSetup(stellaSetupSteps({ ...NOTHING_DONE, taxRates: [{ is_active: true }], bookedCount: 4 }));
     assert.match(html, /2 of 6 done/);
     assert.equal((html.match(/aria-label="Done"/g) || []).length, 2);
   });
 
   test("every step done: the card folds away to one line with Show setup", () => {
-    const html = render(stellaSetupSteps(ALL_DONE));
+    const html = renderSetup(stellaSetupSteps(ALL_DONE));
     assert.match(html, /Setup finished/);
     assert.match(html, />Show setup</);
     assert.doesNotMatch(html, /Mark your personal card/);
@@ -300,9 +336,7 @@ describe("StellaOverviewView — the order on the page", () => {
   });
 
   test("while the setup data is still being read, no card at all (no flicker)", () => {
-    const html = render(null);
-    assert.doesNotMatch(html, /stella-finish-setup/);
-    assert.match(html, /stella-overview-kpis/);
+    assert.equal(renderSetup(null), "");
   });
 });
 
@@ -311,7 +345,7 @@ describe("StellaOverviewView — the order on the page", () => {
 describe("one checklist drawing, and the links land where they say", () => {
   test("SPARK and STELLA draw the same SetupChecklistCard — no third copy", () => {
     const spark = read("components/spark/SparkSetupChecklist.tsx");
-    const view = read("pages/stella/StellaOverviewView.tsx");
+    const view = read("pages/stella/StellaDashboardView.tsx");
     assert.match(spark, /from '\.\.\/SetupChecklistCard'/);
     assert.match(spark, /<SetupChecklistCard/);
     assert.match(view, /from "\.\.\/\.\.\/components\/SetupChecklistCard"/);
@@ -321,19 +355,26 @@ describe("one checklist drawing, and the links land where they say", () => {
     assert.doesNotMatch(view, /function Row\(/);
   });
 
-  test("the Overview reads every step's signal from the API (through the one shared loader)", () => {
-    // 2 Oct 2026: the reads moved to stellaSetupLoad.ts so the STELLA
-    // Dashboard reads the same six signals rather than a copy of them.
+  test("the Dashboard reads every step's signal from the API through the one shared loader", () => {
     const loader = read("pages/stella/stellaSetupLoad.ts");
     for (const p of ["/ledger/plaid/status", "/ledger/plaid/items", "/ledger/coa", "/ledger/tax-rates",
-      "/ledger/transactions?status=categorized&limit=1", "/ledger/transactions?status=reconciled&limit=1"]) {
+      "/ledger/transactions?status=categorized&limit=1", "/ledger/transactions?status=reconciled&limit=1",
+      "/ledger/audit-log?entity_table=stella.accountant_pack&action=export&limit=1"]) {
       assert.ok(loader.includes(`"${p}"`), p);
     }
-    assert.match(loader, /accountantPackDownloaded: packDownloaded\(storage, businessId\)/);
+    assert.match(loader, /accountantPackDownloaded: packRecorded \|\| packDownloaded\(storage, businessId\)/);
+    const dash = read("pages/stella/StellaDashboardPage.tsx");
+    assert.match(dash, /loadStellaSetup\(\{ get, getFull \}, browserStorage\(\), businessId\)/);
+  });
+
+  test("Ledger → Overview reads no setup signals — only the connections its Accounts card lists", () => {
     const page = read("pages/stella/StellaOverviewPage.tsx");
-    assert.match(page, /loadStellaSetup\(\{ get, getFull \}, browserStorage\(\), businessId\)/);
-    // The Accounts card still lists the connections only once one exists.
-    assert.match(page, /s\.plaidStatus && s\.plaidStatus\.itemCount > 0 && s\.plaidItems \? s\.plaidItems : \[\]/);
+    const view = read("pages/stella/StellaOverviewView.tsx");
+    const code = (s) => s.replace(/^\s*\/\/.*$/gm, "");
+    assert.doesNotMatch(code(page), /loadStellaSetup|setupSteps|stellaSetupSteps/);
+    assert.doesNotMatch(code(view), /StellaFinishSetup|SetupChecklistCard|setupSteps/);
+    assert.match(page, /safeRead\(get<PlaidItemSummary\[\]>\("\/ledger\/plaid\/items"\)\)/);
+    assert.doesNotMatch(page, /what's left to set up/);
   });
 
   test("Accounting opens the tab ?tab= names; Reports opens the pack on ?open=accountant_pack", () => {

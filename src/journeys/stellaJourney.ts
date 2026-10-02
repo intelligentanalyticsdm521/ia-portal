@@ -39,7 +39,7 @@ const BANK_STEP: JourneyStep = {
     {
       title: "Connect a bank or card",
       body:
-        "One button starts the secure Plaid flow — your credentials go to your bank, never to STELLA. If it reads 'Plaid keys pending', the connection service isn't enabled on this environment yet and the button says so honestly.",
+        "One button opens your bank's own secure sign-in — your credentials go to your bank, never to STELLA. If the button is greyed out, bank connections aren't switched on yet, and the line under it shows how to bring transactions in with a bank statement instead.",
       targetSelector: '[data-tour="stella-bank-connect"]',
       placement: "left",
     },
