@@ -5,51 +5,50 @@
 // STELLA>Ledger>Overview. Each feature has an overview and then STELLA is
 // supposed to have it's own dashboard/overview." STELLA's rail icon now opens
 // the product Dashboard (StellaDashboardPage, stella_dashboard), first item in
-// the STELLA nav like every other product's. This page stays exactly as it was;
-// only its setup reads moved to stellaSetupLoad.ts so the Dashboard reads the
-// same six signals rather than a copy of them.
+// the STELLA nav like every other product's.
+//
+// 2 Oct 2026 (independent review) — and so the "Finish setup" card is no longer
+// drawn here. The same six-step card sat on both pages and was read twice;
+// cross-feature setup is the Dashboard's job (Brandon: "that's where the
+// platform cross features stuff lives, like finish set up"), and no other
+// product puts its setup checklist on a feature overview. This page reads only
+// what it draws: the money numbers, and the bank connections for its Accounts
+// card (GET /ledger/plaid/items — the rows that are not removed, the same set
+// /ledger/plaid/status counts).
 //
 // Founder-approved design: the entry-level-QuickBooks-replacement look — a
 // glanceable "how is the business doing" page, not a data-entry grid.
 // Degrades gracefully while the backend lands: a 404 renders an honest
 // "service not live yet" card, never a broken page and never fake numbers.
 //
-// 1 Oct 2026 — the PRODUCT overview. Brandon: "STELLA is the only section that
-// doesn't have its own overview … this is helpful for things like 'Finish
-// Setup' that I need to do for STELLA to connect my accounts." The page now
-// reads, top to bottom: the four money numbers → Finish setup (six steps that
-// tick themselves, stellaSetupSteps.ts) → the headline, charts and cards that
-// were already here. The drawing lives in StellaOverviewView.tsx; this file
-// fetches.
+// 1 Oct 2026 this page briefly carried "Finish setup" as STELLA's product
+// overview; on 2 Oct that role (and the checklist) moved to the Dashboard. It
+// reads, top to bottom: the four money numbers → the headline, charts and
+// cards. The drawing lives in StellaOverviewView.tsx; this file fetches.
 //
 //   GET /ledger/overview?month=        the money numbers, charts, cards
-//   loadStellaSetup (stellaSetupLoad)  the six setup steps, and the Plaid
-//                                      connections the Accounts card shows
+//   GET /ledger/plaid/items            the connections the Accounts card shows
 //
-// The setup reads are non-fatal: one that fails leaves its step as a reminder
-// and never breaks the Overview.
+// The connections read is non-fatal: if it fails the card shows its empty
+// state and the Overview still draws.
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { useStellaApi } from "../../hooks/useStellaApi";
-import { useEffectiveTenantId } from "../../lib/tenantContext";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
 import { StellaOverviewView, toNum, type LedgerOverview, type PlaidItemSummary } from "./StellaOverviewView";
-import { type StellaSetupStep } from "./stellaSetupSteps";
-import { browserStorage, loadStellaSetup } from "./stellaSetupLoad";
+import { safeRead } from "./stellaSetupLoad";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
 export function StellaOverviewPage() {
-  const { get, getFull, ready } = useStellaApi();
-  const businessId = useEffectiveTenantId();
+  const { get, ready } = useStellaApi();
   const [month, setMonth] = useState(currentMonth());
   const [ov, setOv] = useState<LedgerOverview | null>(null);
-  // Plaid connections (GET /ledger/plaid/status + /items) — shown in the
-  // Accounts card once itemCount > 0, until real balances land via ingestion.
+  // Plaid connections (GET /ledger/plaid/items) — shown in the Accounts card
+  // once one exists, until real balances land via ingestion.
   const [plaidItems, setPlaidItems] = useState<PlaidItemSummary[]>([]);
-  const [setupSteps, setSetupSteps] = useState<StellaSetupStep[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
   // Backend contract is being shipped by a sibling build — a 404 means "not
@@ -88,30 +87,29 @@ export function StellaOverviewPage() {
     }
   }, [get, month]);
 
-  // Finish setup + the Accounts card's connections. Not month-bound, so it
-  // does not re-run when the month picker moves. Every read is best-effort.
-  const reloadSetup = useCallback(async () => {
-    const s = await loadStellaSetup({ get, getFull }, browserStorage(), businessId);
-    setPlaidItems(s.plaidStatus && s.plaidStatus.itemCount > 0 && s.plaidItems ? s.plaidItems : []);
-    setSetupSteps(s.steps);
-  }, [get, getFull, businessId]);
+  // The Accounts card's connections. Not month-bound, so it does not re-run
+  // when the month picker moves. Best-effort.
+  const reloadAccounts = useCallback(async () => {
+    const items = await safeRead(get<PlaidItemSummary[]>("/ledger/plaid/items"));
+    setPlaidItems(Array.isArray(items) ? items : []);
+  }, [get]);
 
   useEffect(() => {
     if (ready) reload();
   }, [ready, reload]);
 
   useEffect(() => {
-    if (ready) reloadSetup();
-  }, [ready, reloadSetup]);
+    if (ready) reloadAccounts();
+  }, [ready, reloadAccounts]);
 
   const isCurrentMonth = month === currentMonth();
 
   return (
     <StellaShell
       title="Overview"
-      subtitle="Your books at a glance — money in and out, what's left to set up, what needs review, and what you're owed."
+      subtitle="Your books at a glance — money in and out, what needs review, and what you're owed."
       showRecord
-      onRecorded={() => { reload(); reloadSetup(); }}
+      onRecorded={() => { reload(); }}
       actions={
         <input
           type="month"
@@ -143,7 +141,6 @@ export function StellaOverviewPage() {
           month={month}
           isCurrentMonth={isCurrentMonth}
           plaidItems={plaidItems}
-          setupSteps={setupSteps}
         />
       ) : null}
     </StellaShell>

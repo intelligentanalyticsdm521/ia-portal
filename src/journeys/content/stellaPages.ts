@@ -35,7 +35,7 @@ export const STELLA_PAGES: PageContentMap = {
       {
         title: "Go to",
         body:
-          "One tile for every part of STELLA — the Ledger, Bills, Assets, Budgets, Unit Economics, the Database Manager, Reports and Settings — named exactly as they are in the menu on the left.",
+          "One tile for each main part of STELLA — the Ledger, Bills, Assets, Budgets, Unit Economics, the Database Manager, Reports, Custom Reporting and Settings — named exactly as they are in the menu on the left. An S badge means the part comes with the Standard plan, the same badge the menu shows.",
         targetSelector: '[data-tour="stella-dashboard-shortcuts"]',
         placement: "top",
       },
@@ -46,7 +46,7 @@ export const STELLA_PAGES: PageContentMap = {
   stella_ledger_overview: {
     title: "Overview — how the business is doing",
     body:
-      "STELLA is your ledger: every dollar in and out, categorized so reports write themselves. This landing page answers one question at a glance — how is the business doing this month — and points you at the single most useful next step.",
+      "The Ledger's own overview: every dollar in and out, categorized so reports write themselves. It answers one question at a glance — how is the business doing this month — and points you at the single most useful next step. What's left to set up lives on STELLA's Dashboard.",
     onPage: [
       {
         title: "The headline picks itself",
@@ -388,7 +388,7 @@ export const STELLA_PAGES: PageContentMap = {
   stella_report_sql: {
     title: "SQL Editor — for when the builder isn't enough",
     body:
-      "Write a query directly. Two rules are enforced for you: use bare table names, and everything is already limited to your business — you cannot read another tenant's data, and nothing here can write. Every query, including refused ones, is logged.",
+      "Write a query directly. Two rules are enforced for you: use bare table names, and everything is already limited to your business — you cannot read another business's data, and nothing here can write. Every query, including refused ones, is logged.",
   },
   stella_report_exports: {
     body:

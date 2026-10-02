@@ -167,8 +167,13 @@ describe("StellaBankPage uses the rule", () => {
     assert.match(bankPage, /window\.history\.replaceState\(window\.history\.state, "", next\)/);
   });
 
-  test("the dev state (keys not on this environment) is untouched", () => {
-    assert.match(bankPage, /Plaid keys pending/);
-    assert.match(bankPage, /Sandbox keys unlock this — setup guide in the Plaid readiness pack/);
+  test("the not-switched-on state (keys not on this environment) says so in plain words", () => {
+    // 2 Oct 2026 review: it read "Plaid keys pending" and "Sandbox keys unlock
+    // this — setup guide in the Plaid readiness pack" — words for us, not for
+    // an owner. The button stays disabled and the line names the way in.
+    assert.doesNotMatch(bankPage, /Plaid keys pending|Sandbox keys|readiness pack|not configured on this environment|Opening Plaid Link/);
+    assert.match(bankPage, /<Button variant="primary" disabled title=\{NOT_SWITCHED_ON_TITLE\}>\s*Connect a bank or card\s*<\/Button>/);
+    assert.match(bankPage, /\{PLAID_SENTENCES\.notSwitchedOn\}/);
+    assert.match(bankPage, /const NOT_SWITCHED_ON_TITLE = "Bank connections aren't switched on here yet";/);
   });
 });

@@ -1,28 +1,22 @@
-// StellaOverviewView — what STELLA's Overview draws, given the numbers.
+// StellaOverviewView — what Ledger → Overview draws, given the numbers.
 //
 // Split out of StellaOverviewPage on 1 Oct 2026 so the page's ORDER can be
 // rendered in a test without MSAL or the API (test/stella-overview-setup):
 //
 //   1. the four money numbers (Money in · Money out · Net · Owed to you)
-//   2. Finish setup — the six steps that tick themselves from the business's
-//      own data (stellaSetupSteps.ts), drawn with the shared
-//      SetupChecklistCard that SPARK's Overview uses. Brandon, 1 Oct: "STELLA
-//      is the only section that doesn't have its own overview … this is
-//      helpful for things like 'Finish Setup'."
-//   3. the headline (what needs review, what you're owed), the charts, and
-//      the accounts / upcoming recurring cards — the overview as it was.
+//   2. the headline (what needs review, what you're owed), the charts, and
+//      the accounts / upcoming recurring cards.
 //
-// When every step is done the card folds away to one line with "Show setup",
-// the way SPARK's checklist disappears when it is finished.
-import { useState } from "react";
+// 2 Oct 2026 (independent review): the "Finish setup" card that sat between
+// 1 and 2 is gone from here. Brandon put cross-feature setup on STELLA's
+// Dashboard, and the same six-step card on both pages was read twice; it now
+// lives only on the Dashboard (StellaFinishSetup in StellaDashboardView.tsx).
 import { Link } from "react-router-dom";
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
-import { CheckCircle2, CreditCard, Landmark } from "lucide-react";
+import { CreditCard, Landmark } from "lucide-react";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "./stellaTheme";
-import { SetupChecklistCard } from "../../components/SetupChecklistCard";
-import { allStepsDone, type StellaSetupStep } from "./stellaSetupSteps";
 
 // GET /ledger/overview?month=YYYY-MM (stella-api; { data } envelope unwrapped
 // by stellaApi). accounts/upcomingRecurring stay [] until Plaid / ingestion.
@@ -99,15 +93,12 @@ export function StellaOverviewView({
   month,
   isCurrentMonth,
   plaidItems,
-  setupSteps,
 }: {
   ov: LedgerOverview;
   /** The month picker's value. */
   month: string;
   isCurrentMonth: boolean;
   plaidItems: PlaidItemSummary[];
-  /** null while the setup data is still being read — the card waits rather than flickering. */
-  setupSteps: StellaSetupStep[] | null;
 }) {
   return (
     <>
@@ -129,9 +120,6 @@ export function StellaOverviewView({
           dataTour="stella-owed-tile"
         />
       </div>
-
-      {/* Finish setup — between the money numbers and everything else */}
-      <StellaFinishSetup steps={setupSteps} />
 
       <HeroCard ov={ov} isCurrentMonth={isCurrentMonth} />
 
@@ -281,56 +269,6 @@ export function StellaOverviewView({
   );
 }
 
-// ── Finish setup ────────────────────────────────────────────────────────────
-// The six steps, each a link to the screen that does it, each ticked from
-// data. Hidden once every step is done, with "Show setup" to bring it back.
-// Drawn on the Ledger Overview ("Finish setup") and on STELLA's product
-// Dashboard ("Finish setting up", the words SPARK's Dashboard uses).
-export function StellaFinishSetup({ steps, title = "Finish setup" }: { steps: StellaSetupStep[] | null; title?: string }) {
-  const [shown, setShown] = useState(false);
-  if (!steps || steps.length === 0) return null;
-  const done = steps.filter((s) => s.done).length;
-  const finished = allStepsDone(steps);
-
-  if (finished && !shown) {
-    return (
-      <div
-        data-tour="stella-finish-setup"
-        style={{ ...card, display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "10px 18px" }}
-      >
-        <CheckCircle2 size={16} color="#047857" style={{ flexShrink: 0 }} />
-        <span style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>Setup finished — all {steps.length} steps are done.</span>
-        <button type="button" onClick={() => setShown(true)} style={linkButton}>
-          Show setup
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginBottom: 16 }}>
-      <SetupChecklistCard
-        dataTour="stella-finish-setup"
-        title={title}
-        done={done}
-        total={steps.length}
-        accent={STELLA_INDIGO}
-        accentTint="#EEF0FB"
-        borderColor={STELLA_LAVENDER}
-        numbered
-        headerRight={
-          finished ? (
-            <button type="button" onClick={() => setShown(false)} style={linkButton}>
-              Hide setup
-            </button>
-          ) : undefined
-        }
-        groups={[{ rows: steps }]}
-      />
-    </div>
-  );
-}
-
 // ── Hero headline card (OliverDashboard TodayHero pattern) ──────────────────
 // One tone-colored banner that picks the single most important thing:
 //   inboxCount > 0  → review nudge → Inbox
@@ -419,4 +357,3 @@ const card: React.CSSProperties = { background: "#fff", border: `1px solid ${STE
 const cardTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "#0B1C24" };
 const cardSub: React.CSSProperties = { fontSize: 11, color: "#5A7A8A", marginBottom: 8, marginTop: 2 };
 const iconDisc: React.CSSProperties = { width: 40, height: 40, borderRadius: 99, background: STELLA_LAVENDER, display: "inline-flex", alignItems: "center", justifyContent: "center" };
-const linkButton: React.CSSProperties = { background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, color: STELLA_INDIGO };

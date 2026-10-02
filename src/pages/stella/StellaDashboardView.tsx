@@ -8,41 +8,54 @@
 //
 //   1. Finish setting up — the six STELLA steps (StellaFinishSetup, the shared
 //      SetupChecklistCard), each a link to the page that does it. Folds to one
-//      line once every step is done.
+//      line once every step is done. Drawn ONLY here since 2 Oct 2026 (it used
+//      to be on Ledger → Overview as well — the same card, read twice).
 //   2. What needs you — Ledger inbox · Bills · Owed to you · Month-end close.
-//      Each tile says it needs you, it is clear, or we could not check it.
-//   3. Go to — one tile per STELLA feature area, in the nav's own words.
+//      Each tile says it needs you, it is clear, or we could not check it, and
+//      the line beside the heading counts both (needsSummary).
+//   3. Go to — one tile per main STELLA feature area, in the nav's own words,
+//      with the nav's plan badge where it has one.
+//
+// An accountant (allowedServiceKeys non-null) sees only what their own nav
+// holds: no bank setup steps, no Unit Economics, Settings → Period Close.
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertCircle, ArrowRight, CheckCircle2, CircleDot } from "lucide-react";
 import { STELLA_INDIGO, STELLA_LAVENDER } from "./stellaTheme";
-import { StellaFinishSetup } from "./StellaOverviewView";
-import type { StellaSetupStep } from "./stellaSetupSteps";
-import { STELLA_SHORTCUTS, type NeedTile, type StellaShortcut } from "./stellaDashboard";
+import { SetupChecklistCard } from "../../components/SetupChecklistCard";
+import { allStepsDone, type StellaSetupStep } from "./stellaSetupSteps";
+import {
+  needsFor, needsSummary, setupStepsFor, shortcutsFor,
+  type NeedTile, type StellaShortcut,
+} from "./stellaDashboard";
 
 export function StellaDashboardView({
   setupSteps,
   needs,
-  shortcuts = STELLA_SHORTCUTS,
+  allowedServiceKeys = null,
+  shortcuts,
 }: {
   /** null while the setup reads are still out — the card waits rather than flickering. */
   setupSteps: StellaSetupStep[] | null;
   needs: NeedTile[];
+  /** The person's nav allowlist (/overview/me or /ledger/me); null = an owner, who sees everything. */
+  allowedServiceKeys?: string[] | null;
   shortcuts?: StellaShortcut[];
 }) {
-  const waiting = needs.filter((t) => t.state === "needs_you").length;
+  const steps = setupStepsFor(setupSteps, allowedServiceKeys);
+  const tiles = needsFor(needs, allowedServiceKeys);
+  const goTo = shortcuts ?? shortcutsFor(allowedServiceKeys);
   return (
     <>
-      <StellaFinishSetup steps={setupSteps} title="Finish setting up" />
+      <StellaFinishSetup steps={steps} title="Finish setting up" />
 
       <section data-tour="stella-dashboard-needs" aria-label="What needs you" style={{ marginBottom: 16 }}>
         <div style={sectionHead}>
           <span style={sectionTitle}>What needs you</span>
-          <span style={sectionSub}>
-            {waiting === 0 ? "Nothing is waiting on you right now." : `${waiting} of ${needs.length} ${waiting === 1 ? "needs" : "need"} a look.`}
-          </span>
+          <span style={sectionSub}>{needsSummary(tiles)}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
-          {needs.map((t) => (
+          {tiles.map((t) => (
             <NeedCard key={t.key} tile={t} />
           ))}
         </div>
@@ -51,13 +64,19 @@ export function StellaDashboardView({
       <section data-tour="stella-dashboard-shortcuts" aria-label="Go to">
         <div style={sectionHead}>
           <span style={sectionTitle}>Go to</span>
-          <span style={sectionSub}>Every part of STELLA, one click away.</span>
+          <span style={sectionSub}>The main parts of STELLA, one click away.</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
-          {shortcuts.map((s) => (
+          {goTo.map((s) => (
             <Link key={s.key} to={s.route} data-shortcut={s.key} style={shortcutCard}>
               <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>{s.label}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>{s.label}</span>
+                  {s.tag && (
+                    // The same badge the nav shows on this area's items.
+                    <span data-shortcut-tag={s.tag} title="Comes with the Standard plan" style={tagBadge}>{s.tag}</span>
+                  )}
+                </span>
                 <ArrowRight size={13} color={STELLA_INDIGO} />
               </span>
               <span style={{ display: "block", fontSize: 11, color: "#5A7A8A", marginTop: 4, lineHeight: 1.45 }}>{s.detail}</span>
@@ -66,6 +85,55 @@ export function StellaDashboardView({
         </div>
       </section>
     </>
+  );
+}
+
+// ── Finish setting up ───────────────────────────────────────────────────────
+// The steps, each a link to the screen that does it, each ticked from data.
+// Hidden once every step is done, with "Show setup" to bring it back — the way
+// SPARK's checklist disappears when it is finished.
+export function StellaFinishSetup({ steps, title = "Finish setting up" }: { steps: StellaSetupStep[] | null; title?: string }) {
+  const [shown, setShown] = useState(false);
+  if (!steps || steps.length === 0) return null;
+  const done = steps.filter((s) => s.done).length;
+  const finished = allStepsDone(steps);
+
+  if (finished && !shown) {
+    return (
+      <div
+        data-tour="stella-finish-setup"
+        style={{ ...card, display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "10px 18px" }}
+      >
+        <CheckCircle2 size={16} color="#047857" style={{ flexShrink: 0 }} />
+        <span style={{ flex: 1, fontSize: 12, color: "#0B1C24" }}>Setup finished — all {steps.length} steps are done.</span>
+        <button type="button" onClick={() => setShown(true)} style={linkButton}>
+          Show setup
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <SetupChecklistCard
+        dataTour="stella-finish-setup"
+        title={title}
+        done={done}
+        total={steps.length}
+        accent={STELLA_INDIGO}
+        accentTint="#EEF0FB"
+        borderColor={STELLA_LAVENDER}
+        numbered
+        headerRight={
+          finished ? (
+            <button type="button" onClick={() => setShown(false)} style={linkButton}>
+              Hide setup
+            </button>
+          ) : undefined
+        }
+        groups={[{ rows: steps }]}
+      />
+    </div>
   );
 }
 
@@ -108,6 +176,8 @@ function NeedCard({ tile }: { tile: NeedTile }) {
   );
 }
 
+const card: React.CSSProperties = { background: "#fff", border: `1px solid ${STELLA_LAVENDER}`, borderRadius: 12, padding: "14px 18px" };
+const linkButton: React.CSSProperties = { background: "transparent", border: 0, padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600, color: STELLA_INDIGO };
 const sectionHead: React.CSSProperties = { display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginBottom: 8 };
 const sectionTitle: React.CSSProperties = { fontSize: 13, fontWeight: 700, color: "#0B1C24" };
 const sectionSub: React.CSSProperties = { fontSize: 11, color: "#5A7A8A" };
@@ -118,4 +188,14 @@ const shortcutCard: React.CSSProperties = {
   borderRadius: 10,
   padding: "12px 14px",
   textDecoration: "none",
+};
+// The nav's tag pill (SubNav: STELLA_TAG #4C5BD4 at 22 alpha).
+const tagBadge: React.CSSProperties = {
+  background: `${STELLA_INDIGO}22`,
+  color: STELLA_INDIGO,
+  fontSize: 9,
+  fontWeight: 700,
+  letterSpacing: "0.04em",
+  padding: "1px 5px",
+  borderRadius: 99,
 };

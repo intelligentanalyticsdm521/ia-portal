@@ -1,5 +1,7 @@
-// stellaSetupSteps — the six "Finish setup" steps on STELLA's Overview, and
-// the rule that ticks each one from the business's own data.
+// stellaSetupSteps — the six "Finish setting up" steps on STELLA's Dashboard,
+// and the rule that ticks each one from the business's own data. (They sat on
+// Ledger → Overview until 2 Oct 2026; Brandon put cross-feature setup on the
+// Dashboard, so the Ledger's own overview no longer draws them.)
 //
 // Brandon, 1 Oct 2026: "STELLA is the only section that doesn't have its own
 // overview. All the rest have a main overview with the key points; this is
@@ -8,7 +10,11 @@
 //
 // Every step ticks itself from something the API already says — nobody ticks
 // a box by hand:
-//   1 Connect your bank and card   GET /ledger/plaid/status itemCount > 0
+//   1 Connect your bank and card   GET /ledger/plaid/status itemCount > 0, and
+//                                  no connection on GET /ledger/plaid/items
+//                                  that needs attention (2 Oct 2026 review: a
+//                                  broken feed still read "Connected — new
+//                                  transactions come in on their own")
 //   2 Mark your personal card      GET /ledger/plaid/items  any is_personal_card
 //   3 Confirm your chart of accounts  GET /ledger/coa — an account edited
 //                                  (updated_at is only ever set by a saved edit)
@@ -16,14 +22,21 @@
 //   4 Set your sales-tax rate      GET /ledger/tax-rates   any active rate
 //   5 Review your first statement  GET /ledger/transactions — any booked row
 //                                  (status categorized or reconciled)
-//   6 Accountant pack              downloaded once from this browser — the API
-//                                  keeps no record of a download, so this one
-//                                  is remembered locally (see markPackDownloaded)
+//   6 Accountant pack              a download recorded by the API (GET
+//                                  /ledger/audit-log, entity_table
+//                                  stella.accountant_pack, action export —
+//                                  2 Oct 2026 review: it was this browser's
+//                                  localStorage only, so a second browser
+//                                  showed it undone), or one remembered on
+//                                  this browser from before the API kept a
+//                                  record (markPackDownloaded)
 //
 // An input that could not be read arrives as null and its step stays not-done
 // with its ordinary sentence: a reminder, never a false tick.
 //
-// Zero imports — test/stella-overview-setup walks every rule.
+// One import (the broken-connection rule, shared with the Bank page's pill) —
+// test/stella-overview-setup walks every rule.
+import { plaidItemNeedsAttention } from "../../lib/plaidConnectError";
 
 export interface PlaidStatusInput {
   configured: boolean;
@@ -31,6 +44,9 @@ export interface PlaidStatusInput {
 }
 export interface PlaidItemInput {
   is_personal_card?: boolean | number | null;
+  /** 'active' | 'login_required' | 'error' (oliver-api lib/plaidSync.js). */
+  status?: string | null;
+  error_code?: string | null;
 }
 export interface CoaAccountInput {
   created_at?: string | null;
@@ -75,8 +91,9 @@ export const COA_ADDED_LATER_MS = 10 * 60 * 1000;
 
 const BANK_LINK = "Settings → Bank and card accounts";
 
-export function bankStep(status: PlaidStatusInput | null): StellaSetupStep {
+export function bankStep(status: PlaidStatusInput | null, items: PlaidItemInput[] | null = null): StellaSetupStep {
   const count = Number(status?.itemCount || 0);
+  const broken = (Array.isArray(items) ? items : []).filter((i) => plaidItemNeedsAttention(i)).length;
   const done = count > 0;
   // Automatic connection not switched on here (dev, or before keys): the way
   // in is a statement import, and the step says so rather than pointing at a
@@ -95,6 +112,20 @@ export function bankStep(status: PlaidStatusInput | null): StellaSetupStep {
       // really lands on (clicked 1 Oct: the list of reconciliations, not an
       // import screen).
       linkLabel: "Accounting → Bank Reconciliation",
+    };
+  }
+  // A connection that stopped working is not a finished step: the Bank page
+  // shows "Connection needs attention" on it, and this says the same.
+  if (broken > 0) {
+    return {
+      key: "bank",
+      label: "Connect your bank and card",
+      detail: broken === 1
+        ? "A bank connection needs attention, so new transactions from it aren't coming in."
+        : `${broken} bank connections need attention, so new transactions from them aren't coming in.`,
+      done: false,
+      route: STELLA_SETUP_ROUTES.bank,
+      linkLabel: BANK_LINK,
     };
   }
   return {
@@ -198,7 +229,7 @@ export function accountantPackStep(downloaded: boolean): StellaSetupStep {
 /** The six steps, in order. */
 export function stellaSetupSteps(i: StellaSetupInputs): StellaSetupStep[] {
   return [
-    bankStep(i.plaidStatus),
+    bankStep(i.plaidStatus, i.plaidItems),
     personalCardStep(i.plaidItems),
     coaStep(i.coa),
     salesTaxStep(i.taxRates),
@@ -212,9 +243,10 @@ export function allStepsDone(steps: StellaSetupStep[]): boolean {
 }
 
 // ── Accountant pack: remembered on this browser ────────────────────────────
-// The export route writes no record of a download, so "done once" is kept in
-// localStorage per business. Honest about its limits: another browser or a
-// cleared profile shows the step again.
+// Since 2 Oct 2026 the export route records every download (stella.audit_log)
+// and that record is what ticks step 6 on every browser. This local note is
+// kept as a second signal: a download made before the API kept a record is
+// still a download.
 
 export interface PackStorage {
   getItem(key: string): string | null;

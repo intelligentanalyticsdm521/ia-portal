@@ -16,14 +16,20 @@
 // and is never put on the screen:
 //
 //   INVALID_LINK_CUSTOMIZATION  → a setting on OUR side (the bank-connection
-//                                 settings in the Plaid dashboard). The owner
-//                                 can do nothing about it; the API writes a
-//                                 "needs setup" line to our server log when it
-//                                 happens (oliver-api routes/stellaPlaid.js).
+//                                 settings in the Plaid dashboard). Bank
+//                                 connections cannot open until it is
+//                                 finished; the way in meanwhile is a
+//                                 statement import. The API writes a "needs
+//                                 setup" line to our server log naming the
+//                                 setting (oliver-api lib/plaidErrors.js).
 //   plaid_not_configured        → bank connections are not switched on here;
 //                                 the way in is a statement import.
 //   anything else               → it could not start (or finish, or sync) —
 //                                 please try again.
+//
+// Independent review, 2 Oct 2026: the needs-setup sentence said "we've been
+// told, and there's nothing you need to do". Nobody is told (one log line, no
+// alert), so it claims no notification now — the same words the API sends.
 //
 // Zero imports, no window — test/plaid-connect-error walks every branch.
 
@@ -31,13 +37,14 @@
 export const PLAID_NEEDS_SETUP_CODES: readonly string[] = ["INVALID_LINK_CUSTOMIZATION"];
 
 export const PLAID_SENTENCES = {
-  needsSetup: "The bank connection needs one setting finished on our side — we've been told, and there's nothing you need to do.",
+  needsSetup: "Bank connections can't open yet because one setting on our side isn't finished — until then, bring your transactions in with Import a bank statement under Accounting.",
   notSwitchedOn: "Bank connections aren't switched on here yet — you can bring transactions in with Import a bank statement under Accounting.",
   connect: "The bank connection couldn't start — please try again.",
   finish: "The bank connection couldn't be finished — please try again.",
   sync: "That account couldn't sync just now — please try again.",
   disconnect: "We couldn't reach the bank network to disconnect that account, so it is still connected — please try again in a few minutes.",
   closedEarly: "The bank window closed before an account was connected, so nothing changed.",
+  loadFailed: "Your bank and card accounts couldn't be loaded just now — please try again.",
 } as const;
 
 export type PlaidAction = "connect" | "finish" | "sync" | "disconnect";
@@ -68,10 +75,25 @@ export function plaidErrorSentence(e: unknown, action: PlaidAction): string {
   return PLAID_SENTENCES[action];
 }
 
+/** Row statuses oliver-api's sync writes when a connection stops working (lib/plaidSync.js). */
+export const PLAID_BROKEN_STATUSES: readonly string[] = ["login_required", "error"];
+
+/**
+ * Is this connected account broken? An error_code on the row, or a status the
+ * sync writes on failure — a failed sync with no Plaid code still sets
+ * status 'error' with error_code NULL, so the code alone is not enough.
+ * The ONE rule: the Bank page's pill and the Dashboard's bank step both ask it.
+ */
+export function plaidItemNeedsAttention(item: { error_code?: string | null; status?: string | null } | null | undefined): boolean {
+  if (!item) return false;
+  if (item.error_code && String(item.error_code).trim()) return true;
+  return PLAID_BROKEN_STATUSES.includes(String(item.status || "").trim().toLowerCase());
+}
+
 /**
  * A connected account's problem, in words — the row used to print the raw
  * error_code (ITEM_LOGIN_REQUIRED …) in a red pill.
  */
-export function plaidItemProblem(errorCode: string | null | undefined): string | null {
-  return errorCode && String(errorCode).trim() ? "Connection needs attention" : null;
+export function plaidItemProblem(errorCode: string | null | undefined, status?: string | null): string | null {
+  return plaidItemNeedsAttention({ error_code: errorCode, status }) ? "Connection needs attention" : null;
 }

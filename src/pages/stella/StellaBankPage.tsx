@@ -8,8 +8,10 @@
 //   POST /ledger/plaid/sync       → pull transactions        (503 until keys)
 //
 // Three honest states, gated on /status.configured — never a fake row:
-//   (a) configured:false → explainer stays; the connect button is a DISABLED
-//       "Plaid keys pending" with a subtitle pointing at the readiness pack.
+//   (a) configured:false → explainer stays; the connect button is DISABLED,
+//       with one plain line pointing at Import a bank statement (2 Oct 2026
+//       review: the button and its note talked about the provider's keys and
+//       a setup guide — words for us, not for an owner).
 //   (b) configured:true, no items → live "Connect a bank or card" button that
 //       requests a link token and opens Plaid Link (react-plaid-link);
 //       onSuccess → POST /exchange → reload.
@@ -71,6 +73,9 @@ function fmtDate(d?: string | null): string | null {
 // A failed connect / finish / sync is ONE plain sentence from
 // lib/plaidConnectError — never the provider's code, never the raw message
 // (2 Oct 2026: the page printed the bare text INVALID_LINK_CUSTOMIZATION).
+
+// The disabled button's tooltip when bank connections are not switched on.
+const NOT_SWITCHED_ON_TITLE = "Bank connections aren't switched on here yet";
 
 // sessionStorage can throw (blocked site data, some private windows); a page
 // that cannot keep the token simply reads every return as expired.
@@ -235,7 +240,10 @@ export function StellaBankPage() {
       setStatus({ configured: !!s?.configured, itemCount: Number(s?.itemCount || 0) });
       setItems(Array.isArray(it) ? it : []);
     } catch (e) {
-      setError(e);
+      // The server's 500 text is a database message, not a sentence for the
+      // owner — the page says one plain line (2 Oct 2026 review).
+      console.error("[stella.bank] load failed", e);
+      setError(new Error(PLAID_SENTENCES.loadFailed));
     } finally {
       setLoading(false);
     }
@@ -370,11 +378,11 @@ export function StellaBankPage() {
         status && !configured ? (
           // (a) keys not on this environment yet — honest disabled state.
           <div data-tour="stella-bank-connect" style={{ textAlign: "right" }}>
-            <Button variant="primary" disabled title="Plaid keys are not configured on this environment yet">
-              Plaid keys pending
+            <Button variant="primary" disabled title={NOT_SWITCHED_ON_TITLE}>
+              Connect a bank or card
             </Button>
-            <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4, maxWidth: 250, lineHeight: 1.45 }}>
-              Sandbox keys unlock this — setup guide in the Plaid readiness pack
+            <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4, maxWidth: 260, lineHeight: 1.45 }}>
+              {PLAID_SENTENCES.notSwitchedOn}
             </div>
           </div>
         ) : (
@@ -386,7 +394,7 @@ export function StellaBankPage() {
             disabled={!status || connecting}
             loading={connecting}
           >
-            {connecting ? "Opening Plaid Link…" : "Connect a bank or card"}
+            {connecting ? "Opening the bank window…" : "Connect a bank or card"}
           </Button>
         )
       }
@@ -400,7 +408,7 @@ export function StellaBankPage() {
             style={configured ? { background: STELLA_INDIGO } : undefined}
             onClick={startConnect}
             disabled={!status || !configured || connecting}
-            title={status && !configured ? "Plaid keys are not configured on this environment yet" : undefined}
+            title={status && !configured ? NOT_SWITCHED_ON_TITLE : undefined}
           >
             Connect a bank or card
           </Button>
@@ -459,8 +467,8 @@ export function StellaBankPage() {
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
                           {it.institution_name || "Bank connection"}
                         </span>
-                        {plaidItemProblem(it.error_code) && (
-                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{plaidItemProblem(it.error_code)}</span>
+                        {plaidItemProblem(it.error_code, it.status) && (
+                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{plaidItemProblem(it.error_code, it.status)}</span>
                         )}
                       </div>
                       <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>

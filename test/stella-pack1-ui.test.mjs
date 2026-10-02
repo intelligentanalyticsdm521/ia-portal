@@ -34,6 +34,9 @@ const txnsPage = read("pages/stella/StellaTransactionsPage.tsx");
 const opening = read("pages/stella/accounting/OpeningBalances.tsx");
 const accountingPage = read("pages/stella/accounting/AccountingPage.tsx");
 const appShell = read("components/AppShell.tsx");
+// 2 Oct 2026: the filter moved to a pure module AppShell imports, so the rail
+// target and the menu are computed by one rule (navRoleFilter.ts).
+const navFilter = read("components/navRoleFilter.ts");
 
 /* ── Item 4 — statements out of the screen ───────────────────────────────── */
 
@@ -232,10 +235,11 @@ test("Opening Balances is the FIRST tab on the Accounting page", () => {
 /* ── Item 6 — the accountant's nav ───────────────────────────────────────── */
 
 test("the role nav filter covers STELLA as well as OLIVER", () => {
-  assert.match(appShell, /function applyRoleNavFilter\(/);
+  assert.match(navFilter, /export function applyRoleNavFilter\(/);
+  assert.match(appShell, /import \{ applyRoleNavFilter, railRouteFor \} from "\.\/navRoleFilter";/);
   assert.match(appShell, /activeProduct === "oliver" \|\| activeProduct === "stella"/);
   // An admin (null list) is still unfiltered.
-  assert.match(appShell, /if \(!allowedServiceKeys\) return config;/);
+  assert.match(navFilter, /if \(!allowedServiceKeys\) return config;/);
 });
 
 test("Period Close and the bank page live under SETTINGS, and that hub is filtered too", () => {
@@ -251,9 +255,9 @@ test("account settings are NOT product-gated, so the Settings filter is prefix-s
   // reference_account_settings_not_product_gated: tenant-level settings belong
   // to every member of a business whatever their product role. Filtering the
   // whole hub against a PRODUCT allowlist would have stripped them.
-  assert.match(appShell, /prefixes: string\[\] \| null = null/);
-  assert.match(appShell, /const inScope = \(key: string\) => !prefixes \|\| prefixes\.some\(\(p\) => key\.startsWith\(p\)\)/);
-  assert.match(appShell, /items: g\.items\.filter\(\(i\) => !inScope\(i\.key\) \|\| allowSet\.has\(i\.key\)\)/);
+  assert.match(navFilter, /prefixes: string\[\] \| null = null/);
+  assert.match(navFilter, /const inScope = \(key: string\) => !prefixes \|\| prefixes\.some\(\(p\) => key\.startsWith\(p\)\)/);
+  assert.match(navFilter, /items: g\.items\.filter\(\(i\) => !inScope\(i\.key\) \|\| allowSet\.has\(i\.key\)\)/);
 
   // And the three product-settings keys are on the right sides of the line.
   const subNav = read("components/SubNav.tsx");

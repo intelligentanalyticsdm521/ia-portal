@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 
 import {
-  PLAID_NEEDS_SETUP_CODES, PLAID_SENTENCES, plaidErrorCode, plaidErrorSentence, plaidItemProblem,
+  PLAID_NEEDS_SETUP_CODES, PLAID_SENTENCES, plaidErrorCode, plaidErrorSentence, plaidItemProblem, plaidItemNeedsAttention,
 } from "../src/lib/plaidConnectError.ts";
 import { apiBodySentence } from "../src/lib/apiErrorMessage.ts";
 
@@ -33,14 +33,17 @@ function apiError(status, body) {
 const CODE = "INVALID_LINK_CUSTOMIZATION";
 
 describe("plaidErrorSentence — the words for a failed connect", () => {
-  test("INVALID_LINK_CUSTOMIZATION says a setting on our side, we've been told — and no code", () => {
+  test("INVALID_LINK_CUSTOMIZATION says a setting on our side and the way in meanwhile — and no code", () => {
     // Today's API: { error: <code> } only — the message IS the code.
     const old = apiError(500, { error: CODE });
     assert.equal(old.message, CODE, "this is exactly what reached the screen");
     const s = plaidErrorSentence(old, "connect");
     assert.equal(s, PLAID_SENTENCES.needsSetup);
-    assert.match(s, /one setting finished on our side/);
-    assert.match(s, /we've been told/);
+    assert.match(s, /one setting on our side isn't finished/);
+    assert.match(s, /Import a bank statement under Accounting/);
+    // 2 Oct 2026 review: nobody is told (one server log line, no alert), and
+    // for the account holder "nothing you need to do" is wrong.
+    assert.doesNotMatch(s, /been told|notified|nothing you need to do/i);
     assert.ok(!s.includes(CODE));
     // The API after this change also carries a plain message; the code still decides.
     const withMessage = apiError(500, { error: CODE, message: "The bank connection needs one setting finished on our side." });
@@ -92,6 +95,18 @@ describe("plaidErrorSentence — the words for a failed connect", () => {
     assert.equal(plaidItemProblem(null), null);
     assert.equal(plaidItemProblem(""), null);
   });
+
+  test("a failed sync with no Plaid code still needs attention — the row's status says so", () => {
+    // oliver-api lib/plaidSync.js: a failure sets status 'login_required' or
+    // 'error'; a non-Plaid failure leaves error_code NULL.
+    assert.equal(plaidItemProblem(null, "error"), "Connection needs attention");
+    assert.equal(plaidItemProblem(null, "login_required"), "Connection needs attention");
+    assert.equal(plaidItemProblem(null, "active"), null);
+    assert.equal(plaidItemNeedsAttention({ status: "ERROR", error_code: null }), true);
+    assert.equal(plaidItemNeedsAttention({ status: "active", error_code: "ITEM_LOGIN_REQUIRED" }), true);
+    assert.equal(plaidItemNeedsAttention({ status: "active", error_code: null }), false);
+    assert.equal(plaidItemNeedsAttention(null), false);
+  });
 });
 
 describe("StellaBankPage — wiring a typecheck cannot see", () => {
@@ -107,8 +122,16 @@ describe("StellaBankPage — wiring a typecheck cannot see", () => {
     assert.doesNotMatch(page, /friendlyPlaidError/);
     assert.doesNotMatch(page, /setActionError\([^)]*\.message/);
     assert.doesNotMatch(page, /onExit\(`[^`]*\$\{error\.message\}/);
-    // The connected-account pill shows words, not the raw error_code.
+    // The connected-account pill shows words, not the raw error_code — and
+    // reads the row's status too, so a failed sync with no code still shows.
     assert.doesNotMatch(page, />\{it\.error_code\}</);
-    assert.match(page, /plaidItemProblem\(it\.error_code\)/);
+    assert.match(page, /plaidItemProblem\(it\.error_code, it\.status\)/);
+  });
+
+  test("a page that cannot load says one plain line, never the server's own text", () => {
+    // 2 Oct 2026 review: the status/items 500s answered { error: err.message }
+    // and StellaShell printed it.
+    assert.match(page, /setError\(new Error\(PLAID_SENTENCES\.loadFailed\)\)/);
+    assert.doesNotMatch(page, /setError\(e\)/);
   });
 });
