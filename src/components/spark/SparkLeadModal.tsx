@@ -33,7 +33,7 @@ import { IadmModal } from "../IadmModal";
 import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
 // 2 Oct 2026 — why it scored what it scored, in one line under the score.
-import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases } from "../../lib/leadScoreWhy";
+import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases, parsePlace, distanceLine, addressSourceLine } from "../../lib/leadScoreWhy";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
@@ -198,6 +198,9 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
   // What the website check found (lumen.lead.relevance_json); null for leads
   // that never went through it (intake, older runs).
   const relevance = useMemo(() => parseRelevance(lead?.relevance_json), [lead?.relevance_json]);
+  // Where the run placed the business (relevance_json.place, 2 Oct 2026): the
+  // address's source under the Address field, the distance beside "In your area".
+  const place = useMemo(() => parsePlace(lead?.relevance_json), [lead?.relevance_json]);
 
   async function run(key: string, fn: () => Promise<void>) {
     setBusy(key);
@@ -351,7 +354,12 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 <Field icon={Building2} label="Business">{lead.business_name || "—"}</Field>
                 <Field icon={Mail} label="Domain">{lead.domain}</Field>
                 <Field icon={Phone} label="Phone">{lead.phone || "—"}</Field>
-                <Field icon={MapPin} label="Address">{lead.full_address || "—"}</Field>
+                <Field icon={MapPin} label="Address">
+                  {lead.full_address || "—"}
+                  {lead.full_address && addressSourceLine(place) && (
+                    <span className="block text-[10px] text-slate-500" data-testid="lead-address-source">{addressSourceLine(place)}</span>
+                  )}
+                </Field>
               </div>
 
               {/* 2 Oct 2026 — what the website check found, before any email was
@@ -395,6 +403,10 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                       )}
                       {localityLine(lead.locality) && (
                         <span className="text-[11px] text-slate-500">· {localityLine(lead.locality)}</span>
+                      )}
+                      {/* 2 Oct 2026 — how far the address is from the search's centre town. */}
+                      {localityLine(lead.locality) && distanceLine(place) && (
+                        <span className="text-[11px] text-slate-500" data-testid="lead-distance">· {distanceLine(place)}</span>
                       )}
                     </div>
                     {/* 2 Oct 2026 — why, in one line, from the run's own reasons */}

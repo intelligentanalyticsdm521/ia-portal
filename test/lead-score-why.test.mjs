@@ -11,9 +11,14 @@
 //   · scoreWhyLine — ignore `omit`                    → "the score line leaves out what the About block says" RED
 //   · parseRelevance — keep services on not_checked   → "a lead the check could not review" RED
 //   · fitSkipPhrases — drop the unsure count          → "the run banner counts the website check" RED
+//   · distanceLine — round "less than a mile" to 0     → "the distance reads as a person would say it" RED
+//   · addressSourceLine — name the database vendor     → "where the address came from, in plain words" RED
+//   · parsePlace — accept a negative or text distance  → "a place the run did not measure" RED
+//   · the inbox City cell dropped                     → "the list has a City column" RED
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases } from "../src/lib/leadScoreWhy.ts";
+import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases, parsePlace, distanceLine, cityLine, addressSourceLine } from "../src/lib/leadScoreWhy.ts";
+import { readFileSync } from "node:fs";
 import { fitSkipPhrases, fitSkipCount, notCheckedLine } from "../src/lib/leadRunFit.ts";
 
 test("the stored reasons become one line, the first phrase capitalised", () => {
@@ -83,4 +88,63 @@ test("the run banner counts the website check in plain words", () => {
   assert.equal(notCheckedLine({}), null);
   assert.equal(notCheckedLine(null), null);
   for (const p of [...fitSkipPhrases(summary), notCheckedLine(summary)]) assert.doesNotMatch(p, /relevance|_|\bAI\b|Claude|model/i, p);
+});
+
+// ── The business address (2 Oct 2026) ───────────────────────────────────────
+// LUMEN keeps the address in parts on relevance_json.place: the town, the
+// state, where it came from and the distance to the search's centre town.
+const PLACED = JSON.stringify({
+  status: "checked", verdict: "pass", reason: "A plumber.", services: [],
+  place: { address: "2201 SE Delaware Ave, Ankeny, IA 50021", street: "2201 SE Delaware Ave", city: "Ankeny", state: "IA", postal_code: "50021", source: "structured_data", miles: 10.9, anchor: "Des Moines, IA", found_in: ["structured_data", "hunter"] },
+});
+
+test("the place: the town for the list, the distance beside the area line", () => {
+  const p = parsePlace(PLACED);
+  assert.deepEqual(p, { city: "Ankeny", state: "IA", source: "structured_data", miles: 10.9, anchor: "Des Moines, IA" });
+  assert.equal(cityLine(p), "Ankeny, IA");
+  assert.equal(distanceLine(p), "11 miles from Des Moines");
+  // parseRelevance is unchanged by the extra key.
+  assert.deepEqual(parseRelevance(PLACED), { status: "checked", reason: "A plumber.", services: [] });
+});
+
+test("the distance reads as a person would say it", () => {
+  const at = (miles, city = "Altoona") => distanceLine({ city, state: "IA", source: "model", miles, anchor: "Des Moines, IA" });
+  assert.equal(at(0, "Des Moines"), null, "the centre town itself: town-to-town distances cannot say more, the Address field names it");
+  assert.equal(at(0.6, "Pleasant Hill"), "less than a mile from Des Moines");
+  assert.equal(at(1.2), "1 mile from Des Moines");
+  assert.equal(at(29.6), "30 miles from Des Moines");
+});
+
+test("a place the run did not measure, or no place at all, says nothing", () => {
+  assert.equal(parsePlace(null), null);
+  assert.equal(parsePlace("not json"), null);
+  assert.equal(parsePlace(CHECKED), null, "a lead from before the address work");
+  const unmeasured = parsePlace({ place: { city: "Nowhereville", state: "IA", source: "page_text", miles: null, anchor: null } });
+  assert.equal(cityLine(unmeasured), "Nowhereville, IA");
+  assert.equal(distanceLine(unmeasured), null);
+  assert.equal(parsePlace({ place: { city: "Ankeny", state: "IA", miles: -3, anchor: "Des Moines, IA" } }).miles, null);
+  assert.equal(parsePlace({ place: { city: "Ankeny", state: "IA", miles: "10", anchor: "Des Moines, IA" } }).miles, null);
+  assert.equal(parsePlace({ place: { city: "", state: "" } }), null);
+});
+
+test("where the address came from, in plain words — never a vendor's name", () => {
+  const src = (source) => addressSourceLine({ city: "Ankeny", state: "IA", source, miles: null, anchor: null });
+  assert.equal(src("structured_data"), "From their website");
+  assert.equal(src("model"), "From their website");
+  assert.equal(src("page_text"), "From their website");
+  assert.equal(src("hunter"), "From a business database");
+  assert.equal(src("business_record"), "From a business database");
+  assert.equal(src("something_new"), null);
+  for (const s of ["structured_data", "model", "page_text", "hunter", "business_record"]) assert.doesNotMatch(src(s), /hunter|data axle|claude|model|_/i);
+});
+
+test("the lead shows the address, its source and the distance; the list has a City column", () => {
+  const modal = readFileSync(new URL("../src/components/spark/SparkLeadModal.tsx", import.meta.url), "utf8");
+  assert.match(modal, /<Field icon=\{MapPin\} label="Address">\s*\{lead\.full_address \|\| "—"\}/);
+  assert.match(modal, /data-testid="lead-address-source">\{addressSourceLine\(place\)\}/);
+  assert.match(modal, /localityLine\(lead\.locality\) && distanceLine\(place\) &&/);
+  const inbox = readFileSync(new URL("../src/pages/spark/SparkLeadInboxPage.tsx", import.meta.url), "utf8");
+  assert.match(inbox, /<th className="px-4 py-3">Phone<\/th>\s*<th className="px-4 py-3">City<\/th>/);
+  assert.match(inbox, /cityLine\(parsePlace\(l\.relevance_json\)\)/);
+  assert.match(inbox, /colSpan=\{showIntel \? 10 : 9\}/, "the empty row still spans every column");
 });
