@@ -10,7 +10,11 @@
 //     contractual: the approver, else billing, else the primary — never the
 //     whole team; deliverable → everyone who receives documents)
 //   · "Not on the project yet" from /people/available — ticking one adds them
-//     to the project on send (the API does that), so the two lists never drift
+//     to the project on send (the API does that), so the two lists never drift.
+//     A tick there is kept as the person's own row (PickedPerson), so a later
+//     search that hides them neither drops them from the send nor hides them
+//     from the sender: they stay listed, ticked, above the search results
+//     (pane test 2 Oct, CPP-T1).
 //   · the host does the POST: this dialog only answers WHO.
 //
 // `initial` exists so the node test can draw the dialog with a fixture; in the
@@ -20,8 +24,8 @@ import { Send } from "lucide-react";
 import { IadmModal, CORE_BLUE } from "../IadmModal";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import {
-  contactKey, defaultTicked, personLabel, recipientsFrom, userKey,
-  type AvailablePeople, type RecipientInput, type RecipientKind, type RecipientPerson,
+  defaultTicked, hiddenPicks, personLabel, pickContact, pickUser, recipientsFrom, togglePicked,
+  type AvailablePeople, type PickedPerson, type RecipientInput, type RecipientKind, type RecipientPerson,
 } from "../../lib/projectPeople";
 
 export interface RecipientPickerDialogProps {
@@ -40,7 +44,7 @@ export interface RecipientPickerDialogProps {
    *  the dialog open with the sentence shown. */
   onSend: (recipients: RecipientInput[]) => Promise<void>;
   onCancel: () => void;
-  initial?: { people: RecipientPerson[]; available: AvailablePeople };
+  initial?: { people: RecipientPerson[]; available: AvailablePeople; picked?: PickedPerson[] };
 }
 
 const EMPTY_AVAILABLE: AvailablePeople = { contacts: [], users: [] };
@@ -50,7 +54,10 @@ export function RecipientPickerDialog({
 }: RecipientPickerDialogProps) {
   const [people, setPeople] = useState<RecipientPerson[]>(initial?.people ?? []);
   const [available, setAvailable] = useState<AvailablePeople>(initial?.available ?? EMPTY_AVAILABLE);
+  // Two tick lists: the project's people by id, and the people ticked from
+  // "Not on the project yet" as their own rows — never re-read from the search.
   const [ticked, setTicked] = useState<Set<string>>(() => defaultTicked(initial?.people ?? []));
+  const [picked, setPicked] = useState<PickedPerson[]>(initial?.picked ?? []);
   const [loading, setLoading] = useState(!initial);
   const [q, setQ] = useState("");
   const [sending, setSending] = useState(false);
@@ -100,7 +107,9 @@ export function RecipientPickerDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, q]);
 
-  const recipients = useMemo(() => recipientsFrom(ticked, people, available), [ticked, people, available]);
+  const recipients = useMemo(() => recipientsFrom(ticked, people, picked), [ticked, people, picked]);
+  const pickedKeys = useMemo(() => new Set(picked.map((p) => p.key)), [picked]);
+  const hidden = useMemo(() => hiddenPicks(picked, available), [picked, available]);
   const nobodyOnProject = !loading && !peopleFailed && people.length === 0;
   const canSend = !sending && !loading && (recipients.length > 0 || (nobodyOnProject && !!fallback));
 
@@ -110,6 +119,10 @@ export function RecipientPickerDialog({
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
+  }
+
+  function togglePick(person: PickedPerson) {
+    setPicked((prev) => togglePicked(prev, person));
   }
 
   async function handleSend() {
@@ -125,7 +138,7 @@ export function RecipientPickerDialog({
     }
   }
 
-  const otherCount = available.contacts.length + available.users.length;
+  const otherCount = available.contacts.length + available.users.length + hidden.length;
 
   return (
     <IadmModal
@@ -219,41 +232,22 @@ export function RecipientPickerDialog({
             <div className="text-xs text-slate-500">{availableFailed ? "Could not load the other people." : q.trim() ? "Nobody matches." : "Nobody else to add."}</div>
           ) : (
             <ul className="max-h-48 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+              {/* Ticked earlier, not in this search: still going, still shown. */}
+              {hidden.map((p) => (
+                <PickRow key={p.key} person={p} checked onToggle={() => togglePick(p)} />
+              ))}
               {available.contacts.map((c) => {
-                const key = contactKey(c.lumen_contact_id);
-                return (
-                  <li key={key}>
-                    <label className={`flex items-start gap-2 px-3 py-2 ${c.email ? "cursor-pointer" : "opacity-60"}`}>
-                      <input type="checkbox" className="mt-0.5" data-recipient={key} checked={ticked.has(key)} disabled={!c.email} onChange={() => toggle(key)} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-slate-800">
-                          {personLabel(c)}
-                          {c.company && <span className="ml-1 font-normal text-slate-500">· {c.company}</span>}
-                        </span>
-                        <span className="block truncate text-[11px] text-slate-500">{c.email || "No email address"}</span>
-                      </span>
-                    </label>
-                  </li>
-                );
+                const p = pickContact(c);
+                return <PickRow key={p.key} person={p} checked={pickedKeys.has(p.key)} onToggle={() => togglePick(p)} />;
               })}
               {available.users.map((u) => {
-                const key = userKey(u.user_id);
-                return (
-                  <li key={key}>
-                    <label className={`flex items-start gap-2 px-3 py-2 ${u.email ? "cursor-pointer" : "opacity-60"}`}>
-                      <input type="checkbox" className="mt-0.5" data-recipient={key} checked={ticked.has(key)} disabled={!u.email} onChange={() => toggle(key)} />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-slate-800">
-                          {personLabel(u)}
-                          <span className="ml-1 font-normal text-slate-500">· Portal user</span>
-                        </span>
-                        <span className="block truncate text-[11px] text-slate-500">{u.email || "No email address"}</span>
-                      </span>
-                    </label>
-                  </li>
-                );
+                const p = pickUser(u);
+                return <PickRow key={p.key} person={p} checked={pickedKeys.has(p.key)} onToggle={() => togglePick(p)} />;
               })}
             </ul>
+          )}
+          {otherCount > 0 && q.trim() && otherCount === hidden.length && !availableFailed && (
+            <div className="mt-1 text-xs text-slate-500">Nobody else matches.</div>
           )}
           <p className="mt-1 text-[11px] text-slate-500">Ticking someone here adds them to the project when you press Send.</p>
         </section>
@@ -263,6 +257,28 @@ export function RecipientPickerDialog({
         </p>
       </div>
     </IadmModal>
+  );
+}
+
+/** One person not on the project yet: a contact (with their company) or a
+ *  portal user. Drawn from the person's own row, so a ticked person reads the
+ *  same whether or not the current search found them. */
+function PickRow({ person, checked, onToggle }: { person: PickedPerson; checked: boolean; onToggle: () => void }) {
+  return (
+    <li>
+      <label className={`flex items-start gap-2 px-3 py-2 ${person.email ? "cursor-pointer" : "opacity-60"}`}>
+        <input type="checkbox" className="mt-0.5" data-recipient={person.key} checked={checked} disabled={!person.email && !checked} onChange={onToggle} />
+        <span className="min-w-0">
+          <span className="block truncate text-xs font-semibold text-slate-800">
+            {personLabel(person)}
+            {person.person_kind === "user"
+              ? <span className="ml-1 font-normal text-slate-500">· Portal user</span>
+              : person.company && <span className="ml-1 font-normal text-slate-500">· {person.company}</span>}
+          </span>
+          <span className="block truncate text-[11px] text-slate-500">{person.email || "No email address"}</span>
+        </span>
+      </label>
+    </li>
   );
 }
 

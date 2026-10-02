@@ -9,7 +9,8 @@
 //   · one row per person: name (email under it), company chip, role
 //     (Main contact / Approver / Billing / Collaborator), Primary (one per
 //     project — the project's main contact follows it), Receives documents,
-//     remove (×)
+//     remove (×: the first click turns it into "Remove?" and "Keep", and it
+//     stays that way until one of them is pressed — no silent time-out)
 //   · "No primary person — pick one" when the project has none (legitimate
 //     while it is being re-pointed)
 //   · Add person: one search box, two groups ("Contacts", "Portal users");
@@ -21,7 +22,7 @@
 //
 // Endpoints: oliver-api routes/consultingPeople.js — see lib/projectPeople.ts.
 // `initial` lets the node test draw the section from a fixture.
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Star, X, UserPlus } from "lucide-react";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
@@ -33,13 +34,17 @@ import {
 export interface ProjectPeopleSectionProps {
   projectId: string;
   viewerRole: "founder" | "client";
+  /** The project is linked to a client business (consulting.project
+   *  .linked_tenant_id). Portal users come only from that business, so with
+   *  none the Portal users group says why it is empty. */
+  hasClientBusiness: boolean;
   /** The project's main contact moved (primary changed / removed) — the modal
    *  reloads so its header and Client card follow. */
   onPrimaryChanged?: () => void;
   initial?: PeopleResponse;
 }
 
-export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, initial }: ProjectPeopleSectionProps) {
+export function ProjectPeopleSection({ projectId, viewerRole, hasClientBusiness, onPrimaryChanged, initial }: ProjectPeopleSectionProps) {
   const { get, post, patch, del } = useOliverApi();
   const canEdit = viewerRole === "founder";
 
@@ -55,9 +60,11 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
   // A failed search says so once (the error line); the groups then stay
   // quiet rather than claiming there is nobody.
   const [searchFailed, setSearchFailed] = useState(false);
-  // Remove — two clicks, the first arms the × for four seconds.
+  // Remove — two clicks. The first turns the × into "Remove?" and "Keep" and
+  // it stays until one is pressed. It used to disarm itself after four seconds
+  // with nothing said, so a slow second click did nothing (pane test 2 Oct,
+  // CPP-T5).
   const [armedId, setArmedId] = useState<string | null>(null);
-  const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Invite as contact — the row whose name form is open.
   const [inviteId, setInviteId] = useState<string | null>(null);
   const [inviteFirst, setInviteFirst] = useState("");
@@ -76,7 +83,6 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
   }, [get, projectId]);
 
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => () => { if (armTimer.current) clearTimeout(armTimer.current); }, []);
 
   // The picker's two lists, searched on the server.
   useEffect(() => {
@@ -136,12 +142,7 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
   }
 
   function handleRemove(p: ProjectPerson) {
-    if (armedId !== p.project_person_id) {
-      setArmedId(p.project_person_id);
-      if (armTimer.current) clearTimeout(armTimer.current);
-      armTimer.current = setTimeout(() => setArmedId(null), 4000);
-      return;
-    }
+    if (armedId !== p.project_person_id) { setArmedId(p.project_person_id); return; }
     setArmedId(null);
     void run(p.project_person_id, () => del(pathOf(p)), truthy(p.is_primary));
   }
@@ -216,7 +217,7 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
             <PickGroup
               title="Portal users"
               loading={availableLoading}
-              empty={searchFailed ? "" : "No portal users to add. They come from the client's business once it is set on the Details tab."}
+              empty={portalUsersEmpty(searchFailed, hasClientBusiness, q)}
               items={available.users.map((u) => ({
                 key: `u:${u.user_id}`,
                 name: personLabel(u),
@@ -233,7 +234,7 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
         <div className="mt-3 text-xs text-slate-500">Loading people…</div>
       ) : !data ? null /* the read failed — the error above says so; "no one" would be a guess */ : people.length === 0 ? (
         <div className="mt-3 text-xs text-slate-500">
-          No one on this project yet.{canEdit ? " Press Add person to add the people you work it with." : ""}
+          No one on this project yet.{canEdit ? " Press Add person to add the people you work with." : ""}
         </div>
       ) : (
         <ul className="mt-3 divide-y divide-slate-100 rounded-lg border border-slate-200">
@@ -296,12 +297,23 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
                         type="button"
                         onClick={() => handleRemove(p)}
                         disabled={busy}
+                        data-remove={armedId === p.project_person_id ? "armed" : "idle"}
                         aria-label={`Remove ${personLabel(p)} from this project`}
-                        title={armedId === p.project_person_id ? "Click again to remove" : "Remove from this project"}
+                        title={armedId === p.project_person_id ? "Click to take this person off the project" : "Remove from this project"}
                         className={`inline-flex items-center rounded-md px-1.5 py-1 text-xs font-semibold ${armedId === p.project_person_id ? "bg-rose-500 text-white" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700"}`}
                       >
                         {armedId === p.project_person_id ? "Remove?" : <X className="h-3.5 w-3.5" />}
                       </button>
+                      {armedId === p.project_person_id && (
+                        <button
+                          type="button"
+                          onClick={() => setArmedId(null)}
+                          title="Leave this person on the project"
+                          className="rounded-md border border-slate-300 bg-white px-1.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          Keep
+                        </button>
+                      )}
                     </>
                   ) : (
                     <div className="flex items-center gap-2 text-[11px] text-slate-600">
@@ -365,6 +377,17 @@ export function ProjectPeopleSection({ projectId, viewerRole, onPrimaryChanged, 
       )}
     </div>
   );
+}
+
+/** Why the Portal users group is empty, in the words that are true for this
+ *  project. Pane test 2 Oct (CPP-T4): one sentence pointing at the Details tab
+ *  showed even when the client was set and a search simply matched nobody, and
+ *  the Details tab has no client control. Portal users come from the client
+ *  business the project was created for; the Overview's Client card shows it. */
+export function portalUsersEmpty(searchFailed: boolean, hasClientBusiness: boolean, q: string): string {
+  if (searchFailed) return "";
+  if (!hasClientBusiness) return "Portal users come from the client's business, and this project has none (see the Client card below). Add contacts instead.";
+  return q.trim() ? "No portal users match." : "No other portal users.";
 }
 
 function PickGroup({ title, items, loading, empty, busyKey }: {

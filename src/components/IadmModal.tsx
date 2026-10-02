@@ -58,8 +58,26 @@ interface Props {
    * area over the modal's tab strip. Opt-in, so no existing call site moves.
    */
   z?: number;
+  /**
+   * When the title and the header's buttons cannot share one row, put the
+   * buttons on a second row instead of squeezing the title to nothing. The
+   * title column keeps at least HEADER_TITLE_MIN_PX.
+   *
+   * Pane test 2 Oct 2026 at 1024×768 (CPP-T2, CPP-T3): the proposal builder's
+   * nine header buttons took the whole row, the title column shrank to a
+   * sliver, the title box could not be clicked (its 420px overflowed under the
+   * buttons and the customer search) and the "Sent to …" line wrapped one word
+   * per line, pushing the canvas to the bottom third. BuilderFrame turns this
+   * on for its wide layout; its narrow layout moves the buttons to the bottom
+   * bar instead. Opt-in, so no other call site moves.
+   */
+  wrapHeader?: boolean;
   children: ReactNode;
 }
+
+/** The narrowest the title column gets in a wrapping header — room for a
+ *  builder's title box (ProposalBuilder's is 420px) and a sentence under it. */
+export const HEADER_TITLE_MIN_PX = 420;
 
 export const PRODUCT_ACCENT: Record<IadmModalProduct, string> = {
   spark:  "#EF6C33",
@@ -105,7 +123,7 @@ const HEADER_FG_RESET = {
 
 export function IadmModal({
   open, onClose, product, eyebrow, title, subtitle,
-  headerActions, footer, size = "lg", z, children,
+  headerActions, footer, size = "lg", z, wrapHeader = false, children,
 }: Props) {
   useEffect(() => {
     if (!open) return;
@@ -161,10 +179,11 @@ export function IadmModal({
       >
         {/* Ink gradient header */}
         <div
-          className="flex items-center justify-between gap-3 px-5 py-3"
+          data-header-wrap={wrapHeader ? "1" : undefined}
+          className={`flex items-center justify-between px-5 py-3 ${wrapHeader ? "flex-wrap gap-x-3 gap-y-2" : "gap-3"}`}
           style={{ ...HEADER_FG_VARS, color: "var(--iadm-head-fg)", background: "linear-gradient(to right, #0B1C24, #1a3540)" }}
         >
-          <div className="min-w-0">
+          <div className="min-w-0" style={wrapHeader ? { flex: `1 1 ${HEADER_TITLE_MIN_PX}px` } : undefined}>
             <div
               className="text-[10px] font-bold uppercase tracking-wider"
               style={{ color: accent }}
@@ -176,7 +195,7 @@ export function IadmModal({
               <div className={typeof subtitle === "string" ? "mt-0.5 truncate text-[11px] text-white/60" : "relative z-30 mt-0.5 text-[11px] text-white/60"}>{subtitle}</div>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-shrink-0">
+          <div className={`flex items-center gap-2 flex-shrink-0${wrapHeader ? " ml-auto" : ""}`}>
             {headerActions}
             <button
               type="button"

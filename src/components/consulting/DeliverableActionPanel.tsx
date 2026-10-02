@@ -41,6 +41,10 @@
 // row carries is_payment_trigger.
 import { useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+// ONE date format for a document's sends: the project's Deliverables row
+// ("Visible to the client · sent …") and this strip print the same date the
+// same way (pane test 2 Oct, CPP-T5).
+import { documentDate as formatDate } from "../../lib/projectPeople";
 
 // ─── Status normaliser ───────────────────────────────────────────────────
 
@@ -555,13 +559,6 @@ function StatusPill({ status }: { status: DeliverableStatusCanonical }) {
       {cfg.label}
     </span>
   );
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function formatMoneyCents(cents: number | null | undefined): string {

@@ -49,7 +49,7 @@ import { DeliverableActionPanel, type DeliverableShape } from "./DeliverableActi
 import { ProjectPeopleSection } from "./ProjectPeopleSection";
 import { RecipientPickerDialog } from "./RecipientPickerDialog";
 import { ProposalBuilder } from "../../builder/proposal/ProposalBuilder";
-import { deliverableVisibility, type DeliverableVisibilityInput } from "../../lib/projectPeople";
+import { deliverableVisibility, documentDate, type DeliverableVisibilityInput } from "../../lib/projectPeople";
 import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle, Plus } from "lucide-react";
 
 // ─── Color tokens ────────────────────────────────────────────────────────
@@ -1796,6 +1796,7 @@ function OverviewTab({
       <ProjectPeopleSection
         projectId={project.project_id}
         viewerRole={viewerRole}
+        hasClientBusiness={Boolean(project.linked_tenant_id)}
         onPrimaryChanged={onPeopleChanged}
       />
 
@@ -3208,7 +3209,7 @@ function DeliverablesTab({
                   </div>
                 ) : d.sent_at ? (
                   <div className="mt-1 text-[11px] text-slate-400">
-                    Sent to you {new Date(d.sent_at).toLocaleDateString()}
+                    Sent to you {documentDate(d.sent_at)}
                   </div>
                 ) : null}
               </div>

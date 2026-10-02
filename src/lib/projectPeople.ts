@@ -136,45 +136,105 @@ export function defaultTicked(people: RecipientPerson[]): Set<string> {
 }
 
 /**
+ * Someone ticked under "Not on the project yet", kept as their OWN row.
+ *
+ * Pane test 2 Oct (CPP-T1): the send was built from the search's current
+ * result, so ticking Taylor, then searching "sam" and ticking Sam, sent the
+ * proposal to Sam alone — Taylor was neither emailed nor added. A tick is a
+ * decision about a person, not about what the search box happens to show, so
+ * the dialog keeps the ticked person here and builds the send from this list.
+ */
+export interface PickedPerson {
+  key: string;
+  person_kind: PersonKind;
+  lumen_contact_id?: number | null;
+  user_id?: string | null;
+  display_name?: string | null;
+  email?: string | null;
+  company?: string | null;
+}
+
+export function pickContact(c: AvailableContact): PickedPerson {
+  return {
+    key: contactKey(c.lumen_contact_id), person_kind: "contact", lumen_contact_id: Number(c.lumen_contact_id),
+    display_name: c.display_name ?? null, email: c.email ?? null, company: c.company ?? null,
+  };
+}
+
+export function pickUser(u: AvailableUser): PickedPerson {
+  return { key: userKey(u.user_id), person_kind: "user", user_id: u.user_id, display_name: u.display_name ?? null, email: u.email ?? null };
+}
+
+/** Tick or untick one person; everyone else stays exactly as they were. */
+export function togglePicked(picked: PickedPerson[], person: PickedPerson): PickedPerson[] {
+  return picked.some((p) => p.key === person.key)
+    ? picked.filter((p) => p.key !== person.key)
+    : [...picked, person];
+}
+
+/** The ticked people the current search does not show. The dialog keeps them
+ *  on screen, ticked, so what is sent is always what is seen. */
+export function hiddenPicks(picked: PickedPerson[], available: AvailablePeople): PickedPerson[] {
+  const shown = new Set([
+    ...available.contacts.map((c) => contactKey(c.lumen_contact_id)),
+    ...available.users.map((u) => userKey(u.user_id)),
+  ]);
+  return picked.filter((p) => !shown.has(p.key));
+}
+
+/**
  * The `recipients` body for a send, in a stable order: the project's default
  * people first (the first recipient becomes the proposal's contact), then the
- * project's other ticked people, then anyone ticked from "Not on the project
- * yet" — contacts before portal users.
+ * project's other ticked people, then everyone ticked from "Not on the project
+ * yet" (contacts before portal users), whatever the search box now holds.
  */
 export function recipientsFrom(
   ticked: Set<string>,
   people: RecipientPerson[],
-  available: AvailablePeople,
+  picked: PickedPerson[],
 ): RecipientInput[] {
   const out: RecipientInput[] = [];
   const onProject = people.filter((p) => ticked.has(p.project_person_id));
   for (const p of [...onProject.filter((x) => x.default), ...onProject.filter((x) => !x.default)]) {
     out.push({ project_person_id: p.project_person_id });
   }
-  for (const c of available.contacts) {
-    if (ticked.has(contactKey(c.lumen_contact_id))) out.push({ person_kind: "contact", lumen_contact_id: Number(c.lumen_contact_id) });
+  for (const p of picked) {
+    if (p.person_kind === "contact" && p.lumen_contact_id != null) out.push({ person_kind: "contact", lumen_contact_id: Number(p.lumen_contact_id) });
   }
-  for (const u of available.users) {
-    if (ticked.has(userKey(u.user_id))) out.push({ person_kind: "user", user_id: u.user_id });
+  for (const p of picked) {
+    if (p.person_kind === "user" && p.user_id) out.push({ person_kind: "user", user_id: p.user_id });
   }
   return out;
 }
 
-/** "A" · "A and B" · "A, B and C". */
-export function namesList(names: string[]): string {
-  const n = names.filter((x) => String(x || "").trim());
-  if (n.length <= 1) return n[0] || "";
-  return `${n.slice(0, -1).join(", ")} and ${n[n.length - 1]}`;
+/**
+ * ONE name order for a send, wherever it is shown: by name, ignoring case.
+ * That is the order the API reads a recorded send back in
+ * (consulting.document_recipient ORDER BY display_name), and so the order of
+ * the Proposals row's `last_sent_to`. Pane test 2 Oct (CPP-T5): the message
+ * after Send listed the people in tick order and the row listed them by name.
+ */
+export function byName<T extends { display_name?: string | null; email?: string | null }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => personLabel(a).localeCompare(personLabel(b), undefined, { sensitivity: "base" }));
 }
 
-/** "2 Oct" — with the year only when it is not this year. */
-export function shortDate(iso: string | null | undefined, now: Date = new Date()): string {
+/** "A" · "A, B" · "A, B, C" — joined the way the API joins `last_sent_to`,
+ *  so the same send reads the same on every screen. */
+export function namesList(names: string[]): string {
+  return names.filter((x) => String(x || "").trim()).join(", ");
+}
+
+/**
+ * The date of a send in the Portal's one date format ("Oct 1, 2026"), the
+ * format the deliverable's status strip and the rest of the consulting screens
+ * print. Pane test 2 Oct (CPP-T5): a Deliverables row said "sent 1 Oct" above
+ * a strip that said "sent Oct 1, 2026".
+ */
+export function documentDate(iso: string | null | undefined): string {
   if (!iso) return "";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const opts: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" };
-  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
-  return d.toLocaleDateString("en-GB", opts);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 /** One recipient row of a recorded send (consulting.document_recipient). */
@@ -197,22 +257,22 @@ export function latestSend(rows: SentToRow[] | null | undefined): SentToRow[] {
   return list.filter((r) => r.sent_at === first.sent_at);
 }
 
-/** "Sent to Karrie Anderson (karrie@…) on 2 Oct" — the builder's header line. */
-export function sentToLine(rows: SentToRow[] | null | undefined, now: Date = new Date()): string {
+/** "Sent to Karrie Anderson (karrie@…) on Oct 2, 2026" — the builder's header line. */
+export function sentToLine(rows: SentToRow[] | null | undefined): string {
   const last = latestSend(rows);
   if (!last.length) return "";
-  const who = namesList(last.map((r) => {
+  const who = namesList(byName(last).map((r) => {
     const name = personLabel(r);
     return r.email ? `${name} (${r.email})` : name;
   }));
-  const when = shortDate(last[0].sent_at, now);
+  const when = documentDate(last[0].sent_at);
   return `Sent to ${who}${when ? ` on ${when}` : ""}`;
 }
 
 /** What the builder says after a send with recipients: who it went to, and
  *  anyone whose email did not go (suppressed / failed / not queued). */
 export function sentMessage(sentTo: Array<{ display_name?: string | null; email?: string | null; email_status?: string | null }> | null | undefined): string {
-  const list = Array.isArray(sentTo) ? sentTo : [];
+  const list = byName(Array.isArray(sentTo) ? sentTo : []);
   if (!list.length) return "";
   const names = namesList(list.map((r) => personLabel(r)));
   const notEmailed = list.filter((r) => r.email_status && !["queued", "duplicate"].includes(String(r.email_status)));
@@ -230,7 +290,13 @@ export interface DeliverableVisibilityInput {
   client_visible?: boolean | number | null;
   sent_to?:
     | SentToRow[]
-    | { names?: string | string[] | null; display_names?: string | string[] | null; sent_at?: string | null }
+    | {
+        names?: string | string[] | null;
+        display_names?: string | string[] | null;
+        sent_at?: string | null;
+        /** The latest send's people (oliver-api GET /consulting/projects/:id). */
+        recipients?: SentToRow[] | null;
+      }
     | string
     | null;
 }
@@ -242,9 +308,9 @@ function sentLike(d: DeliverableVisibilityInput): boolean {
   return (d.status || "pending") !== "pending" || d.sent_at != null;
 }
 
-/** "Visible to the client · sent 1 Oct to Karrie Anderson" or
+/** "Visible to the client · sent Oct 1, 2026 to Karrie Anderson" or
  *  "Not visible to the client yet". The client sees a document once it is SENT. */
-export function deliverableVisibility(d: DeliverableVisibilityInput, now: Date = new Date()): string {
+export function deliverableVisibility(d: DeliverableVisibilityInput): string {
   const visible = d.client_visible == null ? sentLike(d) : truthy(d.client_visible);
   if (!visible) return "Not visible to the client yet";
   let names = "";
@@ -252,16 +318,20 @@ export function deliverableVisibility(d: DeliverableVisibilityInput, now: Date =
   const st = d.sent_to;
   if (Array.isArray(st)) {
     const last = latestSend(st);
-    names = namesList(last.map((r) => personLabel(r)));
+    names = namesList(byName(last).map((r) => personLabel(r)));
     when = last[0]?.sent_at || when;
   } else if (typeof st === "string") {
     names = st.trim();
   } else if (st && typeof st === "object") {
-    const raw = st.names ?? st.display_names ?? "";
-    names = Array.isArray(raw) ? namesList(raw) : String(raw || "").trim();
+    if (Array.isArray(st.recipients) && st.recipients.length) {
+      names = namesList(byName(st.recipients).map((r) => personLabel(r)));
+    } else {
+      const raw = st.names ?? st.display_names ?? "";
+      names = Array.isArray(raw) ? namesList(raw) : String(raw || "").trim();
+    }
     when = st.sent_at || when;
   }
-  const date = shortDate(when, now);
+  const date = documentDate(when);
   if (!date && !names) return "Visible to the client";
   return `Visible to the client · sent${date ? ` ${date}` : ""}${names ? ` to ${names}` : ""}`;
 }

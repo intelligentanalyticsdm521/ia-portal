@@ -16,6 +16,12 @@
 //     belongs to a project, and the "Pick a customer" refusal does not fire then
 //   • the Deliverables tab says "Visible to the client · sent … to …" or
 //     "Not visible to the client yet"
+//   • (pane test 2 Oct, fix pass) everyone ticked under "Not on the project
+//     yet" is sent, whatever the search box holds (CPP-T1); the builder header
+//     puts its buttons on a second row before it squeezes the title (CPP-T2/T3);
+//     the People section's empty lines say what is true (CPP-T4); one name
+//     order and one date format for the same send, and the remove × waits for
+//     the second click instead of timing out silently (CPP-T5)
 //
 // The rules are pure (src/lib/projectPeople.ts) and imported directly; the two
 // components are RENDERED (esbuild bundles them with the API hook stubbed,
@@ -26,6 +32,13 @@
 //   · ProjectPeopleSection — remove the primary_missing line → "No primary person — pick one" RED
 //   · ProposalBuilder — send without `{ recipients }`        → "the builder's Send carries recipients" RED
 //   · deliverableVisibility — ignore client_visible          → "Not visible to the client yet" RED
+//   (fix pass, 2 Oct)
+//   · recipientsFrom — build the raw recipients from the search's current
+//     result (the CPP-T1 code) instead of `picked`             → "a person ticked … stays in the send" RED
+//   · IadmModal — drop the title column's flex basis            → "the builder header wraps its buttons" RED
+//   · sentMessage — drop byName (tick order again)              → "one name order" RED
+//   · documentDate — back to en-GB "1 Oct"                      → "one date format" RED
+//   · ProjectPeopleSection — the old Details-tab sentence back  → "Portal users empty line" RED
 //
 // Run:  node --import ./scripts/test-ts-loader.mjs --test test/consulting-project-people.test.mjs
 import { test, describe } from "node:test";
@@ -56,8 +69,9 @@ const built = await esbuild.build({
     contents: `
       import { createElement } from "react";
       import { renderToStaticMarkup } from "react-dom/server.browser";
-      export { ProjectPeopleSection } from "./src/components/consulting/ProjectPeopleSection.tsx";
+      export { ProjectPeopleSection, portalUsersEmpty } from "./src/components/consulting/ProjectPeopleSection.tsx";
       export { RecipientPickerDialog } from "./src/components/consulting/RecipientPickerDialog.tsx";
+      export { IadmModal } from "./src/components/IadmModal.tsx";
       export const render = (C, props) => renderToStaticMarkup(createElement(C, props));
     `,
     resolveDir: fileURLToPath(ROOT), loader: "tsx", sourcefile: "entry.tsx",
@@ -84,9 +98,11 @@ const DESIGNER = {
   contact_uuid: null, role: "collaborator", is_primary: false, receives_documents: true,
   display_name: null, email: "webby@harbor.example", company: null,
 };
-const now = new Date();
-const thisYear = now.getFullYear();
+const thisYear = new Date().getFullYear();
 const iso = (m, d) => new Date(Date.UTC(thisYear, m - 1, d, 15, 0, 0)).toISOString();
+// The Portal's one date format — what DeliverableActionPanel and the rest of
+// the consulting screens print ("Oct 1, 2026" in an en-US browser).
+const portalDate = (s) => new Date(s).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 
 /* ── The rules ──────────────────────────────────────────────────────────── */
 
@@ -123,25 +139,46 @@ describe("who a document goes to", () => {
       { ...OWNER, default: false, can_email: true },
       { ...MANAGER, default: true, can_email: true },
     ];
-    const available = {
-      contacts: [{ lumen_contact_id: 31, display_name: "Pat Partner", email: "pat@x.example" }],
-      users: [{ user_id: "u-9", display_name: null, email: "nine@x.example" }],
-    };
-    const ticked = new Set(["p-owner", "p-mgr", "c:31", "u:u-9"]);
-    assert.deepEqual(lib.recipientsFrom(ticked, people, available), [
+    // Ticked in this order: the portal user, then the contact — contacts still go first.
+    const picked = [
+      lib.pickUser({ user_id: "u-9", display_name: null, email: "nine@x.example" }),
+      lib.pickContact({ lumen_contact_id: 31, display_name: "Pat Partner", email: "pat@x.example" }),
+    ];
+    const ticked = new Set(["p-owner", "p-mgr"]);
+    assert.deepEqual(lib.recipientsFrom(ticked, people, picked), [
       { project_person_id: "p-mgr" },
       { project_person_id: "p-owner" },
       { person_kind: "contact", lumen_contact_id: 31 },
       { person_kind: "user", user_id: "u-9" },
     ]);
-    assert.deepEqual(lib.recipientsFrom(new Set(["p-owner"]), people, available), [{ project_person_id: "p-owner" }],
+    assert.deepEqual(lib.recipientsFrom(new Set(["p-owner"]), people, []), [{ project_person_id: "p-owner" }],
       "only one person, when the default would have been someone else");
   });
 
-  test("names read as a sentence", () => {
+  test("CPP-T1: a person ticked under Not on the project yet stays in the send when a later search hides them", () => {
+    // The pane case: tick Taylor, search "sam", tick Sam, Send. It went to Sam alone.
+    const taylor = { lumen_contact_id: 41, display_name: "Taylor Brooks", email: "taylor@x.example", company: "Brooks Co" };
+    const sam = { lumen_contact_id: 42, display_name: "Sam Ortiz", email: "sam@x.example" };
+    let picked = lib.togglePicked([], lib.pickContact(taylor));
+    const searchSam = { contacts: [sam], users: [] }; // Taylor is no longer in the result
+    picked = lib.togglePicked(picked, lib.pickContact(sam));
+    assert.deepEqual(lib.recipientsFrom(new Set(), [], picked), [
+      { person_kind: "contact", lumen_contact_id: 41 },
+      { person_kind: "contact", lumen_contact_id: 42 },
+    ], "both ticked people are sent, and so both are added to the project");
+    assert.deepEqual(lib.hiddenPicks(picked, searchSam).map((p) => p.display_name), ["Taylor Brooks"],
+      "the hidden tick stays on screen, with its own name");
+    // While the only tick is filtered out, there is still someone to send to.
+    const onlyTaylor = lib.togglePicked([], lib.pickContact(taylor));
+    assert.equal(lib.recipientsFrom(new Set(), [], onlyTaylor).length, 1);
+    // Unticking one leaves the other alone.
+    assert.deepEqual(lib.togglePicked(picked, lib.pickContact(taylor)).map((p) => p.key), ["c:42"]);
+  });
+
+  test("names are joined the way the API joins last_sent_to", () => {
     assert.equal(lib.namesList(["A"]), "A");
-    assert.equal(lib.namesList(["A", "B"]), "A and B");
-    assert.equal(lib.namesList(["A", "B", "C"]), "A, B and C");
+    assert.equal(lib.namesList(["A", "B"]), "A, B");
+    assert.equal(lib.namesList(["A", "", "C"]), "A, C");
   });
 
   test("the builder's header line names the latest send only, with addresses and the date", () => {
@@ -149,14 +186,44 @@ describe("who a document goes to", () => {
       { send_id: "s2", display_name: "Morgan Manager", email: "morgan@harbor.example", sent_at: iso(10, 2) },
       { send_id: "s1", display_name: "Dana Owner", email: "dana@harbor.example", sent_at: iso(9, 30) },
     ];
-    assert.equal(lib.sentToLine(rows, now), "Sent to Morgan Manager (morgan@harbor.example) on 2 Oct");
-    assert.equal(lib.sentToLine([], now), "");
+    assert.equal(lib.sentToLine(rows), `Sent to Morgan Manager (morgan@harbor.example) on ${portalDate(iso(10, 2))}`);
+    assert.equal(lib.sentToLine([]), "");
+  });
+
+  test("CPP-T5: one name order for the same send — the message after Send, the builder line and the rows", () => {
+    // Ticked Morgan first, then Jules; the API reads the record back by name.
+    const response = [
+      { display_name: "Morgan Reyes", email: "morgan@x.example", email_status: "queued" },
+      { display_name: "jules Marino", email: "jules@x.example", email_status: "queued" },
+    ];
+    const recorded = [...response].sort((a, b) => a.display_name.localeCompare(b.display_name, undefined, { sensitivity: "base" }));
+    const apiRow = recorded.map((r) => r.display_name).join(", "); // oliver-api recipientNames → last_sent_to
+    assert.equal(lib.sentMessage(response), `Sent to ${apiRow}.`, "the green message reads like the Proposals row");
+    assert.equal(lib.sentMessage(response), "Sent to jules Marino, Morgan Reyes.", "by name, ignoring case");
+    const rows = response.map((r) => ({ ...r, send_id: "s", sent_at: iso(10, 1) }));
+    assert.match(lib.sentToLine(rows), /^Sent to jules Marino \(jules@x\.example\), Morgan Reyes \(morgan@x\.example\) on /);
+    assert.equal(
+      lib.deliverableVisibility({ status: "sent", client_visible: 1, sent_to: { names: apiRow, sent_at: iso(10, 1), recipients: response } }),
+      `Visible to the client · sent ${portalDate(iso(10, 1))} to ${apiRow}`,
+    );
+  });
+
+  test("CPP-T5: one date format — the row's date is the status strip's date", () => {
+    assert.equal(lib.documentDate(iso(10, 1)), portalDate(iso(10, 1)));
+    assert.equal(lib.documentDate(null), "");
+    assert.equal(lib.documentDate("not a date"), "");
+    const panel = read("components/consulting/DeliverableActionPanel.tsx");
+    assert.match(panel, /import \{ documentDate as formatDate \} from "\.\.\/\.\.\/lib\/projectPeople";/,
+      "the strip prints dates with the same function as the row");
+    assert.doesNotMatch(panel, /toLocaleDateString/, "no second date format in the panel");
+    const modal = read("components/consulting/ConsultingProjectModal.tsx");
+    assert.match(modal, /Sent to you \{documentDate\(d\.sent_at\)\}/);
   });
 
   test("the saved message lists the names, and says who was not emailed", () => {
     assert.equal(
-      lib.sentMessage([{ display_name: "Dana Owner", email_status: "queued" }, { display_name: "Morgan Manager", email_status: "queued" }]),
-      "Sent to Dana Owner and Morgan Manager.",
+      lib.sentMessage([{ display_name: "Morgan Manager", email_status: "queued" }, { display_name: "Dana Owner", email_status: "queued" }]),
+      "Sent to Dana Owner, Morgan Manager.",
     );
     assert.match(lib.sentMessage([{ display_name: "Dana Owner", email_status: "suppressed" }]), /Not emailed: Dana Owner \(suppressed\)/);
   });
@@ -164,13 +231,14 @@ describe("who a document goes to", () => {
 
 describe("the Deliverables tab: can the client see it?", () => {
   test("Not visible to the client yet — a draft that was never sent", () => {
-    assert.equal(lib.deliverableVisibility({ status: "pending", sent_at: null, client_visible: false }, now), "Not visible to the client yet");
-    assert.equal(lib.deliverableVisibility({ status: "pending", sent_at: null }, now), "Not visible to the client yet");
-    assert.equal(lib.deliverableVisibility({ status: "awaiting_client_review", sent_at: iso(10, 1), client_visible: 0 }, now),
+    assert.equal(lib.deliverableVisibility({ status: "pending", sent_at: null, client_visible: false }), "Not visible to the client yet");
+    assert.equal(lib.deliverableVisibility({ status: "pending", sent_at: null }), "Not visible to the client yet");
+    assert.equal(lib.deliverableVisibility({ status: "awaiting_client_review", sent_at: iso(10, 1), client_visible: 0 }),
       "Not visible to the client yet", "client_visible from the API wins over the status");
   });
 
-  test("Visible to the client · sent 1 Oct to … — from the recipient record", () => {
+  test("Visible to the client · sent Oct 1, 2026 to … — from the recipient record", () => {
+    const d = portalDate(iso(10, 1));
     assert.equal(
       lib.deliverableVisibility({
         status: "awaiting_client_review", client_visible: true,
@@ -178,14 +246,14 @@ describe("the Deliverables tab: can the client see it?", () => {
           { send_id: "s", display_name: "Dana Owner", email: "dana@harbor.example", sent_at: iso(10, 1) },
           { send_id: "s", display_name: null, email: "webby@harbor.example", sent_at: iso(10, 1) },
         ],
-      }, now),
-      "Visible to the client · sent 1 Oct to Dana Owner and webby",
+      }),
+      `Visible to the client · sent ${d} to Dana Owner, webby`,
     );
     assert.equal(
-      lib.deliverableVisibility({ status: "sent", client_visible: 1, sent_to: { names: "Dana Owner, Morgan Manager", sent_at: iso(10, 1) } }, now),
-      "Visible to the client · sent 1 Oct to Dana Owner, Morgan Manager",
+      lib.deliverableVisibility({ status: "sent", client_visible: 1, sent_to: { names: "Dana Owner, Morgan Manager", sent_at: iso(10, 1) } }),
+      `Visible to the client · sent ${d} to Dana Owner, Morgan Manager`,
     );
-    assert.equal(lib.deliverableVisibility({ status: "sent", sent_at: iso(10, 1) }, now), "Visible to the client · sent 1 Oct",
+    assert.equal(lib.deliverableVisibility({ status: "sent", sent_at: iso(10, 1) }), `Visible to the client · sent ${d}`,
       "a send from before recipients were recorded still says when");
   });
 });
@@ -196,6 +264,7 @@ describe("ProjectPeopleSection (rendered)", () => {
   const html = ui.render(ui.ProjectPeopleSection, {
     projectId: "0C222222-0000-4000-8000-000000000001",
     viewerRole: "founder",
+    hasClientBusiness: true,
     initial: { people: [OWNER, MANAGER, DESIGNER], primary_missing: false },
   });
 
@@ -243,9 +312,38 @@ describe("ProjectPeopleSection (rendered)", () => {
     assert.match(empty, /No one on this project yet\. Press Add person/);
   });
 
+  test("CPP-T4: the empty line reads 'the people you work with'", () => {
+    const empty = ui.render(ui.ProjectPeopleSection, {
+      projectId: "p", viewerRole: "founder", hasClientBusiness: true, initial: { people: [], primary_missing: true },
+    });
+    assert.match(empty, /Press Add person to add the people you work with\./);
+    assert.doesNotMatch(empty, /work it with/);
+  });
+
+  test("CPP-T4: the Portal users empty line says what is true for this project", () => {
+    const people = read("components/consulting/ProjectPeopleSection.tsx");
+    const rule = ui.portalUsersEmpty;
+    assert.equal(rule(false, true, "zz"), "No portal users match.", "a search that found nobody says so");
+    assert.equal(rule(false, true, ""), "No other portal users.");
+    assert.match(rule(false, false, ""), /this project has none \(see the Client card below\)/,
+      "only a project with no client business is told about the client");
+    assert.match(rule(false, false, "zz"), /this project has none/);
+    assert.equal(rule(true, true, "zz"), "", "a failed search is said once, in the error line");
+    assert.doesNotMatch(people, /"[^"\n]*Details tab[^"\n]*"/, "the Details tab has no client control — the old sentence is gone");
+    const modal = read("components/consulting/ConsultingProjectModal.tsx");
+    assert.match(modal, /hasClientBusiness=\{Boolean\(project\.linked_tenant_id\)\}/);
+  });
+
+  test("CPP-T5: remove waits for the second click — Remove? and Keep, no silent time-out", () => {
+    const people = read("components/consulting/ProjectPeopleSection.tsx");
+    assert.doesNotMatch(people, /setTimeout\(\(\) => setArmedId\(null\)/, "the four-second disarm is gone");
+    assert.match(people, /data-remove=\{armedId === p\.project_person_id \? "armed" : "idle"\}/);
+    assert.match(people, /onClick=\{\(\) => setArmedId\(null\)\}[\s\S]{0,400}>\s*Keep\s*</);
+  });
+
   test("a client sees the list read-only: no selects, no Add person, no remove", () => {
     const ro = ui.render(ui.ProjectPeopleSection, {
-      projectId: "p", viewerRole: "client",
+      projectId: "p", viewerRole: "client", hasClientBusiness: true,
       initial: { people: [OWNER, MANAGER], primary_missing: false },
     });
     assert.doesNotMatch(ro, /<select/);
@@ -277,6 +375,29 @@ describe("RecipientPickerDialog (rendered)", () => {
     assert.match(box("p-mgr"), /checked=""/);
     assert.doesNotMatch(box("p-owner"), /checked=""/);
     assert.doesNotMatch(box("c:31"), /checked=""/);
+  });
+
+  test("CPP-T1: a tick the search no longer shows is still listed, ticked, and Send is live", () => {
+    const taylor = lib.pickContact({ lumen_contact_id: 41, display_name: "Taylor Brooks", email: "taylor@x.example", company: "Brooks Co" });
+    const out = ui.render(ui.RecipientPickerDialog, {
+      api: { get: async () => ({}) },
+      projectId: "p", kind: "contractual",
+      onSend: async () => {}, onCancel: () => {},
+      initial: {
+        people: [],
+        // The search now shows only Sam; Taylor was ticked before it.
+        available: { contacts: [{ lumen_contact_id: 42, display_name: "Sam Ortiz", email: "sam@x.example" }], users: [] },
+        picked: [taylor],
+      },
+    });
+    const tick = (key) => (out.match(new RegExp(`<input[^>]*data-recipient="${key}"[^>]*>`)) || [""])[0];
+    assert.match(tick("c:41"), /checked=""/, "Taylor is on screen and ticked");
+    assert.match(out, /Taylor Brooks/);
+    assert.doesNotMatch(tick("c:42"), /checked=""/);
+    const send = (out.match(/<button[^>]*data-recipient-send="1"[^>]*>/) || [""])[0];
+    assert.doesNotMatch(send, /disabled=""/, "Send follows the ticked set, not the search");
+    const dialog = read("components/consulting/RecipientPickerDialog.tsx");
+    assert.match(dialog, /recipientsFrom\(ticked, people, picked\)/);
   });
 
   test("the words: Who gets this?, the one-link note, Not on the project yet, Send / Cancel", () => {
@@ -311,6 +432,36 @@ describe("the proposal builder sends to the people ticked", () => {
     assert.match(src, /if \(row\.project_id\) setAttachedProjectId\(String\(row\.project_id\)\);/);
     assert.match(src, /setSentTo\(Array\.isArray\(row\.sent_to\) \? row\.sent_to : \[\]\);/);
     assert.match(src, /\{sentToLine\(sentTo\)\}/);
+  });
+});
+
+describe("CPP-T2/T3: the builder header puts its buttons on a second row before it squeezes the title", () => {
+  const props = (wrapHeader) => ({
+    open: true, onClose: () => {}, product: "oliver", eyebrow: "OLIVER · Document builder", size: "builder", wrapHeader,
+    title: "Website rebuild proposal", subtitle: "Sent to Dana Owner (dana@harbor.example) on Oct 1, 2026",
+    headerActions: "buttons", children: "canvas",
+  });
+
+  test("wrapping header: the title column keeps 420px, the buttons wrap and stay right", () => {
+    const html = ui.render(ui.IadmModal, props(true));
+    const header = (html.match(/<div data-header-wrap="1" class="([^"]*)"/) || [])[1] || "";
+    assert.match(header, /\bflex-wrap\b/);
+    assert.match(html, /<div class="min-w-0" style="flex:1 1 420px">/, "the title column never shrinks below the title box");
+    assert.match(html, /class="flex items-center gap-2 flex-shrink-0 ml-auto"/);
+  });
+
+  test("every other modal's header is as it was", () => {
+    const html = ui.render(ui.IadmModal, props(false));
+    assert.doesNotMatch(html, /data-header-wrap/);
+    assert.match(html, /class="flex items-center justify-between px-5 py-3 gap-3"/);
+    assert.match(html, /<div class="min-w-0">/);
+  });
+
+  test("BuilderFrame turns it on for the wide layout (narrow has the bottom bar)", () => {
+    const frame = read("builder/BuilderFrame.tsx");
+    assert.match(frame, /size="builder"[\s\S]{0,300}wrapHeader=\{!narrow\}/);
+    const builder = read("builder/proposal/ProposalBuilder.tsx");
+    assert.match(builder, /minWidth: 420/, "the title box is the width the header keeps for it");
   });
 });
 

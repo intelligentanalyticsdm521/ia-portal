@@ -343,6 +343,10 @@ export function BuilderFrame(p: BuilderFrameProps) {
         subtitle={p.subtitle}
         /* SD-010 addendum: every builder opens as the largest surface we have. */
         size="builder"
+        /* Wide: the buttons wrap to a second header row before they squeeze
+           the title (1024px pane test, 2 Oct). Narrow: they are in the bottom
+           bar already. */
+        wrapHeader={!narrow}
         headerActions={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             {/* The three sentences again, plus the keyboard list. Shown once
