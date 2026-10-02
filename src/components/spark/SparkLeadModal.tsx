@@ -33,7 +33,7 @@ import { IadmModal } from "../IadmModal";
 import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
 // 2 Oct 2026 — why it scored what it scored, in one line under the score.
-import { scoreWhyLine, localityLine } from "../../lib/leadScoreWhy";
+import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases } from "../../lib/leadScoreWhy";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
@@ -93,6 +93,9 @@ export interface LeadDetail {
   // run could place it in the search area.
   score_reasons_json?: string | null;
   locality?: string | null;
+  // 2 Oct 2026 (migration 190): what the website check found — one plain
+  // sentence and the services the website lists, or "not checked" in words.
+  relevance_json?: string | null;
   lifecycle_stage: string | null;
   status: string | null;
   source: string | null;
@@ -192,6 +195,9 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
     { label: "Findability", value: lead?.score_findability },
     { label: "Enrichment", value: lead?.score_enrichment_depth },
   ]), [lead]);
+  // What the website check found (lumen.lead.relevance_json); null for leads
+  // that never went through it (intake, older runs).
+  const relevance = useMemo(() => parseRelevance(lead?.relevance_json), [lead?.relevance_json]);
 
   async function run(key: string, fn: () => Promise<void>) {
     setBusy(key);
@@ -348,6 +354,33 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 <Field icon={MapPin} label="Address">{lead.full_address || "—"}</Field>
               </div>
 
+              {/* 2 Oct 2026 — what the website check found, before any email was
+                  looked up. A description of the business, not a score, so
+                  every tier sees it. */}
+              {relevance && relevance.status === "checked" && (relevance.reason || relevance.services.length > 0) && (
+                <div data-testid="lead-relevance">
+                  <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">About this business</h3>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    {relevance.reason && <p className="text-sm text-slate-800">{relevance.reason}</p>}
+                    {relevance.services.length > 0 && (
+                      <div className={relevance.reason ? "mt-2" : ""}>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Services on their website</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {relevance.services.map((s) => (
+                            <span key={s} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">{s}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {relevance && relevance.status === "not_checked" && (
+                <div className="text-[11px] text-slate-500" data-testid="lead-relevance-not-checked">
+                  {relevance.reason || "Not checked: the website could not be reviewed for this search."}
+                </div>
+              )}
+
               {showIntel ? (
                 <div>
                   <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">Score</h3>
@@ -364,8 +397,8 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                       )}
                     </div>
                     {/* 2 Oct 2026 — why, in one line, from the run's own reasons */}
-                    {scoreWhyLine(lead.score_reasons_json) && (
-                      <div className="mt-1.5 text-xs text-slate-600" data-testid="lead-score-why">{scoreWhyLine(lead.score_reasons_json)}</div>
+                    {scoreWhyLine(lead.score_reasons_json, relevancePhrases(relevance)) && (
+                      <div className="mt-1.5 text-xs text-slate-600" data-testid="lead-score-why">{scoreWhyLine(lead.score_reasons_json, relevancePhrases(relevance))}</div>
                     )}
                     <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {subScores.map((s) => (
