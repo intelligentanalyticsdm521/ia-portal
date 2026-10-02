@@ -1504,11 +1504,7 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, proje
                   widest button in the bar. The blanks warning stays: that one
                   says why the button will not do what it says. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-                title={blanks.length
-                  ? `${blanks.length} detail(s) are still blank`
-                  : attachedProjectId
-                    ? "Choose who on the project gets it, then email them a link to this document"
-                    : "Email the customer a link to this document"}>
+                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Send"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
               <SaveOptions busy={busy}>
