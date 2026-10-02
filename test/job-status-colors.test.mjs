@@ -16,7 +16,9 @@ import {
 import { layoutLanes } from "../src/oliver/calendarLanes.ts";
 
 const SRC = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src");
-const read = (...p) => readFileSync(path.join(SRC, ...p), "utf8");
+// CRLF-safe: a fresh Windows checkout reads Button.tsx with \r\n, and the
+// multi-line pins below are written against \n (Portal builder, 2 Oct 2026).
+const read = (...p) => readFileSync(path.join(SRC, ...p), "utf8").replace(/\r\n/g, "\n");
 
 test("green = confirmed and a worker is assigned", () => {
   for (const status of ["scheduled", "dispatched", "assigned"]) {

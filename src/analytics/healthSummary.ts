@@ -9,6 +9,12 @@
 //   Platform Score     = 50/50 Trend + Intelligence (Brandon's LOCKED rule,
 //                        2026-06-21, platformPulse.js) — Trend-only when
 //                        Intelligence has no score yet.
+//   Platform previous  = LIKE FOR LIKE: last month's Trend prior blended with
+//                        the Intelligence score re-run on the series without
+//                        their last month (likeForLikePrior). The rule LUMEN's
+//                        monthly review uses (lumen-api src/services/
+//                        insightsReview/review.js scoreProduct), so the email
+//                        and the gauge always say the same change.
 //   Business Pulse     = businessPulse(ARION/SPARK/OLIVER platform scores),
 //                        computed client-side from the demo builders for
 //                        review — the same roll-up ArgusTrendsPage does.
@@ -23,7 +29,8 @@ import { demoArionMetricsClient } from "./arionDemoClient";
 import { buildSparkDashboards, demoSparkMetrics } from "./sparkDashboards";
 import { buildOliverDashboards, demoOliverMetrics } from "./oliverDashboards";
 import { buildArgusDashboards, demoArgusMetrics, type PlatformRollup } from "./argusDashboards";
-import { buildIntelligenceMirror, ARION_MIRROR, SPARK_MIRROR, OLIVER_MIRROR, ARGUS_MIRROR } from "./intelligenceMirror";
+import { buildIntelligenceMirror, ARION_MIRROR, SPARK_MIRROR, OLIVER_MIRROR, ARGUS_MIRROR, type MirrorConfig } from "./intelligenceMirror";
+import type { MetricsPayload } from "./arionDashboards";
 
 // ── primitives ─────────────────────────────────────────────────────────────
 
@@ -40,6 +47,38 @@ export function blend5050(trend: number | null, intel: number | null): number | 
   if (trend == null) return intel;
   if (intel == null) return trend;
   return Math.round(trend * 0.5 + intel * 0.5);
+}
+
+/**
+ * The payload as it stood a month earlier: every series without its last
+ * month. The same "drop the final element" rule the engine uses for every
+ * Trends prior, and exactly LUMEN's review.js withoutLastMonth (months left as
+ * they are, as there).
+ */
+export function withoutLastMonth(payload: MetricsPayload): MetricsPayload {
+  const metrics: Record<string, Array<number | null>> = {};
+  for (const [k, s] of Object.entries((payload && payload.metrics) || {})) metrics[k] = Array.isArray(s) ? s.slice(0, -1) : s;
+  return { ...payload, metrics };
+}
+
+/** The Intelligence mirror as it read last month — what the Platform previous blends in. */
+export function priorIntelligence(payload: MetricsPayload | null | undefined, cfg: MirrorConfig): DashboardScore[] {
+  if (!payload) return [];
+  return buildIntelligenceMirror(withoutLastMonth(payload), cfg).dashboards;
+}
+
+/**
+ * Last month's Platform Score, like for like.
+ *
+ * The Intelligence mirror carries no prior, so blending the two priors fell
+ * back to the Trend prior ALONE and the gauge compared this month's BLENDED
+ * score with last month's TREND score: a change of (Intelligence − Trend) / 2
+ * every month even when nothing moved (SPARK read 63 vs 60 "+3" while like for
+ * like was 63 vs 64). The previous is the Trend prior blended with the
+ * Intelligence score re-run without the last month — LUMEN's likePrior.
+ */
+export function likeForLikePrior(trendPrior: number | null, intelPriorDs: DashboardScore[]): number | null {
+  return blend5050(trendPrior, rollupScore(intelPriorDs).score);
 }
 
 /** One dashboard → one breakdown bar. Unmeasured dashboards render greyed, never zero-scored. */
@@ -84,6 +123,8 @@ export function platformHealth(
   intelDs: DashboardScore[],
   trendRoute: string,
   intelRoute: string,
+  /** The mirror re-run without the last month (priorIntelligence). Required: without it the previous is the Trend prior alone. */
+  intelPriorDs: DashboardScore[],
 ): PlatformHealth {
   const t = rollupScore(trendDs);
   const i = rollupScore(intelDs);
@@ -91,7 +132,7 @@ export function platformHealth(
     trendScore: t.score, trendPrior: t.prior,
     intelScore: i.score, intelPrior: i.prior,
     platformScore: blend5050(t.score, i.score),
-    platformPrior: blend5050(t.prior, i.prior),
+    platformPrior: likeForLikePrior(t.prior, intelPriorDs),
     trendBreakdown: breakdownBars(trendDs, trendRoute),
     intelligenceBreakdown: breakdownBars(intelDs, intelRoute),
   };
@@ -122,10 +163,12 @@ export function demoBusinessPulse(seed: string, opts?: {
   sparkPayload?: import("./arionDashboards").MetricsPayload | null;
   oliverPayload?: import("./arionDashboards").MetricsPayload | null;
 }): DemoPulse {
-  const platform = (trendDs: DashboardScore[], intelDs: DashboardScore[]) => {
+  // Each platform's previous is like for like (likeForLikePrior), so the
+  // Pulse's previous is the average of those — LUMEN's engine prior pulse.
+  const platform = (trendDs: DashboardScore[], intelDs: DashboardScore[], intelPriorDs: DashboardScore[]) => {
     const t = rollupScore(trendDs);
     const i = rollupScore(intelDs);
-    return { score: blend5050(t.score, i.score), prior: blend5050(t.prior, i.prior) };
+    return { score: blend5050(t.score, i.score), prior: likeForLikePrior(t.prior, intelPriorDs) };
   };
 
   const arionPayload = opts?.arionPayload || demoArionMetricsClient(seed);
@@ -136,9 +179,9 @@ export function demoBusinessPulse(seed: string, opts?: {
   const sparkDs = buildSparkDashboards(sparkPayload);
   const oliverDs = buildOliverDashboards(oliverPayload);
 
-  const arion = platform(arionDs, buildIntelligenceMirror(arionPayload, ARION_MIRROR).dashboards);
-  const spark = platform(sparkDs, buildIntelligenceMirror(sparkPayload, SPARK_MIRROR).dashboards);
-  const oliver = platform(oliverDs, buildIntelligenceMirror(oliverPayload, OLIVER_MIRROR).dashboards);
+  const arion = platform(arionDs, buildIntelligenceMirror(arionPayload, ARION_MIRROR).dashboards, priorIntelligence(arionPayload, ARION_MIRROR));
+  const spark = platform(sparkDs, buildIntelligenceMirror(sparkPayload, SPARK_MIRROR).dashboards, priorIntelligence(sparkPayload, SPARK_MIRROR));
+  const oliver = platform(oliverDs, buildIntelligenceMirror(oliverPayload, OLIVER_MIRROR).dashboards, priorIntelligence(oliverPayload, OLIVER_MIRROR));
 
   // ARGUS = the cross-platform product: its trend dashboards take the three
   // product roll-ups (same as ArgusTrendsPage), its intelligence is the mirror.
@@ -154,6 +197,7 @@ export function demoBusinessPulse(seed: string, opts?: {
   const argus = platform(
     buildArgusDashboards(argusPayload, [rollup("ARION", "arion", arionDs), rollup("SPARK", "spark", sparkDs), rollup("OLIVER", "oliver", oliverDs)]),
     buildIntelligenceMirror(argusPayload, ARGUS_MIRROR).dashboards,
+    priorIntelligence(argusPayload, ARGUS_MIRROR),
   );
 
   return {

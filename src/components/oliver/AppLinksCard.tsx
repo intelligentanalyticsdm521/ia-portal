@@ -26,7 +26,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { Copy, Check, ExternalLink, Download, QrCode, Smartphone } from "lucide-react";
+import { Copy, Check, ExternalLink, Share2, Mail, MessageSquare, QrCode, Smartphone } from "lucide-react";
 // The ONE place this repo decides where oliver-api lives. Four private copies
 // of that fallback used to exist; do not make a fifth.
 import { OLIVER_API_BASE } from "../../lib/oliverApi";
@@ -39,11 +39,68 @@ const APPS: Array<{ kind: AppKind; host: string; name: string; who: string }> = 
   { kind: "booking", host: "book.ia-dm.com", name: "Booking page", who: "Anyone — book an appointment with you" },
 ];
 
+// On a dev machine the three apps run on their Vite / built-bundle ports, so
+// Open goes somewhere that answers (Brandon, 30 Sep 2026: "the open buttons
+// don't appear to work" — they carried the production addresses on dev).
+const DEV_PORTS: Record<AppKind, number> = { customer: 5175, crew: 5176, booking: 5407 };
+const onDevMachine = () => typeof window !== "undefined" && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+
 function appUrl(kind: AppKind, slug: string): string {
+  if (onDevMachine()) return `http://localhost:${DEV_PORTS[kind]}/${slug}/`;
   const host = APPS.find((a) => a.kind === kind)!.host;
   // Trailing slash on purpose: it is the manifest's start_url, and a scanned
   // code that lands one redirect away from the install scope installs nothing.
   return `https://${host}/${slug}/`;
+}
+
+/**
+ * One Share button per app (Brandon, 30 Sep 2026: "change that to a share
+ * button and then they can text it if on a mobile or email it or whatever
+ * normal share functionality is there"). On a phone it opens the device's own
+ * share sheet (text, email, every app); on a desktop it offers Email and Text
+ * message links and a copy of the link.
+ */
+function ShareButton({ url, name }: { url: string; name: string }) {
+  const [open, setOpen] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const text = `${name}: ${url}`;
+  const canSheet = typeof navigator !== "undefined" && typeof navigator.share === "function";
+  async function share() {
+    if (canSheet) {
+      try { await navigator.share({ title: name, text: name, url }); } catch { /* the person closed the sheet */ }
+      return;
+    }
+    setOpen((o) => !o);
+  }
+  async function copy() {
+    try { await navigator.clipboard.writeText(url); setNote("Link copied"); } catch { setNote("Copy the address shown above"); }
+    setTimeout(() => setNote(null), 2500);
+    setOpen(false);
+  }
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={share}
+        aria-haspopup={canSheet ? undefined : "menu"}
+        aria-expanded={canSheet ? undefined : open}
+        className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      >
+        <Share2 className="h-3 w-3" /> Share
+      </button>
+      {open && !canSheet && (
+        <div role="menu" className="absolute left-0 z-20 mt-1 w-48 rounded-md border border-slate-200 bg-white p-1 text-xs shadow-lg">
+          <a role="menuitem" href={`mailto:?subject=${encodeURIComponent(name)}&body=${encodeURIComponent(text)}`} onClick={() => setOpen(false)}
+            className="flex items-center gap-2 rounded px-2 py-1.5 text-slate-700 hover:bg-slate-50"><Mail className="h-3 w-3" /> Email the link</a>
+          <a role="menuitem" href={`sms:?&body=${encodeURIComponent(text)}`} onClick={() => setOpen(false)}
+            className="flex items-center gap-2 rounded px-2 py-1.5 text-slate-700 hover:bg-slate-50"><MessageSquare className="h-3 w-3" /> Text the link</a>
+          <button role="menuitem" type="button" onClick={copy}
+            className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-slate-700 hover:bg-slate-50"><Copy className="h-3 w-3" /> Copy the link</button>
+        </div>
+      )}
+      {note && <span className="ml-2 text-xs text-emerald-700">{note}</span>}
+    </div>
+  );
 }
 
 function CopyButton({ value }: { value: string }) {
@@ -72,8 +129,6 @@ function AppRow({ kind, slug }: { kind: AppKind; slug: string }) {
   const meta = APPS.find((a) => a.kind === kind)!;
   const url = appUrl(kind, slug);
   const qrBase = `${OLIVER_API_BASE.replace(/\/$/, "")}/public/portal/${encodeURIComponent(slug)}/qr`;
-  const png = `${qrBase}.png?app=${kind}&size=512`;
-  const svg = `${qrBase}.svg?app=${kind}`;
 
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-white p-4 sm:flex-row sm:items-start">
@@ -105,23 +160,7 @@ function AppRow({ kind, slug }: { kind: AppKind; slug: string }) {
           >
             <ExternalLink className="h-3 w-3" /> Open
           </a>
-          {/* Straight links, not fetch-and-blob: the response already carries
-              Content-Disposition and the browser's own download is the one
-              thing that works identically everywhere. */}
-          <a
-            href={png}
-            download={`${slug}-${kind}-qr.png`}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3 w-3" /> PNG
-          </a>
-          <a
-            href={svg}
-            download={`${slug}-${kind}-qr.svg`}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-          >
-            <Download className="h-3 w-3" /> SVG
-          </a>
+          <ShareButton url={url} name={meta.name} />
         </div>
       </div>
     </div>

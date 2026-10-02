@@ -1,10 +1,35 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getDashboard, globalSearch, type DashboardResponse } from '../../lib/forgeApi';
 import { Card, EmptyState, ForgeLayout, Pill, StatTile, statusTone } from './ForgeLayout';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { money, moneyExact, shortDate } from './forgeConfig';
 import { describeError, useDebounced, useForgeApi } from './useForge';
 import { phase2Enabled, screenRoute } from './forgeSoftware';
+
+/* The dashboard is mostly stat tiles, and a tile is a number with a link — it
+   has nothing to export that the screen it links to does not hold. The two
+   ROW LISTS at the foot of it are a different matter: both are real tables a
+   director reads, and both are already in memory from the dashboard call, so
+   each gets the same export every other list has. */
+type ServiceTypeRow = DashboardResponse['servicesByType'][number];
+type RecentApplicationRow = DashboardResponse['recentApplications'][number];
+
+const SERVICE_TYPE_COLUMNS = [
+  { label: 'Service type', value: (r: ServiceTypeRow) => r.provider_type },
+  { label: 'Services delivered', value: (r: ServiceTypeRow) => String(r.n) },
+];
+
+/* The four columns the table shows. It drops "Applied for" for width, and the
+   file keeps that decision rather than quietly holding a different report —
+   Grant Applications is the screen that answers the fuller question. */
+const RECENT_APPLICATION_COLUMNS = [
+  { label: 'Funder', value: (a: RecentApplicationRow) => a.funder_name ?? '' },
+  { label: 'Applied', value: (a: RecentApplicationRow) => csvBlankIfDash(shortDate(a.applied_date)) },
+  { label: 'Decision', value: (a: RecentApplicationRow) => a.decision_type ?? '' },
+  { label: 'Awarded', value: (a: RecentApplicationRow) => csvBlankIfDash(moneyExact(a.amount_awarded)) },
+];
 
 export function ForgeOverviewPage() {
   const { ready, withParams } = useForgeApi();
@@ -35,6 +60,20 @@ export function ForgeOverviewPage() {
       .catch((err) => console.error(err));
     return () => { cancelled = true; };
   }, [ready, withParams, q]);
+
+  const exportServiceTypes = useCallback(async () => {
+    downloadCsv(
+      csvFilename('services-by-type'),
+      toCsvText(SERVICE_TYPE_COLUMNS, data?.servicesByType ?? [], (r, col) => col.value(r))
+    );
+  }, [data]);
+
+  const exportRecentApplications = useCallback(async () => {
+    downloadCsv(
+      csvFilename('recent-funding-applications'),
+      toCsvText(RECENT_APPLICATION_COLUMNS, data?.recentApplications ?? [], (a, col) => col.value(a))
+    );
+  }, [data]);
 
   const s = data?.stats;
   const fr = data?.fundraising;
@@ -86,16 +125,6 @@ export function ForgeOverviewPage() {
           <StatTile label="Providers" value={s.providers.toLocaleString()} to={R('providers')} />
           <StatTile label="Funders" value={s.funders.toLocaleString()} to={R('funders')} />
           <StatTile label="Volunteers" value={s.volunteers.toLocaleString()} to={R('volunteers')} />
-          {s.needs_review > 0 && (
-            <StatTile
-              label="Needs review"
-              value={s.needs_review.toLocaleString()}
-              tone="warn"
-              hint="Services whose assistance link could not be confirmed during migration"
-              // Straight to the flagged rows, not the full services list.
-              to={`${R('services')}?needs_review=1`}
-            />
-          )}
         </div>
       )}
 
@@ -168,7 +197,17 @@ export function ForgeOverviewPage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <Card title="Services delivered by type">
+        <Card
+          title="Services delivered by type"
+          action={(
+            <ForgeExportButton
+              subject="the services-by-type breakdown"
+              disabled={!data?.servicesByType.length}
+              onExport={exportServiceTypes}
+              onError={setError}
+            />
+          )}
+        >
           {!data?.servicesByType.length ? <EmptyState>No services recorded.</EmptyState> : (
             <ul className="space-y-2">
               {data.servicesByType.map((row) => {
@@ -189,7 +228,17 @@ export function ForgeOverviewPage() {
           )}
         </Card>
 
-        <Card title="Recent funding applications">
+        <Card
+          title="Recent funding applications"
+          action={(
+            <ForgeExportButton
+              subject="the recent applications"
+              disabled={!data?.recentApplications.length}
+              onExport={exportRecentApplications}
+              onError={setError}
+            />
+          )}
+        >
           {!data?.recentApplications.length ? <EmptyState>No applications recorded.</EmptyState> : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">

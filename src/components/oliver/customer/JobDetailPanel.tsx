@@ -9,10 +9,16 @@
  * CustomerModal can render them at the bottom.
  */
 import { useCallback, useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ScheduleJobModal } from "../ScheduleJobModal";
 import { Button, StatusBadge } from "../ui";
 import { jobColor } from "../../../oliver/jobStatusColors";
 import { CatalogLineItemPicker, computeLineTotal, type LineItem } from "../CatalogLineItemPicker";
+import { CardOnFileBadge } from "./CardOnFileBadge";
+import { ChangeOrdersCard } from "./ChangeOrdersCard";
+import {
+  JOB_LINES_LOCKED_LINE, jobFinishedAndInvoiced, jobMoney, jobOffersCreateInvoice, jobTakesChangeOrders,
+} from "../../../lib/onsiteJob";
 
 interface JobDetail {
   id: string;
@@ -28,6 +34,10 @@ interface JobDetail {
   scheduledDate?: string;
   scheduledEnd?: string;
   total?: number;
+  /** A pending customer reschedule request (GET /jobs/:id) — the customer-side colour. */
+  rescheduleRequested?: boolean | null;
+  /** An open dispatch offer nobody has answered yet (GET /jobs/:id). */
+  openOffer?: { workerNames: string[]; expiresAt?: string | null } | null;
   assignedWorkers?: Array<{
     assignmentId?: string;
     id: string;
@@ -72,9 +82,11 @@ const ALL_STATUSES: Array<{ key: string; label: string }> = [
   { key: "cancelled",   label: "Cancelled" },
 ];
 
-function fmtMoney(n?: number | null) {
-  return `$${Number(n ?? 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
-}
+// Always with cents ("$643.50", never "$643.5" — pane walk 1 Oct, B3). The
+// job total itself is the server's (GET /jobs/:id `total`: the invoice, else
+// the agreed total — the quote plus every accepted change order); this only
+// prints it, it never re-derives it.
+const fmtMoney = jobMoney;
 function toLocalDtInput(iso?: string): string {
   if (!iso) return "";
   const d = new Date(iso);
@@ -116,11 +128,19 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
     try {
       const [j, items] = await Promise.all([
         api.get<JobDetail | { data: JobDetail }>(`/jobs/${jobId}`),
-        api.get<{ data: PersistedLineItem[] }>(`/jobs/${jobId}/line-items`).catch(() => ({ data: [] })),
+        api.get<PersistedLineItem[] | { data?: PersistedLineItem[] }>(`/jobs/${jobId}/line-items`).catch(() => [] as PersistedLineItem[]),
       ]);
       const jobData = (j as any)?.data ?? j;
       setJob(jobData);
-      const itemRows = (items?.data || []).map((it) => ({
+      // useOliverApi already strips the { data } envelope, so the body IS the
+      // array. Reading only `.data` left this tab at "No line items yet" on
+      // every job that had lines (pane test 1 Oct, FIX-9001 with 3 lines) —
+      // and "Save line items" then replaced the job's real lines with only
+      // what was typed. Accept the wrapped shape too, like the job read above.
+      const itemList: PersistedLineItem[] = Array.isArray(items)
+        ? (items as PersistedLineItem[])
+        : ((items as { data?: PersistedLineItem[] })?.data ?? []);
+      const itemRows = itemList.map((it) => ({
         id: it.id,
         description: it.description,
         quantity: Number(it.quantity),
@@ -262,6 +282,7 @@ export function JobDetailPanel({ jobId, api, onChanged, topSlot }: JobDetailPane
       startEditDetails={startEditDetails} saveDetails={saveDetails} cancelEditDetails={() => setEditingDetails(false)}
       setSchedulingOpen={setSchedulingOpen} scheduledDate={job?.scheduledDate}
       lineItems={lineItems} setLineItems={setLineItems}
+      savedLineItems={originalLineItems}
       lineItemsDirty={lineItemsDirty} lineItemsSubtotal={lineItemsSubtotal}
       saveLineItems={saveLineItems}
       isTerminal={isTerminal}
@@ -315,6 +336,8 @@ type JobLayoutProps = {
   cancelEditDetails: () => void;
   lineItems: LineItem[];
   setLineItems: (items: LineItem[]) => void;
+  /** The job's lines as saved — what a change order can take off. */
+  savedLineItems: LineItem[];
   lineItemsDirty: boolean;
   lineItemsSubtotal: number;
   saveLineItems: () => Promise<void>;
@@ -329,6 +352,11 @@ type JobTab = "details" | "lines" | "workers" | "activity" | "proof";
 function JobLayout(p: JobLayoutProps) {
   const [tab, setTab] = useState<JobTab>("details");
   const { job, jobId } = p;
+  const navigate = useNavigate();
+  // A finished, invoiced job's lines belong to its invoice: the editor is
+  // read-only, as on a paid or cancelled job (isTerminal), and says why.
+  const linesLocked = jobFinishedAndInvoiced(job);
+  const linesReadOnly = p.isTerminal || linesLocked;
 
   return (
     <div>
@@ -351,11 +379,14 @@ function JobLayout(p: JobLayoutProps) {
             <StatusDropdown
               currentStatus={job.status}
               hasWorker={(job.assignedWorkers?.length ?? 0) > 0}
+              customerAttention={!!job.rescheduleRequested}
               busy={!!(p.busy && p.busy.startsWith("status:"))}
               onChange={p.changeStatus}
             />
             {job.scheduledDate && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Scheduled {new Date(job.scheduledDate).toLocaleString()}</span>}
             {Number(job.total) > 0 && <span style={{ fontSize: 11, color: "#5A7A8A" }}>Total: <strong>{fmtMoney(job.total)}</strong></span>}
+            {/* On-site flow Phase B: the customer's saved card, before anyone charges. */}
+            <CardOnFileBadge contactId={job.contactId} api={p.api} />
           </div>
         </div>
       </div>
@@ -416,17 +447,33 @@ function JobLayout(p: JobLayoutProps) {
                   <div className="card-ttl">Line items</div>
                   <div className="card-sub">
                     {p.lineItems.length} item{p.lineItems.length === 1 ? "" : "s"} · subtotal {fmtMoney(p.lineItemsSubtotal)}
-                    {p.lineItems.length > 0 && " · job total recomputed on save"}
+                    {p.lineItems.length > 0 && !linesReadOnly && " · job total recomputed on save"}
                   </div>
                 </div>
-                {p.lineItemsDirty && !p.isTerminal && (
+                {p.lineItemsDirty && !linesReadOnly && (
                   <Button variant="primary" onClick={p.saveLineItems} disabled={p.busy === "save-lines"}>
                     {p.busy === "save-lines" ? "Saving…" : "Save line items"}
                   </Button>
                 )}
               </div>
-              <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={p.isTerminal} />
+              {linesLocked && (
+                <div data-testid="job-lines-locked" style={{ margin: "4px 0 10px", fontSize: 12, color: "#5A7A8A" }}>
+                  {JOB_LINES_LOCKED_LINE}
+                </div>
+              )}
+              <CatalogLineItemPicker items={p.lineItems} onChange={p.setLineItems} disabled={linesReadOnly} />
             </div>
+          )}
+          {/* On-site flow Phase C (G5): change orders under the job's lines —
+              what was added or taken off after the price was agreed, and who
+              signed it. "New change order" posts to the office route. */}
+          {tab === "lines" && (
+            <ChangeOrdersCard
+              jobId={jobId}
+              api={p.api}
+              jobLines={p.savedLineItems}
+              disabled={p.isTerminal || !jobTakesChangeOrders(job)}
+            />
           )}
 
           {tab === "workers" && (
@@ -438,9 +485,19 @@ function JobLayout(p: JobLayoutProps) {
                 </div>
               </div>
               {(job.assignedWorkers ?? []).length === 0 ? (
-                <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
-                  No workers assigned yet. Click "+ Add worker" below to dispatch one to this job.
-                </div>
+                job.openOffer && job.openOffer.workerNames.length ? (
+                  /* 2026-09-25 (register oliver-job-view-does-not-show-an-open-offer): an
+                     offer the crew has not answered used to read as "No workers
+                     assigned yet", as if nothing had been done. */
+                  <div style={{ fontSize: 11, color: "#6D28D9", padding: "8px 0" }}>
+                    Offered to {job.openOffer.workerNames.join(", ")}, waiting for an answer
+                    {job.openOffer.expiresAt ? ` (until ${new Date(job.openOffer.expiresAt).toLocaleString()})` : ""}. Nobody is assigned until someone accepts.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11, color: "#5A7A8A", fontStyle: "italic", padding: "8px 0" }}>
+                    No workers assigned yet. Click "+ Add worker" below to dispatch one to this job.
+                  </div>
+                )
               ) : (
                 (job.assignedWorkers ?? []).map((w) => (
                   <AssignmentRow
@@ -505,6 +562,14 @@ function JobLayout(p: JobLayoutProps) {
                   {p.scheduledDate ? "Reschedule" : "Schedule job"}
                 </Button>
                 <Button variant="secondary" onClick={p.startEditDetails}>Edit details</Button>
+                {/* 2026-09-25: the only "+ Create invoice" from a job lived in a
+                    drawer nothing rendered any more. The Invoices page already
+                    takes ?from_job and pre-seeds the customer and the job. */}
+                {/* Not on a job that is finished and invoiced: the API refuses it
+                    (pane walk 1 Oct, M8). */}
+                {jobOffersCreateInvoice(job) && (
+                  <Button variant="secondary" onClick={() => navigate(`/app/services/oliver_invoices?from_job=${encodeURIComponent(jobId)}`)}>+ Create invoice</Button>
+                )}
                 <div style={{ fontSize: 10, color: "#94A3B8", textAlign: "center", marginTop: 4 }}>
                   Status moves via the pill above ↑
                 </div>
@@ -661,21 +726,25 @@ function InfoCell({ label, value }: { label: string; value: string }) {
 // here matches the card that was clicked on a calendar or the Job Board.
 // This panel does not know about a pending reschedule request, so it colours
 // by status + whether a worker is on the job.
-function statusStyle(status: string, hasWorker?: boolean): { bg: string; fg: string } {
-  const c = jobColor({ kind: "job", status, hasWorker: hasWorker ?? null });
+function statusStyle(status: string, hasWorker?: boolean, customerAttention?: boolean): { bg: string; fg: string } {
+  // 2026-09-25 (register oliver-job-panel-pill-ignores-the-customer-side-colour):
+  // the pill takes the same three facts the board and the calendars colour
+  // by, so an orange chip opens on an orange pill.
+  const c = jobColor({ kind: "job", status, hasWorker: hasWorker ?? null, customerAttention: customerAttention ?? null });
   return { bg: c.soft, fg: c.softText };
 }
 
 function StatusDropdown({
-  currentStatus, hasWorker, busy, onChange,
+  currentStatus, hasWorker, customerAttention, busy, onChange,
 }: {
   currentStatus: string;
   hasWorker?: boolean;
+  customerAttention?: boolean;
   busy: boolean;
   onChange: (s: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const c = statusStyle(currentStatus, hasWorker);
+  const c = statusStyle(currentStatus, hasWorker, customerAttention);
   const label = ALL_STATUSES.find((s) => s.key === currentStatus)?.label || currentStatus;
 
   return (
@@ -771,12 +840,12 @@ function JobProfitabilityCard({
         <div>
           <div className="card-ttl" style={{ margin: 0 }}>Profitability</div>
           <div className="card-sub" style={{ marginTop: 2 }}>
-            {revenue > 0 ? `$${revenue.toLocaleString()}` : "$0"} collected · {totalHours.toFixed(1)}h logged · ${laborCost.toLocaleString()} labor
+            {jobMoney(revenue)} collected · {totalHours.toFixed(1)}h logged · {jobMoney(laborCost)} labor
           </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 24, fontWeight: 700, color: profit >= 0 ? "#059669" : "#DC2626", fontFamily: "monospace" }}>
-            {profit >= 0 ? "" : "−"}${Math.abs(profit).toLocaleString()}
+            {jobMoney(profit)}
           </div>
           <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
             {margin != null ? `${margin}% margin` : "profit"}

@@ -9,7 +9,7 @@
 //
 // Reference: C:\dev\claude code\overnight-report\30_LEADGEN_V1_SPEC.md
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { LeadGenTermsLink, LeadGenTermsNotice } from "../../components/spark/LeadGenTermsLink";
@@ -26,6 +26,13 @@ import {
 import {
   type ExpandedKeyword, withTypedTopics, mergeExpansions, categoryPayloadFrom,
 } from "../../lib/leadgenCategories";
+// 2026-10-01 — a picked category's topics sit under its chip; a saved search
+// opens here ready to change (a row on the Lead Inbox's Saved Searches tab).
+import { LeadGenCategoryTopics } from "../../components/spark/LeadGenCategoryTopics";
+import {
+  type SavedSearch, type SavedCategory, SAVED_SEARCHES_PATH,
+  prefillFromSaved, savedCategoriesOf, excludedFromSaved, saveRequestFor,
+} from "../../lib/leadgenSavedSearch";
 import {
   Search, MapPin, Sparkles, DollarSign, Clock, Play, Save,
   X, ChevronDown, Check, Tag, Snowflake, Building2, Info, CreditCard, CalendarClock,
@@ -217,9 +224,6 @@ interface ComboProps<T> {
    *  hands the typed text back (label from customLabel). */
   onPickCustom?: (value: string) => void;
   customLabel?: (value: string) => string;
-  /** A second, differently-typed suggestion list rendered under its own heading
-   *  (e.g. matching search TOPICS while the user is in the CATEGORY box). */
-  secondary?: { title: string; items: { key: string; label: React.ReactNode }[]; onPick: (key: string) => void };
   emptyText?: string;
   /** Enter key. Brandon 2026-09-04: "it says press Enter to add it as a custom
    *  term, but it doesn't accept me pressing enter" — it was never wired. */
@@ -228,7 +232,7 @@ interface ComboProps<T> {
 
 function AutocompleteCombo<T>({
   placeholder, value, onChange, results, loading, onPick, renderItem, disabled, icon,
-  onPickCustom, customLabel, secondary, emptyText, onEnter,
+  onPickCustom, customLabel, emptyText, onEnter,
 }: ComboProps<T>) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -269,7 +273,7 @@ function AutocompleteCombo<T>({
           {loading && (
             <div className="px-3 py-2 text-xs text-slate-400">Searching…</div>
           )}
-          {!loading && results.length === 0 && value.trim() && !onPickCustom && !(secondary && secondary.items.length) && (
+          {!loading && results.length === 0 && value.trim() && !onPickCustom && (
             <div className="px-3 py-2 text-xs text-slate-400">{emptyText || "No matches — press Enter to add it as a custom term."}</div>
           )}
           {results.map((r, i) => (
@@ -282,21 +286,6 @@ function AutocompleteCombo<T>({
               {renderItem(r)}
             </button>
           ))}
-          {!loading && secondary && secondary.items.length > 0 && (
-            <>
-              <div className="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wide font-semibold text-slate-400 border-t border-slate-100">{secondary.title}</div>
-              {secondary.items.map((it) => (
-                <button
-                  key={it.key}
-                  type="button"
-                  onClick={() => { secondary.onPick(it.key); setOpen(false); }}
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-orange-50 hover:text-orange-900 flex items-center justify-between"
-                >
-                  {it.label}
-                </button>
-              ))}
-            </>
-          )}
           {!loading && onPickCustom && value.trim().length >= 2 && (
             <button
               type="button"
@@ -318,8 +307,14 @@ function AutocompleteCombo<T>({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function SparkLeadGenNewPage() {
-  const { get, post, ready } = useSparkApi();
+  const { get, post, patch, ready } = useSparkApi();
   const navigate = useNavigate();
+  // A row on the Lead Inbox's Saved Searches tab opens this form on ?edit=<id>.
+  const [searchParams] = useSearchParams();
+  const editId = searchParams.get("edit");
+  /** The saved search this form is editing — Save updates it in place. */
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   // B18 — the search model. Only "b2b" is selectable, so this is the value the
@@ -378,12 +373,50 @@ export function SparkLeadGenNewPage() {
   const toggleTerm = (term: string) => setExcludedTerms((prev) => { const n = new Set(prev); if (n.has(term)) n.delete(term); else n.add(term); return n; });
   const toggleCity = (id: number) => setExcludedCityIds((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const activeKw = useMemo(() => previewKw.filter((k) => !excludedTerms.has(k.term)), [previewKw, excludedTerms]);
+  // A category's own topics: the expansion's rows filed under it (first claim
+  // wins across categories — the same attribution the job uses).
+  const sameName = (a: string | null | undefined, b: string) => (a || "").trim().toLowerCase() === b.trim().toLowerCase();
+  const topicsFor = (c: CategoryHit) => previewKw.filter((k) => sameName(k.category, c.name));
   const activeCities = useMemo(() => previewLoc.cities.filter((c) => !excludedCityIds.has(c.city_id)), [previewLoc, excludedCityIds]);
 
   // Tenant billing facts — package, included/remaining leads this period, the
   // per-lead rate for extras (from Stripe), card on file. Drives the slider,
   // the live estimate and the Start gate. GET /leadgen/credits (LUMEN-API).
   const [credits, setCredits] = useState<LeadGenCredits | null>(null);
+
+  // ── Edit and run: fill the form from a saved search ──────────────────────
+  // Removed topics are not stored: a saved category's topics are the ones that
+  // were still ticked, so once its topics are expanded again every other topic
+  // it offers comes back UNticked (excludedFromSaved). Held in a ref until the
+  // first expansion of the prefilled form lands.
+  const pendingSaved = useRef<SavedCategory[] | null>(null);
+  useEffect(() => {
+    if (!ready || !editId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        // GET /api/v1/leadgen/profiles → { data: SavedSearch[] }
+        const r = await get<{ data: SavedSearch[] }>("/api/v1/leadgen/profiles");
+        if (cancelled) return;
+        const found = (r?.data || []).find((p) => String(p.id) === String(editId));
+        if (!found) { setError(new Error("That saved search was not found.")); return; }
+        pendingSaved.current = savedCategoriesOf(found);
+        setExcludedTerms(new Set());
+        setExcludedCityIds(new Set());
+        setForm((f) => ({ ...f, ...prefillFromSaved(found, f.maxLeads) }));
+        setEditing({ id: String(found.id), name: found.name });
+        setProfileName(found.name);
+      } catch (err) {
+        if (!cancelled) setError(friendlyApiError(err));
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editId, get, ready]);
+  useEffect(() => {
+    if (!pendingSaved.current || previewKwLoading || previewKw.length === 0) return;
+    setExcludedTerms(excludedFromSaved(previewKw, pendingSaved.current));
+    pendingSaved.current = null;
+  }, [previewKw, previewKwLoading]);
 
   // B19 — which models this business may pick. FALLBACK_MODELS (B2C locked) is
   // what renders until this answers, and what stays if it never does: the safe
@@ -479,22 +512,11 @@ export function SparkLeadGenNewPage() {
     return () => { cancelled = true; };
   }, [debouncedCat, get, ready, catTop25Only]);
 
-  // Search TOPICS that match what is typed in the CATEGORY box — so "snow" shows
-  // "snow removal services" even though no category matches (Brandon 2026-09-04).
-  const [catTermSuggestions, setCatTermSuggestions] = useState<TermHit[]>([]);
-  useEffect(() => {
-    if (!ready || catTop25Only || debouncedCat.trim().length < 2) { setCatTermSuggestions([]); return; }
-    let cancelled = false;
-    (async () => {
-      try {
-        const r = await get<{ data: TermHit[] }>(`/api/v1/leadgen/terms/autocomplete?q=${encodeURIComponent(debouncedCat)}`);
-        if (!cancelled) setCatTermSuggestions((r?.data || []).slice(0, 6));
-      } catch {
-        if (!cancelled) setCatTermSuggestions([]);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [debouncedCat, get, ready, catTop25Only]);
+  // 2026-10-01 (Brandon): the category box lists CATEGORIES ONLY. It used to
+  // list matching search TOPICS under its own heading as well, and picking one
+  // ("electrician schools", a topic from another category) turned the topic into
+  // a custom category. A topic is typed in the Search Topics box; a category's
+  // own topics are shown under its chip once it is picked.
 
   // Term autocomplete (scoped to category if present).
   useEffect(() => {
@@ -803,18 +825,6 @@ export function SparkLeadGenNewPage() {
     });
     setCatQuery("");
   }
-  // A search TOPIC picked from the category box: custom category named after it,
-  // and the taxonomy term itself (positive id) becomes the seed for expansion.
-  function pickTermAsCategory(t: TermHit) {
-    if (form.categories.some((x) => x.name.toLowerCase() === t.term.toLowerCase())) { setCatQuery(""); return; }
-    const already = form.terms.some((x) => x.id === t.id || x.term.toLowerCase() === t.term.toLowerCase());
-    setForm({
-      ...form,
-      categories: [...form.categories, { id: 0, name: t.term, industry_id: null, custom: true }],
-      terms: already ? form.terms : [...form.terms, t],
-    });
-    setCatQuery("");
-  }
   function addCity(c: CityHit) {
     if (form.cities.some((x) => x.id === c.id)) return;
     setForm({ ...form, cities: [...form.cities, c] });
@@ -841,6 +851,9 @@ export function SparkLeadGenNewPage() {
     // Only the ACTIVE (not deselected) keywords and cities go to the job.
     expanded_terms: activeKw.map((t) => t.term),
     expanded_city_ids: activeCities.map((c) => c.city_id),
+    // 2026-10-01 — the server stores the ANCHOR cities + radius and expands
+    // them at every run; only a deselection makes it keep the exact list.
+    deselected_city_ids: [...excludedCityIds],
     search_mode: form.searchMode,
     state: form.state,
     city_ids: form.cities.map((c) => c.id),
@@ -849,7 +862,10 @@ export function SparkLeadGenNewPage() {
     zips: form.zips.map((z) => z.zip),
     include_cold_leads: form.includeCold,
     max_leads: form.maxLeads,
-  }), [form, activeKw, activeCities, categoryPayload]);
+    // 2 Oct 2026 — a run started from an opened saved search says which one, so
+    // its leads read Found by "Quick search … · from Home Trades - Des Moines".
+    from_saved_search: editing ? editing.name : null,
+  }), [form, activeKw, activeCities, categoryPayload, editing]);
 
   async function handleStart() {
     if (!canSubmit) return;
@@ -873,31 +889,52 @@ export function SparkLeadGenNewPage() {
     }
   }
 
-  async function handleSaveProfile() {
+  // "Save" on a saved search that is open updates THAT search (PATCH, the same
+  // row). "Save as new search" — and Save on a fresh form — creates a new one
+  // (POST) and leaves the original exactly as it was. saveRequestFor decides.
+  async function handleSaveProfile(how: "save" | "save_as_new" = "save") {
     const name = profileName.trim();
     if (!name) return;
     setSavingProfile(true);
     try {
-      // POST /api/v1/leadgen/profiles → { data: { id } }
-      await post("/api/v1/leadgen/profiles", { name, ...buildPayload() });
+      const req = saveRequestFor(editing ? editing.id : null, how);
+      const body = { name, ...buildPayload() };
+      if (req.method === "patch") {
+        // PATCH /api/v1/leadgen/profiles/:id — the same row, changed in place.
+        await patch(req.path, body);
+      } else {
+        // POST /api/v1/leadgen/profiles → { data: { id } } — a new row.
+        await post(req.path, body);
+      }
       setShowSaveModal(false);
+      if (editing) {
+        // Back to the Saved Searches tab, where the row shows the change (or
+        // the new search beside the untouched original).
+        navigate(SAVED_SEARCHES_PATH);
+        return;
+      }
+      setSavedNote(`Saved "${name}".`);
       setProfileName("");
     } catch (err) {
-      setError(err);
+      setError(friendlyApiError(err));
     } finally {
       setSavingProfile(false);
     }
   }
+  const sameNameAsOpen = !!editing && profileName.trim().toLowerCase() === editing.name.trim().toLowerCase();
 
   // ── render ─────────────────────────────────────────────────────────────
   return (
     <SparkPageShell
-      title="New B2B Lead Search"
-      subtitle="Find verified B2B leads — see exactly what you're searching for before you pay"
+      title={editing ? `Editing: ${editing.name}` : "New B2B Lead Search"}
+      subtitle={editing
+        ? "Change anything, then Save it or Start Search"
+        : "Find verified B2B leads — see exactly what you're searching for before you pay"}
       help="Set your categories, location, and search mode. Pick more than one category and the search asks each of them in turn. The live preview on the right shows expanded keywords, resolved cities/ZIPs, estimated cost and estimated runtime, and tells you when a search looks too strict to fill your order. Nothing runs (and you're not charged) until you click Start Search."
       actions={
         <span className="inline-flex items-center gap-3">
-          <Link to="/app/spark/leadgen/saved" className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline">
+          {/* Saved searches are a tab of the Lead Inbox (2026-10-01). */}
+          <Link to={SAVED_SEARCHES_PATH} className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800 underline-offset-2 hover:underline">
             <Save className="h-3.5 w-3.5" /> Saved searches
           </Link>
           <LeadGenTermsLink />
@@ -941,17 +978,27 @@ export function SparkLeadGenNewPage() {
           {/* Business Categories (A13 — more than one per run) */}
           <Section
             title="Business Categories"
-            hint="Add one or more. Each category brings its own search topics, and the search asks them in turn so one category cannot crowd out another. Remove any topic you don't want in the preview pane."
+            hint="Add one or more. Each category brings its own search topics, shown under it — remove any you don't want searched. The search asks the categories in turn so one cannot crowd out another."
           >
+            {/* 2026-10-01 — each category's topics directly under its chip, from
+                the same expansion and the same excludedTerms as the Live Preview,
+                so a topic removed here leaves the right pane's count at once. */}
             {form.categories.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-2">
+              <div className="space-y-2 mb-3" data-testid="picked-categories">
                 {form.categories.map((c) => (
-                  <Chip
-                    key={`${c.id}:${c.name}`}
-                    label={c.custom ? `${c.name} · custom` : c.name}
-                    onRemove={() => removeCategory(c)}
-                    icon={<Building2 className="h-3 w-3" />}
-                  />
+                  <div key={`${c.id}:${c.name}`} className="rounded-lg border border-slate-200 bg-slate-50/40 p-2.5">
+                    <Chip
+                      label={c.custom ? `${c.name} · custom` : c.name}
+                      onRemove={() => removeCategory(c)}
+                      icon={<Building2 className="h-3 w-3" />}
+                    />
+                    <LeadGenCategoryTopics
+                      topics={topicsFor(c)}
+                      excluded={excludedTerms}
+                      loading={previewKwLoading}
+                      onToggle={toggleTerm}
+                    />
+                  </div>
                 ))}
               </div>
             )}
@@ -986,11 +1033,6 @@ export function SparkLeadGenNewPage() {
                     </span>
                   )}
                   icon={<Building2 className="h-3.5 w-3.5" />}
-                  secondary={catTermSuggestions.length ? {
-                    title: "Search topics that match",
-                    items: catTermSuggestions.map((t) => ({ key: String(t.id), label: <span className="flex-1 flex items-center gap-2"><Tag className="h-3 w-3 text-slate-400" /><span>{t.term}</span></span> })),
-                    onPick: (key) => { const t = catTermSuggestions.find((x) => String(x.id) === key); if (t) pickTermAsCategory(t); },
-                  } : undefined}
                   onPickCustom={catTop25Only ? undefined : pickCustomCategory}
                   customLabel={(v) => `Use "${v}" as a custom category`}
                   onEnter={onCategoryEnter}
@@ -1465,8 +1507,13 @@ export function SparkLeadGenNewPage() {
                 disabled={!hasSeed}
                 className="w-full min-h-[40px] rounded-md border border-slate-300 bg-white text-slate-700 text-xs font-medium py-1.5 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
               >
-                <Save className="h-3 w-3" /> Save this search
+                <Save className="h-3 w-3" /> {editing ? "Save changes" : "Save this search"}
               </button>
+              {savedNote && (
+                <p className="text-[11px] text-emerald-700 text-center" role="status">
+                  {savedNote} <Link to={SAVED_SEARCHES_PATH} className="underline hover:text-emerald-900">See it in Saved Searches</Link>
+                </p>
+              )}
               {/* Decision B5: scheduled (recurring) searches are a subscriber feature. */}
               {credits && !subscriber && (
                 <p className="text-[11px] text-slate-500 text-center flex items-center justify-center gap-1.5">
@@ -1491,13 +1538,17 @@ export function SparkLeadGenNewPage() {
           <div className="bg-white rounded-xl w-full max-w-md p-5 space-y-3" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <div className="text-base font-semibold flex items-center gap-2">
-                <Save className="h-4 w-4" /> Save this search
+                <Save className="h-4 w-4" /> {editing ? "Save changes" : "Save this search"}
               </div>
               <button onClick={() => setShowSaveModal(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-[12px] text-slate-500">Find it again under the Saved searches link at the top of this page (and on every search results page). Re-run any time without re-configuring.</p>
+            <p className="text-[12px] text-slate-500">
+              {editing
+                ? <>Save updates &ldquo;{editing.name}&rdquo;. Save as new search keeps it as it was and adds a new saved search.</>
+                : "Find it again on the Saved Searches tab of the Lead Inbox. Run it again any time without setting it up again."}
+            </p>
             <div>
               <label className="text-[10px] uppercase font-semibold text-slate-500">Name</label>
               <input
@@ -1508,10 +1559,22 @@ export function SparkLeadGenNewPage() {
                 autoFocus
               />
             </div>
-            <div className="flex justify-end gap-2 pt-1">
+            {editing && sameNameAsOpen && (
+              <p className="text-[11px] text-slate-500">To save it as a new search, give it a different name.</p>
+            )}
+            <div className="flex flex-wrap justify-end gap-2 pt-1">
               <button onClick={() => setShowSaveModal(false)} className="text-sm px-3 py-1.5 rounded border border-slate-200">Cancel</button>
+              {editing && (
+                <button
+                  onClick={() => handleSaveProfile("save_as_new")}
+                  disabled={!profileName.trim() || savingProfile || sameNameAsOpen}
+                  className="text-sm px-3 py-1.5 rounded border border-slate-300 bg-white text-slate-700 disabled:opacity-50"
+                >
+                  Save as new search
+                </button>
+              )}
               <button
-                onClick={handleSaveProfile}
+                onClick={() => handleSaveProfile("save")}
                 disabled={!profileName.trim() || savingProfile}
                 className="text-sm px-3 py-1.5 rounded bg-[#EF6C33] text-white disabled:opacity-50 flex items-center gap-1"
               >

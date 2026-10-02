@@ -141,9 +141,6 @@ const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkfl
 const SparkIAInsightsHealthPage = lazyNamed(() => import('./spark/SparkIAInsightsHealthPage'), 'SparkIAInsightsHealthPage');
 const SparkIAInsightsTrendsPage = lazyNamed(() => import('./spark/SparkIAInsightsTrendsPage'), 'SparkIAInsightsTrendsPage');
 const SparkIAInsightsReportsPage = lazyNamed(() => import('./spark/SparkIAInsightsReportsPage'), 'SparkIAInsightsReportsPage');
-// IL step 8 — the monthly "what worked" report. The email links here, so the
-// route key and the path in services/il/findingsTemplate.js must stay in step.
-const SparkWhatWorkedPage = lazyNamed(() => import('./spark/SparkWhatWorkedPage'), 'SparkWhatWorkedPage');
 const ReportsHubPage = lazyNamed(() => import('../components/insights/ReportsHubPage'), 'ReportsHubPage');
 const SparkIAInsightsIntelligencePage = lazyNamed(() => import('./spark/SparkIAInsightsIntelligencePage'), 'SparkIAInsightsIntelligencePage');
 const OliverIAInsightsHealthPage = lazyNamed(() => import('./oliver/OliverIAInsightsHealthPage'), 'OliverIAInsightsHealthPage');
@@ -320,16 +317,11 @@ const OliverProposalsPage = lazyNamed(() => import('./oliver/OliverProposalsPage
 const OliverUsagePage = lazyNamed(() => import('./oliver/OliverUsagePage'), 'OliverUsagePage');
 const OliverFeesPage = lazyNamed(() => import('./oliver/OliverFeesPage'), 'OliverFeesPage');
 const OliverClientExperiencePage = lazyNamed(() => import('./oliver/OliverClientExperiencePage'), 'OliverClientExperiencePage');
-const OliverPortalDesignerPage = lazyNamed(() => import('./oliver/OliverPortalDesignerPage'), 'OliverPortalDesignerPage');
 const OliverAutomationsPage = lazyNamed(() => import('./oliver/OliverAutomationsPage'), 'OliverAutomationsPage');
 const OliverAddonsPage = lazyNamed(() => import('./oliver/OliverAddonsPage'), 'OliverAddonsPage');
 const OliverPortalDomainsPage = lazyNamed(() => import('./oliver/OliverPortalDomainsPage'), 'OliverPortalDomainsPage');
 // F-114 — unified portals hub
 const OliverPortalsHubPage = lazyNamed(() => import('./oliver/OliverPortalsHubPage'), 'OliverPortalsHubPage');
-// #290 Onboarding V3 Phase 3 — constrained WYSIWYG portal customization
-// (welcome copy / hero image / brand colors). Scaffolded page; full editor
-// ships in the next pass — see file header for what's stubbed.
-const PortalCustomizationPage = lazyNamed(() => import('./oliver/PortalCustomizationPage'), 'PortalCustomizationPage');
 // OLIVER v1.0 additions
 const OliverWorkflowTemplatesPage = lazyNamed(() => import('./oliver/OliverWorkflowTemplatesPage'), 'OliverWorkflowTemplatesPage');
 const OliverJobOffersPage = lazyNamed(() => import('./oliver/OliverJobOffersPage'), 'OliverJobOffersPage');
@@ -339,6 +331,7 @@ const OliverTimeTrackingPage = lazyNamed(() => import('./oliver/OliverTimeTracki
 // Five most-complete Ledger surfaces are their own chunks; the remaining live
 // shells + Unit Economics share a chunk each; locked Layer-3 keys render the
 // STELLA coming-soon sheet.
+const StellaDashboardPage = lazyNamed(() => import('./stella/StellaDashboardPage'), 'StellaDashboardPage');
 const StellaOverviewPage = lazyNamed(() => import('./stella/StellaOverviewPage'), 'StellaOverviewPage');
 const StellaLedgerInboxPage = lazyNamed(() => import('./stella/StellaLedgerInboxPage'), 'StellaLedgerInboxPage');
 const StellaTransactionsPage = lazyNamed(() => import('./stella/StellaTransactionsPage'), 'StellaTransactionsPage');
@@ -660,12 +653,17 @@ function ServiceRouterInner() {
 
   if (service.section === 'STELLA') {
     // Legacy 0.1.0 MLP routes — the old Overview P&L + Expenses pages are
-    // retired. Redirect old deep links to the NEW Ledger Overview landing.
-    if (service.key === 'stella_coming') return <Navigate to="/app/services/stella_ledger_overview" replace />;
-    if (service.key === 'stella_expenses_coming') return <Navigate to="/app/services/stella_ledger_overview" replace />;
+    // retired. Old deep links land on STELLA's landing, which since 2 Oct 2026
+    // is the product Dashboard (it was the Ledger Overview before).
+    if (service.key === 'stella_coming') return <Navigate to="/app/services/stella_dashboard" replace />;
+    if (service.key === 'stella_expenses_coming') return <Navigate to="/app/services/stella_dashboard" replace />;
 
     let stellaPage: React.ReactNode = null;
     switch (service.key) {
+      // The PRODUCT Dashboard (2 Oct 2026) — first in the STELLA nav, what the
+      // rail icon opens; the cross-feature layer (setup, what needs you, a way
+      // into each part). The Ledger keeps its own Overview below.
+      case 'stella_dashboard': stellaPage = <StellaDashboardPage />; break;
       // Ledger (Layer 1 — live; 2026-07-30 consolidation, 8-item nav cap)
       case 'stella_ledger_overview': stellaPage = <StellaOverviewPage />; break;
       case 'stella_ledger_inbox': stellaPage = <StellaLedgerInboxPage />; break;
@@ -795,12 +793,10 @@ function ServiceRouterInner() {
       case 'oliver_usage': oliverPage = <OliverUsagePage />; break;
       case 'oliver_fees': oliverPage = <OliverFeesPage />; break;
       case 'oliver_client_experience': oliverPage = <OliverClientExperiencePage />; break;
-      case 'oliver_portal_designer': oliverPage = <OliverPortalDesignerPage />; break;
       case 'oliver_automations': oliverPage = <OliverAutomationsPage />; break;
       case 'oliver_addons': oliverPage = <OliverAddonsPage />; break;
       case 'oliver_portal_domains': oliverPage = <OliverPortalDomainsPage />; break;
       case 'oliver_portals_hub': oliverPage = <OliverPortalsHubPage />; break;
-      case 'oliver_portal_customization': oliverPage = <PortalCustomizationPage />; break;
       // v1.0 additions
       case 'oliver_workflow_templates': oliverPage = <OliverWorkflowTemplatesPage />; break;
       case 'oliver_job_offers': oliverPage = <OliverJobOffersPage />; break;
@@ -981,7 +977,6 @@ function ServiceRouterInner() {
       case 'spark_ia_insights_health': sparkPage = <SparkIAInsightsHealthPage />; break;
       case 'spark_ia_insights_trends': sparkPage = <SparkIAInsightsTrendsPage />; break;
       case 'spark_ia_insights_reports': sparkPage = <SparkIAInsightsReportsPage />; break;
-      case 'spark_what_worked': sparkPage = <SparkWhatWorkedPage />; break;
       case 'spark_ia_insights_intelligence': sparkPage = <SparkIAInsightsIntelligencePage />; break;
       case 'spark_service_category': sparkPage = <SparkServiceCategoryPage />; break;
       case 'spark_form_builder': sparkPage = <SparkFormBuilderPage />; break;

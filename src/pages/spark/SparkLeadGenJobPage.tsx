@@ -20,6 +20,8 @@ import { LeadAttributionCard } from "../../components/spark/LeadAttributionCard"
 // P5 — hand the "you have N new leads" toast to the SPARK shell, which shows it
 // after the redirect to the inbox.
 import { stashRunComplete } from "../../components/spark/NewLeadsBanner";
+import { SAVED_SEARCHES_PATH } from "../../lib/leadgenSavedSearch";
+import { stopReasonWords } from "../../lib/leadgenStopReason";
 import {
   CheckCircle2, Circle, Loader2, AlertTriangle, ExternalLink, Mail, Phone,
   ArrowLeft, ThumbsUp, ThumbsDown, Sparkles, RefreshCw, Receipt, Lock,
@@ -29,41 +31,14 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type JobPhase =
-  | "queued"
-  | "expanding_keywords"
-  | "expanding_locations"
-  | "discovery"
-  | "scoring"
-  | "enriching"
-  | "finalizing"
-  | "complete"
-  | "failed";
+// The steps, their words and the waiting lines are PURE and live in
+// lib/leadgenJobSteps.ts (a test imports them; this page's API hook reads
+// import.meta.env, which a test cannot).
+import {
+  type JobPhase, PHASE_ORDER, PHASE_LABELS, STEP_TO_PHASE, WAITING_LINES, savedSoFarLine,
+} from "../../lib/leadgenJobSteps";
 
 type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled";
-
-const PHASE_ORDER: JobPhase[] = [
-  "queued",
-  "expanding_keywords",
-  "expanding_locations",
-  "discovery",
-  "scoring",
-  "enriching",
-  "finalizing",
-  "complete",
-];
-
-const PHASE_LABELS: Record<JobPhase, { label: string; help: string }> = {
-  queued:               { label: "Queued",               help: "Waiting for a worker to pick up your search." },
-  expanding_keywords:   { label: "Expanding keywords",   help: "Building the full keyword set from your category and search mode." },
-  expanding_locations:  { label: "Resolving locations",  help: "Computing the cities and ZIPs inside your radius." },
-  discovery:            { label: "Discovery",            help: "Querying Hunter Discover, Brave and You.com for candidate domains." },
-  scoring:              { label: "Scoring",              help: "Filtering against the blocklist, suppression list, and the cross-tenant cache." },
-  enriching:            { label: "Enriching contacts",   help: "Pulling email addresses via homepage scrape and Hunter (only where needed)." },
-  finalizing:           { label: "Finalizing",           help: "Wrapping up — refunding any shortfall against your max." },
-  complete:             { label: "Complete",             help: "Review your leads below." },
-  failed:               { label: "Failed",               help: "Something went wrong — see the error above." },
-};
 
 interface JobStatusResponse {
   job_id: string;
@@ -121,16 +96,6 @@ interface RawJobRow {
   pool_strain_message?: string | null;
 }
 
-const STEP_TO_PHASE: Record<string, JobPhase> = {
-  starting: "queued",
-  loading_filters: "queued",
-  checking_cache: "queued",
-  discovering: "discovery",
-  scoring: "scoring",
-  enriching: "enriching",
-  persisting: "finalizing",
-  completed: "complete",
-};
 
 function adaptRow(row: RawJobRow): JobStatusResponse {
   // 'completed' in DB → 'complete' for the page's phase tracker; everything
@@ -280,6 +245,17 @@ export function SparkLeadGenJobPage() {
   // ── derived ────────────────────────────────────────────────────────────
   const phaseIdx = status?.phase ? PHASE_ORDER.indexOf(status.phase) : 0;
   const isRunning = status?.status === "running" || status?.status === "queued";
+  // One of the phase's lines, changing every four seconds while the run is on.
+  const [waitTick, setWaitTick] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const t = setInterval(() => setWaitTick((n) => n + 1), 4000);
+    return () => clearInterval(t);
+  }, [isRunning]);
+  const waitingLine = useMemo(() => {
+    const lines = WAITING_LINES[status?.phase || "queued"] || WAITING_LINES.queued;
+    return lines[waitTick % lines.length];
+  }, [status?.phase, waitTick]);
   const isComplete = status?.status === "complete";
   const isFailed = status?.status === "failed";
 
@@ -334,7 +310,7 @@ export function SparkLeadGenJobPage() {
     <SparkPageShell
       title={status?.search_summary?.category ? `Search: ${status.search_summary.category}` : "Lead Gen Job"}
       subtitle={subtitle}
-      help="Lead generation jobs progress through 7 phases. Once complete, accept or reject leads to send the accepted ones to your contacts."
+      help="A search finds businesses, checks each one is real and in your area, reads its website to make sure it is the kind of business you asked for, finds a named person with a verified email for the best matches first, then scores and saves the lead with its reasons. Once complete, accept or reject leads to send the accepted ones to your contacts."
       error={error}
       loading={loading && !status}
       actions={
@@ -347,7 +323,7 @@ export function SparkLeadGenJobPage() {
             <ArrowLeft className="h-3 w-3" /> New search
           </button>
           <button
-            onClick={() => navigate("/app/spark/leadgen/saved")}
+            onClick={() => navigate(SAVED_SEARCHES_PATH)}
             className="text-xs px-2.5 py-1 rounded border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           >
             Saved searches
@@ -366,6 +342,15 @@ export function SparkLeadGenJobPage() {
                   {isComplete ? "Search complete" : isFailed ? "Search failed" : "Running your search"}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">{PHASE_LABELS[status.phase]?.help}</div>
+                {isRunning && (
+                  <div className="text-[12px] text-[#B84817] mt-1.5 flex items-center gap-2" data-testid="job-waiting-line">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>{waitingLine}</span>
+                    {savedSoFarLine(status.delivered_count, status.target_count) && (
+                      <span className="text-slate-500">· {savedSoFarLine(status.delivered_count, status.target_count)}</span>
+                    )}
+                  </div>
+                )}
               </div>
               {isRunning && (
                 <div className="text-right">
@@ -484,16 +469,13 @@ export function SparkLeadGenJobPage() {
           <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-2">
             <AlertTriangle className="h-4 w-4 text-rose-700 mt-0.5 flex-shrink-0" />
             <div>
-              <div className="text-sm font-semibold text-rose-900">
-                Run stopped early — {status.budget_stop_reason === "hunter_cap"
-                  ? "Hunter contact-lookup budget cap"
-                  : status.budget_stop_reason === "cse_cap"
-                    ? "Google search budget cap"
-                    : "internal budget cap"}
+              {/* 2 Oct 2026 — each stop reason says what really happened
+                  (lib/leadgenStopReason.ts); not every stop is a cap. */}
+              <div className="text-sm font-semibold text-rose-900" data-testid="run-stop-title">
+                Run stopped early — {stopReasonWords(status.budget_stop_reason).title}
               </div>
-              <p className="text-[12px] text-rose-800 mt-0.5">
-                We hit our hard safety cap of {status.budget_stop_reason === "hunter_cap" ? "5×" : "10×"} the requested target.
-                {" "}This protects you from runaway API charges. Narrow your terms or radius and try again.
+              <p className="text-[12px] text-rose-800 mt-0.5" data-testid="run-stop-body">
+                {stopReasonWords(status.budget_stop_reason).body}
               </p>
             </div>
           </div>

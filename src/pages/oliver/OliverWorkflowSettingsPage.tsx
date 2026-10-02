@@ -18,10 +18,13 @@ import { SignupFormBuilder, type SignupConfig as SignupConfigFull } from "../../
 type RescheduleMode = "auto_confirm" | "admin_approval" | "disabled";
 
 // Customer-facing label per mode — used by the "running as" hint under Mode.
+// D-BK12 (Brandon, 25 Sep 2026): one plain question. The three answers ARE the
+// three stored modes; the manage link's buttons, the customer portal and the
+// email wording all follow this one setting (oliver-api lib/selfService.js).
 const RESCHEDULE_MODE_LABELS: Record<RescheduleMode, string> = {
-  admin_approval: "Request (approval)",
-  auto_confirm: "Instant (auto-confirm)",
-  disabled: "Disabled",
+  auto_confirm: "Yes — a move is confirmed right away",
+  admin_approval: "Ask us first — we approve each move",
+  disabled: "No — customers call the office",
 };
 
 interface WorkflowSettings {
@@ -154,15 +157,15 @@ export function OliverWorkflowSettingsPage() {
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Field
-              label="Mode"
+              label="Can customers move or cancel a visit themselves?"
               hint={wf.effective_reschedule_mode && wf.effective_reschedule_mode !== wf.reschedule_mode
                 ? `Running as: ${RESCHEDULE_MODE_LABELS[wf.effective_reschedule_mode]} — instant auto-confirm is included with OLIVER Pro and above; on your plan customer reschedules go to your approval queue.`
-                : undefined}
+                : "Drives the change-or-cancel link in emails, the buttons on the booking link, and the customer portal. \"No\" shows your phone number instead."}
             >
               <select value={wf.reschedule_mode} onChange={(e) => setWfField("reschedule_mode", e.target.value as WorkflowSettings["reschedule_mode"])} className="input">
-                <option value="admin_approval">Admin approves each request</option>
-                <option value="auto_confirm">Auto-confirm if the new time is allowed</option>
-                <option value="disabled">Disabled — customer must call</option>
+                <option value="auto_confirm">{RESCHEDULE_MODE_LABELS.auto_confirm}</option>
+                <option value="admin_approval">{RESCHEDULE_MODE_LABELS.admin_approval}</option>
+                <option value="disabled">{RESCHEDULE_MODE_LABELS.disabled}</option>
               </select>
             </Field>
             <Field label="Advance notice (hours)" hint="New time must be at least this many hours from now.">

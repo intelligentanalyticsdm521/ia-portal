@@ -185,10 +185,6 @@ export const FORGE_ENTITIES: Record<EntityKey, EntityConfig> = {
       f('assistance_id', 'Assistance', 'entity', { entity: 'assistance', displayKey: 'assistance_reference', inList: false }),
       f('start_date', 'Start', 'date', { inList: false }),
       f('end_date', 'End', 'date', { inList: false }),
-      // Not shown in the grid or the form, but declared so it can be FILTERED:
-      // the overview's "Needs review" tile links to ?needs_review=1 and the
-      // list only accepts query keys the entity declares.
-      f('needs_review', 'Needs review', 'number', { inList: false, inForm: false }),
     ],
   },
 
@@ -471,16 +467,24 @@ export const humanizeValue = (v: string) => {
   return v.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
 };
 
+/* Built once, not per cell. Constructing an Intl formatter is expensive enough
+   to be the whole cost of a large render: an export of a few thousand rows
+   builds one per money cell and one per date cell, and the tab stops painting
+   while it does. The formatters are stateless, so one each is all there ever
+   needs to be. */
+const MONEY_ROUNDED = new Intl.NumberFormat('en-US', {
+  style: 'currency', currency: 'USD', maximumFractionDigits: 0,
+});
+const MONEY_EXACT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const SHORT_DATE = new Intl.DateTimeFormat('en-US', {
+  year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+});
+
 export const money = (v: unknown) =>
-  v === null || v === undefined || v === ''
-    ? '—'
-    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
-        .format(Number(v));
+  v === null || v === undefined || v === '' ? '—' : MONEY_ROUNDED.format(Number(v));
 
 export const moneyExact = (v: unknown) =>
-  v === null || v === undefined || v === ''
-    ? '—'
-    : new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(v));
+  v === null || v === undefined || v === '' ? '—' : MONEY_EXACT.format(Number(v));
 
 /**
  * Calendar dates (start/end of an assistance period, a service, an application
@@ -496,9 +500,7 @@ export const shortDate = (v: unknown) => {
   // Plain YYYY-MM-DD needs no parsing at all.
   const plain = /^(\d{4})-(\d{2})-(\d{2})$/.exec(raw);
   const d = plain ? new Date(Date.UTC(+plain[1], +plain[2] - 1, +plain[3])) : new Date(raw);
-  return Number.isNaN(d.getTime())
-    ? '—'
-    : d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return Number.isNaN(d.getTime()) ? '—' : SHORT_DATE.format(d);
 };
 
 export const cellValue = (row: Record<string, unknown>, field: FieldDef) => {

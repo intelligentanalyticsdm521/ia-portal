@@ -98,7 +98,6 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_ia_insights_health', displayName: 'IA Insights — Health', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_ia_insights_health', description: 'SPARK Health composite — Overall Business Score, SPARK Score, Trend Score, Intelligence Score, plus the trend/intelligence breakdown bars.' },
   { key: 'spark_ia_insights_trends', displayName: 'IA Insights — Trends', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_ia_insights_trends', description: 'SPARK Trend reports — Contact Health, Lead Pipeline, Campaign Performance, Marketing Attribution, Customer Segmentation, Automation Effectiveness, Retention Risk, Revenue Attribution.' },
   { key: 'spark_ia_insights_intelligence', displayName: 'IA Insights — Intelligence', section: 'LUMEN', defaultStatus: 'coming_soon', route: '/app/services/spark_ia_insights_intelligence', description: 'Modelled SPARK Intelligence reports — Churn Prediction, LTV Cohorts, Campaign ROI, Optimal Send Time, Segment Forecast.' },
-  { key: 'spark_what_worked', displayName: 'What Worked', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_what_worked', description: 'The monthly report: which source produced paid jobs, what each lead cost, which campaign got a response — every sentence with the figures behind it, plus 2-4 step next moves that only ever deep-link.' },
   { key: 'spark_service_category', displayName: 'Service Category', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_service_category', description: 'Industry classification (home services, legal, health, b2b) that drives benchmark selection in SPARK + OLIVER IA Insights.' },
   { key: 'oliver_ia_insights_health', displayName: 'IA Insights — Health', section: 'OLIVER', defaultStatus: 'enabled', route: '/app/services/oliver_ia_insights_health', description: 'OLIVER Health composite — Overall Business Score, OLIVER Score, Trend Score, Intelligence Score, plus the trend/intelligence breakdown bars.' },
   { key: 'oliver_ia_insights_trends', displayName: 'IA Insights — Trends', section: 'OLIVER', defaultStatus: 'enabled', route: '/app/services/oliver_ia_insights_trends', description: 'OLIVER Trend reports — Operations Health, Revenue Performance, Cash Flow, Quote Win Rate, Customer Retention, Crew Capacity, Service Line, Seasonal Planning.' },
@@ -159,8 +158,14 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // reports collapsed into ONE Reports page (P&L live, rest land P2), and
   // Bank Connections + Period Close moved to the SETTINGS hub — they are
   // settings, not daily-work nav (see stella_settings_* below).
-  // Overview is FIRST — it is the Ledger landing page (first-item-wins makes
-  // it STELLA's default landing; see AppShell defaultRouteFor).
+  // DASHBOARD (2 Oct 2026) — the PRODUCT dashboard, named and placed the way
+  // OLIVER / SPARK / ARION name and place theirs: "Dashboard", first item of
+  // the product nav, so first-item-wins (AppShell defaultRouteFor) makes it
+  // what STELLA's rail icon opens. Brandon: "STELLA is supposed to have it's
+  // own dashboard/overview … that's where the platform cross features stuff
+  // lives, like finish set up". Ledger → Overview below is the LEDGER feature's
+  // overview and stays the Ledger group's landing.
+  { key: 'stella_dashboard', displayName: 'Dashboard', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_dashboard', description: 'Everything across STELLA in one place — what is left to set up, what needs you (inbox, bills, money owed to you, month-end close), and a way into every part.' },
   { key: 'stella_ledger_overview', displayName: 'Overview', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_overview', description: 'Your bookkeeping at a glance — month money in/out/net, cash-flow trend, bank balances, what needs review, and what you\'re owed.' },
   { key: 'stella_ledger_inbox', displayName: 'Inbox', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_inbox', description: 'Needs-review queue — uncategorized, flagged and duplicate transactions with one-tap accept/reject.' },
   { key: 'stella_ledger_transactions', displayName: 'Transactions', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_transactions', description: 'The canonical ledger — every money-in and money-out line with income, expense, and recurring views, manual record entry, and personal-card reimbursement tracking (what the business owes you).' },
@@ -211,8 +216,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // Back-compat aliases for the retired 0.1.0 MLP deep links. Not shown in any
   // nav (coming_soon keeps them out of GlobalSearch); ServiceRouter redirects
   // them to the live Ledger equivalents so old bookmarks / email CTAs don't 404.
-  { key: 'stella_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'Legacy alias — redirects to STELLA Overview.' },
-  { key: 'stella_expenses_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Legacy alias — redirects to STELLA Overview.' },
+  { key: 'stella_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'Legacy alias — redirects to the STELLA Dashboard.' },
+  { key: 'stella_expenses_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Legacy alias — redirects to the STELLA Dashboard.' },
   // OLIVER — Full FSM suite (16 pages)
   { key: 'oliver_dashboard', displayName: 'Dashboard', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dashboard', description: 'KPI overview: active jobs, revenue, open invoices, and recent activity.' },
   { key: 'oliver_job_board', displayName: 'Job Board', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_board', description: 'List and Kanban views of all jobs with status filtering.' },
@@ -240,8 +245,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_billing_overview', displayName: 'Billing Overview', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_billing_overview', description: 'Stripe-style billing dashboard: gross volume, outstanding, MRR, and recent payments.' },
   { key: 'oliver_usage', displayName: 'Plan & Pricing', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_usage', description: 'OLIVER tier comparison + live plan total. See your current seats/jobs usage and switch tiers.' },
   { key: 'oliver_fees', displayName: 'Fees', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_fees', description: 'Full processing-fee breakdown by tier — Stripe portion, platform portion, and per-transaction caps.' },
-  { key: 'oliver_client_experience', displayName: 'Client Experience', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_client_experience', description: 'Client Experience add-on — Essentials / Growth / Authority. White-label design editor, automations, retention tools.' },
-  { key: 'oliver_portal_designer', displayName: 'Portal Designer', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_designer', description: 'White Label Design Editor — control portal buttons, labels, fonts, header/footer, and custom CSS (Client Experience add-on).' },
+  { key: 'oliver_client_experience', displayName: 'Client Experience', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_client_experience', description: 'Client Experience add-on — Essentials / Growth / Authority. Automations and retention tools.' },
   // LOCKED 2026-05-26 r2 — Workflow & Automations is the new nav home for
   // the Automations engine (Pro+ rule library + tenant message customization).
   // Replaces the deprecated Client Experience add-on stub; routes to the
@@ -250,7 +254,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_addons', displayName: 'Add-ons', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_addons', description: 'Stack-on subscriptions: SMS Essentials/Growth/Authority for operational notifications. Future: per-tenant native mobile apps.' },
   { key: 'oliver_portal_domains', displayName: 'Portals & Domains', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portal_domains', description: 'Customer + crew portal URLs. Default subdomains (xxx.customer.ia-dm.com) free; bring your own domain on Pro+.' },
   // F-114 — Unified Customer & Crew portals hub (replaces 3 scattered surfaces).
-  { key: 'oliver_portals_hub', displayName: 'Customer & Crew Portals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portals_hub', description: 'Single hub to manage both portals — design, signup form, domain binding, and workflow rules.' },
+  { key: 'oliver_portals_hub', displayName: 'Customer & Crew Portals', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_portals_hub', description: 'Single hub to manage both portals — the customer portal look, signup form, domain binding, and workflow rules.' },
   // F-70 + F-72 + F-63 — Workflow Settings (reschedule policy, post-booking
   // actions, customer signup form config).
   { key: 'oliver_workflow_settings', displayName: 'Workflow Settings', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_workflow_settings', description: 'Reschedule policy + after-booking actions (auto-invoice, confirmation email, auto-assign) + the customer signup form library.' },
@@ -316,7 +320,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_search_profiles', displayName: 'Search Profiles', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_search_profiles', description: 'Saved lead search configurations.' },
   // SPARK Lead Gen V1 (F-150/F-163) — Option 3 live-preview lead search flow
   { key: 'spark_leadgen_new', displayName: 'New B2B Lead Search', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/b2b_new', description: 'Build a B2B lead search with a live preview panel — see expanded keywords, resolved cities, estimated cost, and runtime before you pay.' },
-  { key: 'spark_leadgen_saved', displayName: 'Saved Lead Searches', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/spark/leadgen/saved', description: 'Saved Lead Gen profiles. Re-run any with one click.' },
+  // Saved lead searches (2026-10-01) are the Lead Inbox's Saved Searches tab — no page of their own.
   { key: 'spark_intelligence', displayName: 'Contact Scoring', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_intelligence', description: 'X/Y/Z contact intelligence with OLIVER cross-platform signals.' },
   // Tenant-level tuning surface for the 6-dimension contact score weights.
   // Six sliders that must sum to 100; live re-rank preview of the top 20
@@ -422,8 +426,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // header sub-routes, etc.). They render the generic "Coming soon" placeholder
   // in ServiceRouter — no dedicated page component needed.
   // (STELLA's old stella_coming Overview MLP is retired — see the STELLA block
-  // above; legacy /app/services/stella_coming links redirect to the Ledger
-  // Overview landing.)
+  // above; legacy /app/services/stella_coming links redirect to the STELLA
+  // Dashboard.)
   { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
   { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },

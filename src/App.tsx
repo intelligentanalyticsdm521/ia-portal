@@ -74,7 +74,6 @@ import { SparkContactScoringPage } from './pages/spark/SparkContactScoringPage';
 // takes an :id path param that doesn't fit the service-key router.
 import { SparkLeadGenNewPage } from './pages/spark/SparkLeadGenNewPage';
 import { SparkLeadGenJobPage } from './pages/spark/SparkLeadGenJobPage';
-import { SparkLeadGenSavedPage } from './pages/spark/SparkLeadGenSavedPage';
 import SparkLeadGenTermsPage from './pages/spark/SparkLeadGenTermsPage';
 import SparkCustomerFlowPage from './pages/spark/SparkCustomerFlowPage';
 import SparkLifecyclePage from './pages/spark/SparkLifecyclePage';
@@ -450,7 +449,8 @@ export function App() {
               <Route path="b2b_new" element={LEADGEN_ENABLED ? <SparkLeadGenNewPage /> : <FeatureUnavailable name="Lead Gen" />} />
               <Route path="terms" element={<SparkLeadGenTermsPage />} />
               <Route path="jobs/:id" element={LEADGEN_ENABLED ? <SparkLeadGenJobPage /> : <FeatureUnavailable name="Lead Gen" />} />
-              <Route path="saved" element={LEADGEN_ENABLED ? <SparkLeadGenSavedPage /> : <FeatureUnavailable name="Lead Gen" />} />
+              {/* 2026-10-01: saved searches are the Lead Inbox's Saved Searches tab; the old page is gone and its address lands there. */}
+              <Route path="saved" element={<Navigate to="/app/services/spark_lead_inbox?tab=saved" replace />} />
             </Route>
             <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
             <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />

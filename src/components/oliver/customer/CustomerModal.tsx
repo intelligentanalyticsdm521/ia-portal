@@ -33,6 +33,7 @@ import {
   JobCreatePanel, QuoteCreatePanel, InvoiceCreatePanel, SubscriptionCreatePanel,
 } from "./CreatePanels";
 import { PaymentMethodsCard } from "./PaymentMethodsCard";
+import { CardOnFileBadge } from "./CardOnFileBadge";
 import { formatPhone } from "../../../lib/formatPhone";
 import { PhoneInput } from "../../PhoneInput";
 // The customer model: the five cards, the location page and the LUMEN client
@@ -409,14 +410,21 @@ export function CustomerModal({
       subtitle={subtitle}
       size="fixed"
       width="xl"
-      headerActions={detail && customerId ? (
-        <div style={{ display: "flex", gap: 8 }}>
+      headerActions={detail ? (
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* On-site flow Phase B (1 Oct 2026): "Card on file •••• 1234" when
+              the customer saved a card — on the crew's tablet, from the
+              one-time link or here. The OLIVER contact the card hangs off:
+              the one we opened with, else the record's first. */}
+          <CardOnFileBadge contactId={customerId || detail.contact_id || null} api={api} />
           {/* Primary CTA — most common path is "skip the quote, create a job"
               per founder spec 2026-05-25. Quote/Invoice/Subscription creation
               are exposed inside their sections. */}
-          <Button variant="primary" onClick={() => { setTab("jobs"); setFocusedJobId(null); setCreating("job"); }}>
-            + New job
-          </Button>
+          {customerId && (
+            <Button variant="primary" onClick={() => { setTab("jobs"); setFocusedJobId(null); setCreating("job"); }}>
+              + New job
+            </Button>
+          )}
         </div>
       ) : undefined}
     >

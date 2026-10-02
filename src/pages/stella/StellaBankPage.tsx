@@ -8,20 +8,36 @@
 //   POST /ledger/plaid/sync       → pull transactions        (503 until keys)
 //
 // Three honest states, gated on /status.configured — never a fake row:
-//   (a) configured:false → explainer stays; the connect button is a DISABLED
-//       "Plaid keys pending" with a subtitle pointing at the readiness pack.
+//   (a) configured:false → explainer stays; the connect button is DISABLED,
+//       with one plain line pointing at Import a bank statement (2 Oct 2026
+//       review: the button and its note talked about the provider's keys and
+//       a setup guide — words for us, not for an owner).
 //   (b) configured:true, no items → live "Connect a bank or card" button that
 //       requests a link token and opens Plaid Link (react-plaid-link);
 //       onSuccess → POST /exchange → reload.
 //   (c) items exist → list with institution, connected date, last synced, a
 //       per-item "Sync now", and the "Personal card — business use"
 //       designation chip (UI-only for now — see PERSONAL-USE TODO below).
+//
+// THE BANK SENDS YOU BACK (1 Oct 2026). Banks that sign you in on their own
+// site (Chase, Capital One, Amex, Bank of America …) leave this page and come
+// back to it with ?oauth_state_id=… on the address. Link can only finish if it
+// is opened again with the SAME link token plus that address, so the token is
+// kept in sessionStorage when Link first opens (lib/plaidReturn.ts). On a
+// return: a fresh token → Link reopens at once with receivedRedirectUri and
+// finishes exactly like an ordinary connect; no usable token → one plain line
+// to start again. Either way the token is forgotten and oauth_state_id is
+// taken off the address afterwards.
 import { useCallback, useEffect, useState } from "react";
 import { AlertTriangle, CreditCard, Landmark, RefreshCw, Wallet } from "lucide-react";
 import { usePlaidLink, type PlaidLinkOnSuccessMetadata } from "react-plaid-link";
 import { Button } from "../../components/oliver/ui";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
+import {
+  clearToken, readReturn, rememberToken, stripReturnParam, type PlaidReturn, type TokenStorage,
+} from "../../lib/plaidReturn";
+import { PLAID_SENTENCES, plaidErrorSentence, plaidItemProblem } from "../../lib/plaidConnectError";
 
 // { data } envelope is unwrapped by stellaApi.
 interface PlaidStatus {
@@ -54,13 +70,33 @@ function fmtDate(d?: string | null): string | null {
   return Number.isNaN(t.getTime()) ? null : t.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-// Turn a stellaApi throw into copy a business owner can read.
-function friendlyPlaidError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg.includes("plaid_not_configured")) {
-    return "Plaid isn't configured on this environment yet — the connect flow unlocks once sandbox keys land.";
+// A failed connect / finish / sync is ONE plain sentence from
+// lib/plaidConnectError — never the provider's code, never the raw message
+// (2 Oct 2026: the page printed the bare text INVALID_LINK_CUSTOMIZATION).
+
+// The disabled button's tooltip when bank connections are not switched on.
+const NOT_SWITCHED_ON_TITLE = "Bank connections aren't switched on here yet";
+
+// sessionStorage can throw (blocked site data, some private windows); a page
+// that cannot keep the token simply reads every return as expired.
+function linkTokenStore(): TokenStorage | null {
+  try {
+    return typeof window !== "undefined" ? window.sessionStorage : null;
+  } catch {
+    return null;
   }
-  return msg;
+}
+
+// Take oauth_state_id off the address without a navigation (and without
+// dropping React Router's history entry state), so a refresh does not try to
+// finish the connection a second time.
+function stripReturnFromAddress() {
+  try {
+    const next = stripReturnParam(window.location.href);
+    if (next !== window.location.href) window.history.replaceState(window.history.state, "", next);
+  } catch {
+    /* address stays as it is — harmless */
+  }
 }
 
 /**
@@ -122,28 +158,35 @@ function SwitchToggle({
  */
 function PlaidLinkLauncher({
   token,
+  receivedRedirectUri,
   onSuccess,
   onExit,
 }: {
   token: string;
+  /** Only when the bank has just sent the person back: the address it sent them to. */
+  receivedRedirectUri?: string;
   onSuccess: (publicToken: string | null, metadata: PlaidLinkOnSuccessMetadata) => void;
   onExit: (message?: string) => void;
 }) {
-  const { open, ready, error } = usePlaidLink({ token, onSuccess, onExit: () => onExit() });
+  const { open, ready, error } = usePlaidLink({ token, receivedRedirectUri, onSuccess, onExit: () => onExit() });
 
   useEffect(() => {
     if (ready) open();
   }, [ready, open]);
 
   useEffect(() => {
-    if (error) onExit(`Plaid Link failed to load: ${error.message}`);
+    // The script's own error text is for the console, not the owner.
+    if (error) {
+      console.error("[stella.bank] Plaid Link failed to load", error);
+      onExit(PLAID_SENTENCES.connect);
+    }
   }, [error, onExit]);
 
   return null;
 }
 
 export function StellaBankPage() {
-  const { get, post, patch, ready } = useStellaApi();
+  const { get, post, patch, del, ready } = useStellaApi();
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -159,6 +202,33 @@ export function StellaBankPage() {
   // designated item default to needs-reimbursement. (The overnight verify
   // caught the earlier UI-only local state that never saved.)
   const [designating, setDesignating] = useState<string | null>(null);
+  // Disconnect is asked twice, in the row itself: the first press shows what
+  // will happen, the second does it (DELETE /ledger/plaid/items/:id — the
+  // bank network drops the connection and the access key is deleted for good).
+  const [askDisconnect, setAskDisconnect] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  // Read ONCE, on the first render, before anything strips the address.
+  const [bankReturn] = useState<PlaidReturn>(() =>
+    typeof window === "undefined" ? { kind: "none" } : readReturn(window.location.href, linkTokenStore(), Date.now())
+  );
+  // The address the bank sent the person back to — handed to Link while the
+  // returned connection finishes, then dropped.
+  const [receivedRedirectUri, setReceivedRedirectUri] = useState<string | null>(null);
+  const [returnExpired, setReturnExpired] = useState(false);
+
+  // Act on the return once: reopen Link with the kept token, or say it expired.
+  useEffect(() => {
+    if (bankReturn.kind === "resume") {
+      setReceivedRedirectUri(bankReturn.receivedRedirectUri);
+      setLinkToken(bankReturn.token);
+      setConnecting(true);
+    } else if (bankReturn.kind === "expired") {
+      clearToken(linkTokenStore());
+      stripReturnFromAddress();
+      setReturnExpired(true);
+    }
+  }, [bankReturn]);
 
   const reload = useCallback(async () => {
     setError(null);
@@ -170,7 +240,10 @@ export function StellaBankPage() {
       setStatus({ configured: !!s?.configured, itemCount: Number(s?.itemCount || 0) });
       setItems(Array.isArray(it) ? it : []);
     } catch (e) {
-      setError(e);
+      // The server's 500 text is a database message, not a sentence for the
+      // owner — the page says one plain line (2 Oct 2026 review).
+      console.error("[stella.bank] load failed", e);
+      setError(new Error(PLAID_SENTENCES.loadFailed));
     } finally {
       setLoading(false);
     }
@@ -190,7 +263,9 @@ export function StellaBankPage() {
         await patch(`/ledger/plaid/items/${it.raw_plaid_item_id}`, { is_personal_card: !it.is_personal_card });
         await reload();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : "Could not update the designation. Please try again.");
+        // The server's 500 text is a database message, not a sentence for the owner.
+        console.error("[stella.bank] personal-card switch failed", e);
+        setActionError("That switch couldn't be saved — please try again.");
       } finally {
         setDesignating(null);
       }
@@ -201,23 +276,31 @@ export function StellaBankPage() {
   // (b) live connect: link token → Plaid Link → exchange → reload.
   const startConnect = useCallback(async () => {
     setActionError(null);
+    setReturnExpired(false);
+    setReceivedRedirectUri(null);
     setConnecting(true);
     try {
       const r = await post<{ link_token: string; expiration?: string }>("/ledger/plaid/link-token");
-      if (!r?.link_token) throw new Error("Plaid didn't return a link token.");
+      if (!r?.link_token) throw new Error("no link token in the answer");
+      // Kept for the bank that sends the person back (lib/plaidReturn.ts).
+      rememberToken(linkTokenStore(), r.link_token, Date.now());
       setLinkToken(r.link_token);
     } catch (e) {
+      console.error("[stella.bank] link token failed", e);
       setConnecting(false);
-      setActionError(friendlyPlaidError(e));
+      setActionError(plaidErrorSentence(e, "connect"));
     }
   }, [post]);
 
   const onLinkSuccess = useCallback(
     async (publicToken: string | null, metadata: PlaidLinkOnSuccessMetadata) => {
       setLinkToken(null);
+      setReceivedRedirectUri(null);
+      clearToken(linkTokenStore());
+      stripReturnFromAddress();
       if (!publicToken) {
         setConnecting(false);
-        setActionError("Plaid Link closed without a public token — nothing was connected.");
+        setActionError(PLAID_SENTENCES.closedEarly);
         return;
       }
       try {
@@ -228,7 +311,8 @@ export function StellaBankPage() {
         });
         await reload();
       } catch (e) {
-        setActionError(friendlyPlaidError(e));
+        console.error("[stella.bank] exchange failed", e);
+        setActionError(plaidErrorSentence(e, "finish"));
       } finally {
         setConnecting(false);
       }
@@ -238,6 +322,9 @@ export function StellaBankPage() {
 
   const onLinkExit = useCallback((message?: string) => {
     setLinkToken(null);
+    setReceivedRedirectUri(null);
+    clearToken(linkTokenStore());
+    stripReturnFromAddress();
     setConnecting(false);
     if (message) setActionError(message);
   }, []);
@@ -250,12 +337,33 @@ export function StellaBankPage() {
         await post("/ledger/plaid/sync", { item_id: itemId });
         await reload();
       } catch (e) {
-        setActionError(friendlyPlaidError(e));
+        console.error("[stella.bank] sync failed", e);
+        setActionError(plaidErrorSentence(e, "sync"));
       } finally {
         setSyncingItemId(null);
       }
     },
     [post, reload]
+  );
+
+  const disconnect = useCallback(
+    async (it: PlaidItem) => {
+      setActionError(null);
+      setNotice(null);
+      setDisconnecting(it.raw_plaid_item_id);
+      try {
+        await del(`/ledger/plaid/items/${it.raw_plaid_item_id}`);
+        setAskDisconnect(null);
+        setNotice(`${it.institution_name || "That account"} is disconnected. Nothing new will come in from it; your books keep everything already there.`);
+        await reload();
+      } catch (e) {
+        console.error("[stella.bank] disconnect failed", e);
+        setActionError(plaidErrorSentence(e, "disconnect"));
+      } finally {
+        setDisconnecting(null);
+      }
+    },
+    [del, reload]
   );
 
   const configured = !!status?.configured;
@@ -270,11 +378,11 @@ export function StellaBankPage() {
         status && !configured ? (
           // (a) keys not on this environment yet — honest disabled state.
           <div data-tour="stella-bank-connect" style={{ textAlign: "right" }}>
-            <Button variant="primary" disabled title="Plaid keys are not configured on this environment yet">
-              Plaid keys pending
+            <Button variant="primary" disabled title={NOT_SWITCHED_ON_TITLE}>
+              Connect a bank or card
             </Button>
-            <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4, maxWidth: 250, lineHeight: 1.45 }}>
-              Sandbox keys unlock this — setup guide in the Plaid readiness pack
+            <div style={{ fontSize: 10, color: "#94A3B8", marginTop: 4, maxWidth: 260, lineHeight: 1.45 }}>
+              {PLAID_SENTENCES.notSwitchedOn}
             </div>
           </div>
         ) : (
@@ -286,15 +394,37 @@ export function StellaBankPage() {
             disabled={!status || connecting}
             loading={connecting}
           >
-            {connecting ? "Opening Plaid Link…" : "Connect a bank or card"}
+            {connecting ? "Opening the bank window…" : "Connect a bank or card"}
           </Button>
         )
       }
     >
+      {returnExpired && (
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#FFFAEB", color: "#92400E", border: "1px solid #FEDF89", borderRadius: 8, lineHeight: 1.5 }}>
+          <span>The bank sent you back, but the connection had expired. Start again.</span>
+          <Button
+            variant="primary"
+            size="sm"
+            style={configured ? { background: STELLA_INDIGO } : undefined}
+            onClick={startConnect}
+            disabled={!status || !configured || connecting}
+            title={status && !configured ? NOT_SWITCHED_ON_TITLE : undefined}
+          >
+            Connect a bank or card
+          </Button>
+        </div>
+      )}
+
       {actionError && (
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 8, lineHeight: 1.5 }}>
           <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" style={{ padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#ECFDF3", color: "#05603A", border: "1px solid #ABEFC6", borderRadius: 8, lineHeight: 1.5 }}>
+          {notice}
         </div>
       )}
 
@@ -337,8 +467,8 @@ export function StellaBankPage() {
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
                           {it.institution_name || "Bank connection"}
                         </span>
-                        {it.error_code && (
-                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{it.error_code}</span>
+                        {plaidItemProblem(it.error_code, it.status) && (
+                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{plaidItemProblem(it.error_code, it.status)}</span>
                         )}
                       </div>
                       <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>
@@ -359,7 +489,39 @@ export function StellaBankPage() {
                     <Button variant="secondary" size="sm" onClick={() => syncNow(it.item_id)} disabled={syncing} loading={syncing}>
                       {!syncing && <RefreshCw size={11} />} {syncing ? "Syncing…" : "Sync now"}
                     </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => { setNotice(null); setAskDisconnect(it.raw_plaid_item_id); }}
+                      disabled={disconnecting === it.raw_plaid_item_id || askDisconnect === it.raw_plaid_item_id}
+                      title="Stop pulling transactions from this account and remove its access key"
+                    >
+                      Disconnect
+                    </Button>
                   </div>
+                  {askDisconnect === it.raw_plaid_item_id && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 8, marginLeft: 52, padding: "10px 12px", fontSize: 12, color: "#7A2E0E", background: "#FFFAEB", border: "1px solid #FEDF89", borderRadius: 8, lineHeight: 1.5, maxWidth: 640 }}>
+                      <span>
+                        Disconnect {it.institution_name || "this account"}? New transactions stop coming in and we delete
+                        our access to it. Everything already in your books stays.
+                      </span>
+                      <span style={{ display: "inline-flex", gap: 8 }}>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          style={{ background: "#B42318" }}
+                          onClick={() => disconnect(it)}
+                          disabled={disconnecting === it.raw_plaid_item_id}
+                          loading={disconnecting === it.raw_plaid_item_id}
+                        >
+                          {disconnecting === it.raw_plaid_item_id ? "Disconnecting…" : "Yes, disconnect"}
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => setAskDisconnect(null)} disabled={disconnecting === it.raw_plaid_item_id}>
+                          Keep it connected
+                        </Button>
+                      </span>
+                    </div>
+                  )}
                   {designated && (
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, marginLeft: 52, padding: "8px 12px", fontSize: 11, color: "#3730A3", background: "#EEF0FB", border: `1px solid ${STELLA_INDIGO}33`, borderRadius: 8, lineHeight: 1.5, maxWidth: 640 }}>
                       <Wallet size={13} style={{ flexShrink: 0, marginTop: 1 }} />
@@ -419,7 +581,14 @@ export function StellaBankPage() {
       </div>
 
       {/* Plaid Link mounts only while a fetched link token is in hand */}
-      {linkToken && <PlaidLinkLauncher token={linkToken} onSuccess={onLinkSuccess} onExit={onLinkExit} />}
+      {linkToken && ready && (
+        <PlaidLinkLauncher
+          token={linkToken}
+          receivedRedirectUri={receivedRedirectUri || undefined}
+          onSuccess={onLinkSuccess}
+          onExit={onLinkExit}
+        />
+      )}
     </StellaShell>
   );
 }

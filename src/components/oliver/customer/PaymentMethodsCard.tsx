@@ -11,7 +11,8 @@
  *   POST   /payments/contacts/:id/setup-intent      returns client_secret
  *   DELETE /payments/contacts/:id/methods/:pmId     detach a card
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchMethodsOnce, methodsChanged } from "../../../lib/cardMethods";
 import {
   loadStripe, type Stripe as StripeClient, type StripeElements as StripeElementsT,
 } from "@stripe/stripe-js";
@@ -61,22 +62,32 @@ export function PaymentMethodsCard({
   const [err, setErr] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
 
+  // The customer window passes a fresh api object on every render; keying the
+  // read on it re-read the cards on every render (pane walk 1 Oct, M12: four
+  // reads for one open). Keyed on the customer, through the shared read the
+  // header badge uses.
+  const apiRef = useRef(api);
+  apiRef.current = api;
+
   const reload = useCallback(async () => {
     setLoading(true); setErr(null);
     try {
-      const data = await api.get<{ data: PaymentMethod[] } | PaymentMethod[]>(`/payments/contacts/${customerId}/methods`);
+      const data = (await fetchMethodsOnce(apiRef.current.get, customerId)) as { data: PaymentMethod[] } | PaymentMethod[];
       setMethods(Array.isArray(data) ? data : ((data as any).data ?? []));
     } catch (e) { setErr((e as Error).message); }
     finally { setLoading(false); }
-  }, [api, customerId]);
+  }, [customerId]);
 
   useEffect(() => { reload(); }, [reload]);
+
+  /** A card was added or removed: everyone reads the list again. */
+  const changed = useCallback(() => { methodsChanged(customerId); void reload(); }, [customerId, reload]);
 
   async function detach(pmId: string) {
     if (!confirm(`Remove card ending ${methods.find((m) => m.id === pmId)?.last4 || ""}?`)) return;
     try {
       await api.del(`/payments/contacts/${customerId}/methods/${pmId}`);
-      await reload();
+      changed();
     } catch (e) { setErr((e as Error).message); }
   }
 
@@ -141,7 +152,7 @@ export function PaymentMethodsCard({
           customerId={customerId}
           api={api}
           onCancel={() => setAddOpen(false)}
-          onAdded={() => { setAddOpen(false); reload(); }}
+          onAdded={() => { setAddOpen(false); changed(); }}
         />
       )}
     </div>

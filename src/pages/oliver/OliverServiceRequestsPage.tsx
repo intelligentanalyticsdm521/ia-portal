@@ -20,6 +20,8 @@ interface ServiceRequest {
   customerNotes?: string;
   /** The catalog service, job scope or custom entry the customer picked (GET /booking/pending). */
   service_name?: string | null;
+  /** The booking page (form) a booking request came in on (GET /booking/pending, /booking/decided). */
+  booking_page_title?: string | null;
   /** Where the visit is, as the guest typed it on the booking form; null on a page that does not ask. */
   service_address?: { address_line_1?: string; address_line_2?: string; city?: string; state?: string; postal_code?: string; access_notes?: string } | string | null;
   service_address_line?: string | null;
@@ -111,6 +113,8 @@ export function OliverServiceRequestsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkBusy, setBulkBusy] = useState<"quote" | "cancel" | null>(null);
   const [bulkResult, setBulkResult] = useState<{ kind: "quote" | "cancel"; ok: number; failed: number } | null>(null);
+  // The bulk yes/no lives in the bar (2026-09-25); it was a browser confirm().
+  const [bulkAsk, setBulkAsk] = useState<"quoted" | "cancelled" | null>(null);
   // Open is the default and behaves exactly as before; the other three read
   // the decided list, fetched alongside so the chips can carry their counts.
   const [view, setView] = useState<RequestView>("open");
@@ -163,8 +167,7 @@ export function OliverServiceRequestsPage() {
   async function bulkAdvance(toStatus: "quoted" | "cancelled") {
     const ids = Array.from(selected);
     if (!ids.length) return;
-    const label = toStatus === "quoted" ? "mark as quoted" : "cancel";
-    if (!confirm(`${label.charAt(0).toUpperCase() + label.slice(1)} ${ids.length} request${ids.length === 1 ? "" : "s"}?`)) return;
+    setBulkAsk(null);
     setBulkBusy(toStatus === "quoted" ? "quote" : "cancel");
     setBulkResult(null);
     let ok = 0;
@@ -183,9 +186,13 @@ export function OliverServiceRequestsPage() {
   /** The service a row asked for: the booked service, else the title before " · ". */
   const serviceOf = (r: ServiceRequest) =>
     String(r.service_name || String(r.title || "").split(" · ")[0] || "").trim();
+  /** Where a request came from, one entry per booking page. 2026-09-25 (Brandon,
+   *  Test 4.17): "None of the service requests say which form it is from." */
+  const sourceOf = (r: ServiceRequest) =>
+    r.source === "booking" ? `Booking · ${r.booking_page_title || "booking page"}` : sourceLabel(r.source).label;
   const passesDropdowns = (r: ServiceRequest) =>
     (!typeFilter || serviceOf(r) === typeFilter) &&
-    (!sourceFilter || sourceLabel(r.source).label === sourceFilter);
+    (!sourceFilter || sourceOf(r) === sourceFilter);
 
   const filtered = useMemo(() => {
     const rows = requests.filter(passesDropdowns);
@@ -216,7 +223,7 @@ export function OliverServiceRequestsPage() {
   // The dropdowns offer only what the current view holds.
   const viewRows: ServiceRequest[] = view === "open" ? requests : decided.filter((d) => d.outcome === view);
   const typeOptions = Array.from(new Set(viewRows.map(serviceOf).filter(Boolean))).sort((a, b) => a.localeCompare(b));
-  const sourceOptions = Array.from(new Set(viewRows.map((r) => sourceLabel(r.source).label))).sort((a, b) => a.localeCompare(b));
+  const sourceOptions = Array.from(new Set(viewRows.map(sourceOf))).sort((a, b) => a.localeCompare(b));
 
   const decidedCount = (o: DecidedRequest["outcome"]) => decided.filter((d) => d.outcome === o).length;
   const viewPills = [
@@ -334,9 +341,17 @@ export function OliverServiceRequestsPage() {
       render: (r) => {
         const meta = sourceLabel(r.source);
         return (
-          <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color }}>
-            {meta.label}
-          </span>
+          <div>
+            <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: meta.bg, color: meta.color }}>
+              {meta.label}
+            </span>
+            {/* 2026-09-25 (Brandon, Test 4.17): which booking page (form) it came in on. */}
+            {r.source === "booking" && r.booking_page_title && (
+              <div style={{ fontSize: 10, color: "#5A7A8A", marginTop: 3, maxWidth: 160, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.booking_page_title}>
+                {r.booking_page_title}
+              </div>
+            )}
+          </div>
         );
       },
     },
@@ -576,15 +591,29 @@ export function OliverServiceRequestsPage() {
                 <div style={{ fontSize: 12, color: "#0C4A60" }}>
                   <strong>{selected.size}</strong> selected
                 </div>
-                <div style={{ display: "flex", gap: 6 }}>
-                  <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
-                  <Button variant="ghost" onClick={() => bulkAdvance("cancelled")} disabled={!!bulkBusy}>
-                    {bulkBusy === "cancel" ? "Cancelling…" : `Cancel ${selected.size}`}
-                  </Button>
-                  <Button variant="primary" onClick={() => bulkAdvance("quoted")} disabled={!!bulkBusy}>
-                    {bulkBusy === "quote" ? "Updating…" : `Mark ${selected.size} as quoted`}
-                  </Button>
-                </div>
+                {bulkAsk ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, color: "#0C4A60" }}>
+                      {bulkAsk === "cancelled"
+                        ? `Cancel ${selected.size} request${selected.size === 1 ? "" : "s"}? The customer${selected.size === 1 ? " is" : "s are"} not told.`
+                        : `Mark ${selected.size} request${selected.size === 1 ? "" : "s"} as quoted?`}
+                    </span>
+                    <Button variant={bulkAsk === "cancelled" ? "ghost" : "primary"} onClick={() => bulkAdvance(bulkAsk)} disabled={!!bulkBusy}>
+                      {bulkAsk === "cancelled" ? `Yes, cancel ${selected.size === 1 ? "it" : "them"}` : `Yes, mark ${selected.size === 1 ? "it" : "them"}`}
+                    </Button>
+                    <Button variant="secondary" onClick={() => setBulkAsk(null)} disabled={!!bulkBusy}>Back</Button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button variant="secondary" onClick={() => setSelected(new Set())}>Clear</Button>
+                    <Button variant="ghost" onClick={() => setBulkAsk("cancelled")} disabled={!!bulkBusy}>
+                      {bulkBusy === "cancel" ? "Cancelling…" : `Cancel ${selected.size}`}
+                    </Button>
+                    <Button variant="primary" onClick={() => setBulkAsk("quoted")} disabled={!!bulkBusy}>
+                      {bulkBusy === "quote" ? "Updating…" : `Mark ${selected.size} as quoted`}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -711,11 +740,15 @@ function BookingDetailDrawer({
 }) {
   const [busy, setBusy] = useState<"confirm" | "cancel" | "reschedule" | null>(null);
   const [rescheduleMode, setRescheduleMode] = useState(false);
+  // 2026-09-25: the yes/no used to be the browser's own confirm() box, which
+  // some browsers and every embedded pane swallow (the click then did nothing
+  // and said nothing). The question now sits in the drawer, like Reschedule.
+  const [ask, setAsk] = useState<"confirm" | "decline" | null>(null);
   const [newStart, setNewStart] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   async function doConfirm() {
-    if (!confirm("Confirm this booking? The guest will receive a confirmation email.")) return;
+    setAsk(null);
     setBusy("confirm"); setError(null);
     try {
       const result = await api.patch<ConfirmResult>(`/booking/slots/${row.id}/confirm`, {});
@@ -730,7 +763,7 @@ function BookingDetailDrawer({
   }
 
   async function doCancel() {
-    if (!confirm("Decline this booking? The guest will be notified.")) return;
+    setAsk(null);
     setBusy("cancel"); setError(null);
     try {
       await api.patch(`/booking/slots/${row.id}/cancel`, {});
@@ -796,9 +829,10 @@ function BookingDetailDrawer({
           address): the office used to confirm a visit without being shown what
           was booked or where. GET /booking/pending has carried both since
           OLIVER pack 1; the drawer never read them. */}
-      {(row.service_name || row.service_address_line || accessNotes) && (
+      {(row.booking_page_title || row.service_name || row.service_address_line || accessNotes) && (
         <div className="card">
           <div className="card-ttl">What and where</div>
+          {row.booking_page_title && <Row label="Booking page" value={row.booking_page_title} />}
           {row.service_name && <Row label="Service" value={row.service_name} />}
           {row.service_address_line && <Row label="Address" value={row.service_address_line} />}
           {accessNotes && <Row label="Getting in" value={accessNotes} />}
@@ -847,16 +881,33 @@ function BookingDetailDrawer({
             </Button>
           </div>
         </div>
+      ) : ask ? (
+        <div className="card" style={{ background: ask === "confirm" ? "#ECFDF5" : "#FEF2F2" }}>
+          <div className="card-ttl">{ask === "confirm" ? "Confirm this booking?" : "Decline this booking?"}</div>
+          <div style={{ fontSize: 13, color: "#334155", marginBottom: 10 }}>
+            {ask === "confirm"
+              ? "It becomes a job on the calendar and the guest gets a confirmation email."
+              : "The guest is told it was declined. The request moves to Declined."}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Button variant="primary" onClick={ask === "confirm" ? doConfirm : doCancel} disabled={!!busy}>
+              {ask === "confirm" ? (busy === "confirm" ? "Confirming…" : "Yes, confirm it") : (busy === "cancel" ? "Declining…" : "Yes, decline it")}
+            </Button>
+            <Button variant="secondary" onClick={() => setAsk(null)} disabled={!!busy}>
+              Back
+            </Button>
+          </div>
+        </div>
       ) : (
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-          <Button variant="primary" onClick={doConfirm} disabled={!!busy}>
-            {busy === "confirm" ? "Confirming…" : "Confirm booking"}
+          <Button variant="primary" onClick={() => { setError(null); setAsk("confirm"); }} disabled={!!busy}>
+            Confirm booking
           </Button>
           <Button variant="secondary" onClick={() => setRescheduleMode(true)} disabled={!!busy}>
             Reschedule
           </Button>
-          <Button variant="secondary" onClick={doCancel} disabled={!!busy}>
-            {busy === "cancel" ? "Cancelling…" : "Decline"}
+          <Button variant="secondary" onClick={() => { setError(null); setAsk("decline"); }} disabled={!!busy}>
+            Decline
           </Button>
         </div>
       )}

@@ -41,6 +41,10 @@
 // row carries is_payment_trigger.
 import { useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+// ONE date format for a document's sends: the project's Deliverables row
+// ("Visible to the client · sent …") and this strip print the same date the
+// same way (pane test 2 Oct, CPP-T5).
+import { documentDate as formatDate } from "../../lib/projectPeople";
 
 // ─── Status normaliser ───────────────────────────────────────────────────
 
@@ -150,6 +154,13 @@ export interface DeliverableActionPanelProps {
    */
   onPay?: () => Promise<void> | void;
   /**
+   * Founder-only: the host asks WHO before anything is sent (the project
+   * modal's Deliverables tab opens RecipientPickerDialog and POSTs
+   * send-to-client with the people ticked). Without it, "Send to Client" posts
+   * straight away as before.
+   */
+  onSendToClient?: () => void;
+  /**
    * Host context — drives whether the Pay CTA is candidate-renderable.
    * 'sr' / 'standalone' never show Pay even when is_payment_trigger=1 (those
    * trigger payment via a different surface). Default 'standalone'.
@@ -173,6 +184,7 @@ export function DeliverableActionPanel({
   onApprove,
   onRequestRevision,
   onPay,
+  onSendToClient,
   context = "standalone",
   readOnly = false,
 }: DeliverableActionPanelProps) {
@@ -255,6 +267,7 @@ export function DeliverableActionPanel({
   }
 
   async function handleSendToClient() {
+    if (onSendToClient) { onSendToClient(); return; }
     setBusy(true);
     setError(null);
     try {
@@ -546,13 +559,6 @@ function StatusPill({ status }: { status: DeliverableStatusCanonical }) {
       {cfg.label}
     </span>
   );
-}
-
-function formatDate(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "";
-  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 function formatMoneyCents(cents: number | null | undefined): string {

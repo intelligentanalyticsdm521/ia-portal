@@ -13,11 +13,25 @@ import {
   type FinancialImportRow, type OrgSettings, type PaymentAccountResponse,
 } from '../../lib/forgeApi';
 import { ForgeLayout, Card, Button, EmptyState, Pill } from './ForgeLayout';
+import { ForgeExportButton } from './ForgeExportButton';
+import { csvBlankIfDash, csvFilename, downloadCsv, toCsvText } from './forgeCsv';
 import { useForgeApi, describeError } from './useForge';
 import { shortDate } from './forgeConfig';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
+
+/* Setup is a form, not a list screen, with one exception: the import log at the
+   foot of it. It is a list on a nav page, so it exports like every other one —
+   the period split into two columns because a spreadsheet wants two dates where
+   the table wants one cell. */
+const IMPORT_COLUMNS = [
+  { label: 'Period start', value: (i: FinancialImportRow) => csvBlankIfDash(shortDate(i.period_start)) },
+  { label: 'Period end', value: (i: FinancialImportRow) => csvBlankIfDash(shortDate(i.period_end)) },
+  { label: 'Label', value: (i: FinancialImportRow) => i.label ?? '' },
+  { label: 'Source', value: (i: FinancialImportRow) => i.source },
+  { label: 'Lines', value: (i: FinancialImportRow) => String(i.line_count) },
+];
 
 const fyLabel = (m: number) => {
   if (m === 1) return 'Calendar year — 1 January to 31 December.';
@@ -104,6 +118,13 @@ export function ForgeSetupPage() {
       console.error(err);
     }
   }, [withParams]);
+
+  const exportImports = useCallback(async () => {
+    downloadCsv(
+      csvFilename('financial-imports'),
+      toCsvText(IMPORT_COLUMNS, imports, (i, col) => col.value(i))
+    );
+  }, [imports]);
 
   const receiptReady = Boolean(settings.legal_name && settings.ein);
 
@@ -251,7 +272,17 @@ export function ForgeSetupPage() {
         )}
       </Card>
 
-      <Card title="Financial statements">
+      <Card
+        title="Financial statements"
+        action={(
+          <ForgeExportButton
+            subject="the financial imports"
+            disabled={imports.length === 0}
+            onExport={exportImports}
+            onError={setError}
+          />
+        )}
+      >
         <p className="text-sm text-slate-600">
           Contribution income comes from this system. The expense side comes from your ledger —
           STELLA if you have it, otherwise an import — so the Statement of Activities and the

@@ -46,7 +46,11 @@ import { ProjectTasksTab } from "./ProjectTasksTab";
 import { OnboardingWizardModal } from "./OnboardingWizardModal";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { DeliverableActionPanel, type DeliverableShape } from "./DeliverableActionPanel";
-import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle } from "lucide-react";
+import { ProjectPeopleSection } from "./ProjectPeopleSection";
+import { RecipientPickerDialog } from "./RecipientPickerDialog";
+import { ProposalBuilder } from "../../builder/proposal/ProposalBuilder";
+import { deliverableVisibility, documentDate, type DeliverableVisibilityInput } from "../../lib/projectPeople";
+import { CheckCircle2, ChevronDown, ChevronRight, Lock, User, Send, AlertCircle, Plus } from "lucide-react";
 
 // ─── Color tokens ────────────────────────────────────────────────────────
 // Locked per F1 brief 2026-06-25.
@@ -167,6 +171,10 @@ interface ConsultingDeliverable {
   revision_requested_at?: string | null;
   revision_note?: string | null;
   sent_at?: string | null;
+  /** The latest send's people (consulting.document_recipient) and whether the
+   *  client can see it (= isSentDocument on the API). */
+  sent_to?: DeliverableVisibilityInput["sent_to"];
+  client_visible?: boolean | number | null;
 }
 
 // Task ≡ service request (consulting.service_request). A milestone task is a
@@ -799,6 +807,7 @@ export function ConsultingProjectModal({
               ownerOptions={ownerOptions}
               savingDetail={savingDetail}
               onDetailPatch={handleDetailPatch}
+              onPeopleChanged={() => { void load(); onChanged?.(); }}
             />
           )}
           {data && tab === "milestones" && (
@@ -1006,6 +1015,8 @@ interface ProposalRow {
   total?: number | null;
   project_id?: string | null;
   milestone_id?: string | null;
+  /** Names of the latest send, joined with ", " (GET /proposals list). */
+  last_sent_to?: string | null;
 }
 
 function ProposalsTab({ projectId, milestones, viewerRole }: {
@@ -1013,7 +1024,7 @@ function ProposalsTab({ projectId, milestones, viewerRole }: {
   milestones: ConsultingProjectMilestone[];
   viewerRole?: string;
 }) {
-  const { get, post } = useOliverApi();
+  const { get, post, patch } = useOliverApi();
   const [linked, setLinked] = useState<ProposalRow[]>([]);
   const [all, setAll] = useState<ProposalRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1021,6 +1032,11 @@ function ProposalsTab({ projectId, milestones, viewerRole }: {
   const [pickProposal, setPickProposal] = useState("");
   const [pickMilestone, setPickMilestone] = useState("");
   const [linking, setLinking] = useState(false);
+  // The builder, opened from this tab: "new" = a proposal born on this project;
+  // an id = one of the proposals listed here.
+  const [builder, setBuilder] = useState<"new" | string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const builderApi = useMemo(() => ({ get, post, patch }), [get, post, patch]);
 
   const money = (n: number | null | undefined) =>
     `$${Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1060,8 +1076,23 @@ function ProposalsTab({ projectId, milestones, viewerRole }: {
   return (
     <div className="px-5 py-4 space-y-5 text-sm">
       {err && <div className="rounded-lg bg-red-50 text-red-700 px-3 py-2 text-xs">{err}</div>}
+      {notice && <div className="rounded-lg bg-emerald-50 text-emerald-800 px-3 py-2 text-xs">{notice}</div>}
       <section>
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">Proposals on this project</div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Proposals on this project</div>
+          {viewerRole === "founder" && (
+            <button
+              type="button"
+              onClick={() => { setNotice(null); setBuilder("new"); }}
+              title="Write a proposal that belongs to this project; Send then offers the project's people"
+              className="inline-flex items-center gap-1 rounded-md px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              style={{ background: "#1A3A4A" }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              New proposal for this project
+            </button>
+          )}
+        </div>
         {loading ? (
           <div className="text-xs text-slate-500">Loading…</div>
         ) : linked.length === 0 ? (
@@ -1077,16 +1108,41 @@ function ProposalsTab({ projectId, milestones, viewerRole }: {
                     <div className="text-[11px] text-slate-500">
                       {money(p.total)}{ms ? ` · advances "${ms.name}" on accept` : ""}
                     </div>
+                    {p.last_sent_to && (
+                      <div className="text-[11px] text-slate-600" data-last-sent-to="1">Sent to {p.last_sent_to}</div>
+                    )}
                   </div>
-                  <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500 flex-shrink-0">
-                    {String(p.status || "—").replace(/_/g, " ")}
-                  </span>
+                  <div className="flex flex-shrink-0 items-center gap-2">
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                      {String(p.status || "—").replace(/_/g, " ")}
+                    </span>
+                    {viewerRole === "founder" && (
+                      <button
+                        type="button"
+                        onClick={() => { setNotice(null); setBuilder(p.proposal_id); }}
+                        title="Open this proposal in the builder"
+                        className="rounded border border-slate-300 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                      >
+                        Open
+                      </button>
+                    )}
+                  </div>
                 </li>
               );
             })}
           </ul>
         )}
       </section>
+
+      {builder && (
+        <ProposalBuilder
+          api={builderApi}
+          proposalId={builder === "new" ? null : builder}
+          projectId={projectId}
+          onClose={() => { setBuilder(null); void loadProposals(); }}
+          onSaved={(msg) => { setBuilder(null); setNotice(msg); void loadProposals(); }}
+        />
+      )}
 
       {viewerRole === "founder" && (
         <section className="rounded-lg border border-slate-200 p-3 space-y-2">
@@ -1113,7 +1169,7 @@ function ProposalsTab({ projectId, milestones, viewerRole }: {
             {linking ? "Linking…" : "Link proposal to project"}
           </button>
           <p className="text-[11px] text-slate-500">
-            Create a new proposal in OLIVER → Proposals, then link it here. When the client accepts it, the milestone above advances automatically.
+            For a proposal written elsewhere. A new one starts from New proposal for this project above. When the client accepts it, the milestone above advances automatically.
           </p>
         </section>
       )}
@@ -1657,6 +1713,7 @@ function OverviewTab({
   ownerOptions = [],
   savingDetail = false,
   onDetailPatch,
+  onPeopleChanged,
 }: {
   project: ConsultingProjectRow;
   milestoneCount: number;
@@ -1671,6 +1728,9 @@ function OverviewTab({
   ownerOptions?: Array<{ user_id: string; label: string }>;
   savingDetail?: boolean;
   onDetailPatch?: (fields: Record<string, unknown>) => void | Promise<void>;
+  /** The primary person moved — the project's main contact (and so the header
+   *  and the Client card) follows it. */
+  onPeopleChanged?: () => void;
 }) {
   const progressPct = milestoneCount > 0
     ? Math.round((milestonesComplete / milestoneCount) * 100)
@@ -1730,6 +1790,15 @@ function OverviewTab({
           </div>
         </div>
       </div>
+
+      {/* The people the project is worked with (scope 2026-10-01). The founder
+          edits; a client sees the same list read-only. */}
+      <ProjectPeopleSection
+        projectId={project.project_id}
+        viewerRole={viewerRole}
+        hasClientBusiness={Boolean(project.linked_tenant_id)}
+        onPrimaryChanged={onPeopleChanged}
+      />
 
       {/* Two-column meta */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -2970,7 +3039,7 @@ function DeliverablesTab({
   viewerRole: "founder" | "client";
   onChanged: () => void;
 }) {
-  const { uploadFounder, download } = useOliverApi();
+  const { get, post, uploadFounder, download } = useOliverApi();
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState("");
@@ -2978,6 +3047,9 @@ function DeliverablesTab({
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  // "Send to client" asks WHO first (RecipientPickerDialog, kind deliverable:
+  // pre-ticked = everyone on the project who receives documents).
+  const [sendFor, setSendFor] = useState<ConsultingDeliverable | null>(null);
 
   async function handleUpload() {
     if (!file || !milestoneId) return;
@@ -3128,11 +3200,18 @@ function DeliverablesTab({
                 {d.description?.trim() && (
                   <div className="mt-0.5 whitespace-pre-wrap text-xs text-slate-600">{d.description}</div>
                 )}
-                {d.sent_at && (
-                  <div className="mt-1 text-[11px] text-slate-400">
-                    Sent to client {new Date(d.sent_at).toLocaleDateString()}
+                {viewerRole === "founder" ? (
+                  // Client visibility on the LIVE store: a client sees a
+                  // document once it is sent (isSentDocument), and the
+                  // recipient record says to whom.
+                  <div data-client-visibility="1" className="mt-1 text-[11px] text-slate-500">
+                    {deliverableVisibility(d)}
                   </div>
-                )}
+                ) : d.sent_at ? (
+                  <div className="mt-1 text-[11px] text-slate-400">
+                    Sent to you {documentDate(d.sent_at)}
+                  </div>
+                ) : null}
               </div>
               {d.file_url && (
                 // NOT an <a href={d.file_url}> — the blob container is private,
@@ -3152,11 +3231,32 @@ function DeliverablesTab({
                 deliverable={panelShape}
                 viewerRole={viewerRole}
                 onChanged={onChanged}
+                onSendToClient={viewerRole === "founder" ? () => setSendFor(d) : undefined}
               />
             </div>
           </div>
         );
       })}
+
+      {sendFor && (
+        <RecipientPickerDialog
+          api={{ get }}
+          projectId={projectId}
+          kind="deliverable"
+          documentLabel={sendFor.title || sendFor.file_name || "Deliverable"}
+          // Nobody on the project: the client's business hears the usual way.
+          fallback="the client's business, the usual way"
+          onCancel={() => setSendFor(null)}
+          onSend={async (recipients) => {
+            await post(
+              `/consulting/deliverables/${sendFor.deliverable_id}/send-to-client`,
+              recipients.length ? { recipients } : {},
+            );
+            setSendFor(null);
+            onChanged();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -13,8 +13,9 @@ import { TrendDashboardView } from "../../components/insights/TrendDashboardView
 
 export function OliverIAInsightsIntelligencePage() {
   const { activeTenantId } = useAppState();
-  // Real monthly series when the tenant has rows (same endpoint as Trends);
-  // line-item detail stays demo until dimensioned capture lands.
+  // Real monthly series when the tenant has rows (same endpoint as Trends), and
+  // real line-item detail with them (payload.detail, 24 reports since D-BK17,
+  // 2026-09-25); the demo detail draws only when the metrics fell back to demo.
   const payload = useProductInsightsPayload("oliver").payload;
   const built = useMemo(() => {
     const seed = activeTenantId || "oliver";

@@ -212,6 +212,9 @@ function AssetForm({ onClose, onSaved, post }: {
   const [cost, setCost] = useState("");
   const [salvage, setSalvage] = useState("0");
   const [life, setLife] = useState("60");
+  // D-BK4 (Brandon): "How did you pay for it?" — the cost is posted to the books
+  // from the answer (bank, loan) or left alone (already in my books).
+  const [funding, setFunding] = useState<"bank" | "loan" | "already">("bank");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -227,8 +230,9 @@ function AssetForm({ onClose, onSaved, post }: {
         salvage_value: Number(salvage) || 0,
         useful_life_months: Number(life) || null,
         depreciation_method: "straight_line",
+        funding,
       });
-      onSaved(`${name} added. Its cost is spread over ${life} months from ${fmtDate(inService)}.`);
+      onSaved(`${name} added. Its cost is spread over ${life} months from ${fmtDate(inService)}.${funding === "already" ? "" : " The cost is on the balance sheet."}`);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Could not save that asset.");
     } finally { setSaving(false); }
@@ -290,6 +294,18 @@ function AssetForm({ onClose, onSaved, post }: {
         <div>
           <label style={label}>Months you will use it</label>
           <input value={life} inputMode="numeric" onChange={(e) => setLife(e.target.value)} style={{ ...input, textAlign: "right" }} />
+        </div>
+        <div style={{ gridColumn: "span 3" }}>
+          <label style={label}>How did you pay for it?</label>
+          <select value={funding} onChange={(e) => setFunding(e.target.value as "bank" | "loan" | "already")} style={input} aria-label="How did you pay for it?">
+            <option value="bank">From the bank account — the cost comes out of Cash</option>
+            <option value="loan">With a loan — the cost sits against Loans Payable</option>
+            <option value="already">It is already in my books — post nothing</option>
+          </select>
+          <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 4 }}>
+            Bank or loan puts the cost on the balance sheet under Equipment &amp; Vehicles the day you bought it.
+            Pick "already in my books" when the purchase is a transaction STELLA has categorised, so it is not counted twice.
+          </div>
         </div>
       </div>
       <div style={{ marginTop: 14, fontSize: 11, color: "#5A7A8A", lineHeight: 1.6 }}>

@@ -13,7 +13,7 @@
 // Reorder uses ↑↓ buttons (not HTML5 drag-drop) for cross-browser
 // reliability; a future enhancement can layer drag in without changing
 // the data model.
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Plus, Trash2, ArrowUp, ArrowDown, Search, Save, Lock,
 } from "lucide-react";
@@ -63,17 +63,35 @@ interface Props {
   config: SignupConfig | null;
   onClose: () => void;
   onSave: (next: SignupConfig) => Promise<void> | void;
+  /** Render as a plain panel inside another window instead of a window of its own. */
+  inline?: boolean;
   saving?: boolean;
+  /**
+   * Inline only (1 Oct 2026, Brandon: "the save signup form button can we move
+   * that next to done. I missed it because you have to scroll down to do it").
+   * The window that holds this panel owns the draft: it puts "Save signup
+   * form" in its own footer beside Done, and the draft survives a trip to
+   * another tab. When `draft` is given the panel renders no Save of its own.
+   */
+  draft?: SignupConfig | null;
+  onDraftChange?: (next: SignupConfig) => void;
 }
 
-export function SignupFormBuilder({ open, config, onClose, onSave, saving }: Props) {
-  const [draft, setDraft] = useState<SignupConfig | null>(null);
+export function SignupFormBuilder({ open, config, onClose, onSave, saving, inline = false, draft: draftProp, onDraftChange }: Props) {
+  const controlled = inline && draftProp !== undefined;
+  const [innerDraft, setInnerDraft] = useState<SignupConfig | null>(null);
+  const draft = controlled ? draftProp : innerDraft;
+  const setDraft = useCallback((next: SignupConfig | null | ((d: SignupConfig | null) => SignupConfig | null)) => {
+    if (!controlled) { setInnerDraft(next); return; }
+    const v = typeof next === "function" ? next(draftProp ?? null) : next;
+    if (v) onDraftChange?.(v);
+  }, [controlled, draftProp, onDraftChange]);
   const [query, setQuery] = useState("");
   const [customDraft, setCustomDraft] = useState<Partial<CustomField>>({ kind: "text", enabled: true, required: false });
 
   useEffect(() => {
-    if (open && config) setDraft({ ...config, fields: [...config.fields], custom_fields: [...config.custom_fields] });
-  }, [open, config]);
+    if (!controlled && open && config) setInnerDraft({ ...config, fields: [...config.fields], custom_fields: [...config.custom_fields] });
+  }, [controlled, open, config]);
 
   const categories = useMemo(() => unique((draft?.fields || []).map(categoryOf)), [draft]);
 
@@ -157,6 +175,179 @@ export function SignupFormBuilder({ open, config, onClose, onSave, saving }: Pro
     update({ custom_fields: [...draft.custom_fields, cf] });
     setCustomDraft({ kind: "text", enabled: true, required: false });
   };
+
+  if (inline) {
+    // The panel fills the window's body: three columns as tall as the window,
+    // each scrolling on its own. Save lives in the window's footer (controlled)
+    // — or, for a caller that gave no draft, at the bottom of the panel.
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <div className="min-h-0 flex-1">
+      <div className="grid grid-cols-12 gap-4 h-full p-4">
+        {/* ── LEFT: Library ───────────────────────────────────────────────── */}
+        <div className="col-span-4 flex flex-col h-full min-h-0 rounded-lg border border-slate-200 bg-white">
+          <div className="px-3 py-2 border-b border-slate-200">
+            <div className="text-xs font-bold text-slate-900">Field library</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{filteredAvailable.length} available · {selected.length}/{draft.fields.length} selected</div>
+            <div className="mt-2 relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-400" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name or category"
+                className="w-full pl-7 pr-2 py-1 text-xs rounded border border-slate-300"
+              />
+            </div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
+            {categories.map((cat) => {
+              const items = filteredAvailable.filter((f) => categoryOf(f) === cat);
+              if (items.length === 0) return null;
+              return (
+                <div key={cat}>
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 px-1 mb-1">{cat}</div>
+                  <div className="space-y-1">
+                    {items.map((f) => (
+                      <button
+                        key={f.key}
+                        type="button"
+                        onClick={() => enable(f.key)}
+                        className="w-full text-left px-2 py-1.5 rounded border border-slate-200 hover:bg-slate-50 hover:border-[#FEC82C] text-xs flex items-center justify-between"
+                      >
+                        <span className="truncate">
+                          <span className="font-medium text-slate-900">{f.label}</span>
+                          <span className="ml-1.5 text-[10px] text-slate-400">{f.kind}</span>
+                        </span>
+                        <Plus className="h-3 w-3 text-slate-400 flex-shrink-0" />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+            {filteredAvailable.length === 0 && (
+              <div className="text-[11px] text-slate-500 text-center py-6">All library fields are already on your form.</div>
+            )}
+          </div>
+        </div>
+
+        {/* ── CENTER: Selected ───────────────────────────────────────────── */}
+        <div className="col-span-5 flex flex-col h-full min-h-0 rounded-lg border border-slate-200 bg-white">
+          <div className="px-3 py-2 border-b border-slate-200">
+            <div className="text-xs font-bold text-slate-900">Form fields</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{selectedAll.length} fields · max 10 custom</div>
+          </div>
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+            {selectedAll.length === 0 && (
+              <div className="text-center py-6 text-[11px] text-slate-500">Tap a field on the left to add it.</div>
+            )}
+            {selectedAll.map((f, i) => (
+              <div key={f.key} className="rounded border border-slate-200 bg-slate-50 px-2 py-1.5">
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => move(f.key, -1, f.is_custom)} disabled={i === 0} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 disabled:opacity-30"><ArrowUp className="h-3 w-3" /></button>
+                  <button onClick={() => move(f.key, +1, f.is_custom)} disabled={i === selectedAll.length - 1} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 disabled:opacity-30"><ArrowDown className="h-3 w-3" /></button>
+                  <input
+                    type="text"
+                    value={f.label}
+                    onChange={(e) => setLabel(f.key, e.target.value, f.is_custom)}
+                    className="flex-1 text-xs px-2 py-1 rounded border border-transparent bg-white hover:border-slate-300 focus:border-[#FEC82C]"
+                  />
+                  <span className="text-[9px] font-mono text-slate-400 px-1">{f.kind}</span>
+                  {!f.is_custom && (f as LibraryField).required_locked && (
+                    <span title="Required by core" className="text-amber-500"><Lock className="h-3 w-3" /></span>
+                  )}
+                  <label className="flex items-center gap-1 text-[10px] text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={f.required}
+                      disabled={!f.is_custom && (f as LibraryField).required_locked}
+                      onChange={(e) => setRequired(f.key, e.target.checked, f.is_custom)}
+                    />
+                    req
+                  </label>
+                  {f.is_custom ? (
+                    <button onClick={() => removeCustom(f.key)} className="rounded p-0.5 text-rose-500 hover:bg-rose-100"><Trash2 className="h-3 w-3" /></button>
+                  ) : (
+                    <button onClick={() => disable(f.key)} disabled={(f as LibraryField).required_locked} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 disabled:opacity-30"><Trash2 className="h-3 w-3" /></button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Custom-field creator */}
+          <div className="border-t border-slate-200 bg-slate-50 p-3">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">Add a custom field <span className="text-slate-400">({draft.custom_fields.length}/{MAX_CUSTOM})</span></div>
+            <div className="grid grid-cols-6 gap-1.5">
+              <input
+                placeholder="Label"
+                value={customDraft.label || ""}
+                onChange={(e) => setCustomDraft({ ...customDraft, label: e.target.value })}
+                className="col-span-3 text-xs px-2 py-1 rounded border border-slate-300"
+              />
+              <select
+                value={customDraft.kind}
+                onChange={(e) => setCustomDraft({ ...customDraft, kind: e.target.value as FieldKind })}
+                className="col-span-2 text-xs px-2 py-1 rounded border border-slate-300 bg-white"
+              >
+                <option value="text">Text</option>
+                <option value="textarea">Long text</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="select">Dropdown</option>
+                <option value="checkbox">Yes/No</option>
+              </select>
+              <button
+                disabled={draft.custom_fields.length >= MAX_CUSTOM}
+                onClick={addCustom}
+                className="col-span-1 text-xs rounded bg-[#FEC82C] text-[#1A3A4A] font-semibold disabled:opacity-30"
+              >
+                Add
+              </button>
+              {customDraft.kind === "select" && (
+                <input
+                  placeholder="Options, comma-separated"
+                  value={(customDraft.options as unknown as string) || ""}
+                  onChange={(e) => setCustomDraft({ ...customDraft, options: e.target.value as unknown as string[] })}
+                  className="col-span-6 text-xs px-2 py-1 rounded border border-slate-300"
+                />
+              )}
+              <input
+                placeholder="Placeholder (optional)"
+                value={customDraft.placeholder || ""}
+                onChange={(e) => setCustomDraft({ ...customDraft, placeholder: e.target.value })}
+                className="col-span-5 text-xs px-2 py-1 rounded border border-slate-300"
+              />
+              <label className="col-span-1 flex items-center justify-center gap-1 text-[10px] text-slate-700">
+                <input type="checkbox" checked={!!customDraft.required} onChange={(e) => setCustomDraft({ ...customDraft, required: e.target.checked })} /> Req
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT: Preview ─────────────────────────────────────────────── */}
+        <div className="col-span-3 flex flex-col h-full min-h-0 rounded-lg border border-slate-200 bg-slate-50">
+          <div className="px-3 py-2 border-b border-slate-200 bg-white">
+            <div className="text-xs font-bold text-slate-900">Customer-facing preview</div>
+          </div>
+          <div className="flex-1 overflow-y-auto p-3">
+            <FormPreview config={draft} selectedAll={selectedAll} onWelcome={(t) => update({ welcome_text: t })} onSubmitLabel={(t) => update({ submit_label: t })} />
+          </div>
+        </div>
+      </div>
+        </div>
+        {!controlled && (
+          <div className="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <IadmButton variant="primary" onClick={() => onSave(draft)} disabled={!!saving}>
+              <Save className="h-3.5 w-3.5" /> {saving ? "Saving…" : "Save signup form"}
+            </IadmButton>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <IadmModal

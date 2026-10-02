@@ -12,11 +12,41 @@
 import type { PageContentMap } from "../pageGuide";
 
 export const STELLA_PAGES: PageContentMap = {
+  // ── Dashboard (2 Oct 2026) ──────────────────────────────────────────────
+  stella_dashboard: {
+    title: "Dashboard — STELLA at a glance",
+    body:
+      "Start here. The Dashboard pulls together what cuts across all of STELLA: what's left to set up, what's waiting on you, and a way into every part. Each feature still has its own page — this is the one that tells you which to open first.",
+    onPage: [
+      {
+        title: "Finish setting up",
+        body:
+          "Six steps that tick themselves from your own books — connect your bank and card, mark your personal card, make the chart of accounts your own, set your sales-tax rate, review your first statement, and download the accountant pack. Each row takes you straight to the page where it's done, and the card folds away once all six are finished.",
+        targetSelector: '[data-tour="stella-finish-setup"]',
+        placement: "bottom",
+      },
+      {
+        title: "What needs you",
+        body:
+          "Four answers in one row: transactions waiting in the Ledger inbox, bills overdue or due this week, money you're owed for costs you paid yourself, and whether last month is closed. Each tile says plainly whether it needs you, it's clear, or we couldn't check it — and clicking it opens the page that sorts it out.",
+        targetSelector: '[data-tour="stella-dashboard-needs"]',
+        placement: "top",
+      },
+      {
+        title: "Go to",
+        body:
+          "One tile for each main part of STELLA — the Ledger, Bills, Assets, Budgets, Unit Economics, the Database Manager, Reports, Custom Reporting and Settings — named exactly as they are in the menu on the left. An S badge means the part comes with the Standard plan, the same badge the menu shows.",
+        targetSelector: '[data-tour="stella-dashboard-shortcuts"]',
+        placement: "top",
+      },
+    ],
+  },
+
   // ── Ledger ──────────────────────────────────────────────────────────────
   stella_ledger_overview: {
     title: "Overview — how the business is doing",
     body:
-      "STELLA is your ledger: every dollar in and out, categorized so reports write themselves. This landing page answers one question at a glance — how is the business doing this month — and points you at the single most useful next step.",
+      "The Ledger's own overview: every dollar in and out, categorized so reports write themselves. It answers one question at a glance — how is the business doing this month — and points you at the single most useful next step. What's left to set up lives on STELLA's Dashboard.",
     onPage: [
       {
         title: "The headline picks itself",
@@ -358,7 +388,7 @@ export const STELLA_PAGES: PageContentMap = {
   stella_report_sql: {
     title: "SQL Editor — for when the builder isn't enough",
     body:
-      "Write a query directly. Two rules are enforced for you: use bare table names, and everything is already limited to your business — you cannot read another tenant's data, and nothing here can write. Every query, including refused ones, is logged.",
+      "Write a query directly. Two rules are enforced for you: use bare table names, and everything is already limited to your business — you cannot read another business's data, and nothing here can write. Every query, including refused ones, is logged.",
   },
   stella_report_exports: {
     body:

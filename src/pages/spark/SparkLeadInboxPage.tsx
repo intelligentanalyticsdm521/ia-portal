@@ -19,11 +19,19 @@
 // and when to use it. Brandon explicitly asked for a MODAL, not a tooltip,
 // so the copy can breathe.
 //
-// Default tab = Lead Inbox. Tab state syncs to ?tab=inbox|suppressed|territories
-// so ARGUS deep links + back/forward work. The legacy route keys
+// Default tab = Lead Inbox. Tab state syncs to ?tab=inbox|saved|suppressed|territories|billing
+// so ARGUS deep links + back/forward work.
+//
+// Saved Searches (Brandon, 2026-10-01: "The lead inbox should be the only place
+// I have to go to get a new or saved search"): the tab between Lead Inbox and
+// Suppressed Domains lists the saved lead searches. Clicking one opens New B2B
+// Lead Search filled in from it; the old Saved Lead Searches page is gone and
+// its address lands here (?tab=saved). Shown to a business the lead-search
+// allow-list lets search — the same answer the search page itself takes. The legacy route keys
 // (`spark_leads`, `spark_lead_suppression`, `spark_lead_territories`) still
 // resolve via ServiceRouter — each pre-selects the matching tab on this page.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Sparkles, MoreVertical, Search, X, CheckCircle2, Bell, ShieldCheck, ShieldX,
   ShieldAlert, ArrowUpDown, Plus, ShieldOff, Trash2, Pencil, MapPin, HelpCircle,
@@ -40,17 +48,24 @@ import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { SparkCapacityBanner } from "../../components/spark/SparkCapacityBanner";
 import { FilterChip, FilterChipRow, TAB_STRIP_ROW, TAB_STRIP_ITEM } from "../../components/spark/FilterChip";
 import { rowSourceLabel, rowChannelLabel, sourceFacetLabel } from "../../lib/leadSource";
+import { useLeadgenAccess } from "../../hooks/useLeadgenAccess";
+import { SavedSearchesList } from "../../components/spark/SavedSearchesList";
+import { type SavedSearch, NEW_SEARCH_PATH, editSearchPath } from "../../lib/leadgenSavedSearch";
+// 2 Oct 2026 — the run banner's counts for the website check
+import { fitSkipPhrases, fitSkipCount, notCheckedLine } from "../../lib/leadRunFit";
+import { parsePlace, cityLine } from "../../lib/leadScoreWhy";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Tab plumbing
 // ─────────────────────────────────────────────────────────────────────────────
 
-type TabKey = "inbox" | "suppressed" | "territories" | "billing";
+type TabKey = "inbox" | "saved" | "suppressed" | "territories" | "billing";
 
-const TAB_ORDER: TabKey[] = ["inbox", "suppressed", "territories", "billing"];
+const TAB_ORDER: TabKey[] = ["inbox", "saved", "suppressed", "territories", "billing"];
 
 const TAB_LABEL: Record<TabKey, string> = {
   inbox: "Lead Inbox",
+  saved: "Saved Searches",
   suppressed: "Suppressed Domains",
   territories: "Territories",
   billing: "Billing",
@@ -85,6 +100,27 @@ const TAB_INFO: Record<TabKey, { title: string; body: React.ReactNode }> = {
           <li>Suppress a noisy domain so it never re-appears.</li>
           <li>Dismiss leads that aren't a fit.</li>
         </ul>
+      </div>
+    ),
+  },
+  saved: {
+    title: "Saved Searches",
+    body: (
+      <div className="space-y-3 text-sm text-slate-700">
+        <p>
+          A saved search remembers everything you set on New B2B Lead Search — the
+          categories and the search topics under them, the search mode, the state,
+          cities, radius and ZIP codes, and how many leads you want.
+        </p>
+        <p className="font-semibold text-slate-900 pt-1">Use this tab to:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li><strong>Run again</strong> — run a saved search exactly as it was saved.</li>
+          <li>Click a search to open it, change anything, and run it — or <strong>Save</strong> the changes, or <strong>Save as new search</strong> to keep the original as it was.</li>
+          <li>Start a fresh search with the orange button at the top of the tab.</li>
+        </ul>
+        <p className="text-xs text-slate-500 pt-1">
+          Every run is billed per delivered lead, the same as a new search.
+        </p>
       </div>
     ),
   },
@@ -186,12 +222,16 @@ interface Props {
 function readTabFromUrl(): TabKey | null {
   if (typeof window === "undefined") return null;
   const v = new URLSearchParams(window.location.search).get("tab");
-  return v === "inbox" || v === "suppressed" || v === "territories" || v === "billing" ? v : null;
+  return v === "inbox" || v === "saved" || v === "suppressed" || v === "territories" || v === "billing" ? v : null;
 }
 
 export function SparkLeadInboxPage({ initialTab }: Props = {}) {
   const [tab, setTab] = useState<TabKey>(() => initialTab ?? readTabFromUrl() ?? "inbox");
   const [infoOpenFor, setInfoOpenFor] = useState<TabKey | null>(null);
+  // Saved Searches is a lead-SEARCH surface, so it follows the same allow-list
+  // as New B2B Lead Search; every other tab is a business's own inbox.
+  const leadgen = useLeadgenAccess();
+  const tabs = TAB_ORDER.filter((t) => t !== "saved" || leadgen.allowed === true);
 
   // Sync ?tab= to state so deep links + back/forward keep the right tab.
   useEffect(() => {
@@ -234,7 +274,7 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
           immediately to the RIGHT of each label that opens an IadmModal
           (info size) with a plain-English explainer. */}
       <div className={`mb-4 flex items-end gap-1 border-b border-slate-200 ${TAB_STRIP_ROW}`}>
-        {TAB_ORDER.map((t) => {
+        {tabs.map((t) => {
           const active = tab === t;
           return (
             <div key={t} className={`flex items-center -mb-px ${TAB_STRIP_ITEM}`}>
@@ -268,6 +308,7 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
       {/* Tab bodies. Each component runs its own data fetch via useSparkApi so
           mounting/unmounting is cheap — no shared state across tabs. */}
       {tab === "inbox" && <LeadInboxTab />}
+      {tab === "saved" && <SavedSearchesTab />}
       {tab === "suppressed" && <SuppressedDomainsTab />}
       {tab === "territories" && <TerritoriesTab />}
       {tab === "billing" && <BillingTab />}
@@ -296,6 +337,109 @@ export function SparkLeadInboxPage({ initialTab }: Props = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SavedSearchesTab — the saved lead searches (Brandon, 2026-10-01).
+//
+// GET /api/v1/leadgen/profiles lists them. A row click opens New B2B Lead
+// Search on ?edit=<id>, which fills the form from that search ("Editing:
+// <name>"); there it can be changed and run, saved over (PATCH, same row) or
+// saved as a new search (POST). "Run again" runs it exactly as saved
+// (POST /profiles/:id/run, billed like any run). Delete asks first, in the
+// platform's own modal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function SavedSearchesTab() {
+  const { get, post, del, ready } = useSparkApi();
+  const navigate = useNavigate();
+  const leadgen = useLeadgenAccess();
+  const [searches, setSearches] = useState<SavedSearch[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<SavedSearch | null>(null);
+
+  const load = useCallback(async () => {
+    if (!ready) return;
+    setLoading(true);
+    setError(null);
+    try {
+      // GET /api/v1/leadgen/profiles → { data: SavedSearch[] }
+      const r = await get<{ data: SavedSearch[] }>("/api/v1/leadgen/profiles");
+      setSearches(r?.data || []);
+    } catch {
+      setError("Your saved searches could not be loaded. Try again in a moment.");
+    } finally {
+      setLoading(false);
+    }
+  }, [get, ready]);
+  useEffect(() => { load(); }, [load]);
+
+  async function runAgain(s: SavedSearch) {
+    setRunningId(s.id);
+    setError(null);
+    try {
+      // POST /api/v1/leadgen/profiles/:id/run → { data: { job_id } }
+      type RunResp = { data?: { job_id?: string | number } };
+      const r = await post<RunResp>(`/api/v1/leadgen/profiles/${s.id}/run`, {});
+      const jobId = r?.data?.job_id;
+      if (jobId != null) navigate(`/app/spark/leadgen/jobs/${jobId}`);
+      else setError("The search did not start. Try again in a moment.");
+    } catch (err) {
+      // Billing refusals (one-off minimum, no card on file, pricing) arrive as
+      // sentences from the server — show those.
+      setError(friendlyApiError(err).message);
+    } finally {
+      setRunningId(null);
+    }
+  }
+
+  async function remove(s: SavedSearch) {
+    setConfirmDelete(null);
+    try {
+      // DELETE /api/v1/leadgen/profiles/:id
+      await del(`/api/v1/leadgen/profiles/${s.id}`);
+      await load();
+    } catch {
+      setError("That saved search could not be deleted. Try again in a moment.");
+    }
+  }
+
+  if (leadgen.allowed !== true) return null;
+  return (
+    <>
+      <SavedSearchesList
+        searches={searches}
+        loading={loading}
+        error={error}
+        runningId={runningId}
+        onOpen={(s) => navigate(editSearchPath(s.id))}
+        onRunAgain={runAgain}
+        onDelete={(s) => setConfirmDelete(s)}
+        onNewSearch={() => navigate(NEW_SEARCH_PATH)}
+      />
+      <IadmModal
+        open={confirmDelete != null}
+        onClose={() => setConfirmDelete(null)}
+        product="spark"
+        eyebrow="SAVED SEARCHES"
+        title={confirmDelete ? `Delete "${confirmDelete.name}"?` : ""}
+        size="confirm"
+        footer={
+          <>
+            <IadmButton variant="ghost" onClick={() => setConfirmDelete(null)}>Keep it</IadmButton>
+            <IadmButton variant="primary" onClick={() => confirmDelete && remove(confirmDelete)}>Delete</IadmButton>
+          </>
+        }
+      >
+        <div className="px-6 py-5 text-sm text-slate-700">
+          The saved search goes away. Leads it already found stay in your Lead Inbox.
+        </div>
+      </IadmModal>
+    </>
+  );
+}
+// ── end SavedSearchesTab
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LeadInboxTab — body of the legacy SparkLeadsPage.tsx, lifted as-is.
 //
 // Preserves F-LG.6.6 (since-last-visit pill), F-LG.10 (Run Summary banner),
@@ -322,7 +466,12 @@ interface RecentRun {
     delivered: number;
     flagged_review: number;
     from_cache: number;
-    skipped: { no_email: number; already_in_inbox: number; insert_failed: number };
+    skipped: {
+      no_email: number; already_in_inbox: number; insert_failed: number; out_of_area?: number; not_a_business?: number;
+      // 2 Oct 2026 — the website check, before any email is looked up (lib/leadRunFit.ts)
+      not_relevant?: number; relevance_unsure?: number;
+    };
+    delivered_not_checked?: number;
     target_count: number;
     raw_qualified: number;
   };
@@ -366,6 +515,8 @@ interface Lead {
   locked?: boolean | number | null;
   contact_masked?: boolean;
   search_job_id?: number | null;
+  // 2 Oct 2026 — the run's place for the business (relevance_json.place): the City column.
+  relevance_json?: string | null;
 }
 
 function firstRefusalReason(json: string | null | undefined): string | null {
@@ -827,7 +978,7 @@ function LeadInboxTab() {
                     <span className="ml-2 inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">{recentRun.summary?.flagged_review} flagged for review</span>
                   )}
                 </div>
-                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed) > 0 && (
+                {recentRun.summary && (recentRun.summary.skipped.already_in_inbox + recentRun.summary.skipped.no_email + recentRun.summary.skipped.insert_failed + (recentRun.summary.skipped.out_of_area ?? 0) + (recentRun.summary.skipped.not_a_business ?? 0) + fitSkipCount(recentRun.summary)) > 0 && (
                   <div className="mt-1 text-xs text-emerald-800">
                     Skipped:
                     {recentRun.summary.skipped.already_in_inbox > 0 && (
@@ -836,10 +987,24 @@ function LeadInboxTab() {
                     {recentRun.summary.skipped.no_email > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.no_email} no email</span>
                     )}
+                    {/* 2 Oct 2026 — a business placed in another state, or not a business at all, is not delivered */}
+                    {(recentRun.summary.skipped.out_of_area ?? 0) > 0 && (
+                      <span className="ml-2">· {recentRun.summary.skipped.out_of_area} outside your area</span>
+                    )}
+                    {(recentRun.summary.skipped.not_a_business ?? 0) > 0 && (
+                      <span className="ml-2">· {recentRun.summary.skipped.not_a_business} not a business (unions, schools, suppliers, directories)</span>
+                    )}
+                    {/* 2 Oct 2026 — the website check: neither is delivered or billed */}
+                    {fitSkipPhrases(recentRun.summary).map((p) => (
+                      <span key={p} className="ml-2" data-testid="run-fit-skip">· {p}</span>
+                    ))}
                     {recentRun.summary.skipped.insert_failed > 0 && (
                       <span className="ml-2">· {recentRun.summary.skipped.insert_failed} other</span>
                     )}
                   </div>
+                )}
+                {notCheckedLine(recentRun.summary) && (
+                  <div className="mt-1 text-xs text-emerald-800" data-testid="run-not-checked">{notCheckedLine(recentRun.summary)}</div>
                 )}
                 {(recentRun.summary?.delivered ?? 0) < (recentRun.summary?.target_count ?? 0) && (
                   <div className="mt-1 text-xs text-emerald-800">
@@ -990,6 +1155,7 @@ function LeadInboxTab() {
               </th>}
               <th className="px-4 py-3">Email</th>
               <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3">City</th>
               <th className="px-4 py-3">Lifecycle</th>
               <th className="px-4 py-3">Source</th>
               <th className="px-4 py-3">
@@ -1084,6 +1250,10 @@ function LeadInboxTab() {
                     {l.phone || <span className="text-slate-400">—</span>}
                     {!!l.locked && l.phone && <div className="text-[10px] text-amber-700">Pay the invoice to view</div>}
                   </td>
+                  {/* 2 Oct 2026 — the town from the business's own address, when the run found one. */}
+                  <td className="px-4 py-3 text-xs text-slate-700 whitespace-nowrap">
+                    {cityLine(parsePlace(l.relevance_json)) || <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-4 py-3 text-xs text-slate-700">{l.lifecycle_stage || "lead"}</td>
                   {/* "Source · via Channel" (post-capture L9). An Intake lead
                       shows the name the client gave the connection; a B2B
@@ -1167,7 +1337,7 @@ function LeadInboxTab() {
             })}
             {!loading && filteredLeads.length === 0 && (
               <tr>
-                <td colSpan={showIntel ? 9 : 8} className="px-4 py-12 text-center text-sm text-slate-500">
+                <td colSpan={showIntel ? 10 : 9} className="px-4 py-12 text-center text-sm text-slate-500">
                   {leads.length === 0
                     ? <>You haven't run a sweep yet. <a href="/app/spark/leadgen/b2b_new" className="text-[#EF6C33] font-semibold underline">Start a new B2B Lead Run →</a></>
                     : `No leads match "${search}".`}

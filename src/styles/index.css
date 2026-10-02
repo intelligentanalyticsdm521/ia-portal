@@ -514,6 +514,18 @@ body {
   background: linear-gradient(to bottom, #ffffff 0%, #fafbfc 100%);
   border-bottom: 1px solid rgb(226, 232, 240);
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+  /* 2026-10-01: when the right-hand chips and links do not fit beside the
+     title, they drop to the next line instead of squeezing the title to
+     nothing ("Lead In…", and an "Editing: <saved search>" heading that
+     vanished entirely in a narrow window). Wide windows are unchanged. */
+  flex-wrap: wrap;
+}
+.spark-page-header > .min-w-0 {
+  flex: 1 1 14rem;
+}
+.spark-page-header > :last-child {
+  flex-wrap: wrap;
+  max-width: 100%;
 }
 .spark-page-header h1 {
   font-size: 20px;
@@ -864,6 +876,8 @@ body {
      "Kanban" gets its last letter cut. Below 768px the actions go under the
      title and get the full width. */
   .spark-page-header { flex-direction: column; align-items: stretch; }
+  /* In a column the title's 14rem flex-basis would be a HEIGHT; size it by its content. */
+  .spark-page-header > .min-w-0 { flex: none; }
 }
 
 /* ==========================================================================

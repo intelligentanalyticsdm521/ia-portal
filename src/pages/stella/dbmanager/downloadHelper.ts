@@ -19,6 +19,11 @@ export async function downloadStellaFile(
   const res = await fetch(`${STELLA_API_BASE}${path}`, { headers });
   if (!res.ok) {
     const text = await res.text();
+    // A refusal the API wrote for a person ({ message }) is shown as written;
+    // anything else keeps the status and the raw body so it can be reported.
+    let plain = "";
+    try { plain = String(JSON.parse(text)?.message || "").trim(); } catch { /* not JSON */ }
+    if (plain) throw new Error(plain);
     throw new Error(`Download failed (${res.status}): ${text.slice(0, 200)}`);
   }
   const blob = await res.blob();

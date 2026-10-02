@@ -77,6 +77,8 @@ import {
   PER_EVENT_SENTENCE, pricingBasisOf, type ClauseRow,
 } from "../templates";
 import { NameBlockDialog } from "../NameBlockDialog";
+import { RecipientPickerDialog } from "../../components/consulting/RecipientPickerDialog";
+import { sentMessage, sentToLine, type RecipientInput, type SentToRow } from "../../lib/projectPeople";
 import { TemplateLibrary } from "../TemplateLibrary";
 import { BLANK_TEMPLATE_ID } from "../templateLibraryModel";
 import {
@@ -113,6 +115,14 @@ export interface ProposalBuilderProps {
    * There is no second editor.
    */
   revision?: { proposalId: string; revisionId: string } | null;
+  /**
+   * The consulting project this proposal belongs to (scope 2026-10-01 §5). A
+   * new proposal opened from the project modal's Proposals tab is born with
+   * it, and Send asks "Who gets this?" from the project's people instead of
+   * needing a single customer picked. An existing proposal brings its own
+   * `project_id` when it is opened.
+   */
+  projectId?: string | null;
   onClose: () => void;
   onSaved: (message: string) => void;
 }
@@ -195,7 +205,7 @@ const saveRow: React.CSSProperties = {
   color: "#0B1C24", cursor: "pointer",
 };
 
-export function ProposalBuilder({ api, proposalId = null, revision = null, onClose, onSaved }: ProposalBuilderProps) {
+export function ProposalBuilder({ api, proposalId = null, revision = null, projectId = null, onClose, onSaved }: ProposalBuilderProps) {
   const { kit } = useBrandKit();
   // §9/D-121 — the ONE custom-field mechanism. The property's own fields live
   // in lumen.custom_field, which already accepts entity_kind "property", so the
@@ -275,6 +285,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    * answers, and every later save is a PATCH of the same row.
    */
   const [liveId, setLiveId] = useState<string | null>(proposalId ?? null);
+
+  /* ── The consulting project, when the proposal belongs to one ────────── */
+  /** The prop for a new proposal; the row's own `project_id` once it opens. */
+  const [attachedProjectId, setAttachedProjectId] = useState<string | null>(projectId);
+  /** Who it went to, newest send first (GET /proposals/:id `sent_to`). */
+  const [sentTo, setSentTo] = useState<SentToRow[]>([]);
+  /** "Who gets this?" is up — Send was pressed on a project's proposal. */
+  const [pickingRecipients, setPickingRecipients] = useState(false);
 
   /* ── The revision, when this is one ──────────────────────────────────── */
   const [revMeta, setRevMeta] = useState<RevisionMeta | null>(null);
@@ -387,6 +405,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       const row = r?.data ?? r;
       setTitle(row.title || "");
       setContactId(row.contact_id || "");
+      if (row.project_id) setAttachedProjectId(String(row.project_id));
+      setSentTo(Array.isArray(row.sent_to) ? row.sent_to : []);
       if (row.contact_id) {
         setPickedContact({
           contact_id: row.contact_id,
@@ -449,6 +469,38 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
     }).catch((e) => refuse("load", `We could not open that revision: ${apiErrorMessage(e)}`));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [revision?.revisionId]);
+
+  /* ── A NEW proposal for a project starts addressed to its primary person ─
+   * "New proposal for this project" used to open with no customer, so the
+   * customer search sat open over the top of the panel until one was picked
+   * (verifier, 2 Oct 2026). The project already knows who it is for: its
+   * primary person's contact (Karrie, on MS Moments). Only a brand-new
+   * proposal, only when nothing is picked yet, and "change" still works. */
+  useEffect(() => {
+    if (!projectId || proposalId || revision || contactId) return;
+    let alive = true;
+    api.get<{ people?: Array<{ contact_uuid?: string | null; is_primary?: boolean | number; person_kind?: string;
+      display_name?: string | null; email?: string | null; company?: string | null }> }>(
+      `/consulting/projects/${projectId}/people`,
+    ).then((r) => {
+      if (!alive) return;
+      const people = Array.isArray(r?.people) ? r.people : [];
+      const primary = people.find((p) => (p.is_primary === true || p.is_primary === 1) && p.contact_uuid)
+        || people.find((p) => p.person_kind === "contact" && p.contact_uuid);
+      if (!primary?.contact_uuid) return;
+      const name = String(primary.display_name || "").trim();
+      setContactId(primary.contact_uuid);
+      setPickedContact({
+        contact_id: primary.contact_uuid,
+        first_name: name.split(" ")[0],
+        last_name: name.split(" ").slice(1).join(" "),
+        email: primary.email || undefined,
+        company_name: primary.company || undefined,
+      });
+    }).catch(() => undefined);
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, proposalId, revision?.revisionId]);
 
   /** What this document changes, measured against what the customer read. */
   const diff = useMemo(() => diffDocuments(baseDoc, revision ? doc : null), [baseDoc, doc, revision]);
@@ -970,12 +1022,20 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
    *              "Save and close" is now its own button, which is the whole of
    *              what that behaviour was ever for.
    */
-  async function save(send: boolean, close = true) {
+  /**
+   * @param recipients the people ticked in "Who gets this?" — only for a
+   *              proposal that belongs to a consulting project. Present means
+   *              the dialog already answered; a failure is thrown back to it so
+   *              the sentence shows in the dialog the author is looking at.
+   */
+  async function save(send: boolean, close = true, recipients?: RecipientInput[]) {
     // N-1 / D-20: a refusal appears AT the button that was pressed. Every one
     // of these used to print in the far-left pane, 1,413px from Send.
     const anchor = send ? "send" : close ? "save-close" : "save";
     if (!title.trim()) { refuse(anchor, "Give the document a title at the top first."); return; }
-    if (send && !contactId) { refuse(anchor, "Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
+    // A project's proposal is addressed from the project's people, ticked in
+    // the dialog — so it needs no single customer picked here.
+    if (send && !contactId && !attachedProjectId) { refuse(anchor, "Pick a customer to send it to, or press Save draft and share the link yourself."); return; }
     if (send && blanks.length) {
       // Assert the PRESENCE of the thing we want, not just the absence of an
       // error: a document sent with {{plow_rate}} on it is the failure. And
@@ -988,6 +1048,8 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       takeMeToTheBlank();
       return;
     }
+    // Ask WHO before anything is saved or sent: Cancel leaves no trace.
+    if (send && attachedProjectId && recipients === undefined) { setPickingRecipients(true); return; }
     setSaved(null); setRefusal(null); setBusy(true);
     try {
       const w = wire(send);
@@ -1014,23 +1076,35 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
       if (id) {
         await api.patch(`/proposals/${id}`, payload);
       } else {
-        const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals", payload);
+        // Born on its project when opened from the project's Proposals tab.
+        const res = await api.post<{ proposal_id: string; proposal_number: string }>("/proposals",
+          attachedProjectId ? { ...payload, project_id: attachedProjectId } : payload);
         id = (res as any).proposal_id; number = (res as any).proposal_number;
         setLiveId(id);
       }
       let msg = number ? `Saved ${number}.` : "Saved.";
       if (send && id) {
-        const sent = await api.post<{ url: string; emailed_to?: string | null }>(`/proposals/${id}/send`);
+        // The people ticked in "Who gets this?" go with the send; one email
+        // each, one recorded row each. An empty list is the dialog's fallback
+        // (the customer picked above), which is today's send unchanged.
+        const sent = await api.post<{ url: string; emailed_to?: string | null; sent_to?: SentToRow[] }>(
+          `/proposals/${id}/send`,
+          recipients && recipients.length ? { recipients } : undefined,
+        );
         const to = (sent as any).emailed_to;
-        msg += to
-          ? ` Sent to ${to}. Their link is ${(sent as any).url}`
-          : ` Sent — the customer's link is ${(sent as any).url}`;
+        const named = sentMessage((sent as any).sent_to);
+        msg += named
+          ? ` ${named} Their link is ${(sent as any).url}`
+          : to
+            ? ` Sent to ${to}. Their link is ${(sent as any).url}`
+            : ` Sent — the customer's link is ${(sent as any).url}`;
       }
-      if (close || send) { onSaved(msg); return; }
+      if (close || send) { setPickingRecipients(false); onSaved(msg); return; }
       // Stay put, and SAY so. A tick that appears and nothing else moving is
       // what "it saved" looks like in every editor a business owner has used.
       setSaved(`${msg} You are still in the builder.`);
     } catch (e) {
+      if (recipients !== undefined) throw new Error(`Could not send: ${apiErrorMessage(e)}`);
       refuse(anchor, `Could not save: ${apiErrorMessage(e)}`);
     } finally {
       setBusy(false);
@@ -1364,6 +1438,14 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                 reference (D-165 (c)): the reference editor has no customer to
                 choose. It used to ride in the modal's `subtitle`, which the
                 reference bar has no room for, so it is a control in the bar. */}
+            {/* Who it actually went to — the recorded send, not the contact
+                the row happens to point at now (scope 2026-10-01 §5). */}
+            {sentTo.length > 0 && (
+              <div data-sent-to="1" title={sentToLine(sentTo)}
+                style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", maxWidth: 260, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {sentToLine(sentTo)}
+              </div>
+            )}
             <CustomerBar
               search={contactSearch} onSearch={setContactSearch}
               contact={contact} contacts={contacts}
@@ -1422,7 +1504,11 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
                   widest button in the bar. The blanks warning stays: that one
                   says why the button will not do what it says. */}
               <button type="button" data-builder-anchor="send" onClick={() => save(true)} disabled={busy} style={orangeBtn}
-                title={blanks.length ? `${blanks.length} detail(s) are still blank` : "Send"}>
+                title={blanks.length
+                  ? `${blanks.length} detail(s) are still blank`
+                  : attachedProjectId
+                    ? "Choose who on the project gets it, then email them a link to this document"
+                    : "Email the customer a link to this document"}>
                 {busy ? "Working…" : "Send to customer"}
               </button>
               <SaveOptions busy={busy}>
@@ -1611,6 +1697,23 @@ export function ProposalBuilder({ api, proposalId = null, revision = null, onClo
               dangerouslySetInnerHTML={{ __html: renderDocument(doc, { ...ctx, mode: "view" }) }} />
           </div>
         </IadmModal>
+      )}
+
+      {/* "Who gets this?" — a project's proposal is sent to the people ticked
+          here, pre-ticked by the contractual rule (approver, else billing,
+          else the primary; never the whole team). */}
+      {pickingRecipients && attachedProjectId && (
+        <RecipientPickerDialog
+          api={api}
+          projectId={attachedProjectId}
+          kind="contractual"
+          documentLabel={title.trim() || null}
+          fallback={contact
+            ? `${[contact.first_name, contact.last_name].filter(Boolean).join(" ") || contact.company_name || "the customer"}${contact.email ? ` (${contact.email})` : ""}`
+            : null}
+          onCancel={() => setPickingRecipients(false)}
+          onSend={(recipients) => save(true, true, recipients)}
+        />
       )}
 
       {/* M-23's dialog, reused: "Save as template" asks the same two questions

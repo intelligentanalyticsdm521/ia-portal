@@ -645,11 +645,6 @@ const SPARK_NAV: SubNavConfig = {
         // intelligence stays ARGUS-only.
         { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" }, minTier: "pro" },
         { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
-        // IL step 8 — the monthly "what worked" report. EVERY tier: gating depth
-        // is the rule and a hidden report cannot sell an upgrade
-        // (`reference_report_tier_model`). The page itself says in words which
-        // parts come with Standard and which with Pro.
-        { key: "spark_what_worked", label: "What Worked", route: "/app/services/spark_what_worked" },
       ],
     },
   ],
@@ -764,6 +759,16 @@ const STELLA_NAV: SubNavConfig = {
   tagline: "Ledger & Unit Economics",
   groups: [
     {
+      // 2 Oct 2026 — the PRODUCT Dashboard, first and on its own, exactly the
+      // shape of OLIVER / SPARK / ARION (a label-less group holding one
+      // "Dashboard" item). Being the first item makes it what STELLA's rail
+      // icon opens (first-item-wins in AppShell.defaultRouteFor). Brandon:
+      // "Each feature has an overview and then STELLA is supposed to have it's
+      // own dashboard/overview. all the other platforms call it a dashboard."
+      label: "",
+      items: [{ key: "stella_dashboard", label: "Dashboard", route: "/app/services/stella_dashboard" }],
+    },
+    {
       // 2026-07-30 consolidation — founder capped every sub-nav at 8 items.
       // 18 → 6: Income/Recurring are Transactions tabs, Receipts is a modal
       // hint on Transactions, Mileage + Materials merged (two tabs), the
@@ -771,9 +776,10 @@ const STELLA_NAV: SubNavConfig = {
       // and Bank Connections + Period Close moved to the SETTINGS hub.
       label: "Ledger", icon: CreditCard, collapsible: true, sectionId: "stella_ledger",
       items: [
-        // Overview FIRST (2026-07-30 design pass) — it is both the Ledger
-        // landing and, via first-item-wins in AppShell.defaultRouteFor,
-        // STELLA's default landing. Group sits at 7 items — under the 8 cap.
+        // Overview FIRST (2026-07-30 design pass) — the Ledger feature's
+        // overview and the group's landing (clicking "Ledger" opens it).
+        // Since 2 Oct 2026 it is no longer STELLA's default landing — the
+        // Dashboard group above is. Group sits at 8 items — the cap.
         { key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview" },
         { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox" },
         { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
@@ -1186,8 +1192,8 @@ function getDefaultSection(path: string): string | null {
   // it must NOT resolve to the Billing section any more or the wrong nav group
   // opens. oliver_proposals is Billing.
   if (path.includes("/oliver_quotes") || path.includes("/oliver_proposals") || path.includes("/oliver_invoices") || path.includes("/oliver_payments") || path.includes("/oliver_recurring") || path.includes("/oliver_disputes") || path.includes("/oliver_reminders")) return "oliver_billing";
-  // F-114 — Portals hub + legacy Portal Designer / Portals & Domains all live in the W&A group.
-  if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_designer") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
+  // F-114 — Portals hub + legacy Portals & Domains live in the W&A group. (The Portal Designer page was deleted 2026-09-25; its job is the hub's Look tab.)
+  if (path.includes("/oliver_portals_hub") || path.includes("/oliver_portal_domains") || path.includes("/oliver_automations") || path.includes("/oliver_addons") || path.includes("/oliver_workflow_settings")) return "oliver_workflow";
   if (path.includes("/oliver_ia_insights")) return "oliver_ia_insights";
   // ARGUS — single IA Insights group; expand it on any ARGUS Insights route.
   if (path.includes("/argus_health") || path.includes("/argus_trends") || path.includes("/argus_cross_platform") || path.includes("/argus_cross_channel") || path.includes("/argus_intelligence") || path.includes("/argus_ia_insights")) return "argus_ia_insights";

@@ -16,6 +16,8 @@ import { Download, FileSpreadsheet, AlertTriangle, Lock, Unlock } from "lucide-r
 import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../../../auth/useAccessToken";
 import { useClientTenantIdOverride } from "../../../lib/clientTenantContext";
+import { useEffectiveTenantId } from "../../../lib/tenantContext";
+import { markPackDownloaded } from "../stellaSetupSteps";
 import { useStellaApi } from "../../../hooks/useStellaApi";
 import { STELLA_API_BASE, getStellaAuthHeaders } from "../../../lib/stellaApi";
 import { STELLA_INDIGO, STELLA_LAVENDER, fmtMoney } from "../StellaShell";
@@ -44,6 +46,9 @@ export function AccountantPack() {
   const { instance } = useMsal();
   const account = useActiveAccount();
   const tenantOverride = useClientTenantIdOverride();
+  // Overview → Finish setup ticks "Accountant pack" once a download has gone
+  // through on this browser (the export route keeps no record of downloads).
+  const businessId = useEffectiveTenantId();
 
   const thisYear = new Date().getFullYear();
   const [year, setYear] = useState(thisYear);
@@ -96,6 +101,7 @@ export function AccountantPack() {
       a.click();
       a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      try { markPackDownloaded(window.localStorage, businessId, Date.now()); } catch { /* storage blocked */ }
     } catch (e) { setError(e); } finally { setDownloading(null); }
   }
 

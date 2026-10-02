@@ -5,6 +5,7 @@ import { Menu, X } from "lucide-react";
 import { HeaderBar } from "./HeaderBar";
 import { IconRail, type ProductKey } from "./IconRail";
 import { SubNav, SUB_NAV_CONFIGS, SETTINGS_KEYS, type SubNavConfig } from "./SubNav";
+import { applyRoleNavFilter, railRouteFor } from "./navRoleFilter";
 import { useOliverRole } from "../hooks/useOliverRole";
 import { useAppState } from "../app/AppState";
 import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
@@ -20,39 +21,10 @@ import { ConsultantModeBanner } from "./consulting/ConsultantModeBanner";
 import { WalkthroughPanel } from "./walkthroughs/WalkthroughPanel";
 import { PageHelpButton } from "./PageHelpButton";
 
-// Strip nav items that aren't in allowedServiceKeys, and drop any group that
-// becomes empty. Returns the original config when no filter applies (admin
-// users / null allowedServiceKeys).
-//
-// STELLA pack 1, item 6: this runs for STELLA as well as OLIVER now. The server
-// list (oliver-api routes/overview.js ACCOUNTANT_SERVICE_KEYS) gained the
-// stella_* keys, and applying the filter to only one of the two products would
-// have meant an accountant either saw no STELLA nav at all or saw all of it
-// including the bank-link settings — neither of which is the answer.
-//
-// `prefixes` is what makes this safe to point at the SETTINGS hub as well. The
-// Settings SubNav mixes PRODUCT settings (stella_settings_bank,
-// stella_settings_period_close, oliver_settings_*) with TENANT-level account
-// settings that every member of a business is entitled to see whatever their
-// product role is (reference_account_settings_not_product_gated). Filtering the
-// whole hub against a product allowlist would strip the account settings too;
-// filtering nothing would leave an accountant able to reach the bank-link page,
-// which the server list deliberately withholds. So only items whose key starts
-// with one of `prefixes` are subject to the allowlist, and everything else is
-// left exactly as it was.
-function applyRoleNavFilter(
-  config: SubNavConfig,
-  allowedServiceKeys: string[] | null,
-  prefixes: string[] | null = null,
-): SubNavConfig {
-  if (!allowedServiceKeys) return config;
-  const allowSet = new Set(allowedServiceKeys);
-  const inScope = (key: string) => !prefixes || prefixes.some((p) => key.startsWith(p));
-  const filteredGroups = config.groups
-    .map((g) => ({ ...g, items: g.items.filter((i) => !inScope(i.key) || allowSet.has(i.key)) }))
-    .filter((g) => g.items.length > 0);
-  return { ...config, groups: filteredGroups };
-}
+// The accountant's nav filter (applyRoleNavFilter) and the rail target
+// (railRouteFor) live in navRoleFilter.ts — pure, so a node test runs the real
+// rule. 2 Oct 2026 review: the rail icon read the UNFILTERED nav, so an
+// accountant's STELLA icon opened the Dashboard their own menu did not hold.
 
 // F1.9 — Hide founder-only Consulting items (Onboard Client + Access Log +
 // Clients picker + Tenant Workspace) for non-super-users. Per locked rule:
@@ -168,20 +140,17 @@ function deriveProduct(pathname: string): ProductKey {
  *  2026-06-29: Consulting is role-split — founders land on the relocated
  *  /app/admin/consulting/clients surface; clients land on the new
  *  CLIENT-facing /app/consulting/projects surface (F-Client.Consulting).
- *  Other products still use the first-item-wins rule. */
-function defaultRouteFor(key: ProductKey, isFounder: boolean): string {
+ *  Other products still use the first-item-wins rule — on the nav THIS person
+ *  sees (role-filtered for OLIVER and STELLA, 2 Oct 2026), so the rail never
+ *  opens a page their own menu does not hold. */
+function defaultRouteFor(key: ProductKey, isFounder: boolean, allowedServiceKeys: string[] | null): string {
   if (key === "overview") return "/app/overview";
   if (key === "consulting") {
     return isFounder
       ? "/app/admin/consulting/clients"
       : "/app/consulting/projects";
   }
-  const config = SUB_NAV_CONFIGS[key];
-  if (!config) return "/app/overview";
-  for (const group of config.groups) {
-    if (group.items.length > 0) return group.items[0].route;
-  }
-  return "/app/overview";
+  return railRouteFor(key, SUB_NAV_CONFIGS[key], allowedServiceKeys) ?? "/app/overview";
 }
 
 export function AppShell() {
@@ -270,9 +239,9 @@ export function AppShell() {
       // Navigate to the product's default page. 2026-06-29: Consulting
       // routes to /app/admin/consulting/clients for founders (Brandon
       // sees Clients first) and to the shared Overview for clients.
-      navigate(defaultRouteFor(key, effectiveIsFounder));
+      navigate(defaultRouteFor(key, effectiveIsFounder, roleInfo.allowedServiceKeys));
     },
-    [navigate, mobileNavOpen, effectiveIsFounder]
+    [navigate, mobileNavOpen, effectiveIsFounder, roleInfo.allowedServiceKeys]
   );
 
   // F-Client.Consulting — 2026-07-24 (Brandon): the client consulting surface

@@ -2,8 +2,8 @@
   "$comment": "Native browser dialogs still living under src/pages/spark. A RATCHET, not a claim that they are gone: the sweep of these is tracked work. The guard in test/builder-usability-cleanup.test.mjs fails if the total grows or any file gains one. Regenerate with `npm run ratchet:native-dialogs` AFTER removing some.",
   "tree": "src/pages/spark",
   "generatedBy": "scripts/dev/regen-native-dialog-ratchet.mjs",
-  "total": 210,
-  "fileCount": 49,
+  "total": 209,
+  "fileCount": 48,
   "files": {
     "pages/spark/SparkAbTestsPage.tsx": 6,
     "pages/spark/SparkAccountsPage.tsx": 1,
@@ -26,7 +26,6 @@
     "pages/spark/SparkFormBuilderPage.tsx": 2,
     "pages/spark/SparkInboundWebhooksPage.tsx": 6,
     "pages/spark/SparkJourneyBuilderPage.tsx": 5,
-    "pages/spark/SparkLeadGenSavedPage.tsx": 1,
     "pages/spark/SparkLeadInboxPage.tsx": 14,
     "pages/spark/SparkLeadSourcesPage.tsx": 14,
     "pages/spark/SparkLeadSuppressionPage.tsx": 4,

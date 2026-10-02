@@ -34,13 +34,12 @@ import { IAInsightsHeader } from "../../components/iainsights/IAInsightsHeader";
 import type { IAInsightsHeaderData } from "../../components/iainsights/types";
 import { buildSparkDashboards, demoSparkMetrics } from "../../analytics/sparkDashboards";
 import { buildIntelligenceMirror, SPARK_MIRROR } from "../../analytics/intelligenceMirror";
-import { platformHealth, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
+import { platformHealth, priorIntelligence, demoBusinessPulse, gaugeOf } from "../../analytics/healthSummary";
 import { insightsDemoAllowed } from "../../components/insights/insightsDemo";
 import { InsightsEmpty, InsightsError, InsightsLoading, SampleDataBadge } from "../../components/insights/InsightsStateView";
 import { SPARK_INSIGHT_SOURCES } from "../../components/insights/sparkInsightSources";
 import { useArionInsightsPayload } from "../../hooks/useArionInsightsPayload";
 import { SparkLeadPoolCard } from "../../components/spark/SparkLeadPoolCard";
-import { WhatWorkedCard } from "../../components/spark/WhatWorkedCard";
 import { useProductInsightsPayload } from "../../hooks/useProductInsightsPayload";
 
 const TRENDS_ROUTE = "/app/services/spark_ia_insights_trends";
@@ -61,7 +60,7 @@ export function SparkIAInsightsHealthPage() {
     if (!metrics) return null;
     const trendDs = buildSparkDashboards(metrics);
     const intelDs = buildIntelligenceMirror(metrics, SPARK_MIRROR).dashboards;
-    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE);
+    const h = platformHealth(trendDs, intelDs, TRENDS_ROUTE, INTEL_ROUTE, priorIntelligence(metrics, SPARK_MIRROR));
 
     // CROSS-PRODUCT: only when we have real numbers from the other products too.
     // demoBusinessPulse invents a series for any payload that is null, which made
@@ -131,12 +130,6 @@ export function SparkIAInsightsHealthPage() {
           produces (L16). Same payload as the monthly email, so the page and
           the client's inbox always say the same thing. */}
       <SparkLeadPoolCard className="mt-4" />
-
-      {/* IL step 8 — "What worked in <Month>": where the work came from, what
-          it cost and what got a response. Same payload as the monthly email,
-          for the same reason the card above reads its own. Renders nothing
-          until the business has a month behind it. */}
-      <WhatWorkedCard className="mt-4" />
 
       {/* Contact scoring + the raw activity feed used to be their own nav
           items. The feature map folds them in here ("Health/Contact Scoring ·

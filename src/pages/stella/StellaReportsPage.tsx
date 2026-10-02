@@ -20,6 +20,7 @@
 // The numbers are oliver-api's, built from the SAME statement functions the
 // /ledger routes use — this page does no money arithmetic of its own.
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { InsightsReportsCatalog } from "../../components/insights/InsightsReportsCatalog";
 import { ReportsHubPage } from "../../components/insights/ReportsHubPage";
 import { IadmModal } from "../../components/IadmModal";
@@ -37,7 +38,19 @@ type Basis = "cash" | "accrual";
 export function StellaReportsPage() {
   const [month, setMonth] = useState(currentMonth);
   const [basis, setBasis] = useState<Basis>("cash");
-  const [packOpen, setPackOpen] = useState(false);
+  // ?open=accountant_pack opens the pack straight away — the link from
+  // Overview → Finish setup → "Accountant pack". Closing it drops the
+  // parameter so a refresh does not reopen it.
+  const [params, setParams] = useSearchParams();
+  const [packOpen, setPackOpenState] = useState(() => params.get("open") === "accountant_pack");
+  const setPackOpen = (open: boolean) => {
+    setPackOpenState(open);
+    if (!open && params.get("open")) {
+      const next = new URLSearchParams(params);
+      next.delete("open");
+      setParams(next, { replace: true });
+    }
+  };
   const state = useProductInsightsPayload("stella", { month, basis });
   const period = state.status === "ready" ? state.payload.period : undefined;
 

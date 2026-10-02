@@ -32,6 +32,8 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
 import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+// 2 Oct 2026 — why it scored what it scored, in one line under the score.
+import { scoreWhyLine, localityLine, parseRelevance, relevancePhrases, parsePlace, distanceLine, addressSourceLine } from "../../lib/leadScoreWhy";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
@@ -87,6 +89,13 @@ export interface LeadDetail {
   score_business_health: number | null;
   score_findability: number | null;
   score_enrichment_depth: number | null;
+  // 2 Oct 2026 (migration 189): why it scored what it scored, and whether the
+  // run could place it in the search area.
+  score_reasons_json?: string | null;
+  locality?: string | null;
+  // 2 Oct 2026 (migration 190): what the website check found — one plain
+  // sentence and the services the website lists, or "not checked" in words.
+  relevance_json?: string | null;
   lifecycle_stage: string | null;
   status: string | null;
   source: string | null;
@@ -186,6 +195,12 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
     { label: "Findability", value: lead?.score_findability },
     { label: "Enrichment", value: lead?.score_enrichment_depth },
   ]), [lead]);
+  // What the website check found (lumen.lead.relevance_json); null for leads
+  // that never went through it (intake, older runs).
+  const relevance = useMemo(() => parseRelevance(lead?.relevance_json), [lead?.relevance_json]);
+  // Where the run placed the business (relevance_json.place, 2 Oct 2026): the
+  // address's source under the Address field, the distance beside "In your area".
+  const place = useMemo(() => parsePlace(lead?.relevance_json), [lead?.relevance_json]);
 
   async function run(key: string, fn: () => Promise<void>) {
     setBusy(key);
@@ -339,8 +354,41 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                 <Field icon={Building2} label="Business">{lead.business_name || "—"}</Field>
                 <Field icon={Mail} label="Domain">{lead.domain}</Field>
                 <Field icon={Phone} label="Phone">{lead.phone || "—"}</Field>
-                <Field icon={MapPin} label="Address">{lead.full_address || "—"}</Field>
+                <Field icon={MapPin} label="Address">
+                  {lead.full_address || "—"}
+                  {lead.full_address && addressSourceLine(place) && (
+                    <span className="block text-[10px] text-slate-500" data-testid="lead-address-source">{addressSourceLine(place)}</span>
+                  )}
+                </Field>
               </div>
+
+              {/* 2 Oct 2026 — what the website check found, before any email was
+                  looked up. A description of the business, not a score, so
+                  every tier sees it. */}
+              {relevance && relevance.status === "checked" && (relevance.reason || relevance.services.length > 0) && (
+                <div data-testid="lead-relevance">
+                  <h3 className="text-[10px] uppercase font-bold tracking-wider text-slate-500 mb-2">About this business</h3>
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    {/* Written from the business's own (untrusted) website — said so, never stated as fact. */}
+                    {relevance.reason && <p className="text-sm text-slate-800"><span className="font-semibold text-slate-600">From their website:</span> {relevance.reason}</p>}
+                    {relevance.services.length > 0 && (
+                      <div className={relevance.reason ? "mt-2" : ""}>
+                        <div className="text-[10px] uppercase tracking-wide text-slate-500 font-semibold mb-1">Services on their website</div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {relevance.services.map((s) => (
+                            <span key={s} className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-700">{s}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {relevance && relevance.status === "not_checked" && (
+                <div className="text-[11px] text-slate-500" data-testid="lead-relevance-not-checked">
+                  {relevance.reason || "Not checked: the website could not be reviewed for this search."}
+                </div>
+              )}
 
               {showIntel ? (
                 <div>
@@ -353,7 +401,18 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                           {lead.hot_warm_cold}
                         </span>
                       )}
+                      {localityLine(lead.locality) && (
+                        <span className="text-[11px] text-slate-500">· {localityLine(lead.locality)}</span>
+                      )}
+                      {/* 2 Oct 2026 — how far the address is from the search's centre town. */}
+                      {localityLine(lead.locality) && distanceLine(place) && (
+                        <span className="text-[11px] text-slate-500" data-testid="lead-distance">· {distanceLine(place)}</span>
+                      )}
                     </div>
+                    {/* 2 Oct 2026 — why, in one line, from the run's own reasons */}
+                    {scoreWhyLine(lead.score_reasons_json, relevancePhrases(relevance)) && (
+                      <div className="mt-1.5 text-xs text-slate-600" data-testid="lead-score-why">{scoreWhyLine(lead.score_reasons_json, relevancePhrases(relevance))}</div>
+                    )}
                     <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {subScores.map((s) => (
                         <div key={s.label} className="rounded bg-slate-50 px-2 py-1.5">
@@ -762,6 +821,10 @@ const ACTIVITY_LABELS: Record<string, string> = {
   moved_to_contacts: "Moved to Contacts",
   removed_from_inbox: "Removed from the inbox",
   email_sent: "Email sent",
+  // 2 Oct 2026 — every score and re-score says why, in one sentence.
+  found: "Found by a search",
+  scored: "Scored",
+  rescored: "Re-scored",
 };
 function activityLabel(key: string): string {
   return ACTIVITY_LABELS[key] || titleCase(key.replace(/_/g, " "));

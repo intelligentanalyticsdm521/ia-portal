@@ -299,6 +299,13 @@ export function InvoiceCreateForm({ onCreated, onCancel, initialJobId, initialCo
           </div>
         ) : (
           <Field label="Job">
+            {/* 2026-09-25: "+ Create invoice" on a job that is not finished yet lands
+                here with nothing to pick. Say so, plainly, instead of an empty pick. */}
+            {initialJobId && jobs.length > 0 && !jobs.some((j) => j.id === initialJobId) && (
+              <div style={{ marginBottom: 8, padding: "8px 10px", borderRadius: 6, background: "#FEF3C7", color: "#92400E", fontSize: 12 }}>
+                That job is not finished yet, so it is not in this list. Finish it on the Job Board and come back, or press "Bill a customer" to invoice them now.
+              </div>
+            )}
             <select
               value={selectedJobId}
               onChange={(e) => setSelectedJobId(e.target.value)}

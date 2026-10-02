@@ -110,7 +110,7 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
   // remove items) per-subscription via PATCH /subscriptions/:id, which
   // updates Stripe + re-syncs the local mirror.
   const [editingItems, setEditingItems] = useState(false);
-  const [draftItems, setDraftItems] = useState<Record<string, { quantity: number; deleted: boolean }>>({});
+  const [draftItems, setDraftItems] = useState<Record<string, { quantity: number; unitAmount: string; deleted: boolean }>>({});
   const [savingItems, setSavingItems] = useState(false);
   // Items added during edit mode that don't exist on the subscription yet.
   // Each carries a temp id (for React keying), the chosen catalog price
@@ -367,8 +367,14 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
           {/* F-16 — Edit / Save / Cancel */}
           {(sub.items || []).length > 0 && !editingItems && (
             <Button variant="secondary" onClick={() => {
-              const d: Record<string, { quantity: number; deleted: boolean }> = {};
-              for (const it of sub.items || []) d[it.item_id] = { quantity: Number(it.quantity) || 1, deleted: false };
+              const d: Record<string, { quantity: number; unitAmount: string; deleted: boolean }> = {};
+              for (const it of sub.items || []) {
+                d[it.item_id] = {
+                  quantity: Number(it.quantity) || 1,
+                  unitAmount: String(Number(it.unit_amount ?? 0)),
+                  deleted: false,
+                };
+              }
               setDraftItems(d);
               setEditingItems(true);
             }}>Edit items</Button>
@@ -387,8 +393,17 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
                     const d = draftItems[it.item_id];
                     if (!d || !it.stripe_subscription_item_id) return null;
                     if (d.deleted) return { stripe_subscription_item_id: it.stripe_subscription_item_id, deleted: true };
-                    if (d.quantity !== Number(it.quantity)) return { stripe_subscription_item_id: it.stripe_subscription_item_id, quantity: d.quantity };
-                    return null;
+                    /* A changed amount mints a price on the same product server-side
+                       (Stripe prices are immutable). Only send it when it actually
+                       differs, so an untouched line is never re-priced. */
+                    const amountChanged = Number(d.unitAmount) !== Number(it.unit_amount);
+                    const qtyChanged = d.quantity !== Number(it.quantity);
+                    if (!amountChanged && !qtyChanged) return null;
+                    return {
+                      stripe_subscription_item_id: it.stripe_subscription_item_id,
+                      ...(qtyChanged ? { quantity: d.quantity } : {}),
+                      ...(amountChanged ? { unit_amount: Number(d.unitAmount) } : {}),
+                    };
                   }).filter(Boolean);
                   // New items: oliver-api routes/subscriptions.js:739-743 calls
                   // stripe.subscriptionItems.create when price_id is present
@@ -462,31 +477,49 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
                       {it.product_name}
                       {it.recurring_interval && <span style={{ color: "#94A3B8", marginLeft: 6 }}>· /{it.recurring_interval_count && it.recurring_interval_count > 1 ? `${it.recurring_interval_count} ` : ""}{it.recurring_interval}</span>}
                     </td>
-                    <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace" }}>{fmtMoney(it.unit_amount)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontFamily: "monospace" }}>
+                      {editingItems && !isDeleted ? (
+                        <input
+                          type="number" min={0} step="0.01"
+                          value={d ? d.unitAmount : String(Number(it.unit_amount ?? 0))}
+                          onChange={(e) => setDraftItems((prev) => ({
+                            ...prev,
+                            [it.item_id]: {
+                              ...(prev[it.item_id] || { quantity: qty, unitAmount: String(Number(it.unit_amount ?? 0)), deleted: false }),
+                              unitAmount: e.target.value,
+                            },
+                          }))}
+                          title="Charge this subscription a different amount for the same product"
+                          style={{ width: 92, padding: "2px 6px", textAlign: "right", fontFamily: "monospace", border: "1px solid #E5E7EB", borderRadius: 4 }}
+                        />
+                      ) : fmtMoney(it.unit_amount)}
+                    </td>
                     <td style={{ padding: "8px", textAlign: "right" }}>
                       {editingItems && !isDeleted ? (
                         <input
                           type="number" min={1} value={qty}
                           onChange={(e) => setDraftItems((prev) => ({
                             ...prev,
-                            [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), quantity: Math.max(1, Number(e.target.value) || 1) },
+                            [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, unitAmount: String(Number(it.unit_amount ?? 0)), deleted: false }), quantity: Math.max(1, Number(e.target.value) || 1) },
                           }))}
                           style={{ width: 56, padding: "2px 6px", textAlign: "right", border: "1px solid #E5E7EB", borderRadius: 4 }}
                         />
                       ) : qty}
                     </td>
-                    <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>{fmtMoney(Number(it.unit_amount) * qty)}</td>
+                    <td style={{ padding: "8px 0", textAlign: "right", fontFamily: "monospace", fontWeight: 600 }}>
+                      {fmtMoney(Number(editingItems && d ? d.unitAmount || 0 : it.unit_amount) * qty)}
+                    </td>
                     {editingItems && (
                       <td style={{ padding: "8px 0", textAlign: "right" }}>
                         {isDeleted ? (
                           <button
-                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), deleted: false } }))}
+                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, unitAmount: String(Number(it.unit_amount ?? 0)), deleted: false }), deleted: false } }))}
                             style={{ background: "none", border: "none", color: "#1A7DB5", cursor: "pointer", fontSize: 11 }}
                             title="Undo remove"
                           >undo</button>
                         ) : (
                           <button
-                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, deleted: false }), deleted: true } }))}
+                            onClick={() => setDraftItems((prev) => ({ ...prev, [it.item_id]: { ...(prev[it.item_id] || { quantity: qty, unitAmount: String(Number(it.unit_amount ?? 0)), deleted: false }), deleted: true } }))}
                             style={{ background: "none", border: "none", color: "#DC2626", cursor: "pointer", fontSize: 14, lineHeight: 1 }}
                             title="Remove this item from the subscription"
                           >×</button>
@@ -543,7 +576,11 @@ export function SubscriptionDetailPanel({ subscriptionId, api, onChanged, topSlo
                             const current = draftItems[existing.item_id]?.quantity ?? Number(existing.quantity) ?? 1;
                             setDraftItems(prev => ({
                               ...prev,
-                              [existing.item_id]: { quantity: current + 1, deleted: false },
+                              [existing.item_id]: {
+                                ...(prev[existing.item_id] ?? { unitAmount: String(Number(existing.unit_amount ?? 0)), deleted: false }),
+                                quantity: current + 1,
+                                deleted: false,
+                              },
                             }));
                           } else {
                             const dup = newItems.find(n => n.price_id === price.price_id);

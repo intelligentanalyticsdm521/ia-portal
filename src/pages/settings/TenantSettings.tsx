@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { useAppState } from '../../app/AppState';
 import { useAccessToken } from '../../auth/useAccessToken';
 import { connectGoogle, getGoogleProperties, selectGoogleProperties, listArionSites, listGbpLocations, selectGbpLocation, disconnectGbp, getInternalIps, addInternalIp, removeInternalIp, type InternalIpEntry } from '../../lib/arionApi';
+import { apiErrorMessage } from '../../lib/apiErrorMessage';
 import { useOliverApi } from '../../hooks/useOliverApi';
 import { PlatformTeamAccess } from './PlatformTeamAccess';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
@@ -110,6 +111,9 @@ function SectionLabel({ title, description }: { title: string; description?: str
 
 interface OrgProfile {
   tenantFullName?: string;
+  /** The EIN as the IRS prints it (NN-NNNNNNN). Platform 040, D-BK5: the
+   *  1099 filing file is refused until it is set. */
+  taxId?: string | null;
   /** Optional shorthand used on customer-facing surfaces (booking pages,
    *  email From display name, customer portal). Falls back to
    *  tenantFullName when blank. */
@@ -120,7 +124,17 @@ interface OrgProfile {
   website?: string;
   email?: string;
   phone?: string;
+  /** READ-ONLY composed one-liner from the API. The editable truth is the five
+   *  below (PATCH accepts only those; sending `address` is refused with
+   *  structured_address_required, which is what this form did from 1 Sep to
+   *  25 Sep 2026 — every Save on this page failed). */
   address?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  stateProvince?: string;
+  postalCode?: string;
+  countryRegion?: string;
   logoUrl?: string | null;
   brandColor?: string | null;
   brandColorSecondary?: string | null;
@@ -270,11 +284,18 @@ export function OrganizationTab() {
       const updated = await patch<OrgProfile>('/settings', {
         tenantFullName: draft.tenantFullName ?? '',
         preferredBusinessName: draft.preferredBusinessName ?? '',
+        // Sent only when edited: '' clears it, undefined leaves it alone.
+        ...((draft.taxId ?? '') !== (profile?.taxId ?? '') ? { taxId: draft.taxId ?? '' } : {}),
         slug: draft.slug ?? '',
         website: draft.website ?? '',
         email: draft.email ?? '',
         phone: draft.phone ?? '',
-        address: draft.address ?? '',
+        // The address goes as its parts; '' clears a part (a dropped suite number).
+        addressLine1: draft.addressLine1 ?? '',
+        addressLine2: draft.addressLine2 ?? '',
+        city: draft.city ?? '',
+        stateProvince: draft.stateProvince ?? '',
+        postalCode: draft.postalCode ?? '',
         logoUrl: draft.logoUrl ?? '',
         brandColor: draft.brandColor ?? '',
         brandColorSecondary: draft.brandColorSecondary ?? '',
@@ -289,11 +310,12 @@ export function OrganizationTab() {
       setProfile(updated); setDraft(updated);
       setToast('Business profile saved — shared across all products');
     } catch (e) {
-      setErrMsg(`Save failed: ${(e as Error).message}`);
+      // The API's own sentence ("An EIN is nine digits…"), not its JSON.
+      setErrMsg(`Save failed: ${apiErrorMessage(e)}`);
     } finally {
       setSaving(false);
     }
-  }, [draft, patch]);
+  }, [draft, patch, profile]);
 
   if (loading || !draft) {
     return <div className="py-10 text-center text-sm text-gray-500">{errMsg || 'Loading business profile…'}</div>;
@@ -325,6 +347,11 @@ export function OrganizationTab() {
           <p className="mt-1 text-xs text-gray-500">Shorter brand name shown on booking pages, customer portal, and emails. Defaults to your full business name.</p>
         </div>
         <div>
+          <label className="block text-sm font-medium text-gray-700">EIN <span className="text-gray-400">(employer identification number)</span></label>
+          <input type="text" inputMode="numeric" value={draft.taxId || ''} onChange={(e) => set({ taxId: e.target.value })} className={cls} placeholder="12-3456789" aria-label="EIN" />
+          <p className="mt-1 text-xs text-gray-500">Nine digits from your IRS letter. Needed before STELLA can produce your 1099 filing file; it appears nowhere else.</p>
+        </div>
+        <div>
           <label className="block text-sm font-medium text-gray-700">Website</label>
           <input type="url" value={draft.website || ''} onChange={(e) => set({ website: e.target.value })} className={cls} placeholder="https://example.com" />
         </div>
@@ -348,7 +375,14 @@ export function OrganizationTab() {
 
       <div>
         <label className="block text-sm font-medium text-gray-700">Address</label>
-        <textarea rows={2} value={draft.address || ''} onChange={(e) => set({ address: e.target.value })} className={cls} placeholder="123 Main St, Springfield IL 62701" />
+        <div className="mt-1 grid gap-3 sm:grid-cols-6">
+          <input type="text" aria-label="Address line 1" value={draft.addressLine1 || ''} onChange={(e) => set({ addressLine1: e.target.value })} className={`${cls} sm:col-span-4`} placeholder="123 Main St" />
+          <input type="text" aria-label="Address line 2" value={draft.addressLine2 || ''} onChange={(e) => set({ addressLine2: e.target.value })} className={`${cls} sm:col-span-2`} placeholder="Suite 4 (optional)" />
+          <input type="text" aria-label="City" value={draft.city || ''} onChange={(e) => set({ city: e.target.value })} className={`${cls} sm:col-span-3`} placeholder="City" />
+          <input type="text" aria-label="State or province" value={draft.stateProvince || ''} onChange={(e) => set({ stateProvince: e.target.value })} className={`${cls} sm:col-span-1`} placeholder="State" />
+          <input type="text" aria-label="Postcode or ZIP" value={draft.postalCode || ''} onChange={(e) => set({ postalCode: e.target.value })} className={`${cls} sm:col-span-2`} placeholder="ZIP" />
+        </div>
+        <p className="mt-1 text-xs text-gray-500">Printed on invoices, quotes and the 1099 payer block.</p>
       </div>
 
       <div>
