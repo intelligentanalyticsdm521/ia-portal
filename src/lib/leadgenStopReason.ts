@@ -55,6 +55,11 @@ const WORDS: Record<string, StopReasonWords> = {
     title: "emails could not be confirmed",
     body: `The service that confirms each email kept saying it could not tell, so new leads could not be confirmed and we stopped. ${NOTHING_MORE} Try again later.`,
   },
+  // 2 Oct 2026: the website check cannot run at all (a key or model problem on our side), so the run stops before it spends.
+  website_check_misconfigured: {
+    title: "the website check is not working on our side",
+    body: `The check we run on each business's website could not run at all — a setup problem on our side, not yours. We stopped before spending anything on this run. ${NOTHING_MORE} We have been told; try again once it is fixed.`,
+  },
   verification_unavailable: {
     title: "the final checks were not answering",
     body: `The last checks we run on each lead before it is saved stopped answering, so we stopped. ${NOTHING_MORE} Try again later.`,
