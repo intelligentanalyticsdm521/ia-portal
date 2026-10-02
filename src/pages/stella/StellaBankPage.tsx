@@ -35,6 +35,7 @@ import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
 import {
   clearToken, readReturn, rememberToken, stripReturnParam, type PlaidReturn, type TokenStorage,
 } from "../../lib/plaidReturn";
+import { PLAID_SENTENCES, plaidErrorSentence, plaidItemProblem } from "../../lib/plaidConnectError";
 
 // { data } envelope is unwrapped by stellaApi.
 interface PlaidStatus {
@@ -67,14 +68,9 @@ function fmtDate(d?: string | null): string | null {
   return Number.isNaN(t.getTime()) ? null : t.toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-// Turn a stellaApi throw into copy a business owner can read.
-function friendlyPlaidError(e: unknown): string {
-  const msg = e instanceof Error ? e.message : String(e);
-  if (msg.includes("plaid_not_configured")) {
-    return "Plaid isn't configured on this environment yet — the connect flow unlocks once sandbox keys land.";
-  }
-  return msg;
-}
+// A failed connect / finish / sync is ONE plain sentence from
+// lib/plaidConnectError — never the provider's code, never the raw message
+// (2 Oct 2026: the page printed the bare text INVALID_LINK_CUSTOMIZATION).
 
 // sessionStorage can throw (blocked site data, some private windows); a page
 // that cannot keep the token simply reads every return as expired.
@@ -174,7 +170,11 @@ function PlaidLinkLauncher({
   }, [ready, open]);
 
   useEffect(() => {
-    if (error) onExit(`Plaid Link failed to load: ${error.message}`);
+    // The script's own error text is for the console, not the owner.
+    if (error) {
+      console.error("[stella.bank] Plaid Link failed to load", error);
+      onExit(PLAID_SENTENCES.connect);
+    }
   }, [error, onExit]);
 
   return null;
@@ -249,7 +249,9 @@ export function StellaBankPage() {
         await patch(`/ledger/plaid/items/${it.raw_plaid_item_id}`, { is_personal_card: !it.is_personal_card });
         await reload();
       } catch (e) {
-        setActionError(e instanceof Error ? e.message : "Could not update the designation. Please try again.");
+        // The server's 500 text is a database message, not a sentence for the owner.
+        console.error("[stella.bank] personal-card switch failed", e);
+        setActionError("That switch couldn't be saved — please try again.");
       } finally {
         setDesignating(null);
       }
@@ -265,13 +267,14 @@ export function StellaBankPage() {
     setConnecting(true);
     try {
       const r = await post<{ link_token: string; expiration?: string }>("/ledger/plaid/link-token");
-      if (!r?.link_token) throw new Error("Plaid didn't return a link token.");
+      if (!r?.link_token) throw new Error("no link token in the answer");
       // Kept for the bank that sends the person back (lib/plaidReturn.ts).
       rememberToken(linkTokenStore(), r.link_token, Date.now());
       setLinkToken(r.link_token);
     } catch (e) {
+      console.error("[stella.bank] link token failed", e);
       setConnecting(false);
-      setActionError(friendlyPlaidError(e));
+      setActionError(plaidErrorSentence(e, "connect"));
     }
   }, [post]);
 
@@ -283,7 +286,7 @@ export function StellaBankPage() {
       stripReturnFromAddress();
       if (!publicToken) {
         setConnecting(false);
-        setActionError("Plaid Link closed without a public token — nothing was connected.");
+        setActionError(PLAID_SENTENCES.closedEarly);
         return;
       }
       try {
@@ -294,7 +297,8 @@ export function StellaBankPage() {
         });
         await reload();
       } catch (e) {
-        setActionError(friendlyPlaidError(e));
+        console.error("[stella.bank] exchange failed", e);
+        setActionError(plaidErrorSentence(e, "finish"));
       } finally {
         setConnecting(false);
       }
@@ -319,7 +323,8 @@ export function StellaBankPage() {
         await post("/ledger/plaid/sync", { item_id: itemId });
         await reload();
       } catch (e) {
-        setActionError(friendlyPlaidError(e));
+        console.error("[stella.bank] sync failed", e);
+        setActionError(plaidErrorSentence(e, "sync"));
       } finally {
         setSyncingItemId(null);
       }
@@ -422,8 +427,8 @@ export function StellaBankPage() {
                         <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>
                           {it.institution_name || "Bank connection"}
                         </span>
-                        {it.error_code && (
-                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{it.error_code}</span>
+                        {plaidItemProblem(it.error_code) && (
+                          <span style={{ ...pill, color: "#B91C1C", background: "#FEF2F2" }}>{plaidItemProblem(it.error_code)}</span>
                         )}
                       </div>
                       <div style={{ fontSize: 11, color: "#5A7A8A", marginTop: 2 }}>

@@ -158,8 +158,14 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // reports collapsed into ONE Reports page (P&L live, rest land P2), and
   // Bank Connections + Period Close moved to the SETTINGS hub — they are
   // settings, not daily-work nav (see stella_settings_* below).
-  // Overview is FIRST — it is the Ledger landing page (first-item-wins makes
-  // it STELLA's default landing; see AppShell defaultRouteFor).
+  // DASHBOARD (2 Oct 2026) — the PRODUCT dashboard, named and placed the way
+  // OLIVER / SPARK / ARION name and place theirs: "Dashboard", first item of
+  // the product nav, so first-item-wins (AppShell defaultRouteFor) makes it
+  // what STELLA's rail icon opens. Brandon: "STELLA is supposed to have it's
+  // own dashboard/overview … that's where the platform cross features stuff
+  // lives, like finish set up". Ledger → Overview below is the LEDGER feature's
+  // overview and stays the Ledger group's landing.
+  { key: 'stella_dashboard', displayName: 'Dashboard', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_dashboard', description: 'Everything across STELLA in one place — what is left to set up, what needs you (inbox, bills, money owed to you, month-end close), and a way into every part.' },
   { key: 'stella_ledger_overview', displayName: 'Overview', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_overview', description: 'Your bookkeeping at a glance — month money in/out/net, cash-flow trend, bank balances, what needs review, and what you\'re owed.' },
   { key: 'stella_ledger_inbox', displayName: 'Inbox', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_inbox', description: 'Needs-review queue — uncategorized, flagged and duplicate transactions with one-tap accept/reject.' },
   { key: 'stella_ledger_transactions', displayName: 'Transactions', section: 'STELLA', defaultStatus: 'enabled', route: '/app/services/stella_ledger_transactions', description: 'The canonical ledger — every money-in and money-out line with income, expense, and recurring views, manual record entry, and personal-card reimbursement tracking (what the business owes you).' },
@@ -210,8 +216,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // Back-compat aliases for the retired 0.1.0 MLP deep links. Not shown in any
   // nav (coming_soon keeps them out of GlobalSearch); ServiceRouter redirects
   // them to the live Ledger equivalents so old bookmarks / email CTAs don't 404.
-  { key: 'stella_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'Legacy alias — redirects to STELLA Overview.' },
-  { key: 'stella_expenses_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Legacy alias — redirects to STELLA Overview.' },
+  { key: 'stella_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_coming', description: 'Legacy alias — redirects to the STELLA Dashboard.' },
+  { key: 'stella_expenses_coming', displayName: 'STELLA', section: 'STELLA', defaultStatus: 'coming_soon', route: '/app/services/stella_expenses_coming', description: 'Legacy alias — redirects to the STELLA Dashboard.' },
   // OLIVER — Full FSM suite (16 pages)
   { key: 'oliver_dashboard', displayName: 'Dashboard', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_dashboard', description: 'KPI overview: active jobs, revenue, open invoices, and recent activity.' },
   { key: 'oliver_job_board', displayName: 'Job Board', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_job_board', description: 'List and Kanban views of all jobs with status filtering.' },
@@ -420,8 +426,8 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // header sub-routes, etc.). They render the generic "Coming soon" placeholder
   // in ServiceRouter — no dedicated page component needed.
   // (STELLA's old stella_coming Overview MLP is retired — see the STELLA block
-  // above; legacy /app/services/stella_coming links redirect to the Ledger
-  // Overview landing.)
+  // above; legacy /app/services/stella_coming links redirect to the STELLA
+  // Dashboard.)
   { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
   { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },

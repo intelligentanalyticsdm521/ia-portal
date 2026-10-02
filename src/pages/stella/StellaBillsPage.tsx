@@ -14,6 +14,7 @@
 // the total, the balance, the status and the aging all come back from
 // /ledger/bills and /ledger/ap-aging.
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, AlertTriangle } from "lucide-react";
 import { useStellaApi } from "../../hooks/useStellaApi";
 import { DataTable, EmptyState, FilterBar, type Column } from "../../components/oliver/ui";
@@ -91,7 +92,11 @@ export function StellaBillsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<unknown>(null);
-  const [filter, setFilter] = useState("all");
+  // ?filter=overdue|open|… opens the list already filtered — the STELLA
+  // Dashboard's Bills tile links here with the pill that matches what it said.
+  const [params] = useSearchParams();
+  const asked = params.get("filter") || "";
+  const [filter, setFilter] = useState(FILTER_PILLS.some((p) => p.key === asked) ? asked : "all");
   const [search, setSearch] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [detail, setDetail] = useState<BillDetail | null>(null);

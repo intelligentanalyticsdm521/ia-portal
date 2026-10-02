@@ -1,5 +1,13 @@
-// StellaOverviewPage — Ledger → Overview (the STELLA landing page, and the
-// section's landing per SubNav STELLA_NAV / AppShell.defaultRouteFor).
+// StellaOverviewPage — Ledger → Overview, the LEDGER feature's overview (the
+// Ledger group's landing in SubNav STELLA_NAV).
+//
+// 2 Oct 2026 — no longer STELLA's landing. Brandon: "Everything is in
+// STELLA>Ledger>Overview. Each feature has an overview and then STELLA is
+// supposed to have it's own dashboard/overview." STELLA's rail icon now opens
+// the product Dashboard (StellaDashboardPage, stella_dashboard), first item in
+// the STELLA nav like every other product's. This page stays exactly as it was;
+// only its setup reads moved to stellaSetupLoad.ts so the Dashboard reads the
+// same six signals rather than a copy of them.
 //
 // Founder-approved design: the entry-level-QuickBooks-replacement look — a
 // glanceable "how is the business doing" page, not a data-entry grid.
@@ -15,11 +23,8 @@
 // fetches.
 //
 //   GET /ledger/overview?month=        the money numbers, charts, cards
-//   GET /ledger/plaid/status + /items  step 1, step 2, and the Accounts card
-//   GET /ledger/coa                    step 3
-//   GET /ledger/tax-rates              step 4
-//   GET /ledger/transactions?status=categorized|reconciled&limit=1   step 5
-//   localStorage (accountant pack downloaded on this browser)       step 6
+//   loadStellaSetup (stellaSetupLoad)  the six setup steps, and the Plaid
+//                                      connections the Accounts card shows
 //
 // The setup reads are non-fatal: one that fails leaves its step as a reminder
 // and never breaks the Overview.
@@ -29,23 +34,11 @@ import { useStellaApi } from "../../hooks/useStellaApi";
 import { useEffectiveTenantId } from "../../lib/tenantContext";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
 import { StellaOverviewView, toNum, type LedgerOverview, type PlaidItemSummary } from "./StellaOverviewView";
-import {
-  packDownloaded, stellaSetupSteps,
-  type CoaAccountInput, type PlaidStatusInput, type StellaSetupStep, type TaxRateInput,
-} from "./stellaSetupSteps";
+import { type StellaSetupStep } from "./stellaSetupSteps";
+import { browserStorage, loadStellaSetup } from "./stellaSetupLoad";
 
 function currentMonth() {
   return new Date().toISOString().slice(0, 7);
-}
-
-type PlaidItemRow = PlaidItemSummary & { is_personal_card?: boolean | number | null };
-
-function browserStorage(): Storage | null {
-  try {
-    return typeof window !== "undefined" ? window.localStorage : null;
-  } catch {
-    return null;
-  }
 }
 
 export function StellaOverviewPage() {
@@ -98,34 +91,9 @@ export function StellaOverviewPage() {
   // Finish setup + the Accounts card's connections. Not month-bound, so it
   // does not re-run when the month picker moves. Every read is best-effort.
   const reloadSetup = useCallback(async () => {
-    const safe = async <T,>(p: Promise<T>): Promise<T | null> => {
-      try { return await p; } catch { return null; }
-    };
-    const bookedTotal = (r: { pagination?: { total?: number } } | null) =>
-      r ? Number(r.pagination?.total || 0) : null;
-    const [ps, pi, coa, rates, categorized, reconciled] = await Promise.all([
-      safe(get<PlaidStatusInput>("/ledger/plaid/status")),
-      safe(get<PlaidItemRow[]>("/ledger/plaid/items")),
-      safe(get<CoaAccountInput[]>("/ledger/coa")),
-      safe(get<TaxRateInput[]>("/ledger/tax-rates")),
-      safe(getFull<{ pagination?: { total?: number } }>("/ledger/transactions?status=categorized&limit=1")),
-      safe(getFull<{ pagination?: { total?: number } }>("/ledger/transactions?status=reconciled&limit=1")),
-    ]);
-    const items = Array.isArray(pi) ? pi : null;
-    const plaidStatus = ps ? { configured: !!ps.configured, itemCount: Number(ps.itemCount || 0) } : null;
-    setPlaidItems(plaidStatus && plaidStatus.itemCount > 0 && items ? items : []);
-    const c = bookedTotal(categorized);
-    const r = bookedTotal(reconciled);
-    setSetupSteps(
-      stellaSetupSteps({
-        plaidStatus,
-        plaidItems: items,
-        coa: Array.isArray(coa) ? coa : null,
-        taxRates: Array.isArray(rates) ? rates : null,
-        bookedCount: c === null && r === null ? null : (c || 0) + (r || 0),
-        accountantPackDownloaded: packDownloaded(browserStorage(), businessId),
-      })
-    );
+    const s = await loadStellaSetup({ get, getFull }, browserStorage(), businessId);
+    setPlaidItems(s.plaidStatus && s.plaidStatus.itemCount > 0 && s.plaidItems ? s.plaidItems : []);
+    setSetupSteps(s.steps);
   }, [get, getFull, businessId]);
 
   useEffect(() => {

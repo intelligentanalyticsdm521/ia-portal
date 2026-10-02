@@ -284,7 +284,9 @@ export function StellaOverviewView({
 // ── Finish setup ────────────────────────────────────────────────────────────
 // The six steps, each a link to the screen that does it, each ticked from
 // data. Hidden once every step is done, with "Show setup" to bring it back.
-export function StellaFinishSetup({ steps }: { steps: StellaSetupStep[] | null }) {
+// Drawn on the Ledger Overview ("Finish setup") and on STELLA's product
+// Dashboard ("Finish setting up", the words SPARK's Dashboard uses).
+export function StellaFinishSetup({ steps, title = "Finish setup" }: { steps: StellaSetupStep[] | null; title?: string }) {
   const [shown, setShown] = useState(false);
   if (!steps || steps.length === 0) return null;
   const done = steps.filter((s) => s.done).length;
@@ -309,7 +311,7 @@ export function StellaFinishSetup({ steps }: { steps: StellaSetupStep[] | null }
     <div style={{ marginBottom: 16 }}>
       <SetupChecklistCard
         dataTour="stella-finish-setup"
-        title="Finish setup"
+        title={title}
         done={done}
         total={steps.length}
         accent={STELLA_INDIGO}
