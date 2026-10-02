@@ -32,6 +32,8 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { IadmModal } from "../IadmModal";
 import { rowSourceAndChannel } from "../../lib/leadSource";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+// 2 Oct 2026 — why it scored what it scored, in one line under the score.
+import { scoreWhyLine, localityLine } from "../../lib/leadScoreWhy";
 // The ARGUS Responder's panel — one tab, its own component, so this modal
 // stays a modal and the agent surface can grow without it.
 import { LeadResponderPanel } from "./LeadResponderPanel";
@@ -87,6 +89,10 @@ export interface LeadDetail {
   score_business_health: number | null;
   score_findability: number | null;
   score_enrichment_depth: number | null;
+  // 2 Oct 2026 (migration 189): why it scored what it scored, and whether the
+  // run could place it in the search area.
+  score_reasons_json?: string | null;
+  locality?: string | null;
   lifecycle_stage: string | null;
   status: string | null;
   source: string | null;
@@ -353,7 +359,14 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
                           {lead.hot_warm_cold}
                         </span>
                       )}
+                      {localityLine(lead.locality) && (
+                        <span className="text-[11px] text-slate-500">· {localityLine(lead.locality)}</span>
+                      )}
                     </div>
+                    {/* 2 Oct 2026 — why, in one line, from the run's own reasons */}
+                    {scoreWhyLine(lead.score_reasons_json) && (
+                      <div className="mt-1.5 text-xs text-slate-600" data-testid="lead-score-why">{scoreWhyLine(lead.score_reasons_json)}</div>
+                    )}
                     <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
                       {subScores.map((s) => (
                         <div key={s.label} className="rounded bg-slate-50 px-2 py-1.5">
