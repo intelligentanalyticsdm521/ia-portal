@@ -30,41 +30,14 @@ import {
 // Types
 // ─────────────────────────────────────────────────────────────────────────────
 
-type JobPhase =
-  | "queued"
-  | "expanding_keywords"
-  | "expanding_locations"
-  | "discovery"
-  | "scoring"
-  | "enriching"
-  | "finalizing"
-  | "complete"
-  | "failed";
+// The steps, their words and the waiting lines are PURE and live in
+// lib/leadgenJobSteps.ts (a test imports them; this page's API hook reads
+// import.meta.env, which a test cannot).
+import {
+  type JobPhase, PHASE_ORDER, PHASE_LABELS, STEP_TO_PHASE, WAITING_LINES, savedSoFarLine,
+} from "../../lib/leadgenJobSteps";
 
 type JobStatus = "queued" | "running" | "complete" | "failed" | "cancelled";
-
-const PHASE_ORDER: JobPhase[] = [
-  "queued",
-  "expanding_keywords",
-  "expanding_locations",
-  "discovery",
-  "scoring",
-  "enriching",
-  "finalizing",
-  "complete",
-];
-
-const PHASE_LABELS: Record<JobPhase, { label: string; help: string }> = {
-  queued:               { label: "Queued",               help: "Waiting for a worker to pick up your search." },
-  expanding_keywords:   { label: "Expanding keywords",   help: "Building the full keyword set from your category and search mode." },
-  expanding_locations:  { label: "Resolving locations",  help: "Computing the cities and ZIPs inside your radius." },
-  discovery:            { label: "Discovery",            help: "Querying Hunter Discover, Brave and You.com for candidate domains." },
-  scoring:              { label: "Scoring",              help: "Filtering against the blocklist, suppression list, and the cross-tenant cache." },
-  enriching:            { label: "Enriching contacts",   help: "Pulling email addresses via homepage scrape and Hunter (only where needed)." },
-  finalizing:           { label: "Finalizing",           help: "Wrapping up — refunding any shortfall against your max." },
-  complete:             { label: "Complete",             help: "Review your leads below." },
-  failed:               { label: "Failed",               help: "Something went wrong — see the error above." },
-};
 
 interface JobStatusResponse {
   job_id: string;
@@ -122,16 +95,6 @@ interface RawJobRow {
   pool_strain_message?: string | null;
 }
 
-const STEP_TO_PHASE: Record<string, JobPhase> = {
-  starting: "queued",
-  loading_filters: "queued",
-  checking_cache: "queued",
-  discovering: "discovery",
-  scoring: "scoring",
-  enriching: "enriching",
-  persisting: "finalizing",
-  completed: "complete",
-};
 
 function adaptRow(row: RawJobRow): JobStatusResponse {
   // 'completed' in DB → 'complete' for the page's phase tracker; everything
@@ -281,6 +244,17 @@ export function SparkLeadGenJobPage() {
   // ── derived ────────────────────────────────────────────────────────────
   const phaseIdx = status?.phase ? PHASE_ORDER.indexOf(status.phase) : 0;
   const isRunning = status?.status === "running" || status?.status === "queued";
+  // One of the phase's lines, changing every four seconds while the run is on.
+  const [waitTick, setWaitTick] = useState(0);
+  useEffect(() => {
+    if (!isRunning) return;
+    const t = setInterval(() => setWaitTick((n) => n + 1), 4000);
+    return () => clearInterval(t);
+  }, [isRunning]);
+  const waitingLine = useMemo(() => {
+    const lines = WAITING_LINES[status?.phase || "queued"] || WAITING_LINES.queued;
+    return lines[waitTick % lines.length];
+  }, [status?.phase, waitTick]);
   const isComplete = status?.status === "complete";
   const isFailed = status?.status === "failed";
 
@@ -335,7 +309,7 @@ export function SparkLeadGenJobPage() {
     <SparkPageShell
       title={status?.search_summary?.category ? `Search: ${status.search_summary.category}` : "Lead Gen Job"}
       subtitle={subtitle}
-      help="Lead generation jobs progress through 7 phases. Once complete, accept or reject leads to send the accepted ones to your contacts."
+      help="A search finds businesses, checks each one is real and in your area, finds a named person with a verified email, then scores and saves the lead with its reasons. Once complete, accept or reject leads to send the accepted ones to your contacts."
       error={error}
       loading={loading && !status}
       actions={
@@ -367,6 +341,15 @@ export function SparkLeadGenJobPage() {
                   {isComplete ? "Search complete" : isFailed ? "Search failed" : "Running your search"}
                 </div>
                 <div className="text-[11px] text-slate-500 mt-0.5">{PHASE_LABELS[status.phase]?.help}</div>
+                {isRunning && (
+                  <div className="text-[12px] text-[#B84817] mt-1.5 flex items-center gap-2" data-testid="job-waiting-line">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    <span>{waitingLine}</span>
+                    {savedSoFarLine(status.delivered_count, status.target_count) && (
+                      <span className="text-slate-500">· {savedSoFarLine(status.delivered_count, status.target_count)}</span>
+                    )}
+                  </div>
+                )}
               </div>
               {isRunning && (
                 <div className="text-right">
