@@ -862,7 +862,10 @@ export function SparkLeadGenNewPage() {
     zips: form.zips.map((z) => z.zip),
     include_cold_leads: form.includeCold,
     max_leads: form.maxLeads,
-  }), [form, activeKw, activeCities, categoryPayload]);
+    // 2 Oct 2026 — a run started from an opened saved search says which one, so
+    // its leads read Found by "Quick search … · from Home Trades - Des Moines".
+    from_saved_search: editing ? editing.name : null,
+  }), [form, activeKw, activeCities, categoryPayload, editing]);
 
   async function handleStart() {
     if (!canSubmit) return;
