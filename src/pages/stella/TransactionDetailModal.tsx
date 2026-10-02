@@ -282,7 +282,16 @@ export function TransactionDetailModal({
       // Inbox review queue, not straight to 'categorized' — otherwise it sits
       // account-less forever with nothing prompting categorization. A line
       // that was flagged when this window opened goes back to flagged.
-      const target = txn.status === "flagged" ? "flagged" : coaAccountId ? "categorized" : "needs_categorization";
+      //
+      // 2 Oct 2026 (STELLA verifier, NEW-1): the target is decided by the
+      // category that is SAVED on the line, never by a pick in this window
+      // that was not saved. Pick → Personal → Add back used to send
+      // "categorized" for a line with no saved category; the server answered
+      // 200, posted nothing, and the line left the Inbox into no report. The
+      // server now refuses that too (category_required); this keeps the
+      // window from asking for it.
+      const saved = txn.coa_account_id || "";
+      const target = txn.status === "flagged" ? "flagged" : saved ? "categorized" : "needs_categorization";
       await patch(`/ledger/transactions/${txn.transaction_id}`, { status: target });
       setStatus(target);
       changedRef.current = true;

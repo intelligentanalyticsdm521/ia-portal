@@ -734,9 +734,14 @@ describe("the detail window", () => {
     assert.doesNotMatch(m, /\{isExpense && \(\s*<button[^>]*onClick=\{markPersonal\}/);
   });
 
-  test("Add back puts a flagged line back to flagged, and sends the status alone", () => {
+  test("Add back puts a flagged line back to flagged, decides by the SAVED category, and sends the status alone", () => {
     const fn = m.slice(m.indexOf("async function addBackToBooks("), m.indexOf("async function voidTxn("));
-    assert.match(fn, /const target = txn\.status === "flagged" \? "flagged" : coaAccountId \? "categorized" : "needs_categorization";/);
+    // NEW-1 (2 Oct 2026): an unsaved pick in the window's dropdown must never
+    // turn Add back into "categorized" — that sent a line out of the Inbox
+    // with no category and no journal entry. The saved category decides.
+    assert.match(fn, /const saved = txn\.coa_account_id \|\| "";/);
+    assert.match(fn, /const target = txn\.status === "flagged" \? "flagged" : saved \? "categorized" : "needs_categorization";/);
+    assert.doesNotMatch(fn, /coaAccountId \? "categorized"/, "the local pick decides nothing here");
     assert.match(fn, /await patch\(`\/ledger\/transactions\/\$\{txn\.transaction_id\}`, \{ status: target \}\);/);
   });
 });
