@@ -7,9 +7,12 @@
  * checked: is it the kind of business the search was for, working in the area?
  * The run summary (LUMEN searchOrchestrator.js) counts what that set aside:
  *   skipped.not_relevant      not the kind of business searched for
- *   skipped.relevance_unsure  the website did not say enough to confirm it
+ *   skipped.relevance_unsure  the website did not say enough to confirm it as a fit
  *   delivered_not_checked     saved, but the check could not be run for it
  * Neither of the first two is delivered or billed. Plain counts only; no codes.
+ * A business that does the right work but serves somewhere else is NOT in
+ * not_relevant: LUMEN counts it under skipped.out_of_area, which the banner
+ * already reads as "outside your area" (2 Oct 2026 review).
  *
  * Pure on purpose, so a test can import it (the page reads import.meta.env).
  */
@@ -27,7 +30,8 @@ export function fitSkipPhrases(summary: RunFitCounts | null | undefined): string
   const notRelevant = n(summary?.skipped?.not_relevant);
   const unsure = n(summary?.skipped?.relevance_unsure);
   if (notRelevant) out.push(`${notRelevant} not the kind of business you searched for`);
-  if (unsure) out.push(`${unsure} could not be confirmed`);
+  // "as a fit" — never read as an email that could not be confirmed.
+  if (unsure) out.push(`${unsure} could not be confirmed as a fit`);
   return out;
 }
 
