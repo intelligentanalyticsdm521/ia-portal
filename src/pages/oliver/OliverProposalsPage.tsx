@@ -562,7 +562,19 @@ export function ProposalDetailDrawer({
    * the Revisions tab's "+ Revise in the builder" — which creates a revision.
    * A draft nobody has seen has nothing to revise.
    */
-  const [editingDocument, setEditingDocument] = useState(false);
+  /* A DRAFT OPENS STRAIGHT INTO THE BUILDER (fewer clicks, 2 Oct 2026).
+     Clicking a draft's row used to open this record first, with the builder
+     one more press away; a draft has nothing to show here that the builder
+     does not. So the builder is up the moment the record opens for a draft,
+     and leaving the builder leaves the record too — back to the list, which
+     reloads. Everything that has been sent still opens on the record. */
+  const draftOpensBuilder = proposalSummary?.status === "draft";
+  const [editingDocument, setEditingDocument] = useState(draftOpensBuilder);
+  const leaveBuilder = () => {
+    setEditingDocument(false);
+    onChanged();
+    if (draftOpensBuilder) onClose();
+  };
 
   // Total in CENTS — server stores DECIMAL(18,2), round-trip Math.round.
   const parentTotalCents = proposalSummary
@@ -749,8 +761,8 @@ export function ProposalDetailDrawer({
         <ProposalBuilder
           api={{ get: api.get, post: api.post, patch: api.patch }}
           proposalId={proposalId}
-          onClose={() => { setEditingDocument(false); onChanged(); }}
-          onSaved={(msg) => { setEditingDocument(false); setRevsNote(msg); onChanged(); }}
+          onClose={leaveBuilder}
+          onSaved={(msg) => { setRevsNote(msg); leaveBuilder(); }}
         />
       )}
 

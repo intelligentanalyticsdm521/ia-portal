@@ -381,6 +381,13 @@ describe("D-04 · a saved draft opens in the builder from the row", () => {
     assert.ok(RECORD.includes("No revision is created — this is the document itself."));
   });
 
+  test("a draft opens straight into the builder, and leaving the builder leaves the record (2 Oct 2026)", () => {
+    assert.ok(RECORD.includes('const draftOpensBuilder = proposalSummary?.status === "draft";'));
+    assert.ok(RECORD.includes("useState(draftOpensBuilder)"), "the builder is up the moment a draft's record opens");
+    assert.ok(RECORD.includes("if (draftOpensBuilder) onClose();"), "leaving the builder on a draft goes back to the list");
+    assert.ok(RECORD.includes("onClose={leaveBuilder}") && RECORD.includes("leaveBuilder();"), "both ways out of the builder leave the same way");
+  });
+
   test("\"+ Revise in the builder\" is refused on a draft", () => {
     assert.ok(RECORD.includes('proposalSummary?.status === "draft"'));
     assert.ok(RECORD.includes("there is no version to revise"));
