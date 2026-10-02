@@ -181,7 +181,7 @@ function PlaidLinkLauncher({
 }
 
 export function StellaBankPage() {
-  const { get, post, patch, ready } = useStellaApi();
+  const { get, post, patch, del, ready } = useStellaApi();
   const [status, setStatus] = useState<PlaidStatus | null>(null);
   const [items, setItems] = useState<PlaidItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -197,6 +197,12 @@ export function StellaBankPage() {
   // designated item default to needs-reimbursement. (The overnight verify
   // caught the earlier UI-only local state that never saved.)
   const [designating, setDesignating] = useState<string | null>(null);
+  // Disconnect is asked twice, in the row itself: the first press shows what
+  // will happen, the second does it (DELETE /ledger/plaid/items/:id — the
+  // bank network drops the connection and the access key is deleted for good).
+  const [askDisconnect, setAskDisconnect] = useState<string | null>(null);
+  const [disconnecting, setDisconnecting] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // Read ONCE, on the first render, before anything strips the address.
   const [bankReturn] = useState<PlaidReturn>(() =>
     typeof window === "undefined" ? { kind: "none" } : readReturn(window.location.href, linkTokenStore(), Date.now())
@@ -332,6 +338,26 @@ export function StellaBankPage() {
     [post, reload]
   );
 
+  const disconnect = useCallback(
+    async (it: PlaidItem) => {
+      setActionError(null);
+      setNotice(null);
+      setDisconnecting(it.raw_plaid_item_id);
+      try {
+        await del(`/ledger/plaid/items/${it.raw_plaid_item_id}`);
+        setAskDisconnect(null);
+        setNotice(`${it.institution_name || "That account"} is disconnected. Nothing new will come in from it; your books keep everything already there.`);
+        await reload();
+      } catch (e) {
+        console.error("[stella.bank] disconnect failed", e);
+        setActionError(plaidErrorSentence(e, "disconnect"));
+      } finally {
+        setDisconnecting(null);
+      }
+    },
+    [del, reload]
+  );
+
   const configured = !!status?.configured;
 
   return (
@@ -385,6 +411,12 @@ export function StellaBankPage() {
         <div style={{ display: "flex", alignItems: "flex-start", gap: 8, padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#FEF2F2", color: "#991B1B", border: "1px solid #FECACA", borderRadius: 8, lineHeight: 1.5 }}>
           <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {notice && (
+        <div role="status" style={{ padding: "10px 14px", marginBottom: 12, fontSize: 12, background: "#ECFDF3", color: "#05603A", border: "1px solid #ABEFC6", borderRadius: 8, lineHeight: 1.5 }}>
+          {notice}
         </div>
       )}
 
@@ -449,7 +481,39 @@ export function StellaBankPage() {
                     <Button variant="secondary" size="sm" onClick={() => syncNow(it.item_id)} disabled={syncing} loading={syncing}>
                       {!syncing && <RefreshCw size={11} />} {syncing ? "Syncing…" : "Sync now"}
                     </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => { setNotice(null); setAskDisconnect(it.raw_plaid_item_id); }}
+                      disabled={disconnecting === it.raw_plaid_item_id || askDisconnect === it.raw_plaid_item_id}
+                      title="Stop pulling transactions from this account and remove its access key"
+                    >
+                      Disconnect
+                    </Button>
                   </div>
+                  {askDisconnect === it.raw_plaid_item_id && (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 8, marginLeft: 52, padding: "10px 12px", fontSize: 12, color: "#7A2E0E", background: "#FFFAEB", border: "1px solid #FEDF89", borderRadius: 8, lineHeight: 1.5, maxWidth: 640 }}>
+                      <span>
+                        Disconnect {it.institution_name || "this account"}? New transactions stop coming in and we delete
+                        our access to it. Everything already in your books stays.
+                      </span>
+                      <span style={{ display: "inline-flex", gap: 8 }}>
+                        <Button
+                          variant="primary"
+                          size="sm"
+                          style={{ background: "#B42318" }}
+                          onClick={() => disconnect(it)}
+                          disabled={disconnecting === it.raw_plaid_item_id}
+                          loading={disconnecting === it.raw_plaid_item_id}
+                        >
+                          {disconnecting === it.raw_plaid_item_id ? "Disconnecting…" : "Yes, disconnect"}
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => setAskDisconnect(null)} disabled={disconnecting === it.raw_plaid_item_id}>
+                          Keep it connected
+                        </Button>
+                      </span>
+                    </div>
+                  )}
                   {designated && (
                     <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, marginLeft: 52, padding: "8px 12px", fontSize: 11, color: "#3730A3", background: "#EEF0FB", border: `1px solid ${STELLA_INDIGO}33`, borderRadius: 8, lineHeight: 1.5, maxWidth: 640 }}>
                       <Wallet size={13} style={{ flexShrink: 0, marginTop: 1 }} />
