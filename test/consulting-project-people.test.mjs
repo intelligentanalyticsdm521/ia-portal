@@ -236,6 +236,11 @@ describe("ProjectPeopleSection (rendered)", () => {
       initial: { people: [{ ...OWNER, is_primary: 0 }], primary_missing: true },
     });
     assert.match(none, /No primary person — pick one/);
+    const empty = ui.render(ui.ProjectPeopleSection, {
+      projectId: "p", viewerRole: "founder", initial: { people: [], primary_missing: true },
+    });
+    assert.doesNotMatch(empty, /No primary person/, "nobody to pick on an empty project — Add person is the one thing to do");
+    assert.match(empty, /No one on this project yet\. Press Add person/);
   });
 
   test("a client sees the list read-only: no selects, no Add person, no remove", () => {
