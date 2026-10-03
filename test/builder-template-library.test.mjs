@@ -534,7 +534,7 @@ describe("the footer's empty-page button (D-153)", () => {
   test("it says what the adapter's empty page actually is", () => {
     assert.equal(blankButtonLabel(CATALOGUES.proposal), "Start from an empty page");
     assert.equal(blankButtonLabel(CATALOGUES.email), "Just the basics");
-    assert.equal(blankButtonLabel(CATALOGUES.website), "Start from one section");
+    assert.equal(blankButtonLabel(CATALOGUES.website), "Start from an empty page");
   });
 
   test("there is no button where there is no empty page", () => {

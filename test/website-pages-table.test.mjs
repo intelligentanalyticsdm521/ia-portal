@@ -190,10 +190,15 @@ test('the bulk actions are the ones the website can actually do', () => {
 /* ═════════════════ 5. the screen itself, and what is now gone ════════════ */
 
 test('the screen is WordPress’s, element for element', () => {
-  assert.match(LIVE, /className="wpp-title">Pages</, 'the heading');
-  assert.match(LIVE, />\s*Add New Page\s*</, 'the button beside it');
+  // 2 Oct 2026: Pages and Posts are two lists (Brandon: "all my posts are
+  // coming through as pages"), so the heading, the button and the search box
+  // take their words from the list's kind.
+  assert.match(LIVE, /className="wpp-title">\{words\.many\}</, 'the heading');
+  assert.match(LIVE, /\{busy \? 'Creating…' : words\.add\}/, 'the button beside it');
+  assert.match(LIVE, /add: 'Add New Page'/);
+  assert.match(LIVE, /add: 'Add New Post'/);
   assert.match(LIVE, /className="wpp-status"/, 'the status links');
-  assert.match(LIVE, /Search pages/, 'the search box');
+  assert.match(LIVE, /Search \{words\.many\.toLowerCase\(\)\}/, 'the search box');
   assert.match(LIVE, /<th>Title<\/th>\s*<th>Author<\/th>\s*<th>Date<\/th>/, 'the three columns');
   assert.match(LIVE, /bulkActions\(view\)/, 'bulk actions');
   assert.match(LIVE, /wpp-pagination/, 'pagination');

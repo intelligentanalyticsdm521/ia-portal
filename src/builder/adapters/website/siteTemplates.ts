@@ -226,15 +226,17 @@ export const SITE_PAGE_TEMPLATES: SitePageTemplate[] = [
     },
   },
   {
+    // 2 Oct 2026, Brandon: the website's library gets the same empty page the
+    // proposal's has - nothing on it. It used to open on a banner.
     key: "blank",
-    name: "Start from one section",
-    purpose: "Almost empty",
+    name: "Start from an empty page",
+    purpose: "Empty page",
     businessTypes: ["Any business"],
-    tags: ["blank", "empty", "one section", "from scratch"],
+    tags: ["blank", "empty", "nothing", "from scratch"],
     useCase: "A banner and nothing else. You add every other section yourself from the panel, which is the long way round unless you already know exactly what this page is.",
     bestFor: "A page that is nothing like the others — a policy page, a one-off notice, something you are rebuilding by hand.",
     blank: true,
-    kinds: ["hero"],
+    kinds: [],
   },
 ];
 

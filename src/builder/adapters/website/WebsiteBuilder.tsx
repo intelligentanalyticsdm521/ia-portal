@@ -816,7 +816,29 @@ export function WebsiteBuilder({ pageId, api, onClose, onSaved }: WebsiteBuilder
         }}
         adapter="website"
         resetKey={resetKey}
-        title={detail?.title || "Page"}
+        /* THE NAME IS TYPED HERE (Brandon, 2 Oct 2026): a new page is born
+           "Untitled page" and gets its name in the bar, as in WordPress's
+           "Add title". It is saved with the draft and written to the website
+           with the publish (both already carry detail.title). */
+        title={
+          <input
+            value={detail?.title ?? ""}
+            onChange={(e) => {
+              const title = e.target.value;
+              dirtyRef.current = true;
+              setDetail((d: any) => ({ ...(d || {}), title }));
+            }}
+            placeholder="Name this page"
+            title="Page Name"
+            aria-label="Page Name"
+            data-page-name
+            style={{
+              background: "transparent", border: "none", borderBottom: "1px dashed rgba(255,255,255,0.35)",
+              color: "#fff", fontSize: 15, fontWeight: 600, outline: "none", width: "100%", minWidth: 0, padding: "0 0 2px",
+              overflow: "hidden", textOverflow: "ellipsis",
+            }}
+          />
+        }
         doc={doc}
         onChange={change}
         ctx={ctx}

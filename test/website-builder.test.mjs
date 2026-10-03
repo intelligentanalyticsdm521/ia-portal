@@ -468,9 +468,14 @@ describe("the canvas draws the page, not a form", () => {
    ══════════════════════════════════════════════════════════════════════════ */
 
 describe("never a blank page", () => {
-  test("every template is a list of REAL ARION kinds — no template carries words", () => {
+  test("every template is a list of REAL ARION kinds — no template carries words; only the empty page is empty", () => {
     assert.ok(SITE_PAGE_TEMPLATES.length >= 5);
+    // 2 Oct 2026, Brandon: the website's library has the proposal's empty page
+    // ("Start from an empty page", nothing on it). Every OTHER template is full.
+    const blank = SITE_PAGE_TEMPLATES.find((t) => t.blank);
+    assert.ok(blank && blank.kinds.length === 0 && blank.name === "Start from an empty page", "the empty page is empty");
     for (const t of SITE_PAGE_TEMPLATES) {
+      if (t.blank) continue;
       assert.ok(t.kinds.length > 0, `${t.key} is empty`);
       for (const k of t.kinds) {
         assert.ok(ARION_KINDS.includes(k), `${t.key} names "${k}", which the website cannot build`);

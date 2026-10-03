@@ -530,7 +530,8 @@ function ServiceRouterInner() {
       case 'arion_onboarding': arionPage = <ArionOnboardingPage />; break;
       case 'arion_website_overview': arionPage = <WebsiteOverview />; break;
       case 'arion_website_content': arionPage = <WebsiteContent />; break;
-      case 'arion_website_pages': arionPage = <WebsitePages />; break;
+      case 'arion_website_pages': arionPage = <WebsitePages kind="page" />; break;
+      case 'arion_website_posts': arionPage = <WebsitePages kind="post" />; break;
       case 'arion_website_menus': arionPage = <WebsiteMenus />; break;
       case 'arion_website_design': arionPage = <WebsiteDesign />; break;
       // The AI Builder is GONE (2026-09-16): its configure → generate →

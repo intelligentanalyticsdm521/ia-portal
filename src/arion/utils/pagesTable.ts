@@ -102,14 +102,16 @@ export function paginate<T>(rows: T[], page: number, perPage = PER_PAGE): {
  * itself which editor built the page; it means nothing to the client, so it
  * is not repeated.
  */
-export function stateSuffix(p: ArionSitePage): string {
+export function stateSuffix(p: ArionSitePage, opts: { ownList?: boolean } = {}): string {
   const bits: string[] = [];
   if (p.status === 'draft') bits.push('Draft');
   else if (p.status === 'pending') bits.push('Pending review');
   else if (p.status === 'future') bits.push('Scheduled');
   else if (p.status === 'private') bits.push('Private');
   else if (p.status === 'trash') bits.push('In the bin');
-  if (p.type === 'post') bits.push('Post');
+  // 2 Oct 2026: posts have their own list (Website > Posts), so a row never
+  // needs to say it is one. The suffix stays for anything that still mixes.
+  if (p.type === 'post' && !opts.ownList) bits.push('Post');
   if (p.hasUnpublishedDraft && p.status !== 'trash') bits.push('Unpublished changes');
   return bits.join(', ');
 }

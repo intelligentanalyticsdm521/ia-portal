@@ -110,19 +110,25 @@ function Banner({ tone, children, onClose }: {
  * row strings are `node --test` rows rather than a browser check.
  */
 
-function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
+/** Which of WordPress's two lists this screen is: Pages, or Posts. */
+export type PageKind = 'page' | 'post';
+const KIND_WORDS: Record<PageKind, { one: string; many: string; add: string; untitled: string }> = {
+  page: { one: 'page', many: 'Pages', add: 'Add New Page', untitled: 'Untitled page' },
+  post: { one: 'post', many: 'Posts', add: 'Add New Post', untitled: 'Untitled post' },
+};
+
+function PagesList({ onOpen, kind }: { onOpen: (pageId: number) => void; kind: PageKind }) {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const [creating, setCreating] = useState(false);
-  const [newTitle, setNewTitle] = useState('');
-  const [newKind, setNewKind] = useState<'page' | 'post'>('page');
-  // THE TEMPLATE PRINCIPLE (§7): a new page never opens blank. The template is
-  // a list of ARION section KINDS — arion-api fills each one from the
-  // business's own details, so no template ever carries somebody else's words.
-  const [template, setTemplate] = useState('home');
-  // §11.9 — the one template library, opened from 'Browse templates'.
+  const words = KIND_WORDS[kind];
+  /* HOW A PAGE STARTS (Brandon, 2 Oct 2026: "it should just bring this up and
+     then I should name the page and whatnot just like in WordPress and
+     Elementor"). Add New Page opens the library at once - every template,
+     and "Start from an empty page" - the pick creates the draft and the
+     builder opens on it, where the name is typed in the bar. There is no form
+     in between. A post starts the way WordPress starts one: straight into
+     the editor on a headline and a paragraph. */
   const [browsing, setBrowsing] = useState(false);
   const pageLibrary = useMemo(() => siteLibrary(), []);
-  const chosenTemplate = SITE_PAGE_TEMPLATES.find((t) => t.key === template);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [askFor, setAskFor] = useState<ArionSitePage | null>(null);
@@ -143,7 +149,12 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     () => (activeSiteId ? arionApi.listSitePages(activeSiteId) : Promise.resolve(null)),
     [activeSiteId],
   );
-  const pages: ArionSitePage[] = (data as any)?.data?.pages || [];
+  // Pages and posts are two lists, as they are in WordPress (Brandon, 2 Oct
+  // 2026: "all my posts are coming through as pages"). The plugin sends both
+  // in one answer; this screen shows its own kind.
+  const pages: ArionSitePage[] = ((data as any)?.data?.pages || []).filter(
+    (p: ArionSitePage) => (String(p.type || 'page') === 'post' ? 'post' : 'page') === kind,
+  );
 
   const links = useMemo(() => statusLinks(pages), [pages]);
   const filtered = useMemo(() => filterPages(pages, view, search), [pages, view, search]);
@@ -223,26 +234,28 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
     }
   };
 
-  const create = async () => {
-    if (!activeSiteId || !newTitle.trim()) return;
+  /** Make the draft and open the builder on it. `templateKey` is a page
+   *  template's key, "blank" for the empty page, or null for a post. */
+  const createFrom = async (templateKey: string | null) => {
+    if (!activeSiteId) return;
     setBusy(true); setError(null);
     try {
-      const chosen = SITE_PAGE_TEMPLATES.find((t) => t.key === template);
+      const chosen = templateKey ? SITE_PAGE_TEMPLATES.find((t) => t.key === templateKey) : null;
       const res: any = await arionApi.createSitePage(activeSiteId, {
-        title: newTitle.trim(),
+        // Named in the builder, like WordPress's "Add title": the draft is
+        // born untitled and the bar's name box is where it gets one.
+        title: words.untitled,
         // A post opens on a headline and a paragraph; a page opens on the
-        // template the client chose, filled from their own details.
-        sections: (newKind === 'post'
-          ? ['about', 'content']
-          : (chosen?.kinds || ['hero'])
-        ).map((kind) => ({ kind })),
-        type: newKind,
+        // template the client chose, filled from their own details; the
+        // empty page opens on nothing.
+        sections: (kind === 'post' ? ['about', 'content'] : (chosen?.kinds || [])).map((k) => ({ kind: k })),
+        type: kind,
       });
-      setCreating(false); setNewTitle('');
+      setBrowsing(false);
       refetch();
       if (res?.data?.pageId) onOpen(res.data.pageId);
     } catch (e: any) {
-      setError(messageFrom(e, 'We could not create that page.'));
+      setError(messageFrom(e, `We could not create that ${words.one}.`));
     } finally {
       setBusy(false);
     }
@@ -297,7 +310,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
   const tablenav = (where: 'top' | 'bottom') => (
     <div className="wpp-tablenav">
       <div className="wpp-bulk">
-        <label className="wpp-sr" htmlFor={`wpp-bulk-${where}`}>What to do with the pages you ticked</label>
+        <label className="wpp-sr" htmlFor={`wpp-bulk-${where}`}>What to do with the {words.many.toLowerCase()} you ticked</label>
         <select
           id={`wpp-bulk-${where}`}
           value={bulk}
@@ -355,89 +368,27 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
       {note && <Banner tone="good" onClose={() => setNote(null)}>{note}</Banner>}
 
       <div className="wpp-head">
-        <h1 className="wpp-title">Pages</h1>
+        <h1 className="wpp-title">{words.many}</h1>
         <button
           type="button" className="abtn abtn-sky" style={{ minHeight: 44 }}
-          onClick={() => { setNewKind('page'); setCreating(true); }}
+          disabled={busy}
+          onClick={() => { if (kind === 'post') void createFrom(null); else setBrowsing(true); }}
         >
-          Add New Page
-        </button>
-        <button
-          type="button" style={{ ...smallButton, minHeight: 44 }}
-          onClick={() => { setNewKind('post'); setCreating(true); }}
-        >
-          Write a post
+          {busy ? 'Creating…' : words.add}
         </button>
         <span className="wpp-where">{selectedSite?.primaryDomain || 'your website'}</span>
       </div>
-
-      {creating && (
-        <div style={{
-          border: '1px solid var(--border)', borderRadius: 10, padding: 12, margin: '12px 0',
-          background: 'var(--surface-2, #F8FAFC)',
-        }}>
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6 }} htmlFor="new-page-title">
-            What is the {newKind === 'post' ? 'post' : 'page'} called?
-          </label>
-          <input
-            id="new-page-title"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="e.g. Garden offices"
-            style={{
-              width: '100%', fontSize: 16, padding: '10px 12px', borderRadius: 8,
-              border: '1px solid var(--border)', minHeight: 44, boxSizing: 'border-box',
-            }}
-          />
-          {/* §11.9 / D-146 — the grid of text cards that used to sit here is
-              gone. One library, with a picture of every page, search and
-              categories, shared with the proposal and email builders. */}
-          {newKind === 'page' && (
-            <div style={{ margin: '12px 0' }}>
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 8 }}>Start from…</div>
-              <div style={{
-                display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10,
-                border: '1px solid var(--border)', borderRadius: 8, padding: 10,
-                background: 'var(--surface, #fff)',
-              }}>
-                <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{chosenTemplate?.name || 'Choose a template'}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3, lineHeight: 1.35 }}>
-                    {chosenTemplate
-                      ? `${chosenTemplate.purpose} · ${chosenTemplate.kinds.length} section${chosenTemplate.kinds.length === 1 ? '' : 's'} · ${chosenTemplate.bestFor}`
-                      : 'Every template opens filled in from your own business details.'}
-                  </div>
-                </div>
-                <button type="button" style={{ ...smallButton, minHeight: 44 }} onClick={() => setBrowsing(true)}>
-                  Browse templates
-                </button>
-              </div>
-            </div>
-          )}
-          {browsing && (
-            <TemplateLibrary
-              open
-              onClose={() => setBrowsing(false)}
-              product="arion"
-              eyebrow="ARION · Website"
-              title="Start your page"
-              subtitle="Every page opens as a draft, filled in from your own business details. Pick the one closest to what this page is for, then change anything in the builder."
-              entries={pageLibrary}
-              onPick={(id) => { setTemplate(id); setBrowsing(false); }}
-            />
-          )}
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', margin: '8px 0 10px' }}>
-            It starts as a draft, filled in from your own business details, so nothing appears on your
-            website until you publish it. Every section can be changed, moved or removed in the builder.
-            {newKind === 'post' && ' You can set what it is filed under, and its picture, in its settings.'}
-          </div>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button type="button" className="abtn abtn-sky" style={{ minHeight: 44 }} disabled={busy || !newTitle.trim()} onClick={create}>
-              {busy ? 'Creating…' : 'Create draft'}
-            </button>
-            <button type="button" style={smallButton} onClick={() => { setCreating(false); setNewTitle(''); }}>Cancel</button>
-          </div>
-        </div>
+      {browsing && (
+        <TemplateLibrary
+          open
+          onClose={() => setBrowsing(false)}
+          product="arion"
+          eyebrow="ARION · Website"
+          title="Start your page"
+          subtitle="Every one of these opens as a draft, filled in from your own business details, or start from an empty page. You name the page in the builder. Nothing shows on your website until you publish it."
+          entries={pageLibrary}
+          onPick={(id) => { void createFrom(id); }}
+        />
       )}
 
       <div className="wpp-bar">
@@ -460,7 +411,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
           className="wpp-search"
           onSubmit={(e) => { e.preventDefault(); setSearch(typed); setPageNo(1); }}
         >
-          <label className="wpp-sr" htmlFor="wpp-search">Search pages</label>
+          <label className="wpp-sr" htmlFor="wpp-search">Search {words.many.toLowerCase()}</label>
           <input
             id="wpp-search"
             type="search"
@@ -476,7 +427,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
               border: '1px solid var(--border)', minHeight: 44, minWidth: 180,
             }}
           />
-          <button type="submit" style={{ ...smallButton, minHeight: 44 }}>Search pages</button>
+          <button type="submit" style={{ ...smallButton, minHeight: 44 }}>Search {words.many.toLowerCase()}</button>
         </form>
       </div>
 
@@ -486,7 +437,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
         <thead>
           <tr>
             <th className="wpp-cb">
-              <label className="wpp-sr" htmlFor="wpp-all">Tick every page on this screen</label>
+              <label className="wpp-sr" htmlFor="wpp-all">Tick every {words.one} on this screen</label>
               <input
                 id="wpp-all"
                 type="checkbox"
@@ -511,7 +462,7 @@ function PagesList({ onOpen }: { onOpen: (pageId: number) => void }) {
               </td>
             </tr>
           ) : shown.map((p) => {
-            const suffix = stateSuffix(p);
+            const suffix = stateSuffix(p, { ownList: true });
             const when = dateCell(p);
             return (
               <tr key={p.pageId} className="wpp-row">
@@ -681,7 +632,7 @@ function useWebsiteBuilderApi(): WebsiteBuilderApi | null {
 
 /* ── the route ─────────────────────────────────────────────────────────── */
 
-export function WebsitePages() {
+export function WebsitePages({ kind = 'page' }: { kind?: PageKind } = {}) {
   const { selectedSite, loading } = useArionContext();
   const [params, setParams] = useSearchParams();
   const raw = params.get('pageId');
@@ -706,7 +657,7 @@ export function WebsitePages() {
   return (
     <>
       {saved && <Banner tone="good" onClose={() => setSaved(null)}>{saved}</Banner>}
-      <PagesList onOpen={open} />
+      <PagesList onOpen={open} kind={kind} />
       {pageId != null && api && (
         <WebsiteBuilder
           key={pageId}

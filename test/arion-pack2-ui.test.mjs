@@ -223,21 +223,39 @@ test('the two switches that lived only in WordPress have a home', () => {
 
 /* ═══════════════════ 6. blog posts ═════════════════════════════════════ */
 
-test('a blog post is marked as one, and can still be written', () => {
-  // The separate "Blog posts" card is gone with the rest of the card list
-  // (2026-09-22). One table, WordPress's, and a post says what it is in the
-  // same place WordPress puts "— Draft" — so a client never has to work out
-  // which of two lists a thing is in.
+test('posts are their own list, as in WordPress, and a post can still be written', () => {
+  // 2026-09-22 put posts in the Pages table with a "Post" suffix. Brandon,
+  // 2 Oct 2026: "all my posts are coming through as pages. We should have
+  // posts and pages separated." Two lists now - Website > Pages and
+  // Website > Posts - the same screen filtered by kind.
   const src = read('pages/website/WebsitePages.tsx');
   assert.equal(stateSuffix({ pageId: 1, status: 'publish', type: 'post' }), 'Post');
-  assert.equal(stateSuffix({ pageId: 1, status: 'draft', type: 'post' }), 'Draft, Post');
-  assert.equal(stateSuffix({ pageId: 1, status: 'publish', type: 'page' }), '');
-  assert.match(stripComments(src), /Write a post/);
+  assert.match(src, /\(String\(p\.type \|\| 'page'\) === 'post' \? 'post' : 'page'\) === kind/, 'the list shows its own kind only');
+  assert.match(src, /export function WebsitePages\(\{ kind = 'page' \}/);
+  const router = read('../pages/ServiceRouter.tsx');
+  assert.match(router, /case 'arion_website_posts': arionPage = <WebsitePages kind="post" \/>/);
+  const nav = read('../components/SubNav.tsx');
+  assert.match(nav, /key: "arion_website_posts", label: "Posts"/);
+  const catalog = read('../config/serviceCatalog.ts');
+  assert.match(catalog, /key: 'arion_website_posts', displayName: 'Posts'/);
 });
 
-test('a post is created as a post, not a page', () => {
+test('a post is created as a post, not a page, and starts in the editor like WordPress', () => {
   const src = read('pages/website/WebsitePages.tsx');
-  assert.match(src, /type: newKind/);
+  assert.match(src, /type: kind,/);
+  assert.match(src, /if \(kind === 'post'\) void createFrom\(null\); else setBrowsing\(true\);/,
+    'Add New Post goes straight to the editor; Add New Page opens the library');
+});
+
+test('Add New Page opens the library first, and the page is named in the builder (Brandon, 2 Oct 2026)', () => {
+  const src = read('pages/website/WebsitePages.tsx');
+  assert.doesNotMatch(src, /Browse templates/, 'the library is not behind a second button');
+  assert.doesNotMatch(src, /new-page-title/, 'no title form before the builder');
+  assert.match(src, /title: words\.untitled,/, 'the draft is born untitled');
+  assert.match(src, /onPick=\{\(id\) => \{ void createFrom\(id\); \}\}/, 'a pick creates the draft and opens it');
+  const builder = read('../builder/adapters/website/WebsiteBuilder.tsx');
+  assert.match(builder, /data-page-name/, 'the name box is in the builder bar');
+  assert.match(builder, /setDetail\(\(d: any\) => \(\{ \.\.\.\(d \|\| \{\}\), title \}\)\)/, 'typing the name changes what is saved and published');
 });
 
 test('the status links still keep drafts and the bin apart, posts included', () => {

@@ -264,6 +264,7 @@ const ARION_NAV: SubNavConfig = {
         // so it sits directly under Overview and above the technology-named
         // entries. Site builder Phase 1A, 2026-09-05.
         { key: "arion_website_pages", label: "Pages", route: "/app/services/arion_website_pages" },
+        { key: "arion_website_posts", label: "Posts", route: "/app/services/arion_website_posts" },
         // Site builder pack 2, 2026-09-09. Menus is the job a client asks for
         // straight after building a page ("now put it in my menu"), so it sits
         // next to Pages; Brand & layout is everything that is the same on
