@@ -133,7 +133,7 @@ const ArgusIAInsightsPage = lazyNamed(() => import('./argus/ArgusIAInsightsPage'
 const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'ArgusHealthPage');
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
-const ArgusWorkflowAutomationsPage = lazyNamed(() => import('./argus/ArgusWorkflowAutomationsPage'), 'ArgusWorkflowAutomationsPage');
+const ArgusWorkflowsPage = lazyNamed(() => import('./argus/ArgusWorkflowsPage'), 'ArgusWorkflowsPage');
 // 2026-07-25 v13.0: the old platform-api grid page
 // (ArgusIAInsightsIntelligencePage) is no longer routed — all ARGUS
 // Intelligence keys (argus_intelligence / argus_cross_platform /
@@ -851,9 +851,10 @@ function ServiceRouterInner() {
   if (service.key === 'argus_intelligence' || service.key === 'argus_cross_platform' || service.key === 'argus_cross_channel') {
     return <Suspense fallback={<RouteLoading />}><ArgusIntelligencePage /></Suspense>;
   }
-  // P0-7 (Agency Foundation) — ARGUS Workflow & Automations observe surface.
+  // ARGUS → Workflows (2026-10-07, chat workflows contract §F.2). Replaced the
+  // P0-7 observe page; the legacy key still lands here for old bookmarks.
   if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
-    return <Suspense fallback={<RouteLoading />}><ArgusWorkflowAutomationsPage /></Suspense>;
+    return <Suspense fallback={<RouteLoading />}><ArgusWorkflowsPage /></Suspense>;
   }
 
   if (service.section === 'LUMEN') {

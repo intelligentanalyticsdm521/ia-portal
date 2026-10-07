@@ -135,3 +135,23 @@ test("neither surface says 'tenant' to a human", () => {
       `${name} must say "business", never "tenant"`);
   }
 });
+
+// Chat workflows (2026-10-07, contract §F.4): above each transcript, what the
+// workflow knows — the service and path, what it looks like, the fields the
+// visitor gave, and what ran for them, with the report link. Read from the one
+// GET /leads/:id/chat the panel already makes; no second fetch.
+test("the Conversation tab shows what the chat workflow captured, above the transcript", () => {
+  assert.match(panel, /workflow\?: ChatConversationWorkflow \| null;/);
+  assert.match(panel, /\{c\.workflow && <WorkflowBlock w=\{c\.workflow\} \/>\}/);
+  // above the transcript, not below it
+  assert.ok(panel.indexOf("<WorkflowBlock w={c.workflow} />") < panel.indexOf("{c.messages.map((m) => <Bubble"));
+  assert.match(panel, /const where = \[w\.service, w\.path\]\.filter\(Boolean\)\.join\(" · "\);/);
+  assert.match(panel, /Looks like: \{w\.intent_words\}\{sure \? ` \(\$\{sure\}\)` : ""\}/);
+  assert.match(panel, /\{fields\.map\(\(f, i\) => \(/);
+  // a conversation whose block lacks a list still renders
+  assert.match(panel, /const fields = Array\.isArray\(w\.fields\) \? w\.fields : \[\];/);
+  assert.match(panel, /\{r\.label\}: \{r\.status_words\}/);
+  assert.match(panel, /<a href=\{r\.file_url\} target="_blank" rel="noopener"[^>]*>\s*Open the report\s*<\/a>/);
+  // one fetch, the one it already made
+  assert.equal([...panel.matchAll(/get</g)].length, 1);
+});

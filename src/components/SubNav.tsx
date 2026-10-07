@@ -1021,9 +1021,9 @@ const ARGUS_NAV: SubNavConfig = {
   tagline: "AI & Agents",
   groups: [
     {
-      label: "Workflow & Automations", icon: Zap, collapsible: false, sectionId: "argus_workflow",
+      label: "Workflows", icon: Zap, collapsible: false, sectionId: "argus_workflow",
       items: [
-        { key: "argus_workflows",      label: "Workflow & Automations", route: "/app/services/argus_workflows", tag: { label: "ARGUS", color: "#84CC16" } },
+        { key: "argus_workflows",      label: "Workflows", route: "/app/services/argus_workflows", tag: { label: "ARGUS", color: "#84CC16" } },
       ],
     },
     {

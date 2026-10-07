@@ -1,0 +1,1396 @@
+{
+ "$comment": "Snapshot of LUMEN src/services/chatWorkflows/definition.js tree() run on scripts/fixtures/playbook-agency-example.json (no link vars set, switch web_design.no_site off), taken 2026-10-07 from the LUMEN builder's working tree. The shape the Portal reads as tree on GET /chat/playbooks. Test data only.",
+ "services": [
+  {
+   "key": "web_design",
+   "label": "Web Design",
+   "on": true,
+   "paths": [
+    {
+     "key": "web_design.audit",
+     "label": "Has a website: free audit",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: Want a free audit? We check its speed, how easily people find it on Google, its security, and anything that might be costing you leads.",
+       "buttons": [
+        {
+         "label": "Yes please",
+         "steps": [
+          {
+           "kind": "ask",
+           "words": "Asks their name"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their business name (they can skip it)"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their website"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their email"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their phone number (they can skip it)"
+          },
+          {
+           "kind": "lead",
+           "words": "Saves them as a lead"
+          },
+          {
+           "kind": "tool",
+           "words": "Runs your tool: Website audit"
+          },
+          {
+           "kind": "journey",
+           "words": "Adds them to the journey \"Audit follow-up\""
+          },
+          {
+           "kind": "end",
+           "words": "Offers the services again"
+          }
+         ]
+        },
+        {
+         "label": "Not now",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: No problem.",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Get a custom quote",
+             "goes_to": {
+              "key": "shared.quote",
+              "label": "Get a custom quote"
+             },
+             "on": true
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "web_design.no_site",
+     "label": "No website yet",
+     "on": false,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: {business} specializes in custom website design.",
+       "buttons": [
+        {
+         "label": "Call a rep now",
+         "goes_to": {
+          "key": "shared.call",
+          "label": "Call a rep now"
+         },
+         "on": true
+        },
+        {
+         "label": "Get a custom quote",
+         "goes_to": {
+          "key": "shared.quote",
+          "label": "Get a custom quote"
+         },
+         "on": true
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "first": {
+    "kind": "buttons",
+    "words": "ARGUS asks: Do you have a website today?"
+   }
+  },
+  {
+   "key": "digital_marketing",
+   "label": "Digital Marketing",
+   "on": true,
+   "paths": [
+    {
+     "key": "digital_marketing.main",
+     "label": "More calls, reviews or content",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: What do you want more of?",
+       "buttons": [
+        {
+         "label": "Calls and leads",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Do you run any marketing today?",
+           "buttons": [
+            {
+             "label": "Yes",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "No, starting",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Reviews and reputation",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Do you run any marketing today?",
+           "buttons": [
+            {
+             "label": "Yes",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "No, starting",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Social and content",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Do you run any marketing today?",
+           "buttons": [
+            {
+             "label": "Yes",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "No, starting",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                },
+                {
+                 "label": "Get a custom quote",
+                 "goes_to": {
+                  "key": "shared.quote",
+                  "label": "Get a custom quote"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "jobs_invoicing",
+   "label": "Jobs & Invoicing",
+   "on": true,
+   "paths": [
+    {
+     "key": "jobs_invoicing.main",
+     "label": "Scheduling and billing",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: How do you schedule and bill today?",
+       "buttons": [
+        {
+         "label": "Paper / texts",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: How many jobs a week?",
+           "buttons": [
+            {
+             "label": "Under 10",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "10–40",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "40+",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Another app",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: How many jobs a week?",
+           "buttons": [
+            {
+             "label": "Under 10",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "10–40",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "40+",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Just me",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: How many jobs a week?",
+           "buttons": [
+            {
+             "label": "Under 10",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "10–40",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            },
+            {
+             "label": "40+",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their business name (they can skip it)"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their phone number (they can skip it)"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "buttons",
+               "words": "ARGUS asks: Thanks, {name}. Where would you like to go from here?",
+               "buttons": [
+                {
+                 "label": "Call a rep now",
+                 "goes_to": {
+                  "key": "shared.call",
+                  "label": "Call a rep now"
+                 },
+                 "on": true
+                }
+               ]
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "data_management",
+   "label": "Data Management",
+   "on": true,
+   "paths": [
+    {
+     "key": "data_management.main",
+     "label": "Getting your data in order",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: What's the data?",
+       "buttons": [
+        {
+         "label": "Customers and jobs",
+         "steps": [
+          {
+           "kind": "ask",
+           "words": "Asks: Where does it live now? Name the programs or files if you can. (they can skip it)"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their name"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their email"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their phone number (they can skip it)"
+          },
+          {
+           "kind": "lead",
+           "words": "Saves them as a lead"
+          },
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Get a custom quote",
+             "goes_to": {
+              "key": "shared.quote",
+              "label": "Get a custom quote"
+             },
+             "on": true
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Spreadsheets everywhere",
+         "steps": [
+          {
+           "kind": "ask",
+           "words": "Asks: Where does it live now? Name the programs or files if you can. (they can skip it)"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their name"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their email"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their phone number (they can skip it)"
+          },
+          {
+           "kind": "lead",
+           "words": "Saves them as a lead"
+          },
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Get a custom quote",
+             "goes_to": {
+              "key": "shared.quote",
+              "label": "Get a custom quote"
+             },
+             "on": true
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Reports I can't get",
+         "steps": [
+          {
+           "kind": "ask",
+           "words": "Asks: Where does it live now? Name the programs or files if you can. (they can skip it)"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their name"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their email"
+          },
+          {
+           "kind": "ask",
+           "words": "Asks their phone number (they can skip it)"
+          },
+          {
+           "kind": "lead",
+           "words": "Saves them as a lead"
+          },
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Get a custom quote",
+             "goes_to": {
+              "key": "shared.quote",
+              "label": "Get a custom quote"
+             },
+             "on": true
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "key": "ai_solutions",
+   "label": "AI Solutions",
+   "on": true,
+   "paths": [
+    {
+     "key": "ai_solutions.argus",
+     "label": "Leads, follow-ups, posts and reviews",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: That's what our ARGUS employees do.",
+       "buttons": [
+        {
+         "label": "Call a rep now",
+         "goes_to": {
+          "key": "shared.call",
+          "label": "Call a rep now"
+         },
+         "on": true
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "ai_solutions.custom",
+     "label": "Something custom",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "ask",
+       "words": "Asks: Tell me a little about what you have in mind."
+      },
+      {
+       "kind": "ask",
+       "words": "Asks their name"
+      },
+      {
+       "kind": "ask",
+       "words": "Asks their email"
+      },
+      {
+       "kind": "ask",
+       "words": "Asks their phone number (they can skip it)"
+      },
+      {
+       "kind": "lead",
+       "words": "Saves them as a lead"
+      },
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: Thanks, {name}. What would you like to do next?",
+       "buttons": [
+        {
+         "label": "Call a rep now",
+         "goes_to": {
+          "key": "shared.call",
+          "label": "Call a rep now"
+         },
+         "on": true
+        },
+        {
+         "label": "Get a custom quote",
+         "goes_to": {
+          "key": "shared.quote",
+          "label": "Get a custom quote"
+         },
+         "on": true
+        }
+       ]
+      }
+     ]
+    }
+   ],
+   "first": {
+    "kind": "buttons",
+    "words": "ARGUS asks: What would you want AI to take off your plate?"
+   }
+  },
+  {
+   "key": "accounting",
+   "label": "Accounting Software",
+   "on": true,
+   "paths": [
+    {
+     "key": "accounting.main",
+     "label": "A look with your own numbers",
+     "on": true,
+     "status": "live",
+     "steps": [
+      {
+       "kind": "buttons",
+       "words": "ARGUS asks: What do you use today?",
+       "buttons": [
+        {
+         "label": "QuickBooks",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Want a 15-minute look with your own numbers?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Not now",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "end",
+               "words": "ARGUS says: Thanks — {owner} will be in touch when it suits you."
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Spreadsheet",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Want a 15-minute look with your own numbers?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Not now",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "end",
+               "words": "ARGUS says: Thanks — {owner} will be in touch when it suits you."
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "An accountant does it",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Want a 15-minute look with your own numbers?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Not now",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "end",
+               "words": "ARGUS says: Thanks — {owner} will be in touch when it suits you."
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        },
+        {
+         "label": "Nothing yet",
+         "steps": [
+          {
+           "kind": "buttons",
+           "words": "ARGUS asks: Want a 15-minute look with your own numbers?",
+           "buttons": [
+            {
+             "label": "Call a rep now",
+             "goes_to": {
+              "key": "shared.call",
+              "label": "Call a rep now"
+             },
+             "on": true
+            },
+            {
+             "label": "Not now",
+             "steps": [
+              {
+               "kind": "ask",
+               "words": "Asks their name"
+              },
+              {
+               "kind": "ask",
+               "words": "Asks their email"
+              },
+              {
+               "kind": "lead",
+               "words": "Saves them as a lead"
+              },
+              {
+               "kind": "end",
+               "words": "ARGUS says: Thanks — {owner} will be in touch when it suits you."
+              }
+             ]
+            }
+           ]
+          }
+         ]
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "shared": [
+  {
+   "key": "shared.call",
+   "label": "Call a rep now",
+   "on": true,
+   "status": "live",
+   "steps": [
+    {
+     "kind": "ask",
+     "words": "Asks their name"
+    },
+    {
+     "kind": "ask",
+     "words": "Asks their email"
+    },
+    {
+     "kind": "ask",
+     "words": "Asks their phone number"
+    },
+    {
+     "kind": "lead",
+     "words": "Saves them as a lead"
+    },
+    {
+     "kind": "phone",
+     "words": "Shows your phone number"
+    },
+    {
+     "kind": "tell_owner",
+     "words": "Tells you: Chat visitor calling now: {name}"
+    },
+    {
+     "kind": "end",
+     "words": "Offers the services again"
+    }
+   ]
+  },
+  {
+   "key": "shared.quote",
+   "label": "Get a custom quote",
+   "on": true,
+   "status": "live",
+   "steps": [
+    {
+     "kind": "ask",
+     "words": "Asks their name"
+    },
+    {
+     "kind": "ask",
+     "words": "Asks their email"
+    },
+    {
+     "kind": "ask",
+     "words": "Asks: In a line, what do you need?"
+    },
+    {
+     "kind": "lead",
+     "words": "Saves them as a lead"
+    },
+    {
+     "kind": "say",
+     "words": "ARGUS says: Thanks — {owner} will reply within one business day."
+    },
+    {
+     "kind": "tell_owner",
+     "words": "Tells you: Quote request: {name}"
+    },
+    {
+     "kind": "email",
+     "words": "Emails them what they asked for"
+    },
+    {
+     "kind": "end",
+     "words": "Offers the services again"
+    }
+   ]
+  }
+ ],
+ "drafts": [],
+ "hidden_links": [
+  {
+   "label": "Build one in minutes with the IA Website Builder",
+   "words": "The 'Build one in minutes with the IA Website Builder' button is hidden because no web address is set for it."
+  },
+  {
+   "label": "See a 10-minute demo",
+   "words": "The 'See a 10-minute demo' button is hidden because no web address is set for it."
+  },
+  {
+   "label": "Start a trial",
+   "words": "The 'Start a trial' button is hidden because no web address is set for it."
+  },
+  {
+   "label": "See how it works",
+   "words": "The 'See how it works' button is hidden because no web address is set for it."
+  },
+  {
+   "label": "Book it",
+   "words": "The 'Book it' button is hidden because no web address is set for it."
+  }
+ ]
+}

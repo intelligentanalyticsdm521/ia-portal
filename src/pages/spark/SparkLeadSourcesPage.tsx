@@ -46,6 +46,8 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+import { ChatWorkflowCard, ChatOwnTools } from "../../components/spark/ChatWorkflowCard";
+import { CHAT_WF, type ChatActionRow, type ChatPlaybookRow } from "../../lib/chatWorkflows";
 
 // ── shapes the API serves ───────────────────────────────────────────────────
 interface CatalogRow {
@@ -133,6 +135,12 @@ interface ChatSiteRow {
   updated_by: string | null;
   /** The one line the client pastes into a website we do not host. */
   snippet?: string | null;
+  /** Chat workflows (2026-10-07): whether the chat emails a visitor what they
+   *  asked for (a report, a "we have your request"). The ONE setting that is on
+   *  when nothing says otherwise (Brandon: "For me, let's keep them on"), so a
+   *  row that does not carry it reads as on. */
+  visitor_emails_enabled?: boolean;
+  timezone?: string | null;
 }
 
 /** The business's own phone line, and this month's texting allowance. */
@@ -279,6 +287,12 @@ export function SparkLeadSourcesPage() {
   const [chatSites, setChatSites] = useState<ChatSiteRow[]>([]);
   const [chatMeta, setChatMeta] = useState<ChatMeta | null>(null);
   const [chatBusy, setChatBusy] = useState<string | null>(null);
+  // Chat workflows (contract §F.1). null = the call failed or is not offered,
+  // and the block simply is not shown; [] = none yet.
+  const [playbooks, setPlaybooks] = useState<ChatPlaybookRow[] | null>(null);
+  const [chatActions, setChatActions] = useState<ChatActionRow[] | null>(null);
+  // A refused visitor-emails switch says why on its own row (never a browser dialog).
+  const [emailsWords, setEmailsWords] = useState<Record<string, string>>({});
   const [addingSite, setAddingSite] = useState(false);
   const [newSite, setNewSite] = useState({ label: "", domain: "" });
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
@@ -311,7 +325,7 @@ export function SparkLeadSourcesPage() {
     setError(null);
     try {
       // Portal data-fetching convention: both lists in one pass.
-      const [cat, conns, chat, phone] = await Promise.all([
+      const [cat, conns, chat, phone, pbs, acts] = await Promise.all([
         get<{ data: CatalogRow[]; meta: { source_limit: number | null; source_limit_reason: string } }>("/api/v1/intake/providers"),
         get<{ data: Connection[] }>("/api/v1/intake/connections"),
         // Inbound (Conversations 4). Its own failure: a business with no
@@ -320,6 +334,10 @@ export function SparkLeadSourcesPage() {
         // Conversations 2 + 3. Its own failure too: a business whose phone line
         // could not be read should still see its connectors, not an error page.
         get<{ data: PhoneLineRow | null; meta: PhoneLineMeta }>("/api/v1/conversations/phone-line").catch(() => null),
+        // Chat workflows (2026-10-07). Each its own failure, like the two above:
+        // a business whose workflows could not be read still sees its sources.
+        get<{ data: ChatPlaybookRow[] }>(CHAT_WF.playbooks).catch(() => null),
+        get<{ data: ChatActionRow[] }>(CHAT_WF.actions).catch(() => null),
       ]);
       setCatalog(cat.data || []);
       setSourceLimit(cat.meta?.source_limit ?? null);
@@ -327,6 +345,8 @@ export function SparkLeadSourcesPage() {
       setConnections(conns.data || []);
       setChatSites(chat?.data || []);
       setChatMeta(chat?.meta || null);
+      setPlaybooks(pbs ? pbs.data || [] : null);
+      setChatActions(acts ? acts.data || [] : null);
       setLine(phone?.data || null);
       setLineMeta(phone?.meta || null);
       setForwardTo(phone?.data?.forward_to_e164 || "");
@@ -386,6 +406,26 @@ export function SparkLeadSourcesPage() {
     } catch (err) {
       alert(friendlyApiError(err).message);
       await load();
+    } finally {
+      setChatBusy(null);
+    }
+  }
+
+  /** Chat workflows: whether the chat emails a visitor what they asked for. */
+  async function toggleVisitorEmails(site: ChatSiteRow, on: boolean) {
+    setChatBusy(`emails:${site.site_id}`);
+    setEmailsWords((w) => ({ ...w, [site.site_id]: "" }));
+    try {
+      await put(CHAT_WF.site(site.site_id), { visitor_emails_enabled: on });
+      setChatSites((rows) => rows.map((r) => (r.site_id === site.site_id ? { ...r, visitor_emails_enabled: on } : r)));
+      setNotice(on
+        ? `Visitors on ${site.label || site.domain || "that website"} get an email with what they asked for.`
+        : `Visitors on ${site.label || site.domain || "that website"} won't get emails from the chat.`);
+    } catch (err) {
+      setEmailsWords((w) => ({
+        ...w,
+        [site.site_id]: `That didn't save: ${friendlyApiError(err).message} The switch shows what is saved now — try again in a minute.`,
+      }));
     } finally {
       setChatBusy(null);
     }
@@ -647,6 +687,39 @@ export function SparkLeadSourcesPage() {
                         </div>
                       </div>
 
+                      {/* Chat workflows: does the chat email a visitor what they
+                          asked for? On unless the business says no. */}
+                      {(() => {
+                        const emailsOn = site.visitor_emails_enabled !== false;
+                        return (
+                          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-1.5">
+                            <div className="min-w-0 text-[11px] text-slate-600">
+                              <span className="font-semibold text-slate-700">Email visitors what they asked for</span>
+                              <span className="block text-[10px] text-slate-500">
+                                {emailsOn
+                                  ? "Visitors get an email with what they asked for."
+                                  : "Visitors won't get emails from the chat on this website."}
+                              </span>
+                            </div>
+                            <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+                              <input
+                                type="checkbox"
+                                role="switch"
+                                checked={emailsOn}
+                                disabled={chatBusy === `emails:${site.site_id}`}
+                                onChange={(e) => toggleVisitorEmails(site, e.target.checked)}
+                                className="h-4 w-4 rounded border-slate-300"
+                                aria-label={`Email visitors what they asked for on ${name}`}
+                              />
+                              {emailsOn ? "On" : "Off"}
+                            </label>
+                            {emailsWords[site.site_id] && (
+                              <p className="w-full text-[11px] text-rose-700" role="alert">{emailsWords[site.site_id]}</p>
+                            )}
+                          </div>
+                        );
+                      })()}
+
                       {/* The one line to paste. Shown for a website we do not
                           host — and for one we do, because a client who moves
                           their site off our hosting should not lose the bubble
@@ -726,6 +799,32 @@ export function SparkLeadSourcesPage() {
               >
                 + Add a website we do not host
               </button>
+            )}
+
+            {/* Chat workflows (contract §F.1): the buttons-and-steps chat, one
+                card per workflow, and the business's own tools a step can run. */}
+            {playbooks && playbooks.map((pb) => (
+              <ChatWorkflowCard
+                key={pb.playbook_id}
+                playbook={pb}
+                businessName={chatMeta?.business_name ?? null}
+                siteIds={pb.site_id ? [pb.site_id] : chatSites.map((s) => s.site_id)}
+                onChanged={(row) => setPlaybooks((list) => (list || []).map((x) => (x.playbook_id === row.playbook_id ? row : x)))}
+                onNotice={setNotice}
+              />
+            ))}
+            {/* A business whose only workflows are refused (no Growth package)
+                is told so on the card; the tools a step would run are not offered
+                beside that sentence. With no workflow yet, tools can be added
+                first — a workflow that names a tool needs it registered to go live. */}
+            {chatActions && !(playbooks && playbooks.length > 0 && playbooks.every((p) => !p.allowed)) && (
+              <ChatOwnTools
+                actions={chatActions}
+                playbooks={playbooks || []}
+                businessName={chatMeta?.business_name ?? null}
+                onActions={setChatActions}
+                onNotice={setNotice}
+              />
             )}
 
             {/* What a visitor is actually told, and where the words come from. */}

@@ -113,7 +113,7 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // 2026-06-22: canonical service key renamed to `argus_cross_platform`.
   // Legacy `argus_cross_channel` retained as a back-compat alias below.
   { key: 'argus_cross_platform', displayName: 'IA Insights — Intelligence', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_cross_platform', description: 'Six ARGUS Intelligence reports — Acquisition Performance, Marketing Effectiveness, Reputation Impact, Channel Performance, Customer Lifetime Value, Business Health Trajectory.' },
-  { key: 'argus_workflows', displayName: 'ARGUS — Workflow & Automations', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_workflows', description: 'Observe the onboarding workflows (node timelines), the business automation rules, and live onboarding runs across your platforms.' },
+  { key: 'argus_workflows', displayName: 'ARGUS — Workflows', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_workflows', description: 'Every process that runs for your business in one list: what starts it, whether it runs automatically or waits for you, and what it did.' },
   { key: 'argus_cross_channel', displayName: 'IA Insights — Intelligence', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_cross_channel', description: 'Legacy alias — see argus_cross_platform.' },
   { key: 'arion_seo_overview', displayName: 'SEO Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_seo_overview', description: 'SE Ranking SEO project summary — visibility score, tracked keywords, and trends.' },
   { key: 'arion_seo_keywords', displayName: 'SEO Keywords', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_seo_keywords', description: 'Keyword research wizard plus tracked-keyword management — add, remove, run suggestions/related/longtail/questions.' },
@@ -461,14 +461,6 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
     defaultStatus: 'coming_soon',
     route: '/app/services/forge_integrations',
     description: 'Integration health and sync status (placeholder).'
-  },
-  {
-    key: 'argus_automation',
-    displayName: 'Automation',
-    section: 'ARGUS',
-    defaultStatus: 'coming_soon',
-    route: '/app/services/argus_automation',
-    description: 'Automation orchestration and Intelligence Layer wiring (placeholder).'
   },
   // CONSULTING — IA Work & Deliverables (platform-level, always enabled for all tenants)
   { key: 'consulting_overview', displayName: 'Overview', section: 'CONSULTING', defaultStatus: 'enabled', route: '/app/services/consulting_overview', description: 'Summary of active engagements, tasks, deliverables, and upcoming events.' },

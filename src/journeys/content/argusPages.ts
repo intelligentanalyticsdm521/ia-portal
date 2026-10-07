@@ -25,9 +25,9 @@ export const ARGUS_PAGES: PageContentMap = {
   },
 
   argus_workflows: {
-    title: "Workflow & Automations — what runs without you",
+    title: "Workflows — what runs for you, and what needs you",
     body:
-      "The onboarding workflows and business rules, plus live runs as they happen. Open a run to see its timeline node by node: where it started, what it did, and where it stopped. When onboarding 'didn't work', this page is where the answer actually is.",
+      "Each workflow starts with something that happens — a visitor writes in the chat on your website — and runs its steps. Choose Automatic, or Send me first to check anything before it goes to a customer. Needs you is where those wait, along with chat messages ARGUS couldn't place.",
   },
 
   argus_coming: {

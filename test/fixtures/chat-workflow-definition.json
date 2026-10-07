@@ -1,0 +1,58 @@
+{
+  "$comment": "A chat workflow definition (chat-playbook/1) in the shape LUMEN serves as `tree` on GET /chat/playbooks, trimmed from the contract's example (CONTRACT_ARGUS_CHAT_PLAYBOOKS_2026-10-07 §B.7) plus the owner's switches and one draft. Test data only.",
+  "schema": "chat-playbook/1",
+  "name": "Website chat",
+  "path_switches": { "web_design.no_site": false },
+  "rules": { "opening": { "say": "What can we help with today?", "show_services": true } },
+  "services": [
+    { "key": "web_design", "label": "Web Design", "start": "wd.start" },
+    { "key": "digital_marketing", "label": "Digital Marketing", "start": "dm.start" }
+  ],
+  "paths": [
+    { "key": "web_design.audit", "service": "web_design", "label": "Has a website: free audit", "entry": "wd.audit_offer" },
+    { "key": "web_design.no_site", "service": "web_design", "label": "No website yet", "entry": "wd.no_site" },
+    { "key": "digital_marketing.main", "service": "digital_marketing", "label": "More calls, reviews or content", "entry": "dm.start" },
+    { "key": "shared.call", "service": null, "label": "Call a rep now", "entry": "shared.call" },
+    { "key": "shared.quote", "service": null, "label": "Get a custom quote", "entry": "shared.quote" },
+    { "key": "draft.17", "service": null, "label": "do you sell tractors?", "entry": "draft.17", "status": "draft" }
+  ],
+  "nodes": {
+    "wd.start": { "type": "buttons", "say": "Do you have a website today?", "buttons": [
+      { "id": "yes", "label": "Yes", "goto": "wd.audit_offer" },
+      { "id": "no", "label": "No", "goto": "wd.no_site" } ] },
+    "wd.audit_offer": { "type": "buttons", "say": "Want a free audit?", "buttons": [
+      { "id": "yes", "label": "Yes please", "goto": "wd.audit.name" },
+      { "id": "not_now", "label": "Not now", "goto": "wd.not_now" } ] },
+    "wd.audit.name": { "type": "ask", "field": "name", "prompt": "Great — what's your name?", "required": true, "next": "wd.audit.business" },
+    "wd.audit.business": { "type": "ask", "field": "business", "prompt": "And the name of your business?", "required": false, "skip_label": "Skip", "next": "wd.audit.email" },
+    "wd.audit.email": { "type": "ask", "field": "email", "prompt": "Where should we send the report?", "required": true, "next": "wd.audit.lead" },
+    "wd.audit.lead": { "type": "action", "kind": "create_lead", "params": { "service": "Web Design" }, "next": "wd.audit.run" },
+    "wd.audit.run": { "type": "action", "kind": "custom", "params": { "action_name": "Website audit", "say_before": "Running it now — the report goes to {email} within the hour." }, "next": "wd.audit.journey" },
+    "wd.audit.journey": { "type": "action", "kind": "enrol_journey", "params": { "journey_name": "Audit follow-up", "if_missing": "alert_owner" }, "next": "wd.audit.done" },
+    "wd.audit.done": { "type": "end" },
+    "wd.not_now": { "type": "buttons", "say": "No problem.", "buttons": [
+      { "id": "call", "label": "Call a rep now", "goto": "shared.call" },
+      { "id": "quote", "label": "Get a custom quote", "goto": "shared.quote" } ] },
+    "wd.no_site": { "type": "buttons", "say": "{business} specializes in custom website design.", "buttons": [
+      { "id": "call", "label": "Call a rep now", "goto": "shared.call" },
+      { "id": "quote", "label": "Get a custom quote", "goto": "shared.quote" },
+      { "id": "builder", "label": "Build one in minutes", "link": "https://builder.example.test/start" } ] },
+    "dm.start": { "type": "buttons", "say": "What do you want more of?", "buttons": [
+      { "id": "calls", "label": "Calls and leads", "goto": "dm.email" },
+      { "id": "reviews", "label": "Reviews and reputation", "goto": "dm.email" },
+      { "id": "social", "label": "Social and content", "goto": "dm.email" } ] },
+    "dm.email": { "type": "ask", "field": "email", "prompt": "What's the best email to reach you?", "required": true, "next": "dm.lead" },
+    "dm.lead": { "type": "action", "kind": "create_lead", "params": {}, "next": "dm.done" },
+    "dm.done": { "type": "end", "say": "Thanks — {owner} will be in touch." },
+    "shared.call": { "type": "ask", "field": "phone", "prompt": "And the best number to call you back on?", "required": true, "next": "shared.call.now" },
+    "shared.call.now": { "type": "action", "kind": "call_now", "params": { "say_open": "Call us on {business_phone}." }, "next": "shared.call.alert" },
+    "shared.call.alert": { "type": "action", "kind": "alert_owner", "params": { "title": "Chat visitor calling now: {name}" }, "next": "shared.call.done" },
+    "shared.call.done": { "type": "end" },
+    "shared.quote": { "type": "ask", "field": "note", "prompt": "In a line, what do you need?", "required": true, "next": "shared.quote.reply" },
+    "shared.quote.reply": { "type": "say", "say": "Thanks — {owner} will reply within one business day.", "next": "shared.quote.email_visitor" },
+    "shared.quote.email_visitor": { "type": "action", "kind": "email_visitor", "params": { "promise": "{owner} will reply within one business day." }, "next": "shared.quote.handoff" },
+    "shared.quote.handoff": { "type": "handoff", "kind": "owner_reply", "say": "Good question — {owner} will answer that.", "next": "shared.quote.done" },
+    "shared.quote.done": { "type": "end" },
+    "draft.17": { "type": "handoff", "kind": "owner_reply", "say": "Good question — {owner} will answer that.", "next": "shared.quote.done" }
+  }
+}

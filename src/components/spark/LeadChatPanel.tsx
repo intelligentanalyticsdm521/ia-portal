@@ -23,6 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, Sparkles, User, Globe, CheckCircle2, XCircle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { friendlyApiError } from "../../lib/leadgenBilling";
+import { sureWords, type ChatConversationWorkflow } from "../../lib/chatWorkflows";
 
 export interface ChatMessageRow {
   id: number;
@@ -52,6 +53,10 @@ export interface ChatConversationRow {
   closed_at: string | null;
   closed_by: string | null;
   messages: ChatMessageRow[];
+  /** Chat workflows (contract §C.11): which service and path the visitor took,
+   *  what they told us, and what ran for them. Absent when no workflow drove
+   *  this conversation. */
+  workflow?: ChatConversationWorkflow | null;
 }
 
 function when(ts: string | null | undefined) {
@@ -88,6 +93,49 @@ function Bubble({ m }: { m: ChatMessageRow }) {
         </div>
         <div className="whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-800">{m.body}</div>
       </div>
+    </div>
+  );
+}
+
+/** What the chat workflow knows about this visitor, above their transcript. */
+function WorkflowBlock({ w }: { w: ChatConversationWorkflow }) {
+  const sure = sureWords(w.sure);
+  const where = [w.service, w.path].filter(Boolean).join(" · ");
+  const fields = Array.isArray(w.fields) ? w.fields : [];
+  const results = Array.isArray(w.results) ? w.results : [];
+  return (
+    <div className="border-b border-slate-100 bg-white px-3 py-2 text-[11px] text-slate-700" data-chat-workflow-block>
+      <div className="font-semibold text-slate-900">{where || w.name}</div>
+      {w.intent_words && (
+        <div className="text-slate-500">Looks like: {w.intent_words}{sure ? ` (${sure})` : ""}</div>
+      )}
+      {fields.length > 0 && (
+        <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+          {fields.map((f, i) => (
+            <div key={i} className="contents">
+              <dt className="text-slate-500">{f.label}</dt>
+              <dd className="min-w-0 break-words text-slate-800">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {results.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {results.map((r) => (
+            <li key={r.run_id}>
+              {r.label}: {r.status_words}
+              {r.file_url && (
+                <>
+                  {" "}
+                  <a href={r.file_url} target="_blank" rel="noopener" className="font-semibold text-sky-700 underline">
+                    Open the report
+                  </a>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -214,6 +262,8 @@ export function LeadChatPanel({ leadId, onChanged }: Props) {
               <span className="truncate">They were on <span className="text-slate-700">{c.page_url}</span></span>
             </div>
           )}
+
+          {c.workflow && <WorkflowBlock w={c.workflow} />}
 
           <div className="max-h-[340px] space-y-2 overflow-y-auto bg-slate-50 px-3 py-3">
             {c.messages.map((m) => <Bubble key={m.id} m={m} />)}

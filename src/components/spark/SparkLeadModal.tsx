@@ -124,6 +124,7 @@ export interface LeadDetail {
 }
 
 type Tab = "overview" | "contacts" | "notes" | "conversation" | "textscalls" | "responder" | "activity" | "actions";
+export type SparkLeadModalTab = Tab;
 
 // The lead's own ladder. The contact it becomes moves through the SPARK
 // workflow separately.
@@ -149,9 +150,12 @@ interface Props {
   onChanged?: () => void;
   /** Called when the lead leaves the inbox (suppressed / dismissed). */
   onRemoved?: (leadId: number) => void;
+  /** Which tab opens first. ARGUS → Workflows → Needs you → Reply now opens
+   *  straight onto Conversation, so answering is one click, not three. */
+  initialTab?: SparkLeadModalTab;
 }
 
-export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: Props) {
+export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved, initialTab }: Props) {
   const { get, post, put, ready } = useSparkApi();
   const [tab, setTab] = useState<Tab>("overview");
   const [lead, setLead] = useState<LeadDetail | null>(null);
@@ -182,9 +186,9 @@ export function SparkLeadModal({ leadId, open, onClose, onChanged, onRemoved }: 
   }, [get, ready, leadId]);
 
   useEffect(() => {
-    if (open && leadId) { setTab("overview"); load(); }
+    if (open && leadId) { setTab(initialTab ?? "overview"); load(); }
     if (!open) { setLead(null); setNewNote(""); setFollowUpDays(""); }
-  }, [open, leadId, load]);
+  }, [open, leadId, load, initialTab]);
 
   const name = lead?.business_name || lead?.domain || "Lead";
   const locked = !!lead?.locked;
