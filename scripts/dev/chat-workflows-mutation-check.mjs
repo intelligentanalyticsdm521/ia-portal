@@ -39,7 +39,8 @@ const M = [
   { id: "P1", file: "src/pages/argus/ArgusWorkflowsPage.tsx", test: "test/argus-workflows-ui.test.mjs",
     from: "Nothing needs you right now.", to: "Nothing needs you right now. No intent matched." },
   { id: "P2", file: "src/pages/argus/ArgusWorkflowsPage.tsx", test: "test/argus-workflows-ui.test.mjs",
-    from: "  const needsCount = needsYou.length;", to: "  useEffect(() => { const t = setInterval(() => void loadNeedsYou(), 5000); return () => clearInterval(t); }, [loadNeedsYou]);\n  const needsCount = needsYou.length;" },
+    // 2026-10-08: the line now also counts the team's waiting items (ARGUS employees phase 1 §F.4).
+    from: "  const needsCount = needsYou.length + needs.rows.length;", to: "  useEffect(() => { const t = setInterval(() => void loadNeedsYou(), 5000); return () => clearInterval(t); }, [loadNeedsYou]);\n  const needsCount = needsYou.length + needs.rows.length;" },
   { id: "P3", file: "src/components/spark/ChatWorkflowCard.tsx", test: "test/chat-workflow-card-ui.test.mjs",
     from: "onClose={() => { setSecret(null); setCopied(false); }}", to: "onClose={() => { setCopied(false); }}" },
   { id: "P4", restoreOld: true, test: "test/argus-workflows-ui.test.mjs" },

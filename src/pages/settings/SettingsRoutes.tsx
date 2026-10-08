@@ -162,25 +162,12 @@ const SETTINGS_TILES: Array<{
   {
     group: 'OLIVER',
     items: [
-      { to: '/app/services/oliver_agents', label: 'Agents (OLIVER)', description: 'What your agents did, anything waiting on you, and the switch for each one' },
       { to: '/app/services/oliver_team_access', label: 'Team Access (OLIVER)', description: 'Per-user OLIVER role + service access' },
       { to: '/app/services/oliver_locations', label: 'Locations (OLIVER)', description: 'Business locations — second location needs Business' },
       { to: '/app/services/oliver_templates', label: 'Templates (OLIVER)', description: 'Quote, invoice, and message templates' },
       { to: '/app/services/oliver_booking', label: 'Booking Page (OLIVER)', description: 'Public booking config + availability' },
       { to: '/app/services/oliver_territories', label: 'Territories (OLIVER, Pro)', description: 'Service area zones' },
       { to: '/app/services/oliver_sla_policies', label: 'SLA Policies (OLIVER, Pro)', description: 'Response-time SLAs' },
-    ],
-  },
-  {
-    group: 'SPARK',
-    items: [
-      { to: '/app/services/spark_agents', label: 'Agents (SPARK)', description: 'Campaigns, win-backs and the Responder — what they did and what needs you' },
-    ],
-  },
-  {
-    group: 'ARION',
-    items: [
-      { to: '/app/services/arion_agents', label: 'Agents (ARION)', description: 'What your website agents did, and anything waiting on you' },
     ],
   },
   {

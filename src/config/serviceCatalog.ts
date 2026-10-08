@@ -44,10 +44,6 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   },
   // ARION — Full Web & Digital Presence suite (46 pages)
   { key: 'arion_onboarding', displayName: 'Get Started', section: 'ARION', defaultStatus: 'not_subscribed', route: '/app/services/arion_onboarding', description: 'Guided onboarding — site, GA4, Search Console, Business Profile, Bing, SEO add-on.' },
-  // Agents (2026-09-05) — one Agents page per product, in that product's
-  // Settings group. ARION's Content & Social Agent is not on this line yet,
-  // so the page shows it as coming and offers no button.
-  { key: 'arion_agents', displayName: 'Agents', section: 'ARION', defaultStatus: 'enabled', route: '/app/services/arion_agents', description: "What your ARION agents did, and anything waiting on you." },
   { key: 'arion_dashboard', displayName: 'Dashboard', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_dashboard', description: 'High-level ARION dashboard with website, hosting, SEO, and business profile status.' },
   { key: 'arion_website_overview', displayName: 'Website Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_overview', description: 'Website health summary — uptime, WordPress version, plugin status, and quick actions.' },
   { key: 'arion_website_content', displayName: 'Website Content', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_website_content', description: 'Page and post content inventory with last-modified dates and publish status.' },
@@ -113,6 +109,11 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // 2026-06-22: canonical service key renamed to `argus_cross_platform`.
   // Legacy `argus_cross_channel` retained as a back-compat alias below.
   { key: 'argus_cross_platform', displayName: 'IA Insights — Intelligence', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_cross_platform', description: 'Six ARGUS Intelligence reports — Acquisition Performance, Marketing Effectiveness, Reputation Impact, Channel Performance, Customer Lifetime Value, Business Health Trajectory.' },
+  // ARGUS → Your team (2026-10-08, contract ARGUS employees phase 1 §F.2) — one
+  // page per employee. Replaced the three per-product Agents rows.
+  { key: 'argus_team_web', displayName: 'The web person', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_team_web', description: 'Writes your blog and social posts and answers your Google reviews: what it did, what needs you, and its jobs.' },
+  { key: 'argus_team_marketer', displayName: 'The marketer', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_team_marketer', description: 'Answers every new inquiry, brings quiet customers back, and writes the campaigns you ask for.' },
+  { key: 'argus_team_office', displayName: 'The office administrator', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_team_office', description: 'Chases quotes and unpaid invoices, suggests who takes each job, and asks for reviews.' },
   { key: 'argus_workflows', displayName: 'ARGUS — Workflows', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_workflows', description: 'Every process that runs for your business in one list: what starts it, whether it runs automatically or waits for you, and what it did.' },
   { key: 'argus_cross_channel', displayName: 'IA Insights — Intelligence', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_cross_channel', description: 'Legacy alias — see argus_cross_platform.' },
   { key: 'arion_seo_overview', displayName: 'SEO Overview', section: 'ARION', defaultStatus: 'coming_soon', route: '/app/services/arion_seo_overview', description: 'SE Ranking SEO project summary — visibility score, tracked keywords, and trends.' },
@@ -286,7 +287,6 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'oliver_payouts', displayName: 'Stripe Payouts', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_payouts', description: 'Stripe Connect payout dashboard: account status, balance, schedule, recent transfers (Pro).' },
   { key: 'oliver_reminders', displayName: 'Reminders', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_reminders', description: 'Overdue invoice tracker. See which automated reminders have fired and send manual nudges.' },
   { key: 'oliver_onboarding', displayName: 'Get Started', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_onboarding', description: 'Guided 5-step setup wizard for new tenants.' },
-  { key: 'oliver_agents', displayName: 'Agents', section: 'OLIVER', defaultStatus: 'enabled', route: '/app/services/oliver_agents', description: 'What your OLIVER agents did, anything waiting on you, and the switch for each one.' },
   { key: 'oliver_settings', displayName: 'Business Setup', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_settings', description: 'Deprecated — profile moved to Organization Settings, templates to Template Library, connections to Connected Accounts.' },
   { key: 'oliver_templates', displayName: 'Document Design', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_templates', description: 'How your invoices, quotes and proposals look. Lives in Business Setup with the invoice template.' },
   { key: 'oliver_team_access', displayName: 'Team Access', section: 'OLIVER', defaultStatus: 'not_subscribed', route: '/app/services/oliver_team_access', description: 'Assign Admin or Accountant roles to OLIVER users. Accountants get a read-only Billing/Reports view.' },
@@ -301,7 +301,6 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   { key: 'spark_contacts', displayName: 'Contacts', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_contacts', description: 'Contact management with dedup, search, import, and activity history.' },
   { key: 'spark_lists', displayName: 'Lists', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_lists', description: 'Static contact lists for campaign targeting.' },
   { key: 'spark_segments', displayName: 'Segments', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_segments', description: 'Dynamic contact segments with filter rules.' },
-  { key: 'spark_agents', displayName: 'Agents', section: 'LUMEN', defaultStatus: 'enabled', route: '/app/services/spark_agents', description: 'What your SPARK agents did, anything waiting on you, and the switch for each one.' },
   { key: 'spark_campaigns', displayName: 'Campaigns', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_campaigns', description: 'Email and SMS campaign management with analytics.' },
   { key: 'spark_forms', displayName: 'Forms', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_forms', description: 'Form builder with hosted URLs and embedded widgets.' },
   { key: 'spark_form_builder', displayName: 'Form Builder', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_form_builder', description: 'Visual drag-and-drop designer for form fields (text, email, phone, select, radio, checkbox, date, number, hidden) with live preview and hosted submit URL.' },

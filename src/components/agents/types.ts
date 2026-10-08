@@ -12,6 +12,8 @@
 //   · NO cost_usd. A client never sees our cost basis. `cost_note` is the
 //     sentence they read; the founder page is where the dollars live.
 
+import type { BriefCited, Decide } from "../../lib/team";
+
 /** proposed = waiting on a person · stopped = the agent stood down by itself. */
 export type AgentStatus = "proposed" | "approved" | "declined" | "stopped";
 
@@ -74,6 +76,19 @@ export interface AgentActivityRow {
   decide_href?: string | null;
   attribution: string;
   links: AgentLink[];
+  // ── ARGUS → Your team, phase 1 (contract §F.1). Optional: a product that has
+  // not tagged its rows yet still renders; a row without `decide` shows no
+  // buttons rather than guessing at a route.
+  /** The job that made it, e.g. "arion.blog_posts". */
+  job_key?: string;
+  /** Which employee: web | marketer | office. */
+  employee_key?: string;
+  /** Which saved version of Your business it was written from, and what it used. */
+  brief_cited?: BriefCited | null;
+  /** Why it waited, one sentence. */
+  held_words?: string | null;
+  /** The routes its buttons call, from the product that owns the decision. */
+  decide?: Decide;
 }
 
 /**
@@ -128,6 +143,8 @@ export interface AgentRunRow {
   failure: { reason: string } | null;
   rung?: string | null;
   intent?: string | null;
+  /** ARGUS → Your team (§G.4): the job this run belongs to, when the product tags it. */
+  job_key?: string | null;
 }
 
 /** What the oversight layer itself has been doing, per registered agent. */
@@ -166,6 +183,8 @@ export interface AgentSummary {
   read_only?: boolean;
   paused?: boolean;
   paused_reason?: string | null;
+  /** When it stopped itself, where the product sends it. */
+  halted_at?: string | null;
   /** The Responder keeps its own settings page; this row points at it. */
   settings_href?: string;
   settings: Record<string, number | string | boolean | null>;

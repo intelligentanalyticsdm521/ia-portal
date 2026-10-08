@@ -81,8 +81,10 @@ test("no polling on the new screens (P2)", () => {
 
 test("a business without SPARK reads the sentence, not an error", () => {
   assert.match(page, /if \(isPackageRefusal\(err\)\) setNoSpark\(true\);/);
+  // ARGUS employees phase 1 §F.4: the sentence is about the chat alone; the
+  // team's jobs and the other Needs-you sources still show (argus-team-ui).
   assert.match(read("src/lib/chatWorkflows.ts"),
-    /"Your workflows appear here\. Right now the only kind is the website chat, which comes with SPARK\."/);
+    /export const NO_SPARK_WORDS = "The website chat comes with SPARK\.";/);
   assert.match(page, /else setLoadError\(refusalSentences\(err\)\.join\(" "\)\);/);
 });
 

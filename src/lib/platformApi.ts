@@ -13,6 +13,7 @@
  */
 
 import { emergencyActAsHeaders } from "./emergencyActAs";
+import type { JobView, TeamEmployee, TeamJobChange } from "./team";
 
 export interface SessionVerifyResponse {
   surface: 'iadm_portal' | 'employee_portal' | 'customer_portal';
@@ -848,6 +849,15 @@ export interface BusinessProfileFields {
   responsePromiseText: string | null;
   escalation: { name?: string; phone?: string; email?: string; when?: string } | null;
   languages: string[] | null;
+  // ── What your team knows (contract ARGUS employees phase 1 §E.2). NULL = not
+  // set. The jobs read only what is SAVED here; a starter or a prefill is a
+  // suggestion until the owner presses Save.
+  offersAllowed?: Array<{ words: string; note?: string }> | null;
+  proofAllowed?: Array<{ words: string; from: string }> | null;
+  namesNeverMention?: string[] | null;
+  namesYouMayMention?: string[] | null;
+  competitors?: string[] | null;
+  customerWords?: string[] | null;
 }
 
 export type BusinessHours = Record<
@@ -960,4 +970,84 @@ export function getBusinessProfileHistory(params: BusinessProfileCallParams) {
     params,
     '/me/business-profile/history',
   );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   ARGUS → Your team (contract ARGUS employees phase 1 §C.1)
+   ══════════════════════════════════════════════════════════════════════════
+
+   platform-api is the ONE writer of a job's On/Off, its mode and the owner's
+   limits. Every screen that shows a job's switch (the employee page, ARGUS →
+   Workflows, the Responder page, ARION → Reviews) writes through PUT
+   /me/team/jobs/:jobKey, so there is one row and no second copy.
+
+   A refusal is a 4xx/503 carrying a plain sentence; it changes nothing. The
+   error keeps the status and the body so the screen can say that sentence in
+   the row it came from (lib/team.ts teamRefusal).
+*/
+
+
+interface TeamCallParams {
+  baseUrl: string;
+  bearerToken: string;
+  tenantId: string;
+}
+
+async function teamRequest<T>(
+  params: TeamCallParams,
+  path: string,
+  init: { method: string; body?: unknown } = { method: 'GET' },
+): Promise<T> {
+  const res = await fetchWithTimeout(`${normalizeBaseUrl(params.baseUrl)}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${params.bearerToken}`,
+      'Content-Type': 'application/json',
+      'x-tenant-key': params.tenantId,
+      ...emergencyActAsHeaders(),
+    },
+    ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+  });
+  const text = await res.text();
+  const body = text ? safeJsonParse(text) : null;
+  if (!res.ok) {
+    const b = body as { words?: string; message?: string } | null;
+    throw new PlatformApiError(b?.words || b?.message || `Request failed (${res.status})`, res.status, body);
+  }
+  return body as T;
+}
+
+export function getTeam(params: TeamCallParams) {
+  return teamRequest<{ employees: TeamEmployee[] }>(params, '/me/team');
+}
+
+export function getTeamEmployee(params: TeamCallParams & { employeeKey: string }) {
+  return teamRequest<{ employee: TeamEmployee; jobs: JobView[] }>(
+    params, `/me/team/${encodeURIComponent(params.employeeKey)}`,
+  );
+}
+
+/** Every team-home job this business has switched on (ARGUS → Workflows → All). */
+export function getTeamJobsOn(params: TeamCallParams) {
+  return teamRequest<{ jobs: JobView[] }>(params, '/me/team/jobs?enabled=1');
+}
+
+export function putTeamJob(
+  params: TeamCallParams & { jobKey: string; patch: { enabled?: boolean; mode?: 'automatic' | 'review'; vars?: Record<string, unknown> } },
+) {
+  return teamRequest<JobView>(params, `/me/team/jobs/${encodeURIComponent(params.jobKey)}`, {
+    method: 'PUT',
+    body: params.patch,
+  });
+}
+
+/** The last 20 changes to one job's setting, newest first: { at, words, actor }. */
+export async function getTeamJobChanges(params: TeamCallParams & { jobKey: string }): Promise<TeamJobChange[]> {
+  const body = await teamRequest<unknown>(
+    params, `/me/team/jobs/${encodeURIComponent(params.jobKey)}/changes`,
+  );
+  // The contract names the rows, not the key around them; take either name, or a bare list.
+  if (Array.isArray(body)) return body as TeamJobChange[];
+  const b = (body || {}) as { changes?: TeamJobChange[]; events?: TeamJobChange[] };
+  return b.changes || b.events || [];
 }

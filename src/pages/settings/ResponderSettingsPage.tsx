@@ -16,12 +16,23 @@
  * D3 lives here as the $500 default on the send-by-itself limit, with the
  * sentence that a complaint always waits regardless.
  *
+ * ARGUS employees phase 1 §F.5: "write the reply for me" and "let it send by
+ * itself" are now your marketer's job, Replies to new inquiries — its On switch
+ * and its Automatic / Send me first. They write the job's row (PUT
+ * /me/team/jobs/spark.inquiry_reply on platform-api), the same row ARGUS → Your
+ * team → The marketer writes, so the two pages can never disagree. Everything
+ * else here (answering at all, the acknowledgement, your alerts, the sequence,
+ * the quote, the send-by-itself limit) is the Responder add-on's own and stays.
+ *
  * The word "tenant" appears nowhere a person can see it. It is a Business.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ChevronLeft, Check, AlertTriangle, Sparkles, Lock } from 'lucide-react';
 import { useSparkApi } from '../../hooks/useSparkApi';
+import { useTeamJob } from '../../hooks/useTeam';
+import { JobControls } from '../../components/argus/team/JobRow';
+import { employeeRoute } from '../../lib/team';
 
 interface ResponderConfig {
   enabled: boolean;
@@ -82,6 +93,9 @@ function Toggle({ label, hint, checked, onChange, disabled, lockedNote }: {
 
 export function ResponderSettingsPage() {
   const { get, put, post, ready } = useSparkApi();
+  // Your marketer's job "Replies to new inquiries": its switch and its mode.
+  const reply = useTeamJob('marketer', 'spark.inquiry_reply');
+  const [jobNotice, setJobNotice] = useState<string | null>(null);
   const [data, setData] = useState<ResponderSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -276,14 +290,33 @@ export function ResponderSettingsPage() {
             reply in your voice and, with OLIVER, attaches a quote from your price list.
           </div>
         )}
-        <Toggle
-          label="Draft the reply for me"
-          hint="A short answer grounded in what you told us about your business — never a price you don't charge, never a date you didn't promise."
-          checked={c.draft_enabled}
-          disabled={!c.enabled || !data.can_draft}
-          lockedNote="Included from the next plan up"
-          onChange={(v) => save({ draft_enabled: v })}
-        />
+        {/* Your marketer's job: Replies to new inquiries (On / Off). */}
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-gray-900">Draft the reply for me</span>
+              <span className="mt-0.5 block text-xs text-gray-500">
+                A short answer grounded in what you told us about your business — never a price you don't charge, never
+                a date you didn't promise. This is your marketer's job, Replies to new inquiries.
+              </span>
+              <Link to={employeeRoute('marketer', 'jobs')} className="mt-1 inline-block text-xs font-medium text-gray-600 underline">
+                See it with your marketer's other jobs
+              </Link>
+            </span>
+            {reply.job ? (
+              <JobControls job={reply.job} hideMode onChanged={reply.setJob} onNotice={setJobNotice} />
+            ) : reply.error ? (
+              <span className="max-w-xs text-xs text-red-700" role="alert">{reply.error}</span>
+            ) : (
+              <span className="text-xs text-gray-500">Loading…</span>
+            )}
+          </div>
+        </div>
+        {jobNotice && (
+          <div className="flex items-center gap-2 rounded border border-emerald-200 bg-emerald-50 p-2.5 text-sm text-emerald-800" role="status">
+            <Check className="h-4 w-4" />{jobNotice}
+          </div>
+        )}
         <Toggle
           label="Attach a quote from my price list"
           hint="When what they asked for matches something in your OLIVER catalog. The prices always come from your catalog."
@@ -317,14 +350,25 @@ export function ResponderSettingsPage() {
             for you to press send.
           </div>
         )}
-        <Toggle
-          label="Let small quotes send themselves"
-          hint="Only the ones under your limit, and only when nothing about the message needs a person."
-          checked={c.auto_send_enabled}
-          disabled={!c.enabled || !data.can_auto_send}
-          lockedNote="Part of the top plan"
-          onChange={(v) => save({ auto_send_enabled: v })}
-        />
+        {/* The same job's mode: Automatic sends small quotes by themselves. */}
+        <div className="rounded-lg border border-gray-200 bg-white p-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <span className="flex-1">
+              <span className="block text-sm font-medium text-gray-900">Let small quotes send themselves</span>
+              <span className="mt-0.5 block text-xs text-gray-500">
+                Automatic sends the ones under your limit, and only when nothing about the message needs a person.
+                Send me first keeps every reply waiting for you.
+              </span>
+            </span>
+            {reply.job ? (
+              <JobControls job={reply.job} hideSwitch onChanged={reply.setJob} onNotice={setJobNotice} />
+            ) : reply.error ? (
+              <span className="max-w-xs text-xs text-red-700" role="alert">{reply.error}</span>
+            ) : (
+              <span className="text-xs text-gray-500">Loading…</span>
+            )}
+          </div>
+        </div>
         <label className="block">
           <span className="text-sm font-medium text-gray-900">Send by itself up to</span>
           <div className="mt-1 flex items-center gap-2">
