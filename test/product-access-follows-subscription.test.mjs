@@ -16,6 +16,9 @@
 //      { product, action: 'remove' }; Keep sends DELETE /billing/pending-change
 //      { product }.
 //   C  the stream-1 contract these controls call, pinned by path and body.
+//   P  a product whose payment FAILED (unpaid): the gate, the menu notice and
+//      the rail say what the Plan & Pricing card says, with Update card, never
+//      "isn't part of your plan yet" with "Add" (decision (d)).
 //
 // Mutations run against this file are listed in the stream-2 report.
 import { test, describe, before, after } from "node:test";
@@ -33,7 +36,7 @@ import {
   productSwitchedOff, productLockedOnRail, gateExemptServiceKey, planPagePath,
   endedSentence, neverBoughtSentence, offNotice, planCardLine, removeConfirmSentence,
   billingRefusalSentence, rowForProduct, rowIsLive, payloadForTenant, offNoticeShownByPage,
-  planCardForViewer, railLockWords, endedProducts, formatLongDate,
+  planCardForViewer, railLockWords, offReasons, offReasonForRow, formatLongDate,
 } from "../src/lib/productAccess.ts";
 
 const ROOT = new URL("../", import.meta.url);
@@ -134,12 +137,12 @@ describe("G: only a decided 'not owned' closes a product", () => {
       /productLocked && isOffGatedProduct\(productKey\) && !\(productAccess\.isOff\(productKey\) && offNoticeShownByPage\(location\.pathname, productKey\)\) && \(/);
   });
   test("the rail says ENDED for an ended product, in the notice's words; ADD for one never bought", () => {
-    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", true),
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "ended"),
       { badge: "ENDED", title: "Your SPARK subscription ended. Open SPARK to re-subscribe." });
-    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", false),
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "never"),
       { badge: "ADD", title: "SPARK is not part of your plan — add SPARK to enable Marketing" });
-    assert.deepEqual([...endedProducts([{ product: "spark", status: "ended", ended: { at: "2026-11-01T00:00:00Z" } },
-      { product: "oliver", status: "active" }])], ["spark"]);
+    assert.deepEqual([...offReasons([{ product: "spark", status: "ended", ended: { at: "2026-11-01T00:00:00Z" } },
+      { product: "oliver", status: "active" }])], [["spark", "ended"]]);
     const rail = read("src/components/IconRail.tsx");
     assert.match(rail, /\{lockWords\.badge\}/);
     assert.match(rail, /title=\{locked \? lockWords\.title : /);
@@ -172,7 +175,7 @@ describe("S: the words, as Brandon wrote them", () => {
     assert.equal(neverBoughtSentence("spark"), "SPARK isn't part of your plan yet.");
   });
   test("the off notice for each viewer: admin gets the control; a member and the founder read why, with no button", () => {
-    const ended = { at: "2026-11-01T12:00:00Z" };
+    const ended = { kind: "ended", at: "2026-11-01T12:00:00Z" };
     assert.deepEqual(offNotice("spark", ended, "admin", TZ).action, { kind: "resubscribe", label: "Re-subscribe" });
     assert.equal(offNotice("spark", ended, "admin", TZ).note, null);
     const member = offNotice("spark", ended, "member", TZ);
@@ -378,9 +381,17 @@ before(async () => {
         import { ProductEndedNotice } from "./src/components/ProductEndedNotice.tsx";
         import { ProductPlanStatus } from "./src/components/ProductPlanStatus.tsx";
         import { ProductGate } from "./src/components/ProductGate.tsx";
+        import { useOffReasons } from "./src/hooks/useOffReasons.ts";
+        import { railLockWords } from "./src/lib/productAccess.ts";
         import { clearSubscriptionsCache } from "./src/lib/billingApi.ts";
         import { clearEntitlementCache } from "./src/lib/entitlements.ts";
         export { act, clearSubscriptionsCache, clearEntitlementCache, ProductEndedNotice, ProductPlanStatus, ProductGate, createElement };
+        // The rail's reading, as IconRail makes it: useOffReasons, then railLockWords.
+        export function RailProbe({ product }) {
+          const why = useOffReasons(true, "probe");
+          const w = railLockWords(product, product.toUpperCase(), "Marketing", why.get(product) ?? "never");
+          return createElement("span", { "data-rail-probe": "1", "data-badge": w.badge, title: w.title });
+        }
         const FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true };
         function Where() {
           const l = useLocation();
@@ -786,5 +797,173 @@ describe("R: Re-subscribe with no checkout says why, and never loops", () => {
     await settle();
     assert.ok(button(there.host, "STELLA Standard"), "the plans are already showing");
     there.unmount();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   P — a product whose payment FAILED (unpaid), on the off surfaces
+   (decision (d), 2026-10-08). The sync switched it off, so ProductGate and
+   the SPARK menu show the off notice, and the rail shows the lock. Each says
+   what the Plan & Pricing card says, "Your last payment didn't go through,
+   so SPARK is paused.", with Update card, never "isn't part of your plan
+   yet" with "Add SPARK". One reading decides all three: offReasonForRow.
+   ══════════════════════════════════════════════════════════════════════════ */
+const UNPAID_SENTENCE = "Your last payment didn't go through, so SPARK is paused. Update your card to turn it back on.";
+const UNPAID_SPARK = [{ product: "spark", tier: null, status: "unpaid", current_period_end: null, monthly_usd: 0, items: [],
+  ended: null, message: UNPAID_SENTENCE, action: "update_card" }];
+const NEVER_WORDS = /isn't part of your plan|Add SPARK|Re-subscribe/;
+
+describe("P: an unpaid product, read once for every surface", () => {
+  test("offReasonForRow: unpaid carries the API's sentence; ended carries its date; nothing else is 'never'", () => {
+    assert.deepEqual(offReasonForRow("spark", UNPAID_SPARK[0]), { kind: "unpaid", sentence: UNPAID_SENTENCE });
+    assert.deepEqual(offReasonForRow("oliver", { product: "oliver", status: "unpaid" }),
+      { kind: "unpaid", sentence: "Your last payment didn't go through, so OLIVER is paused. Update your card to turn it back on." });
+    assert.deepEqual(offReasonForRow("spark", ENDED_SPARK[0]), { kind: "ended", at: "2026-11-01T18:00:00Z" });
+    assert.deepEqual(offReasonForRow("spark", null), { kind: "never" });
+    // an unpaid row beside an older ended record is still unpaid (rowForProduct picks it)
+    assert.equal(offReasonForRow("spark", rowForProduct([...ENDED_SPARK, ...UNPAID_SPARK], "spark")).kind, "unpaid");
+  });
+
+  test("the off notice and the Plan & Pricing card say the SAME sentence, with the same control", () => {
+    const row = rowForProduct(UNPAID_SPARK, "spark");
+    const card = planCardLine("spark", row, TZ);
+    const notice = offNotice("spark", offReasonForRow("spark", row), "admin", TZ);
+    assert.equal(notice.sentence, card.line);
+    assert.equal(notice.sentence, UNPAID_SENTENCE);
+    assert.deepEqual(notice.action, { kind: "update_card", label: "Update card" });
+    assert.deepEqual(card.control, { kind: "update_card", label: "Update card" });
+    assert.doesNotMatch(JSON.stringify(notice), NEVER_WORDS);
+  });
+
+  test("the off notice for each viewer: a member and the founder read the sentence and why, never a button", () => {
+    const why = offReasonForRow("spark", UNPAID_SPARK[0]);
+    const member = offNotice("spark", why, "member", TZ);
+    assert.equal(member.action, null);
+    assert.equal(member.note, "Ask an admin on your team to update the card.");
+    assert.equal(member.note, planCardForViewer("spark", planCardLine("spark", UNPAID_SPARK[0]), "member").note, "the card's own words");
+    const founder = offNotice("spark", why, "viewing_client", TZ);
+    assert.equal(founder.action, null);
+    assert.equal(founder.note, "Switch to your own business to change billing.");
+    assert.equal(founder.sentence, UNPAID_SENTENCE);
+  });
+
+  test("the rail: PAUSED and the payment words for an unpaid product, never ADD", () => {
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "unpaid"),
+      { badge: "PAUSED", title: "Your last payment didn't go through, so SPARK is paused. Open SPARK to update your card." });
+    assert.deepEqual([...offReasons(UNPAID_SPARK)], [["spark", "unpaid"]]);
+    assert.deepEqual([...offReasons([...ENDED_SPARK, { product: "oliver", status: "unpaid" }, { product: "arion", status: "active" }])],
+      [["oliver", "unpaid"], ["spark", "ended"]]);
+  });
+
+  test("one source: the card, the notice, the rail's reasons and IconRail all read offReasonForRow / offReasons", () => {
+    const lib = read("src/lib/productAccess.ts");
+    const fn = (name) => lib.slice(lib.indexOf(`export function ${name}(`), lib.indexOf("\n}\n", lib.indexOf(`export function ${name}(`)));
+    assert.match(fn("planCardLine"), /const why = offReasonForRow\(product, row\);/);
+    assert.match(fn("offReasons"), /const why = offReasonForRow\(p, row\);/);
+    assert.doesNotMatch(fn("planCardLine"), /row\.message|unpaidSentence\(/, "the card does not read the unpaid row on its own");
+    const notice = read("src/components/ProductEndedNotice.tsx");
+    assert.match(notice, /setWhy\(offReasonForRow\(product, rowForProduct\(r\?\.subscriptions, product\)\)\)/);
+    const rail = read("src/components/IconRail.tsx");
+    assert.match(rail, /const offWhy = useOffReasons\(FEATURE_GATING_ENABLED && anyGatedLocked, location\.pathname\);/);
+    assert.match(rail, /railLockWords\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| p\.key, p\.tagline, p\.label, offWhy\.get\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| ""\) \?\? "never"\)/);
+    assert.match(read("src/hooks/useOffReasons.ts"), /why: offReasons\(r\?\.subscriptions\)/);
+    // Update card is ONE action, used by the card and by the notice
+    assert.match(read("src/components/ProductPlanStatus.tsx"), /const said = await openUpdateCard\(\{ token, tenantId, product \}\);/);
+    assert.match(notice, /const text = await openUpdateCard\(\{ token: t\.accessToken, tenantId: activeTenantId, product \}\);/);
+    assert.doesNotMatch(notice + read("src/components/ProductPlanStatus.tsx"), /createPortalSession/, "nobody opens the payment page on their own");
+  });
+});
+
+describe("P: an unpaid product, rendered and clicked", () => {
+  function unpaidGate() {
+    reset({ subs: UNPAID_SPARK });
+    const base = world.answer;
+    world.answer = async (call) => (call.path === "/me/entitlements" ? { status: 200, body: SPARK_OFF } : base(call));
+  }
+  async function updateCardClick(v) {
+    const opened = [];
+    const realOpen = window.open;
+    window.open = (u) => { opened.push(u); return null; };
+    try {
+      world.calls = [];
+      const base = world.answer;
+      world.answer = async (call) => (call.path === "/billing/portal-session"
+        ? { status: 200, body: { data: { mode: "portal", url: "https://billing.example/p/spark" } } } : base(call));
+      await click(button(v.host, "Update card"));
+    } finally { window.open = realOpen; }
+    return opened;
+  }
+
+  test("ProductGate (Left rail → SPARK → Contacts): the payment sentence and Update card, never 'Add SPARK'", async () => {
+    unpaidGate();
+    const v = ui.mount(ui.ProductGate, { product: "spark", serviceKey: "spark_contacts", children: PAGE() });
+    await settle();
+    assert.equal(v.host.querySelector("[data-real-page]"), null, "the page itself is still closed (the sync switched SPARK off)");
+    assert.equal(text(v.host.querySelector("[data-notice-sentence]")), UNPAID_SENTENCE);
+    assert.equal(button(v.host, "Add SPARK"), undefined);
+    assert.equal(button(v.host, "Re-subscribe"), undefined);
+    assert.doesNotMatch(text(v.host), NEVER_WORDS);
+    const opened = await updateCardClick(v);
+    assert.deepEqual(world.calls.filter((c) => c.method === "POST").map((c) => [c.path, c.body]),
+      [["/billing/portal-session", { product: "spark", return_url: "http://localhost/app/settings/plan-pricing?refresh=1" }]],
+      "the card's own Update card: the payment page for SPARK, back to Plan & Pricing");
+    assert.deepEqual(opened, ["https://billing.example/p/spark"]);
+    assert.equal(where(v.host), "/app/services/spark_contacts", "Update card never sends them to the plan page to buy again");
+    assert.equal(world.calls.filter((c) => /\/billing\/(change|resubscribe)/.test(c.path)).length, 0, "nothing is bought");
+    v.unmount();
+  });
+
+  test("the SPARK menu notice (SubNav, variant nav): the same sentence and Update card", async () => {
+    reset({ subs: UNPAID_SPARK });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "spark", variant: "nav" });
+    await settle();
+    assert.equal(v.host.querySelector('[data-product-ended="spark"]')?.getAttribute("data-variant"), "nav");
+    assert.equal(text(v.host.querySelector("[data-notice-sentence]")), UNPAID_SENTENCE);
+    assert.doesNotMatch(text(v.host), NEVER_WORDS);
+    const opened = await updateCardClick(v);
+    assert.deepEqual(world.calls.filter((c) => c.method === "POST").map((c) => c.path), ["/billing/portal-session"]);
+    assert.deepEqual(opened, ["https://billing.example/p/spark"]);
+    v.unmount();
+  });
+
+  test("no payment page to open: its sentence is said beside the button", async () => {
+    reset({ subs: UNPAID_SPARK });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "spark" });
+    await settle();
+    world.answer = async (call) => (call.path === "/billing/portal-session"
+      ? { status: 200, body: { data: { mode: "owner", message: "There is no card to update on this account." } } } : { status: 200, body: { data: {} } });
+    await click(button(v.host, "Update card"));
+    assert.equal(text(v.host.querySelector("[data-notice-said]")), "There is no card to update on this account.");
+    v.unmount();
+  });
+
+  test("a team member: the sentence and 'Ask an admin on your team to update the card.', no button", async () => {
+    reset({ role: "user", subs: UNPAID_SPARK });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "spark" });
+    await settle();
+    assert.equal(v.host.querySelectorAll("button").length, 0);
+    assert.equal(text(v.host.querySelector("[data-notice-sentence]")), UNPAID_SENTENCE);
+    assert.equal(text(v.host.querySelector("[data-notice-note]")), "Ask an admin on your team to update the card.");
+    v.unmount();
+  });
+
+  test("the founder viewing a client: the sentence and 'Switch to your own business to change billing.'", async () => {
+    reset({ founderViewing: true, subs: UNPAID_SPARK });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "spark" });
+    await settle();
+    assert.equal(v.host.querySelectorAll("button").length, 0);
+    assert.equal(text(v.host.querySelector("[data-notice-sentence]")), UNPAID_SENTENCE);
+    assert.equal(text(v.host.querySelector("[data-notice-note]")), "Switch to your own business to change billing.");
+    v.unmount();
+  });
+
+  test("the rail's reading (the real useOffReasons hook): SPARK unpaid gives PAUSED and the payment words", async () => {
+    reset({ subs: UNPAID_SPARK });
+    const v = ui.mount(ui.RailProbe, { product: "spark" });
+    await settle();
+    const probe = v.host.querySelector("[data-rail-probe]");
+    assert.equal(probe?.getAttribute("data-badge"), "PAUSED");
+    assert.equal(probe?.getAttribute("title"), "Your last payment didn't go through, so SPARK is paused. Open SPARK to update your card.");
+    v.unmount();
   });
 });

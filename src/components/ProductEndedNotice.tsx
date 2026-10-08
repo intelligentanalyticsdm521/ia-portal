@@ -4,9 +4,16 @@
  * SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2. One sentence and one
  * control, in place of the product's pages:
  *
+ *   Unpaid        "Your last payment didn't go through, so SPARK is paused.
+ *                  Update your card to turn it back on."          [Update card]
  *   Ended         "Your SPARK subscription ended on November 1, 2026.
  *                  Re-subscribe to pick up where you left off."   [Re-subscribe]
  *   Never bought  "SPARK isn't part of your plan yet."           [Add SPARK]
+ *
+ * Which of the three is decided by offReasonForRow, the same reading the
+ * Plan & Pricing card makes, and Update card is the card's own action
+ * (openUpdateCard). An unpaid product is never "isn't part of your plan yet"
+ * with "Add" (decision (d), 2026-10-08): its subscription still holds it.
  *   Not an admin  the sentence, and "Ask an admin on your team to re-subscribe."
  *   Founder viewing a client
  *                 the sentence, and "Switch to your own business to change billing."
@@ -22,19 +29,19 @@
  * Plan & Pricing card, which opens with them showing. "SPARK is already on."
  * is said here, beside the button.
  *
- * Data: GET /billing/subscriptions once, on mount, for the `ended` date of this
- * product (§5). Nothing is polled.
+ * Data: GET /billing/subscriptions once, on mount, for this product's row
+ * (unpaid, or the `ended` date, §5). Nothing is polled.
  */
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useBillingViewer } from '../hooks/useBillingViewer';
-import { fetchSubscriptionsShared, resubscribe } from '../lib/billingApi';
+import { fetchSubscriptionsShared, openUpdateCard, resubscribe } from '../lib/billingApi';
 import { leaveForCheckout } from '../lib/leaveForCheckout';
 import {
-  offNotice, planPagePath, resubscribeFallbackSentence, rowForProduct, rowIsLive, PRODUCT_NAME,
-  STELLA_PICK_SENTENCE, type GatedProduct,
+  offNotice, offReasonForRow, planPagePath, resubscribeFallbackSentence, rowForProduct, PRODUCT_NAME,
+  STELLA_PICK_SENTENCE, type GatedProduct, type OffReason,
 } from '../lib/productAccess';
 import type { PlanNoticeState } from './ProductPlanStatus';
 
@@ -51,7 +58,7 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
   const location = useLocation();
   const [said, setSaid] = useState<string | null>(null);
 
-  const [ended, setEnded] = useState<{ at: string | null } | null>(null);
+  const [why, setWhy] = useState<OffReason | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,12 +74,12 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
       try {
         const t = await getToken();
         const r = await fetchSubscriptionsShared({ token: t.accessToken, tenantId: activeTenantId });
-        const row = rowForProduct(r?.subscriptions, product);
-        if (!cancelled) setEnded(row && !rowIsLive(row) && row.ended ? { at: row.ended.at ?? null } : null);
+        if (!cancelled) setWhy(offReasonForRow(product, rowForProduct(r?.subscriptions, product)));
       } catch {
-        // Not knowing WHEN it ended changes only the sentence, never the control:
-        // both versions lead back to buying it.
-        if (!cancelled) setEnded(null);
+        // Not knowing WHY it is off: the never-bought words. Add leads to the
+        // plan page, and the billing API itself refuses a second checkout
+        // beside a subscription that still holds the product.
+        if (!cancelled) setWhy(null);
       } finally {
         if (!cancelled) setLoaded(true);
       }
@@ -80,7 +87,7 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, product]);
 
-  const notice = offNotice(product, ended, viewer);
+  const notice = offNotice(product, why, viewer);
 
   /** To the plan page, carrying the sentence; never to the page already open. */
   function toPlanPage(text: string, pick: boolean) {
@@ -101,6 +108,11 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
     setBusy(true);
     try {
       const t = await getToken();
+      if (notice.action.kind === 'update_card') {
+        const text = await openUpdateCard({ token: t.accessToken, tenantId: activeTenantId, product });
+        if (text) setSaid(text);
+        return;
+      }
       const r = await resubscribe({ token: t.accessToken, tenantId: activeTenantId, product });
       if (r?.url) { leaveForCheckout(r.url); return; }
       if (r?.mode === 'active' || r?.mode === 'owner') { setSaid(r.message || `${PRODUCT_NAME[product]} is already on.`); return; }
@@ -128,7 +140,7 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
             : 'mt-5 inline-flex items-center justify-center rounded-md bg-[#EF6C33] px-5 py-2 text-sm font-semibold text-white hover:bg-[#d95e2b] disabled:opacity-60'}
           style={variant === 'nav' ? { background: '#EF6C33' } : undefined}
         >
-          {busy ? 'Opening checkout…' : notice.action.label}
+          {busy ? (notice.action.kind === 'update_card' ? 'Opening…' : 'Opening checkout…') : notice.action.label}
         </button>
       )}
       {notice.note && (

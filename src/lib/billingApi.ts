@@ -116,6 +116,25 @@ export async function fetchSubscriptionsShared(params: {
   return run;
 }
 
+/**
+ * Update card: the ONE action behind every "Update card" (the Plan & Pricing
+ * card, and the off notice on an unpaid product's pages and menu). Opens the
+ * payment page for this product in a new tab and answers null; when there is
+ * no page to open it answers the sentence to say beside the button.
+ */
+export async function openUpdateCard(params: {
+  token: string; tenantId: string;
+  product: "oliver" | "spark" | "arion" | "stella";
+}): Promise<string | null> {
+  const r = await createPortalSession({
+    token: params.token, tenantId: params.tenantId,
+    product: params.product === "stella" ? undefined : params.product,
+    returnUrl: window.location.origin + "/app/settings/plan-pricing?refresh=1",
+  });
+  if (r.mode === "portal" && r.url) { window.open(r.url, "_blank", "noopener,noreferrer"); return null; }
+  return r.message || "There is no card to update on this account.";
+}
+
 /** F-106 — Stripe Billing Portal session URL.
  *  Opens Stripe's hosted portal for cancel + invoice history +
  *  payment-method updates. Configured per-env in the Stripe dashboard. */

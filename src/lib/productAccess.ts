@@ -145,6 +145,7 @@ export function neverBoughtSentence(product: GatedProduct): string {
 }
 
 export const ASK_AN_ADMIN_RESUBSCRIBE = 'Ask an admin on your team to re-subscribe.';
+export const ASK_AN_ADMIN_UPDATE_CARD = 'Ask an admin on your team to update the card.';
 export const SWITCH_TO_OWN_BUSINESS = 'Switch to your own business to change billing.';
 
 /** Who is looking: a business admin, a team member without billing rights,
@@ -154,18 +155,27 @@ export type Viewer = 'admin' | 'member' | 'viewing_client';
 export interface OffNotice {
   sentence: string;
   /** The one control. null when this viewer cannot act — the line below says why. */
-  action: { kind: 'resubscribe' | 'add'; label: string } | null;
+  action: { kind: 'resubscribe' | 'add' | 'update_card'; label: string } | null;
   /** Said in place of the control, never as a disabled button. */
   note: string | null;
 }
 
 /**
- * What the product's pages show instead of themselves.
- * `ended` = the latest switch-off the billing API reported (§5 `ended`), or
- * null when the product was never bought (or the date is not known).
+ * What the product's pages (ProductGate) and its menu (SubNav) show instead of
+ * themselves. `why` = offReasonForRow(product, its billing row): the SAME
+ * reading the Plan & Pricing card makes, so an unpaid product says the payment
+ * failed with Update card here too, never "isn't part of your plan yet" with
+ * "Add" (decision (d)). null = not known, read as never bought.
  */
-export function offNotice(product: GatedProduct, ended: { at: string | null } | null, viewer: Viewer, timeZone?: string): OffNotice {
+export function offNotice(product: GatedProduct, why: OffReason | null, viewer: Viewer, timeZone?: string): OffNotice {
   const name = PRODUCT_NAME[product];
+  if (why?.kind === 'unpaid') {
+    const sentence = why.sentence;
+    if (viewer === 'viewing_client') return { sentence, action: null, note: SWITCH_TO_OWN_BUSINESS };
+    if (viewer === 'member') return { sentence, action: null, note: ASK_AN_ADMIN_UPDATE_CARD };
+    return { sentence, action: { kind: 'update_card', label: 'Update card' }, note: null };
+  }
+  const ended = why?.kind === 'ended' ? why : null;
   const sentence = ended ? endedSentence(product, ended.at, timeZone) : neverBoughtSentence(product);
   if (viewer === 'viewing_client') return { sentence, action: null, note: SWITCH_TO_OWN_BUSINESS };
   if (viewer === 'member') {
@@ -225,6 +235,28 @@ export function rowForProduct(rows: PlanRow[] | null | undefined, product: strin
 export const unpaidSentence = (product: GatedProduct): string =>
   `Your last payment didn't go through, so ${PRODUCT_NAME[product]} is paused. Update your card to turn it back on.`;
 
+/** Why a product is not live, read from its billing row (rowForProduct). */
+export type OffReason =
+  | { kind: 'unpaid'; sentence: string }
+  | { kind: 'ended'; at: string | null }
+  | { kind: 'never' };
+
+/**
+ * THE one reading of a product's billing row when it is not live. The Plan &
+ * Pricing card (planCardLine), the off notice on the product's pages and menu
+ * (offNotice) and the rail's badge (railLockWords via offReasons) all take
+ * their words from here, so the three can never disagree:
+ *   unpaid  the payment failed and Stripe stopped retrying; the subscription
+ *           still holds the product. The API's sentence, or unpaidSentence.
+ *   ended   a switch-off on record, with its date.
+ *   never   no row, or nothing that says it was ever bought.
+ */
+export function offReasonForRow(product: GatedProduct, row: PlanRow | null | undefined): OffReason {
+  if (row && rowIsUnpaid(row)) return { kind: 'unpaid', sentence: (row.message && String(row.message).trim()) || unpaidSentence(product) };
+  if (row && !rowIsLive(row) && row.ended) return { kind: 'ended', at: row.ended.at ?? null };
+  return { kind: 'never' };
+}
+
 export type CardState = 'active' | 'downgrade' | 'ending' | 'past_due' | 'ended' | 'never';
 
 export interface CardLine {
@@ -240,19 +272,16 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
   const name = PRODUCT_NAME[product];
   if (!row) return { state: 'never', line: 'Not subscribed', control: { kind: 'add', label: `Add ${name} to your account` }, canRemove: false };
 
-  const live = rowIsLive(row);
-  if (rowIsUnpaid(row)) {
-    return {
-      state: 'past_due',
-      line: (row.message && String(row.message).trim()) || unpaidSentence(product),
-      control: { kind: 'update_card', label: 'Update card' },
-      canRemove: false,
-    };
+  if (!rowIsLive(row)) {
+    const why = offReasonForRow(product, row);
+    if (why.kind === 'unpaid') {
+      return { state: 'past_due', line: why.sentence, control: { kind: 'update_card', label: 'Update card' }, canRemove: false };
+    }
+    if (why.kind === 'ended') {
+      return { state: 'ended', line: endedSentence(product, why.at, timeZone), control: { kind: 'resubscribe', label: 'Re-subscribe' }, canRemove: false };
+    }
+    return { state: 'never', line: 'Not subscribed', control: { kind: 'add', label: `Add ${name} to your account` }, canRemove: false };
   }
-  if (!live && row.ended) {
-    return { state: 'ended', line: endedSentence(product, row.ended.at, timeZone), control: { kind: 'resubscribe', label: 'Re-subscribe' }, canRemove: false };
-  }
-  if (!live) return { state: 'never', line: 'Not subscribed', control: { kind: 'add', label: `Add ${name} to your account` }, canRemove: false };
 
   if (String(row.status || '').toLowerCase() === 'past_due') {
     return {
@@ -312,7 +341,7 @@ export function planCardForViewer(product: GatedProduct, card: CardLine, viewer:
   const name = PRODUCT_NAME[product];
   const note = card.state === 'ended' ? ASK_AN_ADMIN_RESUBSCRIBE
     : card.state === 'never' ? `Ask an admin on your team to add ${name}.`
-    : card.state === 'past_due' ? 'Ask an admin on your team to update the card.'
+    : card.state === 'past_due' ? ASK_AN_ADMIN_UPDATE_CARD
     : `Ask an admin on your team to change ${name}'s plan.`;
   return { card: bare, note };
 }
@@ -364,23 +393,28 @@ export function billingRefusalSentence(body: unknown, status: number): string {
    The rail: the badge and the tooltip of a locked product
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The same words the product's off notice uses: an ENDED product says it
- *  ended (and how to get it back); a product never bought says ADD. */
-export function railLockWords(product: string, tagline: string, label: string, ended: boolean): { badge: string; title: string } {
-  if (ended && isOffGatedProduct(product)) {
+/** The same words the product's off notice uses (offReasonForRow): an
+ *  UNPAID product says the payment failed (and how to fix it), an ENDED one
+ *  says it ended (and how to get it back); only a product never bought says ADD. */
+export function railLockWords(product: string, tagline: string, label: string, why: OffReason['kind']): { badge: string; title: string } {
+  if (isOffGatedProduct(product)) {
     const name = PRODUCT_NAME[product];
-    return { badge: 'ENDED', title: `Your ${name} subscription ended. Open ${name} to re-subscribe.` };
+    if (why === 'unpaid') return { badge: 'PAUSED', title: `Your last payment didn't go through, so ${name} is paused. Open ${name} to update your card.` };
+    if (why === 'ended') return { badge: 'ENDED', title: `Your ${name} subscription ended. Open ${name} to re-subscribe.` };
   }
   return { badge: 'ADD', title: `${tagline} is not part of your plan — add ${tagline} to enable ${label}` };
 }
 
-/** The products whose subscription ENDED (a still-off switch-off on record),
- *  from GET /billing/subscriptions rows. */
-export function endedProducts(rows: PlanRow[] | null | undefined): Set<string> {
-  const out = new Set<string>();
+/** Why each off-gated product is not live, from GET /billing/subscriptions
+ *  rows: only 'unpaid' and 'ended' are listed (a product not listed reads as
+ *  never bought). The rail's words come from here. */
+export function offReasons(rows: PlanRow[] | null | undefined): Map<string, OffReason['kind']> {
+  const out = new Map<string, OffReason['kind']>();
   for (const p of OFF_GATED_PRODUCTS) {
     const row = rowForProduct(rows, p);
-    if (row && !rowIsLive(row) && row.ended) out.add(p);
+    if (!row || rowIsLive(row)) continue;
+    const why = offReasonForRow(p, row);
+    if (why.kind !== 'never') out.set(p, why.kind);
   }
   return out;
 }

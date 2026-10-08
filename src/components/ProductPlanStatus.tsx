@@ -33,7 +33,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useBillingViewer } from '../hooks/useBillingViewer';
-import { changePlan, createPortalSession, keepProductPlan, removeProduct, resubscribe } from '../lib/billingApi';
+import { changePlan, keepProductPlan, openUpdateCard, removeProduct, resubscribe } from '../lib/billingApi';
 import { leaveForCheckout } from '../lib/leaveForCheckout';
 import {
   planCardForViewer, planCardLine, planPagePath, removeConfirmSentence, resubscribeFallbackSentence,
@@ -102,13 +102,8 @@ export function ProductPlanStatus({ product, row, owner = false, addTo, onChange
     }
     if (c.kind === 'update_card') {
       return run('update_card', async (token, tenantId) => {
-        const r = await createPortalSession({
-          token, tenantId,
-          product: product === 'stella' ? undefined : product,
-          returnUrl: window.location.origin + '/app/settings/plan-pricing?refresh=1',
-        });
-        if (r.mode === 'portal' && r.url) window.open(r.url, '_blank', 'noopener,noreferrer');
-        else setMessage(r.message || 'There is no card to update on this account.');
+        const said = await openUpdateCard({ token, tenantId, product });
+        if (said) setMessage(said);
       });
     }
     if (c.kind === 'resubscribe') {

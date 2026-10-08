@@ -5,7 +5,7 @@ import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { useProductAccess } from "../hooks/useProductAccess";
-import { useEndedProducts } from "../hooks/useEndedProducts";
+import { useOffReasons } from "../hooks/useOffReasons";
 import { isOffGatedProduct, railLockWords } from "../lib/productAccess";
 
 // "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
@@ -158,10 +158,11 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     return { ...p, enabled: ownedProducts.has(serviceKey) };
   });
 
-  // A locked OLIVER/SPARK/ARION/STELLA whose subscription ENDED says so on the
-  // rail in the off notice's own words ("ENDED"), not "ADD" (review 2026-10-08).
+  // A locked OLIVER/SPARK/ARION/STELLA whose payment failed or whose
+  // subscription ENDED says so on the rail in the off notice's own words
+  // ("PAUSED", "ENDED"), never "ADD" (review 2026-10-08, decision (d)).
   const anyGatedLocked = products.some((p) => !p.enabled && isOffGatedProduct(PRODUCT_SERVICE_KEY[p.key]));
-  const ended = useEndedProducts(FEATURE_GATING_ENABLED && anyGatedLocked, location.pathname);
+  const offWhy = useOffReasons(FEATURE_GATING_ENABLED && anyGatedLocked, location.pathname);
 
   return (
     // In a flex row parent with min-h-0 and align-items:stretch (default), this column
@@ -187,7 +188,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           // locked — restores the pre-gating behaviour while the founder-bypass
           // path is verified. See config/featureFlags.FEATURE_GATING_ENABLED.
           const locked = FEATURE_GATING_ENABLED && !p.enabled;
-          const lockWords = railLockWords(PRODUCT_SERVICE_KEY[p.key] || p.key, p.tagline, p.label, ended.has(PRODUCT_SERVICE_KEY[p.key] || ""));
+          const lockWords = railLockWords(PRODUCT_SERVICE_KEY[p.key] || p.key, p.tagline, p.label, offWhy.get(PRODUCT_SERVICE_KEY[p.key] || "") ?? "never");
           return (
             <button
               key={p.key}
