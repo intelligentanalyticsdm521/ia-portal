@@ -139,6 +139,15 @@ export function AgentApprovalCard({
           </>
         )}
 
+        {/* What the writer left out on purpose, in its own words: shown in the open,
+            next to the draft, so a brief that asked for an offer the business does not
+            allow is not read as half-ignored (dev click S22). */}
+        {row.detail?.confidence_note && (
+          <p data-left-out-note className="rounded-md bg-amber-50 px-2.5 py-1.5 text-[11px] leading-relaxed text-amber-900 ring-1 ring-amber-200">
+            <span className="font-medium">What it left out, and why: </span>{row.detail.confidence_note}
+          </p>
+        )}
+
         {row.detail?.why && (
           <details className="text-[11px] text-slate-500">
             <summary className="cursor-pointer select-none hover:text-slate-700">

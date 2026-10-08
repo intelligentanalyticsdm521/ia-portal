@@ -204,3 +204,13 @@ test("the Responder keeps ONE settings page; its draft and send-by-itself are th
   assert.equal(/save\(\{ draft_enabled/.test(responderSettings), false, "the old draft switch is gone");
   assert.equal(/save\(\{ auto_send_enabled/.test(responderSettings), false, "the old send-by-itself switch is gone");
 });
+
+test("the writer's 'what I left out, and why' note is shown in the open on the card, not hidden under 'What this is based on' (dev click S22)", () => {
+  const i = card.indexOf("{row.detail?.confidence_note && (");
+  assert.ok(i > 0, "the card renders detail.confidence_note, with no dead guard in front of it");
+  assert.ok(!/false\s*&&\s*row\.detail\?\.confidence_note/.test(card), "never switched off by a constant");
+  assert.ok(/data-left-out-note/.test(card.slice(i, i + 400)), "it is its own visible line");
+  assert.ok(/What it left out, and why/.test(card.slice(i, i + 400)), "with a plain label");
+  const why = card.indexOf("row.detail?.why &&");
+  assert.ok(i < why, "the note comes before the collapsed 'What this is based on'");
+});
