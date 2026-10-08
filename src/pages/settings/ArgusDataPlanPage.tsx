@@ -405,22 +405,21 @@ export function ArgusDataPlanPage() {
         )}
       </div>
 
-      {/* Action pricing reference */}
+      {/* What credits cost. The owner reads only plain words: the price row's
+          description says what the credit buys, so its key is never printed. */}
       <div className="rounded-lg border border-slate-200 bg-white p-6">
         <h2 className="text-lg font-semibold text-slate-900 mb-3">What credits cost</h2>
-        <div className="text-xs text-slate-500 mb-3">Credit costs per AI action. Founder admin can adjust pricing quarterly as provider costs shift.</div>
+        <div className="text-xs text-slate-500 mb-3">How many credits each piece of work uses, at today's prices.</div>
         <table className="w-full text-sm">
           <thead>
             <tr className="text-xs text-slate-500 border-b border-slate-200">
-              <th className="text-left pb-2">Action</th>
               <th className="text-left pb-2">Credits</th>
-              <th className="text-left pb-2">Description</th>
+              <th className="text-left pb-2">What you get</th>
             </tr>
           </thead>
           <tbody>
             {pricing.map((p) => (
               <tr key={p.action_type} className="border-b border-slate-100">
-                <td className="py-2 font-mono text-xs text-slate-700">{p.action_type}</td>
                 <td className="py-2 font-semibold text-slate-900">{p.credits_per_call}</td>
                 <td className="py-2 text-slate-600">{p.description || '—'}</td>
               </tr>
@@ -447,13 +446,13 @@ export function ArgusDataPlanPage() {
           </div>
         </div>
         {!usage || usage.by_action.length === 0 ? (
-          <div className="text-sm text-slate-500 py-6 text-center">No AI activity in the last {usageDays} days.</div>
+          <div className="text-sm text-slate-500 py-6 text-center">No credits used in the last {usageDays} days.</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 border-b border-slate-200">
-                <th className="text-left pb-2">Action</th>
-                <th className="text-right pb-2">Calls</th>
+                <th className="text-left pb-2">What it was</th>
+                <th className="text-right pb-2">Times</th>
                 <th className="text-right pb-2">Credits Spent</th>
                 <th className="text-right pb-2">Refunded</th>
               </tr>
@@ -461,7 +460,7 @@ export function ArgusDataPlanPage() {
             <tbody>
               {usage.by_action.map((r) => (
                 <tr key={r.action_type} className="border-b border-slate-100">
-                  <td className="py-2 font-mono text-xs text-slate-700">{r.action_type}</td>
+                  <td className="py-2 text-slate-700">{pricing.find((p) => p.action_type === r.action_type)?.description || 'Other work'}</td>
                   <td className="py-2 text-right text-slate-700">{r.call_count}</td>
                   <td className="py-2 text-right font-semibold text-slate-900">{r.credits_spent.toLocaleString()}</td>
                   <td className="py-2 text-right text-slate-500">{r.refunded_count}</td>
