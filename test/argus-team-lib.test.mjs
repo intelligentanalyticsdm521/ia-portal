@@ -377,6 +377,7 @@ test("a job that is On but can't read its job description says so, and Run it no
   assert.equal(canRunNow(ok), true);
   assert.equal(canRunNow({ ...ok, problem: null }), true);
   assert.equal(canRunNow({ ...ok, problem: WIRE.CANT_READ_DESCRIPTION_WORDS }), false, "on, but the runners drop it: never offered");
+  assert.equal(canRunNow({ ...ok, problem: "   " }), true, "a blank problem is no problem");
 });
 
 /* ── Run it now ──────────────────────────────────────────────────────── */
@@ -445,6 +446,12 @@ test("Run it now refused or broken: the runner's refusal sentence; a fault is on
   assert.equal(runNowFailure(WIRE.ARION_JOB_OFF()), "That job is off. Switch it on first.");
   // a 500 carries the exception's text: never shown
   assert.equal(runNowFailure(WIRE.ARION_FAULT()), RUN_SERVER_FAULT_WORDS);
+  // arion's kill switch is a 503 with the code AGENT_DISABLED: paused for everyone, not a fault to retry
+  const killSwitch = Object.assign(new Error("x"), { status: 503, body: { error: { code: "AGENT_DISABLED", message: "Nothing ran: the writing is switched off for everyone just now.", status: 503 } } });
+  assert.equal(runNowFailure(killSwitch), RUN_PAUSED_WORDS);
+  assert.equal(runNowFailure(new Error('ARION API 503: {"error":{"code":"AGENT_DISABLED","message":"Nothing ran.","status":503}}')), RUN_PAUSED_WORDS);
+  // a top-level message that is not a sentence never reaches the screen either
+  assert.equal(runNowFailure(Object.assign(new Error("x"), { status: 409, body: { message: "No tenant row for {id}" } })), RUN_FAILED_WORDS, "a top-level non-sentence message is not shown");
   const spark500 = Object.assign(new Error('SPARK API 500: {"error":"Internal","message":"connect ECONNREFUSED 127.0.0.1:1433"}'), {});
   assert.equal(runNowFailure(spark500), RUN_SERVER_FAULT_WORDS);
   assert.equal(runNowFailure(new Error("OLIVER API 503: <html>Service Unavailable</html>")), RUN_SERVER_FAULT_WORDS);

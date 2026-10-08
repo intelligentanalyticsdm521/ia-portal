@@ -878,13 +878,16 @@ export function runResult(out: unknown): { ok: boolean; words: string } {
  */
 export function runNowFailure(err: unknown): string {
   const status = statusOfError(err);
-  if (status !== null && status >= 500) return RUN_SERVER_FAULT_WORDS;
   let body: unknown = err && typeof err === "object" ? (err as { body?: unknown }).body : null;
   if (!body && err instanceof Error) {
     // SPARK and OLIVER throw "<PRODUCT> API <status>: <body>".
     const m = /^(?:SPARK|OLIVER|ARION|LUMEN|PLATFORM) API \d{3}: (.*)$/s.exec(err.message);
     if (m) { try { body = JSON.parse(m[1]); } catch { body = null; } }
   }
+  // arion's kill switch answers 503 AGENT_DISABLED: the writing is paused for
+  // everyone, which is not a fault to retry. Read by its code, never its text.
+  if (errorCodeOf(body) === "AGENT_DISABLED") return RUN_PAUSED_WORDS;
+  if (status !== null && status >= 500) return RUN_SERVER_FAULT_WORDS;
   if (body && typeof body === "object") {
     const b = body as { words?: unknown; message?: unknown; error?: unknown };
     const inner = b.error && typeof b.error === "object" ? (b.error as { message?: unknown }).message : b.error;
@@ -893,6 +896,15 @@ export function runNowFailure(err: unknown): string {
   }
   if (status === null || status === 0) return RUN_NO_ANSWER_WORDS;
   return RUN_FAILED_WORDS;
+}
+
+/** The error code a server put on its answer ({error:{code}} or {code}), or null. A code is read, never shown. */
+function errorCodeOf(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const b = body as { code?: unknown; error?: unknown };
+  const inner = b.error && typeof b.error === "object" ? (b.error as { code?: unknown }).code : null;
+  const code = typeof inner === "string" ? inner : typeof b.code === "string" ? b.code : null;
+  return code ? code.trim().toUpperCase() : null;
 }
 
 /**
