@@ -15,10 +15,10 @@
 // Back closes it.
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { X } from "lucide-react";
+import { AlertTriangle, X } from "lucide-react";
 import { useJobWriter } from "../../../hooks/useTeam";
 import {
-  NOT_BUILT_WORDS, briefFieldRoute, choiceLabel, varLimitWords, varText, varsPayload, versionLine, whenWords,
+  NOT_BUILT_WORDS, briefFieldRoute, choiceLabel, jobProblem, varLimitWords, varText, varsPayload, versionLine, whenWords,
   type JobView, type TeamJobChange, type VarDef,
 } from "../../../lib/team";
 import type { AgentRunRow } from "../../agents/types";
@@ -99,6 +99,7 @@ export function JobDrawer({ job, onClose, onChanged, onNotice, runs, door, loadC
   }, [job.job_key, loadChanges]);
 
   const pb = job.playbook;
+  const problem = jobProblem(job);
   const dirty = Object.keys(draft).filter((k) => draft[k] !== varText(job.vars?.[k]));
 
   const save = async () => {
@@ -123,6 +124,13 @@ export function JobDrawer({ job, onClose, onChanged, onNotice, runs, door, loadC
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500"><X className="h-4 w-4" /></button>
         </div>
+
+        {problem && (
+          <div className="mt-3 flex items-start gap-1.5 rounded bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800 ring-1 ring-rose-200" role="alert" data-job-problem>
+            <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+            <span>{problem}</span>
+          </div>
+        )}
 
         <div className="mt-4 space-y-4">
           <Section title="When I do it">

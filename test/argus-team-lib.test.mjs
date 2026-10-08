@@ -36,7 +36,7 @@ import {
   RUN_UNKNOWN_WORDS, RUN_NOTHING_WORDS, RUN_PART_FAILED_WORDS, SCHEDULE_FAILED_WORDS, NOTHING_CHANGED_SAVED_WORDS, NEVER_WORDS,
   varsPayload, varText, varLimitWords, teamRefusal, madeByWords, employeeTabFrom, pausedWords,
   dayMonth, relativeTime, WAITING_PATHS, TEAM_PATHS, NOT_BUILT_WORDS, UNDECIDED_WORDS, NOT_ADMIN_WORDS,
-  UNREACHABLE_WORDS,
+  UNREACHABLE_WORDS, runNowFailure, jobProblem, RUN_SERVER_FAULT_WORDS, RUN_NO_ANSWER_WORDS,
 } from "../src/lib/team.ts";
 import {
   DOOR_KNOBS, doorReads, doorState, doorWrite, doorPlace, doorRowView, doorRefusalWords,
@@ -359,6 +359,26 @@ test("a social post goes out tomorrow at 10:00 unless the owner picks another ti
   assert.equal(localToIso("not a time"), null);
 });
 
+/* ── On, but it can't read its job description (JobView.problem) ─────── */
+
+test("a job that is On but can't read its job description says so, and Run it now is not offered", () => {
+  const live = {
+    state: "live", setting_home: "team", mode_rule: "either", lock_words: null, on_team: true, enabled: true,
+    available: { ok: true, decided: true }, automatic: { ok: true, decided: true },
+  };
+  const st = jobRowState({ ...live, problem: WIRE.CANT_READ_DESCRIPTION_WORDS });
+  assert.equal(st.problemLine, WIRE.CANT_READ_DESCRIPTION_WORDS, "the server's sentence, as sent");
+  assert.equal(st.control, "switch", "it can still be switched off and on again");
+  assert.equal(jobRowState(live).problemLine, null, "no problem, no line");
+  assert.equal(jobRowState({ ...live, problem: "   " }).problemLine, null);
+  assert.equal(jobRowState({ ...live, setting_home: "door", problem: WIRE.CANT_READ_DESCRIPTION_WORDS }).problemLine, WIRE.CANT_READ_DESCRIPTION_WORDS, "a door job too");
+  assert.equal(jobProblem({ problem: null }), null);
+  const ok = { hasRunRoute: true, isOn: true, paused: false, halted: false };
+  assert.equal(canRunNow(ok), true);
+  assert.equal(canRunNow({ ...ok, problem: null }), true);
+  assert.equal(canRunNow({ ...ok, problem: WIRE.CANT_READ_DESCRIPTION_WORDS }), false, "on, but the runners drop it: never offered");
+});
+
 /* ── Run it now ──────────────────────────────────────────────────────── */
 
 test("Run it now calls each runner's own route", () => {
@@ -405,11 +425,42 @@ test("Run it now, review replies (arion review tick): posted counted apart, a fa
   assert.deepEqual(runResult(R.heldTwo), { ok: true, words: "It has had a look and wrote 2 things for you. They're in Needs you." });
   assert.deepEqual(runResult(R.nothingDue), { ok: true, words: RUN_NOTHING_WORDS });
   assert.deepEqual(runResult(R.googleFetchFailed), { ok: false, words: RUN_PART_FAILED_WORDS }, "never 'nothing to do' when Google could not be read");
-  assert.deepEqual(runResult(R.briefBlocked), { ok: false, words: "I couldn't read your business details, so I didn't answer any reviews." });
+  assert.deepEqual(runResult(R.failedNoWords), { ok: false, words: RUN_FAILED_WORDS }, "a failed run with no words of its own is rose");
   const refused = runResult(R.postRefused);
   assert.equal(refused.ok, false);
   assert.match(refused.words, /^1 reply didn't go to Google\. It's in Needs you to try again\./);
   assert.equal(/fetchReviews|401/.test(runResult(R.googleFetchFailed).words), false, "the machine error never reaches the screen");
+});
+
+test("Run it now, a business without the product: arion's own answer's productOff: true is said as not on the plan", () => {
+  assert.deepEqual(runResult(WIRE.CONTENT_TICK.ownProductOff), { ok: false, words: RUN_NOT_OWNED_WORDS });
+  assert.deepEqual(runResult({ productOff: true, ran: 0, results: [] }), { ok: false, words: RUN_NOT_OWNED_WORDS }, "with or without the envelope");
+  assert.deepEqual(runResult({ data: { productOff: true } }), { ok: false, words: RUN_NOT_OWNED_WORDS }, "a single-run shape too");
+});
+
+test("Run it now refused or broken: the runner's refusal sentence; a fault is one plain sentence, never its body", () => {
+  // review replies: a blocked run is a 409 NOT_RUN with its words, not a 200
+  assert.equal(runNowFailure(WIRE.REVIEW_RUN_REFUSED.briefBlocked()), "I couldn't read your business details, so I didn't answer any reviews.");
+  assert.equal(runNowFailure(WIRE.REVIEW_RUN_REFUSED.ceiling()), "This month's ARGUS spending limit for your business is reached, so I didn't write any replies.");
+  assert.equal(runNowFailure(WIRE.ARION_JOB_OFF()), "That job is off. Switch it on first.");
+  // a 500 carries the exception's text: never shown
+  assert.equal(runNowFailure(WIRE.ARION_FAULT()), RUN_SERVER_FAULT_WORDS);
+  const spark500 = Object.assign(new Error('SPARK API 500: {"error":"Internal","message":"connect ECONNREFUSED 127.0.0.1:1433"}'), {});
+  assert.equal(runNowFailure(spark500), RUN_SERVER_FAULT_WORDS);
+  assert.equal(runNowFailure(new Error("OLIVER API 503: <html>Service Unavailable</html>")), RUN_SERVER_FAULT_WORDS);
+  for (const e of [WIRE.ARION_FAULT(), spark500]) {
+    assert.equal(/recordset|ECONNREFUSED|1433|Cannot read/.test(runNowFailure(e)), false, "the body never reaches the screen");
+  }
+  // a 4xx whose body is not the server's words shape
+  assert.equal(runNowFailure(Object.assign(new Error("x"), { status: 400, body: { raw: "<html>Bad gateway</html>" } })), RUN_FAILED_WORDS);
+  assert.equal(runNowFailure(Object.assign(new Error("x"), { status: 409, body: { error: "not_enabled" } })), RUN_FAILED_WORDS, "a code is not a sentence");
+  assert.equal(runNowFailure(Object.assign(new Error("x"), { status: 409, body: { error: { message: "No tenant row for {id}" } } })), RUN_FAILED_WORDS);
+  // OLIVER / SPARK refusals in their own shapes
+  assert.equal(runNowFailure(new Error('OLIVER API 409: {"error":"halted","message":"It stopped itself. Start it again first."}')), "It stopped itself. Start it again first.");
+  assert.equal(runNowFailure(Object.assign(new Error("x"), { status: 422, body: { words: "Say what the campaign is about first." } })), "Say what the campaign is about first.");
+  // no answer at all: it may have run
+  assert.equal(runNowFailure(new TypeError("Failed to fetch")), RUN_NO_ANSWER_WORDS);
+  assert.equal(runNowFailure(Object.assign(new Error("Request to arion-api timed out after 120000ms"), { status: 0, body: null })), RUN_NO_ANSWER_WORDS);
 });
 
 test("Run it now, the office administrator (oliver answers 200 for a job that did nothing)", () => {
@@ -710,6 +761,10 @@ test("a 2xx decision that says it failed is said in rose", () => {
   assert.deepEqual(decisionResult("publish", {}), { ok: true, words: "Sent to your website." });
   assert.equal(decisionResult("approve", { ok: false }).ok, false);
   assert.equal(decisionResult("approve", { data: { failed: true, words: "It didn't go." } }).words, "It didn't go.");
+});
+
+test("a switch or mode that is already set: platform-api answers 409 with its sentence, said as the refusal", () => {
+  assert.equal(teamRefusal(WIRE.alreadySetError()), WIRE.ALREADY_SET_WORDS);
 });
 
 test("the toast follows the server's answer, never the request", () => {

@@ -58,7 +58,7 @@ import {
   EMPLOYEE_NAME, EMPLOYEE_SOURCE, EMPLOYEE_TABS, PLAN_PRICING_ROUTE, RUNS_PATHS, YourEmployee,
   AGENT_JOBS, belongsTo, briefFieldRoute, employeeLoadWords, employeeOfRow, employeeStanding, employeeTabFrom,
   haltedLine, knowFields, lastRunByJob, needCountWords, notOnTeamWords, productNotOwnedWords, relativeTime,
-  runNowCall, runResult, knownJobKeys, waitingByJob, whatIDid, withStanding, yourEmployee,
+  runNowCall, runNowFailure, runResult, knownJobKeys, waitingByJob, whatIDid, withStanding, yourEmployee,
   type EmployeeKey, type EmployeeTab, type JobView, type TeamEmployee,
 } from "../../lib/team";
 
@@ -270,7 +270,9 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
       else setPageAlert(result.words);
       await Promise.all([needs.reload(), loadRuns()]);
     } catch (err) {
-      setPageAlert(apiErrorMessage(err));
+      // The runner's own refusal sentence; a fault (5xx) or a body that is not
+      // the runner's words is one plain sentence, never the body.
+      setPageAlert(runNowFailure(err));
     } finally {
       setRunning(null);
     }

@@ -161,8 +161,30 @@ test("Jobs: every row through JobRow, with its last run, its count, the halted l
 test("Run it now: what came of it is green only when it worked, rose otherwise; the button follows canRunNow", () => {
   assert.match(page, /const result = runResult\(out\);\s*if \(result\.ok\) setNotice\(result\.words\);\s*else setPageAlert\(result\.words\);/);
   assert.equal(/setNotice\(runResult/.test(page), false);
-  assert.match(jobRow, /const canRun = canRunNow\(\{ hasRunRoute: !!onRunNow, isOn, paused: st\.paused, halted: !!halted \}\);/);
+  assert.match(jobRow, /const canRun = canRunNow\(\{ hasRunRoute: !!onRunNow, isOn, paused: st\.paused, halted: !!halted, problem: job\.problem \}\);/);
   assert.match(jobRow, /\{canRun && \(/);
+});
+
+test("Run it now refused or broken: the page says runNowFailure's sentence, never the server's body", () => {
+  const body = page.slice(page.indexOf("const runNow = async"), page.indexOf("const saveFounderKnob"));
+  assert.match(body, /\} catch \(err\) \{\s*(?:\/\/[^\n]*\n\s*)*setPageAlert\(runNowFailure\(err\)\);/);
+  assert.equal(/apiErrorMessage\(/.test(body), false, "a 500's text never reaches the alert through apiErrorMessage");
+});
+
+test("On, but it can't read its job description: the row and the drawer say the server's sentence in rose", () => {
+  // The row: one ProblemLine, rose, role=alert, drawn from jobRowState's problemLine.
+  assert.match(jobRow, /export function ProblemLine\(\{ words \}: \{ words: string \}\) \{\s*return \(\s*<div className="[^"]*bg-rose-50[^"]*text-rose-800[^"]*" role="alert" data-job-problem>\s*<AlertTriangle[^>]*\/>\s*<span>\{words\}<\/span>/);
+  assert.match(jobRow, /\{st\.problemLine && !hideSwitch && <ProblemLine words=\{st\.problemLine\} \/>\}/, "on the switch, wherever the switch is shown");
+  assert.match(jobRow, /\{st\.control === "door" && st\.problemLine && <ProblemLine words=\{st\.problemLine\} \/>\}/, "on a door job's row too");
+  // The drawer: the same sentence at the top, rose, role=alert.
+  assert.match(drawer, /const problem = jobProblem\(job\);/);
+  assert.match(drawer, /\{problem && \(\s*<div className="[^"]*bg-rose-50[^"]*text-rose-800[^"]*" role="alert" data-job-problem>\s*<AlertTriangle[^>]*\/>\s*<span>\{problem\}<\/span>/);
+});
+
+test("What I never do: the drawer shows the server's sentences as sent and writes none of its own", () => {
+  assert.match(drawer, /\{pb\.never\.length \? <ul className="space-y-0\.5">\{pb\.never\.map\(\(w, i\) => <li key=\{i\}>· \{w\}<\/li>\)\}<\/ul>/);
+  assert.equal(/never to mention|competitor|proof you allow|is enforced/i.test(stripComments(drawer)), false,
+    "no rule sentence is written in the Portal: whether a list is empty is the server's to say");
 });
 
 test("Run it now: the runners' own routes; campaign from a brief asks one line in the app's dialog", () => {

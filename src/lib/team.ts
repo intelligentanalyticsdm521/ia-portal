@@ -137,6 +137,12 @@ export interface JobView {
   door: JobDoor | null;
   playbook: JobPlaybookView | null;
   waiting_for_brief: Array<{ field: string; label: string }>;
+  /**
+   * Why a job that is On does nothing (platform-api lib/team/view.js): its
+   * pinned job description can't be read, so the runners drop it. The
+   * server's own sentence; null when there is nothing wrong.
+   */
+  problem?: string | null;
 }
 
 export interface TeamJobChange { at: string; words: string; actor?: string | null }
@@ -209,6 +215,8 @@ export interface JobRowState {
   gateLine: { words: string; link?: TeamLink } | null;
   /** On, but its requirement stopped holding (a downgrade): "Paused: …". */
   paused: boolean;
+  /** On, but it does nothing: the server's sentence (JobView.problem), shown in rose. */
+  problemLine: string | null;
 }
 
 /**
@@ -221,16 +229,17 @@ export interface JobRowState {
  * always-asks job never shows Automatic (mutation M19).
  */
 export function jobRowState(job: Pick<JobView,
-  "state" | "setting_home" | "mode_rule" | "lock_words" | "on_team" | "enabled" | "available" | "automatic">): JobRowState {
+  "state" | "setting_home" | "mode_rule" | "lock_words" | "on_team" | "enabled" | "available" | "automatic" | "problem">): JobRowState {
   const words = (job.lock_words || "").trim() || null;
   const base: JobRowState = {
     control: "none", switchLocked: false, lockLine: null, modeControl: false,
-    modeLine: null, automaticLine: null, gateLine: null, paused: false,
+    modeLine: null, automaticLine: null, gateLine: null, paused: false, problemLine: null,
   };
+  const problemLine = jobProblem(job);
   if (job.state === "planned") return { ...base, lockLine: words || NOT_BUILT_WORDS };
   if (job.state === "locked") return { ...base, lockLine: words };
   if (job.setting_home === "none") return { ...base, lockLine: words };
-  if (job.setting_home === "door") return { ...base, control: "door", modeLine: words };
+  if (job.setting_home === "door") return { ...base, control: "door", modeLine: words, problemLine };
   if (job.setting_home !== "team") return { ...base, lockLine: words };
   // From here: a live job whose switch is the team row.
   if (!job.on_team) return { ...base, lockLine: null };
@@ -245,12 +254,18 @@ export function jobRowState(job: Pick<JobView,
     switchLocked: !on && refused,
     gateLine: refused ? { words: (gate.words || "").trim() || "This job can't be switched on yet.", link: gate.link } : null,
     paused: on && refused,
+    problemLine,
     modeControl,
     modeLine: words,
     automaticLine: modeControl && auto.decided === true && auto.ok === false
       ? { words: (auto.words || "").trim() || "Automatic isn't available for this job yet.", link: auto.link }
       : null,
   };
+}
+
+/** The server's sentence for a job that is on but does nothing, or null. */
+export function jobProblem(job: Pick<JobView, "problem">): string | null {
+  return typeof job.problem === "string" && job.problem.trim() ? job.problem.trim() : null;
 }
 
 /** "Paused: <the plan sentence>" for a job that is on but can no longer run. */
@@ -744,6 +759,8 @@ export const RUN_PAUSED_WORDS = "Nothing ran: your team's writing is paused for 
 export const RUN_NOT_OWNED_WORDS = "Nothing ran: your plan doesn't include this job.";
 export const RUN_PART_FAILED_WORDS = "Part of it didn't work this time (it couldn't read or answer some of your reviews). Try again in a minute.";
 export const RUN_NO_CREDITS_WORDS = "It ran out of credits before it finished.";
+export const RUN_SERVER_FAULT_WORDS = "Something went wrong on our side, so it didn't run. Try again in a minute.";
+export const RUN_NO_ANSWER_WORDS = "We didn't hear back, so we can't say whether it ran. Anything it wrote will be in Needs you; look there before trying again.";
 
 /** A sentence a runner wrote, when it is one an owner can read. */
 function runnerSentence(v: unknown): string | null {
@@ -796,6 +813,9 @@ export function runResult(out: unknown): { ok: boolean; words: string } {
   const d = (o.data && typeof o.data === "object" ? o.data : o) as Record<string, unknown>;
 
   if (d.disabled === true) return { ok: false, words: RUN_PAUSED_WORDS };
+  // The business doesn't have the product: arion's Run it now answer carries
+  // productOff: true at the top (routes/arion/agents.js ownRunSummary).
+  if (d.productOff === true) return { ok: false, words: RUN_NOT_OWNED_WORDS };
   if (d.jobStateUnreadable === true) return { ok: false, words: runnerSentence(d.words) || RUN_FAILED_WORDS };
   const off = (d.productOff as { skipped?: unknown[] } | undefined)?.skipped;
   const isTick = Array.isArray(d.results) || Array.isArray(d.runs);
@@ -849,12 +869,45 @@ export function runResult(out: unknown): { ok: boolean; words: string } {
 }
 
 /**
- * Run it now is offered only for a job that is on, not paused by its plan and
- * not stopped by itself (fails closed: unknown "on" is not on). The runners
- * refuse an off job too, but OLIVER's answers 200 "not enabled", so this is
- * the line that keeps the button off.
+ * A Run it now that was refused or broke, as one sentence for the rose alert.
+ * A refusal (4xx) carries the runner's own sentence in its own shape:
+ * { error: { message } } from arion, { words } or { message } from the others.
+ * A fault (5xx) carries whatever the server tripped over (arion sends
+ * err.message, the others a raw body), so it is NEVER shown: one plain
+ * sentence instead. So is a 4xx whose body is not the server's words.
  */
-export function canRunNow(p: { hasRunRoute: boolean; isOn: boolean | null | undefined; paused: boolean; halted: boolean }): boolean {
+export function runNowFailure(err: unknown): string {
+  const status = statusOfError(err);
+  if (status !== null && status >= 500) return RUN_SERVER_FAULT_WORDS;
+  let body: unknown = err && typeof err === "object" ? (err as { body?: unknown }).body : null;
+  if (!body && err instanceof Error) {
+    // SPARK and OLIVER throw "<PRODUCT> API <status>: <body>".
+    const m = /^(?:SPARK|OLIVER|ARION|LUMEN|PLATFORM) API \d{3}: (.*)$/s.exec(err.message);
+    if (m) { try { body = JSON.parse(m[1]); } catch { body = null; } }
+  }
+  if (body && typeof body === "object") {
+    const b = body as { words?: unknown; message?: unknown; error?: unknown };
+    const inner = b.error && typeof b.error === "object" ? (b.error as { message?: unknown }).message : b.error;
+    const said = runnerSentence(b.words) || runnerSentence(b.message) || runnerSentence(inner);
+    if (said) return said;
+  }
+  if (status === null || status === 0) return RUN_NO_ANSWER_WORDS;
+  return RUN_FAILED_WORDS;
+}
+
+/**
+ * Run it now is offered only for a job that is on, not paused by its plan,
+ * not stopped by itself, and not on with a job description it can't read
+ * (fails closed: unknown "on" is not on). The runners refuse an off job too,
+ * but OLIVER's answers 200 "not enabled", so this is the line that keeps the
+ * button off.
+ */
+export function canRunNow(p: {
+  hasRunRoute: boolean; isOn: boolean | null | undefined; paused: boolean; halted: boolean; problem?: string | null;
+}): boolean {
+  // A job that is on but can't read its job description is dropped by the
+  // runners (arion answers 409 "That job is off"), so it is never offered.
+  if (typeof p.problem === "string" && p.problem.trim()) return false;
   return p.hasRunRoute === true && p.isOn === true && !p.paused && !p.halted;
 }
 

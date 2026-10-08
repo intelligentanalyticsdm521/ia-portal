@@ -33,6 +33,16 @@ function GateLink({ line }: { line: { words: string; link?: { label: string; to:
   );
 }
 
+/** On, but doing nothing (JobView.problem): the server's sentence, in rose, never a quiet "On". */
+export function ProblemLine({ words }: { words: string }) {
+  return (
+    <div className="flex max-w-xs items-start gap-1.5 rounded bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800 ring-1 ring-rose-200" role="alert" data-job-problem>
+      <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+      <span>{words}</span>
+    </div>
+  );
+}
+
 interface ControlsProps {
   job: JobView;
   /** The server's new JobView after a change that worked. */
@@ -116,6 +126,7 @@ export function JobControls({ job, onChanged, onNotice, hideSwitch, hideMode }: 
           <GateLink line={{ ...st.gateLine, words: pausedWords(st.gateLine.words) }} />
         </p>
       )}
+      {st.problemLine && !hideSwitch && <ProblemLine words={st.problemLine} />}
       {refusal && (
         <div className="flex items-start gap-1.5 rounded bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800 ring-1 ring-rose-200" role="alert">
           <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
@@ -242,7 +253,7 @@ export function JobRow({ job, onChanged, onNotice, onOpen, lastDidIso, needCount
   const last = lastDidWords(lastDidIso || null);
   const need = needCountWords(needCount || 0);
   const isOn = st.control === "door" ? door?.state.enabled === true : job.enabled === true;
-  const canRun = canRunNow({ hasRunRoute: !!onRunNow, isOn, paused: st.paused, halted: !!halted });
+  const canRun = canRunNow({ hasRunRoute: !!onRunNow, isOn, paused: st.paused, halted: !!halted, problem: job.problem });
 
   return (
     <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200" id={`job-${job.job_key}`}>
@@ -264,6 +275,7 @@ export function JobRow({ job, onChanged, onNotice, onOpen, lastDidIso, needCount
           {st.control === "door" && door ? <DoorControls job={job} door={door} /> : (
             <JobControls job={job} onChanged={onChanged} onNotice={onNotice} />
           )}
+          {st.control === "door" && st.problemLine && <ProblemLine words={st.problemLine} />}
           {canRun && (
             <button
               type="button"

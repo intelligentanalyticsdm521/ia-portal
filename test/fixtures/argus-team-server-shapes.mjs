@@ -28,6 +28,25 @@ export const TEAM_LIST_NO_ARION = Object.freeze({
   ],
 });
 
+/**
+ * PUT /me/team/jobs/:jobKey that changes nothing (lib/team/settings.js:36 refuse,
+ * :303-304 "a change that changed nothing answers 4xx with the reason, never
+ * 200"; words lib/team/words.js:40). It is NOT 200 { changed: false } any more.
+ * As lib/platformApi.ts teamRequest throws it: PlatformApiError(words, 409, body).
+ */
+export const ALREADY_SET_WORDS = "That's already how it's set, so nothing changed.";
+export function alreadySetError() {
+  const body = { error: ALREADY_SET_WORDS, message: ALREADY_SET_WORDS };
+  return Object.assign(new Error(ALREADY_SET_WORDS), { name: "PlatformApiError", status: 409, body });
+}
+
+/**
+ * A job that is On but whose pinned description can't be read (lib/team/view.js
+ * loadJobViews :112-121, buildJobView :80-83; words lib/team/words.js:38): the
+ * runners drop it, playbook is null and problem carries the sentence.
+ */
+export const CANT_READ_DESCRIPTION_WORDS = "I can't read my job description, so I'm doing nothing. Switch me off and on again to use the current one.";
+
 /* ── arion-api POST /arion/agents/run → { data: runTick summary } ───────── */
 // lib/contentAgent/tick.js:169-173 (empty), :217, :233, :249, :315, :323, :331; pick() :391-396
 
@@ -53,7 +72,24 @@ export const CONTENT_TICK = Object.freeze({
     jobStateUnreadable: true, words: "ARGUS couldn't check which jobs are switched on, so it did nothing this time.", error: "timeout" } },
   killSwitch: { data: { disabled: true, killSwitch: "X", tenants: 0, ran: 0, results: [] } },
   productOff: { data: { tenants: 0, ran: 0, failed: 0, results: [], productOff: { skipped: [{ tenantId: "T", note: "the web person didn't write anything" }] } } },
+  // routes/arion/agents.js ownRunSummary narrows the tick to THIS business; the
+  // arion fixer keeps the product verdict as a top-level productOff: true.
+  ownProductOff: { data: { ran: 0, results: [], alerts: [], productOff: true } },
 });
+
+/**
+ * As lib/arionApi.ts requestJson throws a refusal or a fault:
+ * ArionApiError(body.error.message, status, body).
+ */
+export function arionError(status, code, message) {
+  const body = { error: { code, message, status } };
+  return Object.assign(new Error(message), { name: "ArionApiError", status, body });
+}
+
+/** routes/arion/agents.js:367-368 and reviewReplies.js:98: a fault answers 500 with the exception's own text. */
+export const ARION_FAULT = () => arionError(500, "INTERNAL_ERROR", "Cannot read properties of undefined (reading 'recordset')");
+/** routes/arion/agents.js:343-345: the job is off for this business. */
+export const ARION_JOB_OFF = () => arionError(409, "JOB_OFF", "That job is off. Switch it on first.");
 
 /* ── arion-api POST /arion/review-replies/run → { data: runReviewReplyTick summary } ── */
 // lib/gbpReplyRunner.js:184-187 (summary), :228, :236, :244, :271, :289, :324, :337-345
@@ -67,9 +103,20 @@ export const REVIEW_TICK = Object.freeze({
   automaticMixed: reviewSummary({ drafted: 2, held: 1, posted: 1, runs: [{ tenantId: "T", runId: "r", outcome: "worked", seen: 2, drafted: 2, held: 1, posted: 1 }] }),
   heldTwo: reviewSummary({ drafted: 2, held: 2, runs: [{ tenantId: "T", runId: "r", outcome: "worked", seen: 2, drafted: 2, held: 2, posted: 0 }] }),
   googleFetchFailed: reviewSummary({ errors: ["fetchReviews S: 401 unauthorised"], runs: [{ tenantId: "T", runId: "r", outcome: "nothing_due", seen: 0, drafted: 0, held: 0, posted: 0 }] }),
-  briefBlocked: reviewSummary({ runs: [{ tenantId: "T", runId: "r", outcome: "blocked", words: "I couldn't read your business details, so I didn't answer any reviews." }] }),
   nothingDue: reviewSummary({ runs: [{ tenantId: "T", runId: "r", outcome: "nothing_due", seen: 0, drafted: 0, held: 0, posted: 0 }] }),
   postRefused: reviewSummary({ drafted: 1, held: 1, failed: 1, runs: [{ tenantId: "T", runId: "r", outcome: "worked", seen: 1, drafted: 1, held: 1, posted: 0 }] }),
+  // A run with no words of its own (gbpReplyRunner.js:478-481) still answers 200.
+  failedNoWords: reviewSummary({ runs: [{ tenantId: "T", runId: "r", outcome: "failed", error: "Invalid column name" }] }),
+});
+
+/**
+ * A blocked or failed review run that has words is refused, never an empty 200
+ * (routes/arion/reviewReplies.js:91-94 fail(res, 409, 'NOT_RUN', mineRun.words);
+ * words lib/jobChecks.js:139, lib/gbpReplyRunner.js:52).
+ */
+export const REVIEW_RUN_REFUSED = Object.freeze({
+  briefBlocked: () => arionError(409, "NOT_RUN", "I couldn't read your business details, so I didn't answer any reviews."),
+  ceiling: () => arionError(409, "NOT_RUN", "This month's ARGUS spending limit for your business is reached, so I didn't write any replies."),
 });
 
 /* ── oliver-api POST /qtc-agent/run, /fieldops-agent/run → { data: runCycle } (oliverApi strips data) ── */
