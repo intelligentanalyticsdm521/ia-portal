@@ -31,6 +31,7 @@
 import { useState, type ReactNode } from "react";
 import { Send, Pencil, Trash2, AlertTriangle, Info, ExternalLink } from "lucide-react";
 import type { AgentActivityRow } from "./types";
+import { readableText } from "../../lib/readableText";
 
 interface Props {
   row: AgentActivityRow;
@@ -133,7 +134,8 @@ export function AgentApprovalCard({
             {row.detail?.subject && <div className="text-xs font-medium text-slate-800">{row.detail.subject}</div>}
             {row.detail?.body && (
               <div className="max-h-64 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-slate-700">
-                {row.detail.body}
+                {/* An email draft is stored as HTML: read it as words, never as tags. */}
+                {readableText(row.detail.body)}
               </div>
             )}
           </>

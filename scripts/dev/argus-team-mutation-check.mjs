@@ -169,6 +169,8 @@ const MUTATIONS = [
     to: "    const said = runnerSentence(b.words) || (typeof b.message === \"string\" ? b.message : null) || runnerSentence(inner);", test: LIB },
   { id: "B1g", what: "a blank problem keeps Run it now off", file: "src/lib/team.ts",
     find: "  if (typeof p.problem === \"string\" && p.problem.trim()) return false;", to: "  if (typeof p.problem === \"string\" && p.problem.length) return false;", test: LIB },
+  { id: "B8", what: "a campaign draft shows its HTML tags as text on the card", file: "src/components/agents/AgentApprovalCard.tsx",
+    find: "                {readableText(row.detail.body)}\n", to: "                {row.detail.body}\n", test: SURFACES },
   { id: "B7", what: "the writer's 'what I left out' note is not shown on the card", file: "src/components/agents/AgentApprovalCard.tsx",
     find: "        {row.detail?.confidence_note && (\n", to: "        {false && row.detail?.confidence_note && (\n", test: SURFACES },
   { id: "B6", what: "a run that wrote some pieces and couldn't finish others reads green", file: "src/lib/team.ts",

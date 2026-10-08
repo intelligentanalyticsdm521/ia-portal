@@ -214,3 +214,17 @@ test("the writer's 'what I left out, and why' note is shown in the open on the c
   const why = card.indexOf("row.detail?.why &&");
   assert.ok(i < why, "the note comes before the collapsed 'What this is based on'");
 });
+
+test("a draft stored as HTML is read as words on the card, never as tags (seen on dev 8 Oct: '<p>' and '<strong>' on a campaign card)", async () => {
+  const i = card.indexOf("{readableText(row.detail.body)}");
+  assert.ok(i > 0, "the read view goes through readableText");
+  assert.ok(/import \{ readableText \} from "\.\.\/\.\.\/lib\/readableText"/.test(card), "imported from the shared helper");
+  const { readableText } = await import("../src/lib/readableText.ts");
+  const html = "<p>Spring throws a lot at a yard &amp; more.</p><p>That's what our <strong>free spring yard check</strong> is for.</p><p><a href=\"#\">Reply or book</a> and we'll get you on the schedule.</p>";
+  const words = readableText(html);
+  assert.equal(words, "Spring throws a lot at a yard & more.\n\nThat's what our free spring yard check is for.\n\nReply or book and we'll get you on the schedule.");
+  assert.ok(!/[<>]/.test(words), "no tag survives");
+  assert.equal(readableText("Plain words stay as they are.\nSecond line."), "Plain words stay as they are.\nSecond line.");
+  assert.equal(readableText(null), "");
+  assert.equal(readableText("Line<br>break<br/>here"), "Line\nbreak\nhere");
+});
