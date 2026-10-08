@@ -1090,3 +1090,67 @@ describe("Q: an incomplete or paused subscription still holds the product", () =
     }
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Q2: a hold does not cancel a change the owner scheduled before it
+
+   oliver-api now carries cancel_at_period_end / next_change / the period end
+   on a held row (ee1af6d + the follow-up), because the change is still
+   waiting: at the end of the period it happens. Keep removes a scheduled
+   change and nothing else, which is why the API allows Keep on a subscription
+   nobody is paying for while /change refuses.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+describe("Q2: a held product with a change still scheduled", () => {
+  const heldScheduled = (status, message, extra) => ({
+    product: "spark", tier: "standard", status, monthly_usd: 0, items: [], ended: null,
+    message, action: status === "unpaid" ? "update_card" : null,
+    current_period_end: "2026-11-01T00:00:00Z", subscription_id: "sub_h", ...extra,
+  });
+
+  test("the card says the cancellation is still waiting, beside the hold's own sentence", () => {
+    const card = planCardLine("spark", heldScheduled("paused", PAUSED_SENTENCE, { cancel_at_period_end: true }), TZ);
+    assert.equal(card.state, "paused");
+    assert.ok(card.line.startsWith(PAUSED_SENTENCE), "the hold's sentence comes first");
+    assert.match(card.line, /A cancellation is still scheduled on November 1, 2026\. Keep it to call that off\./);
+    assert.doesNotMatch(card.line, NEVER_WORDS);
+  });
+
+  test("with nothing else to offer, Keep is the control", () => {
+    const card = planCardLine("spark", heldScheduled("paused", PAUSED_SENTENCE, { cancel_at_period_end: true }), TZ);
+    assert.deepEqual(card.control, { kind: "keep", label: "Keep SPARK" });
+    assert.equal(card.canRemove, false, "a held product is not removed from here");
+  });
+
+  test("a failed payment keeps Update card: it is the action that brings the product back", () => {
+    const card = planCardLine("spark", heldScheduled("unpaid", UNPAID_SENTENCE, { cancel_at_period_end: true }), TZ);
+    assert.deepEqual(card.control, { kind: "update_card", label: "Update card" });
+    assert.match(card.line, /A cancellation is still scheduled/, "and the owner is still told about the cancellation");
+  });
+
+  test("a scheduled PLAN CHANGE is worded as one, not as a cancellation", () => {
+    const card = planCardLine("spark", heldScheduled("incomplete", INCOMPLETE_SENTENCE, {
+      next_change: { kind: "tier", to_tier: "lite", at: "2026-11-01T00:00:00Z" },
+    }), TZ);
+    assert.match(card.line, /A plan change is still scheduled on November 1, 2026\./);
+    assert.doesNotMatch(card.line, /cancellation/);
+    assert.deepEqual(card.control, { kind: "keep", label: "Keep SPARK" });
+  });
+
+  test("a held row with nothing scheduled says nothing extra", () => {
+    for (const [status, sentence] of [["unpaid", UNPAID_SENTENCE], ["paused", PAUSED_SENTENCE], ["incomplete", INCOMPLETE_SENTENCE]]) {
+      const card = planCardLine("spark", heldScheduled(status, sentence, {}), TZ);
+      assert.equal(card.line, sentence, `${status}: one sentence only`);
+      assert.doesNotMatch(card.line, /still scheduled/);
+    }
+  });
+
+  test("no date known: the sentence says the end of the period rather than inventing one", () => {
+    const card = planCardLine("spark", {
+      product: "spark", status: "paused", message: PAUSED_SENTENCE, action: null,
+      ended: null, cancel_at_period_end: true, current_period_end: null,
+    }, TZ);
+    assert.match(card.line, /at the end of this billing period/);
+    assert.doesNotMatch(card.line, /Invalid|NaN|undefined/);
+  });
+});

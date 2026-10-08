@@ -144,6 +144,22 @@ export function neverBoughtSentence(product: GatedProduct): string {
   return `${PRODUCT_NAME[product]} isn't part of your plan yet.`;
 }
 
+/** Said BESIDE a held product's own sentence: the hold does not cancel a
+ *  change the owner scheduled before it, and at the end of the period that
+ *  change still happens. Keep removes it. */
+export function alsoScheduledSentence(row: PlanRow | null | undefined, timeZone?: string): string | null {
+  if (!row) return null;
+  const nc = row.next_change || null;
+  const ends = (nc && nc.kind === 'ends') || row.cancel_at_period_end;
+  const tierChange = nc && nc.kind === 'tier';
+  if (!ends && !tierChange) return null;
+  const date = formatLongDate(nc?.at || row.current_period_end, timeZone);
+  const when = date ? `on ${date}` : 'at the end of this billing period';
+  return ends
+    ? `A cancellation is still scheduled ${when}. Keep it to call that off.`
+    : `A plan change is still scheduled ${when}. Keep it to call that off.`;
+}
+
 export const ASK_AN_ADMIN_RESUBSCRIBE = 'Ask an admin on your team to re-subscribe.';
 export const ASK_AN_ADMIN_UPDATE_CARD = 'Ask an admin on your team to update the card.';
 export const SWITCH_TO_OWN_BUSINESS = 'Switch to your own business to change billing.';
@@ -346,10 +362,20 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
   if (!rowIsLive(row)) {
     const why = offReasonForRow(product, row);
     if (why.kind === 'held') {
+      // A hold does not cancel a change scheduled before it. Update card is the
+      // bigger action when the payment failed - it brings the product back - so
+      // it keeps the one control slot and the second sentence says what is also
+      // waiting. With nothing else to offer, Keep IS the control: it only ever
+      // removes a scheduled change, which is why oliver-api allows it on a
+      // subscription nobody is paying for while /change refuses.
+      const also = alsoScheduledSentence(row, timeZone);
+      const control = why.action === 'update_card'
+        ? { kind: 'update_card' as const, label: 'Update card' }
+        : also ? { kind: 'keep' as const, label: `Keep ${name}` } : null;
       return {
         state: why.status === 'incomplete' ? 'payment_incomplete' : why.status === 'paused' ? 'paused' : 'past_due',
-        line: why.sentence,
-        control: why.action === 'update_card' ? { kind: 'update_card', label: 'Update card' } : null,
+        line: also ? `${why.sentence} ${also}` : why.sentence,
+        control,
         canRemove: false,
       };
     }
