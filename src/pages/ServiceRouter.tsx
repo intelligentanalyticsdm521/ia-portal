@@ -3,6 +3,7 @@ import { ForgeLinePage } from './forge/ForgeLinePage';
 import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { employeeFromServiceKey } from '../lib/team';
+import { ARGUS_SETTINGS_KEY, ARGUS_SETTINGS_OLD_KEY, ARGUS_SETTINGS_ROUTE } from '../lib/argusSettings';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
@@ -136,6 +137,9 @@ const ArgusHealthPage = lazyNamed(() => import('./argus/ArgusHealthPage'), 'Argu
 const ArgusTrendsPage = lazyNamed(() => import('./argus/ArgusTrendsPage'), 'ArgusTrendsPage');
 const ArgusIntelligencePage = lazyNamed(() => import('./argus/ArgusIntelligencePage'), 'ArgusIntelligencePage');
 const ArgusWorkflowsPage = lazyNamed(() => import('./argus/ArgusWorkflowsPage'), 'ArgusWorkflowsPage');
+// Settings → ARGUS (2026-10-08): the real settings page that replaced the
+// argus_coming "Coming soon" placeholder; the old key redirects to it.
+const ArgusSettingsPage = lazyNamed(() => import('./argus/ArgusSettingsPage'), 'ArgusSettingsPage');
 // 2026-07-25 v13.0: the old platform-api grid page
 // (ArgusIAInsightsIntelligencePage) is no longer routed — all ARGUS
 // Intelligence keys (argus_intelligence / argus_cross_platform /
@@ -483,6 +487,14 @@ function ServiceRouterInner() {
   // bookmark, an alert email or the ARGUS assistant lands on the right page.
   if (serviceKey && OLD_AGENTS_PAGES[serviceKey]) {
     return <Navigate to={`/app/services/${OLD_AGENTS_PAGES[serviceKey]}`} replace />;
+  }
+
+  // Settings → ARGUS (2026-10-08). The argus_coming "Coming soon" placeholder
+  // is DELETED: ARGUS is live, so Settings → ARGUS is a real page now. The old
+  // key redirects BEFORE the catalog lookup (its catalog row is gone) so a
+  // bookmark lands on the settings page instead of "Service not found".
+  if (serviceKey === ARGUS_SETTINGS_OLD_KEY) {
+    return <Navigate to={ARGUS_SETTINGS_ROUTE} replace />;
   }
 
   // SPARK pack 1 (2026-09-08) — ONE inbox. The SPARK SMS Inbox page is DELETED:
@@ -874,6 +886,14 @@ function ServiceRouterInner() {
   // P0-7 observe page; the legacy key still lands here for old bookmarks.
   if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
     return <Suspense fallback={<RouteLoading />}><ArgusWorkflowsPage /></Suspense>;
+  }
+  // Settings → ARGUS — links to Your team, Workflows and the ARGUS data plan.
+  if (service.key === ARGUS_SETTINGS_KEY) {
+    return (
+      <PageErrorBoundary scope={`argus/${service.key}`}>
+        <Suspense fallback={<RouteLoading />}><ArgusSettingsPage /></Suspense>
+      </PageErrorBoundary>
+    );
   }
   // ARGUS → Your team → the web person / the marketer / the office administrator.
   const teamEmployee = employeeFromServiceKey(service.key);

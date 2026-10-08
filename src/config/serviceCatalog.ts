@@ -429,7 +429,9 @@ const RAW_SERVICE_CATALOG: PortalService[] = [
   // above; legacy /app/services/stella_coming links redirect to the STELLA
   // Dashboard.)
   { key: 'forge_coming', displayName: 'FORGE Overview', section: 'FORGE', defaultStatus: 'coming_soon', route: '/app/services/forge_coming', description: 'FORGE integration hub — coming soon. The home for cross-product integrations and data plumbing.' },
-  { key: 'argus_coming', displayName: 'ARGUS Overview', section: 'ARGUS', defaultStatus: 'coming_soon', route: '/app/services/argus_coming', description: 'ARGUS AI agents — coming soon. Autonomous AI doing work on your behalf under your guardrails.' },
+  // Settings → ARGUS (2026-10-08) — replaced the argus_coming "Coming soon"
+  // placeholder (ServiceRouter redirects that old key here). Settings nav only.
+  { key: 'argus_settings', displayName: 'ARGUS settings', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/argus_settings', description: 'Where you set up your team, the workflows that run for your business, and your ARGUS data plan.' },
   { key: 'spark_workflow_triggers', displayName: 'Workflow Triggers', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_workflow_triggers', description: 'Per-contact triggers (health tier change / lead score threshold / activity silence / tag added) that fire an action.' },
   { key: 'spark_config_backup', displayName: 'Configuration Backup', section: 'LUMEN', defaultStatus: 'not_subscribed', route: '/app/services/spark_config_backup', description: 'Export and import the tenant SPARK configuration (dashboards, reports, fields, rules, templates).' },
   // ── FORGE › HESTIA — non-profit case management (MS Moments is tenant #1) ──

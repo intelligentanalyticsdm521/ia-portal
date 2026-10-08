@@ -49,9 +49,10 @@ export const ARGUS_PAGES: PageContentMap = {
       "It chases quotes and unpaid invoices, suggests who takes each job and asks for a review once a job is done. These switches are the same ones OLIVER uses, so changing one here changes it there.",
   },
 
-  argus_coming: {
-    title: "Agents — not yet, and deliberately so",
+  // Settings → ARGUS (2026-10-08) — replaced the argus_coming placeholder.
+  argus_settings: {
+    title: "ARGUS settings — your team, your workflows, your credits",
     body:
-      "Autonomous agents doing work on your behalf under your guardrails. This page is a placeholder: the agents are being built product by product, and the guardrails matter more than the speed. Nothing here acts on your business today.",
+      "Three places to set ARGUS up. Your team has one page for each person who works for you; Workflows lists everything that runs for your business; the ARGUS data plan says what credits cost and how many you have left.",
   },
 };

@@ -150,7 +150,7 @@ test("the catalog, the menu and the page guide say Workflows", () => {
 });
 
 test("the words checklist: no jargon, no 'tenant', no vendor (P1)", () => {
-  const words = [page, guide.slice(guide.indexOf("argus_workflows:"), guide.indexOf("argus_coming"))].flatMap(screenWords);
+  const words = [page, guide.slice(guide.indexOf("argus_workflows:"), guide.indexOf("argus_settings:"))].flatMap(screenWords);
   assert.ok(words.some((w) => w.includes("Nothing needs you right now.")), "the extractor must see the page's words");
   const BANNED = /\b(tenant|playbooks?|node|nodes|intent|confidence|HMAC|webhooks?|payload|JSON)\b|anthropic|claude|openai|gpt-|sonnet|haiku|opus/i;
   assert.deepEqual(words.filter((w) => BANNED.test(w)), []);

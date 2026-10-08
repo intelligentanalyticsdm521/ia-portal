@@ -376,7 +376,7 @@ test("the words checklist: no jargon, no account-record word, no vendor or model
     yourBusiness.slice(yourBusiness.indexOf("What your team knows — ARGUS"), yourBusiness.indexOf("Borrowed basics, for completeness")),
     responder.slice(responder.indexOf("Your marketer's job: Replies"), responder.indexOf("How you want it to sound")),
     reviews.slice(reviews.indexOf("function ReviewRepliesCard"), reviews.indexOf("function Stars")),
-    guide.slice(guide.indexOf("argus_team_web:"), guide.indexOf("argus_coming")),
+    guide.slice(guide.indexOf("argus_team_web:"), guide.indexOf("argus_settings:")),
   ];
   // The extractor reads JSX text between > and <, which also catches a TypeScript
   // generic spanning code (get<{ … }>(…) … get<); those fragments are code, not words.

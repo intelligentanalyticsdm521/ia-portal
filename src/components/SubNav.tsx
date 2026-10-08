@@ -986,7 +986,10 @@ const SETTINGS_NAV: SubNavConfig = {
     {
       label: "ARGUS", icon: Sparkles, collapsible: true, sectionId: "settings_argus",
       items: [
-        { key: "argus_coming", label: "Coming Soon", route: "/app/services/argus_coming" },
+        // 2026-10-08 — was ONE "Coming Soon" row (argus_coming) while ARGUS was
+        // live. Now the real settings page: Your team, Workflows, data plan.
+        // NEVER add this key to ARGUS_NAV (SETTINGS_KEYS would hijack it).
+        { key: "argus_settings", label: "ARGUS settings", route: "/app/services/argus_settings" },
       ],
     },
   ],
