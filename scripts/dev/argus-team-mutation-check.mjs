@@ -169,6 +169,8 @@ const MUTATIONS = [
     to: "    const said = runnerSentence(b.words) || (typeof b.message === \"string\" ? b.message : null) || runnerSentence(inner);", test: LIB },
   { id: "B1g", what: "a blank problem keeps Run it now off", file: "src/lib/team.ts",
     find: "  if (typeof p.problem === \"string\" && p.problem.trim()) return false;", to: "  if (typeof p.problem === \"string\" && p.problem.length) return false;", test: LIB },
+  { id: "B6", what: "a run that wrote some pieces and couldn't finish others reads green", file: "src/lib/team.ts",
+    find: "        if (f > 0) failures.push(runnerSentence(e.words) || partNotFinishedWords(f, num(e.attempted) || dr + f));\n", to: "", test: LIB },
   { id: "B4", what: "arion's productOff: true reads as 'couldn't finish'", file: "src/lib/team.ts",
     find: "  if (d.productOff === true) return { ok: false, words: RUN_NOT_OWNED_WORDS };\n", to: "", test: LIB },
   { id: "B5", what: "the drawer writes its own 'never' sentence", file: "src/components/argus/team/JobDrawer.tsx",

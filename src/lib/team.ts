@@ -788,6 +788,12 @@ function runFailure(e: Record<string, unknown>): string | null {
 }
 
 /** "posted 1 by itself, and wrote 2 things for you. They're in Needs you." */
+/** "It couldn't finish 1 of the 2 it tried. Try again in a minute." */
+export function partNotFinishedWords(failed: number, attempted: number): string {
+  const tried = Math.max(attempted, failed);
+  return `It couldn't finish ${failed} of the ${tried} it tried. Try again in a minute.`;
+}
+
 function didWords(posted: number, waiting: number): string {
   if (posted <= 0 && waiting <= 0) return RUN_NOTHING_WORDS;
   const bits: string[] = [];
@@ -837,6 +843,10 @@ export function runResult(out: unknown): { ok: boolean; words: string } {
         const inAdvance = num(e.approvedInAdvance) || 0;
         posted += inAdvance;
         waiting += Math.max(0, dr - inAdvance);
+        // A run that wrote some pieces and couldn't finish others says both,
+        // never only the green part (arion sends attempted and failed per business).
+        const f = num(e.failed) || 0;
+        if (f > 0) failures.push(runnerSentence(e.words) || partNotFinishedWords(f, num(e.attempted) || dr + f));
       }
     } else {
       // Review replies: the summary's own totals.

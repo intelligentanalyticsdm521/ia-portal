@@ -409,6 +409,16 @@ test("Run it now, the web person's posts (arion content tick): every way it did 
   assert.deepEqual(runResult(T.drafted(2, 1)), { ok: true, words: "It has had a look and posted 1 by itself, and wrote 1 thing for you. It's in Needs you." },
     "one that went out by itself is not described as waiting");
   assert.deepEqual(runResult(T.drafted(1, 1)), { ok: true, words: "It has had a look and posted 1 by itself." });
+  // a run that wrote 1 and couldn't finish 1 says both, never only the green part (dev click S12; arion sends attempted and failed)
+  const mixed = { ran: 1, results: [{ status: "completed", outcome: "completed", drafted: 1, attempted: 2, failed: 1 }], alerts: [] };
+  assert.deepEqual(runResult(mixed), { ok: false, words: "It couldn't finish 1 of the 2 it tried. Try again in a minute. It has had a look and wrote 1 thing for you. It's in Needs you." });
+  // when arion sends its own sentence for the failed pieces, that sentence is used
+  const mixedSaid = { ran: 1, results: [{ status: "completed", outcome: "completed", drafted: 1, attempted: 2, failed: 1, words: "1 of the 2 pieces it tried couldn't be written this time." }], alerts: [] };
+  assert.deepEqual(runResult(mixedSaid), { ok: false, words: "1 of the 2 pieces it tried couldn't be written this time. It has had a look and wrote 1 thing for you. It's in Needs you." });
+  // every piece failed: said as a failure, never as "nothing to do"
+  const allFailed = { ran: 1, results: [{ status: "failed", outcome: "failed", drafted: 0, attempted: 2, failed: 2 }], alerts: [] };
+  assert.equal(runResult(allFailed).ok, false);
+  assert.notEqual(runResult(allFailed).words, RUN_NOTHING_WORDS);
   assert.deepEqual(runResult(T.nothingToWrite), { ok: true, words: RUN_NOTHING_WORDS });
   assert.deepEqual(runResult(T.tickError), { ok: false, words: RUN_FAILED_WORDS });
   assert.deepEqual(runResult(T.briefUnreadable), { ok: false, words: "I couldn't read your business details, so I didn't write anything." });
