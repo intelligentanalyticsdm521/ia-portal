@@ -151,6 +151,9 @@ export interface PlanRow {
   cancel_at_period_end?: boolean;
   next_change?: { kind: 'tier' | 'ends'; to_tier?: string | null; at?: string | null } | null;
   ended?: { at: string | null; tier?: string | null } | null;
+  /** 'entitlement' = the product is on in our records with no paid
+   *  subscription behind it (set up by IA, or comped). Nothing to remove. */
+  source?: string | null;
 }
 
 /** Stripe statuses that still count as paid for (§1.3). */
@@ -199,6 +202,10 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
       canRemove: false,
     };
   }
+
+  // On in our records, with no paid subscription behind it: there is no
+  // renewal to show and nothing for Remove to end.
+  if (row.source === 'entitlement') return { state: 'active', line: null, control: null, canRemove: false };
 
   const current = planDisplayName(product, row.tier || null);
   const nc = row.next_change || null;

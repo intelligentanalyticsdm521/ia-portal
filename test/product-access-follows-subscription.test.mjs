@@ -166,6 +166,10 @@ describe("S: the words, as Brandon wrote them", () => {
     assert.equal(ended.line, "Your SPARK subscription ended on November 1, 2026. Re-subscribe to pick up where you left off.");
     assert.deepEqual(ended.control, { kind: "resubscribe", label: "Re-subscribe" });
 
+    const setUpByUs = planCardLine("spark", { product: "spark", tier: "business", status: "active", current_period_end: null, source: "entitlement" }, TZ);
+    assert.deepEqual(setUpByUs, { state: "active", line: null, control: null, canRemove: false },
+      "a product on in our records with no paid subscription has nothing to renew and nothing to remove");
+
     const never = planCardLine("spark", null, TZ);
     assert.equal(never.line, "Not subscribed");
     assert.deepEqual(never.control, { kind: "add", label: "Add SPARK to your account" });
