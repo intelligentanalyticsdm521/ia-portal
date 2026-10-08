@@ -227,7 +227,9 @@ test("the page shows hours and prices but sends neither", () => {
 
 test("the page states what the record is used for", () => {
   assert.match(PAGE, /Used by:/);
-  assert.match(PAGE, /agents, lead scoring/);
+  // Plain words (ARGUS employees phase 1 §0.3): the owner's team, never "agents".
+  assert.match(PAGE, /your team, lead scoring/);
+  assert.equal(/Used by:<\/span> your agents/.test(PAGE), false);
 });
 
 test("prefilled answers are marked, and the page says nothing is saved until Save", () => {

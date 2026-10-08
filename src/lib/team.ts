@@ -263,12 +263,45 @@ export function shownMode(job: Pick<JobView, "mode" | "mode_rule">): JobMode {
   return job.mode_rule === "either" && job.mode === "automatic" ? "automatic" : "review";
 }
 
-/** The green notice after the mode changes (§F.2 "Mode toast"). */
-export function modeToast(name: string, mode: JobMode, by: string | null | undefined, atIso: string | null | undefined): string {
-  if (mode !== "automatic") return `${name} will wait for you again.`;
+/**
+ * The green notice after the mode changes (§F.2 "Mode toast"). A job that is
+ * Off does nothing whatever its mode, so the sentence says "once it's on"
+ * rather than promising something will go out.
+ */
+export function modeToast(
+  name: string, mode: JobMode, by: string | null | undefined, atIso: string | null | undefined,
+  enabled: boolean | null = true,
+): string {
+  const later = enabled === true ? "" : " once it's on";
+  if (mode !== "automatic") return `${name} will wait for you again${later}.`;
   const who = (by || "").trim() || "you";
   const on = dayMonth(atIso);
-  return `${name} will go out without waiting for you. Approved in advance by ${who}${on ? ` on ${on}` : ""}.`;
+  return `${name} will go out without waiting for you${later}. Approved in advance by ${who}${on ? ` on ${on}` : ""}.`;
+}
+
+export const NOTHING_CHANGED_SAVED_WORDS = "Nothing changed.";
+
+/**
+ * The green notice after a job write, built from the JobView the SERVER
+ * answered with — never from what was asked. A mode the server kept, or an
+ * answer that says nothing changed, is said as such.
+ */
+export function jobWriteWords(
+  name: string,
+  patch: { enabled?: boolean; mode?: JobMode; vars?: Record<string, unknown> },
+  next: Pick<JobView, "enabled" | "mode" | "mode_set_by" | "mode_set_at" | "mode_rule"> & { changed?: boolean },
+): string {
+  if (next.changed === false) return NOTHING_CHANGED_SAVED_WORDS;
+  if (patch.mode !== undefined) return modeToast(name, shownMode(next), next.mode_set_by, next.mode_set_at, next.enabled);
+  if (patch.enabled !== undefined) return enabledToast(name, next.enabled === true);
+  return `Saved: ${name}.`;
+}
+
+/** ARION → Reviews' line about the review-reply job: true only while it is on. */
+export function reviewRepliesIntro(enabled: boolean | null | undefined): string {
+  if (enabled === true) return "Your web person writes a reply to each new review in your voice.";
+  if (enabled === false) return "Switch this on and your web person writes a reply to each new review in your voice.";
+  return "Your web person can write a reply to each new review in your voice.";
 }
 
 export function enabledToast(name: string, enabled: boolean): string {
@@ -293,6 +326,33 @@ export function haltedLine(reason: string | null | undefined, atIso?: string | n
   return on ? `Stopped itself on ${on}: ${why}.` : `Stopped itself: ${why}.`;
 }
 
+/**
+ * Where this employee stands for this business, from GET /me/team (the only
+ * answer that carries product_owned and on_team; GET /me/team/:key does not).
+ *   not_owned    the business doesn't have the product: say so, with Plan & Pricing
+ *   not_on_team  it has the product, but the employee was never added
+ *   unknown      the list could not be read: say nothing either way (never deny on "we don't know")
+ *   ok           on the team
+ */
+export type EmployeeStanding = "not_owned" | "not_on_team" | "unknown" | "ok";
+export function employeeStanding(
+  row: Pick<TeamEmployee, "product_owned" | "on_team"> | null | undefined,
+  jobs: Array<Pick<JobView, "hire_required" | "on_team">> = [],
+): EmployeeStanding {
+  if (!row) return "unknown";
+  if (row.product_owned === false) return "not_owned";
+  if (row.product_owned !== true) return "unknown";
+  if (row.on_team && row.on_team.yes === false && jobs.some((j) => j.hire_required && !j.on_team)) return "not_on_team";
+  return "ok";
+}
+
+/** The employee's row on GET /me/team, merged onto the GET /me/team/:key answer. */
+export function withStanding(employee: TeamEmployee | null, list: TeamEmployee[] | null | undefined): TeamEmployee | null {
+  if (!employee) return null;
+  const row = (list || []).find((e) => e.employee_key === employee.employee_key);
+  return row ? { ...employee, product_owned: row.product_owned ?? null, on_team: row.on_team } : employee;
+}
+
 export function notOnTeamWords(key: EmployeeKey): string {
   return `${YourEmployee(key)} isn't on your team yet. Ask your account contact to add them.`;
 }
@@ -304,6 +364,37 @@ export function productNotOwnedWords(key: EmployeeKey): string {
 
 export const PLAN_PRICING_ROUTE = "/app/settings/plan-pricing";
 export const YOUR_BUSINESS_ROUTE = "/app/settings/your-business";
+
+/**
+ * The drawer's "When I do it". A job that never acts (locked, or with no
+ * switch of its own) says so; "When you ask" is only for a live job whose
+ * trigger is a person pressing Run it now.
+ */
+export function whenWords(job: Pick<JobView, "state" | "setting_home" | "trigger_words" | "lock_words">): string {
+  const trigger = (job.trigger_words || "").trim();
+  if (job.state === "planned") return NOT_BUILT_WORDS;
+  if (job.state === "locked") return (job.lock_words || "").trim() || NEVER_WORDS;
+  if (trigger) return trigger;
+  if (job.setting_home === "none") return (job.lock_words || "").trim() || NEVER_WORDS;
+  return "When you ask";
+}
+export const NEVER_WORDS = "Never: it's always yours.";
+
+/** A choice var's option in words (the job description stores codes). */
+const CHOICE_WORDS: Readonly<Record<string, Record<string, string>>> = Object.freeze({
+  winback_cohort_source: {
+    auto: "Pick for me",
+    job: "Anyone you've done a job for",
+    invoice: "Anyone who has paid an invoice",
+  },
+});
+export function choiceLabel(varKey: string, option: string): string {
+  const w = CHOICE_WORDS[varKey]?.[option];
+  if (w) return w;
+  if (option === "auto") return "Pick for me";
+  const t = String(option).replace(/[_-]+/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : String(option);
+}
 
 /** "Version 3, the standard set" / "Version 4, set up for your business". */
 export function versionLine(pb: Pick<JobPlaybookView, "version" | "source"> | null | undefined): string | null {
@@ -521,10 +612,17 @@ export function approveAllowed(approve: Pick<DecideApprove, "edits_required"> | 
  */
 export function decidePathOk(source: NeedsSource, path: string | null | undefined): boolean {
   if (!path || typeof path !== "string") return false;
-  if (!path.startsWith("/") || path.startsWith("//") || path.includes("..") || /[\s:]/.test(path)) return false;
-  if (source === "arion") return path.startsWith("/arion/");
-  if (source === "spark") return path.startsWith("/api/v1/");
-  return !path.startsWith("/arion/") && !path.startsWith("/api/v1/");
+  if (!path.startsWith("/") || path.startsWith("//") || path.includes("..") || /[\s:\\]/.test(path)) return false;
+  // A percent-encoded dot ("%2e") becomes a real dot segment in the browser's
+  // URL parser, so "/arion/%2e%2e/admin" would be sent to "/admin".
+  if (/%2e|%2f|%5c/i.test(path)) return false;
+  let pathname: string;
+  try { pathname = new URL(path, "http://x").pathname; } catch { return false; }
+  const asked = path.split(/[?#]/)[0];
+  if (pathname !== asked) return false;
+  if (source === "arion") return pathname.startsWith("/arion/");
+  if (source === "spark") return pathname.startsWith("/api/v1/");
+  return !pathname.startsWith("/arion/") && !pathname.startsWith("/api/v1/");
 }
 
 export interface DecideEdits { title?: string; subject?: string; body?: string }
@@ -558,6 +656,43 @@ export function approveBody(
   }
   if (approve.when === "schedule" && scheduledFor) out.scheduled_for = scheduledFor;
   return out;
+}
+
+export const SCHEDULE_FAILED_WORDS = "It's approved, but it couldn't be handed to your social scheduler, so it isn't scheduled yet. Press Try again on it.";
+
+/**
+ * What a decision's 2xx answer actually says (§F.3). A social post approved
+ * but not handed to the scheduler answers 200 with scheduled:false; that, and
+ * any explicit ok:false / failed:true, is a failure said in rose, never green.
+ */
+export function decisionResult(which: "approve" | "skip" | "publish", out: unknown): { ok: boolean; words: string } {
+  const o = (out && typeof out === "object" ? out : {}) as Record<string, unknown>;
+  const d = (o.data && typeof o.data === "object" ? o.data : o) as Record<string, unknown>;
+  const said = runnerSentence(d.words) || runnerSentence(o.words);
+  const failed = d.scheduled === false || d.ok === false || o.ok === false || d.failed === true || o.failed === true;
+  if (failed) return { ok: false, words: said || (d.scheduled === false ? SCHEDULE_FAILED_WORDS : NOTHING_CHANGED_WORDS) };
+  const fallback = which === "skip" ? "Skipped. It won't come back." : which === "publish" ? "Sent to your website." : "Done.";
+  return { ok: true, words: said || fallback };
+}
+
+/** Which buttons a Needs-you card has, from the row's own `decide` (a row without one gets none, never a guessed route). */
+export type CardKind = "approve" | "publish" | "skip" | "none";
+export function cardKind(decide: Decide | null | undefined): CardKind {
+  const d = decide || {};
+  if (d.approve) return "approve";
+  if (d.publish) return "publish";
+  if (d.skip) return "skip";
+  return "none";
+}
+
+/**
+ * The row a Needs-you card draws: why it waited and which job it came from in
+ * the owner's words, and NO attribution. The products stamp a line naming the
+ * platform's own company and the word "Agent" on every row; on this screen the
+ * job line says who made it, so that line never reaches an owner.
+ */
+export function cardRow<R extends AgentActivityRow & { source?: NeedsSource }>(row: R, jobName?: string | null): R {
+  return { ...row, attribution: "", hold_note: heldWordsOf(row), agent_label: fromJobLine(row, jobName) };
 }
 
 /** The value for a date-and-time picker: tomorrow at 10:00 in this browser's time zone. */
@@ -599,17 +734,128 @@ export function runNowCall(jobKey: string, brief?: string | null): RunCall | nul
   }
 }
 
-/** What came of a Run it now, from whatever count the runner sent back. */
-export function runResultWords(out: unknown): string {
+export const RUN_UNKNOWN_WORDS = "It has had a look. Anything it wrote is in Needs you.";
+export const RUN_NOTHING_WORDS = "It has had a look and there was nothing to do.";
+export const RUN_SPEND_LIMIT_WORDS = "Nothing ran: it has reached its spending limit, so nothing was written and nothing was spent.";
+export const RUN_HALTED_WORDS = "Nothing ran: it has stopped itself. Press Start it again on its row first.";
+export const RUN_OFF_WORDS = "Nothing ran: that job is off. Switch it on first.";
+export const RUN_FAILED_WORDS = "It couldn't finish this time, so nothing new is waiting for you. Try again in a minute.";
+export const RUN_PAUSED_WORDS = "Nothing ran: your team's writing is paused for everyone just now. Try again later.";
+export const RUN_NOT_OWNED_WORDS = "Nothing ran: your plan doesn't include this job.";
+export const RUN_PART_FAILED_WORDS = "Part of it didn't work this time (it couldn't read or answer some of your reviews). Try again in a minute.";
+export const RUN_NO_CREDITS_WORDS = "It ran out of credits before it finished.";
+
+/** A sentence a runner wrote, when it is one an owner can read. */
+function runnerSentence(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const t = v.trim();
+  if (!t || !/\s/.test(t) || /tenant|\bjson\b|playbook|[{}]/i.test(t)) return null;
+  return t;
+}
+
+const num = (v: unknown): number | null => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+
+/** One run (or one business's entry in a tick's summary) that did not do its work: why, in words. */
+function runFailure(e: Record<string, unknown>): string | null {
+  const status = String(e.status ?? "");
+  const outcome = String(e.outcome ?? "");
+  const said = runnerSentence(e.words);
+  if (outcome === "suite_cost_ceiling" || outcome === "cost_ceiling") return RUN_SPEND_LIMIT_WORDS;
+  if (status === "skipped_halted" || status === "halted_sticky" || outcome === "sticky_halt") return RUN_HALTED_WORDS;
+  if (status === "halted") return said || RUN_SPEND_LIMIT_WORDS;
+  if (outcome === "not_enabled" || outcome === "job_off") return said || RUN_OFF_WORDS;
+  if (outcome === "blocked") return said || RUN_FAILED_WORDS;
+  if (status === "tick_error" || status === "failed" || outcome === "failed") return said || RUN_FAILED_WORDS;
+  if (status === "skipped") return said || RUN_FAILED_WORDS;
+  return null;
+}
+
+/** "posted 1 by itself, and wrote 2 things for you. They're in Needs you." */
+function didWords(posted: number, waiting: number): string {
+  if (posted <= 0 && waiting <= 0) return RUN_NOTHING_WORDS;
+  const bits: string[] = [];
+  if (posted > 0) bits.push(`posted ${posted} by itself`);
+  if (waiting > 0) bits.push(`wrote ${waiting} ${waiting === 1 ? "thing" : "things"} for you`);
+  const tail = waiting > 0 ? ` ${waiting === 1 ? "It's" : "They're"} in Needs you.` : "";
+  return `It has had a look and ${bits.join(", and ")}.${tail}`;
+}
+
+/**
+ * What came of a Run it now (§F.2), as { ok, words }. ok:false goes in the rose
+ * alert: a run that was stopped by its spending limit, blocked by a missing
+ * answer, switched off, halted or failed is NEVER said in green
+ * (never catch-swallow-report-success). Reads each runner's committed shape:
+ *   · one run   (OLIVER Quote-to-Cash / Field Ops, the marketer's runs):
+ *               { status, outcome, drafted | suggestions, words? }
+ *   · a tick    (the web person's posts):   { disabled?, jobStateUnreadable?, productOff, results: [...] }
+ *   · a tick    (review replies):           { drafted, held, posted, failed, errors: [...], runs: [...] }
+ * A count it did not send is unknown, never 0.
+ */
+export function runResult(out: unknown): { ok: boolean; words: string } {
   const o = (out && typeof out === "object" ? out : {}) as Record<string, unknown>;
-  const inner = (o.data && typeof o.data === "object" ? o.data : o) as Record<string, unknown>;
-  const n = [inner.drafted, inner.suggestions, inner.held, inner.posted]
-    .map((v) => Number(v)).find((v) => Number.isFinite(v));
-  const plain = typeof inner.words === "string" && inner.words.trim() ? inner.words.trim() : null;
-  if (plain) return plain;
-  if (n === undefined) return "It has had a look. Anything it wrote is in Needs you.";
-  if (n > 0) return `It has had a look and wrote ${n} ${n === 1 ? "thing" : "things"} for you. ${n === 1 ? "It's" : "They're"} in Needs you.`;
-  return "It has had a look and there was nothing to do.";
+  const d = (o.data && typeof o.data === "object" ? o.data : o) as Record<string, unknown>;
+
+  if (d.disabled === true) return { ok: false, words: RUN_PAUSED_WORDS };
+  if (d.jobStateUnreadable === true) return { ok: false, words: runnerSentence(d.words) || RUN_FAILED_WORDS };
+  const off = (d.productOff as { skipped?: unknown[] } | undefined)?.skipped;
+  const isTick = Array.isArray(d.results) || Array.isArray(d.runs);
+
+  if (isTick) {
+    const entries = ((Array.isArray(d.results) ? d.results : d.runs) as unknown[])
+      .filter((e): e is Record<string, unknown> => !!e && typeof e === "object");
+    const failures = entries.map(runFailure).filter((w): w is string => !!w);
+    let posted = 0;
+    let waiting = 0;
+    let known = false;
+    if (Array.isArray(d.results)) {
+      // The web person's posts: drafted includes the ones that went out by themselves.
+      for (const e of entries) {
+        if (runFailure(e)) continue;
+        const dr = num(e.drafted);
+        if (dr === null) continue;
+        known = true;
+        const inAdvance = num(e.approvedInAdvance) || 0;
+        posted += inAdvance;
+        waiting += Math.max(0, dr - inAdvance);
+      }
+    } else {
+      // Review replies: the summary's own totals.
+      const p = num(d.posted);
+      const h = num(d.held);
+      if (p !== null || h !== null) { known = true; posted = p || 0; waiting = h || 0; }
+    }
+    if (Array.isArray(d.errors) && d.errors.length) failures.push(RUN_PART_FAILED_WORDS);
+    if ((num(d.skippedInsufficientCredits) || 0) > 0) failures.push(RUN_NO_CREDITS_WORDS);
+    if ((num(d.failed) || 0) > 0 && !Array.isArray(d.results)) {
+      const f = num(d.failed) as number;
+      failures.push(`${f} ${f === 1 ? "reply" : "replies"} didn't go to Google. ${f === 1 ? "It's" : "They're"} in Needs you to try again.`);
+    }
+    if (!entries.length && Array.isArray(off) && off.length) return { ok: false, words: RUN_NOT_OWNED_WORDS };
+    if (failures.length) {
+      const did = known && (posted > 0 || waiting > 0) ? ` ${didWords(posted, waiting)}` : "";
+      return { ok: false, words: `${[...new Set(failures)].join(" ")}${did}` };
+    }
+    if (!entries.length) return { ok: false, words: RUN_FAILED_WORDS };
+    return { ok: true, words: known ? didWords(posted, waiting) : RUN_UNKNOWN_WORDS };
+  }
+
+  const failed = runFailure(d);
+  if (failed) return { ok: false, words: failed };
+  const said = runnerSentence(d.words);
+  if (said) return { ok: true, words: said };
+  const n = num(d.drafted) ?? num(d.suggestions);
+  if (n === null) return { ok: true, words: RUN_UNKNOWN_WORDS };
+  return { ok: true, words: didWords(0, n) };
+}
+
+/**
+ * Run it now is offered only for a job that is on, not paused by its plan and
+ * not stopped by itself (fails closed: unknown "on" is not on). The runners
+ * refuse an off job too, but OLIVER's answers 200 "not enabled", so this is
+ * the line that keeps the button off.
+ */
+export function canRunNow(p: { hasRunRoute: boolean; isOn: boolean | null | undefined; paused: boolean; halted: boolean }): boolean {
+  return p.hasRunRoute === true && p.isOn === true && !p.paused && !p.halted;
 }
 
 // ── which agent of each product belongs to which job (rows with no job_key) ─
@@ -689,7 +935,10 @@ export function varsPayload(defs: Record<string, VarDef>, draft: Record<string, 
       }
       vars[key] = n;
     } else if (def.type === "list") {
-      const items = v.split(/\n|,/).map((s) => s.trim()).filter(Boolean);
+      // One per line, as the box says: an item can carry a comma
+      // ("Mulch, edging and spring clean-ups" is one topic), the same rule as
+      // Your business (businessProfileForm parseLines).
+      const items = v.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
       if (def.max_items !== undefined && items.length > def.max_items) {
         errors.push(`${def.label}: ${def.max_items} at most.`);
         continue;
@@ -790,6 +1039,17 @@ export function teamLoadWords(err: unknown): string {
   }
   if (status === 403) return "Only people on this business's account can see its team.";
   return "Try again in a minute.";
+}
+
+/**
+ * The page's line when the employee's jobs could not be read: the server's own
+ * sentence when it sent one (it already says what happened), otherwise what
+ * could not be loaded and what to do. Never the two run together.
+ */
+export function employeeLoadWords(key: EmployeeKey, err: unknown): string {
+  const w = teamLoadWords(err);
+  const generic = w === "Try again in a minute." || w.startsWith("We couldn't reach the server");
+  return generic ? `We couldn't load ${yourEmployee(key)}'s jobs. ${w}` : w;
 }
 
 /** The jobs each employee's product runs today, for reading its runs and waiting items when its job list could not be read. */

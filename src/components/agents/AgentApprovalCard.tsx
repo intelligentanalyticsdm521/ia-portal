@@ -117,6 +117,9 @@ export function AgentApprovalCard({
               className="w-full rounded border border-slate-300 px-2 py-1 font-mono text-xs"
             />
             <div className="flex flex-wrap gap-2">
+              {/* The control the approval needs (a social post's time) is shown while
+                  editing too: Save & approve must never use a value the screen hid. */}
+              {extra}
               <button
                 onClick={() => { onApprove(row, { subject, body }); setEditing(false); }}
                 disabled={approveBusy || (!!requireEditsToApprove && !changed)}

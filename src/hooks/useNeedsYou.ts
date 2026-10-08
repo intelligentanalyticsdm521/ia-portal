@@ -16,7 +16,7 @@ import { useOliverApi } from './useOliverApi';
 import { useArionTeam } from './useTeam';
 import { apiErrorMessage } from '../lib/apiErrorMessage';
 import {
-  WAITING_PATHS, approveBody, decidePathOk, mergeNeedsYou, sourceResult,
+  WAITING_PATHS, approveBody, decidePathOk, decisionResult, mergeNeedsYou, sourceResult,
   type DecideEdits, type NeedsSource, type NeedsYouRow,
 } from '../lib/team';
 import type { AgentActivityPayload, AgentActivityRow } from '../components/agents/types';
@@ -96,14 +96,11 @@ export function useNeedsYou(sources: NeedsSource[]) {
       } else {
         return { ok: false, words: "This item can't be decided here." };
       }
-      const said = (out && typeof out === 'object')
-        ? ((out as { words?: unknown }).words ?? ((out as { data?: { words?: unknown } }).data?.words))
-        : null;
-      const fallback = which === 'skip' ? "Skipped. It won't come back."
-        : which === 'publish' ? 'Sent to your website.'
-          : 'Done.';
+      // A 2xx can still say it failed (a social post approved but not handed to
+      // the scheduler answers scheduled:false): that is said in rose, not green.
+      const result = decisionResult(which, out);
       await load();
-      return { ok: true, words: typeof said === 'string' && said.trim() ? said.trim() : fallback };
+      return result;
     } catch (err) {
       // A refused decision can still have CHANGED the item (an answered review
       // stands down). Read the list again so the card says what is true now.

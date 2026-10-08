@@ -14,6 +14,10 @@
 //     row can never send a decision to another product's route
 //   · the door adapters' reads and writes
 //   · the six Brief answers round-trip, and a refused save says the label
+//   · (fixer, 8 Oct) what the screen derives from the servers' COMMITTED answers
+//     (test/fixtures/argus-team-server-shapes.mjs): Run it now's sentence for
+//     every runner shape, the employee's standing from GET /me/team, a skip-only
+//     row's button, a 2xx decision that failed, the door's words and Last sent
 //
 // MUTATIONS: node scripts/dev/argus-team-mutation-check.mjs (every line must say RED).
 import { test } from "node:test";
@@ -25,12 +29,19 @@ import {
   notOnTeamWords, productNotOwnedWords, versionLine, briefCitedLine, briefPhrase, briefFieldRoute,
   waitingForBriefWords, knowFields, sourceResult, mergeNeedsYou, sourceFailedWords, statusOfError,
   fromJobLine, heldWordsOf, skipPrompt, approveAllowed, isWaitingItem, teamLoadWords, knownJobKeys, decidePathOk, approveBody, tomorrowAtTen,
-  localToIso, runNowCall, runResultWords, belongsTo, lastRunByJob, waitingByJob, whatIDid,
+  localToIso, runNowCall, runResult, belongsTo, lastRunByJob, waitingByJob, whatIDid,
+  canRunNow, decisionResult, cardKind, cardRow, employeeStanding, withStanding, jobWriteWords, whenWords,
+  choiceLabel, employeeLoadWords, reviewRepliesIntro, productNotOwnedWords as notOwnedWords,
+  RUN_SPEND_LIMIT_WORDS, RUN_HALTED_WORDS, RUN_OFF_WORDS, RUN_FAILED_WORDS, RUN_PAUSED_WORDS, RUN_NOT_OWNED_WORDS,
+  RUN_UNKNOWN_WORDS, RUN_NOTHING_WORDS, RUN_PART_FAILED_WORDS, SCHEDULE_FAILED_WORDS, NOTHING_CHANGED_SAVED_WORDS, NEVER_WORDS,
   varsPayload, varText, varLimitWords, teamRefusal, madeByWords, employeeTabFrom, pausedWords,
   dayMonth, relativeTime, WAITING_PATHS, TEAM_PATHS, NOT_BUILT_WORDS, UNDECIDED_WORDS, NOT_ADMIN_WORDS,
   UNREACHABLE_WORDS,
 } from "../src/lib/team.ts";
-import { DOOR_KNOBS, doorReads, doorState, doorWrite, doorPlace } from "../src/components/argus/team/doors.ts";
+import {
+  DOOR_KNOBS, doorReads, doorState, doorWrite, doorPlace, doorRowView, doorRefusalWords,
+} from "../src/components/argus/team/doors.ts";
+import * as WIRE from "./fixtures/argus-team-server-shapes.mjs";
 import {
   toDraft, toFields, changedFields, splitPair, saveRefusalWords, FIELD_LABELS, EMPTY_DRAFT,
 } from "../src/lib/businessProfileForm.ts";
@@ -157,6 +168,9 @@ test("the mode toast names who approved in advance, and when", () => {
 });
 
 test("the switch toast, the counts and the last-did line", () => {
+  assert.equal(modeToast("Blog posts", "automatic", "Dana Ruiz", null, false),
+    "Blog posts will go out without waiting for you once it's on. Approved in advance by Dana Ruiz.", "an Off job promises nothing now");
+  assert.equal(modeToast("Blog posts", "review", null, null, false), "Blog posts will wait for you again once it's on.");
   assert.equal(enabledToast("Blog posts", true), "Switched on: Blog posts.");
   assert.equal(enabledToast("Blog posts", false), "Switched off: Blog posts. It does nothing until you switch it back on.");
   assert.equal(needCountWords(0), null);
@@ -312,6 +326,16 @@ test("a row can never send a decision to another product's route", () => {
   }
 });
 
+test("an encoded dot segment or a backslash can't carry a decision onto another route", () => {
+  // The browser's URL parser turns these into /admin/x on the same host.
+  for (const bad of ["/arion/%2e%2e/admin/x", "/arion/%2E%2E/admin/x", "/arion/.%2e/admin", "/arion/%2e./admin",
+    "/arion\\..\\admin", "/arion/x\\y", "/arion/./x", "/api/v1/%2e%2e/arion/x", "/qtc-agent/%2e%2e/x"]) {
+    for (const src of ["arion", "spark", "oliver"]) assert.equal(decidePathOk(src, bad), false, `${src} ${bad}`);
+  }
+  assert.equal(new URL("/arion/%2e%2e/admin/x", "http://x").pathname, "/admin/x", "why it matters");
+  assert.equal(decidePathOk("arion", "/arion/content-agent/queue/6f1c/approve"), true, "a real path still passes");
+});
+
 test("each Approve sends its route's own field names, and only what may be edited", () => {
   const edits = { title: "T", subject: "S", body: "B" };
   assert.deepEqual(approveBody("arion", "/arion/content-agent/queue/1/approve", { edits: ["title", "body"] }, edits), { title: "T", body_markdown: "B" });
@@ -350,12 +374,73 @@ test("Run it now calls each runner's own route", () => {
   }
 });
 
-test("what came of a run, in words", () => {
-  assert.equal(runResultWords({ data: { drafted: 2 } }), "It has had a look and wrote 2 things for you. They're in Needs you.");
-  assert.equal(runResultWords({ drafted: 1 }), "It has had a look and wrote 1 thing for you. It's in Needs you.");
-  assert.equal(runResultWords({ data: { drafted: 0 } }), "It has had a look and there was nothing to do.");
-  assert.equal(runResultWords({ data: { words: "Google review replies are off. Switch them on first." } }), "Google review replies are off. Switch them on first.");
-  assert.equal(runResultWords(null), "It has had a look. Anything it wrote is in Needs you.");
+test("what came of a run: a plain count is said in green", () => {
+  assert.deepEqual(runResult({ data: { drafted: 2 } }), { ok: true, words: "It has had a look and wrote 2 things for you. They're in Needs you." });
+  assert.deepEqual(runResult({ drafted: 1 }), { ok: true, words: "It has had a look and wrote 1 thing for you. It's in Needs you." });
+  assert.deepEqual(runResult({ data: { drafted: 0 } }), { ok: true, words: RUN_NOTHING_WORDS });
+  assert.deepEqual(runResult(null), { ok: true, words: RUN_UNKNOWN_WORDS });
+  assert.deepEqual(runResult({ data: { drafted: null } }), { ok: true, words: RUN_UNKNOWN_WORDS }, "a count it did not send is unknown, never 0");
+});
+
+test("Run it now, the web person's posts (arion content tick): every way it did NOT run is said in rose", () => {
+  const T = WIRE.CONTENT_TICK;
+  assert.deepEqual(runResult(T.drafted(1)), { ok: true, words: "It has had a look and wrote 1 thing for you. It's in Needs you." });
+  assert.deepEqual(runResult(T.drafted(2, 1)), { ok: true, words: "It has had a look and posted 1 by itself, and wrote 1 thing for you. It's in Needs you." },
+    "one that went out by itself is not described as waiting");
+  assert.deepEqual(runResult(T.drafted(1, 1)), { ok: true, words: "It has had a look and posted 1 by itself." });
+  assert.deepEqual(runResult(T.nothingToWrite), { ok: true, words: RUN_NOTHING_WORDS });
+  assert.deepEqual(runResult(T.tickError), { ok: false, words: RUN_FAILED_WORDS });
+  assert.deepEqual(runResult(T.briefUnreadable), { ok: false, words: "I couldn't read your business details, so I didn't write anything." });
+  assert.deepEqual(runResult(T.blocked), { ok: false, words: "I'm waiting for you to tell me what you sell (Settings → Your business)." });
+  assert.deepEqual(runResult(T.suiteCeiling), { ok: false, words: RUN_SPEND_LIMIT_WORDS });
+  assert.deepEqual(runResult(T.skippedHalted), { ok: false, words: RUN_HALTED_WORDS });
+  assert.deepEqual(runResult(T.stateUnreadable), { ok: false, words: "ARGUS couldn't check which jobs are switched on, so it did nothing this time." });
+  assert.deepEqual(runResult(T.killSwitch), { ok: false, words: RUN_PAUSED_WORDS });
+  assert.deepEqual(runResult(T.productOff), { ok: false, words: RUN_NOT_OWNED_WORDS });
+});
+
+test("Run it now, review replies (arion review tick): posted counted apart, a failed fetch or blocked run is rose", () => {
+  const R = WIRE.REVIEW_TICK;
+  assert.deepEqual(runResult(R.automaticMixed), { ok: true, words: "It has had a look and posted 1 by itself, and wrote 1 thing for you. It's in Needs you." });
+  assert.deepEqual(runResult(R.heldTwo), { ok: true, words: "It has had a look and wrote 2 things for you. They're in Needs you." });
+  assert.deepEqual(runResult(R.nothingDue), { ok: true, words: RUN_NOTHING_WORDS });
+  assert.deepEqual(runResult(R.googleFetchFailed), { ok: false, words: RUN_PART_FAILED_WORDS }, "never 'nothing to do' when Google could not be read");
+  assert.deepEqual(runResult(R.briefBlocked), { ok: false, words: "I couldn't read your business details, so I didn't answer any reviews." });
+  const refused = runResult(R.postRefused);
+  assert.equal(refused.ok, false);
+  assert.match(refused.words, /^1 reply didn't go to Google\. It's in Needs you to try again\./);
+  assert.equal(/fetchReviews|401/.test(runResult(R.googleFetchFailed).words), false, "the machine error never reaches the screen");
+});
+
+test("Run it now, the office administrator (oliver answers 200 for a job that did nothing)", () => {
+  const O = WIRE.OLIVER_RUN;
+  assert.deepEqual(runResult(O.qtcNotEnabled), { ok: false, words: RUN_OFF_WORDS });
+  assert.deepEqual(runResult(O.fieldopsNotEnabled), { ok: false, words: RUN_OFF_WORDS });
+  assert.deepEqual(runResult(O.qtcSuiteCeiling), { ok: false, words: RUN_SPEND_LIMIT_WORDS });
+  assert.deepEqual(runResult(O.qtcStickyHalt), { ok: false, words: RUN_HALTED_WORDS });
+  assert.deepEqual(runResult(O.qtcFailed), { ok: false, words: RUN_FAILED_WORDS });
+  assert.deepEqual(runResult(O.fieldopsFailed), { ok: false, words: RUN_FAILED_WORDS }, "never the SQL error");
+  assert.deepEqual(runResult(O.qtcDrafted), { ok: true, words: "It has had a look and wrote 2 things for you. They're in Needs you." });
+  assert.deepEqual(runResult(O.qtcNothingDue), { ok: true, words: RUN_NOTHING_WORDS });
+  assert.deepEqual(runResult(O.fieldopsSuggested), { ok: true, words: "It has had a look and wrote 3 things for you. They're in Needs you." });
+});
+
+test("Run it now, the marketer (LUMEN)", () => {
+  const S = WIRE.SPARK_RUN;
+  assert.deepEqual(runResult(S.jobOff), { ok: false, words: "Win back quiet customers is off, so I did nothing." });
+  assert.deepEqual(runResult(S.costCeiling), { ok: false, words: RUN_SPEND_LIMIT_WORDS });
+  assert.deepEqual(runResult(S.briefUnreadable), { ok: false, words: "I couldn't read your business details, so I didn't write anything." });
+  assert.deepEqual(runResult(S.noCohort), { ok: true, words: RUN_NOTHING_WORDS });
+  assert.deepEqual(runResult(S.drafted), { ok: true, words: "It has had a look and wrote 1 thing for you. It's in Needs you." });
+});
+
+test("Run it now is offered only for a job that is on, not paused and not stopped (fails closed)", () => {
+  assert.equal(canRunNow({ hasRunRoute: true, isOn: true, paused: false, halted: false }), true);
+  assert.equal(canRunNow({ hasRunRoute: true, isOn: false, paused: false, halted: false }), false, "an Off job has no Run it now");
+  assert.equal(canRunNow({ hasRunRoute: true, isOn: null, paused: false, halted: false }), false, "unknown is not on");
+  assert.equal(canRunNow({ hasRunRoute: true, isOn: true, paused: true, halted: false }), false, "paused by its plan");
+  assert.equal(canRunNow({ hasRunRoute: true, isOn: true, paused: false, halted: true }), false, "stopped itself");
+  assert.equal(canRunNow({ hasRunRoute: false, isOn: true, paused: false, halted: false }), false, "no run route");
 });
 
 /* ── runs and counts per job ─────────────────────────────────────────── */
@@ -386,6 +471,32 @@ test("Today: the last 7 days of runs, newest first", () => {
 });
 
 /* ── How much ────────────────────────────────────────────────────────── */
+
+test("a list setting is one per line: a comma stays inside its item", () => {
+  const defs = { seed_topics: { label: "Topics", type: "list", max_items: 5, max_len: 80 } };
+  assert.deepEqual(varsPayload(defs, { seed_topics: "Mulch, edging and spring clean-ups\nGutters" }),
+    { ok: true, vars: { seed_topics: ["Mulch, edging and spring clean-ups", "Gutters"] } });
+  assert.deepEqual(varsPayload(defs, { seed_topics: "a\r\nb" }), { ok: true, vars: { seed_topics: ["a", "b"] } });
+});
+
+test("a choice setting's options are words, not codes", () => {
+  assert.equal(choiceLabel("winback_cohort_source", "auto"), "Pick for me");
+  assert.equal(choiceLabel("winback_cohort_source", "job"), "Anyone you've done a job for");
+  assert.equal(choiceLabel("winback_cohort_source", "invoice"), "Anyone who has paid an invoice");
+  assert.equal(choiceLabel("something_new", "last_visit"), "Last visit");
+});
+
+test("When I do it: a locked job never says 'When you ask'", () => {
+  assert.equal(whenWords(job({ state: "locked", setting_home: "none", trigger_words: "", lock_words: "Always yours: your logo, colours and voice" })),
+    "Always yours: your logo, colours and voice");
+  assert.equal(whenWords(job({ state: "locked", setting_home: "none", trigger_words: "", lock_words: null })), NEVER_WORDS);
+  assert.equal(whenWords(job({ state: "locked", setting_home: "team", trigger_words: "Every Monday", lock_words: "Always yours." })), "Always yours.",
+    "a locked job never shows a trigger, whatever else its row says");
+  assert.equal(whenWords(job({ state: "live", setting_home: "none", trigger_words: "", lock_words: null })), NEVER_WORDS);
+  assert.equal(whenWords(job({ state: "planned", trigger_words: "" })), NOT_BUILT_WORDS);
+  assert.equal(whenWords(job({ trigger_words: "Every Monday" })), "Every Monday");
+  assert.equal(whenWords(job({ trigger_words: "" })), "When you ask");
+});
 
 test("the owner's limits are checked like the server checks them, in words", () => {
   const defs = {
@@ -447,7 +558,7 @@ const settings = {
 test("a door reads the home the switch already has", () => {
   assert.deepEqual(doorReads({ kind: "oliver_agent", section: "qtc" }), ["/agents/settings"]);
   assert.deepEqual(doorReads({ kind: "oliver_rule", rule_key: "review_request_after_job" }),
-    ["/automations/rules/review_request_after_job", "/automations/runs?rule_key=review_request_after_job&limit=1"]);
+    ["/automations/rules/review_request_after_job", "/automations/runs?rule_key=review_request_after_job&limit=20"]);
   const q = doorState({ kind: "oliver_agent", section: "qtc" }, settings, null, null);
   assert.equal(q.enabled, true);
   assert.equal(q.paused, true);
@@ -456,7 +567,7 @@ test("a door reads the home the switch already has", () => {
   assert.equal(doorState({ kind: "oliver_agent", section: "fieldops" }, settings, null, null).enabled, false);
   const unread = doorState({ kind: "oliver_agent", section: "qtc" }, null, null, null);
   assert.equal(unread.enabled, null, "could not read is not 'off'");
-  const rule = doorState({ kind: "oliver_rule", rule_key: "review_request_after_job" }, null, { key: "review_request_after_job", is_enabled: true }, [{ fired_at: "2026-10-07T12:00:00Z" }]);
+  const rule = doorState({ kind: "oliver_rule", rule_key: "review_request_after_job" }, null, { key: "review_request_after_job", is_enabled: true }, [{ fired_at: "2026-10-07T12:00:00Z", status: "success" }]);
   assert.equal(rule.enabled, true);
   assert.equal(rule.lastSentAt, "2026-10-07T12:00:00Z");
   assert.equal(doorState({ kind: "oliver_rule", rule_key: "x" }, null, null, null).enabled, null);
@@ -471,6 +582,8 @@ test("a door writes the home with the route it already answers; a rule has only 
     { method: "PATCH", path: "/automations/rules/review_request_after_job", body: { is_enabled: false } });
   assert.equal(doorWrite({ kind: "oliver_rule", rule_key: "review_request_after_job" }, { knob: { field: "x", value: 1 } }), null,
     "a change the rule has no control for sends nothing — never a write that means something else");
+  assert.equal(doorWrite({ kind: "oliver_agent" }, { enabled: true }), null, "a door with no section writes nothing (never the Quote-to-Cash switch by guess)");
+  assert.equal(doorWrite({ kind: "oliver_agent", section: "elsewhere" }, { enabled: true }), null);
   assert.equal(doorPlace({ kind: "oliver_rule" }), "OLIVER → Jobs → Settings");
   assert.equal(DOOR_KNOBS.fieldops[0].label, "Only name someone when it is at least");
 });
@@ -542,4 +655,118 @@ test("a failed READ never says nothing changed; the fallback job keys are the pr
   assert.equal(/nothing changed/.test(teamLoadWords(e(500, {}))), false);
   assert.deepEqual(knownJobKeys("web").sort(), ["arion.blog_posts", "arion.review_replies", "arion.social_posts"]);
   assert.deepEqual(knownJobKeys("office").sort(), ["oliver.crew_suggestions", "oliver.quote_payment_followups"]);
+});
+
+/* ── the fixer's pins, from the servers' committed answers ───────────── */
+
+test("the employee's standing comes from GET /me/team; GET /me/team/:key carries neither field", () => {
+  const emp = WIRE.EMPLOYEE_ANSWER.employee;
+  assert.equal("product_owned" in emp, false, "the fixture is the real route: no product_owned on /:employeeKey");
+  assert.equal(employeeStanding(emp), "unknown", "the :key answer alone says nothing either way");
+  const merged = withStanding(emp, WIRE.TEAM_LIST_NO_ARION.employees);
+  assert.equal(merged.product_owned, false);
+  const hireJobs = [{ hire_required: true, on_team: false }];
+  assert.equal(employeeStanding(merged, hireJobs), "not_owned", "a business without ARION is told to add ARION…");
+  assert.notEqual(employeeStanding(merged, hireJobs), "not_on_team", "…never to ask its account contact to add the web person");
+  assert.equal(notOwnedWords("web"), "Your web person works on ARION. Add ARION to have them on your team.");
+  const marketer = withStanding({ ...emp, employee_key: "marketer", product: "spark" }, WIRE.TEAM_LIST_NO_ARION.employees);
+  assert.equal(employeeStanding(marketer, hireJobs), "ok", "on the team (founder grant)");
+  const office = withStanding({ ...emp, employee_key: "office", product: "oliver" }, WIRE.TEAM_LIST_NO_ARION.employees);
+  assert.equal(employeeStanding(office, hireJobs), "unknown", "plan not readable: nothing is said either way");
+  assert.equal(employeeStanding({ product_owned: true, on_team: { yes: false, source: null } }, hireJobs), "not_on_team");
+  assert.equal(employeeStanding({ product_owned: true, on_team: { yes: false, source: null } }, [{ hire_required: false, on_team: false }]), "ok",
+    "jobs without a hire keep their switches, so there is nothing to say");
+  assert.equal(withStanding(emp, null), emp, "the list could not be read: the :key answer as it is");
+});
+
+test("a skip-only row (Quote-to-Cash escalated, a crew suggestion that names nobody) gets its Skip button", () => {
+  assert.equal(cardKind(WIRE.QTC_ESCALATED_ROW.decide), "skip");
+  assert.equal(cardKind(WIRE.FIELDOPS_NOBODY_ROW.decide), "skip");
+  assert.equal(isWaitingItem(WIRE.QTC_ESCALATED_ROW), true, "it counts in Needs you, so it must have a button");
+  assert.equal(cardKind({ approve: { path: "/a", label: "Approve", edits: [] }, skip: { path: "/s", reason: "optional" } }), "approve");
+  assert.equal(cardKind({ publish: { path: "/p", label: "Put it on your website" } }), "publish");
+  assert.equal(cardKind({}), "none");
+  assert.equal(cardKind(null), "none");
+  assert.equal(skipPrompt(WIRE.QTC_ESCALATED_ROW.decide.skip.reason), "Why? (needed)");
+  assert.equal(decidePathOk("oliver", WIRE.QTC_ESCALATED_ROW.decide.skip.path), true);
+});
+
+test("the Needs-you card never draws the products' attribution line (it names a company and says Agent)", () => {
+  for (const r of [WIRE.QTC_ESCALATED_ROW, WIRE.FIELDOPS_NOBODY_ROW]) {
+    const shown = cardRow({ ...r, source: "oliver" }, "Quote and payment follow-ups");
+    assert.equal(shown.attribution, "");
+    assert.equal(shown.agent_label, "from your office administrator · Quote and payment follow-ups");
+    assert.equal(/Agent|Created by/.test(JSON.stringify([shown.attribution, shown.agent_label, shown.hold_note])), false);
+  }
+});
+
+test("a 2xx decision that says it failed is said in rose", () => {
+  assert.deepEqual(decisionResult("approve", WIRE.SOCIAL_APPROVE_NOT_SCHEDULED),
+    { ok: false, words: "Your social scheduler couldn't be reached, so it isn't scheduled yet. Press Try again." });
+  assert.deepEqual(decisionResult("approve", WIRE.SOCIAL_APPROVE_NOT_SCHEDULED_NO_WORDS), { ok: false, words: SCHEDULE_FAILED_WORDS });
+  assert.deepEqual(decisionResult("approve", WIRE.SOCIAL_APPROVE_SCHEDULED), { ok: true, words: "Scheduled for 9 Oct 10:00." });
+  assert.deepEqual(decisionResult("approve", WIRE.BLOG_APPROVE), { ok: true, words: 'Approved. It goes on your website when you press "Put it on your website".' });
+  assert.deepEqual(decisionResult("skip", WIRE.REVIEW_SKIP), { ok: true, words: "Skipped. It won't come back." });
+  assert.deepEqual(decisionResult("publish", {}), { ok: true, words: "Sent to your website." });
+  assert.equal(decisionResult("approve", { ok: false }).ok, false);
+  assert.equal(decisionResult("approve", { data: { failed: true, words: "It didn't go." } }).words, "It didn't go.");
+});
+
+test("the toast follows the server's answer, never the request", () => {
+  const asked = { mode: "automatic" };
+  const kept = { enabled: true, mode: "review", mode_rule: "either", mode_set_by: null, mode_set_at: null };
+  assert.equal(jobWriteWords("Blog posts", asked, kept), "Blog posts will wait for you again.", "the server kept Send me first");
+  assert.equal(jobWriteWords("Blog posts", asked, { ...kept, changed: false }), NOTHING_CHANGED_SAVED_WORDS);
+  assert.equal(jobWriteWords("Blog posts", asked, { ...kept, mode: "automatic", mode_set_by: "Dana Ruiz", mode_set_at: "2026-10-08T15:00:00Z" }),
+    "Blog posts will go out without waiting for you. Approved in advance by Dana Ruiz on 8 Oct.");
+  assert.equal(jobWriteWords("Blog posts", asked, { ...kept, enabled: false, mode: "automatic", mode_set_by: "Dana Ruiz" }),
+    "Blog posts will go out without waiting for you once it's on. Approved in advance by Dana Ruiz.");
+  assert.equal(jobWriteWords("Blog posts", { enabled: true }, { ...kept, enabled: false }),
+    "Switched off: Blog posts. It does nothing until you switch it back on.", "the server's switch, not the asked one");
+  assert.equal(jobWriteWords("Blog posts", { vars: { posts_per_week: 2 } }, kept), "Saved: Blog posts.");
+});
+
+test("a rule door: Last sent is the last run that SENT; a newer skipped or failed run is said as such", () => {
+  const st = doorState({ kind: "oliver_rule", rule_key: "review_request_after_job" }, null, { key: "review_request_after_job", is_enabled: true }, WIRE.RULE_RUNS);
+  assert.equal(st.lastSentAt, "2026-10-01T10:00:00Z");
+  assert.equal(st.lastMissAt, "2026-10-08T10:00:00Z");
+  const never = doorState({ kind: "oliver_rule", rule_key: "x" }, null, { key: "x", is_enabled: true }, [WIRE.RULE_RUNS[0]]);
+  assert.equal(never.lastSentAt, null, "a skipped run never reads as Last sent");
+  assert.match(doorReads({ kind: "oliver_rule", rule_key: "x" })[1], /limit=20$/, "enough runs to find the last one that sent");
+});
+
+test("a door's row: not owned says so; a plan refusal is its plain sentence; unread is never shown as off", () => {
+  const avail = { ok: false, decided: true, words: "Review asks come with OLIVER Pro.", link: { label: "Plan & Pricing", to: "/app/settings/plan-pricing" } };
+  const j = (over = {}) => ({ display_name: "Review asks after a job", available: { ok: true, decided: true }, ...over });
+  const notOwned = doorRowView(j(), { enabled: null }, notOwnedWords("office"));
+  assert.equal(notOwned.control, "locked");
+  assert.equal(notOwned.words, "Your office administrator works on OLIVER. Add OLIVER to have them on your team.");
+  assert.equal(notOwned.link.to, "/app/settings/plan-pricing");
+  assert.equal(/couldn.t read/.test(notOwned.words), false, "a business without OLIVER is not told something failed");
+  assert.deepEqual(doorRowView(j(), { enabled: null }, null), { control: "unread", words: "We couldn't read whether Review asks after a job is on just now. Open the page again to retry." });
+  assert.deepEqual(doorRowView(j({ available: avail }), { enabled: false }, null), { control: "locked", words: avail.words, link: avail.link });
+  assert.deepEqual(doorRowView(j({ available: avail }), { enabled: true }, null), { control: "switch", canSwitchOn: false, gate: { words: avail.words, link: avail.link } },
+    "on but no longer allowed: it can still be switched off");
+  assert.deepEqual(doorRowView(j(), { enabled: false }, null), { control: "switch", canSwitchOn: true, gate: null });
+  assert.equal(doorRefusalWords(WIRE.tierNotMetError(), j({ available: avail })), "Review asks come with OLIVER Pro.");
+  const plain = doorRefusalWords(WIRE.tierNotMetError(), j());
+  assert.equal(/Automation rule|tier_not_met|review_request_after_job/.test(plain), false, plain);
+  assert.equal(doorRefusalWords({ type: "tier_gate", tierRequired: "pro" }, j({ available: avail })), avail.words);
+  const other = Object.assign(new Error("OLIVER API 409: {}"), { status: 409, body: { message: "That switch is already on." } });
+  assert.equal(doorRefusalWords(other, j()), "That switch is already on.");
+});
+
+test("the page's load-failure line is said once", () => {
+  const e = (status, body) => Object.assign(new Error("x"), { status, body });
+  assert.equal(employeeLoadWords("web", e(500, { error: "We couldn't load your team just now. Try again in a minute.", message: "We couldn't load your team just now. Try again in a minute." })),
+    "We couldn't load your team just now. Try again in a minute.");
+  assert.equal(employeeLoadWords("web", e(404, {})), "We couldn't load your web person's jobs. Try again in a minute.");
+  assert.equal(employeeLoadWords("office", new TypeError("Failed to fetch")),
+    "We couldn't load your office administrator's jobs. We couldn't reach the server. Check your connection and try again.");
+});
+
+test("ARION → Reviews says the web person answers reviews only while the job is on", () => {
+  assert.equal(reviewRepliesIntro(true), "Your web person writes a reply to each new review in your voice.");
+  assert.equal(/^Your web person writes/.test(reviewRepliesIntro(false)), false);
+  assert.equal(/^Your web person writes/.test(reviewRepliesIntro(null)), false);
 });

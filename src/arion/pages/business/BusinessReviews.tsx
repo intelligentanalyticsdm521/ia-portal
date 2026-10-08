@@ -9,7 +9,7 @@ import { ReportBar } from '../../../components/insights/ReportBar';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import { useJobWriter, useTeamJob } from '../../../hooks/useTeam';
 import { JobControls } from '../../../components/argus/team/JobRow';
-import { employeeRoute, jobRowState, shownMode } from '../../../lib/team';
+import { employeeRoute, jobRowState, reviewRepliesIntro, shownMode } from '../../../lib/team';
 
 // Google review replies — your web person's job, switched where the reviews are
 // (contract ARGUS employees phase 1 §F.5, §G). The old auto-reply card posted
@@ -40,7 +40,7 @@ function ReviewRepliesCard() {
   return (
     <Card title="Google review replies">
       <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
-        Your web person writes a reply to each new review in your voice.{' '}
+        {reviewRepliesIntro(job ? job.enabled : null)}{' '}
         <Link to={employeeRoute('web', 'needs-you')} style={{ textDecoration: 'underline' }}>See the replies waiting for you</Link>
       </div>
       {!job && !reply.error && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>}

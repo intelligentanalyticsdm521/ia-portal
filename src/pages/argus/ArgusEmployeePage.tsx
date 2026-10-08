@@ -24,8 +24,10 @@
 // administrator's jobs are doors onto the switches OLIVER already has
 // (components/argus/team/doors.ts).
 //
-// Data: one load on arrival (the employee and its jobs, its runs, its product's
-// settings, and the waiting items together); What I know's learned-voice and a
+// Data: one load on arrival (the employee and its jobs, GET /me/team for whether
+// the business has the product and who is on the team — the only answer that
+// carries those two — its runs, its product's settings, and the waiting items
+// together); What I know's learned-voice and a
 // job's changes load on their first open. No polling (convention_data_fetching).
 //
 // Back sits top left (convention_back_button_top_left) and pops one level: a
@@ -46,15 +48,17 @@ import { JobRow, type DoorView } from "../../components/argus/team/JobRow";
 import { JobDrawer } from "../../components/argus/team/JobDrawer";
 import { NeedsYouList } from "../../components/argus/team/NeedsYouList";
 import { LearnedVoice } from "../../components/argus/team/LearnedVoice";
-import { doorReads, doorState, doorWrite, type DoorRule, type DoorRuleRun } from "../../components/argus/team/doors";
+import {
+  doorReads, doorRefusalWords, doorRowView, doorState, doorWrite, type DoorRule, type DoorRuleRun,
+} from "../../components/argus/team/doors";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import type { ArionLearnedVoice } from "../../lib/arionApi";
 import type { AgentRunRow, AgentRunsPayload, AgentSettingsResponse } from "../../components/agents/types";
 import {
   EMPLOYEE_NAME, EMPLOYEE_SOURCE, EMPLOYEE_TABS, PLAN_PRICING_ROUTE, RUNS_PATHS, YourEmployee,
-  AGENT_JOBS, belongsTo, briefFieldRoute, employeeOfRow, employeeTabFrom, haltedLine, knowFields,
-  lastRunByJob, needCountWords, notOnTeamWords, productNotOwnedWords, relativeTime, runNowCall,
-  runResultWords, teamLoadWords, knownJobKeys, waitingByJob, whatIDid, yourEmployee,
+  AGENT_JOBS, belongsTo, briefFieldRoute, employeeLoadWords, employeeOfRow, employeeStanding, employeeTabFrom,
+  haltedLine, knowFields, lastRunByJob, needCountWords, notOnTeamWords, productNotOwnedWords, relativeTime,
+  runNowCall, runResult, knownJobKeys, waitingByJob, whatIDid, withStanding, yourEmployee,
   type EmployeeKey, type EmployeeTab, type JobView, type TeamEmployee,
 } from "../../lib/team";
 
@@ -150,13 +154,20 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
     setLoading(true);
     setLoadError(null);
     try {
-      const [emp] = await Promise.all([team.employee(employeeKey), loadRuns(), loadSettings()]);
-      setEmployee(emp.employee);
+      // GET /me/team is read beside GET /me/team/:key: only the list says whether
+      // the business has the product and whether this employee is on the team.
+      // A list that can't be read leaves both unknown (nothing is said either way).
+      const [emp, listed] = await Promise.all([
+        team.employee(employeeKey),
+        team.list().then((r) => r.employees).catch((err) => { console.error("[your team] GET /me/team", err); return null; }),
+        loadRuns(), loadSettings(),
+      ]);
+      setEmployee(withStanding(emp.employee, listed));
       setJobs(emp.jobs || []);
       const ruleDoor = (emp.jobs || []).find((j) => j.door?.kind === "oliver_rule");
       if (ruleDoor?.door?.rule_key) await loadRule(ruleDoor.door.rule_key);
     } catch (err) {
-      setLoadError(teamLoadWords(err));
+      setLoadError(employeeLoadWords(employeeKey, err));
     } finally {
       setLoading(false);
     }
@@ -213,6 +224,8 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
     if (!job.door) return null;
     const door = job.door;
     const state = doorState(door, settings, rule, ruleRuns);
+    // A business without the product is told so, not that its switch "couldn't be read".
+    const row = doorRowView(job, state, standing === "not_owned" ? productNotOwnedWords(employeeKey) : null);
     const writeDoor = async (change: Parameters<typeof doorWrite>[1], done: string) => {
       const w = doorWrite(door, change);
       if (!w) return;
@@ -223,13 +236,14 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
         else setRule(await fns.current.oliver.patch<DoorRule>(w.path, w.body));
         setNotice(done);
       } catch (err) {
-        setDoorRefusal((r) => ({ ...r, [job.job_key]: apiErrorMessage(err) }));
+        setDoorRefusal((r) => ({ ...r, [job.job_key]: doorRefusalWords(err, job) }));
       } finally {
         setDoorBusy(null);
       }
     };
     return {
       state,
+      row,
       busy: doorBusy === job.job_key,
       refusal: doorRefusal[job.job_key] || null,
       onToggle: (enabled) => void writeDoor({ enabled }, enabled ? `Switched on: ${job.display_name}.` : `Switched off: ${job.display_name}.`),
@@ -250,7 +264,10 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
       const out = call.source === "arion" ? await a.post(call.path, call.body)
         : call.source === "spark" ? await sp.post<unknown>(call.path, call.body)
           : await o.post<unknown>(call.path, call.body);
-      setNotice(runResultWords(out));
+      // A run that was stopped, blocked, off or failed is said in rose, never green.
+      const result = runResult(out);
+      if (result.ok) setNotice(result.words);
+      else setPageAlert(result.words);
       await Promise.all([needs.reload(), loadRuns()]);
     } catch (err) {
       setPageAlert(apiErrorMessage(err));
@@ -271,8 +288,9 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
 
   const name = employee?.display_name || EMPLOYEE_NAME[employeeKey];
   const need = needCountWords(myRows.length);
-  const notOwned = employee?.product_owned === false;
-  const notOnTeam = !notOwned && jobs.some((j) => j.hire_required && !j.on_team);
+  const standing = employeeStanding(employee, jobs);
+  const notOwned = standing === "not_owned";
+  const notOnTeam = standing === "not_on_team";
   const openJobView = openJobKey ? jobs.find((j) => j.job_key === openJobKey) || null : null;
   const contentAgent = settings?.agents?.find((a) => a.key === "content");
   const runsPayload: AgentRunsPayload | null = runs === null ? null : {
@@ -350,7 +368,7 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
       {loading && <div className="p-6 text-sm text-slate-500">Loading…</div>}
       {!loading && loadError && (
         <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200" role="alert">
-          <span className="flex-1">We couldn&rsquo;t load {yourEmployee(employeeKey)}&rsquo;s jobs. {loadError}</span>
+          <span className="flex-1">{loadError}</span>
           <button type="button" onClick={() => void load()} className="rounded border border-rose-300 px-2 py-0.5 text-xs font-semibold">Try again</button>
         </div>
       )}
@@ -359,8 +377,8 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
         <div className="grid gap-4 md:grid-cols-2">
           <section className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
             <h2 className="text-sm font-bold text-slate-900">What I did</h2>
-            {runsError && <p className="mt-1 text-xs text-rose-700" role="alert">{runsError}</p>}
-            {!runsError && did.length === 0 && <p className="mt-1 text-xs text-slate-600">Nothing in the last 7 days.</p>}
+            {runsError && !notOwned && <p className="mt-1 text-xs text-rose-700" role="alert">{runsError}</p>}
+            {(!runsError || notOwned) && did.length === 0 && <p className="mt-1 text-xs text-slate-600">Nothing in the last 7 days.</p>}
             <ul className="mt-2 space-y-1.5">
               {did.map((d) => (
                 <li key={d.id} className="flex justify-between gap-2 text-xs">
@@ -458,7 +476,7 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
 
       {!loading && tab === "history" && (
         <div className="space-y-2">
-          {runsError && (
+          {runsError && !notOwned && (
             <div className="flex flex-wrap items-center gap-2 text-xs text-rose-700" role="alert">
               <span>{runsError}</span>
               <button type="button" onClick={() => void loadRuns()} className="rounded border border-rose-300 px-2 py-0.5 font-semibold">Try again</button>
@@ -468,7 +486,9 @@ export function ArgusEmployeePage({ employeeKey }: { employeeKey: EmployeeKey })
             runs={runsPayload}
             loading={runs === null}
             defaultOpen
-            emptyBody={`${YourEmployee(employeeKey)} hasn't done anything yet. Switch a job on, then press Run it now on the Jobs tab.`}
+            emptyBody={notOwned
+              ? productNotOwnedWords(employeeKey)
+              : `${YourEmployee(employeeKey)} hasn't done anything yet. Switch a job on, then press Run it now on the Jobs tab.`}
           />
         </div>
       )}

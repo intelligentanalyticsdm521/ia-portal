@@ -16,13 +16,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from '../app/AppState';
 import {
-  getTeamEmployee, getTeamJobsOn, putTeamJob, getTeamJobChanges,
+  getTeam, getTeamEmployee, getTeamJobsOn, putTeamJob, getTeamJobChanges,
 } from '../lib/platformApi';
 import {
   getArionAgentActivity, getArionAgentRuns, getArionAgentSettings, putArionAgentSettings,
   getArionLearnedVoice, postArionTeam,
 } from '../lib/arionApi';
-import { enabledToast, modeToast, teamLoadWords, teamRefusal, type JobMode, type JobView } from '../lib/team';
+import { jobWriteWords, teamLoadWords, teamRefusal, type JobMode, type JobView } from '../lib/team';
 
 const PLATFORM_API_BASE = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string) || '';
 const ARION_API_BASE = (import.meta.env.VITE_ARION_API_BASE_URL as string) || '';
@@ -39,6 +39,8 @@ function useCallParams(baseUrl: string) {
 
 export function useTeamApi() {
   const { params, ready } = useCallParams(PLATFORM_API_BASE);
+  // GET /me/team: the only answer that says whether the product is owned and who is on the team.
+  const list = useCallback(async () => getTeam(await params()), [params]);
   const employee = useCallback(async (employeeKey: string) => getTeamEmployee({ ...(await params()), employeeKey }), [params]);
   const jobsOn = useCallback(async () => getTeamJobsOn(await params()), [params]);
   const putJob = useCallback(
@@ -47,7 +49,7 @@ export function useTeamApi() {
     [params],
   );
   const changes = useCallback(async (jobKey: string) => getTeamJobChanges({ ...(await params()), jobKey }), [params]);
-  return useMemo(() => ({ ready, employee, jobsOn, putJob, changes }), [ready, employee, jobsOn, putJob, changes]);
+  return useMemo(() => ({ ready, list, employee, jobsOn, putJob, changes }), [ready, list, employee, jobsOn, putJob, changes]);
 }
 
 export function useArionTeam() {
@@ -89,11 +91,8 @@ export function useJobWriter() {
       setBusy(job.job_key);
       try {
         const next = await team.putJob(job.job_key, patch);
-        let words: string;
-        if (patch.mode !== undefined) words = modeToast(job.display_name, patch.mode, next.mode_set_by, next.mode_set_at);
-        else if (patch.enabled !== undefined) words = enabledToast(job.display_name, patch.enabled);
-        else words = `Saved: ${job.display_name}.`;
-        return { ok: true, job: next, words };
+        // The sentence follows what the server answered, not what was asked.
+        return { ok: true, job: next, words: jobWriteWords(job.display_name, patch, next) };
       } catch (err) {
         return { ok: false, words: teamRefusal(err) };
       } finally {

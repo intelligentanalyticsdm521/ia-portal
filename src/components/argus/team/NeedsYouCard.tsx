@@ -11,12 +11,18 @@
 // approval path. A held draft (`edits_required`) keeps Approve off until a word
 // changes. A social post's Approve carries the time it should go out, default
 // tomorrow 10:00 in this browser's time zone. There is no "approve all".
+//
+// A row whose only decision is Skip (an escalated Quote-to-Cash draft, a crew
+// suggestion that names nobody) gets the Skip button and its question, so an
+// item counted in "{n} need you" always has a way out. The products' own
+// attribution line (it names the platform's company and says "Agent") is never
+// drawn here: the job line says who made it (lib/team.ts cardRow).
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Send } from "lucide-react";
+import { Send, Trash2 } from "lucide-react";
 import { AgentApprovalCard } from "../../agents/AgentApprovalCard";
 import {
-  YOUR_BUSINESS_ROUTE, approveAllowed, briefCitedLine, fromJobLine, heldWordsOf,
+  YOUR_BUSINESS_ROUTE, approveAllowed, briefCitedLine, cardKind, cardRow,
   localToIso, skipPrompt, tomorrowAtTen, type NeedsYouRow,
 } from "../../../lib/team";
 import type { DecideInput } from "../../../hooks/useNeedsYou";
@@ -33,7 +39,10 @@ export function NeedsYouCard({ row, jobName, onDecide }: Props) {
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<{ ok: boolean; words: string } | null>(null);
   const [when, setWhen] = useState(() => tomorrowAtTen());
+  const [skipping, setSkipping] = useState(false);
+  const [reason, setReason] = useState("");
   const cited = briefCitedLine(row.brief_cited);
+  const kind = cardKind(d);
 
   const run = async (which: "approve" | "skip" | "publish", input?: DecideInput) => {
     setBusy(`${which === "skip" ? "decline" : which}-${row.agent}-${row.id}`);
@@ -43,7 +52,7 @@ export function NeedsYouCard({ row, jobName, onDecide }: Props) {
     setBusy(null);
   };
 
-  const shown = { ...row, hold_note: heldWordsOf(row), agent_label: fromJobLine(row, jobName) };
+  const shown = cardRow(row, jobName);
   const note = cited ? (
     <p className="text-[11px] text-slate-600">
       {cited.link ? <Link to={YOUR_BUSINESS_ROUTE} className="underline">{cited.words}</Link> : cited.words}
@@ -54,7 +63,7 @@ export function NeedsYouCard({ row, jobName, onDecide }: Props) {
   );
 
   // Approved already: the only thing left is the second press.
-  if (!d.approve && d.publish) {
+  if (kind === "publish" && d.publish) {
     const publishBusy = busy === `publish-${row.agent}-${row.id}`;
     return (
       <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-2">
@@ -80,7 +89,57 @@ export function NeedsYouCard({ row, jobName, onDecide }: Props) {
     );
   }
 
-  if (!d.approve) {
+  // Only Skip: the item can't be approved here, but it can be let go of.
+  if (kind === "skip" && d.skip) {
+    const skipBusy = busy === `decline-${row.agent}-${row.id}`;
+    const required = d.skip.reason === "required";
+    return (
+      <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">
+        <div className="text-xs font-medium text-slate-900">{row.summary}</div>
+        <div className="text-[11px] text-slate-500">{shown.agent_label}</div>
+        <div className="text-[11px] text-slate-600">{shown.hold_note}</div>
+        {note}
+        {row.links.map((l) => (
+          <a key={l.href} href={l.href} className="mr-3 text-[11px] text-violet-700 underline">{l.label}</a>
+        ))}
+        {skipping ? (
+          <div className="mt-2 space-y-2">
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder={skipPrompt(d.skip.reason)}
+              aria-label={skipPrompt(d.skip.reason)}
+              className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
+            />
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => { const r = reason.trim(); setSkipping(false); setReason(""); void run("skip", { reason: r }); }}
+                disabled={skipBusy || (required && !reason.trim())}
+                className="rounded bg-slate-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
+              >Skip it</button>
+              <button type="button" onClick={() => { setSkipping(false); setReason(""); }} className="rounded border border-slate-300 px-2.5 py-1 text-xs">Cancel</button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-2">
+            <button
+              type="button"
+              onClick={() => setSkipping(true)}
+              disabled={skipBusy}
+              className="inline-flex items-center gap-1 rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <Trash2 className="h-3 w-3" />Skip
+            </button>
+          </div>
+        )}
+        {saidLine}
+      </div>
+    );
+  }
+
+  if (kind !== "approve" || !d.approve) {
     // Nothing this page can decide: say what it is and where it came from, no buttons.
     return (
       <div className="rounded-lg border border-slate-200 bg-white px-3 py-2">

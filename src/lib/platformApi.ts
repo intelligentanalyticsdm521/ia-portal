@@ -1035,7 +1035,7 @@ export function getTeamJobsOn(params: TeamCallParams) {
 export function putTeamJob(
   params: TeamCallParams & { jobKey: string; patch: { enabled?: boolean; mode?: 'automatic' | 'review'; vars?: Record<string, unknown> } },
 ) {
-  return teamRequest<JobView>(params, `/me/team/jobs/${encodeURIComponent(params.jobKey)}`, {
+  return teamRequest<JobView & { changed?: boolean }>(params, `/me/team/jobs/${encodeURIComponent(params.jobKey)}`, {
     method: 'PUT',
     body: params.patch,
   });

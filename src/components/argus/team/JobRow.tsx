@@ -17,10 +17,10 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ChevronRight, Lock, Play } from "lucide-react";
 import { useJobWriter } from "../../../hooks/useTeam";
 import {
-  briefFieldRoute, jobRowState, lastDidWords, needCountWords, pausedWords, relativeTime, shownMode,
+  briefFieldRoute, canRunNow, jobRowState, lastDidWords, needCountWords, pausedWords, relativeTime, shownMode,
   waitingForBriefWords, type JobMode, type JobView,
 } from "../../../lib/team";
-import type { DoorKnob, DoorState } from "./doors";
+import type { DoorKnob, DoorRowView, DoorState } from "./doors";
 
 function GateLink({ line }: { line: { words: string; link?: { label: string; to: string } } }) {
   return (
@@ -129,6 +129,8 @@ export function JobControls({ job, onChanged, onNotice, hideSwitch, hideMode }: 
 /** A door: the switch where the job's setting already lives (the office administrator's jobs). */
 export interface DoorView {
   state: DoorState;
+  /** What the row shows: the switch, the locked words, or that it could not be read (doors.ts doorRowView). */
+  row: DoorRowView;
   busy: boolean;
   refusal: string | null;
   onToggle: (enabled: boolean) => void;
@@ -138,19 +140,25 @@ export interface DoorView {
 
 export function DoorControls({ job, door }: { job: JobView; door: DoorView }) {
   const st = door.state;
+  const view = door.row;
   return (
     <div className="space-y-1.5">
-      {st.enabled === null ? (
-        <p className="text-[11px] text-rose-700" role="alert">
-          We couldn&rsquo;t read whether {job.display_name} is on just now. Open the page again to retry.
+      {view.control === "unread" && (
+        <p className="text-[11px] text-rose-700" role="alert">{view.words}</p>
+      )}
+      {view.control === "locked" && (
+        <p className="flex max-w-xs items-start gap-1.5 text-xs text-slate-600">
+          <Lock className="mt-0.5 h-3 w-3 flex-shrink-0 text-slate-400" />
+          <GateLink line={view} />
         </p>
-      ) : (
+      )}
+      {view.control === "switch" && (
         <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
           <input
             type="checkbox"
             role="switch"
-            checked={st.enabled}
-            disabled={door.busy}
+            checked={st.enabled === true}
+            disabled={door.busy || (st.enabled !== true && !view.canSwitchOn)}
             onChange={(e) => door.onToggle(e.target.checked)}
             className="h-4 w-4 rounded border-slate-300"
             aria-label={`${job.display_name} on`}
@@ -158,9 +166,17 @@ export function DoorControls({ job, door }: { job: JobView; door: DoorView }) {
           {st.enabled ? "On" : "Off"}
         </label>
       )}
-      {job.lock_words && <p className="text-[11px] text-slate-600">{job.lock_words}</p>}
+      {view.control === "switch" && view.gate && (
+        <p className="text-[11px] font-semibold text-amber-800">
+          <GateLink line={{ ...view.gate, words: pausedWords(view.gate.words) }} />
+        </p>
+      )}
+      {view.control === "switch" && job.lock_words && <p className="text-[11px] text-slate-600">{job.lock_words}</p>}
       {st.lastSentAt && relativeTime(st.lastSentAt) && (
         <p className="text-[11px] text-slate-500">Last sent {relativeTime(st.lastSentAt)}</p>
+      )}
+      {st.lastMissAt && relativeTime(st.lastMissAt) && (
+        <p className="text-[11px] text-amber-800">Didn&rsquo;t send last time ({relativeTime(st.lastMissAt)})</p>
       )}
       {door.refusal && (
         <div className="flex items-start gap-1.5 rounded bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800 ring-1 ring-rose-200" role="alert">
@@ -226,7 +242,7 @@ export function JobRow({ job, onChanged, onNotice, onOpen, lastDidIso, needCount
   const last = lastDidWords(lastDidIso || null);
   const need = needCountWords(needCount || 0);
   const isOn = st.control === "door" ? door?.state.enabled === true : job.enabled === true;
-  const canRun = !!onRunNow && isOn && !st.paused && !halted;
+  const canRun = canRunNow({ hasRunRoute: !!onRunNow, isOn, paused: st.paused, halted: !!halted });
 
   return (
     <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200" id={`job-${job.job_key}`}>
@@ -261,7 +277,7 @@ export function JobRow({ job, onChanged, onNotice, onOpen, lastDidIso, needCount
         </div>
       </div>
 
-      {st.control === "door" && door && door.state.enabled === true && door.state.knobs.length > 0 && (
+      {st.control === "door" && door && door.row.control === "switch" && door.state.enabled === true && door.state.knobs.length > 0 && (
         <div className="mt-3 border-t border-slate-100 pt-3">
           <DoorKnobs knobs={door.state.knobs} values={door.state.values} busy={door.busy} onKnob={door.onKnob} />
         </div>

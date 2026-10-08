@@ -37,6 +37,7 @@ const arionApi = read("src/lib/arionApi.ts");
 const arionCtx = read("src/arion/useArionContext.ts");
 const platformApi = read("src/lib/platformApi.ts");
 const guide = read("src/journeys/content/argusPages.ts");
+const approvalCard = read("src/components/agents/AgentApprovalCard.tsx");
 
 /* ── where it lives ──────────────────────────────────────────────────── */
 
@@ -115,15 +116,31 @@ test("show, don't hide: the product not owned and not on the team each say so on
   assert.match(page, /\{productNotOwnedWords\(employeeKey\)\}/);
   assert.match(page, /to=\{PLAN_PRICING_ROUTE\}/);
   assert.match(page, /\{notOnTeamWords\(employeeKey\)\}/);
+  // The two lines are decided from GET /me/team (the only answer with
+  // product_owned / on_team), merged onto GET /me/team/:key — see argus-team-lib.
+  assert.match(page, /setEmployee\(withStanding\(emp\.employee, listed\)\);/);
+  assert.match(page, /const standing = employeeStanding\(employee, jobs\);/);
+  assert.match(page, /const notOwned = standing === "not_owned";/);
+  assert.match(page, /const notOnTeam = standing === "not_on_team";/);
+  assert.match(useTeam, /const list = useCallback\(async \(\) => getTeam\(await params\(\)\), \[params\]\);/);
+});
+
+test("a business without the product: its doors and its History say so, never 'couldn't read'", () => {
+  assert.match(page, /const row = doorRowView\(job, state, standing === "not_owned" \? productNotOwnedWords\(employeeKey\) : null\);/);
+  assert.match(page, /\{runsError && !notOwned && \(/);
+  assert.match(page, /emptyBody=\{notOwned\s*\? productNotOwnedWords\(employeeKey\)/);
+  assert.match(jobRow, /\{view\.control === "locked" && \(/);
+  assert.match(jobRow, /\{view\.control === "unread" && \(/);
+  assert.match(page, /setDoorRefusal\(\(r\) => \(\{ \.\.\.r, \[job\.job_key\]: doorRefusalWords\(err, job\) \}\)\);/, "a door's refusal is a plain sentence");
 });
 
 test("one load on arrival; the learned voice on its first open; no polling", () => {
-  assert.match(page, /await Promise\.all\(\[team\.employee\(employeeKey\), loadRuns\(\), loadSettings\(\)\]\)/);
+  assert.match(page, /await Promise\.all\(\[\s*team\.employee\(employeeKey\),\s*team\.list\(\)[^\n]*\n\s*loadRuns\(\), loadSettings\(\),\s*\]\)/);
   assert.match(page, /if \(!ready \|\| tab !== "know" \|\| employeeKey !== "web" \|\| voiceAsked\.current\) return;/);
   for (const [name, src] of [["page", page], ["useNeedsYou", useNeeds], ["useTeam", useTeam], ["JobDrawer", drawer]]) {
     assert.equal(/setInterval\s*\(/.test(stripComments(src)), false, `${name} must not poll`);
   }
-  assert.match(useTeam, /return useMemo\(\(\) => \(\{ ready, employee, jobsOn, putJob, changes \}\)/, "a stable api object");
+  assert.match(useTeam, /return useMemo\(\(\) => \(\{ ready, list, employee, jobsOn, putJob, changes \}\)/, "a stable api object");
 });
 
 test("Today: what I did, and the first three that need you, each opening Needs you", () => {
@@ -139,6 +156,13 @@ test("Jobs: every row through JobRow, with its last run, its count, the halted l
   assert.match(page, /halted=\{haltedFor\(job\)\}/);
   assert.match(page, /onRunNow=\{call \? \(\) => void runNow\(job\) : null\}/);
   assert.match(page, /door=\{doorFor\(job\)\}/);
+});
+
+test("Run it now: what came of it is green only when it worked, rose otherwise; the button follows canRunNow", () => {
+  assert.match(page, /const result = runResult\(out\);\s*if \(result\.ok\) setNotice\(result\.words\);\s*else setPageAlert\(result\.words\);/);
+  assert.equal(/setNotice\(runResult/.test(page), false);
+  assert.match(jobRow, /const canRun = canRunNow\(\{ hasRunRoute: !!onRunNow, isOn, paused: st\.paused, halted: !!halted \}\);/);
+  assert.match(jobRow, /\{canRun && \(/);
 });
 
 test("Run it now: the runners' own routes; campaign from a brief asks one line in the app's dialog", () => {
@@ -179,7 +203,8 @@ test("one writer: the switch and the mode PUT /me/team/jobs/:key and show what t
   assert.equal((stripComments(jobRow).match(/onChanged\(/g) || []).length, 1,
     "the row changes only to what the server answered — never an optimistic guess first");
   assert.match(useTeam, /const next = await team\.putJob\(job\.job_key, patch\);/);
-  assert.match(platformApi, /return teamRequest<JobView>\(params, `\/me\/team\/jobs\/\$\{encodeURIComponent\(params\.jobKey\)\}`, \{\s*method: 'PUT',/);
+  assert.match(platformApi, /return teamRequest<JobView & \{ changed\?: boolean \}>\(params, `\/me\/team\/jobs\/\$\{encodeURIComponent\(params\.jobKey\)\}`, \{\s*method: 'PUT',/);
+  assert.match(useTeam, /return \{ ok: true, job: next, words: jobWriteWords\(job\.display_name, patch, next\) \};/, "the toast is built from the server's answer");
   assert.equal(/setJobs\(\(list\) => list\.map\(\(j\) => \(j\.job_key === job\.job_key \? \{ \.\.\.j, enabled/.test(page), false, "no optimistic switch");
 });
 
@@ -219,11 +244,14 @@ test("Needs you asks each product's own endpoint at once, and a failure is never
 test("each button calls the route the row names, after checking it belongs to that product", () => {
   assert.match(useNeeds, /if \(!decidePathOk\(source, path\)\) \{/);
   assert.match(useNeeds, /approveBody\(row\.source, d\.approve\.path, d\.approve, input\.edits \|\| null, input\.scheduledFor\)/);
-  assert.match(arionApi, /if \(!params\.path\.startsWith\('\/arion\/'\) \|\| params\.path\.includes\('\.\.'\)\) \{/);
+  assert.match(arionApi, /if \(!decidePathOk\('arion', params\.path\)\) \{/);
+  assert.match(useNeeds, /const result = decisionResult\(which, out\);/, "a 2xx that says it failed is not said in green");
 });
 
 test("the card answers four things before any button, and says which Brief it was written from", () => {
-  assert.match(cardSrc, /const shown = \{ \.\.\.row, hold_note: heldWordsOf\(row\), agent_label: fromJobLine\(row, jobName\) \};/);
+  assert.match(cardSrc, /const shown = cardRow\(row, jobName\);/, "the products' attribution line is blanked (lib cardRow)");
+  assert.equal(/row\.attribution/.test(stripComments(cardSrc)), false, "the card never draws row.attribution");
+  assert.match(cardSrc, /row=\{shown\}/);
   assert.match(cardSrc, /approveLabel=\{approve\.label\}/);
   assert.match(cardSrc, /const cited = briefCitedLine\(row\.brief_cited\);/);
   assert.match(cardSrc, /secondaryLabel="Skip"/);
@@ -233,6 +261,30 @@ test("the card answers four things before any button, and says which Brief it wa
   assert.match(cardSrc, /const \[when, setWhen\] = useState\(\(\) => tomorrowAtTen\(\)\);/);
   assert.match(cardSrc, /type="datetime-local"/);
   assert.equal(/approve all/i.test(stripComments(cardSrc + list + page + workflows)), false, "no approve-all for anything that reaches a customer");
+});
+
+test("a row whose only decision is Skip has a Skip button wired to the row's skip route", () => {
+  assert.match(cardSrc, /const kind = cardKind\(d\);/);
+  const branch = cardSrc.slice(cardSrc.indexOf('if (kind === "skip" && d.skip) {'), cardSrc.indexOf('if (kind !== "approve" || !d.approve) {'));
+  assert.ok(branch.length > 100, "the skip-only branch exists, before the no-buttons branch");
+  assert.match(branch, /void run\("skip", \{ reason: r \}\)/);
+  assert.match(branch, /disabled=\{skipBusy \|\| \(required && !reason\.trim\(\)\)\}/, "a required reason is required");
+  assert.match(branch, /placeholder=\{skipPrompt\(d\.skip\.reason\)\}/);
+  assert.match(branch, /<Trash2 className="h-3 w-3" \/>Skip/);
+});
+
+test("a social post's time picker shows while editing too: Save & approve never uses a hidden time", () => {
+  const editing = approvalCard.slice(approvalCard.indexOf("{editing ? ("), approvalCard.indexOf(") : (\n          <>"));
+  assert.ok(editing.length > 50);
+  assert.match(editing, /\{extra\}\s*<button\s*onClick=\{\(\) => \{ onApprove\(row, \{ subject, body \}\); setEditing\(false\); \}\}/);
+  assert.match(cardSrc, /extra=\{extra\}/);
+});
+
+test("the drawer's When I do it and choice options are words", () => {
+  assert.match(drawer, /\{whenWords\(job\)\}/);
+  assert.match(drawer, /<option key=\{o\} value=\{o\}>\{choiceLabel\(name, o\)\}<\/option>/);
+  assert.match(reviews, /\{reviewRepliesIntro\(job \? job\.enabled : null\)\}/);
+  assert.equal(/Used by:<\/span> your agents/.test(yourBusiness), false, "Your business never says agents");
 });
 
 /* ── ARGUS → Workflows ───────────────────────────────────────────────── */
@@ -330,6 +382,8 @@ test("no business is named and no id is written in this build's code", () => {
     '"https://intelligentanalyticsdm.com/forge",',
     "xxx.customer.ia-dm.com",
     "whether Intelligent Analytics manages this account",
+    // arionApi.ts, since b6086bb (2026-04-19): an example in a trailing comment on a type.
+    '// long: "Google USA · Des Moines, Iowa · EN"',
   ];
   for (const f of [
     "src/pages/settings/YourBusinessPage.tsx", "src/pages/settings/ResponderSettingsPage.tsx",
@@ -338,6 +392,8 @@ test("no business is named and no id is written in this build's code", () => {
     "src/pages/settings/SettingsRoutes.tsx", "src/lib/businessProfileForm.ts", "src/lib/chatWorkflows.ts",
     "src/components/agents/AgentApprovalCard.tsx", "src/components/agents/types.ts",
     "src/journeys/content/argusPages.ts", "src/lib/platformApi.ts",
+    // Changed by this build too (contract §0.2: every file the build adds or changes).
+    "src/lib/arionApi.ts", "src/arion/useArionContext.ts",
   ]) {
     const hits = stripComments(read(f)).split("\n").filter((l) => BAD.test(l));
     for (const h of hits) {

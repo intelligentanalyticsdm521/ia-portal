@@ -1,5 +1,6 @@
 import { emergencyActAsHeaders } from './emergencyActAs';
 import { getCurrentTenantOverride } from './tenantContext';
+import { decidePathOk } from './team';
 import type {
   AgentActivityPayload, AgentRunsPayload, AgentSettingsResponse,
 } from '../components/agents/types';
@@ -3642,7 +3643,10 @@ export async function putArionAgentSettings(params: {
 export async function postArionTeam(params: {
   baseUrl: string; bearerToken: string; tenantId: string; path: string; body?: unknown; timeoutMs?: number;
 }) {
-  if (!params.path.startsWith('/arion/') || params.path.includes('..')) {
+  // The same check Needs you makes (lib/team.ts decidePathOk): an /arion/ path
+  // only, with no dot segment, encoded or not, and nothing the URL parser would
+  // turn into some other route.
+  if (!decidePathOk('arion', params.path)) {
     throw new ArionApiError('That button points somewhere ARION does not answer, so nothing was sent.', 400, null);
   }
   return requestJson<{ data?: unknown; words?: string }>({

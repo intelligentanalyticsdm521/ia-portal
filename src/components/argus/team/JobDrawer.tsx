@@ -18,7 +18,7 @@ import { Link } from "react-router-dom";
 import { X } from "lucide-react";
 import { useJobWriter } from "../../../hooks/useTeam";
 import {
-  NOT_BUILT_WORDS, briefFieldRoute, varLimitWords, varText, varsPayload, versionLine,
+  NOT_BUILT_WORDS, briefFieldRoute, choiceLabel, varLimitWords, varText, varsPayload, versionLine, whenWords,
   type JobView, type TeamJobChange, type VarDef,
 } from "../../../lib/team";
 import type { AgentRunRow } from "../../agents/types";
@@ -53,7 +53,7 @@ function VarBox({ name, def, value, onChange, disabled }: {
   } else if (def.type === "choice") {
     input = (
       <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)} className="mt-1 rounded border border-slate-300 px-2 py-1 text-xs">
-        {(def.options || []).map((o) => <option key={o} value={o}>{o}</option>)}
+        {(def.options || []).map((o) => <option key={o} value={o}>{choiceLabel(name, o)}</option>)}
       </select>
     );
   } else if (def.type === "stars") {
@@ -126,7 +126,7 @@ export function JobDrawer({ job, onClose, onChanged, onNotice, runs, door, loadC
 
         <div className="mt-4 space-y-4">
           <Section title="When I do it">
-            {job.state === "planned" ? NOT_BUILT_WORDS : (job.trigger_words || "When you ask")}
+            {whenWords(job)}
           </Section>
 
           <Section title="The steps">

@@ -302,7 +302,7 @@ export function YourBusinessPage() {
           The things every product needs to know about you. Answer them once, in your own words.
         </p>
         <p className="mt-2 text-xs text-gray-500">
-          <span className="font-medium text-gray-700">Used by:</span> your agents, lead scoring,
+          <span className="font-medium text-gray-700">Used by:</span> your team, lead scoring,
           reply drafts and your reports.
         </p>
         {completeness && (

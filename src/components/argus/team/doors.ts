@@ -15,7 +15,7 @@
 // that page was deleted.
 
 import type { AgentSettingsResponse, AgentSummary } from "../../agents/types";
-import type { JobDoor } from "../../../lib/team";
+import { PLAN_PRICING_ROUTE, statusOfError, teamRefusal, type JobDoor, type JobView, type TeamLink } from "../../../lib/team";
 
 export interface DoorKnob {
   field: string;
@@ -56,8 +56,14 @@ export const DOOR_KNOBS: Readonly<Record<"qtc" | "fieldops", DoorKnob[]>> = Obje
 
 /** oliver GET /automations/rules/:key → data (oliverApi strips the envelope). */
 export interface DoorRule { key: string; is_enabled: boolean; required_tier?: string | null }
-/** oliver GET /automations/runs → data[] (one row is enough for "Last sent"). */
+/**
+ * oliver GET /automations/runs → data[]. status is success | skipped | failed
+ * (oliver lib/automationDispatcher.js); only a success sent anything.
+ */
 export interface DoorRuleRun { fired_at: string | null; status?: string | null }
+
+/** How many recent runs a rule door reads, to find the last one that sent. */
+export const DOOR_RUNS_LIMIT = 20;
 
 export interface DoorState {
   /** null = we could not read the home, so the switch is not shown as off. */
@@ -67,14 +73,17 @@ export interface DoorState {
   paused: boolean;
   pausedReason: string | null;
   haltedAt: string | null;
+  /** The last run that actually sent (status success). */
   lastSentAt: string | null;
+  /** The newest run, when it did NOT send (skipped or failed): said as such, never as "Last sent". */
+  lastMissAt: string | null;
 }
 
 /** The read paths a door needs, by kind. */
 export function doorReads(door: JobDoor): string[] {
   if (door.kind === "oliver_agent") return ["/agents/settings"];
   const key = encodeURIComponent(door.rule_key || "");
-  return [`/automations/rules/${key}`, `/automations/runs?rule_key=${key}&limit=1`];
+  return [`/automations/rules/${key}`, `/automations/runs?rule_key=${key}&limit=${DOOR_RUNS_LIMIT}`];
 }
 
 /** What the door's home says, in the shape a job row shows. */
@@ -94,8 +103,13 @@ export function doorState(
       pausedReason: a?.paused_reason || null,
       haltedAt: a?.halted_at || null,
       lastSentAt: null,
+      lastMissAt: null,
     };
   }
+  const runs = (lastRun || []).filter((r) => r && r.fired_at)
+    .sort((x, y) => Date.parse(y.fired_at as string) - Date.parse(x.fired_at as string));
+  const sent = runs.find((r) => r.status === "success") || null;
+  const newest = runs[0] || null;
   return {
     enabled: rule ? !!rule.is_enabled : null,
     knobs: [],
@@ -103,7 +117,8 @@ export function doorState(
     paused: false,
     pausedReason: null,
     haltedAt: null,
-    lastSentAt: (lastRun && lastRun[0]?.fired_at) || null,
+    lastSentAt: sent?.fired_at || null,
+    lastMissAt: newest && newest.status !== "success" ? newest.fired_at : null,
   };
 }
 
@@ -119,7 +134,9 @@ export type DoorChange =
  */
 export function doorWrite(door: JobDoor, change: DoorChange): { method: "PUT" | "PATCH"; path: string; body: Record<string, unknown> } | null {
   if (door.kind === "oliver_agent") {
-    const section = door.section || "qtc";
+    // No section, no write: a guessed section would switch some other job.
+    if (door.section !== "qtc" && door.section !== "fieldops") return null;
+    const section = door.section;
     let patch: Record<string, unknown>;
     if ("enabled" in change) patch = { enabled: change.enabled };
     else if ("knob" in change) patch = { [change.knob.field]: change.knob.value };
@@ -135,4 +152,52 @@ export function doorWrite(door: JobDoor, change: DoorChange): { method: "PUT" | 
 export function doorPlace(door: JobDoor): string {
   if (door.kind === "oliver_rule") return "OLIVER → Jobs → Settings";
   return "ARGUS → Your team → The office administrator → Jobs";
+}
+
+/**
+ * What a door's row shows in place of, or beside, its switch (fails closed):
+ *   locked  the business doesn't have the product, or its plan doesn't cover
+ *           the job: the plain sentence and its link, no switch to press on
+ *   unread  the home could not be read: say so, and show no switch
+ *   switch  the switch; `canSwitchOn` false keeps an on-but-no-longer-allowed
+ *           job switchable OFF only, with the plan sentence beside it
+ */
+export type DoorRowView =
+  | { control: "locked"; words: string; link?: TeamLink }
+  | { control: "unread"; words: string }
+  | { control: "switch"; canSwitchOn: boolean; gate: { words: string; link?: TeamLink } | null };
+
+export function doorRowView(
+  job: Pick<JobView, "display_name" | "available">,
+  state: Pick<DoorState, "enabled">,
+  notOwnedWords: string | null,
+): DoorRowView {
+  if (notOwnedWords) return { control: "locked", words: notOwnedWords, link: { label: "Plan & Pricing", to: PLAN_PRICING_ROUTE } };
+  const gate = job.available || { ok: false, decided: false };
+  const refused = gate.decided === true && gate.ok === false;
+  const gateLine = refused ? { words: (gate.words || "").trim() || "Your plan doesn't include this job yet.", link: gate.link } : null;
+  if (state.enabled === null) {
+    return { control: "unread", words: `We couldn't read whether ${job.display_name} is on just now. Open the page again to retry.` };
+  }
+  if (refused && state.enabled !== true) return { control: "locked", words: gateLine!.words, link: gateLine!.link };
+  return { control: "switch", canSwitchOn: !refused, gate: gateLine };
+}
+
+/** OLIVER's codes for "your plan doesn't include this" (oliverApi maps three of them to tier_gate; automations answers tier_not_met). */
+const TIER_CODES = /^(tier_not_met|tier_gate|tier_required|tier_upgrade_required|feature_not_available)$/;
+
+/**
+ * A refused door write, as a plain sentence (§0.3): a plan refusal says the
+ * job's own plan sentence (never "Automation rule 'x' requires pro tier"),
+ * anything else goes through the same refusal words as a team switch.
+ */
+export function doorRefusalWords(err: unknown, job: Pick<JobView, "available">): string {
+  const e = (err && typeof err === "object" ? err : {}) as { type?: unknown; code?: unknown; body?: { error?: unknown } };
+  const code = String(e.type ?? e.code ?? e.body?.error ?? "");
+  if (TIER_CODES.test(code)) {
+    const w = (job.available?.words || "").trim();
+    return w || "Your plan doesn't include this job yet, so nothing changed. See Plan & Pricing.";
+  }
+  if (statusOfError(err) === 403) return "Only the business owner or an admin can change what your team does.";
+  return teamRefusal(err);
 }
