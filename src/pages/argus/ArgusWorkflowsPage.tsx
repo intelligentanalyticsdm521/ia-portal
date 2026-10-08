@@ -19,33 +19,13 @@
 //   History   — what each step did, with the report link when there is one.
 //   Set-up runs — the founder's onboarding observe view (moved unchanged).
 //
-// ARGUS → Your team (contract ARGUS employees phase 1 §F.4) widened two tabs:
-//   All       also one row per switched-on job (GET /me/team/jobs?enabled=1):
-//             its name, when it runs, "Made by: your web person", the same mode
-//             control and On switch as the employee page (both write PUT
-//             /me/team/jobs/:key — one row, no second copy), and Open.
-//   Needs you also every waiting item from ARION, SPARK and OLIVER (each
-//             product's own ?waiting=1, Promise.allSettled), with a chip per
-//             employee. A source that failed says so in its own line.
-// A business without SPARK reads "The website chat comes with SPARK." where the
-// chat would be — it no longer hides the jobs or the other Needs-you sources.
-//
-// Data: one load on mount (workflows + needs-you + the switched-on jobs
-// together); History, the trees and Set-up runs load on their first open. No
-// polling (convention_data_fetching).
+// Data: one load on mount (workflows + needs-you together); History, the trees
+// and Set-up runs load on their first open. No polling (convention_data_fetching).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, CheckCircle2, MessageSquare, X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useIsFounder } from "../../hooks/useIsFounder";
-import { useTeamApi } from "../../hooks/useTeam";
-import { useNeedsYou } from "../../hooks/useNeedsYou";
-import { JobControls } from "../../components/argus/team/JobRow";
-import { NeedsYouList } from "../../components/argus/team/NeedsYouList";
-import {
-  EMPLOYEE_KEYS, employeeRoute, madeByWords, teamLoadWords,
-  type EmployeeKey, type JobView,
-} from "../../lib/team";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { ChatWorkflowSteps } from "../../components/spark/ChatWorkflowTree";
@@ -74,21 +54,10 @@ const itemKey = (i: NeedsYouItem) => (i.kind === "held" ? `held:${i.run_id}` : `
 
 export function ArgusWorkflowsPage() {
   const { get, post, put, ready } = useSparkApi();
-  const team = useTeamApi();
-  const needs = useNeedsYou(["arion", "spark", "oliver"]);
   const isFounder = useIsFounder();
   const [params, setParams] = useSearchParams();
   const tab = workflowsTabFrom(params.get("tab"), isFounder);
   const setTab = (t: Tab) => setParams(t === "all" ? {} : { tab: t }, { replace: true });
-  // Needs you → the employee chip, kept in the URL (?from=web).
-  const fromParam = params.get("from");
-  const picked: EmployeeKey | null = (EMPLOYEE_KEYS as readonly string[]).includes(fromParam || "") ? (fromParam as EmployeeKey) : null;
-  const pick = (k: EmployeeKey | null) => setParams(k ? { tab: "needs-you", from: k } : { tab: "needs-you" }, { replace: true });
-
-  // The switched-on jobs (ARGUS → Your team), one row each on All.
-  const [jobs, setJobs] = useState<JobView[]>([]);
-  const [jobsLoading, setJobsLoading] = useState(true);
-  const [jobsError, setJobsError] = useState<string | null>(null);
 
   const [workflows, setWorkflows] = useState<ArgusWorkflowRow[]>([]);
   const [needsYou, setNeedsYou] = useState<NeedsYouItem[]>([]);
@@ -152,26 +121,6 @@ export function ArgusWorkflowsPage() {
     })();
     return () => { cancelled = true; };
   }, [ready, get]);
-
-  const loadJobs = useCallback(async () => {
-    setJobsLoading(true);
-    setJobsError(null);
-    try {
-      const r = await team.jobsOn();
-      setJobs(r.jobs || []);
-    } catch (err) {
-      setJobsError(`We couldn't load your team's jobs. ${teamLoadWords(err)}`);
-    } finally {
-      setJobsLoading(false);
-    }
-  }, [team]);
-
-  useEffect(() => {
-    if (!team.ready) return;
-    void loadJobs();
-  }, [team.ready, loadJobs]);
-
-  const replaceJob = (next: JobView) => setJobs((list) => list.map((j) => (j.job_key === next.job_key ? next : j)));
 
   const loadHistory = useCallback(async (older: boolean) => {
     setHistoryLoading(true);
@@ -260,8 +209,7 @@ export function ArgusWorkflowsPage() {
     }
   }
 
-  // The tab count is the sum: the chat's items and every employee's.
-  const needsCount = needsYou.length + needs.rows.length;
+  const needsCount = needsYou.length;
   const tabs: Array<{ key: Tab; label: string }> = [
     { key: "all", label: "All" },
     { key: "needs-you", label: `Needs you (${needsCount})` },
@@ -312,49 +260,19 @@ export function ArgusWorkflowsPage() {
 
       {tab !== "setup" && loading && <div className="p-6 text-sm text-slate-500">Loading…</div>}
       {tab !== "setup" && !loading && noSpark && (
-        <div className="mb-3 rounded-lg bg-slate-50 p-4 text-sm text-slate-700 ring-1 ring-slate-200">{NO_SPARK_WORDS}</div>
+        <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-700 ring-1 ring-slate-200">{NO_SPARK_WORDS}</div>
       )}
       {tab !== "setup" && !loading && loadError && (
-        <div className="mb-3 rounded-lg bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
+        <div className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
           {loadFailedWords([loadError])}
-        </div>
-      )}
-
-      {!loading && tab === "all" && (
-        <div className="mb-3 space-y-3">
-          {jobsError && (
-            <div className="flex flex-wrap items-center gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-xs text-rose-800 ring-1 ring-rose-200" role="alert">
-              <span className="flex-1">{jobsError}</span>
-              <button type="button" onClick={() => void loadJobs()} className="rounded border border-rose-300 px-2 py-0.5 font-semibold">Try again</button>
-            </div>
-          )}
-          {jobs.map((j) => (
-            <div key={j.job_key} className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <span className="block truncate text-[15px] font-bold text-slate-900">{j.display_name}</span>
-                  <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                    <span className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2 py-0.5 font-semibold text-sky-800 ring-1 ring-sky-200">
-                      {j.trigger_words}
-                    </span>
-                    <span>· {madeByWords(j.employee_key)}</span>
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <JobControls job={j} onChanged={replaceJob} onNotice={setNotice} />
-                  <Link to={employeeRoute(j.employee_key, "jobs")} className="text-xs font-semibold text-slate-700 underline">Open</Link>
-                </div>
-              </div>
-            </div>
-          ))}
         </div>
       )}
 
       {!loading && !noSpark && !loadError && tab === "all" && (
         <div className="space-y-3">
-          {workflows.length === 0 && jobs.length === 0 && !jobsLoading && (
+          {workflows.length === 0 && (
             <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-700 ring-1 ring-slate-200">
-              No workflows yet. A website chat workflow appears here once it is set up for your website, and a job appears here once you switch it on in ARGUS → Your team.
+              No workflows yet. A website chat workflow appears here once it is set up for your website.
             </div>
           )}
           {workflows.map((w) => {
@@ -470,25 +388,11 @@ export function ArgusWorkflowsPage() {
         </div>
       )}
 
-      {!loading && tab === "needs-you" && (
-        <div className="mb-3">
-          <NeedsYouList
-            rows={needs.rows}
-            failures={needs.failures}
-            loading={needs.loading}
-            onDecide={needs.decide}
-            onRetry={() => void needs.reload()}
-            jobNames={Object.fromEntries(jobs.map((j) => [j.job_key, j.display_name]))}
-            chips={{ picked, onPick: pick }}
-            emptyWords={picked
-              ? "Nothing from them needs you right now."
-              : needsYou.length > 0 ? "Nothing from your team needs you right now." : "Nothing needs you right now."}
-          />
-        </div>
-      )}
-
-      {!loading && !noSpark && !loadError && tab === "needs-you" && !picked && (
+      {!loading && !noSpark && !loadError && tab === "needs-you" && (
         <div className="space-y-3">
+          {needsYou.length === 0 && (
+            <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-700 ring-1 ring-slate-200">Nothing needs you right now.</div>
+          )}
           {needsYou.map((item) => {
             const key = itemKey(item);
             const words = rowWords[key];

@@ -2,7 +2,6 @@ import { lazy, Suspense, useMemo } from 'react';
 import { ForgeLinePage } from './forge/ForgeLinePage';
 import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
-import { employeeFromServiceKey } from '../lib/team';
 import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
@@ -280,10 +279,10 @@ const OliverJobBoardPage = lazyNamed(() => import('./oliver/OliverJobBoardPage')
 const OliverJobsArchivePage = lazyNamed(() => import('./oliver/OliverJobsArchivePage'), 'OliverJobsArchivePage');
 const OliverSchedulePage = lazyNamed(() => import('./oliver/OliverSchedulePage'), 'OliverSchedulePage');
 const OliverDispatchPage = lazyNamed(() => import('./oliver/OliverDispatchPage'), 'OliverDispatchPage');
-// ARGUS → Your team (2026-10-08, contract ARGUS employees phase 1 §F.2). One
-// page per employee replaced, and deleted, the three per-product Agents pages;
-// their old keys redirect (OLD_AGENTS_PAGES below) so old links land.
-const ArgusEmployeePage = lazyNamed(() => import('./argus/ArgusEmployeePage'), 'ArgusEmployeePage');
+// Agents (2026-09-05) — one Agents page per product; see SCOPE_AGENT_SURFACES.
+const OliverAgentsPage = lazyNamed(() => import('./oliver/OliverAgentsPage'), 'OliverAgentsPage');
+const SparkAgentsPage = lazyNamed(() => import('./spark/SparkAgentsPage'), 'SparkAgentsPage');
+const ArionAgentsPage = lazyNamed(() => import('./arion/ArionAgentsPage'), 'ArionAgentsPage');
 const OliverWorkersPage = lazyNamed(() => import('./oliver/OliverWorkersPage'), 'OliverWorkersPage');
 const OliverCrewPerformancePage = lazyNamed(() => import('./oliver/OliverCrewPerformancePage'), 'OliverCrewPerformancePage');
 const OliverContactsPage = lazyNamed(() => import('./oliver/OliverContactsPage'), 'OliverContactsPage');
@@ -429,13 +428,6 @@ const CONSULTING_FOUNDER_RELOCATIONS: Record<string, string> = {
   consulting_documents: '/app/admin/consulting/document-library',
 };
 
-/** The deleted Agents pages → the employee who does that work now. */
-const OLD_AGENTS_PAGES: Record<string, string> = {
-  arion_agents: 'argus_team_web',
-  spark_agents: 'argus_team_marketer',
-  oliver_agents: 'argus_team_office',
-};
-
 function ServiceRouterInner() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
   const { enabledServices } = useAppState();
@@ -444,15 +436,6 @@ function ServiceRouterInner() {
   const { pathname } = useLocation();
   const actingAsClient = /^\/c\/[0-9a-f-]{8,}/i.test(pathname);
   const effectiveIsFounder = isFounder && !actingAsClient;
-  // Every hook BEFORE the first early return. This lookup used to sit below the
-  // redirects, so one ServiceRouterInner that redirected (fewer hooks) and then
-  // rendered the page it landed on (one more hook) threw "Rendered more hooks
-  // than during the previous render" and drew nothing — found 2026-10-08 on the
-  // dev pane when /oliver_agents redirected to /argus_team_office.
-  const service: PortalService | null = useMemo(
-    () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
-    [serviceKey]
-  );
 
   // Old founder-side consulting URLs — relocate to /app/admin/consulting/*.
   // Done before the SERVICE_CATALOG lookup so the redirect fires even if the
@@ -475,14 +458,6 @@ function ServiceRouterInner() {
   // (adversarial-review finding).
   if (serviceKey === 'spark_attribution') {
     return <Navigate to="/app/services/spark_ia_insights_trends" replace />;
-  }
-
-  // ARGUS → Your team (2026-10-08). The three per-product Agents pages are
-  // DELETED (replace means delete); their work lives on the employee's page.
-  // Redirected BEFORE the catalog lookup — their catalog rows are gone — so a
-  // bookmark, an alert email or the ARGUS assistant lands on the right page.
-  if (serviceKey && OLD_AGENTS_PAGES[serviceKey]) {
-    return <Navigate to={`/app/services/${OLD_AGENTS_PAGES[serviceKey]}`} replace />;
   }
 
   // SPARK pack 1 (2026-09-08) — ONE inbox. The SPARK SMS Inbox page is DELETED:
@@ -520,6 +495,11 @@ function ServiceRouterInner() {
     if (leadgenAccess.allowed === null) return null;
     if (!leadgenAccess.allowed) return <Navigate to="/app/overview" replace />;
   }
+
+  const service: PortalService | null = useMemo(
+    () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
+    [serviceKey]
+  );
 
   if (!service) {
     return (
@@ -628,6 +608,7 @@ function ServiceRouterInner() {
       case 'arion_ia_insights_reports': arionPage = <ArionIAInsightsReportsPage />; break;
       case 'arion_ia_insights_intelligence': arionPage = <ArionIAInsightsIntelligencePage />; break;
       case 'arion_service_area': arionPage = <ArionServiceAreaPage />; break;
+      case 'arion_agents': arionPage = <ArionAgentsPage />; break;
       case 'arion_usage': arionPage = <ArionUsagePage service={service} status={status} />; break;
       case 'arion_plugin_provisioning': arionPage = <ArionPluginProvisioningPage service={service} status={status} />; break;
       default: break;
@@ -780,6 +761,7 @@ function ServiceRouterInner() {
       case 'oliver_jobs_archive': oliverPage = <OliverJobsArchivePage />; break;
       case 'oliver_schedule': oliverPage = <OliverSchedulePage />; break;
       case 'oliver_dispatch': oliverPage = <OliverDispatchPage />; break;
+      case 'oliver_agents': oliverPage = <OliverAgentsPage />; break;
       case 'oliver_workers': oliverPage = <OliverWorkersPage />; break;
       case 'oliver_crew_performance': oliverPage = <OliverCrewPerformancePage />; break;
       case 'oliver_contacts': oliverPage = <OliverContactsPage />; break;
@@ -875,15 +857,6 @@ function ServiceRouterInner() {
   if (service.key === 'argus_workflows' || service.key === 'argus_workflow_automations') {
     return <Suspense fallback={<RouteLoading />}><ArgusWorkflowsPage /></Suspense>;
   }
-  // ARGUS → Your team → the web person / the marketer / the office administrator.
-  const teamEmployee = employeeFromServiceKey(service.key);
-  if (teamEmployee) {
-    return (
-      <PageErrorBoundary scope={`argus/${service.key}`}>
-        <Suspense fallback={<RouteLoading />}><ArgusEmployeePage key={teamEmployee} employeeKey={teamEmployee} /></Suspense>
-      </PageErrorBoundary>
-    );
-  }
 
   if (service.section === 'LUMEN') {
     let sparkPage: React.ReactNode = null;
@@ -912,6 +885,7 @@ function ServiceRouterInner() {
       // and ARGUS intents — both render the same tabbed page (default tab = inbox).
       case 'spark_lead_inbox':
       case 'spark_leads': sparkPage = <SparkLeadInboxPage />; break;
+      case 'spark_agents': sparkPage = <SparkAgentsPage />; break;
       // Intake connectors (G-2) — the Lead sources page beside the inbox.
       case 'spark_lead_sources': sparkPage = <SparkLeadSourcesPage />; break;
       case 'spark_search_profiles': sparkPage = <SparkSearchProfilesPage />; break;

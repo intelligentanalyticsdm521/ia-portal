@@ -254,7 +254,7 @@ describe("§11.11 · the builder surfaces ask in the app's own dialog", () => {
       .flatMap((rel) => filesUnder(path.join(SRC_ROOT, rel)));
     assert.ok(seen.length > 40, `expected the three trees to hold real files, saw ${seen.length}`);
     assert.ok(seen.some((f) => f.endsWith("WebsiteBuilder.tsx")));
-    assert.ok(seen.some((f) => f.endsWith("SparkLeadInboxPage.tsx")));
+    assert.ok(seen.some((f) => f.endsWith("SparkAgentsPage.tsx")));
     assert.ok(seen.some((f) => f.endsWith("WebsiteUpdates.tsx")));
     assert.ok(seen.some((f) => f.endsWith("WebsiteSupport.tsx")));
   });
@@ -381,9 +381,7 @@ describe("§11.11 · ONE confirm mechanism, and it is the app's modal", () => {
   });
 
   test("the agents page asks its one question in the ONE-field dialog", () => {
-    // 2026-10-08: the SPARK Agents page was deleted; the campaign-from-a-brief
-    // question moved to ARGUS → Your team → The marketer (one page per employee).
-    const agents = SRC("pages/argus/ArgusEmployeePage.tsx");
+    const agents = SRC("pages/spark/SparkAgentsPage.tsx");
     const nameDialog = SRC("builder/NameBlockDialog.tsx");
     assert.match(agents, /<NameBlockDialog/);
     assert.match(agents, /askNote=\{false\}/);

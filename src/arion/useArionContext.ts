@@ -58,6 +58,8 @@ import {
   getGbpPostsLive as portalGetGbpPostsLive,
   getGbpServices as portalGetGbpServices,
   draftGbpReviewReply as portalDraftGbpReviewReply,
+  getGbpAutoReply as portalGetGbpAutoReply,
+  setGbpAutoReply as portalSetGbpAutoReply,
   getGbpMedia as portalGetGbpMedia,
   addGbpMedia as portalAddGbpMedia,
   deleteGbpMedia as portalDeleteGbpMedia,
@@ -647,6 +649,14 @@ export function useArionContext() {
       async draftGbpReviewReply(siteId: string, review: { reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
         const b = await base();
         return portalDraftGbpReviewReply({ ...b, siteId, ...review });
+      },
+      async getGbpAutoReply(siteId: string) {
+        const b = await base();
+        return portalGetGbpAutoReply({ ...b, siteId });
+      },
+      async setGbpAutoReply(siteId: string, enabled: boolean, minStars: number) {
+        const b = await base();
+        return portalSetGbpAutoReply({ ...b, siteId, enabled, minStars });
       },
       async getGbpMedia(siteId: string) {
         const b = await base();

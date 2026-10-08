@@ -1477,6 +1477,12 @@ export async function getGbpServices(p: { baseUrl: string; bearerToken: string; 
 export async function draftGbpReviewReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; reviewId: string; reviewerName?: string; starRating?: number; comment?: string | null }) {
   return requestJson<any>({ ...p, method: 'POST', path: `/arion/business/reviews/${encodeURIComponent(p.reviewId)}/draft-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { reviewerName: p.reviewerName, starRating: p.starRating, comment: p.comment } });
 }
+export async function getGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...p, path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}` });
+}
+export async function setGbpAutoReply(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; enabled: boolean; minStars: number }) {
+  return requestJson<any>({ ...p, method: 'PUT', path: `/arion/business/reviews/auto-reply?siteId=${encodeURIComponent(p.siteId)}`, body: { enabled: p.enabled, minStars: p.minStars } });
+}
 export async function getGbpMedia(p: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
   return requestJson<any>({ ...p, path: `/arion/business/media?siteId=${encodeURIComponent(p.siteId)}` });
 }
@@ -3579,8 +3585,9 @@ export async function getSiteAiPricing(p: {
 
 // ─── ARGUS pack 1 — the ARION Content & Social Agent's Portal surface ────────
 //
-// The reads the web person's page needs (ARGUS → Your team → The web person),
-// and the one POST its buttons go through (postArionTeam below).
+// Before this the ARION Agents page was an honest "coming" row: the agent was
+// real, tested and merged, and there was no screen for any of it. These are the
+// four reads and four writes that page needs.
 //
 // requestJson does NOT strip a `{ data: … }` envelope (unlike lib/oliverApi.ts),
 // so every type here is the envelope and the page reads `.data`. Getting that
@@ -3594,12 +3601,8 @@ export interface ArionAgentActivityEnvelope {
   };
 }
 
-/** `waiting: true` asks only for what a person can act on (ARGUS → Needs you). */
-export async function getArionAgentActivity(params: { baseUrl: string; bearerToken: string; tenantId: string; limit?: number; waiting?: boolean }) {
-  const qs = new URLSearchParams();
-  if (params.waiting) qs.set('waiting', '1');
-  if (params.limit) qs.set('limit', String(params.limit));
-  const q = qs.toString() ? `?${qs}` : '';
+export async function getArionAgentActivity(params: { baseUrl: string; bearerToken: string; tenantId: string; limit?: number }) {
+  const q = params.limit ? `?limit=${params.limit}` : '';
   return requestJson<ArionAgentActivityEnvelope>({ ...params, path: `/arion/agents/activity${q}` });
 }
 
@@ -3613,10 +3616,13 @@ export async function getArionAgentSettings(params: { baseUrl: string; bearerTok
 }
 
 /**
- * The founder's knobs and the sticky-halt reset for the web person's writing
- * (`price_usd_monthly`, `keyword_provider`, `paused: false`). Whether the jobs
- * are on, and how many a week, is set on the job now (PUT /me/team/jobs/:key on
- * platform-api); arion-api refuses those fields here with that sentence.
+ * Switch the agent on for this business, set what it costs and how many posts a
+ * week it writes.
+ *
+ * This is the write that did not exist. `arion.content_agent_tenant_config` IS
+ * the product — no row, no runs, no cost — and until now nothing in the codebase
+ * could create one, so the agent could not be sold to anybody and the 60% margin
+ * rule reported "price not set" for every real business.
  */
 export async function putArionAgentSettings(params: {
   baseUrl: string; bearerToken: string; tenantId: string;
@@ -3627,26 +3633,39 @@ export async function putArionAgentSettings(params: {
   });
 }
 
-/**
- * ARGUS → Your team (contract ARGUS employees phase 1 §F): one POST for every
- * button the web person's work needs — Approve / Skip / Put it on your website
- * on a waiting item (the path comes from the row's own `decide`, written by
- * arion-api), Run it now for a job (`{ job_key }` on /arion/agents/run, or
- * /arion/review-replies/run), and Try again on a social hand-off.
- *
- * Only ARION's own routes: a path that is not under /arion/ is refused here,
- * before any request, so a row can never send a decision anywhere else.
- * The old per-button calls (approve, reject, publish, run) are gone — the
- * routes are the same, the path now comes with the item.
- */
-export async function postArionTeam(params: {
-  baseUrl: string; bearerToken: string; tenantId: string; path: string; body?: unknown; timeoutMs?: number;
+/** "Run it now" — this business only, never the fleet. */
+export async function postArionAgentRun(params: { baseUrl: string; bearerToken: string; tenantId: string }) {
+  return requestJson<{ data: unknown }>({ ...params, path: '/arion/agents/run', method: 'POST', body: {}, timeoutMs: 120_000 });
+}
+
+/** Approve, optionally with YOUR wording — which is then what publishes (AC3). */
+export async function approveArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string;
+  edits?: { title?: string; body_markdown?: string };
 }) {
-  if (!params.path.startsWith('/arion/') || params.path.includes('..')) {
-    throw new ArionApiError('That button points somewhere ARION does not answer, so nothing was sent.', 400, null);
-  }
-  return requestJson<{ data?: unknown; words?: string }>({
-    ...params, method: 'POST', body: params.body ?? {}, timeoutMs: params.timeoutMs ?? 120_000,
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/approve`,
+    method: 'POST', body: params.edits || {},
+  });
+}
+
+/** A rejection with no reason teaches the agent nothing, so the reason is required. */
+export async function rejectArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string; reason: string;
+}) {
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/reject`,
+    method: 'POST', body: { reason: params.reason },
+  });
+}
+
+/** Publishing is a SEPARATE press. Approval never schedules anything (AC8). */
+export async function publishArionDraft(params: {
+  baseUrl: string; bearerToken: string; tenantId: string; outputId: string;
+}) {
+  return requestJson<{ data: unknown }>({
+    ...params, path: `/arion/content-agent/queue/${params.outputId}/publish`,
+    method: 'POST', body: {}, timeoutMs: 60_000,
   });
 }
 

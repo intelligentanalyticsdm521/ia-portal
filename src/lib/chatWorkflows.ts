@@ -291,10 +291,8 @@ export function errorCodeOf(err: unknown): string | null {
   } catch { return null; }
 }
 
-// ARGUS employees phase 1 §F.4: a business without SPARK still has its team's
-// jobs and their Needs you here, so this sentence is about the chat alone and
-// no longer stands in for the whole page.
-export const NO_SPARK_WORDS = "The website chat comes with SPARK.";
+export const NO_SPARK_WORDS =
+  "Your workflows appear here. Right now the only kind is the website chat, which comes with SPARK.";
 
 /** The package sentence when the server sends none of its own. */
 export const NOT_ALLOWED_WORDS = "Chat workflows with buttons come with the SPARK Leads Growth package.";

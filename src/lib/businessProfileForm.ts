@@ -54,15 +54,6 @@ export interface BusinessProfileDraft {
   escalationEmail: string;
   escalationWhen: string;
   languages: string;
-  // ── What your team knows (ARGUS employees phase 1 §E.2): one per line.
-  /** "10% off a yearly plan — for new customers" (the part after " — " is the note). */
-  offersAllowedText: string;
-  /** "Fixed in a day, great work — Google review, March 2026" (after " — " is where it came from). */
-  proofAllowedText: string;
-  namesNeverMentionText: string;
-  namesYouMayMentionText: string;
-  competitorsText: string;
-  customerWordsText: string;
 }
 
 export const EMPTY_DRAFT: BusinessProfileDraft = {
@@ -76,39 +67,12 @@ export const EMPTY_DRAFT: BusinessProfileDraft = {
   rulesPlainText: '', responsePromiseMinutes: '', responsePromiseText: '',
   escalationName: '', escalationPhone: '', escalationEmail: '', escalationWhen: '',
   languages: '',
-  offersAllowedText: '', proofAllowedText: '', namesNeverMentionText: '',
-  namesYouMayMentionText: '', competitorsText: '', customerWordsText: '',
 };
 
 const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
 const list = (v: string[] | undefined | null): string => (Array.isArray(v) ? v.join(', ') : '');
 const parseList = (v: string): string[] =>
   v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
-/** One per LINE only: a name or an offer can carry a comma ("Smith, Jones & Co"). */
-const parseLines = (v: string): string[] =>
-  v.split('\n').map((s) => s.trim()).filter(Boolean);
-const lines = (v: string[] | null | undefined): string =>
-  (Array.isArray(v) ? v.map((x) => String(x)).join('\n') : '');
-
-/** The separator between an item and its note / where it came from. */
-export const PAIR_SEPARATOR = ' — ';
-
-/** "words — note" → { words, note }. The LAST separator splits, so the words may hold one. */
-export function splitPair(line: string): { head: string; tail: string | null } {
-  const i = line.lastIndexOf(PAIR_SEPARATOR);
-  if (i <= 0) return { head: line.trim(), tail: null };
-  return { head: line.slice(0, i).trim(), tail: line.slice(i + PAIR_SEPARATOR.length).trim() || null };
-}
-
-function offersText(v: BusinessProfileFields['offersAllowed']): string {
-  if (!Array.isArray(v)) return '';
-  return v.map((o) => (o?.note ? `${o.words}${PAIR_SEPARATOR}${o.note}` : String(o?.words ?? ''))).join('\n');
-}
-
-function proofText(v: BusinessProfileFields['proofAllowed']): string {
-  if (!Array.isArray(v)) return '';
-  return v.map((p) => (p?.from ? `${p.words}${PAIR_SEPARATOR}${p.from}` : String(p?.words ?? ''))).join('\n');
-}
 
 /** A structured group we read fields off. A stored scalar is not one. */
 function asObject<T extends object>(v: T | null | undefined): Partial<T> {
@@ -182,12 +146,6 @@ export function toDraft(profile: BusinessProfileFields | null): BusinessProfileD
     escalationEmail: str(esc.email),
     escalationWhen: str(esc.when),
     languages: list(profile.languages),
-    offersAllowedText: offersText(profile.offersAllowed),
-    proofAllowedText: proofText(profile.proofAllowed),
-    namesNeverMentionText: lines(profile.namesNeverMention),
-    namesYouMayMentionText: lines(profile.namesYouMayMention),
-    competitorsText: lines(profile.competitors),
-    customerWordsText: lines(profile.customerWords),
   };
 }
 
@@ -254,25 +212,7 @@ export function toFields(draft: BusinessProfileDraft, catalogue: CatalogueOption
     responsePromiseText: text(draft.responsePromiseText),
     escalation: Object.keys(escalation).length ? escalation : null,
     languages: parseList(draft.languages).length ? parseList(draft.languages) : null,
-    offersAllowed: listOrNull(parseLines(draft.offersAllowedText).map((l) => {
-      const { head, tail } = splitPair(l);
-      return tail ? { words: head, note: tail } : { words: head };
-    })),
-    // A proof line with no " — where it came from" keeps an empty `from`, so the
-    // server's own sentence ("Say where this came from…") is what the owner reads.
-    proofAllowed: listOrNull(parseLines(draft.proofAllowedText).map((l) => {
-      const { head, tail } = splitPair(l);
-      return { words: head, from: tail || '' };
-    })),
-    namesNeverMention: listOrNull(parseLines(draft.namesNeverMentionText)),
-    namesYouMayMention: listOrNull(parseLines(draft.namesYouMayMentionText)),
-    competitors: listOrNull(parseLines(draft.competitorsText)),
-    customerWords: listOrNull(parseLines(draft.customerWordsText)),
   };
-}
-
-function listOrNull<T>(v: T[]): T[] | null {
-  return v.length ? v : null;
 }
 
 const stable = (v: unknown): string => {
@@ -358,41 +298,7 @@ export const FIELD_LABELS: Record<string, string> = {
   responsePromiseText: 'Your response promise',
   escalation: 'Who to call when something is wrong',
   languages: 'Languages you serve',
-  offersAllowed: 'Offers you allow',
-  proofAllowed: 'Proof you allow',
-  namesNeverMention: 'Names never to mention',
-  namesYouMayMention: 'Names you may mention (they said yes in writing)',
-  competitors: 'Competitors (never named)',
-  customerWords: 'Words your customers use',
 };
-
-/**
- * A refused save, in words. The server names the field by its api name
- * (`offersAllowed: Write the offer without a dollar amount…`); the owner reads
- * the question's own label instead.
- */
-export function saveRefusalWords(body: unknown, fallback: string): string {
-  const b = (body && typeof body === 'object' ? body : {}) as {
-    rejected?: Array<{ field?: string; message?: string }>;
-    details?: unknown;
-    message?: unknown;
-  };
-  const label = (f: string | undefined) => (f && FIELD_LABELS[f]) || 'One answer';
-  if (Array.isArray(b.rejected) && b.rejected.length) {
-    return b.rejected.map((r) => `${label(r.field)}: ${String(r.message || '').trim()}`).join(' ');
-  }
-  if (Array.isArray(b.details) && b.details.length) {
-    return b.details
-      .map((d) => String(d))
-      .map((d) => {
-        const m = /^([A-Za-z]+):\s*(.*)$/.exec(d);
-        return m && FIELD_LABELS[m[1]] ? `${FIELD_LABELS[m[1]]}: ${m[2]}` : d;
-      })
-      .join(' ');
-  }
-  if (typeof b.message === 'string' && b.message.trim()) return b.message.trim();
-  return fallback;
-}
 
 /** A change's value, rendered for a human rather than as JSON soup. */
 export function describeValue(v: unknown): string {

@@ -897,9 +897,13 @@ const SETTINGS_NAV: SubNavConfig = {
         //   Brand verification pass): provisioning is a setup/config concern,
         //   not a daily-work feature — reversing the earlier feature→main-nav
         //   move. arion_usage stays OUT of both navs (global hamburger hub).
-        // The Agents entry that lived here (2026-09-05) is gone: the work moved
-        // to ARGUS → Your team → The web person (2026-10-08), and the old route
-        // redirects there.
+        // Agents (2026-09-05, SCOPE_AGENT_SURFACES): ONE entry per product,
+        // in that product's Settings group — the same place the Responder's
+        // own settings page already lives. Deliberately not also in the main
+        // nav: ARION has no Workflow group to match, so three products would
+        // not agree, and two entry points for one page is the parallel-
+        // mechanism trap.
+        { key: "arion_agents", label: "Agents", route: "/app/services/arion_agents" },
         { key: "arion_service_area", label: "Service Area", route: "/app/services/arion_service_area" },
         { key: "arion_plugin_provisioning", label: "Plugin Provisioning", route: "/app/services/arion_plugin_provisioning" },
       ],
@@ -925,6 +929,7 @@ const SETTINGS_NAV: SubNavConfig = {
         // Billing, where it sat four rows from a different row also called
         // "Templates" and nothing on screen said which was which.
         // REMOVED: oliver_addons (feature, in main nav W&A)
+        { key: "oliver_agents", label: "Agents", route: "/app/services/oliver_agents" },
         { key: "oliver_settings", label: "Business Setup", route: "/app/services/oliver_settings" },
         { key: "oliver_templates", label: "Document Design", route: "/app/services/oliver_templates" },
         { key: "oliver_workflow_settings", label: "Workflow Settings", route: "/app/services/oliver_workflow_settings" },
@@ -952,6 +957,7 @@ const SETTINGS_NAV: SubNavConfig = {
         // until you had been to the first. Nobody thinks in domains — they
         // think "I want to send as hello@". One entry now; adding a sender runs
         // the whole setup, domain and all.
+        { key: "spark_agents", label: "Agents", route: "/app/services/spark_agents" },
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },
@@ -1017,18 +1023,6 @@ const ARGUS_NAV: SubNavConfig = {
   productName: "ARGUS",
   tagline: "AI & Agents",
   groups: [
-    // ARGUS → Your team (2026-10-08, contract ARGUS employees phase 1 §F.5): the
-    // three employees, always shown — a business without the product reads
-    // why on the page (show, don't hide). The per-product Agents entries in
-    // Settings were deleted with their pages.
-    {
-      label: "Your team", icon: Users, collapsible: false, sectionId: "argus_team",
-      items: [
-        { key: "argus_team_web",      label: "The web person",           route: "/app/services/argus_team_web" },
-        { key: "argus_team_marketer", label: "The marketer",             route: "/app/services/argus_team_marketer" },
-        { key: "argus_team_office",   label: "The office administrator", route: "/app/services/argus_team_office" },
-      ],
-    },
     {
       label: "Workflows", icon: Zap, collapsible: false, sectionId: "argus_workflow",
       items: [
@@ -1122,6 +1116,9 @@ function getDefaultSection(path: string): string | null {
   // main nav (Templates, Webhooks, Audience Sync, Audit Log, Review Widget,
   // Coupons, Categories, Booking, etc.) are intentionally excluded —
   // they expand their main-nav group instead.
+  if (path.includes("/oliver_agents")) return "settings_oliver";
+  if (path.includes("/spark_agents")) return "settings_spark";
+  if (path.includes("/arion_agents")) return "settings_arion";
   if (path.includes("/oliver_settings") || path.includes("/oliver_templates") || path.includes("/oliver_workflow_settings") || path.includes("/oliver_service_categories") || path.includes("/oliver_team_access") || path.includes("/oliver_locations")) return "settings_oliver";
   if (path.includes("/arion_service_area") || path.includes("/arion_plugin_provisioning")) return "settings_arion";
   // My Brand is a FEATURE section in the ARION main nav (IA re-cut 2026-07-21)

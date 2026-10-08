@@ -20,20 +20,10 @@
  * are NOT stored until the owner saves. Nothing on this page writes a word the
  * owner has not looked at.
  *
- * WHAT YOUR TEAM KNOWS (ARGUS employees phase 1 §E.2)
- * -------------------------------------------------
- * Six more answers, in their own section under the questions, saved by the
- * same one Save: the offers and the proof the team may use, the names never to
- * mention and the ones that said yes, competitors (never named) and the words
- * customers use. Every answer a job reads has an anchor equal to its name
- * (#offersAllowed, #services…), so "Change it" on an employee's page lands on
- * the box. The jobs read only what is SAVED; a starter somebody loaded shows
- * here as "We filled this in from … — check it" until the owner saves it.
- *
  * The word "tenant" appears nowhere a person can see it. It is a Business.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useMsal } from '@azure/msal-react';
 import { ChevronLeft, Check, History, Info, ExternalLink } from 'lucide-react';
 
@@ -44,7 +34,6 @@ import {
   getBusinessProfile,
   updateBusinessProfile,
   getBusinessProfileHistory,
-  PlatformApiError,
   type BusinessProfileResponse,
   type BusinessProfileVersion,
   type BusinessProfileFields,
@@ -56,8 +45,6 @@ import {
   changedFields,
   FIELD_LABELS,
   describeValue,
-  saveRefusalWords,
-  PAIR_SEPARATOR,
   type BusinessProfileDraft,
   type CatalogueOption,
 } from '../../lib/businessProfileForm';
@@ -78,19 +65,16 @@ function PrefillHint({ source }: { source: string }) {
 }
 
 function Question({
-  n, title, drives, prefilledFrom, ids, children,
+  n, title, drives, prefilledFrom, children,
 }: {
   n: number;
   title: string;
   drives: string;
   prefilledFrom?: string | null;
-  /** The answers in this question, as anchors (#services) — "Change it" links land here. */
-  ids?: string[];
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-lg border bg-white p-4 sm:p-5">
-      {(ids || []).map((id) => <span key={id} id={id} className="block" />)}
       <div className="flex items-start gap-3">
         <div className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-900 text-[11px] font-semibold text-white">
           {n}
@@ -173,7 +157,6 @@ export function YourBusinessPage() {
   const account = useActiveAccount();
   const { active } = useAppState();
   const tenantId = active?.tenant?.tenantId ?? null;
-  const { hash } = useLocation();
 
   const [data, setData] = useState<BusinessProfileResponse | null>(null);
   const [loaded, setLoaded] = useState<BusinessProfileFields | null>(null);
@@ -217,14 +200,6 @@ export function YourBusinessPage() {
 
   useEffect(() => { load(); }, [load]);
 
-  // "Change it" from an employee's page arrives as #<answer>: scroll to its box
-  // once the page has drawn.
-  useEffect(() => {
-    if (loading || !hash) return;
-    const el = document.getElementById(decodeURIComponent(hash.slice(1)));
-    if (el) el.scrollIntoView({ block: 'start' });
-  }, [loading, hash]);
-
   const catalogue: CatalogueOption[] = useMemo(
     () => (data?.borrowed.prices.items || []).map((i) => ({ offeringId: i.offeringId, name: i.name })),
     [data],
@@ -256,9 +231,7 @@ export function YourBusinessPage() {
       setVersions(null); // the drawer re-reads next time it opens
       setToast(res.changed ? `Saved — version ${res.version}` : 'Nothing had changed');
     } catch (e) {
-      // The server's sentence, with the question's label instead of its api name.
-      const body = e instanceof PlatformApiError ? e.body : null;
-      setErrMsg(`Save failed: ${saveRefusalWords(body, (e as Error).message)}`);
+      setErrMsg(`Save failed: ${(e as Error).message}`);
     } finally {
       setSaving(false);
     }
@@ -336,7 +309,6 @@ export function YourBusinessPage() {
 
       {/* 1 */}
       <Question n={1} title="What do you do?" drives="Used when anything writes about you — your website, emails and replies."
-        ids={['industry', 'description', 'tagline']}
         prefilledFrom={prefilledSource('industry') || prefilledSource('description') || prefilledSource('tagline')}>
         <Field label="In a few words (your trade or industry)">
           <input className={input} value={draft.industry} onChange={(e) => set({ industry: e.target.value })} placeholder="Gutter cleaning and repair" />
@@ -351,7 +323,6 @@ export function YourBusinessPage() {
 
       {/* 2 */}
       <Question n={2} title="What do you sell?" drives="Quotes, reply drafts and reports group by service line."
-        ids={['services', 'servicesSummary']}
         prefilledFrom={prefilledSource('services')}>
         {prices?.available && prices.items.length > 0 ? (
           <div className="space-y-2">
@@ -408,7 +379,6 @@ export function YourBusinessPage() {
 
       {/* 3 */}
       <Question n={3} title="Where do you work?" drives="Leads outside your area are scored down instead of chased."
-        ids={['serviceArea']}
         prefilledFrom={prefilledSource('serviceArea')}>
         <div className="flex flex-wrap gap-4 text-xs">
           <label className="inline-flex items-center gap-2">
@@ -465,8 +435,7 @@ export function YourBusinessPage() {
       </Question>
 
       {/* 6 */}
-      <Question n={6} title="What is your ideal job, and who is your ideal customer?" drives="Lead scoring learns from this before it has any results to learn from."
-        ids={['idealJob', 'idealCustomer', 'differentiators', 'targetAudience']}>
+      <Question n={6} title="What is your ideal job, and who is your ideal customer?" drives="Lead scoring learns from this before it has any results to learn from.">
         <Field label="Your ideal job"><textarea className={area} value={draft.idealJob} onChange={(e) => set({ idealJob: e.target.value })} placeholder="A two-storey house with guards already fitted, booked a week ahead." /></Field>
         <Field label="Your ideal customer">
           <textarea className={area} value={draft.idealCustomer} onChange={(e) => set({ idealCustomer: e.target.value })} placeholder="A homeowner who books the same week every autumn." />
@@ -481,8 +450,7 @@ export function YourBusinessPage() {
       </Question>
 
       {/* 7 */}
-      <Question n={7} title="What won't you do?" drives="Work you would turn down is never quoted for or promised."
-        ids={['noGoList', 'doNotSay']}>
+      <Question n={7} title="What won't you do?" drives="Work you would turn down is never quoted for or promised.">
         <Field label="Work you don't take">
           <textarea className={area} value={draft.noGoList} onChange={(e) => set({ noGoList: e.target.value })} placeholder="No roofs. No commercial buildings over two storeys." />
         </Field>
@@ -506,7 +474,6 @@ export function YourBusinessPage() {
 
       {/* 9 */}
       <Question n={9} title="How do you talk to customers?" drives="The voice of every drafted reply."
-        ids={['brandVoice']}
         prefilledFrom={prefilledSource('brandVoice')}>
         <Field label="One sentence">
           <input className={input} value={draft.brandVoice} onChange={(e) => set({ brandVoice: e.target.value })} placeholder="Friendly, straight to the point, no jargon." />
@@ -518,8 +485,7 @@ export function YourBusinessPage() {
       </Question>
 
       {/* 10 */}
-      <Question n={10} title="How fast do you answer, and who gets called when something's wrong?" drives="The promise we make on your behalf, and who we escalate to."
-        ids={['responsePromiseMinutes', 'responsePromiseText', 'escalation']}>
+      <Question n={10} title="How fast do you answer, and who gets called when something's wrong?" drives="The promise we make on your behalf, and who we escalate to.">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Answer within (minutes)"><input className={input} inputMode="numeric" value={draft.responsePromiseMinutes} onChange={(e) => set({ responsePromiseMinutes: e.target.value })} placeholder="30" /></Field>
           <Field label="How you say it"><input className={input} value={draft.responsePromiseText} onChange={(e) => set({ responsePromiseText: e.target.value })} placeholder="Within half an hour during business hours." /></Field>
@@ -538,55 +504,6 @@ export function YourBusinessPage() {
           <input className={input} value={draft.languages} onChange={(e) => set({ languages: e.target.value })} placeholder="en, es" />
         </Field>
       </Question>
-
-      {/* What your team knows — ARGUS employees phase 1 §E.2. One Save, as above. */}
-      <section className="rounded-lg border bg-white p-4 sm:p-5" id="team-knows">
-        <h2 className="text-base font-semibold text-gray-900">What your team knows</h2>
-        <p className="mt-0.5 text-xs text-gray-500">
-          What your web person, your marketer and your office administrator may use when they write for you, and
-          what they never say. They only use what you save here; anything we filled in is a suggestion until you press Save.
-        </p>
-        <div className="mt-4 space-y-4">
-          <div id="offersAllowed">
-            {prefilledSource('offersAllowed') && <PrefillHint source={prefilledSource('offersAllowed') as string} />}
-            <Field label={FIELD_LABELS.offersAllowed} hint={`One per line, without a dollar amount. Add a note after${PAIR_SEPARATOR.trimEnd()} if it helps. Prices are read live from your price list.`}>
-              <textarea className={area} value={draft.offersAllowedText} onChange={(e) => set({ offersAllowedText: e.target.value })}
-                placeholder={`10% off a yearly plan\nA free first visit${PAIR_SEPARATOR}new customers only`} />
-            </Field>
-          </div>
-          <div id="proofAllowed">
-            {prefilledSource('proofAllowed') && <PrefillHint source={prefilledSource('proofAllowed') as string} />}
-            <Field label={FIELD_LABELS.proofAllowed} hint={`One per line: the words, then${PAIR_SEPARATOR}where they came from. Nothing else is ever quoted as proof.`}>
-              <textarea className={area} value={draft.proofAllowedText} onChange={(e) => set({ proofAllowedText: e.target.value })}
-                placeholder={`Came the same day and left it spotless${PAIR_SEPARATOR}Google review, March 2026`} />
-            </Field>
-          </div>
-          <div id="namesNeverMention">
-            {prefilledSource('namesNeverMention') && <PrefillHint source={prefilledSource('namesNeverMention') as string} />}
-            <Field label={FIELD_LABELS.namesNeverMention} hint="One name per line: customers, people or places your team must never name.">
-              <textarea className={area} value={draft.namesNeverMentionText} onChange={(e) => set({ namesNeverMentionText: e.target.value })} />
-            </Field>
-          </div>
-          <div id="namesYouMayMention">
-            {prefilledSource('namesYouMayMention') && <PrefillHint source={prefilledSource('namesYouMayMention') as string} />}
-            <Field label={FIELD_LABELS.namesYouMayMention} hint="One name per line. A name can't be on both lists.">
-              <textarea className={area} value={draft.namesYouMayMentionText} onChange={(e) => set({ namesYouMayMentionText: e.target.value })} />
-            </Field>
-          </div>
-          <div id="competitors">
-            {prefilledSource('competitors') && <PrefillHint source={prefilledSource('competitors') as string} />}
-            <Field label={FIELD_LABELS.competitors} hint="One per line. Anything that names one of them waits for you.">
-              <textarea className={area} value={draft.competitorsText} onChange={(e) => set({ competitorsText: e.target.value })} />
-            </Field>
-          </div>
-          <div id="customerWords">
-            {prefilledSource('customerWords') && <PrefillHint source={prefilledSource('customerWords') as string} />}
-            <Field label={FIELD_LABELS.customerWords} hint="One per line: the words your customers use for what you do.">
-              <textarea className={area} value={draft.customerWordsText} onChange={(e) => set({ customerWordsText: e.target.value })} />
-            </Field>
-          </div>
-        </div>
-      </section>
 
       {/* Borrowed basics, for completeness */}
       <Borrowed title="Your business name, address and contact details" editedOn="Business Profile" to="/app/settings/business-profile">

@@ -14,21 +14,8 @@
 //     requires a reason (QTC) or records one (Field Ops override), and the
 //     reason is what tone calibration learns from.
 //
-// ARGUS → Your team (contract ARGUS employees phase 1 §F.3) builds its
-// Needs-you card on this one and passes four optional props; with none of them
-// the card is exactly what it was:
-//   · secondaryLabel        the second button's word ("Skip" in Needs you)
-//   · requireEditsToApprove a held draft is never approved as written: Approve
-//                           stays off until a word has changed
-//   · declineNoteOptional   Skip asks why but does not insist (§F.3), except where
-//                           the route requires a reason
-//   · extra                 a control the approval needs (the social post's time)
-//   · note                  a line under why it waited ("Written from your business details…")
-//   · canEdit               whether this item's route takes edits at all
-//   · onDecline omitted     no second button (a hand-off's Try again has nothing to skip)
-//
 // The engine is ARGUS AI. The model vendor is named nowhere.
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { Send, Pencil, Trash2, AlertTriangle, Info, ExternalLink } from "lucide-react";
 import type { AgentActivityRow } from "./types";
 
@@ -38,21 +25,7 @@ interface Props {
   approveLabel?: string;
   busy?: string | null;
   onApprove: (row: AgentActivityRow, edits?: { subject?: string; body?: string }) => void;
-  onDecline?: (row: AgentActivityRow, note: string) => void;
-  /** A line under why it waited. */
-  note?: ReactNode;
-  /** Whether the route takes edits; by default, any item with a body. */
-  canEdit?: boolean;
-  /** The second button's word. "Decline" unless the page says otherwise. */
-  secondaryLabel?: string;
-  /** Approve only after the words were changed (a held draft, AC2). */
-  requireEditsToApprove?: boolean;
-  /** The reason is asked for but not required. */
-  declineNoteOptional?: boolean;
-  /** The question the reason box asks. */
-  declinePrompt?: string;
-  /** A control the approval needs, shown above the buttons. */
-  extra?: ReactNode;
+  onDecline: (row: AgentActivityRow, note: string) => void;
 }
 
 function when(ts: string | null | undefined) {
@@ -61,22 +34,17 @@ function when(ts: string | null | undefined) {
   return Number.isNaN(d.getTime()) ? null : d.toLocaleString();
 }
 
-export function AgentApprovalCard({
-  row, approveLabel, busy, onApprove, onDecline,
-  secondaryLabel, requireEditsToApprove, declineNoteOptional, declinePrompt, extra, note: noteLine, canEdit,
-}: Props) {
+export function AgentApprovalCard({ row, approveLabel, busy, onApprove, onDecline }: Props) {
   const [editing, setEditing] = useState(false);
   const [subject, setSubject] = useState(row.detail?.subject || "");
   const [body, setBody] = useState(row.detail?.body || "");
   const [declining, setDeclining] = useState(false);
   const [note, setNote] = useState("");
 
-  const editable = (canEdit ?? true) && typeof row.detail?.body === "string" && row.detail.body.length > 0;
+  const editable = typeof row.detail?.body === "string" && row.detail.body.length > 0;
   const primary = approveLabel || "Approve & send";
   const approveBusy = busy === `approve-${row.agent}-${row.id}`;
   const declineBusy = busy === `decline-${row.agent}-${row.id}`;
-  const second = secondaryLabel || "Decline";
-  const changed = subject !== (row.detail?.subject || "") || body !== (row.detail?.body || "");
 
   return (
     <section className="rounded-lg border border-slate-200 bg-white">
@@ -98,7 +66,6 @@ export function AgentApprovalCard({
             <span>{row.hold_note}</span>
           </div>
         )}
-        {noteLine}
 
         {editing ? (
           <div className="space-y-2">
@@ -119,7 +86,7 @@ export function AgentApprovalCard({
             <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => { onApprove(row, { subject, body }); setEditing(false); }}
-                disabled={approveBusy || (!!requireEditsToApprove && !changed)}
+                disabled={approveBusy}
                 className="rounded bg-violet-600 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
               >Save &amp; {primary.toLowerCase().startsWith("approve & ") ? primary.slice(10) : "approve"}</button>
               <button onClick={() => setEditing(false)} className="rounded border border-slate-300 px-2.5 py-1 text-xs">Cancel</button>
@@ -170,25 +137,24 @@ export function AgentApprovalCard({
               value={note}
               onChange={(e) => setNote(e.target.value)}
               rows={2}
-              placeholder={declinePrompt || "Why not? One line is enough — it is how this gets better."}
+              placeholder="Why not? One line is enough — it is how this gets better."
               className="w-full rounded border border-slate-300 px-2 py-1 text-xs"
             />
             <div className="flex gap-2">
               <button
-                onClick={() => { onDecline?.(row, note.trim()); setDeclining(false); setNote(""); }}
-                disabled={(!declineNoteOptional && !note.trim()) || declineBusy}
+                onClick={() => { onDecline(row, note.trim()); setDeclining(false); setNote(""); }}
+                disabled={!note.trim() || declineBusy}
                 className="rounded bg-slate-900 px-2.5 py-1 text-xs font-medium text-white disabled:opacity-40"
-              >{second} it</button>
+              >Decline it</button>
               <button onClick={() => { setDeclining(false); setNote(""); }} className="rounded border border-slate-300 px-2.5 py-1 text-xs">Cancel</button>
             </div>
           </div>
         ) : (
           !editing && (
             <div className="flex flex-wrap gap-2 pt-1">
-              {extra}
               <button
                 onClick={() => onApprove(row)}
-                disabled={approveBusy || !!requireEditsToApprove}
+                disabled={approveBusy}
                 className="flex items-center gap-1 rounded bg-violet-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-violet-700 disabled:opacity-40"
               >
                 <Send className="h-3 w-3" />{primary}
@@ -201,15 +167,13 @@ export function AgentApprovalCard({
                   <Pencil className="h-3 w-3" />Edit
                 </button>
               )}
-              {onDecline && (
-                <button
-                  onClick={() => setDeclining(true)}
-                  disabled={declineBusy}
-                  className="flex items-center gap-1 rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
-                >
-                  <Trash2 className="h-3 w-3" />{second}
-                </button>
-              )}
+              <button
+                onClick={() => setDeclining(true)}
+                disabled={declineBusy}
+                className="flex items-center gap-1 rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              >
+                <Trash2 className="h-3 w-3" />Decline
+              </button>
             </div>
           )
         )}

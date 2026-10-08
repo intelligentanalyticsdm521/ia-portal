@@ -1,5 +1,4 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
@@ -7,66 +6,57 @@ import { Card, StatCard, EmptyPanel, Loading, ConsultingUpsell } from '../../com
 import { GbpPendingVerificationCard, GbpStatusCard } from './GbpStatusCard';
 import { ReportBar } from '../../../components/insights/ReportBar';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
-import { useJobWriter, useTeamJob } from '../../../hooks/useTeam';
-import { JobControls } from '../../../components/argus/team/JobRow';
-import { employeeRoute, jobRowState, shownMode } from '../../../lib/team';
 
-// Google review replies — your web person's job, switched where the reviews are
-// (contract ARGUS employees phase 1 §F.5, §G). The old auto-reply card posted
-// with no approval step and silently skipped 1-3 star reviews; that switch is
-// gone (its routes are deleted). This card is the job's own On switch,
-// Automatic / Send me first, and the one limit it has — "Answer 4 (or 5) stars
-// and up by itself" — all writing PUT /me/team/jobs/arion.review_replies, the
-// same row ARGUS → Your team → The web person writes. A review of 3 stars or
-// fewer always waits for you, whatever the mode; the replies that wait are in
-// Needs you.
-function ReviewRepliesCard() {
-  const reply = useTeamJob('web', 'arion.review_replies');
-  const writer = useJobWriter();
-  const [notice, setNotice] = React.useState<string | null>(null);
-  const [refusal, setRefusal] = React.useState<string | null>(null);
-  const job = reply.job;
-  const st = job ? jobRowState(job) : null;
-  const minStars = job ? Number(job.vars?.automatic_min_stars ?? 4) : 4;
+// Pro+ auto-reply automation — opt-in + minimum-star gate. Uses the ARION
+// IL model to reply automatically to new reviews (metered per reply).
+function AutoReplyCard({ siteId, arionApi }: { siteId: string; arionApi: any }) {
+  const [cfg, setCfg] = React.useState<{ enabled: boolean; minStars: number; allowed: boolean; tier: string } | null>(null);
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => {
+    let alive = true;
+    arionApi.getGbpAutoReply(siteId).then((r: any) => { if (alive) setCfg(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [siteId, arionApi]);
+  if (!cfg) return null;
 
-  const setMinStars = async (n: number) => {
-    if (!job) return;
-    setRefusal(null);
-    const out = await writer.write(job, { vars: { automatic_min_stars: n } });
-    if (out.ok) { reply.setJob(out.job); setNotice(out.words); }
-    else setRefusal(out.words);
+  const save = async (enabled: boolean, minStars: number) => {
+    setSaving(true);
+    try {
+      const r = await arionApi.setGbpAutoReply(siteId, enabled, minStars);
+      setCfg(c => c ? { ...c, enabled: r.enabled, minStars: r.minStars } : c);
+    } catch { /* keep prior state */ }
+    finally { setSaving(false); }
   };
 
   return (
-    <Card title="Google review replies">
-      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 8 }}>
-        Your web person writes a reply to each new review in your voice.{' '}
-        <Link to={employeeRoute('web', 'needs-you')} style={{ textDecoration: 'underline' }}>See the replies waiting for you</Link>
-      </div>
-      {!job && !reply.error && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading…</div>}
-      {reply.error && <div role="alert" style={{ fontSize: 12, color: '#B71C1C' }}>{reply.error}</div>}
-      {job && (
+    <Card title="Auto-reply to reviews">
+      {!cfg.allowed ? (
+        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          Automatic replies are a <strong>Pro</strong> feature. Upgrade to have ARION reply to
+          new reviews in your brand voice automatically (each reply uses 1 AI credit).
+        </div>
+      ) : (
         <div>
-          <JobControls job={job} onChanged={reply.setJob} onNotice={setNotice} />
-          {st?.control === 'switch' && st.modeControl && shownMode(job) === 'automatic' && (
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
-              <span>Answer</span>
-              <select
-                className="field-input"
-                style={{ width: 'auto' }}
-                value={String(minStars >= 5 ? 5 : 4)}
-                disabled={writer.busy === job.job_key}
-                onChange={(e) => void setMinStars(parseInt(e.target.value, 10))}
-                aria-label="Which reviews it answers by itself"
-              >
-                <option value="4">4 stars and up</option>
-                <option value="5">5 stars only</option>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, cursor: 'pointer' }}>
+            <input type="checkbox" checked={cfg.enabled} disabled={saving} onChange={e => save(e.target.checked, cfg.minStars)} />
+            Automatically reply to new reviews in my brand voice
+          </label>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>
+            ARION checks daily and drafts a reply for each new review, using 1 AI credit per reply.
+            You can still edit any reply afterward.
+          </div>
+          {cfg.enabled && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 13 }}>
+              <span>Only auto-reply to reviews of</span>
+              <select className="field-input" style={{ width: 'auto' }} value={cfg.minStars} disabled={saving} onChange={e => save(true, parseInt(e.target.value, 10))}>
+                <option value={1}>all ratings</option>
+                <option value={3}>3★ and up</option>
+                <option value={4}>4★ and up</option>
+                <option value={5}>5★ only</option>
               </select>
-              <span>by itself.</span>
-            </label>
+              <span style={{ color: 'var(--text-muted)' }}>— hand-craft the tougher ones yourself.</span>
+            </div>
           )}
-          {refusal && <div role="alert" style={{ marginTop: 6, fontSize: 12, color: '#B71C1C' }}>{refusal}</div>}
-          {notice && <div role="status" style={{ marginTop: 6, fontSize: 12, color: '#1D7A55' }}>{notice}</div>}
         </div>
       )}
     </Card>
@@ -177,7 +167,7 @@ export function BusinessReviews() {
         </Card>
       )}
 
-      <ReviewRepliesCard />
+      <AutoReplyCard siteId={activeSiteId!} arionApi={arionApi} />
 
       <Card title="Reviews">
         {reviews.length === 0 ? (

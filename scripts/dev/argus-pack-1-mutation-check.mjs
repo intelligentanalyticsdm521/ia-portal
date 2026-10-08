@@ -31,24 +31,20 @@ const abs = (p) => path.join(REPO, p);
  * this harness and not a pass.
  */
 const MUTATIONS = [
-  // 2026-10-08: the ARION, OLIVER and SPARK Agents pages were deleted (ARGUS →
-  // Your team replaced them). The mutations that targeted them now target the
-  // card and the employee page that carry the same guards; the team's own
-  // mutations are scripts/dev/argus-team-mutation-check.mjs.
   {
     id: "M1",
-    what: "the approval card's second button loses its Decline/Skip word",
-    file: "src/components/agents/AgentApprovalCard.tsx",
-    find: 'const second = secondaryLabel || "Decline";',
-    to: 'const second = "OK";',
+    what: "the ARION page loses its Put-it-live button, so approving is the only step",
+    file: "src/pages/arion/ArionAgentsPage.tsx",
+    find: "Put it live",
+    to: "Approve",
     test: "test/agent-surfaces-ui.test.mjs",
   },
   {
     id: "M2",
-    what: "a held draft can be approved as written (AC2 broken on screen)",
-    file: "src/components/agents/AgentApprovalCard.tsx",
-    find: "disabled={approveBusy || !!requireEditsToApprove}",
-    to: "disabled={approveBusy}",
+    what: "held-back drafts are merged into the normal list (AC2 broken on screen)",
+    file: "src/pages/arion/ArionAgentsPage.tsx",
+    find: "Held back for a person to read",
+    to: "More drafts",
     test: "test/agent-surfaces-ui.test.mjs",
   },
   {
@@ -61,19 +57,19 @@ const MUTATIONS = [
   },
   {
     id: "M4",
-    what: "the run history disappears from the employee page",
-    file: "src/pages/argus/ArgusEmployeePage.tsx",
-    find: "          <AgentRunHistoryPanel",
-    to: "          {false && <AgentRunHistoryPanel",
+    what: "the run history disappears from a product page",
+    file: "src/pages/oliver/OliverAgentsPage.tsx",
+    find: "        <AgentRunHistoryPanel",
+    to: "        {false && <AgentRunHistoryPanel",
     test: "test/agent-surfaces-ui.test.mjs",
   },
   {
     id: "M5",
-    what: "Run it now grows a second start path instead of calling the runner's own route",
-    file: "src/lib/team.ts",
-    find: 'return { source: "oliver", path: "/qtc-agent/run",',
-    to: 'return { source: "oliver", path: "/agents/start-a-cycle",',
-    test: "test/argus-team-lib.test.mjs",
+    what: "Run it now grows a second start path instead of calling the agent's own route",
+    file: "src/pages/oliver/OliverAgentsPage.tsx",
+    find: '    qtc: "/qtc-agent/run",',
+    to: '    qtc: "/agents/start-a-cycle",',
+    test: "test/agent-surfaces-ui.test.mjs",
   },
   {
     id: "M6",
@@ -109,18 +105,18 @@ const MUTATIONS = [
   },
   {
     id: "M10",
-    what: "the Needs-you card starts spelling an attribution line itself",
-    file: "src/components/argus/team/NeedsYouCard.tsx",
-    find: "  const cited = briefCitedLine(row.brief_cited);",
-    to: "  const cited = briefCitedLine(row.brief_cited); // Created by Intelligent Analytics",
+    what: "the ARION page starts spelling an attribution line itself again",
+    file: "src/pages/arion/ArionAgentsPage.tsx",
+    find: "  const api = useArionAgentsApi();",
+    to: "  const api = useArionAgentsApi(); // Created by Intelligent Analytics",
     test: "test/agent-surfaces-ui.test.mjs",
   },
   {
     id: "M11",
-    what: "the word tenant reaches a client-facing card",
-    file: "src/components/argus/team/NeedsYouCard.tsx",
-    find: "  const cited = briefCitedLine(row.brief_cited);",
-    to: '  const cited = briefCitedLine(row.brief_cited);\n  const tenantLabel = "tenant";',
+    what: "the word tenant reaches a client-facing agent page",
+    file: "src/pages/arion/ArionAgentsPage.tsx",
+    find: "  const [runs, setRuns] = useState<AgentRunsPayload | null>(null);",
+    to: '  const [runs, setRuns] = useState<AgentRunsPayload | null>(null);\n  const tenantLabel = "tenant";',
     test: "test/agent-surfaces-ui.test.mjs",
   },
 ];
@@ -130,8 +126,7 @@ let survived = 0;
 const survivors = [];
 
 function runTest(file) {
-  // With the repo's TypeScript loader, as `npm test` runs them (M5's test imports lib/team.ts).
-  const r = spawnSync(process.execPath, ["--import", "./scripts/test-ts-loader.mjs", "--test", file], { cwd: REPO, encoding: "utf8" });
+  const r = spawnSync(process.execPath, ["--test", file], { cwd: REPO, encoding: "utf8" });
   const out = `${r.stdout || ""}${r.stderr || ""}`;
   const m = /^# fail (\d+)$/m.exec(out);
   return { failed: m ? Number(m[1]) : (r.status === 0 ? 0 : 1), out };
