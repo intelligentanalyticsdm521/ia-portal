@@ -4,6 +4,7 @@ import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
+import { useProductAccess } from "../hooks/useProductAccess";
 
 // "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
 // was a premature Wave-2 add for the Q4 2026 deferred product. ARION's
@@ -98,6 +99,12 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   const isAdminActive = location.pathname.startsWith("/admin");
   const { enabledServices, ownedProducts } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
+  // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the padlock follows
+  // the subscription mid-session: platform-api's decided answer (one-minute
+  // shared cache, re-asked per navigation) before the sign-in list. A locked
+  // product still opens on click; its pages then show the one sentence with
+  // Re-subscribe (ProductEndedNotice), so buying it back is one click from here.
+  const access = useProductAccess(location.pathname);
 
   // 2026-08-06 — PRODUCT GATING. A product rail icon appears only when the
   // tenant actually OWNS that product (core.tenant_services.is_enabled).
@@ -127,6 +134,9 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
 
     const serviceKey = PRODUCT_SERVICE_KEY[p.key];
     if (!serviceKey) return { ...p, enabled: false };
+
+    const railLock = access.isLockedOnRail(serviceKey);
+    if (railLock !== null) return { ...p, enabled: !railLock };
 
     // Dev / preview: no session payload exists (VITE_ENABLED_SERVICES drives
     // the granular set instead), so fall back to the legacy catalog test rather

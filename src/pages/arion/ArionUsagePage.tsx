@@ -186,7 +186,7 @@ export function ArionUsagePage(_: Props) {
 
   return (
     <div className="arion-page">
-      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} product="arion" />
       <CheckoutResultFlash product="ARION" />
       <div className="card">
         <div className="card-hdr">

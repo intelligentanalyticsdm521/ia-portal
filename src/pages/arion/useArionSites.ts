@@ -63,7 +63,7 @@ export function useArionSites() {
       }
     } catch (err) {
       if (err instanceof ArionApiError) {
-        setError(err.status === 403 ? 'ARION is not enabled for this tenant.' : `ARION API error (${err.status}).`);
+        setError(err.status === 403 ? "ARION isn't part of this business's plan." : `ARION could not be reached (error ${err.status}). Reload the page to try again.`);
       } else {
         setError('Unexpected error while loading ARION sites.');
       }

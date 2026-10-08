@@ -412,7 +412,7 @@ export function SparkUsagePage() {
       loading={loading}
       error={error}
     >
-      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} product="spark" />
       <CheckoutResultFlash product="SPARK" />
       {/* CURRENT USAGE STRIP */}
       {usage && (

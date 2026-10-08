@@ -46,7 +46,7 @@ export function OliverUpgradeGate({ tierRequired, currentTier, featureName }: Ol
 
           <div className="mt-6">
             <a
-              href="/app/spark/pricing"
+              href="/app/services/oliver_usage"
               className="inline-flex items-center gap-2 rounded-lg bg-[#EF6C33] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#d95e2b] transition-colors"
             >
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

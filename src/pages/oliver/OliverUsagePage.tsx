@@ -322,7 +322,7 @@ export function OliverUsagePage() {
 
   return (
     <OliverPageWrapper title="Plan & Pricing" subtitle={usage?.tier ? `You're on the OLIVER ${tierDisplayName("oliver", usage.tier)} plan` : "Pick your tier — usage tracked live"} error={error} loading={loading}>
-      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
+      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} product="oliver" />
       <CheckoutResultFlash product="OLIVER" />
       {/* ── CURRENT USAGE STRIP ─────────────────────────────────────────── */}
       {usage && (

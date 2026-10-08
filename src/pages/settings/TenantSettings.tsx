@@ -10,12 +10,16 @@ import { PlatformTeamAccess } from './PlatformTeamAccess';
 import { LogoPicker } from '../../components/oliver/LogoPicker';
 import { PhoneInput } from '../../components/PhoneInput';
 // F-106 — Plan & Pricing hub (SubscriptionBillingTab)
-import { PendingChangeBanner } from '../../components/PendingChangeBanner';
+import { ProductPlanStatus } from '../../components/ProductPlanStatus';
 import { tierDisplayName } from '../../lib/tierLabels';
 import {
-  fetchSubscriptions, createPortalSession,
+  fetchSubscriptionsShared, createPortalSession,
   type SubscriptionsResponse, type ProductSubscription,
 } from '../../lib/billingApi';
+import {
+  isOffGatedProduct, planCardLine, rowForProduct, rowIsLive,
+  type CardState, type GatedProduct, type PlanRow,
+} from '../../lib/productAccess';
 
 /* ------------------------------------------------------------------ */
 /*  Types & constants                                                  */
@@ -487,9 +491,13 @@ export function SubscriptionBillingTab() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [openingPortal, setOpeningPortal] = useState<string | null>(null);
+  const [portalNote, setPortalNote] = useState<{ key: string; text: string } | null>(null);
+  // Bumped after the owner changes something on a card (Remove, Keep my plan),
+  // so the cards re-read the plan once. Never polled.
+  const [reloadKey, setReloadKey] = useState(0);
 
   // Fetch once when the page mounts. Re-fetch trigger is bumped after the
-  // user returns from Stripe (?refresh=1).
+  // user returns from the payment page (?refresh=1) or changes a card.
   const [searchParams, setSearchParams] = useSearchParams();
   const refresh = searchParams.get("refresh");
 
@@ -500,10 +508,12 @@ export function SubscriptionBillingTab() {
       setLoading(true); setError(null);
       try {
         const t = await getToken();
-        const r = await fetchSubscriptions({ token: t.accessToken, tenantId: activeTenantId });
+        const r = await fetchSubscriptionsShared({
+          token: t.accessToken, tenantId: activeTenantId, force: !!refresh || reloadKey > 0,
+        });
         if (!cancelled) setData(r);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Could not load subscriptions.");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Your plan could not be loaded. Reload the page to try again.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -515,7 +525,7 @@ export function SubscriptionBillingTab() {
       setSearchParams(next, { replace: true });
     }
     return () => { cancelled = true; };
-  }, [activeTenantId, getToken, refresh, searchParams, setSearchParams, fetchSubscriptions]);
+  }, [activeTenantId, getToken, refresh, searchParams, setSearchParams, reloadKey]);
 
   // Mirrors SELF_SERVE_PRODUCTS in oliver-api lib/productTier.js. FORGE and
   // ARGUS are live but not self-serve, so they open the tenant's general
@@ -527,7 +537,9 @@ export function SubscriptionBillingTab() {
 
   async function openPortal(product?: ProductMeta["key"]) {
     if (!activeTenantId) return;
-    setOpeningPortal(product || "any");
+    const key = product || "any";
+    setOpeningPortal(key);
+    setPortalNote(null);
     try {
       const t = await getToken();
       const r = await createPortalSession({
@@ -539,41 +551,59 @@ export function SubscriptionBillingTab() {
       if (r.mode === "portal" && r.url) {
         window.open(r.url, "_blank", "noopener,noreferrer");
       } else if (r.mode === "owner") {
-        alert(r.message || "Platform account has no billing portal.");
+        setPortalNote({ key, text: r.message || "This is the platform account. There is no card or invoice to manage." });
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Couldn't open Stripe Billing Portal.");
+      setPortalNote({ key, text: e instanceof Error && e.message ? e.message : "The payment page did not open. Try again in a minute." });
     } finally {
       setOpeningPortal(null);
     }
   }
 
-  // Index real subs by product so card rendering can branch on "has-sub" vs "not-yet".
+  // Index rows by product. A product with a live subscription and an ended
+  // record shows the live one (rowForProduct).
+  const rows: PlanRow[] = data?.subscriptions || [];
   const subByProduct = new Map<string, ProdSub>();
-  for (const s of data?.subscriptions || []) subByProduct.set(s.product, s);
-  const totalMonthly = (data?.subscriptions || []).reduce((sum, s) => sum + (s.monthly_usd || 0), 0);
+  for (const s of data?.subscriptions || []) if (rowIsLive(s)) subByProduct.set(s.product, s);
+  const totalMonthly = (data?.subscriptions || []).filter((s) => rowIsLive(s)).reduce((sum, s) => sum + (s.monthly_usd || 0), 0);
+
+  const BADGE: Record<CardState, { text: string; cls: string }> = {
+    active: { text: "Active", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+    downgrade: { text: "Active", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
+    ending: { text: "Ending", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
+    past_due: { text: "Payment failed", cls: "bg-red-50 text-red-700 border border-red-200" },
+    ended: { text: "Ended", cls: "bg-gray-100 text-gray-600 border border-gray-200" },
+    never: { text: "Not subscribed", cls: "bg-gray-100 text-gray-500" },
+  };
 
   return (
     <div className="space-y-6">
-      <PendingChangeBanner getToken={getToken} tenantId={activeTenantId} />
-
+      {/* SCOPE 2026-10-07 §5 — what used to be ONE "Downgrade scheduled" banner
+          for the whole business (and read a STELLA downgrade as OLIVER's) is
+          now one line on each product's own card, with its own Keep control. */}
       <SectionLabel
         title="Your subscriptions"
         description={data?.owner
           ? "Platform account — all products are included at no charge."
-          : "Manage every IA platform from one place. Click into a product to upgrade or downgrade, or open the Stripe portal to cancel or update billing details."}
+          : "Every IA product you pay for, in one place. Open a product's plan to upgrade or downgrade, or remove one product without touching the others."}
       />
 
-      {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading subscriptions…</div>}
+      {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading your plan…</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
 
       {/* Per-platform cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {PLAN_HUB_PRODUCTS.map((p) => {
+          const gated = isOffGatedProduct(p.key);
+          const row = gated ? rowForProduct(rows, p.key) : null;
           const sub = subByProduct.get(p.key);
           const isActive = !!sub;
           const isOwner = !!data?.owner;
+          const state: CardState = gated
+            ? planCardLine(p.key as GatedProduct, row).state
+            : isActive ? (sub?.cancel_at_period_end ? "ending" : "active") : "never";
+          const badge = loading ? null : BADGE[state];
           // Product-aware: OLIVER "lite" is sold as "Invoicing" (pricing rework 2026-08-21).
           const tierLabel = sub?.tier ? tierDisplayName(p.key, sub.tier) : null;
           return (
@@ -581,23 +611,13 @@ export function SubscriptionBillingTab() {
               key={p.key}
               className="relative overflow-hidden rounded-lg border bg-white p-4"
               style={{ borderLeft: `3px solid ${p.accent}` }}
+              data-plan-card={p.key}
             >
               <div className="flex items-baseline justify-between">
                 <div className="text-sm font-bold tracking-wide" style={{ color: p.accent }}>{p.name}</div>
-                {isActive && (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${
-                      sub.cancel_at_period_end
-                        ? "bg-amber-50 text-amber-700 border border-amber-200"
-                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    }`}
-                  >
-                    {sub.cancel_at_period_end ? "Cancels at period end" : "Active"}
-                  </span>
-                )}
-                {!isActive && !loading && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-gray-500">
-                    Not subscribed
+                {badge && (
+                  <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${badge.cls}`}>
+                    {badge.text}
                   </span>
                 )}
               </div>
@@ -613,12 +633,23 @@ export function SubscriptionBillingTab() {
                 {isOwner && (
                   <span className="text-xs text-gray-500">Included</span>
                 )}
-                {isActive && !isOwner && sub.monthly_usd > 0 && (
+                {isActive && !isOwner && sub && sub.monthly_usd > 0 && (
                   <span className="text-sm font-bold text-gray-900 tabular-nums">
                     ${sub.monthly_usd.toFixed(2)}<span className="text-xs font-normal text-gray-500">/mo</span>
                   </span>
                 )}
               </div>
+
+              {/* The one line under the tier, and its control (§5). */}
+              {gated && !loading && (
+                <ProductPlanStatus
+                  product={p.key as GatedProduct}
+                  row={row}
+                  owner={isOwner}
+                  addTo={p.usagePath ?? null}
+                  onChanged={() => setReloadKey((k) => k + 1)}
+                />
+              )}
 
               {/* Actions */}
               <div className="mt-4 flex flex-col gap-1.5">
@@ -643,11 +674,12 @@ export function SubscriptionBillingTab() {
                         disabled={openingPortal === p.key}
                         className="inline-flex items-center justify-center rounded-md border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                       >
-                        {openingPortal === p.key ? "Opening Stripe…" : "Manage billing / Cancel"}
+                        {openingPortal === p.key ? "Opening…" : "Payment method & invoices"}
                       </button>
                     )}
+                    {portalNote?.key === p.key && <p className="text-xs text-gray-600">{portalNote.text}</p>}
                   </>
-                ) : p.usagePath ? (
+                ) : gated ? null : p.usagePath ? (
                   <Link
                     to={p.usagePath}
                     className="inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold text-white"
@@ -671,35 +703,37 @@ export function SubscriptionBillingTab() {
           are what a business came to this page for. */}
       <PaymentsPayoutsCard />
 
-      {/* Total + global billing portal link (when there's anything to manage). */}
+      {/* Total + the payment page link (when there's anything to manage). */}
       {data && data.hasAnySubscription && !data.owner && (
         <div className="flex items-center justify-between rounded-lg border bg-gray-50 p-4">
           <div>
             <div className="text-xs uppercase font-semibold text-gray-500">Combined monthly subtotal</div>
             <div className="text-2xl font-bold text-gray-900 tabular-nums">${totalMonthly.toFixed(2)}<span className="text-sm font-normal text-gray-500">/mo</span></div>
             <div className="mt-1 text-[11px] text-gray-500">
-              Recurring proration + annual discounts are reconciled by Stripe. The amount on your next invoice may differ slightly from this estimate.
+              Upgrades are prorated and annual discounts are applied on your invoice, so your next invoice may differ slightly from this estimate.
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => openPortal(undefined)}
-            disabled={openingPortal === "any"}
-            className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
-          >
-            {openingPortal === "any" ? "Opening Stripe…" : "Open Stripe Billing Portal"}
-          </button>
+          <div className="flex flex-col items-end gap-1">
+            <button
+              type="button"
+              onClick={() => openPortal(undefined)}
+              disabled={openingPortal === "any"}
+              className="inline-flex items-center rounded-md bg-gray-900 px-3 py-2 text-xs font-semibold text-white hover:bg-gray-800 disabled:opacity-50"
+            >
+              {openingPortal === "any" ? "Opening…" : "Payment method & invoices"}
+            </button>
+            {portalNote?.key === "any" && <p className="text-xs text-gray-600">{portalNote.text}</p>}
+          </div>
         </div>
       )}
 
-      {/* Invoice history — Stripe Portal handles full history. We keep the
-          empty stub for now; a richer in-app invoice table is a v2 task. */}
+      {/* Invoice history lives on the payment page. */}
       <div className="border-t pt-4">
         <SectionLabel title="Invoice history" />
         <div className="mt-3 rounded-md border bg-gray-50 p-4 text-sm text-gray-600">
-          Your full invoice history (with PDF downloads, payment-method updates, and cancel
-          options) lives in the Stripe Billing Portal. Click <strong>Open Stripe Billing
-          Portal</strong> above (or <strong>Manage billing</strong> on a specific platform card).
+          Your invoices (with PDF downloads) and your payment method are on the payment page.
+          Click <strong>Payment method &amp; invoices</strong> above, or on a product's card.
+          To end one product without touching the others, use <strong>Remove</strong> on that product's card.
         </div>
       </div>
     </div>

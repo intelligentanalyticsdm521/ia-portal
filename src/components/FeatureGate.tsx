@@ -53,7 +53,7 @@ export function FeatureGate({
         <div className="max-w-md rounded-2xl bg-white px-6 py-5 shadow-lg border border-gray-200 text-center">
           <h2 className="text-lg font-semibold mb-2">
             {isUpsell
-              ? `${serviceName} is not enabled for this tenant`
+              ? `${serviceName} isn't part of this business's plan`
               : "Coming soon"}
           </h2>
 

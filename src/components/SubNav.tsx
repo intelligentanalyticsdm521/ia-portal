@@ -20,6 +20,9 @@ import { useAppState } from "../app/AppState";
 import { FORGE_SOFTWARE, screenRoute, softwareRoot, visibleScreens } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
+import { useProductAccess } from "../hooks/useProductAccess";
+import { ProductEndedNotice } from "./ProductEndedNotice";
+import { isOffGatedProduct } from "../lib/productAccess";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -1272,9 +1275,17 @@ export function SubNav({ config }: SubNavProps) {
   const needsKey = PRODUCT_SERVICE_KEY[productKey || ""];
   // Kill switch (2026-08-06) — see config/featureFlags.FEATURE_GATING_ENABLED.
   // With gating off nothing is marked locked, restoring the pre-gating menu.
+  //
+  // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the same source as the
+  // rail and the page gate: platform-api's decided answer first (so a product
+  // whose subscription ended mid-session locks within a minute), then the
+  // sign-in list. For OLIVER, SPARK, ARION and STELLA the banner is the same
+  // sentence and control the page shows (ProductEndedNotice, variant "nav").
+  const productAccess = useProductAccess(location.pathname);
+  const railLock = needsKey ? productAccess.isLockedOnRail(needsKey) : null;
   const productLocked =
     FEATURE_GATING_ENABLED &&
-    !!needsKey && ownedProducts.size > 0 && !ownedProducts.has(needsKey);
+    !!needsKey && (railLock !== null ? railLock : ownedProducts.size > 0 && !ownedProducts.has(needsKey));
 
   // 2026-08-17 — SHOW-DON'T-HIDE applies to ENTITLEMENT ONLY.
   //
@@ -1422,7 +1433,10 @@ export function SubNav({ config }: SubNavProps) {
           browsable so the customer can see exactly what they'd get, with a
           prominent "add this product" banner above it. Access itself is
           enforced server-side (403), never by hiding the nav. */}
-      {productLocked && (
+      {productLocked && isOffGatedProduct(productKey) && (
+        <ProductEndedNotice product={productKey} variant="nav" />
+      )}
+      {productLocked && !isOffGatedProduct(productKey) && (
         <div
           className="mx-3 mb-3 rounded-md px-3 py-2.5"
           style={{ background: "#EF6C3318", border: "1px solid #EF6C3355" }}
