@@ -190,6 +190,10 @@ export interface PlanRow {
   /** 'entitlement' = the product is on in our records with no paid
    *  subscription behind it (set up by IA, or comped). Nothing to remove. */
   source?: string | null;
+  /** The API's own sentence for this row (status 'unpaid' carries one). */
+  message?: string | null;
+  /** 'update_card' on an unpaid row. */
+  action?: string | null;
 }
 
 /** Stripe statuses that still count as paid for (§1.3). */
@@ -203,11 +207,23 @@ export function rowIsLive(row: PlanRow | null | undefined): boolean {
   return (LIVE_STATUSES as readonly string[]).includes(String(row.status).toLowerCase());
 }
 
-/** The row for one product: a live one first, else the ended one. */
+/** UNPAID: Stripe gave up retrying the card. The product is HELD by that
+ *  subscription (the open invoice is still there), so it is never "Not
+ *  subscribed" and never "Add <PRODUCT>": a second Checkout would bill the
+ *  business twice (decision (d), 2026-10-08). */
+export function rowIsUnpaid(row: PlanRow | null | undefined): boolean {
+  return !!row && String(row.status || '').toLowerCase() === 'unpaid';
+}
+
+/** The row for one product: a live one first, else an unpaid one, else the ended one. */
 export function rowForProduct(rows: PlanRow[] | null | undefined, product: string): PlanRow | null {
   const mine = (rows || []).filter((r) => String(r.product || '').toLowerCase() === String(product).toLowerCase());
-  return mine.find(rowIsLive) || mine.find((r) => !!r.ended) || null;
+  return mine.find(rowIsLive) || mine.find(rowIsUnpaid) || mine.find((r) => !!r.ended) || null;
 }
+
+/** What an unpaid product's card says, when the API sent no sentence of its own. */
+export const unpaidSentence = (product: GatedProduct): string =>
+  `Your last payment didn't go through, so ${PRODUCT_NAME[product]} is paused. Update your card to turn it back on.`;
 
 export type CardState = 'active' | 'downgrade' | 'ending' | 'past_due' | 'ended' | 'never';
 
@@ -225,6 +241,14 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
   if (!row) return { state: 'never', line: 'Not subscribed', control: { kind: 'add', label: `Add ${name} to your account` }, canRemove: false };
 
   const live = rowIsLive(row);
+  if (rowIsUnpaid(row)) {
+    return {
+      state: 'past_due',
+      line: (row.message && String(row.message).trim()) || unpaidSentence(product),
+      control: { kind: 'update_card', label: 'Update card' },
+      canRemove: false,
+    };
+  }
   if (!live && row.ended) {
     return { state: 'ended', line: endedSentence(product, row.ended.at, timeZone), control: { kind: 'resubscribe', label: 'Re-subscribe' }, canRemove: false };
   }
