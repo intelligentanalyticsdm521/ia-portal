@@ -32,6 +32,11 @@ test("without the API's sentence the card still says the payment failed", () => 
   assert.equal(card.control?.kind, "update_card");
 });
 
+test("the API's own sentence is the one said, when it sends one", () => {
+  const said = "Your last payment didn't go through, so SPARK is paused. Update your card to turn it back on before November 1, 2026.";
+  assert.equal(planCardLine("spark", { ...unpaidRow, message: said }).line, said);
+});
+
 test("a team member reads the line and 'Ask an admin on your team to update the card.'", () => {
   const { card, note } = planCardForViewer("spark", planCardLine("spark", unpaidRow), "member");
   assert.equal(card.control, null);
