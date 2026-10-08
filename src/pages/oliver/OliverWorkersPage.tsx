@@ -638,8 +638,19 @@ function WorkerDrawer({ workerId, onClose, onSaved, api, locations, defaultLocat
 // /workers/:id (not the drawer's Save), and "Saved" only when the answer
 // carries the value sent. Read from GET /workers/:id, whose row carries the
 // four columns; a switch the server did not send is shown disabled with a
-// sentence rather than a guessed default. Owners and admins can always do
-// all four (the API says so on GET /employee/me).
+// sentence rather than a guessed default.
+//
+// WHAT THE SENTENCE SAYS, AND WHY IT CHANGED (2026-10-08). It used to read
+// "Owners and admins can always do all four", which was true of the code and
+// wrong in effect: oliver-api's crewPermissions() short-circuited on
+// `oliverRole === "admin"`, and EVERY user resolves to admin unless there is a
+// row in oliver.tenant_user_role saying accountant - a table with zero rows on
+// production. So the four boxes did nothing for anybody. Rolling In It's crew
+// member had can_send_quotes, can_quote_custom and can_charge all unticked and
+// could still do all three (oliver-api 370ae33). A box that is SET is now
+// obeyed for everyone; where a box was never set, an owner or admin may do it.
+// The sentence had to change with the behaviour, or the screen would lie the
+// other way. GET /employee/me returns the same four, read the same way.
 function CrewPermissionsPanel({ workerId, firstName, api }: {
   workerId: string; firstName: string; api: WorkerDrawerApi;
 }) {
@@ -677,7 +688,7 @@ function CrewPermissionsPanel({ workerId, firstName, api }: {
     <div data-testid="crew-permissions">
       <h3 className="text-sm font-semibold uppercase tracking-wide text-oliver-teal">On site, in the crew app</h3>
       <p className="text-xs text-slate-500 mt-1">
-        What {firstName.trim() || "this worker"} may do on the tablet. Each box saves when you tick or untick it. Owners and admins can always do all four.
+        What {firstName.trim() || "this worker"} may do on the tablet. Each box saves when you tick or untick it. Once you set a box it holds for everyone, owners and admins included.
       </p>
       {loadErr && <div className="mt-2 rounded-lg bg-red-50 ring-1 ring-red-200 px-3 py-2 text-xs text-red-800" role="alert">{loadErr}</div>}
       {!perms && !loadErr && <div className="mt-2 text-xs text-slate-500">Loading…</div>}

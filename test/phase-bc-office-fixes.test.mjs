@@ -83,6 +83,21 @@ test("W4: the ON SITE help names the tick boxes it sits over", () => {
   assert.doesNotMatch(panelSrc.slice(0, 4000), /role="switch"/, "a tick box is announced as a tick box");
 });
 
+// 2026-10-08: the help used to end "Owners and admins can always do all four."
+// That was true of the code and WRONG IN EFFECT - crewPermissions()
+// short-circuited on an admin role that every user has, so the four boxes did
+// nothing for anybody (oliver-api 370ae33). A box that is set is now obeyed for
+// everyone, so the sentence had to change with it or the screen would lie the
+// other way round.
+test("W4b: the ON SITE help does not promise that admins override the boxes", () => {
+  // Scoped to the words on the SCREEN. The comment above the panel quotes the
+  // old sentence on purpose, to record what changed and why.
+  const help = workers.slice(workers.indexOf("may do on the tablet"), workers.indexOf("may do on the tablet") + 400);
+  assert.match(help, /Once you set a box it holds for everyone, owners and admins included\./);
+  assert.doesNotMatch(help, /can always do all four/, "the old promise is gone from the screen");
+  assert.doesNotMatch(help, /Owners and admins can always/);
+});
+
 // ── M4 ────────────────────────────────────────────────────────────────────
 
 test("M4: the Workflow tab's message is not cleared by a timer", () => {
