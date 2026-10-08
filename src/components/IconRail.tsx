@@ -188,7 +188,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           // locked — restores the pre-gating behaviour while the founder-bypass
           // path is verified. See config/featureFlags.FEATURE_GATING_ENABLED.
           const locked = FEATURE_GATING_ENABLED && !p.enabled;
-          const lockWords = railLockWords(PRODUCT_SERVICE_KEY[p.key] || p.key, p.tagline, p.label, offWhy.get(PRODUCT_SERVICE_KEY[p.key] || "") ?? "never");
+          const lockWords = railLockWords(PRODUCT_SERVICE_KEY[p.key] || p.key, p.tagline, p.label, offWhy.get(PRODUCT_SERVICE_KEY[p.key] || "") ?? null);
           return (
             <button
               key={p.key}

@@ -578,6 +578,9 @@ export function SubscriptionBillingTab() {
     downgrade: { text: "Active", cls: "bg-emerald-50 text-emerald-700 border border-emerald-200" },
     ending: { text: "Ending", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
     past_due: { text: "Payment failed", cls: "bg-red-50 text-red-700 border border-red-200" },
+    // The product is still there in both of these: never "Not subscribed".
+    payment_incomplete: { text: "Payment pending", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
+    paused: { text: "Paused", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
     ended: { text: "Ended", cls: "bg-gray-100 text-gray-600 border border-gray-200" },
     never: { text: "Not subscribed", cls: "bg-gray-100 text-gray-500" },
   };

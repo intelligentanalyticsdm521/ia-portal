@@ -146,11 +146,17 @@ export function ProductPlanStatus({ product, row, owner = false, addTo, onChange
   const btn = 'inline-flex items-center justify-center rounded-md px-3 py-1.5 text-xs font-semibold disabled:opacity-50';
   // STELLA has no plan page: "Add STELLA" opens its plans here instead of a link.
   const addInCard = card.control?.kind === 'add' && product === 'stella' && !addTo;
+  // A held-but-not-paid product is not a quiet grey note: a failed payment is
+  // red, an unfinished first payment and a paused subscription are amber.
+  const lineColour = card.state === 'past_due' ? 'text-red-700'
+    : card.state === 'payment_incomplete' || card.state === 'paused' ? 'text-amber-700'
+    : card.state === 'ended' ? 'text-slate-800'
+    : 'text-gray-600';
 
   return (
     <div className="mt-2 flex flex-col gap-1.5" data-plan-status={product} data-plan-state={card.state} data-plan-viewer={viewer}>
       {card.line && card.state !== 'never' && (
-        <p className={`text-xs ${card.state === 'past_due' ? 'text-red-700' : card.state === 'ended' ? 'text-slate-800' : 'text-gray-600'}`} data-plan-line>
+        <p className={`text-xs ${lineColour}`} data-plan-line>
           {card.line}
         </p>
       )}

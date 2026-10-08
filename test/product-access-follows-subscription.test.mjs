@@ -19,6 +19,10 @@
 //   P  a product whose payment FAILED (unpaid): the gate, the menu notice and
 //      the rail say what the Plan & Pricing card says, with Update card, never
 //      "isn't part of your plan yet" with "Add" (decision (d)).
+//   Q  the other two HELD-but-not-paid states (2026-10-08 open minor): an
+//      INCOMPLETE first payment and a PAUSED subscription are listed by the
+//      billing API and read the same way everywhere - their own sentence, no
+//      control (nothing of ours fixes either), and never "Add <PRODUCT>".
 //
 // Mutations run against this file are listed in the stream-2 report.
 import { test, describe, before, after } from "node:test";
@@ -137,12 +141,15 @@ describe("G: only a decided 'not owned' closes a product", () => {
       /productLocked && isOffGatedProduct\(productKey\) && !\(productAccess\.isOff\(productKey\) && offNoticeShownByPage\(location\.pathname, productKey\)\) && \(/);
   });
   test("the rail says ENDED for an ended product, in the notice's words; ADD for one never bought", () => {
-    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "ended"),
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", { kind: "ended", at: "2026-11-01T00:00:00Z" }),
       { badge: "ENDED", title: "Your SPARK subscription ended. Open SPARK to re-subscribe." });
-    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "never"),
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", { kind: "never" }),
+      { badge: "ADD", title: "SPARK is not part of your plan — add SPARK to enable Marketing" });
+    // Nothing known at all reads as never bought, never as a held product.
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", null),
       { badge: "ADD", title: "SPARK is not part of your plan — add SPARK to enable Marketing" });
     assert.deepEqual([...offReasons([{ product: "spark", status: "ended", ended: { at: "2026-11-01T00:00:00Z" } },
-      { product: "oliver", status: "active" }])], [["spark", "ended"]]);
+      { product: "oliver", status: "active" }])], [["spark", { kind: "ended", at: "2026-11-01T00:00:00Z" }]]);
     const rail = read("src/components/IconRail.tsx");
     assert.match(rail, /\{lockWords\.badge\}/);
     assert.match(rail, /title=\{locked \? lockWords\.title : /);
@@ -815,13 +822,19 @@ const NEVER_WORDS = /isn't part of your plan|Add SPARK|Re-subscribe/;
 
 describe("P: an unpaid product, read once for every surface", () => {
   test("offReasonForRow: unpaid carries the API's sentence; ended carries its date; nothing else is 'never'", () => {
-    assert.deepEqual(offReasonForRow("spark", UNPAID_SPARK[0]), { kind: "unpaid", sentence: UNPAID_SENTENCE });
+    assert.deepEqual(offReasonForRow("spark", UNPAID_SPARK[0]),
+      { kind: "held", status: "unpaid", sentence: UNPAID_SENTENCE, action: "update_card" });
+    // An older billing API sent no sentence and no action: unpaid still offers
+    // Update card, because that screen exists.
     assert.deepEqual(offReasonForRow("oliver", { product: "oliver", status: "unpaid" }),
-      { kind: "unpaid", sentence: "Your last payment didn't go through, so OLIVER is paused. Update your card to turn it back on." });
+      { kind: "held", status: "unpaid", action: "update_card",
+        sentence: "Your last payment didn't go through, so OLIVER is paused. Update your card to turn it back on." });
     assert.deepEqual(offReasonForRow("spark", ENDED_SPARK[0]), { kind: "ended", at: "2026-11-01T18:00:00Z" });
     assert.deepEqual(offReasonForRow("spark", null), { kind: "never" });
     // an unpaid row beside an older ended record is still unpaid (rowForProduct picks it)
-    assert.equal(offReasonForRow("spark", rowForProduct([...ENDED_SPARK, ...UNPAID_SPARK], "spark")).kind, "unpaid");
+    const bothRows = offReasonForRow("spark", rowForProduct([...ENDED_SPARK, ...UNPAID_SPARK], "spark"));
+    assert.equal(bothRows.kind, "held");
+    assert.equal(bothRows.status, "unpaid");
   });
 
   test("the off notice and the Plan & Pricing card say the SAME sentence, with the same control", () => {
@@ -848,11 +861,13 @@ describe("P: an unpaid product, read once for every surface", () => {
   });
 
   test("the rail: PAUSED and the payment words for an unpaid product, never ADD", () => {
-    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", "unpaid"),
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", offReasonForRow("spark", UNPAID_SPARK[0])),
       { badge: "PAUSED", title: "Your last payment didn't go through, so SPARK is paused. Open SPARK to update your card." });
-    assert.deepEqual([...offReasons(UNPAID_SPARK)], [["spark", "unpaid"]]);
-    assert.deepEqual([...offReasons([...ENDED_SPARK, { product: "oliver", status: "unpaid" }, { product: "arion", status: "active" }])],
-      [["oliver", "unpaid"], ["spark", "ended"]]);
+    assert.deepEqual([...offReasons(UNPAID_SPARK)],
+      [["spark", { kind: "held", status: "unpaid", sentence: UNPAID_SENTENCE, action: "update_card" }]]);
+    const several = [...offReasons([...ENDED_SPARK, { product: "oliver", status: "unpaid" }, { product: "arion", status: "active" }])];
+    assert.deepEqual(several.map(([p, why]) => [p, why.kind, why.status ?? null]),
+      [["oliver", "held", "unpaid"], ["spark", "ended", null]]);
   });
 
   test("one source: the card, the notice, the rail's reasons and IconRail all read offReasonForRow / offReasons", () => {
@@ -865,7 +880,7 @@ describe("P: an unpaid product, read once for every surface", () => {
     assert.match(notice, /setWhy\(offReasonForRow\(product, rowForProduct\(r\?\.subscriptions, product\)\)\)/);
     const rail = read("src/components/IconRail.tsx");
     assert.match(rail, /const offWhy = useOffReasons\(FEATURE_GATING_ENABLED && anyGatedLocked, location\.pathname\);/);
-    assert.match(rail, /railLockWords\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| p\.key, p\.tagline, p\.label, offWhy\.get\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| ""\) \?\? "never"\)/);
+    assert.match(rail, /railLockWords\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| p\.key, p\.tagline, p\.label, offWhy\.get\(PRODUCT_SERVICE_KEY\[p\.key\] \|\| ""\) \?\? null\)/);
     assert.match(read("src/hooks/useOffReasons.ts"), /why: offReasons\(r\?\.subscriptions\)/);
     // Update card is ONE action, used by the card and by the notice
     assert.match(read("src/components/ProductPlanStatus.tsx"), /const said = await openUpdateCard\(\{ token, tenantId, product \}\);/);
@@ -965,5 +980,113 @@ describe("P: an unpaid product, rendered and clicked", () => {
     assert.equal(probe?.getAttribute("data-badge"), "PAUSED");
     assert.equal(probe?.getAttribute("title"), "Your last payment didn't go through, so SPARK is paused. Open SPARK to update your card.");
     v.unmount();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Q: the other two HELD-but-not-paid states (open minor, 2026-10-08 11:15Z)
+
+   GET /billing/subscriptions used to list only live and UNPAID rows, so a
+   product an INCOMPLETE or PAUSED subscription held fell through to "Not
+   subscribed" + "Add <PRODUCT>". Pressing Add was refused with the right
+   sentence and nobody was double-charged, but the words on the card, the
+   product's own pages, its menu and the rail were all wrong.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+const INCOMPLETE_SENTENCE = "Your first payment for SPARK hasn't gone through yet, so SPARK is switched off. Check your email from us to finish it.";
+const PAUSED_SENTENCE = "SPARK is paused, so it's switched off. Contact us and we'll turn it back on.";
+const heldRow = (status, message) => ({
+  product: "spark", tier: null, status, current_period_end: null, monthly_usd: 0, items: [],
+  ended: null, message, action: null, subscription_id: "sub_h",
+});
+
+describe("Q: an incomplete or paused subscription still holds the product", () => {
+  test("rowForProduct keeps a held row (it used to be dropped, which is what said 'Add SPARK')", () => {
+    for (const status of ["unpaid", "incomplete", "paused"]) {
+      const row = rowForProduct([heldRow(status, "x")], "spark");
+      assert.ok(row, `${status} must survive rowForProduct`);
+      assert.equal(row.status, status);
+    }
+    // A live row still wins, and an ended record is still last.
+    assert.equal(rowForProduct([heldRow("paused", "x"), { product: "spark", status: "active" }], "spark").status, "active");
+    // Two held rows: the billing API's HELD_NOT_PAID order (unpaid first), so
+    // the card names the same subscription the refusal does.
+    assert.equal(rowForProduct([heldRow("paused", "p"), heldRow("unpaid", "u")], "spark").message, "u");
+  });
+
+  test("the API's sentence is the one said, and each state has its own fallback", () => {
+    assert.deepEqual(offReasonForRow("spark", heldRow("incomplete", INCOMPLETE_SENTENCE)),
+      { kind: "held", status: "incomplete", sentence: INCOMPLETE_SENTENCE, action: null });
+    assert.deepEqual(offReasonForRow("spark", heldRow("paused", PAUSED_SENTENCE)),
+      { kind: "held", status: "paused", sentence: PAUSED_SENTENCE, action: null });
+    // No sentence from the API (an older oliver-api): the Portal's own words,
+    // which say the same thing.
+    assert.equal(offReasonForRow("spark", { product: "spark", status: "incomplete" }).sentence, INCOMPLETE_SENTENCE);
+    assert.equal(offReasonForRow("spark", { product: "spark", status: "paused" }).sentence, PAUSED_SENTENCE);
+  });
+
+  test("neither sentence promises Update card, because nothing of ours resumes or finishes one", () => {
+    for (const sentence of [INCOMPLETE_SENTENCE, PAUSED_SENTENCE]) {
+      assert.doesNotMatch(sentence, /update (your )?card/i);
+      assert.doesNotMatch(sentence, NEVER_WORDS);
+    }
+    assert.match(UNPAID_SENTENCE, /Update your card/);
+  });
+
+  test("the card: its own badge state, its own sentence, and NO control", () => {
+    for (const [status, sentence, state] of [
+      ["incomplete", INCOMPLETE_SENTENCE, "payment_incomplete"],
+      ["paused", PAUSED_SENTENCE, "paused"],
+    ]) {
+      const card = planCardLine("spark", rowForProduct([heldRow(status, sentence)], "spark"), TZ);
+      assert.equal(card.state, state);
+      assert.equal(card.line, sentence);
+      assert.equal(card.control, null, "no button that cannot do anything");
+      assert.equal(card.canRemove, false);
+      assert.doesNotMatch(JSON.stringify(card), NEVER_WORDS);
+      assert.notEqual(card.state, "never", 'never == "Not subscribed" + Add');
+    }
+    // UNPAID is unchanged: a failed payment keeps its red badge and its button.
+    const unpaid = planCardLine("spark", UNPAID_SPARK[0], TZ);
+    assert.equal(unpaid.state, "past_due");
+    assert.deepEqual(unpaid.control, { kind: "update_card", label: "Update card" });
+  });
+
+  test("Payment pending and Paused are real badges on the Plan & Pricing card", () => {
+    const page = read("src/pages/settings/TenantSettings.tsx");
+    assert.match(page, /payment_incomplete: \{ text: "Payment pending"/);
+    assert.match(page, /paused: \{ text: "Paused"/);
+    // The line is not grey as if nothing were wrong.
+    assert.match(read("src/components/ProductPlanStatus.tsx"),
+      /card\.state === 'payment_incomplete' \|\| card\.state === 'paused' \? 'text-amber-700'/);
+  });
+
+  test("the off notice on the product's pages and menu: the sentence alone, for every viewer", () => {
+    for (const [status, sentence] of [["incomplete", INCOMPLETE_SENTENCE], ["paused", PAUSED_SENTENCE]]) {
+      const why = offReasonForRow("spark", heldRow(status, sentence));
+      for (const viewer of ["admin", "member", "viewing_client"]) {
+        const n = offNotice("spark", why, viewer, TZ);
+        assert.equal(n.sentence, sentence);
+        assert.equal(n.action, null, `${viewer} is offered no control for ${status}`);
+        assert.equal(n.note, null, "and is not told to ask an admin for something nobody can do");
+        assert.doesNotMatch(JSON.stringify(n), NEVER_WORDS);
+      }
+      // The card and the notice still say ONE sentence.
+      assert.equal(offNotice("spark", why, "admin", TZ).sentence,
+        planCardLine("spark", rowForProduct([heldRow(status, sentence)], "spark"), TZ).line);
+    }
+  });
+
+  test("the rail: its own badge and title, never ADD", () => {
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", offReasonForRow("spark", heldRow("incomplete", INCOMPLETE_SENTENCE))),
+      { badge: "PENDING", title: "Your first payment for SPARK hasn't gone through yet. Open SPARK to see what to do." });
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", offReasonForRow("spark", heldRow("paused", PAUSED_SENTENCE))),
+      { badge: "PAUSED", title: "SPARK is paused. Open SPARK to see what to do." });
+    for (const status of ["incomplete", "paused"]) {
+      const [[key, why]] = [...offReasons([heldRow(status, "x")])];
+      assert.equal(key, "spark");
+      assert.equal(why.kind, "held");
+      assert.equal(why.status, status);
+    }
   });
 });

@@ -14,12 +14,12 @@ import { useAccessToken } from '../auth/useAccessToken';
 import { fetchSubscriptionsShared } from '../lib/billingApi';
 import { offReasons, type OffReason } from '../lib/productAccess';
 
-const NONE: ReadonlyMap<string, OffReason['kind']> = new Map();
+const NONE: ReadonlyMap<string, OffReason> = new Map();
 
-export function useOffReasons(enabled: boolean, refreshKey?: unknown): ReadonlyMap<string, OffReason['kind']> {
+export function useOffReasons(enabled: boolean, refreshKey?: unknown): ReadonlyMap<string, OffReason> {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
-  const [held, setHeld] = useState<{ tenantId: string; why: Map<string, OffReason['kind']> } | null>(null);
+  const [held, setHeld] = useState<{ tenantId: string; why: Map<string, OffReason> } | null>(null);
 
   useEffect(() => {
     if (!enabled || !activeTenantId) return;

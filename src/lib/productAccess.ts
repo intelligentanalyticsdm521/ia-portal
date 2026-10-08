@@ -163,14 +163,18 @@ export interface OffNotice {
 /**
  * What the product's pages (ProductGate) and its menu (SubNav) show instead of
  * themselves. `why` = offReasonForRow(product, its billing row): the SAME
- * reading the Plan & Pricing card makes, so an unpaid product says the payment
- * failed with Update card here too, never "isn't part of your plan yet" with
- * "Add" (decision (d)). null = not known, read as never bought.
+ * reading the Plan & Pricing card makes, so a product a subscription still
+ * holds says what that state is here too, never "isn't part of your plan yet"
+ * with "Add" (decision (d)). null = not known, read as never bought.
  */
 export function offNotice(product: GatedProduct, why: OffReason | null, viewer: Viewer, timeZone?: string): OffNotice {
   const name = PRODUCT_NAME[product];
-  if (why?.kind === 'unpaid') {
+  if (why?.kind === 'held') {
     const sentence = why.sentence;
+    // No control: an incomplete first payment and a paused subscription have
+    // no screen of ours that fixes them, so the sentence stands alone and the
+    // team member is not told to ask an admin for something nobody can do.
+    if (why.action !== 'update_card') return { sentence, action: null, note: null };
     if (viewer === 'viewing_client') return { sentence, action: null, note: SWITCH_TO_OWN_BUSINESS };
     if (viewer === 'member') return { sentence, action: null, note: ASK_AN_ADMIN_UPDATE_CARD };
     return { sentence, action: { kind: 'update_card', label: 'Update card' }, note: null };
@@ -200,9 +204,12 @@ export interface PlanRow {
   /** 'entitlement' = the product is on in our records with no paid
    *  subscription behind it (set up by IA, or comped). Nothing to remove. */
   source?: string | null;
-  /** The API's own sentence for this row (status 'unpaid' carries one). */
+  /** The API's own sentence for this row (every held-but-not-paid status
+   *  carries one: unpaid, incomplete, paused). */
   message?: string | null;
-  /** 'update_card' on an unpaid row. */
+  /** The one control the API says exists for this row: 'update_card' on an
+   *  unpaid row, absent on incomplete and paused (nothing of ours finishes a
+   *  first payment or resumes a paused subscription). */
   action?: string | null;
 }
 
@@ -217,27 +224,78 @@ export function rowIsLive(row: PlanRow | null | undefined): boolean {
   return (LIVE_STATUSES as readonly string[]).includes(String(row.status).toLowerCase());
 }
 
-/** UNPAID: Stripe gave up retrying the card. The product is HELD by that
- *  subscription (the open invoice is still there), so it is never "Not
- *  subscribed" and never "Add <PRODUCT>": a second Checkout would bill the
- *  business twice (decision (d), 2026-10-08). */
-export function rowIsUnpaid(row: PlanRow | null | undefined): boolean {
-  return !!row && String(row.status || '').toLowerCase() === 'unpaid';
+/**
+ * HELD BUT NOT PAID. A subscription that still holds the product although it
+ * is not being paid for, in the order oliver-api answers them
+ * (lib/billingCartChange.js HELD_NOT_PAID, and the order
+ * GET /billing/subscriptions lists them in, so the card and the refusal always
+ * name the same subscription):
+ *   unpaid      Stripe gave up retrying the card; the open invoice is there.
+ *   incomplete  the FIRST payment still needs a step from the owner.
+ *   paused      pause_collection is set (by hand, in the Stripe dashboard).
+ * None of the three is "Not subscribed" and none offers "Add <PRODUCT>": a
+ * second Checkout would bill the business twice (decision (d), 2026-10-08).
+ */
+export const HELD_NOT_PAID_STATUSES = ['unpaid', 'incomplete', 'paused'] as const;
+export type HeldStatus = typeof HELD_NOT_PAID_STATUSES[number];
+
+export function rowHeldStatus(row: PlanRow | null | undefined): HeldStatus | null {
+  const s = String(row?.status || '').toLowerCase();
+  return (HELD_NOT_PAID_STATUSES as readonly string[]).includes(s) ? (s as HeldStatus) : null;
 }
 
-/** The row for one product: a live one first, else an unpaid one, else the ended one. */
+export function rowIsHeldNotPaid(row: PlanRow | null | undefined): boolean {
+  return rowHeldStatus(row) !== null;
+}
+
+/** UNPAID alone (the only held state whose badge is the red "Payment failed"). */
+export function rowIsUnpaid(row: PlanRow | null | undefined): boolean {
+  return rowHeldStatus(row) === 'unpaid';
+}
+
+/** The row for one product: a live one first, else a held one, else the ended one. */
 export function rowForProduct(rows: PlanRow[] | null | undefined, product: string): PlanRow | null {
   const mine = (rows || []).filter((r) => String(r.product || '').toLowerCase() === String(product).toLowerCase());
-  return mine.find(rowIsLive) || mine.find(rowIsUnpaid) || mine.find((r) => !!r.ended) || null;
+  const liveRow = mine.find(rowIsLive);
+  if (liveRow) return liveRow;
+  // In HELD_NOT_PAID order, so two held subscriptions over one product read
+  // the way oliver-api's refusal reads them.
+  for (const status of HELD_NOT_PAID_STATUSES) {
+    const held = mine.find((r) => rowHeldStatus(r) === status);
+    if (held) return held;
+  }
+  return mine.find((r) => !!r.ended) || null;
 }
 
-/** What an unpaid product's card says, when the API sent no sentence of its own. */
+/** What a held product's card says when the API sent no sentence of its own
+ *  (an older oliver-api, or a row we could not read). The API's own wording
+ *  always wins; these exist only so the screen is never wordless. */
 export const unpaidSentence = (product: GatedProduct): string =>
   `Your last payment didn't go through, so ${PRODUCT_NAME[product]} is paused. Update your card to turn it back on.`;
+export const incompleteSentence = (product: GatedProduct): string =>
+  `Your first payment for ${PRODUCT_NAME[product]} hasn't gone through yet, so ${PRODUCT_NAME[product]} is switched off. Check your email from us to finish it.`;
+export const pausedSentence = (product: GatedProduct): string =>
+  `${PRODUCT_NAME[product]} is paused, so it's switched off. Contact us and we'll turn it back on.`;
+export function heldSentence(product: GatedProduct, status: HeldStatus): string {
+  if (status === 'incomplete') return incompleteSentence(product);
+  if (status === 'paused') return pausedSentence(product);
+  return unpaidSentence(product);
+}
+
+/** The one control a held state offers. Only a failed payment has a screen of
+ *  ours that fixes it: nothing we own finishes a first payment or resumes a
+ *  paused subscription, so those offer no button rather than one that lies. */
+export function heldAction(status: HeldStatus, apiAction?: string | null): 'update_card' | null {
+  const said = String(apiAction || '').toLowerCase();
+  if (said === 'update_card') return 'update_card';
+  if (said) return null;                             // the API named a control we have no screen for
+  return status === 'unpaid' ? 'update_card' : null; // an older API sent no action at all
+
+}
 
 /** Why a product is not live, read from its billing row (rowForProduct). */
 export type OffReason =
-  | { kind: 'unpaid'; sentence: string }
+  | { kind: 'held'; status: HeldStatus; sentence: string; action: 'update_card' | null }
   | { kind: 'ended'; at: string | null }
   | { kind: 'never' };
 
@@ -246,18 +304,31 @@ export type OffReason =
  * Pricing card (planCardLine), the off notice on the product's pages and menu
  * (offNotice) and the rail's badge (railLockWords via offReasons) all take
  * their words from here, so the three can never disagree:
- *   unpaid  the payment failed and Stripe stopped retrying; the subscription
- *           still holds the product. The API's sentence, or unpaidSentence.
+ *   held    a subscription still holds the product and is not being paid for
+ *           (unpaid, incomplete or paused). The API's sentence, else
+ *           heldSentence; the API's control, else heldAction.
  *   ended   a switch-off on record, with its date.
  *   never   no row, or nothing that says it was ever bought.
  */
 export function offReasonForRow(product: GatedProduct, row: PlanRow | null | undefined): OffReason {
-  if (row && rowIsUnpaid(row)) return { kind: 'unpaid', sentence: (row.message && String(row.message).trim()) || unpaidSentence(product) };
+  const status = rowHeldStatus(row);
+  if (row && status) {
+    return {
+      kind: 'held',
+      status,
+      sentence: (row.message && String(row.message).trim()) || heldSentence(product, status),
+      action: heldAction(status, row.action),
+    };
+  }
   if (row && !rowIsLive(row) && row.ended) return { kind: 'ended', at: row.ended.at ?? null };
   return { kind: 'never' };
 }
 
-export type CardState = 'active' | 'downgrade' | 'ending' | 'past_due' | 'ended' | 'never';
+// 'past_due' = a payment that failed (a live past-due subscription, or an
+// UNPAID one Stripe stopped retrying). 'payment_incomplete' and 'paused' are
+// the other two held-but-not-paid states: the product is still there, so
+// neither is 'never' and neither offers Add.
+export type CardState = 'active' | 'downgrade' | 'ending' | 'past_due' | 'payment_incomplete' | 'paused' | 'ended' | 'never';
 
 export interface CardLine {
   state: CardState;
@@ -274,8 +345,13 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
 
   if (!rowIsLive(row)) {
     const why = offReasonForRow(product, row);
-    if (why.kind === 'unpaid') {
-      return { state: 'past_due', line: why.sentence, control: { kind: 'update_card', label: 'Update card' }, canRemove: false };
+    if (why.kind === 'held') {
+      return {
+        state: why.status === 'incomplete' ? 'payment_incomplete' : why.status === 'paused' ? 'paused' : 'past_due',
+        line: why.sentence,
+        control: why.action === 'update_card' ? { kind: 'update_card', label: 'Update card' } : null,
+        canRemove: false,
+      };
     }
     if (why.kind === 'ended') {
       return { state: 'ended', line: endedSentence(product, why.at, timeZone), control: { kind: 'resubscribe', label: 'Re-subscribe' }, canRemove: false };
@@ -342,6 +418,8 @@ export function planCardForViewer(product: GatedProduct, card: CardLine, viewer:
   const note = card.state === 'ended' ? ASK_AN_ADMIN_RESUBSCRIBE
     : card.state === 'never' ? `Ask an admin on your team to add ${name}.`
     : card.state === 'past_due' ? ASK_AN_ADMIN_UPDATE_CARD
+    // payment_incomplete and paused have no control at all (see planCardLine),
+    // so they never reach here: nothing to ask an admin for.
     : `Ask an admin on your team to change ${name}'s plan.`;
   return { card: bare, note };
 }
@@ -393,28 +471,36 @@ export function billingRefusalSentence(body: unknown, status: number): string {
    The rail: the badge and the tooltip of a locked product
    ══════════════════════════════════════════════════════════════════════════ */
 
-/** The same words the product's off notice uses (offReasonForRow): an
- *  UNPAID product says the payment failed (and how to fix it), an ENDED one
- *  says it ended (and how to get it back); only a product never bought says ADD. */
-export function railLockWords(product: string, tagline: string, label: string, why: OffReason['kind']): { badge: string; title: string } {
+/** The same words the product's off notice uses (offReasonForRow): a product
+ *  a subscription still HOLDS says which state that is (and how to fix it,
+ *  where we can), an ENDED one says it ended (and how to get it back); only a
+ *  product never bought says ADD. */
+export function railLockWords(product: string, tagline: string, label: string, why: OffReason | null): { badge: string; title: string } {
+  const kind = why?.kind ?? 'never';
+  const status = why?.kind === 'held' ? why.status : 'unpaid';
   if (isOffGatedProduct(product)) {
     const name = PRODUCT_NAME[product];
-    if (why === 'unpaid') return { badge: 'PAUSED', title: `Your last payment didn't go through, so ${name} is paused. Open ${name} to update your card.` };
-    if (why === 'ended') return { badge: 'ENDED', title: `Your ${name} subscription ended. Open ${name} to re-subscribe.` };
+    if (kind === 'held') {
+      if (status === 'incomplete') return { badge: 'PENDING', title: `Your first payment for ${name} hasn't gone through yet. Open ${name} to see what to do.` };
+      if (status === 'paused') return { badge: 'PAUSED', title: `${name} is paused. Open ${name} to see what to do.` };
+      return { badge: 'PAUSED', title: `Your last payment didn't go through, so ${name} is paused. Open ${name} to update your card.` };
+    }
+    if (kind === 'ended') return { badge: 'ENDED', title: `Your ${name} subscription ended. Open ${name} to re-subscribe.` };
   }
   return { badge: 'ADD', title: `${tagline} is not part of your plan — add ${tagline} to enable ${label}` };
 }
 
 /** Why each off-gated product is not live, from GET /billing/subscriptions
- *  rows: only 'unpaid' and 'ended' are listed (a product not listed reads as
- *  never bought). The rail's words come from here. */
-export function offReasons(rows: PlanRow[] | null | undefined): Map<string, OffReason['kind']> {
-  const out = new Map<string, OffReason['kind']>();
+ *  rows: only 'held' and 'ended' are listed (a product not listed reads as
+ *  never bought). The rail's words come from here, so the badge of a product
+ *  whose first payment is unfinished is not the one for a failed payment. */
+export function offReasons(rows: PlanRow[] | null | undefined): Map<string, OffReason> {
+  const out = new Map<string, OffReason>();
   for (const p of OFF_GATED_PRODUCTS) {
     const row = rowForProduct(rows, p);
     if (!row || rowIsLive(row)) continue;
     const why = offReasonForRow(p, row);
-    if (why.kind !== 'never') out.set(p, why.kind);
+    if (why.kind !== 'never') out.set(p, why);
   }
   return out;
 }
