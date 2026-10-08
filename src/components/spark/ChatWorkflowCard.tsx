@@ -12,10 +12,17 @@
 //   • the services, each with its paths, each path with its switch and its
 //     steps as a read-only tree (the full editor comes with the client
 //     rollout, §H);
-//   • drafts and warnings, and the time-zone picker right where the warning is.
+//   • drafts and warnings, and the time-zone picker right where the warning is;
+//   • Links: the web pages the chat's buttons open (the booking page, the
+//     trial page…), one field each, saved on the workflow. A button whose link
+//     has no address is hidden from visitors, and the card says so in plain
+//     words until the address is set.
 //
 // A business without the SPARK Growth package sees the one sentence the server
 // sends and nothing else — no switch that exists to say no.
+//
+// ChatVisitorEmailsSwitch is the "Email visitors what they asked for" switch
+// on a website row of the same block; what it did is said beside it too.
 //
 // ChatOwnTools is the "Your own tools" section in the same block: the
 // business's own software that a chat step can call (a report, a quote
@@ -34,9 +41,10 @@ import { ConfirmDialog, type ConfirmAsk } from "../ConfirmDialog";
 import { ChatWorkflowSteps } from "./ChatWorkflowTree";
 import {
   CHAT_WF, NEEDS_YOU_ROUTE, WORKFLOWS_ROUTE, SECRET_SENTENCE, TOOL_FIELDS,
-  buildDisplayTree, cardWarningLines, isTimezoneWarning, modeLine, refusalSentences, relativeTime,
+  buildDisplayTree, buttonsByLink, cardWarningLines, isTimezoneWarning, linkAddress, linkSavedWords,
+  linkStateWords, modeLine, refusalSentences, relativeTime,
   timeZoneOptions, warningWords, workflowsUsingTool, zoneKnown, zoneTargets,
-  type ChatActionRow, type ChatPlaybookRow, type TreePath, type ZoneSite,
+  type ChatActionRow, type ChatLinkRow, type ChatPlaybookRow, type TreePath, type ZoneSite,
 } from "../../lib/chatWorkflows";
 
 /** Keys of the requests in flight, one per control: two controls never share
@@ -114,9 +122,16 @@ interface CardProps {
 }
 
 export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZoneSaved }: CardProps) {
-  const { put } = useSparkApi();
+  const { put, get } = useSparkApi();
   const busy = useBusy();
   const [refusal, setRefusal] = useState<string[]>([]);
+  // Links: what is typed in each field, and what its last Save did (said beside it).
+  const [linkDrafts, setLinkDrafts] = useState<Record<string, string>>({});
+  const [linkWords, setLinkWords] = useState<Record<string, { ok: boolean; lines: string[] } | null>>({});
+  // The buttons each link opens, as the server has named them. The server
+  // names a button only while it is hidden, so what it said is kept here and
+  // the row still names its buttons once the address is set.
+  const linkButtons = useRef<Record<string, string[]>>({});
   const [said, setSaid] = useState<string | null>(null);
   const [openServices, setOpenServices] = useState<Set<string>>(new Set());
   const [openPaths, setOpenPaths] = useState<Set<string>>(new Set());
@@ -138,7 +153,12 @@ export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZ
   // reads the visitor's website's zone). Then neither the line nor the
   // picker shows.
   const tzAnswered = !!tzSaved || zoneKnown(sites);
-  const amber = cardWarningLines(warnings, tree.notes, tzAnswered);
+  const links: ChatLinkRow[] = Array.isArray(playbook.links) ? playbook.links : [];
+  for (const [k, labels] of Object.entries(buttonsByLink(tree.hiddenLinks))) {
+    const have = linkButtons.current[k] || [];
+    linkButtons.current[k] = [...have, ...labels.filter((l) => !have.includes(l))];
+  }
+  const amber = cardWarningLines(warnings, tree.notes, tzAnswered, tree.hiddenLinks, links);
   const tzTargets = zoneTargets(sites);
   const tzWarning = !tzAnswered && warnings.some(isTimezoneWarning);
 
@@ -252,11 +272,46 @@ export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZ
       } else {
         setRefusal([
           ...(saved.length ? [`Saved on ${saved.map(nameOf).join(", ")}.`] : []),
-          `Not saved on ${failed.map((f) => nameOf(f.id)).join(", ")}: ${failed[0].why} Pick the time zone again to retry.`,
+          `Not saved on ${failed.map((f) => nameOf(f.id)).join(", ")}. ${failed[0].why}`,
         ]);
       }
     } finally {
       busy.stop("tz");
+    }
+  }
+
+  /** The steps and warnings again from the server, so the tree shows a
+   *  button whose address was just set. A failed read changes nothing: the
+   *  card already shows the saved address. */
+  async function refreshCard() {
+    try {
+      const r = await get<{ data?: ChatPlaybookRow[] }>(CHAT_WF.playbooks);
+      const fresh = (r?.data || []).find((x) => x.playbook_id === playbook.playbook_id);
+      if (fresh) onChanged(fresh);
+    } catch { /* the steps catch up on the next page load */ }
+  }
+
+  /** Saves one link's address (empty = hide its buttons again), and says so beside the field. */
+  async function saveLink(link: ChatLinkRow) {
+    const value = linkAddress(linkDrafts[link.key] ?? (link.url || ""));
+    if (value === (link.url || "")) return;
+    const key = `link:${link.key}`;
+    if (!busy.start(key)) return;
+    setLinkWords((w) => ({ ...w, [link.key]: null }));
+    try {
+      const r = await put<{ data?: { links?: ChatLinkRow[] } }>(CHAT_WF.links(playbook.playbook_id), { links: { [link.key]: value } });
+      const next = Array.isArray(r?.data?.links)
+        ? r.data!.links!
+        : links.map((l) => (l.key === link.key ? { ...l, url: value || null } : l));
+      const saved = next.find((l) => l.key === link.key) || { ...link, url: value || null };
+      setLinkDrafts((d) => ({ ...d, [link.key]: saved.url || "" }));
+      onChanged({ ...playbook, links: next });
+      setLinkWords((w) => ({ ...w, [link.key]: { ok: true, lines: [linkSavedWords(saved, linkButtons.current[link.key] || [])] } }));
+      void refreshCard();
+    } catch (err) {
+      setLinkWords((w) => ({ ...w, [link.key]: { ok: false, lines: refusalSentences(err) } }));
+    } finally {
+      busy.stop(key);
     }
   }
 
@@ -371,7 +426,7 @@ export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZ
         <label className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-700">
           <span className="font-semibold">Your time zone</span>
           <select
-            defaultValue=""
+            value=""
             disabled={busy.has("tz")}
             onChange={(e) => void saveTimeZone(e.target.value)}
             className="rounded border border-slate-300 px-2 py-1 text-xs"
@@ -380,6 +435,56 @@ export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZ
             {timeZoneOptions().map((tz) => <option key={tz} value={tz}>{tz.replace(/_/g, " ")}</option>)}
           </select>
         </label>
+      )}
+
+      {links.length > 0 && (
+        <div className="mt-3" data-chat-links="">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Links</div>
+          <p className="mt-0.5 text-[11px] text-slate-600">
+            The web pages your chat&rsquo;s buttons open. A button with no address is hidden from visitors.
+          </p>
+          <ul className="mt-1 space-y-1.5">
+            {links.map((l) => {
+              const key = `link:${l.key}`;
+              const buttons = linkButtons.current[l.key] || [];
+              const typed = linkDrafts[l.key] ?? (l.url || "");
+              const unchanged = linkAddress(typed) === (l.url || "");
+              const words = linkWords[l.key];
+              return (
+                <li key={l.key} data-link={l.key} className="rounded bg-slate-50 px-2.5 py-2 ring-1 ring-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-800">{l.label}</div>
+                  <div className={`text-[11px] ${(l.url || "").trim() ? "text-slate-600" : "text-amber-900"}`}>
+                    {linkStateWords(l, buttons)}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <input
+                      type="text"
+                      inputMode="url"
+                      value={typed}
+                      onChange={(e) => setLinkDrafts((d) => ({ ...d, [l.key]: e.target.value }))}
+                      onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void saveLink(l); } }}
+                      placeholder="https://"
+                      maxLength={1000}
+                      disabled={busy.has(key)}
+                      aria-label={`Web address of your ${l.label}`}
+                      className="min-w-0 flex-1 rounded border border-slate-300 px-2 py-1 text-xs"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void saveLink(l)}
+                      disabled={busy.has(key) || unchanged}
+                      className="rounded bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+                    >
+                      {busy.has(key) ? "Saving…" : "Save"}
+                    </button>
+                  </div>
+                  {words && !words.ok && <Sentences lines={words.lines} />}
+                  {words && words.ok && <Said words={words.lines.join(" ")} />}
+                </li>
+              );
+            })}
+          </ul>
+        </div>
       )}
 
       <div className="mt-3">
@@ -451,6 +556,76 @@ export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZ
       {playbook.draft_version != null && tree.drafts.length === 0 && (
         <p className="mt-3 text-[11px] text-slate-600">There is a draft waiting — it isn&rsquo;t shown to visitors.</p>
       )}
+    </div>
+  );
+}
+
+// -- Email visitors what they asked for (one website row) ---------------------
+
+/** A chat website as the visitor-emails switch needs it. */
+export interface EmailsSite {
+  site_id: string;
+  label?: string | null;
+  domain?: string | null;
+  visitor_emails_enabled?: boolean;
+}
+
+/**
+ * The visitor-emails switch on one website row. On unless the business says
+ * no. What a click did is said right under the switch, never at the top of
+ * the page; a refusal says why there too, and the switch shows what is saved.
+ */
+export function ChatVisitorEmailsSwitch({ site, name, onSaved }: { site: EmailsSite; name: string; onSaved: (on: boolean) => void }) {
+  const { put } = useSparkApi();
+  const busy = useBusy();
+  const [refusal, setRefusal] = useState<string[]>([]);
+  const [said, setSaid] = useState<string | null>(null);
+  const emailsOn = site.visitor_emails_enabled !== false;
+  const where = site.label || site.domain || "this website";
+
+  async function toggle(on: boolean) {
+    if (!busy.start("emails")) return;
+    setSaid(null);
+    setRefusal([]);
+    try {
+      await put(CHAT_WF.site(site.site_id), { visitor_emails_enabled: on });
+      onSaved(on);
+      setSaid(on
+        ? `Saved. Visitors on ${where} get an email with what they asked for.`
+        : `Saved. Visitors on ${where} won't get emails from the chat.`);
+    } catch (err) {
+      setRefusal([`That didn't save, so the switch shows what is saved now. ${refusalSentences(err).join(" ")}`]);
+    } finally {
+      busy.stop("emails");
+    }
+  }
+
+  return (
+    <div className="mt-1.5 border-t border-slate-200 pt-1.5" data-visitor-emails={site.site_id}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0 text-[11px] text-slate-600">
+          <span className="font-semibold text-slate-700">Email visitors what they asked for</span>
+          <span className="block text-[10px] text-slate-500">
+            {emailsOn
+              ? "Visitors get an email with what they asked for."
+              : "Visitors won't get emails from the chat on this website."}
+          </span>
+        </div>
+        <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            role="switch"
+            checked={emailsOn}
+            disabled={busy.has("emails")}
+            onChange={(e) => void toggle(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+            aria-label={`Email visitors what they asked for on ${name}`}
+          />
+          {emailsOn ? "On" : "Off"}
+        </label>
+      </div>
+      <Sentences lines={refusal} />
+      <Said words={said} />
     </div>
   );
 }

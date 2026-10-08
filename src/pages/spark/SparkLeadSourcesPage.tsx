@@ -46,9 +46,9 @@ import { useSparkApi } from "../../hooks/useSparkApi";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { friendlyApiError } from "../../lib/leadgenBilling";
-import { ChatWorkflowCard, ChatOwnTools } from "../../components/spark/ChatWorkflowCard";
+import { ChatWorkflowCard, ChatOwnTools, ChatVisitorEmailsSwitch } from "../../components/spark/ChatWorkflowCard";
 import {
-  CHAT_WF, refusalSentences, toolsOffered, visitorEmailSiteIds,
+  CHAT_WF, toolsOffered, visitorEmailSiteIds,
   type ChatActionRow, type ChatPlaybookRow,
 } from "../../lib/chatWorkflows";
 
@@ -297,8 +297,6 @@ export function SparkLeadSourcesPage() {
   // The server's package answer for chat workflows, when it sends one
   // (meta.allowed on GET /chat/playbooks); null = it did not say.
   const [playbooksAllowed, setPlaybooksAllowed] = useState<boolean | null>(null);
-  // A refused visitor-emails switch says why on its own row (never a browser dialog).
-  const [emailsWords, setEmailsWords] = useState<Record<string, string>>({});
   const [addingSite, setAddingSite] = useState(false);
   const [newSite, setNewSite] = useState({ label: "", domain: "" });
   const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
@@ -420,26 +418,6 @@ export function SparkLeadSourcesPage() {
     } catch (err) {
       alert(friendlyApiError(err).message);
       await load();
-    } finally {
-      setChatBusy(null);
-    }
-  }
-
-  /** Chat workflows: whether the chat emails a visitor what they asked for. */
-  async function toggleVisitorEmails(site: ChatSiteRow, on: boolean) {
-    setChatBusy(`emails:${site.site_id}`);
-    setEmailsWords((w) => ({ ...w, [site.site_id]: "" }));
-    try {
-      await put(CHAT_WF.site(site.site_id), { visitor_emails_enabled: on });
-      setChatSites((rows) => rows.map((r) => (r.site_id === site.site_id ? { ...r, visitor_emails_enabled: on } : r)));
-      setNotice(on
-        ? `Visitors on ${site.label || site.domain || "that website"} get an email with what they asked for.`
-        : `Visitors on ${site.label || site.domain || "that website"} won't get emails from the chat.`);
-    } catch (err) {
-      setEmailsWords((w) => ({
-        ...w,
-        [site.site_id]: `That didn't save: ${refusalSentences(err).join(" ")} The switch shows what is saved now — try again in a minute.`,
-      }));
     } finally {
       setChatBusy(null);
     }
@@ -707,36 +685,13 @@ export function SparkLeadSourcesPage() {
                           on a website an allowed chat workflow runs on — anywhere
                           else nothing is ever emailed, so the switch would say
                           something untrue. */}
-                      {emailsApply && (() => {
-                        const emailsOn = site.visitor_emails_enabled !== false;
-                        return (
-                          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-1.5">
-                            <div className="min-w-0 text-[11px] text-slate-600">
-                              <span className="font-semibold text-slate-700">Email visitors what they asked for</span>
-                              <span className="block text-[10px] text-slate-500">
-                                {emailsOn
-                                  ? "Visitors get an email with what they asked for."
-                                  : "Visitors won't get emails from the chat on this website."}
-                              </span>
-                            </div>
-                            <label className="flex flex-shrink-0 cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
-                              <input
-                                type="checkbox"
-                                role="switch"
-                                checked={emailsOn}
-                                disabled={chatBusy === `emails:${site.site_id}`}
-                                onChange={(e) => toggleVisitorEmails(site, e.target.checked)}
-                                className="h-4 w-4 rounded border-slate-300"
-                                aria-label={`Email visitors what they asked for on ${name}`}
-                              />
-                              {emailsOn ? "On" : "Off"}
-                            </label>
-                            {emailsWords[site.site_id] && (
-                              <p className="w-full text-[11px] text-rose-700" role="alert">{emailsWords[site.site_id]}</p>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      {emailsApply && (
+                        <ChatVisitorEmailsSwitch
+                          site={site}
+                          name={name}
+                          onSaved={(on) => setChatSites((rows) => rows.map((r) => (r.site_id === site.site_id ? { ...r, visitor_emails_enabled: on } : r)))}
+                        />
+                      )}
 
                       {/* The one line to paste. Shown for a website we do not
                           host — and for one we do, because a client who moves

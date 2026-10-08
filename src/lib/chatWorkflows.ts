@@ -41,6 +41,16 @@ export interface ChatPlaybookRow {
   allowed_words: string | null;
   tree: unknown;
   warnings: Array<string | ChatPlaybookWarning>;
+  /** The links the workflow declares and the address the owner set for each
+   *  (LUMEN linksOf: { key, label, url|null }). Absent from an older server. */
+  links?: ChatLinkRow[];
+}
+
+/** One link a workflow's buttons open: the booking page, the trial page… */
+export interface ChatLinkRow {
+  key: string;
+  label: string;
+  url: string | null;
 }
 
 export interface ChatActionRow {
@@ -131,6 +141,7 @@ export const CHAT_WF = {
   playbooks: "/api/v1/chat/playbooks",
   playbook: (id: string) => `/api/v1/chat/playbooks/${enc(id)}`,
   path: (id: string, pathKey: string) => `/api/v1/chat/playbooks/${enc(id)}/paths/${enc(pathKey)}`,
+  links: (id: string) => `/api/v1/chat/playbooks/${enc(id)}/links`,
   site: (siteId: string) => `/api/v1/chat/sites/${enc(siteId)}`,
   actions: "/api/v1/chat/actions",
   action: (id: string) => `/api/v1/chat/actions/${enc(id)}`,
@@ -232,10 +243,30 @@ export function refusalSentences(err: unknown): string[] {
     if (list.length) return list as string[];
     if (typeof body.message === "string" && body.message) return [body.message];
     if (typeof body.words === "string" && body.words) return [body.words];
-    if (typeof body.error === "string" && body.error) return [body.error.replace(/_/g, " ")];
-  } catch { /* not JSON — fall through to the status sentence */ }
-  return [`That didn't work (the server said ${m[1]}). Please try again in a minute.`];
+    // A bare code (PUT /chat/sites/:siteId answers {error:"no_such_site"} and
+    // nothing else): its own sentence, never the code with spaces for underscores.
+    if (typeof body.error === "string" && body.error) {
+      const words = CODE_WORDS[body.error];
+      if (words) return [words];
+      console.warn("[chat workflows] refused with a code we have no sentence for:", body.error);
+    }
+  } catch { /* not JSON — fall through to the plain sentence */ }
+  return [NOT_DONE_WORDS];
 }
+
+/** Said when the server refused with nothing we can say in its place. */
+export const NOT_DONE_WORDS = "That didn't go through. Please try again in a minute.";
+
+/**
+ * The sentence for each code a chat write can answer with no message of its
+ * own (LUMEN routes/chat.js PUT /chat/sites/:siteId). One instruction each.
+ */
+export const CODE_WORDS: Readonly<Record<string, string>> = Object.freeze({
+  no_such_site: "That website isn't on your account any more. Reload the page to see your websites.",
+  bad_site_id: "We couldn't tell which website that is. Reload the page to see your websites.",
+  chat_site_save_failed: "Something went wrong on our side. Please try again in a minute.",
+  no_tenant: "We couldn't tell which business you're signed in to. Sign in again.",
+});
 
 export function statusOf(err: unknown): number | null {
   const msg = err instanceof Error ? err.message : String(err ?? "");
@@ -281,6 +312,20 @@ export function workflowGate(w: Pick<ArgusWorkflowRow, "allowed" | "allowed_word
 export function isPackageRefusal(err: unknown): boolean {
   return statusOf(err) === 403 && errorCodeOf(err) === "not_allowed";
 }
+
+/** ARGUS -> Workflows when its one load failed: what happened, then the one thing to do. */
+export function loadFailedWords(lines: string[]): string {
+  const why = lines.join(" ").trim() || UNREACHABLE_WORDS;
+  return `We couldn't load your workflows. ${why}`;
+}
+
+/**
+ * Needs you: "Save for when you edit the chat". LUMEN keeps the question as a
+ * draft for the chat editor; nothing a visitor sees changes, and the button
+ * and its sentence say exactly that (LUMEN's own answer, used when it sends none).
+ */
+export const ADD_TO_CHAT_LABEL = "Save for when you edit the chat";
+export const ADD_TO_CHAT_WORDS = "Saved for when you edit the chat. Nothing visitors see has changed yet.";
 
 /** The tab ?tab= opens. "Set-up runs" is the founder's; anyone else lands on All. */
 export type WorkflowsTab = "all" | "needs-you" | "history" | "setup";
@@ -366,14 +411,114 @@ export function zoneTargets(sites: ZoneSite[]): string[] {
  * The amber lines on a workflow card: the server's warnings and the tree's
  * own notes, once each. Once the time zone is answered (picked here, or every
  * website already has one) its line is gone with the picker.
+ *
+ * A link button the server hid for want of an address is said in the card's
+ * own words, pointing at the Links section on the same card, and the line is
+ * gone once that link has an address (the server's own sentence for it is
+ * dropped from the warnings and the notes, so it is never said twice).
  */
 export function cardWarningLines(
   warnings: Array<string | ChatPlaybookWarning>,
   notes: string[],
   tzAnswered: boolean,
+  hidden: HiddenLink[] = [],
+  links: ChatLinkRow[] = [],
 ): string[] {
-  const shown = tzAnswered ? warnings.filter((w) => !isTimezoneWarning(w)) : warnings;
-  return [...new Set([...shown.map(warningWords), ...notes].filter(Boolean))];
+  const serverHidden = new Set(hidden.map((h) => h.words).filter(Boolean));
+  const shown = (tzAnswered ? warnings.filter((w) => !isTimezoneWarning(w)) : warnings)
+    .map(warningWords)
+    .filter((w) => !serverHidden.has(w));
+  const ownNotes = notes.filter((n) => !serverHidden.has(n));
+  const hiddenLines = hidden.map((h) => hiddenLinkLine(h, links)).filter((l): l is string => !!l);
+  return [...new Set([...shown, ...ownNotes, ...hiddenLines].filter(Boolean))];
+}
+
+// -- the owner's links (PUT /chat/playbooks/:id/links) --------------------------
+
+/** A link button the server hid because its link has no address (tree.hidden_links). */
+export interface HiddenLink {
+  /** The button's own words ("Book it"). */
+  label: string;
+  /** Which link it opens (the key in links[]), when the server says. */
+  key: string | null;
+  /** The server's own sentence about it. */
+  words: string;
+}
+
+export function hiddenLinksOf(tree: unknown): HiddenLink[] {
+  if (!isRec(tree) || !Array.isArray(tree.hidden_links)) return [];
+  return tree.hidden_links.filter(isRec).map((h) => ({
+    label: str(h.label).trim(),
+    key: str(h.var).trim() || null,
+    words: str(h.words),
+  }));
+}
+
+/** The buttons each link opens, by link key, as far as the server has said. */
+export function buttonsByLink(hidden: HiddenLink[]): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const h of hidden) {
+    if (!h.key || !h.label) continue;
+    const list = out[h.key] || (out[h.key] = []);
+    if (!list.includes(h.label)) list.push(h.label);
+  }
+  return out;
+}
+
+/** "Booking page" → "booking page" mid-sentence; a name ("Website Builder sign-up page") keeps its capitals. */
+const lowerFirst = (s: string) => {
+  const [first, second] = s.split(/\s+/);
+  if (!first) return s;
+  if (second && /^[A-Z]/.test(second)) return s;
+  return s[0].toLowerCase() + s.slice(1);
+};
+const quoted = (labels: string[]) => labels.map((l) => `'${l}'`).join(" and ");
+const hasUrl = (l: Pick<ChatLinkRow, "url"> | undefined) => !!(l?.url || "").trim();
+
+/**
+ * The amber line for one hidden button. It points at Links on this card, and
+ * is null once that link has an address. A button whose link the workflow
+ * does not declare cannot be fixed under Links, so no instruction is given.
+ */
+export function hiddenLinkLine(h: HiddenLink, links: ChatLinkRow[]): string | null {
+  const link = h.key ? links.find((l) => l.key === h.key) : undefined;
+  if (hasUrl(link)) return null;
+  const button = h.label ? `The '${h.label}' button` : "A button";
+  if (!link) return `${button} is hidden from visitors because it has no web address.`;
+  return `${button} is hidden from visitors because it has no web address yet. Add the address of your ${lowerFirst(link.label)} under Links, below.`;
+}
+
+/** What a link row says about its buttons: shown, or hidden and why. */
+export function linkStateWords(link: ChatLinkRow, buttons: string[]): string {
+  const many = buttons.length > 1;
+  if (hasUrl(link)) {
+    return buttons.length
+      ? `Visitors see the ${quoted(buttons)} ${many ? "buttons" : "button"}, and ${many ? "they open" : "it opens"} this page.`
+      : "Visitors see its button, and it opens this page.";
+  }
+  return buttons.length
+    ? `No address yet, so the ${quoted(buttons)} ${many ? "buttons are" : "button is"} hidden from visitors.`
+    : "No address yet, so its button is hidden from visitors.";
+}
+
+/** Said beside the link's field after a save. */
+export function linkSavedWords(link: ChatLinkRow, buttons: string[]): string {
+  const many = buttons.length > 1;
+  if (hasUrl(link)) {
+    return buttons.length
+      ? `Saved. Visitors see the ${quoted(buttons)} ${many ? "buttons" : "button"} from the next page they open.`
+      : "Saved. Visitors see its button from the next page they open.";
+  }
+  return buttons.length
+    ? `Cleared. The ${quoted(buttons)} ${many ? "buttons are" : "button is"} hidden from visitors until you add an address.`
+    : "Cleared. Its button is hidden from visitors until you add an address.";
+}
+
+/** What the owner typed, as the address saved: a bare "book.example.com" gets https:// in front. */
+export function linkAddress(typed: string): string {
+  const t = (typed || "").trim();
+  if (!t) return "";
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(t) ? t : `https://${t}`;
 }
 
 /** Every website the workflow covers has a zone: the question is answered. */
@@ -473,6 +618,8 @@ export interface DisplayTree {
   toolsUsed: string[];
   /** Sentences the server adds about the tree itself (a hidden link button). */
   notes: string[];
+  /** The link buttons hidden for want of an address, with the link each opens. */
+  hiddenLinks: HiddenLink[];
 }
 
 export interface TreeFacts {
@@ -480,7 +627,7 @@ export interface TreeFacts {
   owner?: string | null;
 }
 
-const EMPTY_TREE: DisplayTree = { services: [], shared: [], drafts: [], toolsUsed: [], notes: [] };
+const EMPTY_TREE: DisplayTree = { services: [], shared: [], drafts: [], toolsUsed: [], notes: [], hiddenLinks: [] };
 
 type Rec = Record<string, unknown>;
 const isRec = (v: unknown): v is Rec => !!v && typeof v === "object" && !Array.isArray(v);
@@ -667,7 +814,7 @@ function walkDefinition(tree: Rec, facts: TreeFacts): DisplayTree {
       if (!drafts.some((x) => x.key === key)) drafts.push({ key, label: str(d.label) || str(d.words) || key });
     }
   }
-  return { services: outServices, shared, drafts, toolsUsed: [...toolsUsed], notes: [] };
+  return { services: outServices, shared, drafts, toolsUsed: [...toolsUsed], notes: [], hiddenLinks: hiddenLinksOf(tree) };
 }
 
 const STEP_KINDS = new Set(["say", "ask", "do", "handoff", "end", "goto", "more", "buttons"]);
@@ -758,6 +905,7 @@ export function buildDisplayTree(tree: unknown, facts: TreeFacts = {}): DisplayT
     notes: Array.isArray(tree.hidden_links)
       ? tree.hidden_links.filter(isRec).map((h) => str(h.words)).filter(Boolean)
       : [],
+    hiddenLinks: hiddenLinksOf(tree),
   };
   if (Array.isArray(tree.tools_used)) for (const t of tree.tools_used) if (typeof t === "string") tools.add(t);
   out.toolsUsed = [...tools];

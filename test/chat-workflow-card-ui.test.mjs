@@ -205,7 +205,7 @@ describe("the tree LUMEN walks (definition.tree) reads the same way", () => {
   test("the tool is known by name, and the hidden link buttons are said", () => {
     assert.deepEqual(tree.toolsUsed, ["Website audit"]);
     assert.ok(tree.notes.some((n) => /is hidden because no web address is set for it\./.test(n)));
-    assert.ok(card.includes("cardWarningLines(warnings, tree.notes, tzAnswered)"), "the card shows the tree's notes with the warnings");
+    assert.ok(card.includes("cardWarningLines(warnings, tree.notes, tzAnswered, tree.hiddenLinks, links)"), "the card shows the tree's notes with the warnings");
   });
 });
 
@@ -215,7 +215,8 @@ describe("sentences the screens share", () => {
     assert.deepEqual(refusalSentences(e), ["Chat sentences can't carry a price.", "Add your tool first."]);
     assert.deepEqual(refusalSentences(new Error('SPARK API 503: {"message":"We can\'t store tools safely right now."}')),
       ["We can't store tools safely right now."]);
-    assert.match(refusalSentences(new Error("SPARK API 502: <html>")).join(""), /didn't work .*502.*try again/);
+    // not the server's words (a proxy's page): one plain sentence, no status number
+    assert.deepEqual(refusalSentences(new Error("SPARK API 502: <html>")), ["That didn't go through. Please try again in a minute."]);
     assert.equal(statusOf(new Error("SPARK API 403: {}")), 403);
     assert.equal(statusOf(new Error("network")), null);
   });
@@ -313,11 +314,13 @@ describe("the workflow card on Lead sources", () => {
   });
 
   test("the visitor-emails switch defaults ON (on the websites a workflow runs on)", () => {
-    assert.match(sources, /Email visitors what they asked for/);
-    assert.match(sources, /const emailsOn = site\.visitor_emails_enabled !== false;/);
-    assert.match(sources, /put\(CHAT_WF\.site\(site\.site_id\), \{ visitor_emails_enabled: on \}\)/);
-    assert.match(sources, /"Visitors get an email with what they asked for\."/);
-    assert.match(sources, /"Visitors won't get emails from the chat on this website\."/);
+    // The switch is its own component on the card file; the page puts it on a row.
+    assert.match(card, /Email visitors what they asked for/);
+    assert.match(card, /const emailsOn = site\.visitor_emails_enabled !== false;/);
+    assert.match(card, /put\(CHAT_WF\.site\(site\.site_id\), \{ visitor_emails_enabled: on \}\)/);
+    assert.match(card, /"Visitors get an email with what they asked for\."/);
+    assert.match(card, /"Visitors won't get emails from the chat on this website\."/);
+    assert.match(sources, /<ChatVisitorEmailsSwitch\s+site=\{site\}/);
   });
 });
 

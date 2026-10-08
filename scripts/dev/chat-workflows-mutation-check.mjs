@@ -5,7 +5,10 @@
 //   node scripts/dev/chat-workflows-mutation-check.mjs
 //
 // Contract CONTRACT_ARGUS_CHAT_PLAYBOOKS_2026-10-07 §G.4 (P1–P4 plus the
-// card's own guards, and F1–F27 from the 7 Oct review fixes). Files are
+// card's own guards, F1–F30 from the 7 Oct review fixes, and G1–G17 from the
+// second run: Links on the card, the time-zone binding, the visitor-emails
+// switch's words, refusal codes, the load-failure sentence and the Needs-you
+// button; most G lines run the RENDERED card, test/chat-workflow-card-render). Files are
 // restored byte for byte in a finally, and the deleted old page is removed
 // again after P4. P4 reads the old page from the commit before the one that
 // deleted it, so it runs on any later tree.
@@ -23,6 +26,7 @@ const PAGE = "src/pages/argus/ArgusWorkflowsPage.tsx";
 const CARD = "src/components/spark/ChatWorkflowCard.tsx";
 const SOURCES = "src/pages/spark/SparkLeadSourcesPage.tsx";
 const FIX = "test/chat-workflow-fixes.test.mjs";
+const RENDER = "test/chat-workflow-card-render.test.mjs";
 
 function runTest(file) {
   const r = spawnSync(process.execPath, ["--import", "./scripts/test-ts-loader.mjs", "--test", file], { cwd: ROOT, encoding: "utf8" });
@@ -41,7 +45,7 @@ const M = [
   { id: "P4", restoreOld: true, test: "test/argus-workflows-ui.test.mjs" },
   { id: "C1", file: "src/lib/chatWorkflows.ts", test: "test/chat-workflow-card-ui.test.mjs",
     from: "typeof p.enabled === \"boolean\" ? p.enabled : switches[str(p.key)] !== false;", to: "typeof p.enabled === \"boolean\" ? p.enabled : true;" },
-  { id: "C2", file: "src/pages/spark/SparkLeadSourcesPage.tsx", test: "test/chat-workflow-card-ui.test.mjs",
+  { id: "C2", file: "src/components/spark/ChatWorkflowCard.tsx", test: "test/chat-workflow-card-ui.test.mjs",
     from: "const emailsOn = site.visitor_emails_enabled !== false;", to: "const emailsOn = site.visitor_emails_enabled === true;" },
   { id: "C3", file: "src/components/spark/ChatWorkflowCard.tsx", test: "test/chat-workflow-card-ui.test.mjs",
     from: "          {playbook.allowed_words || \"Chat workflows with buttons come with the SPARK Leads Growth package.\"}\n        </p>",
@@ -105,11 +109,11 @@ const M = [
   { id: "F21", file: CARD, test: FIX, note: "the card saves to every website again",
     from: "      for (const id of tzTargets) {", to: "      for (const id of sites.map((x) => x.site_id)) {" },
   { id: "F22", file: LIB, test: FIX, note: "the time-zone line stays after it is answered",
-    from: "  const shown = tzAnswered ? warnings.filter((w) => !isTimezoneWarning(w)) : warnings;", to: "  const shown = warnings;" },
+    from: "(tzAnswered ? warnings.filter((w) => !isTimezoneWarning(w)) : warnings)", to: "(warnings)" },
   { id: "F23", file: LIB, test: FIX, note: "Email visitors shown beside refused workflows",
     from: "    if (p.allowed !== true) continue;\n", to: "" },
   { id: "F24", file: SOURCES, test: FIX, note: "Email visitors shown on every website row",
-    from: "{emailsApply && (() => {", to: "{(() => {" },
+    from: "{emailsApply && (", to: "{(" },
   { id: "F25", file: LIB, test: FIX, note: "Your own tools offered with no yes from the server",
     from: "  return !!playbooks && playbooks.some((p) => p.allowed === true);", to: "  return true;" },
   { id: "F26", file: SOURCES, test: FIX, note: "the reviewer's mutation: `{chatActions && (`",
@@ -120,8 +124,44 @@ const M = [
     from: "                    disabled={busy.has(`rotate:${a.action_id}`)}\n", to: "" },
   { id: "F29", file: CARD, test: FIX, note: "one shared busy for every path switch",
     from: "    const key = `path:${p.key}`;\n    if (!busy.start(key)) return;", to: "    const key = \"path\";\n    if (!busy.start(key)) return;" },
-  { id: "F30", file: CARD, test: FIX, note: "the card's confirmation is not shown beside the click",
+  { id: "F30", file: CARD, test: RENDER, note: "the card's confirmation is not shown beside the click",
     from: "      <Said words={said} />\n\n      <label className=\"mt-3 block text-xs\">", to: "\n      <label className=\"mt-3 block text-xs\">" },
+
+  // ── second run, 8 Oct (the rendered card: test/chat-workflow-card-render.test.mjs) ──
+  { id: "G1", file: CARD, test: RENDER, note: "the verifier's V3: the zone is saved to every website",
+    from: "  const tzTargets = zoneTargets(sites);", to: "  const tzTargets = sites.map((s) => s.site_id);" },
+  { id: "G2", file: CARD, test: RENDER, note: "no Links section on the card",
+    from: "      {links.length > 0 && (\n        <div className=\"mt-3\" data-chat-links=\"\">", to: "      {false && (\n        <div className=\"mt-3\" data-chat-links=\"\">" },
+  { id: "G3", file: CARD, test: RENDER, note: "Save sends the address in the wrong shape",
+    from: "{ links: { [link.key]: value } }", to: "{ [link.key]: value }" },
+  { id: "G4", file: CARD, test: RENDER, note: "a saved link says nothing beside its field",
+    from: "                  {words && words.ok && <Said words={words.lines.join(\" \")} />}\n", to: "" },
+  { id: "G5", file: LIB, test: RENDER, note: "the amber line stays after its address is set",
+    from: "  if (hasUrl(link)) return null;\n  const button", to: "  const button" },
+  { id: "G6", file: LIB, test: RENDER, note: "the server's 'under Links to show it.' is said as well",
+    from: "    .filter((w) => !serverHidden.has(w));", to: "    ;" },
+  { id: "G7", file: CARD, test: RENDER, note: "a hidden link button is not explained on its row",
+    from: "                    {linkStateWords(l, buttons)}", to: "                    {null}" },
+  { id: "G8", file: CARD, test: RENDER, note: "the visitor-emails switch says nothing beside it",
+    from: "      <Said words={said} />\n    </div>\n  );\n}", to: "    </div>\n  );\n}" },
+  { id: "G9", file: CARD, test: RENDER, note: "the page never learns the switch was saved",
+    from: "      await put(CHAT_WF.site(site.site_id), { visitor_emails_enabled: on });\n      onSaved(on);", to: "      await put(CHAT_WF.site(site.site_id), { visitor_emails_enabled: on });" },
+  { id: "G10", file: LIB, test: FIX, note: "a bare code is echoed with spaces for underscores",
+    from: "      const words = CODE_WORDS[body.error];\n      if (words) return [words];", to: "      return [body.error.replace(/_/g, \" \")];" },
+  { id: "G11", file: PAGE, test: FIX, note: "the load failure gives two instructions again",
+    from: "{loadFailedWords([loadError])}", to: "We couldn&rsquo;t load your workflows: {loadError} Reload the page to try again." },
+  { id: "G12", file: LIB, test: FIX, note: "the Needs-you button promises a path again",
+    from: "export const ADD_TO_CHAT_LABEL = \"Save for when you edit the chat\";", to: "export const ADD_TO_CHAT_LABEL = \"Add to the chat as a new path\";" },
+  { id: "G13", file: CARD, test: RENDER, note: "the card does not ask for the steps again after a link save",
+    from: "      void refreshCard();\n", to: "" },
+  { id: "G14", file: LIB, test: RENDER, note: "a bare address is sent without https://",
+    from: "  return /^[a-z][a-z0-9+.-]*:\\/\\//i.test(t) ? t : `https://${t}`;", to: "  return t;" },
+  { id: "G15", file: CARD, test: RENDER, note: "a refused address is not said in its row",
+    from: "                  {words && !words.ok && <Sentences lines={words.lines} />}\n", to: "" },
+  { id: "G16", file: CARD, test: RENDER, note: "a link row forgets which buttons it opens once it is set",
+    from: "    linkButtons.current[k] = [...have, ...labels.filter((l) => !have.includes(l))];", to: "    linkButtons.current[k] = labels;\n  }\n  for (const k of Object.keys(linkButtons.current)) {\n    if (!tree.hiddenLinks.some((h) => h.key === k)) delete linkButtons.current[k];" },
+  { id: "G17", file: CARD, test: RENDER, note: "the time-zone failure gives two instructions again",
+    from: "`Not saved on ${failed.map((f) => nameOf(f.id)).join(\", \")}. ${failed[0].why}`", to: "`Not saved on ${failed.map((f) => nameOf(f.id)).join(\", \")}: ${failed[0].why} Pick the time zone again to retry.`" },
 ];
 
 const only = process.argv[2] || "";

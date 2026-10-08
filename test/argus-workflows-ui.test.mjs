@@ -17,6 +17,7 @@ import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { stripComments, screenWords } from "./helpers/screenWords.mjs";
+import { ADD_TO_CHAT_LABEL, ADD_TO_CHAT_WORDS } from "../src/lib/chatWorkflows.ts";
 
 const ROOT = process.cwd();
 const read = (rel) => readFileSync(path.join(ROOT, rel), "utf8");
@@ -110,9 +111,13 @@ test("Needs you: an unmatched message can be answered, added, or ignored", () =>
   assert.match(page, /&ldquo;\{item\.text\}&rdquo;/);
   assert.match(page, /\{looks && <span>\{looks\}<\/span>\}/);
   assert.match(page, /Complaint, refund or legal — answer it yourself/);
-  assert.match(page, /decide\(item, CHAT_WF\.addToChat\(item\.unmatched_id\), "Saved as a draft path\. It isn't shown to visitors\."\)/);
+  // LUMEN's own answer, word for word, when it sends none; the button says the same thing.
+  assert.match(page, /decide\(item, CHAT_WF\.addToChat\(item\.unmatched_id\), ADD_TO_CHAT_WORDS\)/);
+  assert.equal(ADD_TO_CHAT_WORDS, "Saved for when you edit the chat. Nothing visitors see has changed yet.");
+  assert.equal(ADD_TO_CHAT_LABEL, "Save for when you edit the chat");
+  assert.equal(/new path|draft path/i.test(page), false, "no promise of a path visitors could take");
   assert.match(page, /decide\(item, CHAT_WF\.ignore\(item\.unmatched_id\),/);
-  assert.match(page, />\s*Add to the chat as a new path\s*</);
+  assert.match(page, />\s*\{ADD_TO_CHAT_LABEL\}\s*</);
   assert.match(page, /Nothing needs you right now\./);
 });
 

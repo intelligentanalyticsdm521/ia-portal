@@ -14,7 +14,7 @@
 //               on or off THERE, where the chat is set up.
 //   Needs you — held steps (Send it now / Don't send) and chat messages ARGUS
 //               could not place (Reply now opens the lead's Conversation tab
-//               right here; Add to the chat as a new path; Ignore). The tree
+//               right here; Save for when you edit the chat; Ignore). The tree
 //               only learns from what the owner approves.
 //   History   — what each step did, with the report link when there is one.
 //   Set-up runs — the founder's onboarding observe view (moved unchanged).
@@ -31,9 +31,9 @@ import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { ChatWorkflowSteps } from "../../components/spark/ChatWorkflowTree";
 import { OnboardingObservePanel } from "../../components/argus/OnboardingObservePanel";
 import {
-  CHAT_WF, LEAD_SOURCES_ROUTE, NO_SPARK_WORDS,
+  ADD_TO_CHAT_LABEL, ADD_TO_CHAT_WORDS, CHAT_WF, LEAD_SOURCES_ROUTE, NO_SPARK_WORDS,
   buildDisplayTree, enabledChangedWords, heldSentence, historyCursor, historyLine, intentLine,
-  isPackageRefusal, mergeHistory, modeChangedWords, openResultWords, refusalSentences,
+  isPackageRefusal, loadFailedWords, mergeHistory, modeChangedWords, openResultWords, refusalSentences,
   relativeTime, workflowGate, workflowsTabFrom,
   type ArgusWorkflowRow, type ChatPlaybookRow, type ChatWorkflowMode, type NeedsYouItem,
   type WorkflowHistoryRow, type WorkflowsTab as Tab,
@@ -264,7 +264,7 @@ export function ArgusWorkflowsPage() {
       )}
       {tab !== "setup" && !loading && loadError && (
         <div className="rounded-lg bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-rose-200">
-          We couldn&rsquo;t load your workflows: {loadError} Reload the page to try again.
+          {loadFailedWords([loadError])}
         </div>
       )}
 
@@ -457,10 +457,10 @@ export function ArgusWorkflowsPage() {
                   <button
                     type="button"
                     disabled={rowBusy}
-                    onClick={() => void decide(item, CHAT_WF.addToChat(item.unmatched_id), "Saved as a draft path. It isn't shown to visitors.")}
+                    onClick={() => void decide(item, CHAT_WF.addToChat(item.unmatched_id), ADD_TO_CHAT_WORDS)}
                     className="rounded border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 disabled:opacity-40"
                   >
-                    Add to the chat as a new path
+                    {ADD_TO_CHAT_LABEL}
                   </button>
                   <button
                     type="button"

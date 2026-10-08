@@ -18,5 +18,8 @@
   "sure_words": ["sure", "fairly sure", "not sure"],
   "lead_results": [
     { "run_id": "r1", "label": "Website audit", "status_words": "Finished — score 62", "file_url": "https://files.example.com/r1.pdf", "finished_at": "2026-10-07T21:00:00.000Z" }
-  ]
+  ],
+  "add_to_playbook_words": "Saved for when you edit the chat. Nothing visitors see has changed yet.",
+  "site_put_bare_codes": ["no_tenant","bad_site_id","no_such_site","chat_site_save_failed"],
+  "$comment_2": "add_to_playbook_words: the words of POST /argus/workflows/unmatched/:id/add-to-playbook (routes/chatWorkflows.js). site_put_bare_codes: the codes PUT /chat/sites/:siteId (routes/chat.js) answers with no message. Read from lumen-api-septa c2006ab."
 }

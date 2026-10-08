@@ -17,6 +17,8 @@ import path from "node:path";
 import { stripComments } from "./helpers/screenWords.mjs";
 
 import {
+  ADD_TO_CHAT_LABEL, ADD_TO_CHAT_WORDS, CODE_WORDS, NOT_DONE_WORDS,
+  hiddenLinkLine, hiddenLinksOf, linkAddress, loadFailedWords,
   ADMIN_ONLY_WORDS, MORE_STEPS_WORDS, NOT_ALLOWED_WORDS, UNREACHABLE_WORDS,
   buildDisplayTree, cardWarningLines, errorCodeOf, historyCursor, historyLine, intentLine,
   isPackageRefusal, mergeHistory, openResultWords, refusalSentences, toolsOffered,
@@ -297,7 +299,7 @@ describe("Lead sources: the switches mean what they say", () => {
     assert.deepEqual(cardWarningLines([tz, other], [other], false), [tz, other]);
     assert.deepEqual(cardWarningLines([tz, other], [], true), [other]);
     assert.match(card, /const tzAnswered = !!tzSaved \|\| zoneKnown\(sites\);/);
-    assert.match(card, /const amber = cardWarningLines\(warnings, tree\.notes, tzAnswered\);/);
+    assert.match(card, /const amber = cardWarningLines\(warnings, tree\.notes, tzAnswered, tree\.hiddenLinks, links\);/);
     // a partial save says which websites saved and which did not
     assert.match(card, /Saved on \$\{saved\.map\(nameOf\)\.join\(", "\)\}\./);
     assert.match(card, /Not saved on \$\{failed\.map\(\(f\) => nameOf\(f\.id\)\)\.join\(", "\)\}/);
@@ -313,7 +315,7 @@ describe("Lead sources: the switches mean what they say", () => {
     assert.deepEqual([...visitorEmailSiteIds([{ allowed: true, site_id: null }], ids)], ["s1", "s2"]);
     assert.deepEqual([...visitorEmailSiteIds([{ allowed: true, site_id: "S2" }], ids)], ["s2"]);
     assert.match(sources, /const emailsApply = emailSites\.has\(site\.site_id\);/);
-    assert.match(sources, /\{emailsApply && \(\(\) => \{/);
+    assert.match(sources, /\{emailsApply && \(\s*<ChatVisitorEmailsSwitch/);
   });
 
   test("Your own tools is offered only on an explicit yes", () => {
@@ -350,5 +352,62 @@ describe("the card: one request per control, the newest secret, words beside the
     assert.match(card, /<Sentences lines=\{refusal\} \/>\s*<Said words=\{said\} \/>/);
     assert.equal(/onNotice/.test(card), false, "the card no longer sends its words to the top of the page");
     assert.match(sources, /text-emerald-900" role="status">/);
+  });
+});
+
+describe("second run (8 Oct): every refusal is a sentence, one instruction each", () => {
+  test("each bare code PUT /chat/sites/:siteId answers has its own sentence, never the code", () => {
+    assert.ok(LUMEN.site_put_bare_codes.length >= 3, "the codes are read from LUMEN (presence)");
+    for (const code of LUMEN.site_put_bare_codes) {
+      const said = refusalSentences(apiErr(code === "no_such_site" ? 404 : code === "chat_site_save_failed" ? 500 : 400, { error: code, details: "Timeout: Request failed" }));
+      assert.equal(said.length, 1, code);
+      assert.equal(said[0], CODE_WORDS[code], `${code} has its sentence`);
+      assert.equal(/_|Timeout/.test(said[0]), false, `${code}: no code, no details`);
+    }
+    assert.equal(refusalSentences(apiErr(404, { error: "no_such_site" }))[0],
+      "That website isn't on your account any more. Reload the page to see your websites.");
+    // a code we have no sentence for: the plain sentence, never the code with spaces
+    assert.deepEqual(refusalSentences(apiErr(400, { error: "some_new_code" })), [NOT_DONE_WORDS]);
+    // the server's own message still wins over its code
+    assert.deepEqual(refusalSentences(apiErr(400, { error: "bad_timezone", message: "That time zone isn't one we recognise. Pick one from the list." })),
+      ["That time zone isn't one we recognise. Pick one from the list."]);
+  });
+
+  test("a failed load says what happened and then one thing to do", () => {
+    const words = loadFailedWords(refusalSentences(new TypeError("Failed to fetch")));
+    assert.equal(words, "We couldn't load your workflows. We couldn't reach the server. Check your connection and try again.");
+    assert.equal((words.match(/try again|Reload/gi) || []).length, 1);
+    assert.match(page, /\{loadFailedWords\(\[loadError\]\)\}/);
+    assert.equal(/Reload the page to try again/.test(page), false);
+  });
+
+  test("Needs you: the button and its sentence are LUMEN's honest answer", () => {
+    assert.equal(ADD_TO_CHAT_WORDS, LUMEN.add_to_playbook_words);
+    assert.equal(ADD_TO_CHAT_LABEL, "Save for when you edit the chat");
+  });
+
+  test("a hidden button's line points at Links on the card, and goes once its address is set", () => {
+    const tree = { services: [], shared: [], hidden_links: [{ label: "Book it", var: "booking_url", words: "The 'Book it' button is hidden because no web address is set for it. Add the address of your booking page under Links to show it." }] };
+    const hidden = hiddenLinksOf(tree);
+    assert.deepEqual(hidden.map((h) => [h.label, h.key]), [["Book it", "booking_url"]]);
+    const links = [{ key: "booking_url", label: "Booking page", url: null }];
+    assert.equal(hiddenLinkLine(hidden[0], links), "The 'Book it' button is hidden from visitors because it has no web address yet. Add the address of your booking page under Links, below.");
+    assert.equal(hiddenLinkLine(hidden[0], [{ ...links[0], url: "https://book.example.com" }]), null);
+    // a name keeps its capitals mid-sentence (LUMEN's label "Website Builder sign-up page")
+    assert.match(hiddenLinkLine({ label: "Build one", key: "builder_url", words: "" }, [{ key: "builder_url", label: "Website Builder sign-up page", url: null }]),
+      /Add the address of your Website Builder sign-up page under Links, below\.$/);
+    // a button whose link the workflow does not declare: no instruction that cannot be followed
+    assert.equal(hiddenLinkLine({ label: "Odd", key: null, words: "" }, links), "The 'Odd' button is hidden from visitors because it has no web address.");
+    // the server's sentence is replaced, not added to
+    assert.deepEqual(cardWarningLines([hidden[0].words], [hidden[0].words], false, hidden, links),
+      ["The 'Book it' button is hidden from visitors because it has no web address yet. Add the address of your booking page under Links, below."]);
+    assert.deepEqual(cardWarningLines([hidden[0].words], [hidden[0].words], false, hidden, [{ ...links[0], url: "https://b.example.com" }]), []);
+  });
+
+  test("a bare address gets https:// in front; anything with a scheme is left for the server to judge", () => {
+    assert.equal(linkAddress("  book.example.com/demo "), "https://book.example.com/demo");
+    assert.equal(linkAddress("https://book.example.com"), "https://book.example.com");
+    assert.equal(linkAddress("http://trial.example.com"), "http://trial.example.com");
+    assert.equal(linkAddress("   "), "");
   });
 });
