@@ -5,6 +5,8 @@ import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
 import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { useProductAccess } from "../hooks/useProductAccess";
+import { useEndedProducts } from "../hooks/useEndedProducts";
+import { isOffGatedProduct, railLockWords } from "../lib/productAccess";
 
 // "my_brand" intentionally REMOVED 2026-06-22 — the top-level My Brand slot
 // was a premature Wave-2 add for the Q4 2026 deferred product. ARION's
@@ -156,6 +158,11 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     return { ...p, enabled: ownedProducts.has(serviceKey) };
   });
 
+  // A locked OLIVER/SPARK/ARION/STELLA whose subscription ENDED says so on the
+  // rail in the off notice's own words ("ENDED"), not "ADD" (review 2026-10-08).
+  const anyGatedLocked = products.some((p) => !p.enabled && isOffGatedProduct(PRODUCT_SERVICE_KEY[p.key]));
+  const ended = useEndedProducts(FEATURE_GATING_ENABLED && anyGatedLocked, location.pathname);
+
   return (
     // In a flex row parent with min-h-0 and align-items:stretch (default), this column
     // stretches to the row's full height automatically — no h-full needed and in fact
@@ -180,6 +187,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
           // locked — restores the pre-gating behaviour while the founder-bypass
           // path is verified. See config/featureFlags.FEATURE_GATING_ENABLED.
           const locked = FEATURE_GATING_ENABLED && !p.enabled;
+          const lockWords = railLockWords(PRODUCT_SERVICE_KEY[p.key] || p.key, p.tagline, p.label, ended.has(PRODUCT_SERVICE_KEY[p.key] || ""));
           return (
             <button
               key={p.key}
@@ -188,9 +196,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
               // upgrade banner, so they can see exactly what they'd get. Do NOT
               // bounce them to Settings — that hides the product entirely.
               onClick={() => onSelect(p.key)}
-              title={locked
-                ? `${p.tagline} is not part of your plan — add ${p.tagline} to enable ${p.label}`
-                : `${p.label} - ${p.tagline}`}
+              title={locked ? lockWords.title : `${p.label} - ${p.tagline}`}
               aria-disabled={locked}
               className={`relative flex w-[88px] flex-col items-center gap-1 rounded-md px-1 py-2 transition-colors ${
                 isActive
@@ -226,7 +232,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
                   className="text-[8px] font-bold leading-none tracking-wide"
                   style={{ color: "#EF6C33" }}
                 >
-                  ADD
+                  {lockWords.badge}
                 </span>
               )}
             </button>

@@ -119,6 +119,7 @@ import { RequireFounderRoute } from './app/RequireFounderRoute';
 // you are (SPARK pack 1). The founder's Lead Gen ADMIN below keeps
 // RequireFounderRoute — that one really is internal tooling.
 import { RequireLeadgenRoute } from './app/RequireLeadgenRoute';
+import { ProductGate } from './components/ProductGate';
 import { lazy, Suspense } from 'react';
 // Each page file exports a default that matches the named export; using the
 // default keeps these lazy() calls minimal and tree-shaker-friendly.
@@ -429,7 +430,10 @@ export function App() {
                 level settings surface (like spark/pricing) rather than a
                 feature page. Also reachable via the spark_contact_scoring
                 service-catalog entry which routes to the same component. */}
-            <Route path="spark/contact-scoring" element={<SparkContactScoringPage />} />
+            {/* SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — SPARK's own routes
+                sit behind the same product gate as /app/services/spark_* (only
+                spark/pricing, where SPARK is bought, stays open). */}
+            <Route path="spark/contact-scoring" element={<ProductGate product="spark"><SparkContactScoringPage /></ProductGate>} />
 
             {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
                 saved searches. The job page needs an :id path param so these
@@ -442,7 +446,7 @@ export function App() {
                 client can run one real paid search while the blast radius stays
                 one business. RequireLeadgenRoute asks LUMEN; LUMEN 403s the job
                 routes independently, so a direct API call cannot bypass it. */}
-            <Route path="spark/leadgen" element={<RequireLeadgenRoute />}>
+            <Route path="spark/leadgen" element={<ProductGate product="spark"><RequireLeadgenRoute /></ProductGate>}>
               {/* 2026-09-04: "new" → "b2b_new" (there will be several lead gens: B2B, inbound, B2C, premium).
                   The old path redirects so bookmarks and the guided tour keep working. */}
               <Route path="new" element={<Navigate to="/app/spark/leadgen/b2b_new" replace />} />
@@ -452,9 +456,9 @@ export function App() {
               {/* 2026-10-01: saved searches are the Lead Inbox's Saved Searches tab; the old page is gone and its address lands there. */}
               <Route path="saved" element={<Navigate to="/app/services/spark_lead_inbox?tab=saved" replace />} />
             </Route>
-            <Route path="spark/customer-flow" element={<SparkCustomerFlowPage />} />
-            <Route path="spark/lifecycle" element={<SparkLifecyclePage />} />
-            <Route path="spark/sync-issues" element={<SparkSyncIssuesPage />} />
+            <Route path="spark/customer-flow" element={<ProductGate product="spark"><SparkCustomerFlowPage /></ProductGate>} />
+            <Route path="spark/lifecycle" element={<ProductGate product="spark"><SparkLifecyclePage /></ProductGate>} />
+            <Route path="spark/sync-issues" element={<ProductGate product="spark"><SparkSyncIssuesPage /></ProductGate>} />
 
             {/* Platform admin: team access */}
             <Route path="team-access" element={<PlatformTeamAccess />} />

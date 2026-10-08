@@ -22,7 +22,7 @@ import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { productColor } from "../config/productTheme";
 import { useProductAccess } from "../hooks/useProductAccess";
 import { ProductEndedNotice } from "./ProductEndedNotice";
-import { isOffGatedProduct } from "../lib/productAccess";
+import { isOffGatedProduct, offNoticeShownByPage } from "../lib/productAccess";
 
 export interface SubNavItem extends VisibilityRules {
   key: string;
@@ -1433,7 +1433,10 @@ export function SubNav({ config }: SubNavProps) {
           browsable so the customer can see exactly what they'd get, with a
           prominent "add this product" banner above it. Access itself is
           enforced server-side (403), never by hiding the nav. */}
-      {productLocked && isOffGatedProduct(productKey) && (
+      {/* One sentence per screen: when the page itself is the off notice, the
+          menu does not repeat it (review 2026-10-08). On the plan page, the
+          menu banner is the only place it is said. */}
+      {productLocked && isOffGatedProduct(productKey) && !(productAccess.isOff(productKey) && offNoticeShownByPage(location.pathname, productKey)) && (
         <ProductEndedNotice product={productKey} variant="nav" />
       )}
       {productLocked && !isOffGatedProduct(productKey) && (

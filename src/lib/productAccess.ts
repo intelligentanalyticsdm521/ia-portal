@@ -49,6 +49,38 @@ export function productSwitchedOff(payload: EntitlementPayload | null | undefine
 }
 
 /**
+ * The entitlement answer only counts for the business it was asked about.
+ * When the founder switches business, the previous business's answer must
+ * never judge the new one while the new answer is on its way: a mismatch is
+ * "not known yet" (open), never the other business's "off".
+ */
+export function payloadForTenant(
+  held: { tenantId: string | null; payload: EntitlementPayload | null } | null | undefined,
+  activeTenantId: string | null | undefined,
+): EntitlementPayload | null {
+  if (!held || !held.payload || !held.tenantId || !activeTenantId) return null;
+  return String(held.tenantId).toLowerCase() === String(activeTenantId).toLowerCase() ? held.payload : null;
+}
+
+/**
+ * True when the page at `pathname` is itself replaced by the off notice for
+ * `product` (a product page other than its plan page, or one of SPARK's own
+ * routes other than its pricing page). The menu banner then stays quiet, so
+ * one screen says the sentence once.
+ */
+export function offNoticeShownByPage(pathname: string | null | undefined, product: string | null | undefined): boolean {
+  if (!isOffGatedProduct(product)) return false;
+  const path = String(pathname || '');
+  const m = path.match(/^\/app\/services\/([^/?#]+)/);
+  if (m) {
+    const key = decodeURIComponent(m[1]).toLowerCase();
+    return key.split('_')[0] === product && !gateExemptServiceKey(key);
+  }
+  if (product === 'spark') return /^\/app\/spark\/(?!pricing(?:[/?#]|$))[^/?#]+/.test(path);
+  return false;
+}
+
+/**
  * The rail's padlock. The entitlement payload when it is decided (so a
  * mid-session switch-off shows within a minute), otherwise the products the
  * business held at sign-in (AppState.ownedProducts), which is what the rail
@@ -84,12 +116,16 @@ export function gateExemptServiceKey(serviceKey: string | null | undefined): boo
   return OFF_GATED_PRODUCTS.some((p) => k === `${p}_usage`);
 }
 
-/** "November 1, 2026". `timeZone` is for tests; the screen uses the viewer's own. */
-export function formatLongDate(iso: string | null | undefined, timeZone?: string): string | null {
+/** "November 1, 2026". Billing dates are the billing period's boundaries,
+ *  which the billing API words in UTC ("SPARK stays on until November 1,
+ *  2026"). The screen uses the SAME zone, so a card line and the sentence
+ *  beside it never name two different days for one moment. */
+export const BILLING_TIME_ZONE = 'UTC';
+export function formatLongDate(iso: string | null | undefined, timeZone: string = BILLING_TIME_ZONE): string | null {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', ...(timeZone ? { timeZone } : {}) });
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone });
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
@@ -221,7 +257,12 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
   }
   if (nc && nc.kind === 'tier' && nc.to_tier) {
     const date = formatLongDate(endsAt, timeZone);
-    const next = planDisplayName(product, nc.to_tier).replace(new RegExp(`^${name}\\s*`), '');
+    // Same tier, fewer items (a SPARK volume cut, an ARION add-on removed):
+    // naming the tier again would say nothing changes when something does.
+    const sameTier = String(nc.to_tier).toLowerCase() === String(row.tier || '').toLowerCase();
+    const next = sameTier
+      ? 'a smaller plan'
+      : planDisplayName(product, nc.to_tier).replace(new RegExp(`^${name}\\s*`), '');
     return {
       state: 'downgrade',
       line: date ? `${current} until ${date}, then ${next}` : `${current} until the end of this billing period, then ${next}`,
@@ -231,6 +272,39 @@ export function planCardLine(product: GatedProduct, row: PlanRow | null, timeZon
   }
   const renews = formatLongDate(row.current_period_end, timeZone);
   return { state: 'active', line: renews ? `Renews ${renews}` : null, control: null, canRemove: true };
+}
+
+/**
+ * The card as THIS viewer sees it. A team member who is not an admin, and the
+ * founder viewing a client's business, read the same line with no control at
+ * all, and one sentence saying why: never a button that only exists to say no.
+ */
+export function planCardForViewer(product: GatedProduct, card: CardLine, viewer: Viewer): { card: CardLine; note: string | null } {
+  if (viewer === 'admin') return { card, note: null };
+  const acts = !!card.control || card.canRemove;
+  const bare: CardLine = { ...card, control: null, canRemove: false };
+  if (!acts) return { card: bare, note: null };
+  if (viewer === 'viewing_client') return { card: bare, note: SWITCH_TO_OWN_BUSINESS };
+  const name = PRODUCT_NAME[product];
+  const note = card.state === 'ended' ? ASK_AN_ADMIN_RESUBSCRIBE
+    : card.state === 'never' ? `Ask an admin on your team to add ${name}.`
+    : card.state === 'past_due' ? 'Ask an admin on your team to update the card.'
+    : `Ask an admin on your team to change ${name}'s plan.`;
+  return { card: bare, note };
+}
+
+/** STELLA has no plan page of its own, so its card offers the plans itself.
+ *  Each opens the checkout, which shows the price before they pay. */
+export const STELLA_PLAN_CHOICES: ReadonlyArray<{ plan: 'standard' | 'pro' | 'business'; label: string }> = [
+  { plan: 'standard', label: 'STELLA Standard' },
+  { plan: 'pro', label: 'STELLA Pro' },
+  { plan: 'business', label: 'STELLA Business' },
+];
+export const STELLA_PICK_SENTENCE = "Choose a STELLA plan. You'll see the price before you pay.";
+
+/** What Re-subscribe says when it cannot open a checkout (no url). */
+export function resubscribeFallbackSentence(product: GatedProduct, message: string | null | undefined): string {
+  return (message && message.trim()) || `Choose a ${PRODUCT_NAME[product]} plan to pick up where you left off.`;
 }
 
 /** The confirm shown beside "Remove <PRODUCT>" before anything is sent. */
@@ -260,4 +334,29 @@ export function billingRefusalSentence(body: unknown, status: number): string {
   }
   if (status === 401 || status === 403) return 'You do not have permission to change billing for this business. Ask an admin on your team.';
   return 'That did not go through. Nothing was changed. Try again in a minute.';
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   The rail: the badge and the tooltip of a locked product
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/** The same words the product's off notice uses: an ENDED product says it
+ *  ended (and how to get it back); a product never bought says ADD. */
+export function railLockWords(product: string, tagline: string, label: string, ended: boolean): { badge: string; title: string } {
+  if (ended && isOffGatedProduct(product)) {
+    const name = PRODUCT_NAME[product];
+    return { badge: 'ENDED', title: `Your ${name} subscription ended. Open ${name} to re-subscribe.` };
+  }
+  return { badge: 'ADD', title: `${tagline} is not part of your plan — add ${tagline} to enable ${label}` };
+}
+
+/** The products whose subscription ENDED (a still-off switch-off on record),
+ *  from GET /billing/subscriptions rows. */
+export function endedProducts(rows: PlanRow[] | null | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const p of OFF_GATED_PRODUCTS) {
+    const row = rowForProduct(rows, p);
+    if (row && !rowIsLive(row) && row.ended) out.add(p);
+  }
+  return out;
 }

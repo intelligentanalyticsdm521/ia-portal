@@ -3,7 +3,7 @@ import { ForgeLinePage } from './forge/ForgeLinePage';
 import { LEGACY_FORGE_ROUTES } from './forge/forgeSoftware';
 import { Navigate, useLocation, useParams } from 'react-router-dom';
 import { useIsFounder } from '../hooks/useIsFounder';
-import { LEADGEN_LOCKED_KEYS, FEATURE_GATING_ENABLED } from '../config/featureFlags';
+import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
 import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
@@ -11,9 +11,7 @@ import { useNavAddons } from '../hooks/useNavAddons';
 import FeatureLocked from '../components/FeatureLocked';
 import { productColor, productOfServiceKey } from '../config/productTheme';
 import { useProductTier } from '../hooks/useProductTier';
-import { useProductAccess } from '../hooks/useProductAccess';
-import { ProductEndedNotice } from '../components/ProductEndedNotice';
-import { gateExemptServiceKey, isOffGatedProduct } from '../lib/productAccess';
+import { ProductGate } from '../components/ProductGate';
 
 // Lazy-load a named React export so it's compatible with React.lazy
 // (which expects { default: Component }). Lets each service section
@@ -1122,33 +1120,24 @@ export function ServiceRouter() {
   const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
   const locked = !isRoutable(rules, { tier, addons, seoAddonTier, gatingActive });
 
-  // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the PRODUCT gate, before
-  // the tier check. When platform-api has DECIDED the business does not own
-  // the product (its subscription ended, or it was never bought), the pages
-  // are replaced by one sentence and one control (ProductEndedNotice).
-  // Undecided stays open (SEAM-3-B). The product's own plan page
-  // (<product>_usage) is never closed: it is where they buy it back.
-  // Re-asked once per navigation (the key), from the shared one-minute cache.
-  const { isOff } = useProductAccess(serviceKey);
-  if (
-    FEATURE_GATING_ENABLED &&
-    isOffGatedProduct(product) &&
-    !gateExemptServiceKey(serviceKey) &&
-    isOff(product)
-  ) {
-    return <ProductEndedNotice product={product} />;
-  }
-
-  if (!locked || !service) return <ServiceRouterInner />;
-
+  // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the PRODUCT gate
+  // (ProductGate) sits OUTSIDE the tier check: a product that is decided off
+  // shows the off notice whatever the tier says. Undecided stays open; the
+  // product's own plan page (<product>_usage) is never closed.
   return (
-    <FeatureLocked
-      name={service.displayName}
-      description={service.description}
-      requiredPlan={requirementLabel(rules, product)}
-      accent={productColor(product)}
-    >
-      <ServiceRouterInner />
-    </FeatureLocked>
+    <ProductGate product={product} serviceKey={serviceKey}>
+      {!locked || !service ? (
+        <ServiceRouterInner />
+      ) : (
+        <FeatureLocked
+          name={service.displayName}
+          description={service.description}
+          requiredPlan={requirementLabel(rules, product)}
+          accent={productColor(product)}
+        >
+          <ServiceRouterInner />
+        </FeatureLocked>
+      )}
+    </ProductGate>
   );
 }

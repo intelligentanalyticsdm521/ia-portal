@@ -16,23 +16,27 @@
  *
  * Re-subscribe is ONE click to the checkout: POST /billing/resubscribe
  * { product } answers with the checkout for the same prices that ended. When it
- * cannot (a price was archived), the owner is taken to the product's plan page.
+ * cannot (a price was archived), the owner is taken to the product's plan page
+ * with the API's sentence ("Choose a SPARK plan to pick up where you left
+ * off."), which the plan line there shows. STELLA's plans are offered on its
+ * Plan & Pricing card, which opens with them showing. "SPARK is already on."
+ * is said here, beside the button.
  *
  * Data: GET /billing/subscriptions once, on mount, for the `ended` date of this
  * product (§5). Nothing is polled.
  */
 import { useEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppState } from '../app/AppState';
 import { useAccessToken } from '../auth/useAccessToken';
-import { useUserAccess } from '../hooks/useUserAccess';
+import { useBillingViewer } from '../hooks/useBillingViewer';
 import { fetchSubscriptionsShared, resubscribe } from '../lib/billingApi';
-import { isActingAsClient } from '../lib/actingAsClient';
 import { leaveForCheckout } from '../lib/leaveForCheckout';
 import {
-  offNotice, planPagePath, rowForProduct, rowIsLive, PRODUCT_NAME,
-  type GatedProduct, type Viewer,
+  offNotice, planPagePath, resubscribeFallbackSentence, rowForProduct, rowIsLive, PRODUCT_NAME,
+  STELLA_PICK_SENTENCE, type GatedProduct,
 } from '../lib/productAccess';
+import type { PlanNoticeState } from './ProductPlanStatus';
 
 export function ProductEndedNotice({ product, variant = 'page' }: {
   product: GatedProduct;
@@ -40,13 +44,12 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
    *  control above the product's menu (SubNav). */
   variant?: 'page' | 'nav';
 }) {
-  const appState = useAppState();
-  const { activeTenantId } = appState;
-  const isFounder = !!appState.bootstrap?.user?.isFounder;
-  const home = appState.bootstrap?.homeTenantId;
+  const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
-  const { access } = useUserAccess();
+  const viewer = useBillingViewer();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [said, setSaid] = useState<string | null>(null);
 
   const [ended, setEnded] = useState<{ at: string | null } | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -77,22 +80,31 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, product]);
 
-  const viewer: Viewer = isActingAsClient(isFounder, activeTenantId, home)
-    ? 'viewing_client'
-    : access && (access.role === 'user' || access.role === 'read_only') ? 'member' : 'admin';
   const notice = offNotice(product, ended, viewer);
+
+  /** To the plan page, carrying the sentence; never to the page already open. */
+  function toPlanPage(text: string, pick: boolean) {
+    const dest = planPagePath(product);
+    if (dest === location.pathname) { setSaid(text); return; }
+    navigate(dest, { state: { planNotice: { product, text, pick } } satisfies PlanNoticeState });
+  }
 
   async function onAction() {
     if (!notice.action) return;
-    setError(null);
-    if (notice.action.kind === 'add') { navigate(planPagePath(product)); return; }
+    setError(null); setSaid(null);
+    if (notice.action.kind === 'add') {
+      if (product === 'stella') toPlanPage(STELLA_PICK_SENTENCE, true);
+      else navigate(planPagePath(product));
+      return;
+    }
     if (!activeTenantId) return;
     setBusy(true);
     try {
       const t = await getToken();
       const r = await resubscribe({ token: t.accessToken, tenantId: activeTenantId, product });
       if (r?.url) { leaveForCheckout(r.url); return; }
-      navigate(planPagePath(product));
+      if (r?.mode === 'active' || r?.mode === 'owner') { setSaid(r.message || `${PRODUCT_NAME[product]} is already on.`); return; }
+      toPlanPage(resubscribeFallbackSentence(product, r?.message), product === 'stella');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'That did not go through. Nothing was changed. Try again in a minute.');
     } finally {
@@ -124,6 +136,7 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
           {notice.note}
         </p>
       )}
+      {said && <p className={variant === 'nav' ? 'mt-1.5 text-[10px] text-[#D5E8F0]' : 'mt-3 text-sm text-slate-700'} data-notice-said>{said}</p>}
       {error && <p className={variant === 'nav' ? 'mt-1.5 text-[10px] text-red-300' : 'mt-3 text-sm text-red-700'} role="alert">{error}</p>}
     </>
   );

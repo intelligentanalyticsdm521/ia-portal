@@ -26,10 +26,14 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { JSDOM } from "jsdom";
+// The billing dates must not move with the viewer's clock: run every test in a
+// US zone, where a UTC-midnight period end is the evening before.
+process.env.TZ = "America/Chicago";
 import {
   productSwitchedOff, productLockedOnRail, gateExemptServiceKey, planPagePath,
   endedSentence, neverBoughtSentence, offNotice, planCardLine, removeConfirmSentence,
-  billingRefusalSentence, rowForProduct, rowIsLive,
+  billingRefusalSentence, rowForProduct, rowIsLive, payloadForTenant, offNoticeShownByPage,
+  planCardForViewer, railLockWords, endedProducts, formatLongDate,
 } from "../src/lib/productAccess.ts";
 
 const ROOT = new URL("../", import.meta.url);
@@ -82,17 +86,63 @@ describe("G: only a decided 'not owned' closes a product", () => {
     assert.equal(productLockedOnRail(null, new Set(), "arion"), null, "dev/preview: nobody knows, caller keeps its fallback");
   });
 
-  test("ServiceRouter closes the product BEFORE the tier check, on the decided answer, and exempts the plan page", () => {
+  test("ServiceRouter puts ProductGate OUTSIDE the tier check (the gate itself is rendered in R: the product gate)", () => {
     const src = read("src/pages/ServiceRouter.tsx");
     const body = src.slice(src.indexOf("export function ServiceRouter()"));
-    const gate = body.indexOf("return <ProductEndedNotice product={product} />");
-    const tierBranch = body.indexOf("if (!locked || !service) return <ServiceRouterInner />");
-    assert.ok(gate > 0, "the gate renders ProductEndedNotice");
-    assert.ok(tierBranch > gate, "the product gate runs before the tier check");
-    const cond = body.slice(body.indexOf("const { isOff } = useProductAccess(serviceKey);"), gate);
-    assert.match(cond, /isOffGatedProduct\(product\)/);
-    assert.match(cond, /!gateExemptServiceKey\(serviceKey\)/);
-    assert.match(cond, /isOff\(product\)/);
+    const gate = body.indexOf("<ProductGate product={product} serviceKey={serviceKey}>");
+    const tier = body.indexOf("<FeatureLocked");
+    const close = body.indexOf("</ProductGate>");
+    assert.ok(gate > 0, "ServiceRouter renders ProductGate");
+    assert.ok(tier > gate && close > tier, "the tier lock is INSIDE the product gate");
+    assert.doesNotMatch(body.slice(0, gate), /return <ServiceRouterInner \/>/, "no page is returned before the gate");
+  });
+  test("SPARK's own routes sit behind the same gate; only spark/pricing (where it is bought) stays open", () => {
+    const app = read("src/App.tsx");
+    for (const [route, el] of [["spark/contact-scoring", "SparkContactScoringPage"], ["spark/leadgen", "RequireLeadgenRoute"],
+      ["spark/customer-flow", "SparkCustomerFlowPage"], ["spark/lifecycle", "SparkLifecyclePage"], ["spark/sync-issues", "SparkSyncIssuesPage"]]) {
+      assert.match(app, new RegExp(`<Route path="${route}" element=\\{<ProductGate product="spark"><${el} /></ProductGate>\\}`), route);
+    }
+    assert.match(app, /<Route path="spark\/pricing" element=\{<SparkPricingPage \/>\} \/>/, "the pricing page is never gated");
+  });
+  test("the rail's padlock never locks on 'we don't know' (an undecided payload, or an undecided node)", () => {
+    const owned = new Set(["spark"]);
+    assert.equal(productLockedOnRail({ ...decided({ spark: { owned: false, decided: false } }), decided: false }, owned, "spark"), false,
+      "undecided payload: the sign-in list (owned) decides, never the payload's owned:false");
+    assert.equal(productLockedOnRail(decided({ spark: { owned: false, decided: false } }), owned, "spark"), false,
+      "decided payload, undecided node: the same");
+    assert.equal(productLockedOnRail({ ...decided({ spark: { owned: false, decided: true } }), decided: false }, new Set(), "spark"), null,
+      "undecided payload and no sign-in list: nobody knows, never a lock");
+  });
+  test("an answer counts only for the business it was asked about (switching business never shows the last one's 'off')", () => {
+    const p = decided({ spark: { owned: false, decided: true } });
+    assert.equal(payloadForTenant({ tenantId: "AAAA", payload: p }, "aaaa"), p);
+    assert.equal(payloadForTenant({ tenantId: "AAAA", payload: p }, "BBBB"), null);
+    assert.equal(payloadForTenant(null, "AAAA"), null);
+    assert.equal(payloadForTenant({ tenantId: "AAAA", payload: p }, null), null);
+    const hook = read("src/hooks/useProductAccess.ts");
+    assert.match(hook, /setHeld\(\{ tenantId: activeTenantId, payload: p \}\)/);
+    assert.match(hook, /const payload = payloadForTenant\(held, activeTenantId\);/);
+  });
+  test("one sentence per screen: the menu banner is quiet where the page itself is the notice", () => {
+    assert.equal(offNoticeShownByPage("/app/services/spark_contacts", "spark"), true);
+    assert.equal(offNoticeShownByPage("/app/services/spark_usage", "spark"), false, "the plan page is open; the banner speaks there");
+    assert.equal(offNoticeShownByPage("/app/services/oliver_jobs", "spark"), false, "another product's page");
+    assert.equal(offNoticeShownByPage("/app/spark/leadgen/jobs/12", "spark"), true);
+    assert.equal(offNoticeShownByPage("/app/spark/pricing", "spark"), false);
+    assert.equal(offNoticeShownByPage("/app/settings/plan-pricing", "stella"), false);
+    assert.match(read("src/components/SubNav.tsx"),
+      /productLocked && isOffGatedProduct\(productKey\) && !\(productAccess\.isOff\(productKey\) && offNoticeShownByPage\(location\.pathname, productKey\)\) && \(/);
+  });
+  test("the rail says ENDED for an ended product, in the notice's words; ADD for one never bought", () => {
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", true),
+      { badge: "ENDED", title: "Your SPARK subscription ended. Open SPARK to re-subscribe." });
+    assert.deepEqual(railLockWords("spark", "SPARK", "Marketing", false),
+      { badge: "ADD", title: "SPARK is not part of your plan — add SPARK to enable Marketing" });
+    assert.deepEqual([...endedProducts([{ product: "spark", status: "ended", ended: { at: "2026-11-01T00:00:00Z" } },
+      { product: "oliver", status: "active" }])], ["spark"]);
+    const rail = read("src/components/IconRail.tsx");
+    assert.match(rail, /\{lockWords\.badge\}/);
+    assert.match(rail, /title=\{locked \? lockWords\.title : /);
   });
   test("the rail and SubNav read the same source; SubNav shows the same sentence and control", () => {
     const rail = read("src/components/IconRail.tsx");
@@ -162,7 +212,7 @@ describe("S: the words, as Brandon wrote them", () => {
     assert.equal(pastDue.line, "Your last payment didn't go through. Update your card to keep your plan.");
     assert.deepEqual(pastDue.control, { kind: "update_card", label: "Update card" });
 
-    const ended = planCardLine("spark", { product: "spark", tier: null, status: "canceled", ended: { at: end, tier: "standard" } }, TZ);
+    const ended = planCardLine("spark", { product: "spark", tier: null, status: "ended", ended: { at: end, tier: "standard" } }, TZ);
     assert.equal(ended.line, "Your SPARK subscription ended on November 1, 2026. Re-subscribe to pick up where you left off.");
     assert.deepEqual(ended.control, { kind: "resubscribe", label: "Re-subscribe" });
 
@@ -174,11 +224,45 @@ describe("S: the words, as Brandon wrote them", () => {
     assert.equal(never.line, "Not subscribed");
     assert.deepEqual(never.control, { kind: "add", label: "Add SPARK to your account" });
   });
+  test("one time zone for every billing date: a UTC-midnight period end reads as the SAME day the billing API says", () => {
+    // The API: "SPARK stays on until November 1, 2026" (routes/billing.js longDate, timeZone UTC).
+    assert.equal(formatLongDate("2026-11-01T02:00:00Z"), "November 1, 2026", "not October 31 in Chicago");
+    assert.equal(formatLongDate("2026-11-01T02:00:00Z", "America/Chicago"), "October 31, 2026", "(the zone really is US here)");
+    const card = planCardLine("spark", { product: "spark", tier: "standard", status: "active", current_period_end: "2026-11-01T02:00:00Z",
+      next_change: { kind: "ends", at: "2026-11-01T02:00:00Z" } });
+    assert.equal(card.line, "SPARK Standard until November 1, 2026, then it ends");
+    assert.equal(removeConfirmSentence("spark", "2026-11-01T02:00:00Z"), "SPARK stays on until November 1, 2026, then it ends. Your other products are not changed.");
+  });
+  test("a change within the same tier (a SPARK volume cut, an ARION add-on removed) says the plan gets smaller, never 'then Standard'", () => {
+    const end = "2026-11-01T12:00:00Z";
+    const spark = planCardLine("spark", { product: "spark", tier: "standard", status: "active", current_period_end: end,
+      next_change: { kind: "tier", to_tier: "standard", at: end } }, TZ);
+    assert.equal(spark.line, "SPARK Standard until November 1, 2026, then a smaller plan");
+    const arion = planCardLine("arion", { product: "arion", tier: "pro", status: "active", current_period_end: end,
+      next_change: { kind: "tier", to_tier: "PRO", at: end } }, TZ);
+    assert.equal(arion.line, "ARION Pro until November 1, 2026, then a smaller plan");
+  });
+  test("the card for each viewer: a member and the founder viewing a client get NO control, and one sentence why", () => {
+    const end = "2026-11-01T12:00:00Z";
+    const active = planCardLine("spark", { product: "spark", tier: "standard", status: "active", current_period_end: end }, TZ);
+    assert.deepEqual(planCardForViewer("spark", active, "admin"), { card: active, note: null });
+    const f = planCardForViewer("spark", active, "viewing_client");
+    assert.equal(f.card.control, null); assert.equal(f.card.canRemove, false);
+    assert.equal(f.note, "Switch to your own business to change billing.");
+    assert.equal(f.card.line, "Renews November 1, 2026", "the line itself is still shown");
+    const ended = planCardLine("spark", { product: "spark", status: "ended", ended: { at: end } }, TZ);
+    assert.equal(planCardForViewer("spark", ended, "member").note, "Ask an admin on your team to re-subscribe.");
+    assert.equal(planCardForViewer("spark", active, "member").note, "Ask an admin on your team to change SPARK's plan.");
+    const pastDue = planCardLine("spark", { product: "spark", status: "past_due", current_period_end: end }, TZ);
+    assert.equal(planCardForViewer("spark", pastDue, "member").note, "Ask an admin on your team to update the card.");
+    const quiet = planCardLine("spark", { product: "spark", tier: "business", status: "active", source: "entitlement" }, TZ);
+    assert.equal(planCardForViewer("spark", quiet, "viewing_client").note, null, "nothing to act on, nothing to explain");
+  });
   test("past_due still counts as paid for (§1.3): it is live, never 'ended'", () => {
     assert.equal(rowIsLive({ product: "spark", status: "past_due" }), true);
     assert.equal(rowIsLive({ product: "spark", status: "unpaid" }), false);
     const rows = [
-      { product: "spark", status: "canceled", ended: { at: "2026-10-01T00:00:00Z" } },
+      { product: "spark", status: "ended", ended: { at: "2026-10-01T00:00:00Z" } },
       { product: "spark", status: "active", tier: "pro" },
     ];
     assert.equal(rowForProduct(rows, "spark").status, "active", "a live row beats an ended record");
@@ -197,10 +281,15 @@ describe("S: the words, as Brandon wrote them", () => {
   test("no 'tenant' and no vendor name in the words this build put on screen", () => {
     const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "").replace(/\{\/\*[\s\S]*?\*\/\}/g, "");
     const files = ["src/lib/productAccess.ts", "src/components/ProductEndedNotice.tsx", "src/components/ProductPlanStatus.tsx",
-      "src/components/PendingChangeBanner.tsx"];
+      "src/components/PendingChangeBanner.tsx", "src/components/ProductGate.tsx", "src/hooks/useBillingViewer.ts"];
+    let scanned = 0;
     for (const f of files) {
       const code = strip(read(f));
       const strings = [...code.matchAll(/(['"`])((?:(?!\1)[^\\]|\\.)*)\1/g)].map((m) => m[2]).filter((t) => /\s/.test(t) && /[A-Za-z]{3}/.test(t));
+      scanned += strings.length;
+      if (/productAccess|ProductPlanStatus|ProductEndedNotice/.test(f)) {
+        assert.ok(strings.length > 5, `${f}: the scan found its sentences (a scan that finds nothing proves nothing): ${strings.length}`);
+      }
       for (const t of strings) {
         assert.doesNotMatch(t, /\btenant\b/i, `${f}: "${t}"`);
         assert.doesNotMatch(t, /\bStripe\b/, `${f}: "${t}"`);
@@ -288,18 +377,24 @@ before(async () => {
         import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
         import { ProductEndedNotice } from "./src/components/ProductEndedNotice.tsx";
         import { ProductPlanStatus } from "./src/components/ProductPlanStatus.tsx";
+        import { ProductGate } from "./src/components/ProductGate.tsx";
         import { clearSubscriptionsCache } from "./src/lib/billingApi.ts";
-        export { act, clearSubscriptionsCache, ProductEndedNotice, ProductPlanStatus };
+        import { clearEntitlementCache } from "./src/lib/entitlements.ts";
+        export { act, clearSubscriptionsCache, clearEntitlementCache, ProductEndedNotice, ProductPlanStatus, ProductGate, createElement };
         const FUTURE = { v7_startTransition: true, v7_relativeSplatPath: true };
-        function Where() { const l = useLocation(); return createElement("output", { "data-where": l.pathname }); }
-        export function mount(C, props) {
+        function Where() {
+          const l = useLocation();
+          return createElement("output", { "data-where": l.pathname, "data-state": JSON.stringify(l.state ?? null) });
+        }
+        export function mount(C, props, opts = {}) {
           const host = document.createElement("div");
           document.body.appendChild(host);
           const root = createRoot(host);
-          const tree = () => createElement(MemoryRouter, { future: FUTURE, initialEntries: ["/app/services/spark_contacts"] },
-            createElement(Where), createElement(C, props));
-          act(() => { root.render(tree()); });
-          return { host, unmount: () => act(() => root.unmount()) };
+          const at = opts.at || "/app/services/spark_contacts";
+          const tree = (p) => createElement(MemoryRouter, { future: FUTURE, initialEntries: [opts.state ? { pathname: at, state: opts.state } : at] },
+            createElement(Where), createElement(C, p));
+          act(() => { root.render(tree(props)); });
+          return { host, rerender: (p) => act(() => { root.render(tree(p || props)); }), unmount: () => act(() => root.unmount()) };
         }
       `,
       resolveDir: fileURLToPath(ROOT), loader: "tsx", sourcefile: "entry.tsx",
@@ -307,7 +402,7 @@ before(async () => {
     bundle: true, format: "esm", platform: "browser", jsx: "automatic", write: false, logLevel: "silent",
     define: {
       "process.env.NODE_ENV": '"development"',
-      "import.meta.env": JSON.stringify({ VITE_OLIVER_API_BASE: "http://oliver.test" }),
+      "import.meta.env": JSON.stringify({ VITE_OLIVER_API_BASE: "http://oliver.test", VITE_PLATFORM_API_BASE_URL: "http://platform.test" }),
     },
     plugins: [stubs],
   });
@@ -343,6 +438,7 @@ function reset({ role = "admin", founderViewing = false, subs = [] } = {}) {
     ownedProducts: new Set(),
   };
   ui.clearSubscriptionsCache();
+  ui.clearEntitlementCache();
   world.answer = async (call) => {
     if (call.method === "GET" && call.path === "/billing/subscriptions") {
       return { status: 200, body: { data: { subscriptions: subs, hasAnySubscription: subs.length > 0, customerId: "cus_1", owner: false } } };
@@ -350,7 +446,7 @@ function reset({ role = "admin", founderViewing = false, subs = [] } = {}) {
     return { status: 200, body: { data: {} } };
   };
 }
-const ENDED_SPARK = [{ product: "spark", tier: null, status: "canceled", current_period_end: null, monthly_usd: 0, items: [],
+const ENDED_SPARK = [{ product: "spark", tier: null, status: "ended", current_period_end: null, monthly_usd: 0, items: [],
   ended: { at: "2026-11-01T18:00:00Z", tier: "standard" } }];
 
 describe("R: the off notice, rendered and clicked", () => {
@@ -502,5 +598,193 @@ describe("C: the billing routes these controls call, as the scope names them", (
     assert.match(api, /method: "DELETE", path: "\/billing\/pending-change", body: \{ product: params\.product \}/);
     assert.match(api, /next_change\?: \{ kind: "tier" \| "ends"; to_tier\?: string \| null; at\?: string \| null \} \| null;/);
     assert.match(api, /ended\?: \{ at: string \| null; tier\?: string \| null \} \| null;/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════
+   R — review fixes of 2026-10-08, rendered and clicked
+   ══════════════════════════════════════════════════════════════════════════ */
+const stateOf = (host) => JSON.parse(host.querySelector("[data-where]")?.getAttribute("data-state") || "null");
+const TA = "11111111-1111-4111-8111-111111111111";
+const TB = "22222222-2222-4222-8222-222222222222";
+const SPARK_OFF = { tenant_id: TA, resolved_at: "", decided: true, products: { spark: { owned: false, decided: true } }, addons: {}, limits: {} };
+const SPARK_ON = { ...SPARK_OFF, products: { spark: { owned: true, decided: true } } };
+const PAGE = () => ui.createElement("p", { "data-real-page": "1" }, "SPARK contacts");
+
+describe("R: the product gate (the real ProductGate and useProductAccess, rendered)", () => {
+  function gateWorld(byTenant) {
+    reset({ subs: ENDED_SPARK });
+    const base = world.answer;
+    world.answer = async (call) => {
+      if (call.path === "/me/entitlements") {
+        const a = byTenant[call.headers["x-tenant-key"]];
+        return typeof a === "function" ? a() : a;
+      }
+      return base(call);
+    };
+  }
+  test("decided owned:false: the page is replaced by the off notice", async () => {
+    gateWorld({ [TA]: { status: 200, body: SPARK_OFF } });
+    const v = ui.mount(ui.ProductGate, { product: "spark", serviceKey: "spark_contacts", children: PAGE() });
+    await settle();
+    assert.equal(v.host.querySelector("[data-real-page]"), null);
+    assert.ok(v.host.querySelector('[data-product-ended="spark"]'));
+    v.unmount();
+  });
+  test("undecided, no answer, or owned: the page shows (never a lock on 'we don't know')", async () => {
+    for (const answer of [{ status: 200, body: { ...SPARK_OFF, decided: false } }, { status: 503, body: {} }, { status: 200, body: SPARK_ON },
+      { status: 200, body: { ...SPARK_OFF, products: { spark: { owned: false, decided: false } } } }]) {
+      gateWorld({ [TA]: answer });
+      const v = ui.mount(ui.ProductGate, { product: "spark", serviceKey: "spark_contacts", children: PAGE() });
+      await settle();
+      assert.ok(v.host.querySelector("[data-real-page]"), JSON.stringify(answer));
+      assert.equal(v.host.querySelector("[data-product-ended]"), null);
+      v.unmount();
+    }
+  });
+  test("the plan page stays open even when decided off", async () => {
+    gateWorld({ [TA]: { status: 200, body: SPARK_OFF } });
+    const v = ui.mount(ui.ProductGate, { product: "spark", serviceKey: "spark_usage", children: PAGE() });
+    await settle();
+    assert.ok(v.host.querySelector("[data-real-page]"));
+    v.unmount();
+  });
+  test("switching business: the last business's 'off' never shows under the new one while its answer is on the way", async () => {
+    let release;
+    const pendingB = new Promise((r) => { release = r; });
+    gateWorld({ [TA]: { status: 200, body: SPARK_OFF }, [TB]: () => pendingB });
+    const v = ui.mount(ui.ProductGate, { product: "spark", serviceKey: "spark_contacts", children: PAGE() });
+    await settle();
+    assert.ok(v.host.querySelector('[data-product-ended="spark"]'), "business A: SPARK is off");
+    world.appState = { ...world.appState, activeTenantId: TB };
+    v.rerender();
+    await settle();
+    assert.ok(v.host.querySelector("[data-real-page]"), "business B, answer not back yet: open, not A's notice");
+    assert.equal(v.host.querySelector("[data-product-ended]"), null);
+    release({ status: 200, body: { ...SPARK_ON, tenant_id: TB } });
+    await settle();
+    assert.ok(v.host.querySelector("[data-real-page]"));
+    v.unmount();
+  });
+});
+
+describe("R: who is looking at the Plan & Pricing card", () => {
+  const ACTIVE = { product: "spark", tier: "standard", status: "active", current_period_end: "2026-11-01T18:00:00Z", monthly_usd: 99, items: [] };
+  const ENDING = { ...ACTIVE, next_change: { kind: "ends", at: "2026-11-01T18:00:00Z" } };
+  for (const [label, opts, note] of [
+    ["the founder viewing a client", { founderViewing: true }, "Switch to your own business to change billing."],
+    ["a team member who is not an admin", { role: "user" }, null],
+  ]) {
+    test(`${label}: the line, NO Remove / Keep / Re-subscribe / Update card, and one sentence why`, async () => {
+      for (const row of [ACTIVE, ENDING, { ...ACTIVE, status: "past_due" }, ENDED_SPARK[0]]) {
+        reset(opts);
+        const v = ui.mount(ui.ProductPlanStatus, { product: "spark", row, addTo: "/app/services/spark_usage" });
+        await settle();
+        assert.equal(v.host.querySelectorAll("button").length, 0, `${label} / ${row.status}: no button at all`);
+        assert.ok(text(v.host.querySelector("[data-plan-line]")).length > 0, "the line is still said");
+        const said = text(v.host.querySelector("[data-plan-note]"));
+        if (note) assert.equal(said, note);
+        else assert.match(said, /^Ask an admin on your team to /);
+        assert.equal(world.calls.filter((c) => c.method !== "GET").length, 0);
+        v.unmount();
+      }
+    });
+  }
+  test("the Plan & Pricing page hides the payment-page buttons from both and says why", () => {
+    const hub = read("src/pages/settings/TenantSettings.tsx");
+    const tab = hub.slice(hub.indexOf("export function SubscriptionBillingTab()"), hub.indexOf("Tab: Team"));
+    assert.match(tab, /const canBill = viewer === 'admin';/);
+    assert.match(tab, /\{!isOwner && canBill && \(/);
+    assert.match(tab, /\{canBill && <div className="flex flex-col items-end gap-1">/);
+    assert.match(tab, /You're viewing a client's business\. \$\{SWITCH_TO_OWN_BUSINESS\}/);
+  });
+});
+
+describe("R: Re-subscribe with no checkout says why, and never loops", () => {
+  const ENDED_STELLA = { product: "stella", tier: null, status: "ended", current_period_end: null, monthly_usd: 0, items: [], ended: { at: "2026-11-01T18:00:00Z" } };
+  const PLAN_PAGE = { status: 200, body: { data: { mode: "plan_page", url: null, message: "Choose a SPARK plan to pick up where you left off." } } };
+
+  test("SPARK on its own plan page: the sentence is said beside the button, and nothing navigates", async () => {
+    reset();
+    const v = ui.mount(ui.ProductPlanStatus, { product: "spark", row: ENDED_SPARK[0] }, { at: "/app/services/spark_usage" });
+    await settle();
+    world.answer = async () => PLAN_PAGE;
+    await click(button(v.host, "Re-subscribe"));
+    assert.equal(where(v.host), "/app/services/spark_usage");
+    assert.equal(text(v.host.querySelector("[data-plan-message]")), "Choose a SPARK plan to pick up where you left off.");
+    v.unmount();
+  });
+
+  test("SPARK from Plan & Pricing: to SPARK's plan page, carrying the sentence, which the plan line there shows", async () => {
+    reset();
+    const v = ui.mount(ui.ProductPlanStatus, { product: "spark", row: ENDED_SPARK[0], addTo: "/app/services/spark_usage" }, { at: "/app/settings/plan-pricing" });
+    await settle();
+    world.answer = async () => PLAN_PAGE;
+    await click(button(v.host, "Re-subscribe"));
+    assert.equal(where(v.host), "/app/services/spark_usage");
+    const carried = stateOf(v.host);
+    assert.deepEqual(carried, { planNotice: { product: "spark", text: "Choose a SPARK plan to pick up where you left off." } });
+    v.unmount();
+    const there = ui.mount(ui.ProductPlanStatus, { product: "spark", row: ENDED_SPARK[0] }, { at: "/app/services/spark_usage", state: carried });
+    await settle();
+    assert.equal(text(there.host.querySelector("[data-plan-message]")), "Choose a SPARK plan to pick up where you left off.");
+    there.unmount();
+  });
+
+  test("STELLA on Plan & Pricing: no loop — the sentence, then STELLA's plans in the card, each opening the checkout", async () => {
+    reset();
+    const v = ui.mount(ui.ProductPlanStatus, { product: "stella", row: ENDED_STELLA, addTo: null }, { at: "/app/settings/plan-pricing" });
+    await settle();
+    world.answer = async () => ({ status: 200, body: { data: { mode: "plan_page", url: null, message: "Choose a STELLA plan to pick up where you left off." } } });
+    await click(button(v.host, "Re-subscribe"));
+    assert.equal(where(v.host), "/app/settings/plan-pricing", "it does not navigate to the page it is on");
+    assert.equal(text(v.host.querySelector("[data-plan-message]")), "Choose a STELLA plan to pick up where you left off.");
+    assert.equal(text(v.host.querySelector("[data-plan-pick] p")), "Choose a STELLA plan. You'll see the price before you pay.");
+    assert.equal(button(v.host, "Re-subscribe"), undefined, "the plans replace the button that could not open a checkout");
+    world.calls = [];
+    world.answer = async () => ({ status: 200, body: { data: { mode: "checkout", url: "https://checkout.example/c/stella" } } });
+    await click(button(v.host, "STELLA Pro"));
+    assert.deepEqual(world.calls.map((c) => [c.method, c.path, c.body]), [["POST", "/billing/change", { product: "stella", billing_cycle: "monthly", plan: "pro" }]]);
+    assert.deepEqual(world.left, ["https://checkout.example/c/stella"]);
+    v.unmount();
+  });
+
+  test("STELLA never bought: a real control (its plans), not 'Ask us about STELLA'", async () => {
+    reset();
+    const v = ui.mount(ui.ProductPlanStatus, { product: "stella", row: null, addTo: null }, { at: "/app/settings/plan-pricing" });
+    await settle();
+    assert.doesNotMatch(text(v.host), /Ask us about/);
+    await click(button(v.host, "Add STELLA to your account"));
+    assert.deepEqual(["STELLA Standard", "STELLA Pro", "STELLA Business"].map((l) => !!button(v.host, l)), [true, true, true]);
+    v.unmount();
+  });
+
+  test("the off notice: 'SPARK is already on.' is said beside the button; plan_page carries its sentence to the plan page", async () => {
+    reset({ subs: ENDED_SPARK });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "spark" });
+    await settle();
+    world.answer = async () => ({ status: 200, body: { data: { mode: "active", url: null, message: "SPARK is already on." } } });
+    await click(button(v.host, "Re-subscribe"));
+    assert.equal(text(v.host.querySelector("[data-notice-said]")), "SPARK is already on.");
+    assert.equal(where(v.host), "/app/services/spark_contacts", "nothing navigates");
+    world.answer = async () => PLAN_PAGE;
+    await click(button(v.host, "Re-subscribe"));
+    assert.equal(where(v.host), "/app/services/spark_usage");
+    assert.equal(stateOf(v.host).planNotice.text, "Choose a SPARK plan to pick up where you left off.");
+    v.unmount();
+  });
+
+  test("the STELLA off notice: Add STELLA opens Plan & Pricing with STELLA's plans showing", async () => {
+    reset({ subs: [] });
+    const v = ui.mount(ui.ProductEndedNotice, { product: "stella" }, { at: "/app/services/stella_books" });
+    await settle();
+    await click(button(v.host, "Add STELLA"));
+    assert.equal(where(v.host), "/app/settings/plan-pricing");
+    assert.deepEqual(stateOf(v.host), { planNotice: { product: "stella", text: "Choose a STELLA plan. You'll see the price before you pay.", pick: true } });
+    v.unmount();
+    const there = ui.mount(ui.ProductPlanStatus, { product: "stella", row: null, addTo: null }, { at: "/app/settings/plan-pricing", state: { planNotice: { product: "stella", text: "x", pick: true } } });
+    await settle();
+    assert.ok(button(there.host, "STELLA Standard"), "the plans are already showing");
+    there.unmount();
   });
 });

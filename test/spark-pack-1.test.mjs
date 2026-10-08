@@ -52,7 +52,8 @@ test("no Portal file gates Lead Gen on who you are any more", () => {
 
 test("the search routes are behind RequireLeadgenRoute; the founder ADMIN is not", () => {
   const app = read("App.tsx");
-  assert.match(app, /<Route path="spark\/leadgen" element=\{<RequireLeadgenRoute \/>\}>/);
+  // 2026-10-08: inside the SPARK product gate too (an ended SPARK shows the off notice).
+  assert.match(app, /<Route path="spark\/leadgen" element=\{<ProductGate product="spark"><RequireLeadgenRoute \/><\/ProductGate>\}>/);
   // /app/admin/leadgen is the term-review queue and the block list — internal
   // tooling, and it keeps the founder gate.
   assert.match(app, /<Route path="admin\/leadgen" element=\{<RequireFounderRoute \/>\}>/);

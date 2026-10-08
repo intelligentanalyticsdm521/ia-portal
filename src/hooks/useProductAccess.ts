@@ -19,7 +19,7 @@ import { useEffect, useState } from 'react';
 import { useAccessToken } from '../auth/useAccessToken';
 import { useAppState } from '../app/AppState';
 import { fetchEntitlements, type EntitlementPayload } from '../lib/entitlements';
-import { productSwitchedOff, productLockedOnRail } from '../lib/productAccess';
+import { productSwitchedOff, productLockedOnRail, payloadForTenant } from '../lib/productAccess';
 import { isActingAsClient } from '../lib/actingAsClient';
 
 const PLATFORM_API_BASE = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string) || '';
@@ -39,26 +39,31 @@ export function useProductAccess(refreshKey?: unknown): {
   const isFounder = !!appState.bootstrap?.user?.isFounder;
   const home = appState.bootstrap?.homeTenantId;
   const { getToken } = useAccessToken();
-  const [payload, setPayload] = useState<EntitlementPayload | null>(null);
+  // The answer is kept WITH the business it was asked about. After a switch of
+  // business, the previous business's answer never judges the new one while
+  // the new answer is on its way (payloadForTenant: a mismatch reads as open).
+  const [held, setHeld] = useState<{ tenantId: string | null; payload: EntitlementPayload | null } | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!activeTenantId || !PLATFORM_API_BASE) { setPayload(null); setReady(true); return; }
+    if (!activeTenantId || !PLATFORM_API_BASE) { setHeld(null); setReady(true); return; }
     let cancelled = false;
     (async () => {
       try {
         const t = await getToken();
         const p = await fetchEntitlements({ baseUrl: PLATFORM_API_BASE, token: t.accessToken, tenantId: activeTenantId });
-        if (!cancelled) setPayload(p);
+        if (!cancelled) setHeld({ tenantId: activeTenantId, payload: p });
       } catch {
         // No answer = undecided = open. Never a lock on "we don't know".
-        if (!cancelled) setPayload(null);
+        if (!cancelled) setHeld(null);
       } finally {
         if (!cancelled) setReady(true);
       }
     })();
     return () => { cancelled = true; };
   }, [activeTenantId, getToken, refreshKey]);
+
+  const payload = payloadForTenant(held, activeTenantId);
 
   return {
     isOff: (product) => productSwitchedOff(payload, product),

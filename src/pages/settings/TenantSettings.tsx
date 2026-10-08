@@ -11,13 +11,14 @@ import { LogoPicker } from '../../components/oliver/LogoPicker';
 import { PhoneInput } from '../../components/PhoneInput';
 // F-106 — Plan & Pricing hub (SubscriptionBillingTab)
 import { ProductPlanStatus } from '../../components/ProductPlanStatus';
+import { useBillingViewer } from '../../hooks/useBillingViewer';
 import { tierDisplayName } from '../../lib/tierLabels';
 import {
   fetchSubscriptionsShared, createPortalSession,
   type SubscriptionsResponse, type ProductSubscription,
 } from '../../lib/billingApi';
 import {
-  isOffGatedProduct, planCardLine, rowForProduct, rowIsLive,
+  isOffGatedProduct, planCardLine, rowForProduct, rowIsLive, SWITCH_TO_OWN_BUSINESS,
   type CardState, type GatedProduct, type PlanRow,
 } from '../../lib/productAccess';
 
@@ -487,6 +488,11 @@ export function SubscriptionBillingTab() {
 
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
+  // Who is looking (review 2026-10-08): only a business admin of THIS business
+  // gets the payment-page buttons. The founder viewing a client and a team
+  // member read why instead (the billing API refuses them as well).
+  const viewer = useBillingViewer();
+  const canBill = viewer === 'admin';
   const [data, setData] = useState<SubsResp | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -588,6 +594,13 @@ export function SubscriptionBillingTab() {
           : "Every IA product you pay for, in one place. Open a product's plan to upgrade or downgrade, or remove one product without touching the others."}
       />
 
+      {!canBill && !data?.owner && (
+        <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-700" data-billing-viewer-note={viewer}>
+          {viewer === 'viewing_client'
+            ? `You're viewing a client's business. ${SWITCH_TO_OWN_BUSINESS}`
+            : 'Only a business admin can change billing. Ask an admin on your team.'}
+        </div>
+      )}
       {loading && <div className="rounded-md border bg-gray-50 p-3 text-sm text-gray-500">Loading your plan…</div>}
       {error && <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
@@ -667,7 +680,7 @@ export function SubscriptionBillingTab() {
                         Plan changes handled by us
                       </span>
                     )}
-                    {!isOwner && (
+                    {!isOwner && canBill && (
                       <button
                         type="button"
                         onClick={() => openPortal(p.key)}
@@ -713,7 +726,7 @@ export function SubscriptionBillingTab() {
               Upgrades are prorated and annual discounts are applied on your invoice, so your next invoice may differ slightly from this estimate.
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1">
+          {canBill && <div className="flex flex-col items-end gap-1">
             <button
               type="button"
               onClick={() => openPortal(undefined)}
@@ -723,7 +736,7 @@ export function SubscriptionBillingTab() {
               {openingPortal === "any" ? "Opening…" : "Payment method & invoices"}
             </button>
             {portalNote?.key === "any" && <p className="text-xs text-gray-600">{portalNote.text}</p>}
-          </div>
+          </div>}
         </div>
       )}
 
