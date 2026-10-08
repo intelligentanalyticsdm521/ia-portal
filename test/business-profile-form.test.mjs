@@ -218,6 +218,9 @@ test("the page shows hours and prices but sends neither", () => {
   assert.match(PAGE, /settings\/business-profile/, "with a link to the page that owns them");
   assert.match(PAGE, /borrowed\.prices/, "prices are shown");
   assert.match(PAGE, /oliver_catalog/, "with a link to the catalogue that owns them");
+  // a refused save is said in the sticky save bar, next to the button that was pressed (S11: the
+  // banner at the top of the form sat thousands of pixels above the box being typed in)
+  assert.match(PAGE, /data-save-bar-error[\s\S]{0,160}\{errMsg\}/, "the save bar says why the save was refused");
   // The save payload is whatever changedFields produced — never a hand-built
   // object that could smuggle one of these in.
   assert.match(PAGE, /payload: pending/);

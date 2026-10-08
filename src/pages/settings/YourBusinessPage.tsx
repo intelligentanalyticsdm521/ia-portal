@@ -617,9 +617,15 @@ export function YourBusinessPage() {
       {/* Sticky save bar — mobile-first, so the button is never off-screen */}
       <div className="fixed inset-x-0 bottom-0 z-30 border-t bg-white/95 px-4 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-          <span className="text-xs text-gray-500">
-            {pendingCount === 0 ? 'No changes to save' : `${pendingCount} change${pendingCount === 1 ? '' : 's'} ready to save`}
-          </span>
+          {/* A refused save is said HERE, next to the button that was pressed: the
+              banner at the top of the form is thousands of pixels away on a long page. */}
+          {errMsg ? (
+            <span role="alert" data-save-bar-error className="text-sm font-medium text-red-700">{errMsg}</span>
+          ) : (
+            <span className="text-xs text-gray-500">
+              {pendingCount === 0 ? 'No changes to save' : `${pendingCount} change${pendingCount === 1 ? '' : 's'} ready to save`}
+            </span>
+          )}
           <button
             type="button"
             disabled={saving || pendingCount === 0}
