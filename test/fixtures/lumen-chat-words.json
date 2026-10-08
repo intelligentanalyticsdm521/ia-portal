@@ -1,0 +1,22 @@
+{
+  "$comment": "Words exactly as LUMEN sends them (lumen-api-septa 99828e3), produced by running LUMEN's own functions: routes/chatWorkflows.js __test.actionLabelOf + statusWords (History rows build status_words as `${label} — ${statusWords(r)}`), services/chatWorkflows/match.js INTENT_WORDS + sureWords, routes/leadChat.js results. Re-generate from LUMEN if its wording changes; the Portal's sentences are tested against these, not against its own source text.",
+  "history": [
+    { "run_id": "r1", "at": "2026-10-07T21:00:00.000Z", "workflow_name": "Website chat", "visitor_name": "Sam Test", "lead_id": 1, "action_label": "Website audit", "status_words": "Website audit — finished, score 62", "file_url": "https://files.example.com/r1.pdf" },
+    { "run_id": "r2", "at": "2026-10-07T20:59:00.000Z", "workflow_name": "Website chat", "visitor_name": "Sam Test", "lead_id": 1, "action_label": "Email to the visitor", "status_words": "Email to the visitor — not sent: visitor emails are off", "file_url": null },
+    { "run_id": "r3", "at": "2026-10-07T20:58:00.000Z", "workflow_name": "Website chat", "visitor_name": "A visitor", "lead_id": 2, "action_label": "Saved as a lead", "status_words": "Saved as a lead — done", "file_url": null },
+    { "run_id": "r4", "at": "2026-10-07T20:57:00.000Z", "workflow_name": "Website chat", "visitor_name": "A visitor", "lead_id": 2, "action_label": "Website audit", "status_words": "Website audit — didn't finish: the tool did not answer", "file_url": null }
+  ],
+  "intent_words": {
+    "quote_request": "Looks like a request for a quote",
+    "booking": "Looks like they want to book a time",
+    "question": "Looks like a question about the business",
+    "complaint": "Looks like a complaint",
+    "vendor_spam": "Looks like someone selling to you",
+    "job_seeker": "Looks like someone asking for a job",
+    "other": "Not sure what they want"
+  },
+  "sure_words": ["sure", "fairly sure", "not sure"],
+  "lead_results": [
+    { "run_id": "r1", "label": "Website audit", "status_words": "Finished — score 62", "file_url": "https://files.example.com/r1.pdf", "finished_at": "2026-10-07T21:00:00.000Z" }
+  ]
+}

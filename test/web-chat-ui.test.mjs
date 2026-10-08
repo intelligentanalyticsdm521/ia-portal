@@ -146,12 +146,12 @@ test("the Conversation tab shows what the chat workflow captured, above the tran
   // above the transcript, not below it
   assert.ok(panel.indexOf("<WorkflowBlock w={c.workflow} />") < panel.indexOf("{c.messages.map((m) => <Bubble"));
   assert.match(panel, /const where = \[w\.service, w\.path\]\.filter\(Boolean\)\.join\(" · "\);/);
-  assert.match(panel, /Looks like: \{w\.intent_words\}\{sure \? ` \(\$\{sure\}\)` : ""\}/);
+  assert.match(panel, /\{looks && <div className="text-slate-500">\{looks\}<\/div>\}/);
   assert.match(panel, /\{fields\.map\(\(f, i\) => \(/);
   // a conversation whose block lacks a list still renders
   assert.match(panel, /const fields = Array\.isArray\(w\.fields\) \? w\.fields : \[\];/);
   assert.match(panel, /\{r\.label\}: \{r\.status_words\}/);
-  assert.match(panel, /<a href=\{r\.file_url\} target="_blank" rel="noopener"[^>]*>\s*Open the report\s*<\/a>/);
+  assert.match(panel, /<a href=\{r\.file_url\} target="_blank" rel="noopener"[^>]*>\s*\{openResultWords\(r\.result_label\)\}\s*<\/a>/);
   // one fetch, the one it already made
   assert.equal([...panel.matchAll(/get</g)].length, 1);
 });

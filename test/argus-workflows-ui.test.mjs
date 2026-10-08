@@ -57,8 +57,7 @@ test("three tabs for every owner, and ?tab=needs-you opens that one", () => {
   assert.match(page, /\{ key: "all", label: "All" \}/);
   assert.match(page, /\{ key: "needs-you", label: `Needs you \(\$\{needsCount\}\)` \}/);
   assert.match(page, /\{ key: "history", label: "History" \}/);
-  assert.match(page, /const tab = tabFrom\(params\.get\("tab"\)\);/);
-  assert.match(page, /v === "needs-you" \|\| v === "history" \|\| v === "setup" \? v : "all"/);
+  assert.match(page, /const tab = workflowsTabFrom\(params\.get\("tab"\), isFounder\);/);
 });
 
 test("one load on arrival: the workflows and Needs you together; History on its first open", () => {
@@ -80,10 +79,10 @@ test("no polling on the new screens (P2)", () => {
 });
 
 test("a business without SPARK reads the sentence, not an error", () => {
-  assert.match(page, /if \(statusOf\(err\) === 403\) setNoSpark\(true\);/);
+  assert.match(page, /if \(isPackageRefusal\(err\)\) setNoSpark\(true\);/);
   assert.match(read("src/lib/chatWorkflows.ts"),
     /"Your workflows appear here\. Right now the only kind is the website chat, which comes with SPARK\."/);
-  assert.match(page, /else setLoadError\(friendlyApiError\(err\)\.message\);/);
+  assert.match(page, /else setLoadError\(refusalSentences\(err\)\.join\(" "\)\);/);
 });
 
 test("All: the trigger, the mode in words, the switch, last ran and this month", () => {
@@ -109,7 +108,7 @@ test("Needs you: Send it now / Don't send call approve / skip", () => {
 
 test("Needs you: an unmatched message can be answered, added, or ignored", () => {
   assert.match(page, /&ldquo;\{item\.text\}&rdquo;/);
-  assert.match(page, /Looks like: \{item\.intent_words\}/);
+  assert.match(page, /\{looks && <span>\{looks\}<\/span>\}/);
   assert.match(page, /Complaint, refund or legal — answer it yourself/);
   assert.match(page, /decide\(item, CHAT_WF\.addToChat\(item\.unmatched_id\), "Saved as a draft path\. It isn't shown to visitors\."\)/);
   assert.match(page, /decide\(item, CHAT_WF\.ignore\(item\.unmatched_id\),/);
@@ -129,8 +128,9 @@ test("Reply now opens the lead's own modal on its Conversation tab, right here",
 });
 
 test("History: what it did, with the report link", () => {
-  assert.match(page, /\{h\.action_label\} — \{h\.status_words\}/);
-  assert.match(page, /<a href=\{h\.file_url\} target="_blank" rel="noopener"[^>]*>Open the report<\/a>/);
+  // the sentence itself is checked against LUMEN's wording in chat-workflow-fixes.test.mjs
+  assert.match(page, /\{historyLine\(h\)\}/);
+  assert.match(page, /<a href=\{h\.file_url\} target="_blank" rel="noopener"[^>]*>\{openResultWords\(h\.result_label\)\}<\/a>/);
 });
 
 test("the catalog, the menu and the page guide say Workflows", () => {

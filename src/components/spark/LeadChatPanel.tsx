@@ -23,7 +23,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MessageSquare, Send, Sparkles, User, Globe, CheckCircle2, XCircle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { friendlyApiError } from "../../lib/leadgenBilling";
-import { sureWords, type ChatConversationWorkflow } from "../../lib/chatWorkflows";
+import { intentLine, openResultWords, type ChatConversationWorkflow } from "../../lib/chatWorkflows";
 
 export interface ChatMessageRow {
   id: number;
@@ -99,16 +99,14 @@ function Bubble({ m }: { m: ChatMessageRow }) {
 
 /** What the chat workflow knows about this visitor, above their transcript. */
 function WorkflowBlock({ w }: { w: ChatConversationWorkflow }) {
-  const sure = sureWords(w.sure);
+  const looks = intentLine(w.intent_words, w.sure);
   const where = [w.service, w.path].filter(Boolean).join(" · ");
   const fields = Array.isArray(w.fields) ? w.fields : [];
   const results = Array.isArray(w.results) ? w.results : [];
   return (
     <div className="border-b border-slate-100 bg-white px-3 py-2 text-[11px] text-slate-700" data-chat-workflow-block>
       <div className="font-semibold text-slate-900">{where || w.name}</div>
-      {w.intent_words && (
-        <div className="text-slate-500">Looks like: {w.intent_words}{sure ? ` (${sure})` : ""}</div>
-      )}
+      {looks && <div className="text-slate-500">{looks}</div>}
       {fields.length > 0 && (
         <dl className="mt-1.5 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
           {fields.map((f, i) => (
@@ -128,7 +126,7 @@ function WorkflowBlock({ w }: { w: ChatConversationWorkflow }) {
                 <>
                   {" "}
                   <a href={r.file_url} target="_blank" rel="noopener" className="font-semibold text-sky-700 underline">
-                    Open the report
+                    {openResultWords(r.result_label)}
                   </a>
                 </>
               )}

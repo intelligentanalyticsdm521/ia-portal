@@ -16,10 +16,10 @@ function Line({ children, tone = "plain" }: { children: ReactNode; tone?: "plain
   return <li className={`text-[11px] leading-relaxed ${cls}`}>{children}</li>;
 }
 
-function Chip({ label, link }: { label: string; link?: boolean }) {
+function Chip({ label, link, off }: { label: string; link?: boolean; off?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-700 ring-1 ring-slate-300">
-      {label}
+    <span className={`inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold ring-1 ring-slate-300 ${off ? "text-slate-400 line-through" : "text-slate-700"}`}>
+      {label}{off ? " (off)" : ""}
       {link && <ExternalLink className="h-2.5 w-2.5 text-slate-400" aria-label="opens a web page" />}
     </span>
   );
@@ -61,9 +61,11 @@ export function ChatWorkflowSteps({ steps }: { steps: TreeStep[] }) {
             return (
               <li key={i} className="flex items-center gap-1 text-[11px] text-slate-600">
                 <ArrowRight className="h-3 w-3 text-slate-400" aria-hidden />
-                <Chip label={s.label} />
+                <Chip label={s.label} off={s.on === false} />
               </li>
             );
+          case "more":
+            return <Line key={i} tone="end">{s.text}</Line>;
           case "buttons":
             return (
               <li key={i} className="text-[11px] leading-relaxed text-slate-700">

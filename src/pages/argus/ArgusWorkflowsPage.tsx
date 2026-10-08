@@ -23,26 +23,31 @@
 // and Set-up runs load on their first open. No polling (convention_data_fetching).
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ChevronDown, ChevronRight, CheckCircle2, MessageSquare, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronRight, CheckCircle2, MessageSquare, X } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useIsFounder } from "../../hooks/useIsFounder";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { SparkLeadModal } from "../../components/spark/SparkLeadModal";
 import { ChatWorkflowSteps } from "../../components/spark/ChatWorkflowTree";
 import { OnboardingObservePanel } from "../../components/argus/OnboardingObservePanel";
-import { friendlyApiError } from "../../lib/leadgenBilling";
 import {
   CHAT_WF, LEAD_SOURCES_ROUTE, NO_SPARK_WORDS,
-  buildDisplayTree, enabledChangedWords, heldSentence, modeChangedWords, refusalSentences,
-  relativeTime, statusOf, sureWords,
+  buildDisplayTree, enabledChangedWords, heldSentence, historyCursor, historyLine, intentLine,
+  isPackageRefusal, mergeHistory, modeChangedWords, openResultWords, refusalSentences,
+  relativeTime, workflowGate, workflowsTabFrom,
   type ArgusWorkflowRow, type ChatPlaybookRow, type ChatWorkflowMode, type NeedsYouItem,
-  type WorkflowHistoryRow,
+  type WorkflowHistoryRow, type WorkflowsTab as Tab,
 } from "../../lib/chatWorkflows";
 
-type Tab = "all" | "needs-you" | "history" | "setup";
-
-function tabFrom(v: string | null): Tab {
-  return v === "needs-you" || v === "history" || v === "setup" ? v : "all";
+/** A refusal, in its own colour, right where it happened — never the green notice. */
+function Refusal({ lines }: { lines: string[] | undefined }) {
+  if (!lines || !lines.length) return null;
+  return (
+    <div className="mt-2 flex items-start gap-1.5 rounded bg-rose-50 px-2.5 py-1.5 text-[11px] text-rose-800 ring-1 ring-rose-200" role="alert">
+      <AlertTriangle className="mt-0.5 h-3 w-3 flex-shrink-0" />
+      <span>{lines.join(" ")}</span>
+    </div>
+  );
 }
 
 const itemKey = (i: NeedsYouItem) => (i.kind === "held" ? `held:${i.run_id}` : `unmatched:${i.unmatched_id}`);
@@ -51,7 +56,7 @@ export function ArgusWorkflowsPage() {
   const { get, post, put, ready } = useSparkApi();
   const isFounder = useIsFounder();
   const [params, setParams] = useSearchParams();
-  const tab = tabFrom(params.get("tab"));
+  const tab = workflowsTabFrom(params.get("tab"), isFounder);
   const setTab = (t: Tab) => setParams(t === "all" ? {} : { tab: t }, { replace: true });
 
   const [workflows, setWorkflows] = useState<ArgusWorkflowRow[]>([]);
@@ -59,7 +64,11 @@ export function ArgusWorkflowsPage() {
   const [loading, setLoading] = useState(true);
   const [noSpark, setNoSpark] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // notice = what a click did, said in green. Refusals never go here: they
+  // sit on their own row in rose (rowError, rowWords) or in pageAlert.
   const [notice, setNotice] = useState<string | null>(null);
+  const [pageAlert, setPageAlert] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<Record<string, string[]>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [rowWords, setRowWords] = useState<Record<string, { ok: boolean; lines: string[] }>>({});
 
@@ -75,6 +84,9 @@ export function ArgusWorkflowsPage() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [historyMore, setHistoryMore] = useState(false);
   const historyAsked = useRef(false);
+  const historyRows = useRef<WorkflowHistoryRow[]>([]);
+  // The server's own cursor for "Show older", when it sends one.
+  const historyNext = useRef<string | null>(null);
 
   // Reply now → the lead's own modal, on its Conversation tab, on this page
   const [replyLead, setReplyLead] = useState<number | null>(null);
@@ -101,8 +113,8 @@ export function ArgusWorkflowsPage() {
         setNeedsYou(ny.data || []);
       } catch (err) {
         if (cancelled) return;
-        if (statusOf(err) === 403) setNoSpark(true);
-        else setLoadError(friendlyApiError(err).message);
+        if (isPackageRefusal(err)) setNoSpark(true);
+        else setLoadError(refusalSentences(err).join(" "));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -110,16 +122,23 @@ export function ArgusWorkflowsPage() {
     return () => { cancelled = true; };
   }, [ready, get]);
 
-  const loadHistory = useCallback(async (before: string | null) => {
+  const loadHistory = useCallback(async (older: boolean) => {
     setHistoryLoading(true);
     setHistoryError(null);
     try {
-      const r = await get<{ data: WorkflowHistoryRow[] }>(CHAT_WF.history(before));
+      const before = older ? historyCursor(historyRows.current, historyNext.current) : null;
+      const r = await get<{ data: WorkflowHistoryRow[]; meta?: { next?: string | null } }>(CHAT_WF.history(before));
       const rows = r.data || [];
-      setHistory((h) => (before ? [...h, ...rows] : rows));
-      setHistoryMore(rows.length >= 50);
+      historyNext.current = r.meta?.next ?? null;
+      const merged = mergeHistory(older ? historyRows.current : [], rows);
+      historyRows.current = merged.rows;
+      setHistory(merged.rows);
+      // A full page that added nothing new means there is nothing older to show.
+      setHistoryMore(rows.length >= 50 && merged.added > 0);
     } catch (err) {
-      setHistoryError(friendlyApiError(err).message);
+      setHistoryError(refusalSentences(err).join(" "));
+      // The first load failed: opening the tab again (or Try again) asks again.
+      if (!older) historyAsked.current = false;
     } finally {
       setHistoryLoading(false);
     }
@@ -128,30 +147,32 @@ export function ArgusWorkflowsPage() {
   useEffect(() => {
     if (!ready || tab !== "history" || historyAsked.current) return;
     historyAsked.current = true;
-    void loadHistory(null);
+    void loadHistory(false);
   }, [ready, tab, loadHistory]);
 
   async function openRow(id: string) {
     setOpen((o) => (o === id ? null : id));
     if (treesAsked.current) return;
     treesAsked.current = true;
+    setTreeError(null);
     try {
       const r = await get<{ data: ChatPlaybookRow[] }>(CHAT_WF.playbooks);
       setTrees(r.data || []);
     } catch (err) {
-      setTreeError(friendlyApiError(err).message);
+      setTreeError(refusalSentences(err).join(" "));
       treesAsked.current = false;
     }
   }
 
   async function setMode(w: ArgusWorkflowRow, mode: ChatWorkflowMode) {
     setBusy(`mode:${w.workflow_id}`);
+    setRowError((e) => ({ ...e, [w.workflow_id]: [] }));
     try {
       await put(CHAT_WF.workflow(w.workflow_id), { mode });
       setWorkflows((list) => list.map((x) => (x.workflow_id === w.workflow_id ? { ...x, mode } : x)));
       setNotice(modeChangedWords(w.name, mode));
     } catch (err) {
-      setNotice(refusalSentences(err).join(" "));
+      setRowError((e) => ({ ...e, [w.workflow_id]: refusalSentences(err) }));
     } finally {
       setBusy(null);
     }
@@ -159,12 +180,13 @@ export function ArgusWorkflowsPage() {
 
   async function setEnabled(w: ArgusWorkflowRow, enabled: boolean) {
     setBusy(`on:${w.workflow_id}`);
+    setRowError((e) => ({ ...e, [w.workflow_id]: [] }));
     try {
       await put(CHAT_WF.workflow(w.workflow_id), { enabled });
       setWorkflows((list) => list.map((x) => (x.workflow_id === w.workflow_id ? { ...x, enabled } : x)));
       setNotice(enabledChangedWords(w.name, enabled));
     } catch (err) {
-      setNotice(refusalSentences(err).join(" "));
+      setRowError((e) => ({ ...e, [w.workflow_id]: refusalSentences(err) }));
     } finally {
       setBusy(null);
     }
@@ -226,6 +248,13 @@ export function ArgusWorkflowsPage() {
           <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss" className="text-emerald-700"><X className="h-3.5 w-3.5" /></button>
         </div>
       )}
+      {pageAlert && (
+        <div className="mb-3 flex items-start gap-2 rounded-lg bg-rose-50 px-4 py-2.5 text-xs text-rose-800 ring-1 ring-rose-200" role="alert">
+          <AlertTriangle className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <div className="flex-1">{pageAlert}</div>
+          <button type="button" onClick={() => setPageAlert(null)} aria-label="Dismiss" className="text-rose-700"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      )}
 
       {tab === "setup" && isFounder && <OnboardingObservePanel />}
 
@@ -251,6 +280,7 @@ export function ArgusWorkflowsPage() {
             const ran = relativeTime(w.last_ran_at);
             const pb = trees?.find((t) => t.playbook_id === w.workflow_id) || null;
             const tree = pb ? buildDisplayTree(pb.tree, { owner: pb.owner_display }) : null;
+            const gate = workflowGate(w);
             return (
               <div key={w.workflow_id} className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
                 <div className="flex flex-wrap items-center justify-between gap-3">
@@ -274,37 +304,42 @@ export function ArgusWorkflowsPage() {
                       </span>
                     </span>
                   </button>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="flex items-center gap-1.5 text-xs text-slate-700">
-                      <span className="font-semibold">Runs</span>
-                      <select
-                        value={w.mode}
-                        disabled={busy === `mode:${w.workflow_id}`}
-                        onChange={(e) => void setMode(w, e.target.value as ChatWorkflowMode)}
-                        className="rounded border border-slate-300 px-2 py-1 text-xs"
-                        aria-label={`How ${w.name} runs`}
-                      >
-                        <option value="automatic">Automatic</option>
-                        <option value="review">Send me first</option>
-                      </select>
-                    </label>
-                    <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        checked={w.enabled}
-                        disabled={busy === `on:${w.workflow_id}`}
-                        onChange={(e) => void setEnabled(w, e.target.checked)}
-                        className="h-4 w-4 rounded border-slate-300"
-                        aria-label={`${w.name} on`}
-                      />
-                      {w.enabled ? "On" : "Off"}
-                    </label>
-                  </div>
+                  {!gate.controls ? (
+                    <p className="max-w-xs text-xs text-slate-600">{gate.words}</p>
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-1.5 text-xs text-slate-700">
+                        <span className="font-semibold">Runs</span>
+                        <select
+                          value={w.mode}
+                          disabled={busy === `mode:${w.workflow_id}`}
+                          onChange={(e) => void setMode(w, e.target.value as ChatWorkflowMode)}
+                          className="rounded border border-slate-300 px-2 py-1 text-xs"
+                          aria-label={`How ${w.name} runs`}
+                        >
+                          <option value="automatic">Automatic</option>
+                          <option value="review">Send me first</option>
+                        </select>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          checked={w.enabled}
+                          disabled={busy === `on:${w.workflow_id}`}
+                          onChange={(e) => void setEnabled(w, e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300"
+                          aria-label={`${w.name} on`}
+                        />
+                        {w.enabled ? "On" : "Off"}
+                      </label>
+                    </div>
+                  )}
                 </div>
+                <Refusal lines={rowError[w.workflow_id]} />
                 {isOpen && (
                   <div className="mt-3 border-t border-slate-100 pt-3">
-                    {treeError && <p className="text-xs text-rose-700">We couldn&rsquo;t load its steps: {treeError} Close and open it again to retry.</p>}
+                    {treeError && <p className="text-xs text-rose-700" role="alert">We couldn&rsquo;t load its steps: {treeError} Close it and open it again to retry.</p>}
                     {!treeError && !trees && <p className="text-xs text-slate-500">Loading its steps…</p>}
                     {tree && (
                       <div className="space-y-3">
@@ -395,13 +430,13 @@ export function ArgusWorkflowsPage() {
                 </div>
               );
             }
-            const sure = sureWords(item.sure);
+            const looks = intentLine(item.intent_words, item.sure);
             const at = relativeTime(item.at);
             return (
               <div key={key} className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
                 <div className="text-sm text-slate-900">&ldquo;{item.text}&rdquo;</div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-500">
-                  {item.intent_words && <span>Looks like: {item.intent_words}{sure ? ` (${sure})` : ""}</span>}
+                  {looks && <span>{looks}</span>}
                   {at && <span>· {at}</span>}
                   {item.reason === "hold" && (
                     <span className="rounded-full bg-rose-50 px-2 py-0.5 font-semibold text-rose-800 ring-1 ring-rose-200">
@@ -452,7 +487,19 @@ export function ArgusWorkflowsPage() {
 
       {!loading && !noSpark && !loadError && tab === "history" && (
         <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-          {historyError && <p className="text-xs text-rose-700">We couldn&rsquo;t load the history: {historyError} Open the tab again to retry.</p>}
+          {historyError && (
+            <div className="flex flex-wrap items-center gap-2 text-xs text-rose-700" role="alert">
+              <span>We couldn&rsquo;t load the history: {historyError}</span>
+              <button
+                type="button"
+                disabled={historyLoading}
+                onClick={() => { historyAsked.current = true; void loadHistory(history.length > 0); }}
+                className="rounded border border-rose-300 px-2 py-0.5 font-semibold text-rose-800 disabled:opacity-40"
+              >
+                Try again
+              </button>
+            </div>
+          )}
           {!historyError && historyLoading && history.length === 0 && <p className="text-sm text-slate-500">Loading…</p>}
           {!historyError && !historyLoading && history.length === 0 && (
             <p className="text-sm text-slate-600">Nothing has run yet.</p>
@@ -462,14 +509,14 @@ export function ArgusWorkflowsPage() {
               {history.map((h) => (
                 <li key={h.run_id} className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-xs">
                   <div className="min-w-0">
-                    <div className="font-semibold text-slate-900">{h.action_label} — {h.status_words}</div>
+                    <div className="font-semibold text-slate-900">{historyLine(h)}</div>
                     <div className="text-[11px] text-slate-500">
                       {h.workflow_name}{h.visitor_name ? ` · ${h.visitor_name}` : ""}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 text-[11px] text-slate-500">
                     {h.file_url && (
-                      <a href={h.file_url} target="_blank" rel="noopener" className="font-semibold text-sky-700 underline">Open the report</a>
+                      <a href={h.file_url} target="_blank" rel="noopener" className="font-semibold text-sky-700 underline">{openResultWords(h.result_label)}</a>
                     )}
                     <span>{h.at ? new Date(h.at).toLocaleString() : ""}</span>
                   </div>
@@ -481,7 +528,7 @@ export function ArgusWorkflowsPage() {
             <button
               type="button"
               disabled={historyLoading}
-              onClick={() => void loadHistory(history[history.length - 1]?.at || null)}
+              onClick={() => void loadHistory(true)}
               className="mt-3 rounded border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 disabled:opacity-40"
             >
               {historyLoading ? "Loading…" : "Show older"}
@@ -498,7 +545,7 @@ export function ArgusWorkflowsPage() {
           setReplyLead(null);
           // The server marks the message replied when the owner answers (§C.11);
           // one read of the list shows it gone.
-          void loadNeedsYou().catch((err) => setNotice(friendlyApiError(err).message));
+          void loadNeedsYou().catch((err) => setPageAlert(`We couldn't refresh Needs you: ${refusalSentences(err).join(" ")}`));
         }}
       />
     </OliverPageWrapper>

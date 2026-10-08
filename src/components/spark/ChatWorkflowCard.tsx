@@ -22,8 +22,10 @@
 // tool, anything with a web address). Every business registers its tools the
 // same way; nothing here knows whose tool is whose.
 //
-// Writes only — the page (SparkLeadSourcesPage) does the one load.
-import { useMemo, useState } from "react";
+// Writes only — the page (SparkLeadSourcesPage) does the one load. What a
+// click did is said on the card itself (role=status), next to the control,
+// not at the top of a long page; a refusal is said there too, in rose.
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, ChevronDown, ChevronRight, Copy, Check, Workflow, Wrench } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
@@ -32,10 +34,41 @@ import { ConfirmDialog, type ConfirmAsk } from "../ConfirmDialog";
 import { ChatWorkflowSteps } from "./ChatWorkflowTree";
 import {
   CHAT_WF, NEEDS_YOU_ROUTE, WORKFLOWS_ROUTE, SECRET_SENTENCE, TOOL_FIELDS,
-  buildDisplayTree, isTimezoneWarning, modeLine, refusalSentences, relativeTime,
-  timeZoneOptions, warningWords, workflowsUsingTool,
-  type ChatActionRow, type ChatPlaybookRow, type TreePath,
+  buildDisplayTree, cardWarningLines, isTimezoneWarning, modeLine, refusalSentences, relativeTime,
+  timeZoneOptions, warningWords, workflowsUsingTool, zoneKnown, zoneTargets,
+  type ChatActionRow, type ChatPlaybookRow, type TreePath, type ZoneSite,
 } from "../../lib/chatWorkflows";
+
+/** Keys of the requests in flight, one per control: two controls never share
+ *  one "busy", so one finishing never re-enables another mid-request. */
+function useBusy() {
+  const [keys, setKeys] = useState<Set<string>>(new Set());
+  const live = useRef<Set<string>>(new Set());
+  return {
+    has: (k: string) => keys.has(k),
+    /** false when that control already has a request in flight */
+    start: (k: string) => {
+      if (live.current.has(k)) return false;
+      live.current.add(k);
+      setKeys(new Set(live.current));
+      return true;
+    },
+    stop: (k: string) => {
+      live.current.delete(k);
+      setKeys(new Set(live.current));
+    },
+  };
+}
+
+/** What the last click did, said beside it. */
+function Said({ words }: { words: string | null }) {
+  if (!words) return null;
+  return (
+    <p className="mt-2 rounded bg-emerald-50 px-2.5 py-1.5 text-[11px] text-emerald-900 ring-1 ring-emerald-200" role="status">
+      {words}
+    </p>
+  );
+}
 
 function Switch({ checked, onChange, disabled, label }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; label: string }) {
   return (
@@ -66,20 +99,25 @@ function Sentences({ lines, tone = "rose" }: { lines: string[]; tone?: "rose" | 
   );
 }
 
+/** A website this workflow runs on, with its saved time zone. */
+export interface CardSite extends ZoneSite { name: string }
+
 interface CardProps {
   playbook: ChatPlaybookRow;
   /** The business's name, from the chat meta — the placeholder for "who replies". */
   businessName: string | null;
-  /** The websites a time-zone answer is saved to (the workflow's own, or all of them). */
-  siteIds: string[];
+  /** The websites this workflow runs on (its own, or all of them), with their zones. */
+  sites: CardSite[];
   onChanged: (row: ChatPlaybookRow) => void;
-  onNotice: (words: string) => void;
+  /** A time zone was saved on these websites. */
+  onZoneSaved: (siteIds: string[], tz: string) => void;
 }
 
-export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, onNotice }: CardProps) {
+export function ChatWorkflowCard({ playbook, businessName, sites, onChanged, onZoneSaved }: CardProps) {
   const { put } = useSparkApi();
-  const [busy, setBusy] = useState<string | null>(null);
+  const busy = useBusy();
   const [refusal, setRefusal] = useState<string[]>([]);
+  const [said, setSaid] = useState<string | null>(null);
   const [openServices, setOpenServices] = useState<Set<string>>(new Set());
   const [openPaths, setOpenPaths] = useState<Set<string>>(new Set());
   const [pathOverride, setPathOverride] = useState<Record<string, boolean>>({});
@@ -95,8 +133,14 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
   const warnings = (playbook.warnings || []).filter((w) => warningWords(w));
   // The tree's own notes (a link button hidden for want of an address) read
   // like the warnings, once each.
-  const amber = [...new Set([...warnings.map(warningWords), ...tree.notes])];
-  const tzWarning = !tzSaved && warnings.some(isTimezoneWarning);
+  // The time-zone question is answered once the owner picks one, or when
+  // every website this workflow runs on already carries a zone (the chat
+  // reads the visitor's website's zone). Then neither the line nor the
+  // picker shows.
+  const tzAnswered = !!tzSaved || zoneKnown(sites);
+  const amber = cardWarningLines(warnings, tree.notes, tzAnswered);
+  const tzTargets = zoneTargets(sites);
+  const tzWarning = !tzAnswered && warnings.some(isTimezoneWarning);
 
   function toggleIn(set: Set<string>, key: string): Set<string> {
     const next = new Set(set);
@@ -124,70 +168,95 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
   }
 
   async function setLive(on: boolean) {
-    setBusy("status");
+    if (!busy.start("status")) return;
     setRefusal([]);
+    setSaid(null);
     try {
       const r = await put(CHAT_WF.playbook(playbook.playbook_id), { status: on ? "live" : "off" });
       accept(r);
       if (!(r as { data?: unknown })?.data) onChanged({ ...playbook, status: on ? "live" : "off" });
-      onNotice(on
+      setSaid(on
         ? `${playbook.name} is live on ${where}. Visitors see it on the next page they open.`
         : `${playbook.name} is off. Visitors get the usual chat until you switch it back on.`);
     } catch (err) {
       setRefusal(refusalSentences(err));
     } finally {
-      setBusy(null);
+      busy.stop("status");
     }
   }
 
   async function setPath(p: TreePath, enabled: boolean) {
-    setBusy(`path:${p.key}`);
+    // One request per path at a time: its switch stays disabled until its own
+    // answer is back, whatever other path is switched meanwhile.
+    const key = `path:${p.key}`;
+    if (!busy.start(key)) return;
     setRefusal([]);
+    setSaid(null);
     try {
       const r = await put(CHAT_WF.path(playbook.playbook_id, p.key), { enabled });
       setPathOverride((o) => ({ ...o, [p.key]: enabled }));
       accept(r);
-      onNotice(enabled
+      setSaid(enabled
         ? `"${p.label}" is back on. Visitors can take it from their next message.`
         : `"${p.label}" is off. Its button is hidden from visitors.`);
     } catch (err) {
       setRefusal(refusalSentences(err));
     } finally {
-      setBusy(null);
+      busy.stop(key);
     }
   }
 
   async function saveOwner() {
     const value = ownerDraft.trim();
     if (value === (playbook.owner_display || "")) return;
-    setBusy("owner");
+    if (!busy.start("owner")) return;
     setRefusal([]);
+    setSaid(null);
     try {
       const r = await put(CHAT_WF.playbook(playbook.playbook_id), { owner_display: value || null });
       accept(r);
       if (!(r as { data?: unknown })?.data) onChanged({ ...playbook, owner_display: value || null });
-      onNotice(value
+      setSaid(value
         ? `Visitors now read "${value} will reply".`
         : `Visitors now read "${businessName || "your business"} will reply".`);
     } catch (err) {
       setRefusal(refusalSentences(err));
     } finally {
-      setBusy(null);
+      busy.stop("owner");
     }
   }
 
+  /** Saves the zone on each website that has none yet (never over one that
+   *  has), one at a time, and says exactly which saved and which did not. */
   async function saveTimeZone(tz: string) {
-    if (!tz || !siteIds.length) return;
-    setBusy("tz");
+    if (!tz || !tzTargets.length) return;
+    if (!busy.start("tz")) return;
     setRefusal([]);
+    setSaid(null);
+    const saved: string[] = [];
+    const failed: Array<{ id: string; why: string }> = [];
     try {
-      for (const id of siteIds) await put(CHAT_WF.site(id), { timezone: tz });
-      setTzSaved(tz);
-      onNotice(`Saved. ARGUS now reads your opening hours in ${tz} time.`);
-    } catch (err) {
-      setRefusal(refusalSentences(err));
+      for (const id of tzTargets) {
+        try {
+          await put(CHAT_WF.site(id), { timezone: tz });
+          saved.push(id);
+        } catch (err) {
+          failed.push({ id, why: refusalSentences(err).join(" ") });
+        }
+      }
+      if (saved.length) onZoneSaved(saved, tz);
+      const nameOf = (id: string) => sites.find((x) => x.site_id === id)?.name || "a website";
+      if (!failed.length) {
+        setTzSaved(tz);
+        setSaid(`Saved. ARGUS now reads your opening hours in ${tz.replace(/_/g, " ")} time.`);
+      } else {
+        setRefusal([
+          ...(saved.length ? [`Saved on ${saved.map(nameOf).join(", ")}.`] : []),
+          `Not saved on ${failed.map((f) => nameOf(f.id)).join(", ")}: ${failed[0].why} Pick the time zone again to retry.`,
+        ]);
+      }
     } finally {
-      setBusy(null);
+      busy.stop("tz");
     }
   }
 
@@ -212,7 +281,7 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
           </button>
           <Switch
             checked={on}
-            disabled={busy === `path:${p.key}`}
+            disabled={busy.has(`path:${p.key}`)}
             onChange={(v) => setPath(p, v)}
             label={`${p.label} — shown to visitors`}
           />
@@ -266,11 +335,12 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
         </div>
         <div className="flex flex-col items-end gap-1">
           <span className="text-[11px] text-slate-600">Live on {where}</span>
-          <Switch checked={live} disabled={busy === "status"} onChange={setLive} label={`Live on ${where}`} />
+          <Switch checked={live} disabled={busy.has("status")} onChange={setLive} label={`Live on ${where}`} />
         </div>
       </div>
 
       <Sentences lines={refusal} />
+      <Said words={said} />
 
       <label className="mt-3 block text-xs">
         <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-600">
@@ -282,7 +352,7 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
           onBlur={() => void saveOwner()}
           placeholder={businessName || "Your business name"}
           maxLength={80}
-          disabled={busy === "owner"}
+          disabled={busy.has("owner")}
           className="w-full max-w-sm rounded border border-slate-300 px-2 py-1.5 text-sm"
         />
       </label>
@@ -297,12 +367,12 @@ export function ChatWorkflowCard({ playbook, businessName, siteIds, onChanged, o
           ))}
         </ul>
       )}
-      {tzWarning && siteIds.length > 0 && (
+      {tzWarning && tzTargets.length > 0 && (
         <label className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-slate-700">
           <span className="font-semibold">Your time zone</span>
           <select
             defaultValue=""
-            disabled={busy === "tz"}
+            disabled={busy.has("tz")}
             onChange={(e) => void saveTimeZone(e.target.value)}
             className="rounded border border-slate-300 px-2 py-1 text-xs"
           >
@@ -392,19 +462,27 @@ interface ToolsProps {
   playbooks: ChatPlaybookRow[];
   businessName: string | null;
   onActions: (rows: ChatActionRow[]) => void;
-  onNotice: (words: string) => void;
 }
 
-export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNotice }: ToolsProps) {
+const EMPTY_FORM = {
+  name: "", url: "",
+  fields: TOOL_FIELDS.map((f) => f.key),
+  email_visitor: true, attach_to_lead: true,
+  // What the tool sends back, in the owner's word: "report", "quote", …
+  // It names the link ("Open the quote") and the visitor's email.
+  result_label: "report",
+};
+
+export function ChatOwnTools({ actions, playbooks, businessName, onActions }: ToolsProps) {
   const { post, patch } = useSparkApi();
   const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({
-    name: "", url: "",
-    fields: TOOL_FIELDS.map((f) => f.key),
-    email_visitor: true, attach_to_lead: true,
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [formErr, setFormErr] = useState<string[]>([]);
-  const [busy, setBusy] = useState<string | null>(null);
+  const busy = useBusy();
+  const [said, setSaid] = useState<string | null>(null);
+  // Only the newest "Replace the secret" answer is shown: an older answer
+  // arriving late carries a secret the server has already replaced.
+  const rotateSeq = useRef<Record<string, number>>({});
   const [rowWords, setRowWords] = useState<Record<string, string[]>>({});
   const [secret, setSecret] = useState<{ name: string; value: string } | null>(null);
   const [copied, setCopied] = useState(false);
@@ -417,29 +495,36 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
   }
 
   async function addTool() {
-    setBusy("add");
+    if (!busy.start("add")) return;
     setFormErr([]);
+    setSaid(null);
     try {
       const r = await post<{ data: ChatActionRow; secret: string }>(CHAT_WF.actions, {
         name: form.name.trim(),
         url: form.url.trim(),
         fields: form.fields,
-        result_handling: { email_visitor: form.email_visitor, attach_to_lead: form.attach_to_lead, note: true, result_label: "report" },
+        result_handling: {
+          email_visitor: form.email_visitor,
+          attach_to_lead: form.attach_to_lead,
+          note: true,
+          result_label: form.result_label.trim() || "report",
+        },
       });
       onActions([...actions, r.data]);
       setSecret({ name: r.data.name, value: r.secret });
       setCopied(false);
       setAdding(false);
-      setForm({ name: "", url: "", fields: TOOL_FIELDS.map((f) => f.key), email_visitor: true, attach_to_lead: true });
+      setForm(EMPTY_FORM);
     } catch (err) {
       setFormErr(refusalSentences(err));
     } finally {
-      setBusy(null);
+      busy.stop("add");
     }
   }
 
   async function testTool(a: ChatActionRow) {
-    setBusy(`test:${a.action_id}`);
+    const key = `test:${a.action_id}`;
+    if (!busy.start(key)) return;
     setRowWords((w) => ({ ...w, [a.action_id]: [] }));
     try {
       const r = await post<{ ok: boolean; ms: number; plain: string }>(CHAT_WF.test(a.action_id), {});
@@ -447,34 +532,42 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
     } catch (err) {
       setRowWords((w) => ({ ...w, [a.action_id]: refusalSentences(err) }));
     } finally {
-      setBusy(null);
+      busy.stop(key);
     }
   }
 
   async function rotate(a: ChatActionRow) {
-    setBusy(`rotate:${a.action_id}`);
+    const key = `rotate:${a.action_id}`;
+    if (!busy.start(key)) return;
+    const seq = (rotateSeq.current[a.action_id] || 0) + 1;
+    rotateSeq.current[a.action_id] = seq;
+    setRowWords((w) => ({ ...w, [a.action_id]: [] }));
     try {
       const r = await post<{ data: ChatActionRow; secret: string }>(CHAT_WF.rotate(a.action_id), {});
+      if (seq !== rotateSeq.current[a.action_id]) return;
       if (r.data) replaceRow(r.data);
       setSecret({ name: a.name, value: r.secret });
       setCopied(false);
     } catch (err) {
+      if (seq !== rotateSeq.current[a.action_id]) return;
       setRowWords((w) => ({ ...w, [a.action_id]: refusalSentences(err) }));
     } finally {
-      setBusy(null);
+      busy.stop(key);
     }
   }
 
   async function remove(a: ChatActionRow) {
-    setBusy(`remove:${a.action_id}`);
+    const key = `remove:${a.action_id}`;
+    if (!busy.start(key)) return;
+    setSaid(null);
     try {
       await patch(CHAT_WF.action(a.action_id), { status: "off" });
       onActions(actions.map((x) => (x.action_id === a.action_id ? { ...x, status: "off" } : x)));
-      onNotice(`${a.name} is removed. No chat step can call it now.`);
+      setSaid(`${a.name} is removed. No chat step can call it now.`);
     } catch (err) {
       setRowWords((w) => ({ ...w, [a.action_id]: refusalSentences(err) }));
     } finally {
-      setBusy(null);
+      busy.stop(key);
     }
   }
 
@@ -511,6 +604,7 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
         Software of your own that a chat step can run — a report, a quote calculator, anything with a web
         address. ARGUS sends it what the visitor told us and passes the result back to them.
       </p>
+      <Said words={said} />
 
       {active.length === 0 && !adding && (
         <p className="mt-2 text-[11px] text-slate-500">No tools added yet.</p>
@@ -535,22 +629,24 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
                   <button
                     type="button"
                     onClick={() => void testTool(a)}
-                    disabled={busy === `test:${a.action_id}`}
+                    disabled={busy.has(`test:${a.action_id}`)}
                     className="rounded bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
                   >
-                    {busy === `test:${a.action_id}` ? "Testing…" : "Test this tool"}
+                    {busy.has(`test:${a.action_id}`) ? "Testing…" : "Test this tool"}
                   </button>
                   <button
                     type="button"
                     onClick={() => askRotate(a)}
-                    className="rounded border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white"
+                    disabled={busy.has(`rotate:${a.action_id}`)}
+                    className="rounded border border-slate-300 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-white disabled:opacity-40"
                   >
-                    Replace the secret
+                    {busy.has(`rotate:${a.action_id}`) ? "Replacing…" : "Replace the secret"}
                   </button>
                   <button
                     type="button"
                     onClick={() => askRemove(a)}
-                    className="text-[11px] font-semibold text-slate-500 underline hover:text-rose-700"
+                    disabled={busy.has(`remove:${a.action_id}`)}
+                    className="text-[11px] font-semibold text-slate-500 underline hover:text-rose-700 disabled:opacity-40"
                   >
                     Remove
                   </button>
@@ -610,6 +706,21 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
               ))}
             </div>
           </fieldset>
+          <label className="mt-2 block text-xs">
+            <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+              What your tool sends back (a report, a quote…)
+            </span>
+            <input
+              value={form.result_label}
+              onChange={(e) => setForm({ ...form, result_label: e.target.value })}
+              placeholder="report"
+              maxLength={40}
+              className="w-full max-w-xs rounded border border-slate-300 px-2 py-1.5 text-sm"
+            />
+            <span className="mt-0.5 block text-[10px] text-slate-500">
+              The link reads &ldquo;Open the {form.result_label.trim() || "report"}&rdquo;.
+            </span>
+          </label>
           <div className="mt-2 flex flex-wrap gap-4">
             <label className="flex items-center gap-1 text-[11px] text-slate-700">
               <input
@@ -635,10 +746,10 @@ export function ChatOwnTools({ actions, playbooks, businessName, onActions, onNo
             <button
               type="button"
               onClick={() => void addTool()}
-              disabled={busy === "add" || !canAdd}
+              disabled={busy.has("add") || !canAdd}
               className="rounded bg-[#EF6C33] px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-40"
             >
-              {busy === "add" ? "Adding…" : "Add it"}
+              {busy.has("add") ? "Adding…" : "Add it"}
             </button>
             <button
               type="button"

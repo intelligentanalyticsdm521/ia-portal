@@ -68,6 +68,10 @@ export interface ArgusWorkflowRow {
   runs_this_month: number;
   needs_you_count: number;
   site_label: string | null;
+  /** The package gate, per row: LUMEN never refuses the list itself, it marks
+   *  each row. Only `true` shows the mode and the switch (fail closed). */
+  allowed?: boolean;
+  allowed_words?: string | null;
 }
 
 export interface NeedsYouHeld {
@@ -104,6 +108,8 @@ export interface WorkflowHistoryRow {
   action_label: string;
   status_words: string;
   file_url: string | null;
+  /** What the tool sends back ("report", "quote"), when the server says. */
+  result_label?: string | null;
 }
 
 /** The block the lead's Conversation tab shows above a transcript (§C.11). */
@@ -114,7 +120,7 @@ export interface ChatConversationWorkflow {
   intent_words: string | null;
   sure: string | null;
   fields: Array<{ label: string; value: string }>;
-  results: Array<{ run_id: string; label: string; status_words: string; file_url: string | null; finished_at: string | null }>;
+  results: Array<{ run_id: string; label: string; status_words: string; file_url: string | null; finished_at: string | null; result_label?: string | null }>;
 }
 
 // ── the routes, built in one place ──────────────────────────────────────────
@@ -210,9 +216,16 @@ export function relativeTime(iso: string | null | undefined, now: number = Date.
 export function refusalSentences(err: unknown): string[] {
   const msg = err instanceof Error ? err.message : String(err ?? "");
   const m = /^SPARK API (\d{3}): ([\s\S]*)$/.exec(msg);
-  if (!m) return [msg || "That didn't work. Please try again."];
+  if (!m) {
+    // A dropped connection, a browser that could not reach us, a fault in the
+    // page: the raw message goes to the console, never to the owner.
+    if (msg) console.warn("[chat workflows] request failed:", msg);
+    return [UNREACHABLE_WORDS];
+  }
   try {
     const body = JSON.parse(m[2]) as { errors?: unknown; message?: unknown; error?: unknown; words?: unknown };
+    // The role check's own message is jargon ("Requires one of: admin…").
+    if (body.error === "forbidden") return [ADMIN_ONLY_WORDS];
     const list = Array.isArray(body.errors)
       ? body.errors.map((e) => (typeof e === "string" ? e : (e as { words?: string; message?: string })?.words || (e as { message?: string })?.message || "")).filter(Boolean)
       : [];
@@ -230,8 +243,178 @@ export function statusOf(err: unknown): number | null {
   return m ? Number(m[1]) : null;
 }
 
+/** Said for anything that is not the server's own answer. */
+export const UNREACHABLE_WORDS = "We couldn't reach the server. Check your connection and try again.";
+
+/** A write refused because the person is not an admin on the account. */
+export const ADMIN_ONLY_WORDS = "Only an admin on your account can change this. Ask one of them, or sign in as one.";
+
+/** The server's error code (`not_allowed`, `forbidden`, …), or null. */
+export function errorCodeOf(err: unknown): string | null {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  const m = /^SPARK API \d{3}: ([\s\S]*)$/.exec(msg);
+  if (!m) return null;
+  try {
+    const body = JSON.parse(m[1]) as { error?: unknown };
+    return typeof body.error === "string" ? body.error : null;
+  } catch { return null; }
+}
+
 export const NO_SPARK_WORDS =
   "Your workflows appear here. Right now the only kind is the website chat, which comes with SPARK.";
+
+/** The package sentence when the server sends none of its own. */
+export const NOT_ALLOWED_WORDS = "Chat workflows with buttons come with the SPARK Leads Growth package.";
+
+/**
+ * Whether a row on ARGUS → Workflows gets its controls. Only an explicit
+ * `allowed: true` does; a row that is refused, or does not say, reads the
+ * package sentence instead — no switch that exists to say no.
+ */
+export function workflowGate(w: Pick<ArgusWorkflowRow, "allowed" | "allowed_words">): { controls: boolean; words: string | null } {
+  if (w.allowed === true) return { controls: true, words: null };
+  return { controls: false, words: (w.allowed_words || "").trim() || NOT_ALLOWED_WORDS };
+}
+
+/** The page-level "comes with SPARK" sentence is for the package refusal only;
+ *  any other refusal of the list (sign-in, a header) is said as itself. */
+export function isPackageRefusal(err: unknown): boolean {
+  return statusOf(err) === 403 && errorCodeOf(err) === "not_allowed";
+}
+
+/** The tab ?tab= opens. "Set-up runs" is the founder's; anyone else lands on All. */
+export type WorkflowsTab = "all" | "needs-you" | "history" | "setup";
+export function workflowsTabFrom(v: string | null, isFounder: boolean): WorkflowsTab {
+  if (v === "needs-you" || v === "history") return v;
+  if (v === "setup" && isFounder) return "setup";
+  return "all";
+}
+
+/**
+ * One History line. LUMEN's status words already carry the step's name
+ * ("Website audit — finished, score 62"); the name is added only when they
+ * do not, so it is never said twice.
+ */
+export function historyLine(h: Pick<WorkflowHistoryRow, "action_label" | "status_words">): string {
+  const label = (h.action_label || "").trim();
+  const words = (h.status_words || "").trim();
+  if (!label) return words;
+  if (!words) return label;
+  if (words.toLowerCase().startsWith(label.toLowerCase())) return words;
+  return `${label} — ${words}`;
+}
+
+/**
+ * "Looks like a complaint (sure)". LUMEN's intent words are whole sentences
+ * ("Looks like a request for a quote", "Not sure what they want"); a bare
+ * phrase gets "Looks like:" in front. "Not sure what they want" never carries
+ * a sure-word — "(sure)" after it would contradict it.
+ */
+export function intentLine(words: string | null | undefined, sure: string | null | undefined): string | null {
+  const w = (words || "").trim();
+  if (!w) return null;
+  const notSure = /^not sure\b/i.test(w);
+  const sentence = /^looks like\b/i.test(w) || notSure ? w : `Looks like: ${w}`;
+  const s = sureWords(sure);
+  return s && !notSure ? `${sentence} (${s})` : sentence;
+}
+
+/** The link to a tool's file: "Open the quote". LUMEN's own default name is "report". */
+export function openResultWords(resultLabel: string | null | undefined): string {
+  const label = (resultLabel || "").trim() || "report";
+  return `Open the ${label}`;
+}
+
+/**
+ * Where "Show older" asks from. The server's own cursor when it sends one;
+ * otherwise one millisecond past the last row, so a run sharing the
+ * boundary's millisecond comes back (mergeHistory drops the repeat) instead
+ * of being skipped by the server's `created_at < before`.
+ */
+export function historyCursor(rows: Array<Pick<WorkflowHistoryRow, "at">>, metaNext?: string | null): string | null {
+  if (metaNext) return metaNext;
+  const last = rows[rows.length - 1]?.at;
+  if (!last) return null;
+  const t = new Date(last).getTime();
+  return Number.isNaN(t) ? null : new Date(t + 1).toISOString();
+}
+
+/** Older rows added below, each run once. `added` = how many were new. */
+export function mergeHistory<T extends { run_id: string }>(have: T[], incoming: T[]): { rows: T[]; added: number } {
+  const seen = new Set(have.map((h) => h.run_id));
+  const fresh: T[] = [];
+  for (const r of incoming) {
+    if (seen.has(r.run_id)) continue;
+    seen.add(r.run_id);
+    fresh.push(r);
+  }
+  return { rows: [...have, ...fresh], added: fresh.length };
+}
+
+/** A chat website as the time-zone picker needs it. */
+export interface ZoneSite { site_id: string; timezone?: string | null }
+
+/**
+ * The websites a picked time zone is saved to: only those with none yet. A
+ * website that already has a zone keeps it — the picker never overwrites one.
+ */
+export function zoneTargets(sites: ZoneSite[]): string[] {
+  return sites.filter((s) => !(s.timezone || "").trim()).map((s) => s.site_id);
+}
+
+/**
+ * The amber lines on a workflow card: the server's warnings and the tree's
+ * own notes, once each. Once the time zone is answered (picked here, or every
+ * website already has one) its line is gone with the picker.
+ */
+export function cardWarningLines(
+  warnings: Array<string | ChatPlaybookWarning>,
+  notes: string[],
+  tzAnswered: boolean,
+): string[] {
+  const shown = tzAnswered ? warnings.filter((w) => !isTimezoneWarning(w)) : warnings;
+  return [...new Set([...shown.map(warningWords), ...notes].filter(Boolean))];
+}
+
+/** Every website the workflow covers has a zone: the question is answered. */
+export function zoneKnown(sites: ZoneSite[]): boolean {
+  return sites.length > 0 && sites.every((s) => !!(s.timezone || "").trim());
+}
+
+/**
+ * The websites whose "Email visitors what they asked for" switch does
+ * something: those an allowed chat workflow runs on (its own website, or every
+ * website when it covers them all). Workflows unknown (the load failed) → none.
+ */
+export function visitorEmailSiteIds(
+  playbooks: Array<Pick<ChatPlaybookRow, "allowed" | "site_id">> | null,
+  siteIds: string[],
+): Set<string> {
+  const out = new Set<string>();
+  if (!playbooks) return out;
+  for (const p of playbooks) {
+    if (p.allowed !== true) continue;
+    if (p.site_id == null) { siteIds.forEach((id) => out.add(id)); continue; }
+    // the same website however its id is cased
+    const want = String(p.site_id).toLowerCase();
+    for (const id of siteIds) if (id.toLowerCase() === want) out.add(id);
+  }
+  return out;
+}
+
+/**
+ * Whether "Your own tools" is offered. Only on an explicit yes: the server's
+ * package answer (`meta.allowed`) or a workflow it marked allowed. A failed
+ * load, no workflows and no answer, or only refused workflows → not offered.
+ */
+export function toolsOffered(
+  playbooks: Array<Pick<ChatPlaybookRow, "allowed">> | null,
+  metaAllowed?: boolean | null,
+): boolean {
+  if (metaAllowed === true) return true;
+  if (metaAllowed === false) return false;
+  return !!playbooks && playbooks.some((p) => p.allowed === true);
+}
 
 // ── the read-only tree ─────────────────────────────────────────────────────
 //
@@ -255,7 +438,8 @@ export type TreeStep =
   | { kind: "do"; text: string }
   | { kind: "handoff"; text: string }
   | { kind: "end"; text: string | null }
-  | { kind: "goto"; label: string }
+  | { kind: "goto"; label: string; on?: boolean }
+  | { kind: "more"; text: string }
   | { kind: "buttons"; text: string; groups: TreeButtonGroup[] };
 
 export interface TreeButtonGroup {
@@ -355,7 +539,11 @@ function parseSwitches(tree: Rec): Record<string, boolean> {
   return out;
 }
 
+/** Steps shown for one path (or one service's opening question). Each walk from
+ *  the top gets its own count, so a long path never leaves the next one empty;
+ *  when a count runs out the owner reads that it did. */
 const MAX_STEPS = 400;
+export const MORE_STEPS_WORDS = "More steps than we can show here.";
 
 /** Walks a definition (shape a) into lines an owner reads. Pure. */
 function walkDefinition(tree: Rec, facts: TreeFacts): DisplayTree {
@@ -367,12 +555,17 @@ function walkDefinition(tree: Rec, facts: TreeFacts): DisplayTree {
   for (const p of paths) if (str(p.entry)) entryToPath.set(str(p.entry), p);
   const toolsUsed = new Set<string>();
   let budget = MAX_STEPS;
+  let cut = false;
 
   function walk(start: string, ownEntry: string | null, ancestors: Set<string>): TreeStep[] {
     const out: TreeStep[] = [];
     let id: string | null = start;
     const seen = new Set(ancestors);
-    while (id && budget > 0) {
+    while (id) {
+      if (budget <= 0) {
+        if (!cut) { out.push({ kind: "more", text: MORE_STEPS_WORDS }); cut = true; }
+        break;
+      }
       budget -= 1;
       const other = entryToPath.get(id);
       if (other && id !== ownEntry) { out.push({ kind: "goto", label: str(other.label) || id }); break; }
@@ -439,18 +632,24 @@ function walkDefinition(tree: Rec, facts: TreeFacts): DisplayTree {
   const pathEnabled = (p: Rec) =>
     typeof p.enabled === "boolean" ? p.enabled : switches[str(p.key)] !== false;
   const isDraft = (p: Rec) => str(p.status) === "draft";
+  /** One count per walk from the top: a path, or a service's opening question. */
+  const fromTop = (start: string, ownEntry: string | null): TreeStep[] => {
+    budget = MAX_STEPS;
+    cut = false;
+    return walk(start, ownEntry, new Set());
+  };
   const toPath = (p: Rec): TreePath => ({
     key: str(p.key),
     label: str(p.label) || str(p.key),
     enabled: pathEnabled(p),
-    steps: walk(str(p.entry), str(p.entry), new Set()),
+    steps: fromTop(str(p.entry), str(p.entry)),
   });
 
   const outServices: TreeService[] = services
     .filter((s) => str(s.status) !== "draft")
     .map((s) => {
       const start = str(s.start);
-      const intro = start && !entryToPath.has(start) ? walk(start, null, new Set()) : [];
+      const intro = start && !entryToPath.has(start) ? fromTop(start, null) : [];
       return {
         key: str(s.key),
         label: str(s.label) || str(s.key),
@@ -471,7 +670,7 @@ function walkDefinition(tree: Rec, facts: TreeFacts): DisplayTree {
   return { services: outServices, shared, drafts, toolsUsed: [...toolsUsed], notes: [] };
 }
 
-const STEP_KINDS = new Set(["say", "ask", "do", "handoff", "end", "goto", "buttons"]);
+const STEP_KINDS = new Set(["say", "ask", "do", "handoff", "end", "goto", "more", "buttons"]);
 const PREFIX = /^ARGUS (says|asks):\s*/;
 
 /** Steps from an already-walked tree: the server's `{ kind, words }`, or our own shape. */
@@ -497,11 +696,14 @@ function fromWalked(v: unknown, facts: TreeFacts, tools: Set<string>, depth = 0)
         const link = c.link === true;
         const to = isRec(c.goes_to) ? c.goes_to : null;
         // Answers that lead to the same place share one line.
-        const target = to ? `path:${str(to.key)}` : `steps:${JSON.stringify(c.steps ?? null)}`;
+        // A chip into another path carries that path's switch (`on`): an
+        // answer into a switched-off path reads off, as visitors are offered it.
+        const on = c.on !== false;
+        const target = to ? `path:${str(to.key)}:${on}` : `steps:${JSON.stringify(c.steps ?? null)}`;
         const g = groups.find((x) => x.target === target && x.link === link);
         if (g) { g.labels.push(str(c.label)); continue; }
         const children: TreeStep[] = to
-          ? [{ kind: "goto", label: str(to.label) || str(to.key) }]
+          ? [{ kind: "goto", label: str(to.label) || str(to.key), on }]
           : fromWalked(c.steps, facts, tools, depth + 1);
         groups.push({ target, link, labels: [str(c.label)], children });
       }
@@ -562,10 +764,14 @@ export function buildDisplayTree(tree: unknown, facts: TreeFacts = {}): DisplayT
   return out;
 }
 
+/** A tool's name as a chat step finds it: trimmed, any case (LUMEN's validate does the same). */
+const toolKey = (name: string) => (name || "").trim().toLowerCase();
+
 /** The workflows that run a tool, by name — said in the Remove confirmation. */
 export function workflowsUsingTool(playbooks: ChatPlaybookRow[], toolName: string, facts: TreeFacts = {}): string[] {
+  const want = toolKey(toolName);
   return playbooks
-    .filter((p) => buildDisplayTree(p.tree, facts).toolsUsed.includes(toolName))
+    .filter((p) => buildDisplayTree(p.tree, facts).toolsUsed.some((t) => toolKey(t) === want))
     .map((p) => p.name);
 }
 

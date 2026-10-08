@@ -205,7 +205,7 @@ describe("the tree LUMEN walks (definition.tree) reads the same way", () => {
   test("the tool is known by name, and the hidden link buttons are said", () => {
     assert.deepEqual(tree.toolsUsed, ["Website audit"]);
     assert.ok(tree.notes.some((n) => /is hidden because no web address is set for it\./.test(n)));
-    assert.ok(card.includes("...tree.notes"), "the card shows the tree's notes with the warnings");
+    assert.ok(card.includes("cardWarningLines(warnings, tree.notes, tzAnswered)"), "the card shows the tree's notes with the warnings");
   });
 });
 
@@ -260,7 +260,7 @@ describe("sentences the screens share", () => {
 describe("the workflow card on Lead sources", () => {
   test("Lead sources loads the workflows and the tools in its one pass, each failing on its own", () => {
     const all = sources.slice(sources.indexOf("await Promise.all(["), sources.indexOf("]);", sources.indexOf("await Promise.all([")));
-    assert.match(all, /get<\{ data: ChatPlaybookRow\[\] \}>\(CHAT_WF\.playbooks\)\.catch\(\(\) => null\)/);
+    assert.match(all, /get<\{ data: ChatPlaybookRow\[\]; meta\?: \{ allowed\?: boolean \} \}>\(CHAT_WF\.playbooks\)\.catch\(\(\) => null\)/);
     assert.match(all, /get<\{ data: ChatActionRow\[\] \}>\(CHAT_WF\.actions\)\.catch\(\(\) => null\)/);
     assert.match(sources, /<ChatWorkflowCard\b/);
     assert.match(sources, /<ChatOwnTools\b/);
@@ -308,11 +308,11 @@ describe("the workflow card on Lead sources", () => {
   });
 
   test("the time-zone picker sits where the warning is and saves through the site", () => {
-    assert.match(card, /tzWarning && siteIds\.length > 0 &&/);
+    assert.match(card, /tzWarning && tzTargets\.length > 0 &&/);
     assert.match(card, /put\(CHAT_WF\.site\(id\), \{ timezone: tz \}\)/);
   });
 
-  test("the visitor-emails switch is on every website row and defaults ON", () => {
+  test("the visitor-emails switch defaults ON (on the websites a workflow runs on)", () => {
     assert.match(sources, /Email visitors what they asked for/);
     assert.match(sources, /const emailsOn = site\.visitor_emails_enabled !== false;/);
     assert.match(sources, /put\(CHAT_WF\.site\(site\.site_id\), \{ visitor_emails_enabled: on \}\)/);

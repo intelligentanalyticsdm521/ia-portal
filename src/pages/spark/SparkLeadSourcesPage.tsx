@@ -47,7 +47,10 @@ import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { friendlyApiError } from "../../lib/leadgenBilling";
 import { ChatWorkflowCard, ChatOwnTools } from "../../components/spark/ChatWorkflowCard";
-import { CHAT_WF, type ChatActionRow, type ChatPlaybookRow } from "../../lib/chatWorkflows";
+import {
+  CHAT_WF, refusalSentences, toolsOffered, visitorEmailSiteIds,
+  type ChatActionRow, type ChatPlaybookRow,
+} from "../../lib/chatWorkflows";
 
 // ── shapes the API serves ───────────────────────────────────────────────────
 interface CatalogRow {
@@ -291,6 +294,9 @@ export function SparkLeadSourcesPage() {
   // and the block simply is not shown; [] = none yet.
   const [playbooks, setPlaybooks] = useState<ChatPlaybookRow[] | null>(null);
   const [chatActions, setChatActions] = useState<ChatActionRow[] | null>(null);
+  // The server's package answer for chat workflows, when it sends one
+  // (meta.allowed on GET /chat/playbooks); null = it did not say.
+  const [playbooksAllowed, setPlaybooksAllowed] = useState<boolean | null>(null);
   // A refused visitor-emails switch says why on its own row (never a browser dialog).
   const [emailsWords, setEmailsWords] = useState<Record<string, string>>({});
   const [addingSite, setAddingSite] = useState(false);
@@ -336,7 +342,7 @@ export function SparkLeadSourcesPage() {
         get<{ data: PhoneLineRow | null; meta: PhoneLineMeta }>("/api/v1/conversations/phone-line").catch(() => null),
         // Chat workflows (2026-10-07). Each its own failure, like the two above:
         // a business whose workflows could not be read still sees its sources.
-        get<{ data: ChatPlaybookRow[] }>(CHAT_WF.playbooks).catch(() => null),
+        get<{ data: ChatPlaybookRow[]; meta?: { allowed?: boolean } }>(CHAT_WF.playbooks).catch(() => null),
         get<{ data: ChatActionRow[] }>(CHAT_WF.actions).catch(() => null),
       ]);
       setCatalog(cat.data || []);
@@ -346,6 +352,7 @@ export function SparkLeadSourcesPage() {
       setChatSites(chat?.data || []);
       setChatMeta(chat?.meta || null);
       setPlaybooks(pbs ? pbs.data || [] : null);
+      setPlaybooksAllowed(typeof pbs?.meta?.allowed === "boolean" ? pbs.meta.allowed : null);
       setChatActions(acts ? acts.data || [] : null);
       setLine(phone?.data || null);
       setLineMeta(phone?.meta || null);
@@ -369,6 +376,13 @@ export function SparkLeadSourcesPage() {
     }
     return m;
   }, [connections]);
+
+  // The websites whose visitor-emails switch does something (an allowed chat
+  // workflow runs there).
+  const emailSites = useMemo(
+    () => visitorEmailSiteIds(playbooks, chatSites.map((s) => s.site_id)),
+    [playbooks, chatSites],
+  );
 
   const activeCount = useMemo(
     () => connections.filter((c) => c.status !== "disconnected").length,
@@ -424,7 +438,7 @@ export function SparkLeadSourcesPage() {
     } catch (err) {
       setEmailsWords((w) => ({
         ...w,
-        [site.site_id]: `That didn't save: ${friendlyApiError(err).message} The switch shows what is saved now — try again in a minute.`,
+        [site.site_id]: `That didn't save: ${refusalSentences(err).join(" ")} The switch shows what is saved now — try again in a minute.`,
       }));
     } finally {
       setChatBusy(null);
@@ -605,7 +619,7 @@ export function SparkLeadSourcesPage() {
         </div>
 
         {notice && (
-          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2.5 text-xs text-emerald-900">
+          <div className="flex items-start gap-2 rounded-lg bg-emerald-50 ring-1 ring-emerald-200 px-4 py-2.5 text-xs text-emerald-900" role="status">
             <CheckCircle2 className="h-4 w-4 flex-shrink-0 mt-0.5" />
             <div className="flex-1">{notice}</div>
             <button onClick={() => setNotice(null)} className="text-emerald-700 hover:text-emerald-900"><X className="h-3.5 w-3.5" /></button>
@@ -645,6 +659,7 @@ export function SparkLeadSourcesPage() {
               <ul className="mt-3 space-y-2">
                 {chatSites.map((site) => {
                   const hosted = site.kind !== "chat_property";
+                  const emailsApply = emailSites.has(site.site_id);
                   const name = site.label || site.domain || "Your website";
                   return (
                     <li key={site.site_id} className="rounded-lg bg-slate-50 px-3 py-2">
@@ -688,8 +703,11 @@ export function SparkLeadSourcesPage() {
                       </div>
 
                       {/* Chat workflows: does the chat email a visitor what they
-                          asked for? On unless the business says no. */}
-                      {(() => {
+                          asked for? On unless the business says no. Shown only
+                          on a website an allowed chat workflow runs on — anywhere
+                          else nothing is ever emailed, so the switch would say
+                          something untrue. */}
+                      {emailsApply && (() => {
                         const emailsOn = site.visitor_emails_enabled !== false;
                         return (
                           <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 pt-1.5">
@@ -808,22 +826,22 @@ export function SparkLeadSourcesPage() {
                 key={pb.playbook_id}
                 playbook={pb}
                 businessName={chatMeta?.business_name ?? null}
-                siteIds={pb.site_id ? [pb.site_id] : chatSites.map((s) => s.site_id)}
+                sites={chatSites
+                  .filter((s) => !pb.site_id || s.site_id.toLowerCase() === String(pb.site_id).toLowerCase())
+                  .map((s) => ({ site_id: s.site_id, timezone: s.timezone ?? null, name: s.label || s.domain || "Your website" }))}
                 onChanged={(row) => setPlaybooks((list) => (list || []).map((x) => (x.playbook_id === row.playbook_id ? row : x)))}
-                onNotice={setNotice}
+                onZoneSaved={(ids, tz) => setChatSites((rows) => rows.map((r) => (ids.includes(r.site_id) ? { ...r, timezone: tz } : r)))}
               />
             ))}
-            {/* A business whose only workflows are refused (no Growth package)
-                is told so on the card; the tools a step would run are not offered
-                beside that sentence. With no workflow yet, tools can be added
-                first — a workflow that names a tool needs it registered to go live. */}
-            {chatActions && !(playbooks && playbooks.length > 0 && playbooks.every((p) => !p.allowed)) && (
+            {/* "Your own tools" only on an explicit yes from the server: its
+                package answer, or a workflow it marked allowed. A failed load,
+                no answer, or only refused workflows → not offered (fail closed). */}
+            {chatActions && toolsOffered(playbooks, playbooksAllowed) && (
               <ChatOwnTools
                 actions={chatActions}
                 playbooks={playbooks || []}
                 businessName={chatMeta?.business_name ?? null}
                 onActions={setChatActions}
-                onNotice={setNotice}
               />
             )}
 
