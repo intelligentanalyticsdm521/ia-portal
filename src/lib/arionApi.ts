@@ -1341,8 +1341,32 @@ export async function getEditorLink(params: { baseUrl: string; bearerToken: stri
   return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/editor-link` });
 }
 
-export async function getForms(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
-  return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/forms` });
+/** The website's inquiries (arion.site_form_submission), newest first, paged. */
+export async function getForms(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; page?: number; perPage?: number }) {
+  const qp = new URLSearchParams();
+  if (params.page != null) qp.set('page', String(params.page));
+  if (params.perPage != null) qp.set('per_page', String(params.perPage));
+  const qs = qp.toString() ? `?${qp.toString()}` : '';
+  return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/forms${qs}` });
+}
+
+/** Every form's saved settings (arion.site_form_config) for this site. */
+export async function getFormConfigs(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {
+  return requestJson<any>({ ...params, path: `/arion/sites/${encodeURIComponent(params.siteId)}/forms/config` });
+}
+
+/** Save one form's settings. A MERGE that overwrites every column: send the whole row. */
+export async function saveFormConfig(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; body: Record<string, unknown> }) {
+  return requestJson<any>({ ...params, method: 'POST', path: `/arion/sites/${encodeURIComponent(params.siteId)}/forms/config`, body: params.body });
+}
+
+/** Delete one inquiry (spam cleanup). Hard delete. */
+export async function deleteFormSubmission(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string; submissionId: string }) {
+  return requestJson<any>({
+    ...params,
+    method: 'DELETE',
+    path: `/arion/sites/${encodeURIComponent(params.siteId)}/forms/submissions/${encodeURIComponent(params.submissionId)}`,
+  });
 }
 
 export async function getBookings(params: { baseUrl: string; bearerToken: string; tenantId: string; siteId: string }) {

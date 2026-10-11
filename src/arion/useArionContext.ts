@@ -24,6 +24,9 @@ import {
   createArionRequest,
   listArionRequests,
   getForms as portalGetForms,
+  getFormConfigs as portalGetFormConfigs,
+  saveFormConfig as portalSaveFormConfig,
+  deleteFormSubmission as portalDeleteFormSubmission,
   getBookings as portalGetBookings,
   getGbpProfile as portalGetGbpProfile,
   getGbpInsights as portalGetGbpInsights,
@@ -521,9 +524,24 @@ export function useArionContext() {
         return listArionRequests({ ...b, siteId });
       },
 
-      async getForms(siteId: string) {
+      async getForms(siteId: string, page?: number, perPage?: number) {
         const b = await base();
-        return portalGetForms({ ...b, siteId });
+        return portalGetForms({ ...b, siteId, page, perPage });
+      },
+
+      async getFormConfigs(siteId: string) {
+        const b = await base();
+        return portalGetFormConfigs({ ...b, siteId });
+      },
+
+      async saveFormConfig(siteId: string, body: Record<string, unknown>) {
+        const b = await base();
+        return portalSaveFormConfig({ ...b, siteId, body });
+      },
+
+      async deleteFormSubmission(siteId: string, submissionId: string) {
+        const b = await base();
+        return portalDeleteFormSubmission({ ...b, siteId, submissionId });
       },
 
       async getBookings(siteId: string) {

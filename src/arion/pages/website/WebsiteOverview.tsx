@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { ReportButton } from '../../../components/insights/ReportButton';
+import { WebsiteInquiries } from './WebsiteInquiries';
 import { useArionInsightsPayload } from '../../../hooks/useArionInsightsPayload';
 import {
   Card, HealthRow, Loading, EmptyPanel, SidebarCard, ConsultingUpsell,
@@ -456,6 +457,15 @@ export function WebsiteOverview() {
           <SidebarCard label="SSL" value={health.sslStatus || 'Active'} valueClass="success" />
         </div>
       </div>
+
+      {/* Website inquiries + the per-form "Send this form to my SPARK inbox"
+          switch (features audit row 41, 2026-10-11). The only screen that
+          shows an ARION-only business what its website took. */}
+      {siteId && (
+        <div style={{ marginTop: 14, marginBottom: 14 }}>
+          <WebsiteInquiries siteId={siteId} arionApi={arionApi} />
+        </div>
+      )}
 
       <ConsultingUpsell
         headline="Your website is the foundation — let IA handle hosting, security, and uptime"
