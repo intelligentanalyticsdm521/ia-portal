@@ -126,8 +126,9 @@ export function WebsiteInquiries({ siteId, arionApi }: { siteId: string; arionAp
     setSavingForm(form.formId); setFormError(null);
     try {
       await arionApi.saveFormConfig(siteId, body as unknown as Record<string, unknown>);
-      // The saved row is exactly what was sent (the route MERGEs the whole
-      // body), so the screen shows it without a second round trip.
+      // The body names only the switch (the route keeps every other stored
+      // column), so the screen keeps the row it has and flips is_active,
+      // without a second round trip.
       setConfigs((prev) => {
         const saved: FormConfigRow = { ...(form.config || {}), ...body, form_id: form.formId };
         const rest = prev.filter((c) => String(c.form_id) !== form.formId);

@@ -110,30 +110,37 @@ describe("the switch is offered only on a DECIDED 'SPARK is in your plan'", () =
   });
 });
 
-describe("the switch writes is_active and keeps every other column", () => {
-  test("a saved row goes back as it was, parsed out of its stored JSON, with only is_active changed", () => {
+describe("a switch flip names ONLY the switch, so it can never erase an outcome", () => {
+  // arion-api 09bcbdc: a key the body does not name keeps its stored value.
+  // The first version sent every column back as it was when the PAGE LOADED,
+  // so tags / list / consent saved after that (another tab, the SPARK outcomes
+  // editor) were overwritten with the old values, and apply_tags kept as plain
+  // text could not be parsed and went back as null.
+  const OUTCOME_KEYS = ["apply_tags", "add_to_list_id", "marketing_optin", "field_map", "form_name"];
+  test("a saved row: the body is form_id + is_active, nothing else", () => {
     const config = {
       form_id: "contact-1", form_name: "Contact us", form_type: "quote",
       field_map: '{"email":"your-email"}', is_active: 0,
       apply_tags: '["Website","Hot"]', add_to_list_id: 7, marketing_optin: 1,
     };
     const body = configWithSwitch({ formId: "contact-1", formType: "contact", config }, true);
-    assert.deepEqual(body, {
-      form_id: "contact-1", form_name: "Contact us", form_type: "quote",
-      field_map: { email: "your-email" }, is_active: true,
-      apply_tags: ["Website", "Hot"], add_to_list_id: 7, marketing_optin: true,
-    });
+    assert.deepEqual(body, { form_id: "contact-1", is_active: true });
+    for (const k of OUTCOME_KEYS) assert.ok(!(k in body), `${k} is never sent by a flip`);
+    assert.ok(!("form_type" in body), "an existing row's type is never sent");
+  });
+  test("a stored value the Portal cannot parse is not touched (plain-text tags)", () => {
+    const body = configWithSwitch({ formId: "a", formType: "contact", config: { form_id: "a", apply_tags: "Website, Hot", is_active: 1 } }, false);
+    assert.ok(!("apply_tags" in body));
   });
   test("turning it off sends is_active false explicitly (the route reads a missing one as ON)", () => {
     const body = configWithSwitch({ formId: "a", formType: "contact", config: { form_id: "a", is_active: 1 } }, false);
     assert.equal(body.is_active, false);
     assert.ok("is_active" in body);
   });
-  test("a form with no row yet gets the route's own defaults", () => {
-    assert.deepEqual(configWithSwitch({ formId: "q", formType: null, config: null }, true), {
-      form_id: "q", form_name: null, form_type: "contact", field_map: null, is_active: true,
-      apply_tags: null, add_to_list_id: null, marketing_optin: false,
-    });
+  test("a form with no row yet: is_active, plus its type from its inquiries when known", () => {
+    assert.deepEqual(configWithSwitch({ formId: "q", formType: null, config: null }, true), { form_id: "q", is_active: true });
+    assert.deepEqual(configWithSwitch({ formId: "b", formType: "booking", config: null }, true), { form_id: "b", is_active: true, form_type: "booking" });
+    for (const k of OUTCOME_KEYS) assert.ok(!(k in configWithSwitch({ formId: "q", formType: "x", config: null }, true)), k);
   });
 });
 
@@ -155,7 +162,7 @@ describe("the page", () => {
     assert.match(section, /Delete this inquiry\? It can't be brought back\./);
     assert.match(api, /method: 'DELETE',\n\s+path: `\/arion\/sites\/\$\{encodeURIComponent\(params\.siteId\)\}\/forms\/submissions\/\$\{encodeURIComponent\(params\.submissionId\)\}`/);
   });
-  test("the switch saves through POST /forms/config with the merged body", () => {
+  test("the switch saves through POST /forms/config with the switch-only body", () => {
     assert.match(section, /const body = configWithSwitch\(form, !form\.sendsToSpark\);/);
     assert.match(api, /method: 'POST', path: `\/arion\/sites\/\$\{encodeURIComponent\(params\.siteId\)\}\/forms\/config`/);
   });

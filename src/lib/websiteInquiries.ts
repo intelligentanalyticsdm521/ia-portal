@@ -12,9 +12,9 @@
 //   2. an arion.site_form_config row for (site, form_id) has is_active = 1.
 // That row's is_active IS "Send this form to my SPARK inbox". It is OFF until
 // the business turns it on (no row = off). The switch writes is_active through
-// POST /arion/sites/:siteId/forms/config, which is a MERGE that overwrites
-// every column, so the other columns are read first and sent back as they
-// were (configWithSwitch). A send to another product is a cross-product WRITE:
+// POST /arion/sites/:siteId/forms/config with ONLY form_id + is_active: since
+// arion-api 09bcbdc a key the body does not name keeps its stored value, so a
+// flip never touches the form's tags, list or consent (configWithSwitch). A send to another product is a cross-product WRITE:
 // undecided never lets it through, so the switch is shown only on a DECIDED
 // "SPARK is owned" (captureSwitchState).
 //
@@ -205,40 +205,36 @@ export function captureSwitchState(payload: EntitlementPayload | null | undefine
   return 'unknown';
 }
 
-/** The POST /forms/config body for this form with the switch set to `on`. */
-export interface FormConfigBody {
+/**
+ * The POST /forms/config body that flips "Send this form to my SPARK inbox".
+ *
+ * ONLY form_id and is_active (2026-10-11 skeptic pass). arion-api 09bcbdc made
+ * the route change only the keys a body names ("a switch flip keeps the
+ * form's outcomes"); the first version of this file sent back every column as
+ * it was when the PAGE LOADED, so tags, list and consent saved anywhere else
+ * after that (another tab, the SPARK outcomes editor, IA) were written back
+ * over with the old values, and a stored value this file could not parse
+ * (apply_tags kept as plain text) was written back as nothing. Naming only the
+ * switch means a flip can never touch an outcome.
+ *
+ * is_active is always sent as a real true/false: the route reads a MISSING
+ * is_active on a new row as ON. A form with no row yet also names its
+ * form_type (from its inquiries) so the new row is not filed as "contact" when
+ * it is a booking form; an existing row's type is never sent.
+ */
+export interface FormSwitchBody {
   form_id: string;
-  form_name: string | null;
-  form_type: string;
-  field_map: Record<string, unknown> | null;
   is_active: boolean;
-  apply_tags: string[] | null;
-  add_to_list_id: number | null;
-  marketing_optin: boolean;
+  form_type?: string;
 }
 
-/**
- * POST /forms/config MERGEs and overwrites EVERY column, and it stringifies
- * field_map and apply_tags itself. So the saved row's values go back exactly
- * as they are (parsed out of their stored JSON, so they are not stringified
- * twice), and only is_active changes. A form with no row yet gets the
- * defaults the route would give it, with is_active sent explicitly (the route
- * reads a missing is_active as ON).
- */
-export function configWithSwitch(form: Pick<SeenForm, 'formId' | 'formType' | 'config'>, on: boolean): FormConfigBody {
-  const c = form.config;
-  const tags = parseJson<unknown>(c?.apply_tags ?? null);
-  const listId = c?.add_to_list_id;
-  return {
-    form_id: form.formId,
-    form_name: c?.form_name ?? null,
-    form_type: str(c?.form_type) || str(form.formType) || 'contact',
-    field_map: parseJson<Record<string, unknown>>(c?.field_map ?? null),
-    is_active: on,
-    apply_tags: Array.isArray(tags) ? tags.map(String) : null,
-    add_to_list_id: listId != null && Number.isFinite(Number(listId)) ? Number(listId) : null,
-    marketing_optin: isActiveFlag(c?.marketing_optin),
-  };
+export function configWithSwitch(form: Pick<SeenForm, 'formId' | 'formType' | 'config'>, on: boolean): FormSwitchBody {
+  const body: FormSwitchBody = { form_id: form.formId, is_active: on };
+  if (!form.config) {
+    const type = str(form.formType);
+    if (type) body.form_type = type;
+  }
+  return body;
 }
 
 /** "Oct 11, 2026, 9:42 AM" in the viewer's own zone; '' when unknown. */
