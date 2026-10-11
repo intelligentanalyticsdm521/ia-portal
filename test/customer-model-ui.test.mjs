@@ -284,7 +284,9 @@ test("Companies is a destination again — the embedded mode is gone, not switch
   const contacts = read("pages/spark/SparkContactsPage.tsx");
   assert.doesNotMatch(contacts, /<SparkAccountsPage/, "Contacts must not render the Companies page inside itself");
   const nav = read("components/SubNav.tsx");
-  assert.match(nav, /key: "spark_accounts", label: "Companies", route: "\/app\/services\/spark_accounts" \}/,
+  // 2026-10-11: the row may carry an `everyTier` reason (it is every SPARK
+  // tier); what must not come back is `merged: true`.
+  assert.match(nav, /key: "spark_accounts", label: "Companies", route: "\/app\/services\/spark_accounts"(, everyTier: "[^"]+")? \}/,
     "un-merged: merged means folded into another surface, and this page is not");
 });
 

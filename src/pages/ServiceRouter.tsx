@@ -8,7 +8,7 @@ import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
 import { SERVICE_VISIBILITY } from '../components/SubNav';
-import { isGatedProduct, isRoutable, requirementLabel } from '../components/navVisibility';
+import { isGatedProduct, isRoutable, requirementLabel, wallProductOfServiceKey } from '../components/navVisibility';
 import { useNavAddons } from '../hooks/useNavAddons';
 import FeatureLocked from '../components/FeatureLocked';
 import { productColor, productOfServiceKey } from '../config/productTheme';
@@ -1156,15 +1156,19 @@ export function ServiceRouter() {
   // rules would have been judged against the wrong subscription. Hooks run
   // unconditionally — non-gated products resolve but are never applied.
   const product = productOfServiceKey(serviceKey);
-  const gatingActive = isGatedProduct(product);
-  const { tier } = useProductTier(gatingActive ? product : "spark");
-  const { addons, seoAddonTier } = useNavAddons(gatingActive ? product : undefined);
+  // The wall judges a page where its MENU row lives: my_brand_* pages are in
+  // ARION's menu, so they are judged as ARION pages (on the My Brand tier).
+  const wallProduct = wallProductOfServiceKey(serviceKey);
+  const gatingActive = isGatedProduct(wallProduct);
+  const { tier } = useProductTier(gatingActive ? wallProduct : "spark");
+  const { tier: myBrandTier } = useProductTier("my_brand");
+  const { addons, seoAddonTier } = useNavAddons(gatingActive ? wallProduct : undefined);
   const service = useMemo(
     () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
     [serviceKey]
   );
   const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
-  const locked = !isRoutable(rules, { tier, addons, seoAddonTier, gatingActive });
+  const locked = !isRoutable(rules, { tier, addons, seoAddonTier, gatingActive, myBrandTier });
 
   // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the PRODUCT gate
   // (ProductGate) sits OUTSIDE the tier check: a product that is decided off
@@ -1178,7 +1182,7 @@ export function ServiceRouter() {
         <FeatureLocked
           name={service.displayName}
           description={service.description}
-          requiredPlan={requirementLabel(rules, product)}
+          requiredPlan={requirementLabel(rules, wallProduct)}
           accent={productColor(product)}
         >
           <ServiceRouterInner />

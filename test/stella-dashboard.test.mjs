@@ -554,7 +554,7 @@ describe("names and wiring a typecheck cannot see", () => {
   test("Dashboard is the FIRST item of the STELLA nav, alone in a label-less group, ahead of Ledger", () => {
     const firstKey = stellaNav.match(/key: "([a-z_]+)"/)[1];
     assert.equal(firstKey, "stella_dashboard");
-    assert.match(stellaNav, /label: "",\s*items: \[\{ key: "stella_dashboard", label: "Dashboard", route: "\/app\/services\/stella_dashboard" \}\],/);
+    assert.match(stellaNav, /label: "",\s*items: \[\{ key: "stella_dashboard", label: "Dashboard", route: "\/app\/services\/stella_dashboard"(, everyTier: "[^"]+")? \}\],/);
     assert.ok(stellaNav.indexOf("stella_dashboard") < stellaNav.indexOf('label: "Ledger"'));
   });
 

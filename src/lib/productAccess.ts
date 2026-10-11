@@ -18,22 +18,49 @@
 import type { EntitlementPayload } from './entitlements';
 import { planDisplayName } from './tierLabels';
 
+/** The products the billing API sells (see SELF_SERVE_BILLING_PRODUCTS). */
 export type GatedProduct = 'oliver' | 'spark' | 'arion' | 'stella';
+/** The products whose pages close when platform-api decides they are not owned. */
+export type OffGatedProduct = GatedProduct | 'argus';
 
-/** The four self-serve products the sync switches on and off (oliver-api
- *  lib/productTier.js SELF_SERVE_PRODUCTS). FORGE, ARGUS and My Brand are not
- *  touched by this build, so they are not gated here either. */
-export const OFF_GATED_PRODUCTS: readonly GatedProduct[] = ['oliver', 'spark', 'arion', 'stella'];
+/**
+ * Products whose pages close when platform-api DECIDES the business does not
+ * own them (the same SEAM-3-B rule for every one: undecided stays open).
+ *
+ * ARGUS joined 2026-10-11 (Brandon: "this should just be a top level
+ * permissions setting. If you don't have the subscription you don't get any
+ * features."). platform-api answers products.argus (lib/entitlements.js
+ * PRODUCT_KEYS), so its pages follow the same rule as the other four.
+ *
+ * FORGE is NOT here: the entitlement payload carries no forge node. FORGE is
+ * gated per build by its own forge_<slug> service key (SubNav softwareKey),
+ * so there is no single "FORGE owned" answer to close pages on.
+ * My Brand is derived (ARION or SPARK), never sold, so it has no off state.
+ */
+export const OFF_GATED_PRODUCTS: readonly OffGatedProduct[] = ['oliver', 'spark', 'arion', 'stella', 'argus'];
 
-export const PRODUCT_NAME: Record<GatedProduct, string> = {
+/**
+ * The products the billing API sells and switches on and off itself (oliver-api
+ * lib/productTier.js SELF_SERVE_PRODUCTS): the only ones with Re-subscribe,
+ * Update card, Keep and Remove. ARGUS is set up by IA, so an ARGUS that is
+ * off offers the plans page instead of a checkout that would be refused.
+ */
+export const SELF_SERVE_BILLING_PRODUCTS: readonly GatedProduct[] = ['oliver', 'spark', 'arion', 'stella'];
+
+export const PRODUCT_NAME: Record<OffGatedProduct, string> = {
   oliver: 'OLIVER',
   spark: 'SPARK',
   arion: 'ARION',
   stella: 'STELLA',
+  argus: 'ARGUS',
 };
 
-export function isOffGatedProduct(p: string | null | undefined): p is GatedProduct {
+export function isOffGatedProduct(p: string | null | undefined): p is OffGatedProduct {
   return !!p && (OFF_GATED_PRODUCTS as readonly string[]).includes(String(p).toLowerCase());
+}
+
+export function isSelfServeBillingProduct(p: string | null | undefined): p is GatedProduct {
+  return !!p && (SELF_SERVE_BILLING_PRODUCTS as readonly string[]).includes(String(p).toLowerCase());
 }
 
 /**
@@ -109,10 +136,30 @@ export function planPagePath(product: string): string {
   return '/app/settings/plan-pricing';
 }
 
+/**
+ * ARGUS pages that stay open when ARGUS itself is off, because each one is the
+ * owner's view of, and off switch for, work that runs under ANOTHER product:
+ *   Your team ×3   each employee is gated on ITS product (the web person on
+ *                  ARION, the marketer on SPARK, the office administrator on
+ *                  OLIVER) and its page already says when that product is not
+ *                  owned (CONTRACT_ARGUS_EMPLOYEES_PHASE1 §F.5).
+ *   Workflows      every process running for the business, with its switch.
+ *   ARGUS settings the doors to the two above, and the data plan.
+ * Closing these while the runs behind them carry on would hide the one place
+ * a business can see and stop them. Decision for Brandon (2026-10-11): if
+ * "Your team" is ARGUS-only, delete this list AND gate the runners in the
+ * APIs in the same release.
+ */
+export const ARGUS_PAGES_OPEN_WHEN_OFF: readonly string[] = [
+  'argus_team_web', 'argus_team_marketer', 'argus_team_office',
+  'argus_workflows', 'argus_workflow_automations', 'argus_settings',
+];
+
 /** A product's own plan page stays open when the product is off — it is
  *  where the owner buys it back. */
 export function gateExemptServiceKey(serviceKey: string | null | undefined): boolean {
   const k = String(serviceKey || '').toLowerCase();
+  if (ARGUS_PAGES_OPEN_WHEN_OFF.includes(k)) return true;
   return OFF_GATED_PRODUCTS.some((p) => k === `${p}_usage`);
 }
 
@@ -132,7 +179,7 @@ export function formatLongDate(iso: string | null | undefined, timeZone: string 
    The sentences (Brandon, 7 October 2026)
    ══════════════════════════════════════════════════════════════════════════ */
 
-export function endedSentence(product: GatedProduct, endedAt: string | null | undefined, timeZone?: string): string {
+export function endedSentence(product: OffGatedProduct, endedAt: string | null | undefined, timeZone?: string): string {
   const name = PRODUCT_NAME[product];
   const date = formatLongDate(endedAt, timeZone);
   return date
@@ -140,7 +187,7 @@ export function endedSentence(product: GatedProduct, endedAt: string | null | un
     : `Your ${name} subscription has ended. Re-subscribe to pick up where you left off.`;
 }
 
-export function neverBoughtSentence(product: GatedProduct): string {
+export function neverBoughtSentence(product: OffGatedProduct): string {
   return `${PRODUCT_NAME[product]} isn't part of your plan yet.`;
 }
 
@@ -183,8 +230,16 @@ export interface OffNotice {
  * holds says what that state is here too, never "isn't part of your plan yet"
  * with "Add" (decision (d)). null = not known, read as never bought.
  */
-export function offNotice(product: GatedProduct, why: OffReason | null, viewer: Viewer, timeZone?: string): OffNotice {
+export function offNotice(product: OffGatedProduct, why: OffReason | null, viewer: Viewer, timeZone?: string): OffNotice {
   const name = PRODUCT_NAME[product];
+  // Not sold through the billing API (ARGUS): no checkout, card or keep of
+  // ours can bring it back, so the one control is the plans page.
+  if (!isSelfServeBillingProduct(product)) {
+    const sentence = why?.kind === 'ended' ? endedSentence(product, why.at, timeZone) : neverBoughtSentence(product);
+    if (viewer === 'viewing_client') return { sentence, action: null, note: SWITCH_TO_OWN_BUSINESS };
+    if (viewer === 'member') return { sentence, action: null, note: `Ask an admin on your team to add ${name}.` };
+    return { sentence, action: { kind: 'add', label: `Add ${name}` }, note: null };
+  }
   if (why?.kind === 'held') {
     const sentence = why.sentence;
     // No control: an incomplete first payment and a paused subscription have
@@ -286,13 +341,13 @@ export function rowForProduct(rows: PlanRow[] | null | undefined, product: strin
 /** What a held product's card says when the API sent no sentence of its own
  *  (an older oliver-api, or a row we could not read). The API's own wording
  *  always wins; these exist only so the screen is never wordless. */
-export const unpaidSentence = (product: GatedProduct): string =>
+export const unpaidSentence = (product: OffGatedProduct): string =>
   `Your last payment didn't go through, so ${PRODUCT_NAME[product]} is paused. Update your card to turn it back on.`;
-export const incompleteSentence = (product: GatedProduct): string =>
+export const incompleteSentence = (product: OffGatedProduct): string =>
   `Your first payment for ${PRODUCT_NAME[product]} hasn't gone through yet, so ${PRODUCT_NAME[product]} is switched off. Check your email from us to finish it.`;
-export const pausedSentence = (product: GatedProduct): string =>
+export const pausedSentence = (product: OffGatedProduct): string =>
   `${PRODUCT_NAME[product]} is paused, so it's switched off. Contact us and we'll turn it back on.`;
-export function heldSentence(product: GatedProduct, status: HeldStatus): string {
+export function heldSentence(product: OffGatedProduct, status: HeldStatus): string {
   if (status === 'incomplete') return incompleteSentence(product);
   if (status === 'paused') return pausedSentence(product);
   return unpaidSentence(product);
@@ -326,7 +381,7 @@ export type OffReason =
  *   ended   a switch-off on record, with its date.
  *   never   no row, or nothing that says it was ever bought.
  */
-export function offReasonForRow(product: GatedProduct, row: PlanRow | null | undefined): OffReason {
+export function offReasonForRow(product: OffGatedProduct, row: PlanRow | null | undefined): OffReason {
   const status = rowHeldStatus(row);
   if (row && status) {
     return {
@@ -460,7 +515,7 @@ export const STELLA_PLAN_CHOICES: ReadonlyArray<{ plan: 'standard' | 'pro' | 'bu
 export const STELLA_PICK_SENTENCE = "Choose a STELLA plan. You'll see the price before you pay.";
 
 /** What Re-subscribe says when it cannot open a checkout (no url). */
-export function resubscribeFallbackSentence(product: GatedProduct, message: string | null | undefined): string {
+export function resubscribeFallbackSentence(product: OffGatedProduct, message: string | null | undefined): string {
   return (message && message.trim()) || `Choose a ${PRODUCT_NAME[product]} plan to pick up where you left off.`;
 }
 
@@ -522,7 +577,7 @@ export function railLockWords(product: string, tagline: string, label: string, w
  *  whose first payment is unfinished is not the one for a failed payment. */
 export function offReasons(rows: PlanRow[] | null | undefined): Map<string, OffReason> {
   const out = new Map<string, OffReason>();
-  for (const p of OFF_GATED_PRODUCTS) {
+  for (const p of SELF_SERVE_BILLING_PRODUCTS) {
     const row = rowForProduct(rows, p);
     if (!row || rowIsLive(row)) continue;
     const why = offReasonForRow(p, row);

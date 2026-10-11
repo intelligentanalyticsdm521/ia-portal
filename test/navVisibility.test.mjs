@@ -8,6 +8,7 @@ import { test, describe, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import {
   isVisible, isRoutable, requirementLabel, isGatedProduct, ADDON_LABELS,
+  isEntitled, wallProductOfServiceKey,
 } from "../src/components/navVisibility.ts";
 import { tierMeets } from "../src/lib/tierRank.ts";
 
@@ -129,6 +130,21 @@ describe("hidden / merged / undeclared", () => {
     assert.equal(isVisible({ merged: true }, ctx()), false);
     assert.equal(isRoutable({ merged: true }, ctx()), true);
   });
+  // 2026-10-11 — merged returned true BEFORE the tier was read, so Contact 360,
+  // Health Score and Contact Scoring (SPARK Business) opened by URL on Standard.
+  test("merged + minTier → routable only when the plan includes it", () => {
+    const contact360 = { merged: true, minTier: "business" };
+    assert.equal(isRoutable(contact360, ctx({ tier: "standard" })), false, "Standard opens it by URL: the hole");
+    assert.equal(isRoutable(contact360, ctx({ tier: "business" })), true);
+    assert.equal(isRoutable(contact360, ctx({ tier: null })), true, "undecided still allows a read");
+  });
+  test("menu and route judge the plan with the SAME function", () => {
+    for (const tier of ["lite", "standard", "pro", "business", null]) {
+      const rules = { minTier: "pro" };
+      assert.equal(isVisible(rules, ctx({ tier })), isEntitled(rules, ctx({ tier })), String(tier));
+      assert.equal(isRoutable(rules, ctx({ tier })), isEntitled(rules, ctx({ tier })), String(tier));
+    }
+  });
   test("undeclared item is visible (adding a nav row never hides it)", () => {
     assert.equal(isVisible(undefined, ctx({ tier: "lite", addons: [] })), true);
     assert.equal(isRoutable(undefined, ctx({ tier: "lite", addons: [] })), true);
@@ -147,6 +163,30 @@ describe("requirementLabel — menu tooltip and FeatureLocked agree", () => {
   test("minTier → '<BRAND> <Tier>'", () => {
     assert.equal(requirementLabel({ minTier: "standard" }, "oliver"), "OLIVER Standard");
     assert.equal(requirementLabel({ minTier: "pro" }, "arion"), "ARION Pro");
+    assert.equal(requirementLabel({ minTier: "pro" }, "stella"), "STELLA Pro");
+  });
+  test("My Brand names both ways to Standard", () => {
+    assert.equal(requirementLabel({ minTier: "standard", tierProduct: "my_brand" }, "arion"), "ARION Standard or any SPARK plan");
+    assert.equal(requirementLabel({ minTier: "pro", tierProduct: "my_brand" }, "arion"), "ARION Pro");
+  });
+});
+
+describe("tierProduct: my_brand — judged on the derived My Brand tier", () => {
+  const studio = { minTier: "standard", tierProduct: "my_brand" };
+  test("ARION Lite + SPARK (My Brand = standard) is NOT locked out", () => {
+    assert.equal(isVisible(studio, ctx({ tier: "lite", myBrandTier: "standard" })), true);
+    assert.equal(isRoutable(studio, ctx({ tier: "lite", myBrandTier: "standard" })), true);
+  });
+  test("ARION Lite alone (My Brand = lite) is locked, menu and route", () => {
+    assert.equal(isVisible(studio, ctx({ tier: "lite", myBrandTier: "lite" })), false);
+    assert.equal(isRoutable(studio, ctx({ tier: "lite", myBrandTier: "lite" })), false);
+  });
+  test("the ARION tier does not open it when My Brand says lite", () => {
+    assert.equal(isVisible(studio, ctx({ tier: "business", myBrandTier: "lite" })), false);
+  });
+  test("undecided My Brand tier allows (and is not judged on ARION's)", () => {
+    assert.equal(isVisible(studio, ctx({ tier: "lite", myBrandTier: null })), true);
+    assert.equal(isVisible(studio, ctx({ tier: "lite" })), true);
   });
   test("no rules → generic", () => {
     assert.equal(requirementLabel(undefined, "spark"), "a higher plan");
@@ -154,12 +194,22 @@ describe("requirementLabel — menu tooltip and FeatureLocked agree", () => {
 });
 
 describe("gated products + tier ladder", () => {
-  test("spark / oliver / arion are gated; stella / settings are not", () => {
+  // STELLA joined 2026-10-11 ("it's by their subscription"): SQL Editor and
+  // IA Insights Intelligence are Pro on its menu, and a deep link must agree.
+  test("spark / oliver / arion / stella are gated; settings / forge / argus are not", () => {
     assert.equal(isGatedProduct("spark"), true);
     assert.equal(isGatedProduct("oliver"), true);
     assert.equal(isGatedProduct("arion"), true);
-    assert.equal(isGatedProduct("stella"), false);
+    assert.equal(isGatedProduct("stella"), true);
+    assert.equal(isGatedProduct("forge"), false);
+    assert.equal(isGatedProduct("argus"), false, "ARGUS has no tiers; owned-or-not is lib/productAccess's answer");
     assert.equal(isGatedProduct(undefined), false);
+  });
+  test("My Brand pages are judged where their menu row lives (ARION)", () => {
+    assert.equal(wallProductOfServiceKey("my_brand_image_studio"), "arion");
+    assert.equal(wallProductOfServiceKey("arion_business_overview"), "arion");
+    assert.equal(wallProductOfServiceKey("stella_report_sql"), "stella");
+    assert.equal(wallProductOfServiceKey(undefined), "");
   });
   test("tierMeets ladder lite < standard = active < pro < business", () => {
     assert.equal(tierMeets("business", "pro"), true);

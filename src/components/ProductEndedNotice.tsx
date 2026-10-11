@@ -41,12 +41,12 @@ import { fetchSubscriptionsShared, openUpdateCard, resubscribe } from '../lib/bi
 import { leaveForCheckout } from '../lib/leaveForCheckout';
 import {
   offNotice, offReasonForRow, planPagePath, resubscribeFallbackSentence, rowForProduct, PRODUCT_NAME,
-  STELLA_PICK_SENTENCE, type GatedProduct, type OffReason,
+  STELLA_PICK_SENTENCE, isSelfServeBillingProduct, type OffGatedProduct, type OffReason,
 } from '../lib/productAccess';
 import type { PlanNoticeState } from './ProductPlanStatus';
 
 export function ProductEndedNotice({ product, variant = 'page' }: {
-  product: GatedProduct;
+  product: OffGatedProduct;
   /** 'page' replaces the product's pages; 'nav' is the same sentence and
    *  control above the product's menu (SubNav). */
   variant?: 'page' | 'nav';
@@ -104,7 +104,9 @@ export function ProductEndedNotice({ product, variant = 'page' }: {
       else navigate(planPagePath(product));
       return;
     }
-    if (!activeTenantId) return;
+    // Re-subscribe and Update card are the billing API's, which sells only
+    // the self-serve four; offNotice never offers them for ARGUS.
+    if (!activeTenantId || !isSelfServeBillingProduct(product)) return;
     setBusy(true);
     try {
       const t = await getToken();

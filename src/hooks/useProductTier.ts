@@ -104,7 +104,7 @@ export function useEntitlements(): {
   return { entitlements, ready, error };
 }
 
-export function useProductTier(product: 'oliver' | 'spark' | 'arion' | 'stella'): {
+export function useProductTier(product: 'oliver' | 'spark' | 'arion' | 'stella' | 'my_brand'): {
   tier: TierKey;
   ready: boolean;
   error: unknown;

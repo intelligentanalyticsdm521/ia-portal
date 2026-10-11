@@ -18,7 +18,7 @@ import {
   type SubscriptionsResponse, type ProductSubscription,
 } from '../../lib/billingApi';
 import {
-  isOffGatedProduct, planCardLine, rowForProduct, rowIsLive, SWITCH_TO_OWN_BUSINESS,
+  isSelfServeBillingProduct, planCardLine, rowForProduct, rowIsLive, SWITCH_TO_OWN_BUSINESS,
   type CardState, type GatedProduct, type PlanRow,
 } from '../../lib/productAccess';
 
@@ -611,7 +611,9 @@ export function SubscriptionBillingTab() {
       {/* Per-platform cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {PLAN_HUB_PRODUCTS.map((p) => {
-          const gated = isOffGatedProduct(p.key);
+          // The billing card's own line + controls are for the products the
+          // billing API sells (ARGUS is page-gated but set up by IA).
+          const gated = isSelfServeBillingProduct(p.key);
           const row = gated ? rowForProduct(rows, p.key) : null;
           const sub = subByProduct.get(p.key);
           const isActive = !!sub;

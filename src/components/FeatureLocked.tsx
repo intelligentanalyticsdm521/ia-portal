@@ -76,7 +76,16 @@ export default function FeatureLocked({
               <Lock size={20} />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              {/* 2026-10-11 — said in so many words, first: a deep link to a
+                  page the plan does not include lands here, and the first
+                  thing read is why. */}
+              <div
+                className="text-[11px] font-bold uppercase tracking-wide text-slate-500"
+                data-feature-locked-heading
+              >
+                Not in your plan
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2">
                 <h2 className="text-lg font-semibold text-slate-900">{name}</h2>
                 <span
                   className="rounded-full px-2 py-0.5 text-[10px] font-bold tracking-wide"

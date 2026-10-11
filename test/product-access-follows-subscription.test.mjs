@@ -65,13 +65,18 @@ describe("G: only a decided 'not owned' closes a product", () => {
       "this product's node is undecided (Stripe unreadable)");
     assert.equal(productSwitchedOff(decided({}), "spark"), false, "the product is not in the answer at all");
   });
-  test("only OLIVER, SPARK, ARION and STELLA are gated by this build", () => {
-    for (const p of ["oliver", "spark", "arion", "stella"]) {
+  // ARGUS joined 2026-10-11 (Brandon: "If you don't have the subscription
+  // you don't get any features"); platform-api answers products.argus. FORGE
+  // has no node in the payload, so it cannot be closed on one answer.
+  test("OLIVER, SPARK, ARION, STELLA and ARGUS are gated; FORGE is not", () => {
+    for (const p of ["oliver", "spark", "arion", "stella", "argus"]) {
       assert.equal(productSwitchedOff(decided({ [p]: { owned: false, decided: true } }), p), true, p);
     }
-    for (const p of ["forge", "argus", "consulting", undefined]) {
+    for (const p of ["forge", "consulting", undefined]) {
       assert.equal(productSwitchedOff(decided({ [p]: { owned: false, decided: true } }), p), false, String(p));
     }
+    assert.equal(productSwitchedOff(decided({ argus: { owned: false, decided: false } }), "argus"), false,
+      "an undecided ARGUS stays open, like every other product");
   });
   test("the product's own plan page is never closed — it is where they buy it back", () => {
     assert.equal(gateExemptServiceKey("spark_usage"), true);

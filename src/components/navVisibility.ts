@@ -101,6 +101,23 @@ export interface VisibilityRules {
   addonTier?: SeoAddonTier;
   /** Requires this subscription tier or higher. */
   minTier?: NavTier;
+  /**
+   * Judge `minTier` against a DIFFERENT entitlement node than the nav's own
+   * product. Only "my_brand": My Brand sits in ARION's menu, but its tier is
+   * platform-api's derived products.my_brand (max of the ARION tier and
+   * "standard" when SPARK is owned), the same answer LUMEN gates on
+   * (FEATURE_TIER_MATRIX_FULL.md section 13). Judging it against the ARION tier
+   * alone would lock an ARION Lite + SPARK business out of what it pays for.
+   */
+  tierProduct?: "my_brand";
+  /**
+   * Documentation, never a lock: WHY this item is in every tier of its
+   * product. Rule (Brandon 2026-10-11, "it's by their subscription"): every
+   * item in a product menu carries a tier rule or says why it has none, so a
+   * missing gate is a decision someone wrote down, not an accident. The test
+   * test/nav-tier-every-item.test.mjs reads it.
+   */
+  everyTier?: string;
 }
 
 export interface VisibilityContext {
@@ -120,9 +137,15 @@ export interface VisibilityContext {
    */
   seoAddonTier: string | null | undefined;
   /**
-   * Products we gate. Anything else (STELLA/FORGE/ARGUS placeholders,
-   * Settings, Consulting) passes through untouched — this wall is a
-   * product-tier simplification, not a portal-wide policy.
+   * The derived My Brand tier (platform-api products.my_brand), for rules with
+   * `tierProduct: "my_brand"`. null/undefined = unresolved -> fail open.
+   */
+  myBrandTier?: TierKey;
+  /**
+   * Products we gate (GATED_PRODUCTS). Anything else (FORGE, ARGUS,
+   * Settings, Consulting) passes through untouched here: ARGUS has no tiers
+   * (it is owned or not, which lib/productAccess answers), and FORGE is
+   * gated per build by its forge_<slug> service key.
    */
   gatingActive: boolean;
 }
@@ -158,6 +181,18 @@ function warnFailOpen(what: string) {
 export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
   if (!rules) return true;
   if (rules.hidden || rules.merged) return false;  // neither belongs in the menu
+  return isEntitled(rules, ctx);
+}
+
+/**
+ * Does the subscription (tier + add-ons) include this surface? The
+ * entitlement half of the wall, shared by the menu (isVisible) and the route
+ * (isRoutable) so the two can never judge a plan differently. Undecided
+ * (null tier / null add-ons) ALLOWS and logs: only a positively-resolved
+ * lower tier or missing add-on says no.
+ */
+export function isEntitled(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
+  if (!rules) return true;
   if (!ctx.gatingActive) return true;       // non-gated product: tier/add-on don't apply
   if (rules.addon) {
     if (ctx.addons == null) warnFailOpen(`add-on "${rules.addon}"`);
@@ -171,8 +206,9 @@ export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityCon
     }
   }
   if (rules.minTier) {
-    if (ctx.tier == null) warnFailOpen("subscription tier");
-    else if (!tierMeets(ctx.tier, rules.minTier)) return false;
+    const tier = rules.tierProduct === "my_brand" ? (ctx.myBrandTier ?? null) : ctx.tier;
+    if (tier == null) warnFailOpen(rules.tierProduct === "my_brand" ? "My Brand tier" : "subscription tier");
+    else if (!tierMeets(tier, rules.minTier)) return false;
   }
   return true;
 }
@@ -182,19 +218,44 @@ export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityCon
  *
  * Merged pages are deliberately routable — their parent links to them. Cut
  * pages and unearned tiers/add-ons are not.
+ *
+ * 2026-10-11: a merged page is routable only if the plan includes it. Before,
+ * `merged` returned true before the tier was read, so a Standard SPARK
+ * business could open Contact 360 / Health Score / Contact Scoring (Business)
+ * by URL, which is exactly the "locked in the menu, open by deep link" hole.
  */
 export function isRoutable(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
   if (!rules) return true;
-  if (rules.merged) return true;            // reached from its new home
-  return isVisible(rules, ctx);
+  if (rules.hidden) return false;           // cut from the product
+  return isEntitled(rules, ctx);            // merged or not: the plan decides
 }
 
-/** Products whose nav is subject to the feature wall. */
-export const GATED_PRODUCTS = ["spark", "oliver", "arion"] as const;
+/**
+ * Products whose nav is subject to the feature wall.
+ *
+ * STELLA joined 2026-10-11 (Brandon: "it's by their subscription"). Its menu
+ * carries two tier rules today (SQL Editor and IA Insights Intelligence = Pro,
+ * FEATURE_TIER_MATRIX_FULL.md sections 6 and 9); everything else is every
+ * STELLA tier and says so on the row.
+ */
+export const GATED_PRODUCTS = ["spark", "oliver", "arion", "stella"] as const;
 export type GatedProduct = (typeof GATED_PRODUCTS)[number];
 
 export function isGatedProduct(p: string | undefined): p is GatedProduct {
   return !!p && (GATED_PRODUCTS as readonly string[]).includes(p);
+}
+
+/**
+ * The product whose feature wall judges a service key's page. Normally the
+ * key's own prefix; My Brand pages (my_brand_*) live in ARION's menu, so the
+ * route guard judges them where the menu does. Without this a deep link to a
+ * locked My Brand page opened as if it were unlocked, because "my" is not a
+ * product.
+ */
+export function wallProductOfServiceKey(serviceKey: string | null | undefined): string {
+  const key = String(serviceKey || "").toLowerCase();
+  if (key.startsWith("my_brand_")) return "arion";
+  return key.split("_")[0];
 }
 
 /**
@@ -204,9 +265,16 @@ export function isGatedProduct(p: string | undefined): p is GatedProduct {
  * about which plan a surface needs.
  */
 export function requirementLabel(
-  rules: { minTier?: string; addon?: string; addonTier?: string } | undefined,
+  rules: { minTier?: string; addon?: string; addonTier?: string; tierProduct?: string } | undefined,
   product: string | undefined,
 ): string {
+  if (rules?.tierProduct === "my_brand" && rules.minTier) {
+    // My Brand's tier is the higher of the ARION tier and Standard-with-SPARK
+    // (section 13), so Standard is reachable two ways and the label says both.
+    const t = rules.minTier;
+    const word = `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
+    return t === "standard" ? "ARION Standard or any SPARK plan" : `ARION ${word}`;
+  }
   if (rules?.addon === "seo" && rules.addonTier) {
     const t = rules.addonTier;
     return `the ARION SEO ${t.charAt(0).toUpperCase()}${t.slice(1)} add-on`;
