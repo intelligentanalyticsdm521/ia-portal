@@ -22,6 +22,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { myBrandLockedOnRail } from "../src/components/navVisibility.ts";
 import {
   OFF_GATED_PRODUCTS, SELF_SERVE_BILLING_PRODUCTS, isOffGatedProduct, isSelfServeBillingProduct,
   gateExemptServiceKey, offNotice, offReasons, offNoticeShownByPage, productSwitchedOff,
@@ -134,11 +135,64 @@ describe("3. deep links follow the same plan", () => {
     assert.match(nav, /minTier: item\.minTier, tierProduct: item\.tierProduct,/, "the route guard keeps tierProduct");
   });
   test("the route guard judges my_brand_* pages as ARION pages on the My Brand tier", () => {
-    assert.match(router, /const wallProduct = wallProductOfServiceKey\(serviceKey\);/);
-    assert.match(router, /const gatingActive = isGatedProduct\(wallProduct\);/);
-    assert.match(router, /isRoutable\(rules, \{ tier, addons, seoAddonTier, gatingActive, myBrandTier \}\)/);
-    assert.match(router, /requiredPlan=\{requirementLabel\(rules, wallProduct\)\}/);
+    const wall = read("src/components/PlanWall.tsx");
+    assert.match(wall, /const wallProduct = wallProductOfServiceKey\(serviceKey\);/);
+    assert.match(wall, /const gatingActive = isGatedProduct\(wallProduct\);/);
+    assert.match(wall, /isRoutable\(rules, \{ tier, addons, seoAddonTier, gatingActive, myBrandTier \}\)/);
+    assert.match(wall, /requiredPlan=\{requirementLabel\(rules, wallProduct\)\}/);
+    assert.match(router, /<PlanWall serviceKey=\{serviceKey\}>\s*<ServiceRouterInner \/>\s*<\/PlanWall>/);
     assert.match(nav, /const visCtx = \{ tier, addons, seoAddonTier, gatingActive, myBrandTier \};/);
+  });
+
+  // 2026-10-11 skeptic pass. ROUTE_ONLY_RULES covered ARION only, so ~20
+  // tiered pages opened by URL on any plan (the Pro Workflows page at
+  // /spark_rules, OLIVER Job Costing on Invoicing, SMS campaigns on SPARK
+  // Standard, four My Brand pages on ARION Lite).
+  const routeOnly = nav.slice(nav.indexOf("export const ROUTE_ONLY_RULES"), nav.indexOf("export const ROUTE_ONLY_EVERY_TIER"));
+  const everyRoute = nav.slice(nav.indexOf("export const ROUTE_ONLY_EVERY_TIER"), nav.indexOf("export const SERVICE_VISIBILITY"));
+  const expectRoute = (key, rule) => assert.ok(routeOnly.includes(`${key}: { ${rule} }`), `${key}: { ${rule} }`);
+  test("OLIVER pages with no menu row carry tierFeatures' tier", () => {
+    for (const k of ["oliver_projects", "oliver_job_offers", "oliver_support_tickets", "oliver_workflow_templates", "oliver_messages", "oliver_portal_domains"]) expectRoute(k, 'minTier: "standard"');
+    for (const k of ["oliver_quote_options", "oliver_time_tracking", "oliver_expenses"]) expectRoute(k, 'minTier: "pro"');
+    for (const k of ["oliver_job_costing", "oliver_territories", "oliver_sla_policies"]) expectRoute(k, 'minTier: "business"');
+  });
+  test("SPARK: the folded Workflows keys are Pro, SMS is Pro (matrix 11), Contact Score Tuning is Business", () => {
+    for (const k of ["spark_automations", "spark_workflow_triggers", "spark_automation_builder", "spark_rules",
+      "spark_scoring_rules", "spark_routing_rules", "spark_autotag_rules", "spark_inbound_webhooks",
+      "spark_sms_campaigns", "spark_sms_templates"]) expectRoute(k, 'minTier: "pro"');
+    expectRoute("spark_contact_scoring", 'minTier: "business"');
+  });
+  test("My Brand pages with no menu row: Standard on the derived My Brand tier", () => {
+    for (const k of ["my_brand_compose", "my_brand_social_channels", "my_brand_social_report", "my_brand_voice"]) {
+      expectRoute(k, 'minTier: "standard", tierProduct: "my_brand"');
+    }
+  });
+  test("EVERY page ServiceRouter can open for a gated product carries a plan or says why it has none", () => {
+    const cases = [...router.matchAll(/case '((?:arion|spark|oliver|stella|my_brand)_[a-z0-9_]+)':([^\n]*)/g)];
+    assert.ok(cases.length > 150, `router cases parsed (${cases.length})`);
+    const bare = [];
+    for (const [, key, rest] of cases) {
+      if (/<Navigate /.test(rest)) continue;                         // a redirect: the target page is judged
+      if (nav.includes(`{ key: "${key}"`)) continue;                 // a menu row (rule or everyTier, block 1)
+      if (routeOnly.includes(`  ${key}: {`)) continue;               // a route-only plan
+      if (everyRoute.includes(`  ${key}: "`)) continue;              // every tier, with the reason
+      bare.push(key);
+    }
+    assert.deepEqual([...new Set(bare)], [], "routed pages with neither a plan nor an every-tier reason");
+  });
+  test("a page on its own route goes through the same wall (Contact Scoring = Business)", () => {
+    const app = read("src/App.tsx");
+    assert.ok(app.includes('<PlanWall serviceKey="spark_contact_scoring"><SparkContactScoringPage /></PlanWall>'));
+    assert.ok(read("src/components/consulting/ClientTenantModal.tsx").includes('<PlanWall serviceKey="spark_contact_scoring"><SparkContactScoringPage /></PlanWall>'));
+  });
+  test("My Brand rows lock on product only when BOTH ARION and SPARK are known locked (SPARK-only owns My Brand)", () => {
+    assert.equal(myBrandLockedOnRail(true, false), false, "SPARK-only business pays for My Brand Standard");
+    assert.equal(myBrandLockedOnRail(false, true), false, "ARION-only business");
+    assert.equal(myBrandLockedOnRail(true, true), true, "neither product: locked");
+    assert.equal(myBrandLockedOnRail(true, null), false, "SPARK not known: open");
+    assert.equal(myBrandLockedOnRail(null, null), false, "nothing known: open");
+    assert.match(nav, /it\.tierProduct === "my_brand" \? myBrandLocked : productLocked/);
+    assert.match(nav, /myBrandLockedOnRail\(lockKnown\("arion"\), lockKnown\("spark"\)\)/);
   });
   test("a locked deep link says 'Not in your plan' first", () => {
     const card = read("src/components/FeatureLocked.tsx");

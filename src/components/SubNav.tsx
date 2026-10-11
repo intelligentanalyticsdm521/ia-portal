@@ -11,6 +11,7 @@ import type { ProductKey } from "./IconRail";
 import {
   isGatedProduct,
   isVisible,
+  myBrandLockedOnRail,
   requirementLabel,
   type VisibilityRules,
 } from "./navVisibility";
@@ -1295,6 +1296,108 @@ export const ROUTE_ONLY_RULES: Record<string, VisibilityRules> = {
   arion_analytics_ia_cross_channel: { minTier: "pro" },        // legacy alias of the row above
   arion_search_bing_indexnow: { minTier: "standard" },         // Bing IndexNow = Standard
   arion_seo_reports: { addon: "seo" },                         // SEO Reports = the SEO add-on (matrix 7/13)
+
+  // 2026-10-11 skeptic pass: every one of these opened by URL on ANY tier,
+  // because the list above covered ARION only. A Standard SPARK business could
+  // run the Pro Workflows page at /spark_rules, an OLIVER Invoicing business
+  // could open Job Costing (Business). Each follows the menu row it was folded
+  // into, or oliver-api lib/tierFeatures.js where it has no row.
+  //
+  // My Brand pages with no menu row: matrix 10 + 13, Standard on the derived
+  // My Brand tier, exactly like the five rows in ARION's menu.
+  my_brand_compose: { minTier: "standard", tierProduct: "my_brand" },        // Social Hub composer
+  my_brand_social_channels: { minTier: "standard", tierProduct: "my_brand" }, // Facebook + Instagram connect = Standard
+  my_brand_social_report: { minTier: "standard", tierProduct: "my_brand" },   // 30-day analytics = Standard
+  my_brand_voice: { minTier: "standard", tierProduct: "my_brand" },           // Voice Monitor inside is Pro (LUMEN voice_monitor)
+  // OLIVER (matrix 2 + 13; tierFeatures.js). Invoicing has zero jobs.
+  oliver_projects: { minTier: "standard" },          // groups jobs (Invoicing max_jobs_per_month = 0)
+  oliver_job_offers: { minTier: "standard" },        // job_offer_queue = Standard
+  oliver_support_tickets: { minTier: "standard" },   // support_ticket_mode = Standard
+  oliver_workflow_templates: { minTier: "standard" }, // workflow_template_library = Standard (lite cap 0)
+  oliver_messages: { minTier: "standard" },          // portal_messaging = Standard (oliver-api messages.js tierGate standard)
+  oliver_portal_domains: { minTier: "standard" },    // customer portal + portal_custom_domain = Standard (same as the Portals hub row)
+  oliver_quote_options: { minTier: "pro" },          // multi_option_quoting = Pro
+  oliver_time_tracking: { minTier: "pro" },          // time_tracking = Pro
+  oliver_expenses: { minTier: "pro" },               // expense_tracking = Pro
+  oliver_job_costing: { minTier: "business" },       // job_costing = Business
+  oliver_territories: { minTier: "business" },       // territory_routing = Business
+  oliver_sla_policies: { minTier: "business" },      // sla_tracking = Business
+  // SPARK (matrix 3 + 11). The old automation / rules / trigger keys render
+  // the Workflows & Automations page (Pro); SMS is Pro (matrix 11).
+  spark_automations: { minTier: "pro" },
+  spark_workflow_triggers: { minTier: "pro" },
+  spark_automation_builder: { minTier: "pro" },
+  spark_rules: { minTier: "pro" },
+  spark_scoring_rules: { minTier: "pro" },           // the always-on rules of the Workflow group (Pro)
+  spark_routing_rules: { minTier: "pro" },
+  spark_autotag_rules: { minTier: "pro" },
+  spark_inbound_webhooks: { minTier: "pro" },        // Webhooks = Pro
+  spark_sms_campaigns: { minTier: "pro" },           // matrix 11: SMS = SPARK Pro+
+  spark_sms_templates: { minTier: "pro" },           // matrix 11
+  spark_contact_scoring: { minTier: "business" },    // Contact Scoring = Business (matrix 3), like spark_intelligence
+};
+
+/**
+ * Pages with no menu row that are in EVERY tier of their product, each with
+ * the reason. With ROUTE_ONLY_RULES and the menus this makes the rule total:
+ * every page ServiceRouter can open carries a plan or says why it has none
+ * (test/nav-tier-every-item.test.mjs reads all three). Documentation only;
+ * nothing here locks or unlocks anything.
+ */
+export const ROUTE_ONLY_EVERY_TIER: Record<string, string> = {
+  arion_analytics_ia_reports: "matrix 6: Reports is every tier",
+  arion_brand: "brand identity setting, used by every plan",
+  arion_onboarding: "setup of the site every plan has",
+  arion_usage: "the plan page; where any plan buys more",
+  arion_website_ai_builder: "matrix 1: AI Builder is Lite+ (limited on Lite)",
+  arion_website_content_seo_pages: "Rank Math in the IA plugin, base website (matrix 7)",
+  arion_website_content_seo_posts: "Rank Math in the IA plugin, base website (matrix 7)",
+  arion_website_content_seo_schema: "Rank Math in the IA plugin, base website (matrix 7)",
+  arion_website_support: "matrix 1: Website Support is Lite+",
+  oliver_activity_log: "matrix 6: reports are every tier (basic_reporting_30d is Invoicing+)",
+  oliver_argus: "no tierFeatures row; ARGUS ownership decides it",
+  oliver_billing_overview: "billing for invoices, which Invoicing has",
+  oliver_client_experience: "where any plan buys the Client Experience add-on",
+  oliver_customer_import: "customers for quotes and invoices (Invoicing+)",
+  oliver_disputes: "card disputes on invoice payments (Invoicing+)",
+  oliver_fees: "payment fees on invoices (Invoicing+)",
+  oliver_insights: "matrix 6: every tier",
+  oliver_notifications: "the business's own email history",
+  oliver_onboarding: "setup every plan has",
+  oliver_payouts: "the business's own Stripe payouts for invoice payments (Invoicing+); contractor payouts are gated in the API",
+  oliver_proposals: "tierFeatures proposals = every tier (matrix 13)",
+  oliver_reminders: "overdue invoice reminders (invoicing_stripe_link is Invoicing+)",
+  oliver_reports: "matrix 6: reports are every tier",
+  oliver_usage: "the plan page; where any plan buys more",
+  spark_account_profile: "the business's own profile",
+  spark_analytics_reports: "matrix 6: Reports is every tier",
+  spark_api_reference: "documentation",
+  spark_audit_log: "reached from IA Insights Reports, every tier",
+  spark_calendar: "matrix 3: retired to My Brand; no tier named",
+  spark_competitor_watch: "matrix 3 names no tier; leads found for the business are masked by the API",
+  spark_contact_bulk: "Contacts is the Standard base (matrix 3)",
+  spark_contact_merge: "Contacts is the Standard base (matrix 3)",
+  spark_dashboards: "matrix 6: reports are every tier",
+  spark_email_templates: "Templates is the Standard base (matrix 3)",
+  spark_engine_docs: "documentation",
+  spark_insights: "matrix 6: every tier",
+  spark_lead_suppression: "a tab of the Lead Inbox, every tier (SPARK pack 1)",
+  spark_lead_territories: "a tab of the Lead Inbox, every tier (SPARK pack 1)",
+  spark_leads: "the Lead Inbox, every tier (SPARK pack 1)",
+  spark_onboarding: "setup every plan has",
+  spark_realtime_metrics: "reached from IA Insights Reports, every tier",
+  spark_saved_searches: "filters on Contacts, which is the Standard base",
+  spark_scheduled_reports: "matrix 6: reports are every tier",
+  spark_sender_domains: "the Senders setting under an old name, every tier",
+  spark_search_profiles: "the Leads package decides it (LEADGEN_LOCKED_KEYS, server allow-list)",
+  spark_smoke_test: "a read-only check of the business's own endpoints",
+  spark_stella: "best time to send, folded into IA Insights (every tier)",
+  spark_template_i18n: "Templates is the Standard base (matrix 3)",
+  spark_usage: "the plan page; where any plan buys more",
+  spark_usage_report: "matrix 6: reports are every tier",
+  stella_coming: "matrix 9: every STELLA tier",
+  stella_db_import_history: "Brandon 2026-08-25: Database Manager is Standard+, every STELLA tier",
+  stella_expenses_coming: "matrix 9: every STELLA tier",
 };
 
 export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
@@ -1373,6 +1476,15 @@ export function SubNav({ config }: SubNavProps) {
   const productLocked =
     FEATURE_GATING_ENABLED &&
     !!needsKey && (railLock !== null ? railLock : ownedProducts.size > 0 && !ownedProducts.has(needsKey));
+  // My Brand rows sit in ARION's menu but are owned through ARION OR SPARK
+  // (matrix 13), so they lock only when both are known to be locked: a
+  // SPARK-only business pays for My Brand Standard and must reach it.
+  const lockKnown = (k: string): boolean | null => {
+    const r = productAccess.isLockedOnRail(k);
+    if (r !== null) return r;
+    return ownedProducts.size > 0 ? !ownedProducts.has(k) : null;
+  };
+  const myBrandLocked = FEATURE_GATING_ENABLED && myBrandLockedOnRail(lockKnown("arion"), lockKnown("spark"));
 
   // 2026-08-17 — SHOW-DON'T-HIDE applies to ENTITLEMENT ONLY.
   //
@@ -1393,7 +1505,7 @@ export function SubNav({ config }: SubNavProps) {
       items: g.items
         .filter((it) => !it.hidden && !it.merged)
         .map((it) =>
-          FEATURE_GATING_ENABLED && (productLocked || !isVisible(it, visCtx))
+          FEATURE_GATING_ENABLED && ((it.tierProduct === "my_brand" ? myBrandLocked : productLocked) || !isVisible(it, visCtx))
             ? { ...it, locked: true as const }
             : it
         ),

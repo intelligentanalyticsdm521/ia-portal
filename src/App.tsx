@@ -120,6 +120,7 @@ import { RequireFounderRoute } from './app/RequireFounderRoute';
 // RequireFounderRoute — that one really is internal tooling.
 import { RequireLeadgenRoute } from './app/RequireLeadgenRoute';
 import { ProductGate } from './components/ProductGate';
+import { PlanWall } from './components/PlanWall';
 import { lazy, Suspense } from 'react';
 // Each page file exports a default that matches the named export; using the
 // default keeps these lazy() calls minimal and tree-shaker-friendly.
@@ -433,7 +434,8 @@ export function App() {
             {/* SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — SPARK's own routes
                 sit behind the same product gate as /app/services/spark_* (only
                 spark/pricing, where SPARK is bought, stays open). */}
-            <Route path="spark/contact-scoring" element={<ProductGate product="spark"><SparkContactScoringPage /></ProductGate>} />
+            {/* PlanWall: Contact Scoring is SPARK Business (matrix 3); this route used to skip the tier wall the catalog route applies. */}
+            <Route path="spark/contact-scoring" element={<ProductGate product="spark"><PlanWall serviceKey="spark_contact_scoring"><SparkContactScoringPage /></PlanWall></ProductGate>} />
 
             {/* SPARK Lead Gen V1 (F-150/F-163) — search form, job progress,
                 saved searches. The job page needs an :id path param so these

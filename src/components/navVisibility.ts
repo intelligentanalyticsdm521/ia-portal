@@ -246,6 +246,19 @@ export function isGatedProduct(p: string | undefined): p is GatedProduct {
 }
 
 /**
+ * Is a My Brand row (tierProduct "my_brand") locked because the PRODUCT is
+ * not owned? My Brand is owned through ARION OR SPARK (platform-api
+ * products.my_brand.owned = arion.owned || spark.owned, matrix 13), so the
+ * rows that sit in ARION's menu lock only when BOTH are known to be locked.
+ * Before 2026-10-11 they took ARION's lock, so a SPARK-only business, which
+ * pays for My Brand Standard, saw every My Brand row padlocked.
+ * null = not known -> open (undecided never locks a paying business out).
+ */
+export function myBrandLockedOnRail(arionLocked: boolean | null, sparkLocked: boolean | null): boolean {
+  return arionLocked === true && sparkLocked === true;
+}
+
+/**
  * The product whose feature wall judges a service key's page. Normally the
  * key's own prefix; My Brand pages (my_brand_*) live in ARION's menu, so the
  * route guard judges them where the menu does. Without this a deep link to a

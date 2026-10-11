@@ -102,7 +102,8 @@ describe("G: only a decided 'not owned' closes a product", () => {
     const src = read("src/pages/ServiceRouter.tsx");
     const body = src.slice(src.indexOf("export function ServiceRouter()"));
     const gate = body.indexOf("<ProductGate product={product} serviceKey={serviceKey}>");
-    const tier = body.indexOf("<FeatureLocked");
+    // The tier wall is PlanWall since 2026-10-11 (shared with dedicated routes).
+    const tier = body.indexOf("<PlanWall serviceKey={serviceKey}>");
     const close = body.indexOf("</ProductGate>");
     assert.ok(gate > 0, "ServiceRouter renders ProductGate");
     assert.ok(tier > gate && close > tier, "the tier lock is INSIDE the product gate");
@@ -110,7 +111,9 @@ describe("G: only a decided 'not owned' closes a product", () => {
   });
   test("SPARK's own routes sit behind the same gate; only spark/pricing (where it is bought) stays open", () => {
     const app = read("src/App.tsx");
-    for (const [route, el] of [["spark/contact-scoring", "SparkContactScoringPage"], ["spark/leadgen", "RequireLeadgenRoute"],
+    // Contact Scoring is SPARK Business: the tier wall sits inside the product gate.
+    assert.ok(app.includes('<Route path="spark/contact-scoring" element={<ProductGate product="spark"><PlanWall serviceKey="spark_contact_scoring"><SparkContactScoringPage /></PlanWall></ProductGate>} />'), "spark/contact-scoring: product gate, then the tier wall");
+    for (const [route, el] of [["spark/leadgen", "RequireLeadgenRoute"],
       ["spark/customer-flow", "SparkCustomerFlowPage"], ["spark/lifecycle", "SparkLifecyclePage"], ["spark/sync-issues", "SparkSyncIssuesPage"]]) {
       assert.match(app, new RegExp(`<Route path="${route}" element=\\{<ProductGate product="spark"><${el} /></ProductGate>\\}`), route);
     }

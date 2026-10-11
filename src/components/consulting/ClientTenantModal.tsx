@@ -54,6 +54,7 @@ import { AddSiteFlow } from "../../pages/sites/AddSiteFlow";
 import { SiteProvisioningStatus } from "../../pages/sites/SiteProvisioningStatus";
 import { ConsultingIntakeFormPage } from "../../pages/consulting/ConsultingIntakeFormPage";
 import { FeatureUnavailable } from "../FeatureUnavailable";
+import { PlanWall } from "../PlanWall";
 
 const PLATFORM_API_BASE = (import.meta.env.VITE_PLATFORM_API_BASE_URL as string) || "";
 
@@ -198,7 +199,7 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
                   <Route path="admin/leadgen" element={<FeatureUnavailable name="Lead Gen admin" />} />
                   <Route path="account" element={<PersonalSettings />} />
                   <Route path="spark/pricing" element={<SparkPricingPage />} />
-                  <Route path="spark/contact-scoring" element={<SparkContactScoringPage />} />
+                  <Route path="spark/contact-scoring" element={<PlanWall serviceKey="spark_contact_scoring"><SparkContactScoringPage /></PlanWall>} />
                   <Route path="spark/leadgen/new" element={<FeatureUnavailable name="Lead Gen" />} />
                   <Route path="spark/leadgen/b2b_new" element={<FeatureUnavailable name="Lead Gen" />} />
                   <Route path="spark/leadgen/terms" element={<FeatureUnavailable name="Lead Gen" />} />

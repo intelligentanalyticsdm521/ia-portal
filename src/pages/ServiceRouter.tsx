@@ -7,13 +7,9 @@ import { ARGUS_SETTINGS_KEY, ARGUS_SETTINGS_OLD_KEY, ARGUS_SETTINGS_ROUTE } from
 import { useIsFounder } from '../hooks/useIsFounder';
 import { LEADGEN_LOCKED_KEYS } from '../config/featureFlags';
 import { useLeadgenAccess } from '../hooks/useLeadgenAccess';
-import { SERVICE_VISIBILITY } from '../components/SubNav';
-import { isGatedProduct, isRoutable, requirementLabel, wallProductOfServiceKey } from '../components/navVisibility';
-import { useNavAddons } from '../hooks/useNavAddons';
-import FeatureLocked from '../components/FeatureLocked';
-import { productColor, productOfServiceKey } from '../config/productTheme';
-import { useProductTier } from '../hooks/useProductTier';
+import { productOfServiceKey } from '../config/productTheme';
 import { ProductGate } from '../components/ProductGate';
+import { PlanWall } from '../components/PlanWall';
 
 // Lazy-load a named React export so it's compatible with React.lazy
 // (which expects { default: Component }). Lets each service section
@@ -1156,19 +1152,8 @@ export function ServiceRouter() {
   // rules would have been judged against the wrong subscription. Hooks run
   // unconditionally — non-gated products resolve but are never applied.
   const product = productOfServiceKey(serviceKey);
-  // The wall judges a page where its MENU row lives: my_brand_* pages are in
-  // ARION's menu, so they are judged as ARION pages (on the My Brand tier).
-  const wallProduct = wallProductOfServiceKey(serviceKey);
-  const gatingActive = isGatedProduct(wallProduct);
-  const { tier } = useProductTier(gatingActive ? wallProduct : "spark");
-  const { tier: myBrandTier } = useProductTier("my_brand");
-  const { addons, seoAddonTier } = useNavAddons(gatingActive ? wallProduct : undefined);
-  const service = useMemo(
-    () => SERVICE_CATALOG.find((s) => s.key === serviceKey) ?? null,
-    [serviceKey]
-  );
-  const rules = serviceKey ? SERVICE_VISIBILITY[serviceKey] : undefined;
-  const locked = !isRoutable(rules, { tier, addons, seoAddonTier, gatingActive, myBrandTier });
+  // The tier wall (menu and route judge one plan) lives in PlanWall since
+  // 2026-10-11, so a page mounted on its own route goes through it too.
 
   // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the PRODUCT gate
   // (ProductGate) sits OUTSIDE the tier check: a product that is decided off
@@ -1176,18 +1161,9 @@ export function ServiceRouter() {
   // product's own plan page (<product>_usage) is never closed.
   return (
     <ProductGate product={product} serviceKey={serviceKey}>
-      {!locked || !service ? (
+      <PlanWall serviceKey={serviceKey}>
         <ServiceRouterInner />
-      ) : (
-        <FeatureLocked
-          name={service.displayName}
-          description={service.description}
-          requiredPlan={requirementLabel(rules, wallProduct)}
-          accent={productColor(product)}
-        >
-          <ServiceRouterInner />
-        </FeatureLocked>
-      )}
+      </PlanWall>
     </ProductGate>
   );
 }
