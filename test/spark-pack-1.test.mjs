@@ -139,12 +139,11 @@ test("no nav row hides a business's own leads behind the Leads add-on", () => {
   const rows = subnav.split("\n").filter((l) => /key: "spark_lead_(inbox|sources)"/.test(l));
   assert.equal(rows.length, 2, "both rows must still exist");
   for (const r of rows) assert.ok(!/addon:/.test(r), `must not be add-on gated: ${r.trim()}`);
-  // And the add-on itself is gone, because nothing declares it.
+  // And the Portal holds no add-on rule at all since the feature catalog
+  // (2026-10-11): which add-on a row needs is its catalog row's, and the Lead
+  // Inbox / Lead sources rows name none (platform-api feature_catalog.json).
   const nav = code("components/navVisibility.ts");
-  assert.match(nav, /export type NavAddon = "seo";/);
-  assert.doesNotMatch(nav, /leadgen: "the Lead Gen add-on"/);
-  const addons = code("hooks/useNavAddons.ts");
-  assert.doesNotMatch(addons, /"leadgen" as NavAddon/, "handing out an add-on nothing declares is dead code");
+  assert.doesNotMatch(nav, /NavAddon|leadgen: "the Lead Gen add-on"/);
 });
 
 /* ══ item 6 — Contact 360 opens from everywhere ════════════════════════════ */
@@ -240,7 +239,9 @@ test("the AI Writer page calls the metered endpoints and prints no price of its 
   assert.match(p, /c\?\.priced/);
   // And it is in nav again, because it works.
   const subnav = read("components/SubNav.tsx");
-  assert.match(subnav, /key: "spark_ai_writer".*minTier: "business"/);
+  // Its plan (SPARK Business) is the feature catalog's row, not the menu's.
+  assert.match(subnav, /key: "spark_ai_writer", label: "AI Writer"/);
+  assert.doesNotMatch(subnav, /key: "spark_ai_writer".*minTier/);
 });
 
 /* ══ item 11 — the webhooks page ═══════════════════════════════════════════ */

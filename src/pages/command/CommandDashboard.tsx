@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback, useMemo } from "react";
 import { Link } from "react-router-dom";
 import { Sparkles, ArrowUpRight } from "lucide-react";
 import { useAppState } from "../../app/AppState";
+import { useEnabledServices } from "../../hooks/useEnabledServices";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { Sparkline } from "../../components/iainsights/Sparkline";
@@ -60,7 +61,8 @@ interface PulseBanner {
 }
 
 export function CommandDashboard() {
-  const { enabledServices, activeTenantId } = useAppState();
+  const { activeTenantId } = useAppState();
+  const { enabledServices } = useEnabledServices();
   const oliver = useOliverApi();
   const spark = useSparkApi();
 

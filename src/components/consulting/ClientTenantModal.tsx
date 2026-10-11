@@ -112,23 +112,13 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
   // mutating the global founder state.
   const modalAppState = useMemo(() => {
     if (!clientActive || !tenantId) return null;
-    const enabled = new Set<string>();
-    // Mirror the enabled-services hydration App.tsx does so the sidebar
-    // renders the same nav for the client.
+    // The CLIENT's products from their select-tenant answer. Which of their
+    // pages open is the feature catalog's answer, read inside the workspace
+    // through useProductAccess for this tenant (hooks/useEnabledServices);
+    // the hand-written ARION/OLIVER key lists that lived here are deleted.
     const svcKeys = new Set(
       (clientActive.services || []).map((s) => String(s.serviceKey || "").trim().toLowerCase())
     );
-    if (svcKeys.has("arion")) {
-      ["arion_dashboard","arion_website_overview","arion_website_content","arion_website_content_seo_overview","arion_website_security_overview","arion_website_security_vulnerabilities","arion_website_security_firewall","arion_website_performance_cache","arion_website_performance_images","arion_website_updates","arion_website_staging","arion_website_support","arion_website_settings","arion_hosting_overview","arion_hosting_domain_dns","arion_hosting_backups","arion_hosting_performance","arion_analytics_overview","arion_analytics_traffic","arion_analytics_audience","arion_analytics_content","arion_analytics_conversions","arion_analytics_pages","arion_analytics_reports","arion_analytics_ia_cross_platform","arion_analytics_ia_cross_channel","arion_analytics_ia_reports","arion_seo_overview","arion_seo_rankings","arion_seo_site_audit","arion_seo_competitors","arion_seo_opportunities","arion_seo_reports","arion_search_performance","arion_search_indexing","arion_search_sitemaps","arion_search_core_web_vitals","arion_search_bing_copilot","arion_search_bing_indexnow","arion_business_overview","arion_business_locations","arion_business_reviews","arion_business_insights","arion_business_posts","arion_business_services","arion_business_bing_overview","arion_business_apple_overview","arion_brand"].forEach((k) => enabled.add(k));
-    }
-    if (svcKeys.has("oliver")) {
-      enabled.add("oliver_operations");
-      enabled.add("oliver_portals");
-    }
-    for (const f of clientActive.features || []) {
-      const k = String(f.featureKey || "").trim();
-      if (k) enabled.add(k);
-    }
 
     return {
       bootstrap: founderState.bootstrap, // founder's identity (isFounder, etc.)
@@ -137,7 +127,6 @@ export function ClientTenantModal({ open, tenantId, tenantName, onClose }: Props
       setActive: (v: SelectTenantResponse | null) => { setClientActive(v); },
       activeTenantId: tenantId,
       setActiveTenantId: () => {/* read-only in modal */},
-      enabledServices: enabled,
       // 2026-08-06 — the CLIENT's product entitlements (core.tenant_services),
       // so view-as shows exactly the products they bought. Previously the rail
       // ignored this entirely and rendered SPARK/ARGUS for every client — which

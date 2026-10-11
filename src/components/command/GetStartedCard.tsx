@@ -12,6 +12,7 @@ import { GBP_ENABLED } from "../../config/featureFlags";
 import { Link } from "react-router-dom";
 import { CheckCircle, Circle, ArrowRight, Sparkles, X, ChevronRight, ChevronLeft } from "lucide-react";
 import { useAppState } from "../../app/AppState";
+import { useEnabledServices } from "../../hooks/useEnabledServices";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useAccessToken } from "../../auth/useAccessToken";
@@ -33,7 +34,8 @@ const PRODUCT_COLOR: Record<Product, string> = {
 };
 
 export function GetStartedCard() {
-  const { activeTenantId, enabledServices } = useAppState();
+  const { activeTenantId } = useAppState();
+  const { enabledServices } = useEnabledServices();
   const spark = useSparkApi();
   const oliver = useOliverApi();
   const { getToken } = useAccessToken();

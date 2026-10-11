@@ -2,7 +2,8 @@
 // Custom Reporting, Layer 3). The nav renders these with a padlock + tier
 // badge; clicking lands here on a STELLA-branded coming-soon sheet so the full
 // product shape is visible without the surface being built. Driven by the
-// PortalService row (displayName / description / tierGate).
+// PortalService row (displayName / description) and, for the tier badge, the
+// feature catalog's min_tier for the key (features[key] on /me/entitlements).
 import { Lock } from "lucide-react";
 import type { PortalService } from "../../config/serviceCatalog";
 import { STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
@@ -32,7 +33,8 @@ function moduleFor(key: string): { label: string; bullets: string[] } {
   return { label: "STELLA · Coming Soon", bullets: [] };
 }
 
-export function StellaComingSoonPage({ service }: { service: PortalService }) {
+export function StellaComingSoonPage({ service, minTier = null }: { service: PortalService; minTier?: string | null }) {
+  const tierWord = minTier ? `${minTier.charAt(0).toUpperCase()}${minTier.slice(1)}` : null;
   const mod = moduleFor(service.key);
 
   return (
@@ -80,7 +82,7 @@ export function StellaComingSoonPage({ service }: { service: PortalService }) {
           >
             Coming soon
           </span>
-          {service.tierGate && (
+          {tierWord && (
             <span
               style={{
                 display: "inline-block",
@@ -92,7 +94,7 @@ export function StellaComingSoonPage({ service }: { service: PortalService }) {
                 fontWeight: 700,
               }}
             >
-              {service.tierGate}+
+              {tierWord}+
             </span>
           )}
         </div>

@@ -9,14 +9,13 @@ import {
 } from "lucide-react";
 import type { ProductKey } from "./IconRail";
 import {
-  isGatedProduct,
-  isVisible,
+  featureContext,
+  isEntitled,
+  isHiddenFeature,
   myBrandLockedOnRail,
   requirementLabel,
   type VisibilityRules,
 } from "./navVisibility";
-import { useProductTier } from "../hooks/useProductTier";
-import { useNavAddons } from "../hooks/useNavAddons";
 import { useAppState } from "../app/AppState";
 import { FORGE_SOFTWARE, screenRoute, softwareRoot, visibleScreens } from "../pages/forge/forgeSoftware";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
@@ -105,15 +104,11 @@ export interface SubNavConfig {
 // separate page. Subscriptions stay in Billing because they're a billing
 // concern (when do I get paid).
 //
-// TIER GATES (pricing rework, Brandon 2026-08-21 — PRICING_REWORK_DECISIONS):
-// the bottom tier is "OLIVER Invoicing" (plan key stays `lite`): quotes,
-// proposals, invoices + Stripe payment links, deposits / partial payments,
-// payments, 1 doc template, 30-day reporting, SPARK contact sync — and ZERO
-// jobs. So every jobs / scheduling / dispatch / customer-portal / crew / team
-// surface carries `minTier: "standard"`. Mirrors oliver-api
-// lib/tierFeatures.js (inquiry_capture, booking_pages, customer_portal_access,
-// crew_portal_access, team_management are all Standard+; Lite job cap → 0).
-// Same show-don't-hide rule as SPARK: the rows stay visible with a lock.
+// PLANS: every row's plan is its feature key's row in the catalog
+// (platform-api db/seed/feature_catalog.json -> core.features), decided per
+// business by platform-api. Nothing here states a tier (2026-10-11). The
+// bottom tier is "OLIVER Invoicing" (quotes, invoices, payments, no jobs);
+// rows the plan does not include stay visible with a lock.
 // ─────────────────────────────────────────────────────────────────────────────
 const OLIVER_NAV: SubNavConfig = {
   productName: "OLIVER",
@@ -121,19 +116,19 @@ const OLIVER_NAV: SubNavConfig = {
   groups: [
     {
       label: "",
-      items: [{ key: "oliver_dashboard", label: "Dashboard", route: "/app/services/oliver_dashboard", everyTier: "the product home; every OLIVER plan has one" }],
+      items: [{ key: "oliver_dashboard", label: "Dashboard", route: "/app/services/oliver_dashboard" }],
     },
     {
       label: "Customers", icon: UserCircle, collapsible: true, sectionId: "oliver_customers",
       items: [
         // Contacts stay on Invoicing — quotes and invoices need a customer, and
         // SPARK contact sync is part of the Invoicing tier.
-        { key: "oliver_contacts", label: "Contacts", route: "/app/services/oliver_contacts", everyTier: "quotes and invoices need a customer (tierFeatures spark_contact_sync is Invoicing+)" },
+        { key: "oliver_contacts", label: "Contacts", route: "/app/services/oliver_contacts" },
         // Inquiry capture (portal "request work" + ARION form → inquiry) is
         // stripped from Invoicing; Standard+ (tierFeatures inquiry_capture).
-        { key: "oliver_service_requests", label: "Service Requests", route: "/app/services/oliver_service_requests", minTier: "standard" },
+        { key: "oliver_service_requests", label: "Service Requests", route: "/app/services/oliver_service_requests" },
         // Public booking pages are Standard+ (tierFeatures booking_pages).
-        { key: "oliver_booking", label: "Booking", route: "/app/services/oliver_booking", minTier: "standard" },
+        { key: "oliver_booking", label: "Booking", route: "/app/services/oliver_booking" },
       ],
     },
     {
@@ -145,32 +140,32 @@ const OLIVER_NAV: SubNavConfig = {
       // Invoicing has zero jobs — the whole group is Standard+.
       label: "Jobs", icon: Wrench, collapsible: true, sectionId: "oliver_jobs",
       items: [
-        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board", minTier: "standard" },
+        { key: "oliver_job_board", label: "Job Board", route: "/app/services/oliver_job_board" },
         // 2026-09-02 — the Standard gate is gone (Brandon, decision 5): every
         // tier gets the calendar. Lite is an invoicing tool, but seeing your own
         // week is a perk and a visual read on availability, and the read
         // endpoint (/calendar/unified) was never tier-gated anyway. The
         // Standard+ gates that remain are the ones that matter:
         // /dispatch/* and /schedule/availability.
-        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule", everyTier: "Brandon 2026-09-02 decision 5: every tier sees its own calendar" },
+        { key: "oliver_schedule", label: "Schedule", route: "/app/services/oliver_schedule" },
         // Dispatch was built (OliverDispatchPage, 249 lines) and had no nav
         // entry at all, so worker assignment was unreachable from the nav.
-        { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch", minTier: "standard" },
+        { key: "oliver_dispatch", label: "Dispatch", route: "/app/services/oliver_dispatch" },
         // 2026-09-25 (D-BK9): the Reschedule Queue existed but had no way in
         // except top-bar search; a customer's move request sat unseen.
-        { key: "oliver_reschedule_requests", label: "Reschedule Queue", route: "/app/services/oliver_reschedule_requests", minTier: "standard" },
-        { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive", minTier: "standard" },
+        { key: "oliver_reschedule_requests", label: "Reschedule Queue", route: "/app/services/oliver_reschedule_requests" },
+        { key: "oliver_jobs_archive", label: "Archive", route: "/app/services/oliver_jobs_archive" },
       ],
     },
     {
       label: "Products & Services", icon: Briefcase, collapsible: true, sectionId: "oliver_products",
       items: [
-        { key: "oliver_catalog", label: "Products & Services", route: "/app/services/oliver_catalog", everyTier: "tierFeatures quote_pricebook is Invoicing+: quotes are priced from it" },
-        { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories", everyTier: "how the pricebook is sorted; part of quote_pricebook (Invoicing+)" },
+        { key: "oliver_catalog", label: "Products & Services", route: "/app/services/oliver_catalog" },
+        { key: "oliver_categories", label: "Categories", route: "/app/services/oliver_categories" },
         // F-74 — separate taxonomy for crew skills (Plumbing, Electrical, etc.).
         // Distinct from product categories; drives auto-assign + customer
         // worker preferences.
-        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons", everyTier: "a discount line on a quote or invoice, which Invoicing has" },
+        { key: "oliver_coupons", label: "Coupons", route: "/app/services/oliver_coupons" },
       ],
     },
     {
@@ -180,14 +175,14 @@ const OLIVER_NAV: SubNavConfig = {
       // Placed in Billing because the templates ARE billing artefacts.
       label: "Billing", icon: CreditCard, collapsible: true, sectionId: "oliver_billing",
       items: [
-        { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes", everyTier: "tierFeatures quote_pricebook + proposals are Invoicing+ (matrix 13)" },
+        { key: "oliver_quotes", label: "Quotes & Proposals", route: "/app/services/oliver_quotes" },
         // ONE destination for both documents (founder 2026-08-19): the page
         // tabs between Quotes and Proposals, and each create opens its own
         // branded modal editor. A second "Proposals" nav row lasted a day.
-        { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices", everyTier: "tierFeatures invoicing_stripe_link is Invoicing+ (matrix 13)" },
+        { key: "oliver_invoices", label: "Invoices", route: "/app/services/oliver_invoices" },
         // Recurring services are jobs (TIER_CAPS lite max_active_recurring = 0) → Standard+.
-        { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring", minTier: "standard" },
-        { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments", everyTier: "tierFeatures partial_payments is Invoicing+ (matrix 13)" },
+        { key: "oliver_recurring", label: "Subscriptions", route: "/app/services/oliver_recurring" },
+        { key: "oliver_payments", label: "Payments", route: "/app/services/oliver_payments" },
 
       ],
     },
@@ -195,14 +190,14 @@ const OLIVER_NAV: SubNavConfig = {
       // Team page is Standard+ (tierFeatures team_management); Invoicing is single-seat.
       label: "Team", icon: Users, collapsible: true, sectionId: "oliver_team",
       items: [
-        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers", minTier: "standard" },
+        { key: "oliver_workers", label: "Workers", route: "/app/services/oliver_workers" },
         // F-44 (2026-05-26) — Time Tracking removed from nav per founder lock
         // "no time tracking until payroll later". Page + route still reachable
         // by URL for legacy data; not surfaced in OLIVER nav.
         // tierFeatures crew_performance_reporting = Pro+ (matrix 2). It read
         // Standard here until 2026-10-11, so the menu offered a Pro report to
         // a Standard business.
-        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true, minTier: "pro" },
+        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true },
       ],
     },
     {
@@ -215,13 +210,13 @@ const OLIVER_NAV: SubNavConfig = {
         // automate without jobs, so Standard+ in the menu. The Pro+
         // orchestration rules (tierFeatures automations_engine) are still
         // gated inside the page; Standard keeps its comms rules.
-        { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations", minTier: "standard" },
-        { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons", everyTier: "where any plan buys an add-on; locking it would hide the way up" },
+        { key: "oliver_automations", label: "Automations", route: "/app/services/oliver_automations" },
+        { key: "oliver_addons", label: "Add-ons", route: "/app/services/oliver_addons" },
         // F-114 — Portals hub replaces the standalone Portals & Domains page;
         // the old page stays reachable by URL but no longer surfaces in nav.
         // Customer + crew portals are Standard+ / Pro+ (customer_portal_access,
         // crew_portal_access); Invoicing customers get Stripe payment links only.
-        { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub", minTier: "standard" },
+        { key: "oliver_portals_hub", label: "Customer & Crew Portals", route: "/app/services/oliver_portals_hub" },
         // F-70 + F-72 + F-63 — reschedule policy, post-booking actions, signup form
       ],
     },
@@ -238,32 +233,23 @@ const OLIVER_NAV: SubNavConfig = {
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "oliver_ia_insights",
       items: [
-        { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health", everyTier: "matrix 6: Health is every tier" },
-        { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" }, everyTier: "matrix 6: Trends is every tier" },
+        { key: "oliver_ia_insights_health", label: "Health", route: "/app/services/oliver_ia_insights_health" },
+        { key: "oliver_ia_insights_trends", label: "Trends", route: "/app/services/oliver_ia_insights_trends", tag: { label: "OLIVER", color: "#FEC82C" } },
         // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
         // Intelligence = Pro. Brandon 2026-08-06.
-        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" }, minTier: "pro" },
-        { key: "oliver_ia_insights_reports", label: "Reports", route: "/app/services/oliver_ia_insights_reports", everyTier: "matrix 6: Reports is every tier (tierFeatures basic_reporting_30d is Invoicing+)" },
+        { key: "oliver_ia_insights_intelligence", label: "Intelligence", route: "/app/services/oliver_ia_insights_intelligence", tag: { label: "OLIVER", color: "#FEC82C" } },
+        { key: "oliver_ia_insights_reports", label: "Reports", route: "/app/services/oliver_ia_insights_reports" },
       ],
     },
   ],
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARION TIER GATES (Brandon 2026-10-11: "it's by their subscription. ARION pro
-// has different features than ARION lite."). Every row carries a rule or an
-// `everyTier` reason. Source: FEATURE_TIER_MATRIX_FULL.md section 1, with
-// section 6 (IA Insights), sections 7/13 (SEO is an add-on that stacks on ANY
-// base tier) and sections 10/13 (My Brand) where they supersede it. Mirrors
-// arion-api middleware/requireArionTier.js PATH_MIN_TIER, so the menu and the
-// API refuse the same things:
-//   Lite      website, hosting, security overview, performance, IA Insights
-//             Health / Trends / Reports
-//   Standard  Analytics Overview + Traffic (GA4), Search (GSC + Bing),
-//             Security: Vulnerabilities, My Brand
-//   Pro       Staging, Analytics Audience / Content / Conversions, Business
-//             Profile (Google, Bing Places, Apple), IA Insights Intelligence
-//   SEO       the SEO add-on (any base tier); Market Monitor = Authority rung
+// ARION PLANS (Brandon 2026-10-11: "it's by their subscription. ARION pro has
+// different features than ARION lite."). Every row names its feature key; the
+// key's catalog row (platform-api db/seed/feature_catalog.json) holds its
+// product, lowest tier and add-on, and platform-api decides it per business,
+// so the menu and arion-api refuse the same things from one list.
 // ─────────────────────────────────────────────────────────────────────────────
 const ARION_NAV: SubNavConfig = {
   productName: "ARION",
@@ -276,28 +262,28 @@ const ARION_NAV: SubNavConfig = {
         // Onboarding now lives as a dashboard banner + modal on the ARION home
         // command center. A permanent "Get Started" nav entry was clutter once
         // onboarding completed.
-        { key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard", everyTier: "the product home; every ARION plan has one" },
+        { key: "arion_dashboard", label: "Dashboard", route: "/app/services/arion_dashboard" },
       ],
     },
     {
       label: "Website", icon: Monitor, collapsible: true, sectionId: "website",
       items: [
-        { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview", everyTier: "matrix 1: Website Overview is Lite+; it also lists every website inquiry, which nothing else shows an ARION-only business" },
+        { key: "arion_website_overview", label: "Overview", route: "/app/services/arion_website_overview" },
         // Pages is the client's own job ("change the words on my About page"),
         // so it sits directly under Overview and above the technology-named
         // entries. Site builder Phase 1A, 2026-09-05.
-        { key: "arion_website_pages", label: "Pages", route: "/app/services/arion_website_pages", everyTier: "matrix 1: Website Content is Lite+ (editing your own pages)" },
-        { key: "arion_website_posts", label: "Posts", route: "/app/services/arion_website_posts", everyTier: "matrix 1: Website Content is Lite+" },
+        { key: "arion_website_pages", label: "Pages", route: "/app/services/arion_website_pages" },
+        { key: "arion_website_posts", label: "Posts", route: "/app/services/arion_website_posts" },
         // Site builder pack 2, 2026-09-09. Menus is the job a client asks for
         // straight after building a page ("now put it in my menu"), so it sits
         // next to Pages; Brand & layout is everything that is the same on
         // every page.
-        { key: "arion_website_menus", label: "Menus", route: "/app/services/arion_website_menus", everyTier: "matrix 1: Website Content is Lite+" },
-        { key: "arion_website_design", label: "Brand & layout", route: "/app/services/arion_website_design", everyTier: "matrix 1: Website Settings is Lite+" },
-        { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content", everyTier: "matrix 1: Website Content is Lite+" },
-        { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview", everyTier: "Rank Math in the IA plugin, not SE Ranking; part of the base website (matrix 7)" },
+        { key: "arion_website_menus", label: "Menus", route: "/app/services/arion_website_menus" },
+        { key: "arion_website_design", label: "Brand & layout", route: "/app/services/arion_website_design" },
+        { key: "arion_website_content", label: "Content", route: "/app/services/arion_website_content" },
+        { key: "arion_website_content_seo_overview", label: "Content SEO", route: "/app/services/arion_website_content_seo_overview" },
         // Matrix 1: Staging = Pro (requireArionTier /staging -> pro).
-        { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging", minTier: "pro" },
+        { key: "arion_website_staging", label: "Staging", route: "/app/services/arion_website_staging" },
         // Pre-walk pass 3b, 2026-09-09. ARION pack 2 put the website chat
         // bubble and the "Book now" button on this page — the two switches that
         // used to exist ONLY on a WordPress settings screen — and the pack's
@@ -305,28 +291,28 @@ const ARION_NAV: SubNavConfig = {
         // the pinned Settings gear that used to reach it was removed in the
         // nav restructure (f11cc50), long before pack 2, so the page has had no
         // door at all since. Reachable only by typing the URL is not reachable.
-        { key: "arion_website_settings", label: "Settings", route: "/app/services/arion_website_settings", everyTier: "matrix 1: Website Settings is Lite+" },
+        { key: "arion_website_settings", label: "Settings", route: "/app/services/arion_website_settings" },
       ],
     },
     {
       label: "Hosting", icon: Server, collapsible: true, sectionId: "hosting",
       items: [
-        { key: "arion_hosting_overview", label: "Overview", route: "/app/services/arion_hosting_overview", everyTier: "matrix 1: Hosting Overview is Lite+" },
-        { key: "arion_hosting_domain_dns", label: "Domain & DNS", route: "/app/services/arion_hosting_domain_dns", everyTier: "matrix 1: Domain & DNS is Lite+" },
-        { key: "arion_hosting_backups", label: "Backups", route: "/app/services/arion_hosting_backups", everyTier: "matrix 1: Backups is Lite+" },
+        { key: "arion_hosting_overview", label: "Overview", route: "/app/services/arion_hosting_overview" },
+        { key: "arion_hosting_domain_dns", label: "Domain & DNS", route: "/app/services/arion_hosting_domain_dns" },
+        { key: "arion_hosting_backups", label: "Backups", route: "/app/services/arion_hosting_backups" },
       ],
     },
     {
       label: "Security & Performance", icon: ShieldCheck, collapsible: true, sectionId: "security",
       items: [
-        { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview", everyTier: "matrix 1: Security Overview is Lite+" },
+        { key: "arion_website_security_overview", label: "Security: Overview", route: "/app/services/arion_website_security_overview" },
         // Matrix 1: Vulnerabilities + Firewall = Standard (requireArionTier
         // /sites/:id/vulnerabilities -> standard). Firewall has no row; its old
         // key redirects to Security: Overview.
-        { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities", minTier: "standard" },
-        { key: "arion_website_performance_cache", label: "Core Web Vitals", route: "/app/services/arion_website_performance_cache", everyTier: "matrix 1: Performance (cache, images, Core Web Vitals) is Lite+, basic" },
-        { key: "arion_website_performance_images", label: "Media", route: "/app/services/arion_website_performance_images", everyTier: "matrix 1: Performance (images) is Lite+" },
-        { key: "arion_website_updates", label: "Plugins", route: "/app/services/arion_website_updates", everyTier: "matrix 1: Website Updates is Lite+" },
+        { key: "arion_website_security_vulnerabilities", label: "Security: Vulnerabilities", route: "/app/services/arion_website_security_vulnerabilities" },
+        { key: "arion_website_performance_cache", label: "Core Web Vitals", route: "/app/services/arion_website_performance_cache" },
+        { key: "arion_website_performance_images", label: "Media", route: "/app/services/arion_website_performance_images" },
+        { key: "arion_website_updates", label: "Plugins", route: "/app/services/arion_website_updates" },
       ],
     },
     {
@@ -335,23 +321,22 @@ const ARION_NAV: SubNavConfig = {
       // platform analytics. IA Insights is now its own top-level section below.
       label: "Search Engine Analytics", icon: BarChart2, collapsible: true, sectionId: "analytics",
       items: [
-        // Matrix 1: GA4 Overview + Traffic = Standard; Audience, Content,
-        // Conversions = Pro. (Analytics Pages = Pro and Analytics Reports =
-        // Business have no menu row; see ROUTE_ONLY_RULES below.)
-        { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview", minTier: "standard" },
-        { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic", minTier: "standard" },
-        { key: "arion_analytics_audience", label: "Audience", route: "/app/services/arion_analytics_audience", minTier: "pro" },
-        { key: "arion_analytics_content", label: "Content", route: "/app/services/arion_analytics_content", minTier: "pro" },
-        { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions", minTier: "pro" },
+        // Analytics Pages and Analytics Reports have no menu row; their
+        // pages follow their own catalog rows when opened by URL.
+        { key: "arion_analytics_overview", label: "Overview", route: "/app/services/arion_analytics_overview" },
+        { key: "arion_analytics_traffic", label: "Traffic", route: "/app/services/arion_analytics_traffic" },
+        { key: "arion_analytics_audience", label: "Audience", route: "/app/services/arion_analytics_audience" },
+        { key: "arion_analytics_content", label: "Content", route: "/app/services/arion_analytics_content" },
+        { key: "arion_analytics_conversions", label: "Conversions", route: "/app/services/arion_analytics_conversions" },
       ],
     },
     {
       // SEO is an ADD-ON, never a base-tier feature (Brandon 2026-08-06,
       // re-affirmed in the 2026-08-21 pricing rework): every SE Ranking-powered
       // surface is sold only through the SEO add-on ladder (Starter /
-      // Essentials / Growth / Authority), so each row carries `addon: "seo"`.
-      // Resolved from the selected site's seoAddonTier by hooks/useNavAddons —
-      // the same column arion-api guards its SE Ranking client on. "Content
+      // Essentials / Growth / Authority); the catalog rows say so and
+      // platform-api reads the add-on from the business's ARION sites — the
+      // same column arion-api guards its SE Ranking client on. "Content
       // SEO" under Website is Rank Math (the IA plugin), not SE Ranking, and
       // stays in the base plan.
       //
@@ -361,22 +346,22 @@ const ARION_NAV: SubNavConfig = {
       // says the same. A Standard site that bought the add-on must get it.
       label: "SEO", icon: TrendingUp, collapsible: true, sectionId: "seo",
       items: [
-        { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview", addon: "seo" },
-        { key: "arion_seo_keywords", label: "Keywords", route: "/app/services/arion_seo_keywords", addon: "seo" },
-        { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings", addon: "seo" },
-        { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit", addon: "seo" },
-        { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors", addon: "seo" },
+        { key: "arion_seo_overview", label: "Overview", route: "/app/services/arion_seo_overview" },
+        { key: "arion_seo_keywords", label: "Keywords", route: "/app/services/arion_seo_keywords" },
+        { key: "arion_seo_rankings", label: "Rankings", route: "/app/services/arion_seo_rankings" },
+        { key: "arion_seo_site_audit", label: "Site Audit", route: "/app/services/arion_seo_site_audit" },
+        { key: "arion_seo_competitors", label: "Competitors", route: "/app/services/arion_seo_competitors" },
         // AI Search Results / AI Prompts are Growth+ inside the add-on
         // (Growth = Google AI Overviews + AI Mode; Authority adds ChatGPT +
         // Gemini). The pages enforce the add-on TIER themselves.
-        { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search", addon: "seo" },
-        { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts", addon: "seo" },
+        { key: "arion_seo_ai_search", label: "AI Search Results", route: "/app/services/arion_seo_ai_search" },
+        { key: "arion_seo_ai_prompts", label: "AI Prompts", route: "/app/services/arion_seo_ai_prompts" },
         // Market Monitor moved OUT of ARION Business into the SEO add-on,
         // AUTHORITY tier only (PRICING_REWORK_DECISIONS_2026-08-21 §ARION 3b —
-        // it runs on SE Ranking page-change monitoring). `addonTier` locks the
-        // menu row + route below Authority (Phase B1); arion-api enforces the
+        // it runs on SE Ranking page-change monitoring). Its catalog row
+        // locks the menu row + route below Authority; arion-api enforces the
         // same rung server-side (SeoMarketMonitor authorityGated).
-        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor", addon: "seo", addonTier: "authority" },
+        { key: "arion_seo_market_monitor", label: "Market Monitor", route: "/app/services/arion_seo_market_monitor" },
       ],
     },
     {
@@ -384,9 +369,9 @@ const ARION_NAV: SubNavConfig = {
       items: [
         // Matrix 1: Search Console (Performance, Indexing, Sitemaps) and Bing
         // = Standard (requireArionTier /search/*, /bing -> standard).
-        { key: "arion_search_performance", label: "Search Performance", route: "/app/services/arion_search_performance", minTier: "standard" },
-        { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing", minTier: "standard" },
-        { key: "arion_search_bing_copilot", label: "Bing: Copilot AI", route: "/app/services/arion_search_bing_copilot", minTier: "standard" },
+        { key: "arion_search_performance", label: "Search Performance", route: "/app/services/arion_search_performance" },
+        { key: "arion_search_indexing", label: "Indexing", route: "/app/services/arion_search_indexing" },
+        { key: "arion_search_bing_copilot", label: "Bing: Copilot AI", route: "/app/services/arion_search_bing_copilot" },
       ],
     },
     {
@@ -399,14 +384,14 @@ const ARION_NAV: SubNavConfig = {
         // (requireArionTier /gbp, /business, /my-business, /sites/:id/apple
         // -> pro). The 2026-07-22 "un-gated" note above was about the old
         // coming-soon locks, not the plan.
-        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview", minTier: "pro" },
-        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations", minTier: "pro" },
-        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews", minTier: "pro" },
-        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights", minTier: "pro" },
-        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts", minTier: "pro" },
-        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services", minTier: "pro" },
-        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview", minTier: "pro" },
-        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview", minTier: "pro" },
+        { key: "arion_business_overview", label: "Overview", route: "/app/services/arion_business_overview" },
+        { key: "arion_business_locations", label: "Locations", route: "/app/services/arion_business_locations" },
+        { key: "arion_business_reviews", label: "Reviews", route: "/app/services/arion_business_reviews" },
+        { key: "arion_business_insights", label: "Performance", route: "/app/services/arion_business_insights" },
+        { key: "arion_business_posts", label: "Posts", route: "/app/services/arion_business_posts" },
+        { key: "arion_business_services", label: "Services", route: "/app/services/arion_business_services" },
+        { key: "arion_business_bing_overview", label: "Bing Places", route: "/app/services/arion_business_bing_overview" },
+        { key: "arion_business_apple_overview", label: "Apple Maps", route: "/app/services/arion_business_apple_overview" },
       ],
     },
     {
@@ -433,13 +418,13 @@ const ARION_NAV: SubNavConfig = {
         // Business add depth INSIDE the pages (calendar grid, Voice Monitor,
         // bulk import, approvals), which LUMEN tierCheck gates per action.
         // Judged against platform-api's derived My Brand tier, not ARION's.
-        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio", minTier: "standard", tierProduct: "my_brand" },
-        { key: "my_brand_templates", label: "Design Studio", route: "/app/services/my_brand_templates", minTier: "standard", tierProduct: "my_brand" },
-        { key: "my_brand_assets", label: "Media Library", route: "/app/services/my_brand_assets", minTier: "standard", tierProduct: "my_brand" },
-        { key: "my_brand_calendar", label: "Social Hub", route: "/app/services/my_brand_calendar", minTier: "standard", tierProduct: "my_brand" },
+        { key: "my_brand_image_studio", label: "Image Studio", route: "/app/services/my_brand_image_studio" },
+        { key: "my_brand_templates", label: "Design Studio", route: "/app/services/my_brand_templates" },
+        { key: "my_brand_assets", label: "Media Library", route: "/app/services/my_brand_assets" },
+        { key: "my_brand_calendar", label: "Social Hub", route: "/app/services/my_brand_calendar" },
         // Re-cut item 5 (2026-07-22): Meta-Business-Suite-style content view —
         // per-post metrics + filters; "full report" page hangs off it (not nav).
-        { key: "my_brand_social_content", label: "Social Content", route: "/app/services/my_brand_social_content", minTier: "standard", tierProduct: "my_brand" },
+        { key: "my_brand_social_content", label: "Social Content", route: "/app/services/my_brand_social_content" },
       ],
     },
     // REMOVED 2026-07-21 (Brandon, My Brand verification pass):
@@ -454,16 +439,16 @@ const ARION_NAV: SubNavConfig = {
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "ia_insights",
       items: [
-        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health", everyTier: "matrix 6: Health is every tier" },
-        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" }, everyTier: "matrix 6: Trends is every tier; depth grows with the data the tier connects" },
+        { key: "arion_ia_insights_health", label: "Health", route: "/app/services/arion_ia_insights_health" },
+        { key: "arion_ia_insights_trends", label: "Trends", route: "/app/services/arion_ia_insights_trends", tag: { label: "ARION", color: "#38BDF8" } },
         // IA Insights model (see SPARK block): Health/Trends/Reports every tier,
         // Intelligence = Pro. Brandon 2026-08-06. Reports entry added by the
         // Insights build (Aug 14-16) — sits in the every-tier band per that model.
-        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" }, minTier: "pro" },
+        { key: "arion_ia_insights_intelligence", label: "Intelligence", route: "/app/services/arion_ia_insights_intelligence", tag: { label: "ARION", color: "#38BDF8" } },
         // Matrix 1 recommended Reports = Business; matrix 6 (Brandon's later
         // call) puts Reports in every tier, and requireArionTier lets
         // /analytics/report through at every tier. The API wins.
-        { key: "arion_ia_insights_reports", label: "Reports", route: "/app/services/arion_ia_insights_reports", everyTier: "matrix 6: Reports is every tier (supersedes matrix 1's Business)" },
+        { key: "arion_ia_insights_reports", label: "Reports", route: "/app/services/arion_ia_insights_reports" },
       ],
     },
   ],
@@ -501,13 +486,13 @@ const SPARK_NAV: SubNavConfig = {
       // banner self-hides when the required steps are complete.
       label: "",
       items: [
-        { key: "spark_overview", label: "Dashboard", route: "/app/services/spark_overview", everyTier: "the product home; matrix 3 Standard base" },
+        { key: "spark_overview", label: "Dashboard", route: "/app/services/spark_overview" },
       ],
     },
     {
       label: "CRM", icon: Users, collapsible: true, sectionId: "spark_crm",
       items: [
-        { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts", everyTier: "matrix 3: Contacts is the Standard base" },
+        { key: "spark_contacts", label: "Contacts", route: "/app/services/spark_contacts" },
         // MERGED into the Contacts import modal 2026-07-30 (phase 4). The modal
         // now does everything this page did (file picker) plus xlsx, so hiding
         // it removes a nav item without removing a capability.
@@ -518,15 +503,15 @@ const SPARK_NAV: SubNavConfig = {
         // item again. "merged" means "folded into another surface"; leaving the
         // flag on a page that is no longer folded in would hide the only way to
         // reach it from the nav (reference_nav_visibility_semantics).
-        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts", everyTier: "matrix 3: Companies is the Standard base" },
-        { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists", everyTier: "matrix 3: Lists is the Standard base" },
-        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments", minTier: "pro" },
+        { key: "spark_accounts", label: "Companies", route: "/app/services/spark_accounts" },
+        { key: "spark_lists", label: "Lists", route: "/app/services/spark_lists" },
+        { key: "spark_segments", label: "Segments", route: "/app/services/spark_segments" },
         // MERGED into the contact record's Activity tab 2026-07-30 (phase 4).
         // Brandon: "Contact 360 - no clue what this is." Its only unique
         // content was email/SMS history + OLIVER jobs, which now render on the
         // record itself — one screen per person instead of two places to look.
-        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) */ },
-        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: linked from IA Insights -> Health (contact scoring) */ },
+        { key: "spark_contact_360", label: "Contact 360°", route: "/app/services/spark_contact_360", intelligence: true, merged: true },
+        { key: "spark_health_score", label: "Health Score", route: "/app/services/spark_health_score", intelligence: true, merged: true },
       ],
     },
     {
@@ -536,22 +521,22 @@ const SPARK_NAV: SubNavConfig = {
       // single entry covering Email + SMS + Translations via tabs inside.
       label: "Outreach", icon: Megaphone, collapsible: true, sectionId: "spark_outreach",
       items: [
-        { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns", everyTier: "matrix 3: Campaigns is the Standard base (an SMS campaign is refused below Pro by the API, matrix 11)" },
+        { key: "spark_campaigns", label: "Campaigns", route: "/app/services/spark_campaigns" },
         // F-91 + 2026-05-28 — Templates moved DOWN to Workflow & Automations
         // per founder decision. Library is configuration-like, used BY
         // campaigns rather than alongside them. Keeping reference here so
         // the move is documented.
-        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter", minTier: "pro" },
+        { key: "spark_newsletter", label: "Newsletter Studio", route: "/app/services/spark_newsletter" },
         { key: "spark_deliverability", label: "Deliverability", route: "/app/services/spark_deliverability", merged: true /* merged: status indicator on Settings -> Senders links to the full dashboard */ },
       ],
     },
     {
       label: "Capture", icon: Target, collapsible: true, sectionId: "spark_capture",
       items: [
-        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms", everyTier: "matrix 3: Forms is the Standard base" },
+        { key: "spark_forms", label: "Forms", route: "/app/services/spark_forms" },
         { key: "spark_form_builder", label: "Form Builder", route: "/app/services/spark_form_builder", merged: true /* merged: Forms opens the builder as a modal (F-104, 2026-05-28); this page is only a back-compat route for old deep links */ },
-        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages", minTier: "pro" /* PRO */},
-        { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes", everyTier: "matrix 3: QR Codes is the Standard base" },
+        { key: "spark_landing_pages", label: "Landing Pages", route: "/app/services/spark_landing_pages"},
+        { key: "spark_qr_codes", label: "QR Codes", route: "/app/services/spark_qr_codes" },
       ],
     },
     {
@@ -578,16 +563,16 @@ const SPARK_NAV: SubNavConfig = {
         // Triggers consolidated into ONE list page. The page exposes a
         // segmented filter for "All / Automations / Rules" and a single
         // "New workflow" button that opens the unified chooser modal.
-        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations", minTier: "pro" /* PRO (tier matrix 2026-08-06) — the ~4 prebuilt toggle-on automations */ },
+        { key: "spark_workflows_automations", label: "Workflows & Automations", route: "/app/services/spark_workflows_automations" },
         // F-CS.6 — admin for the lumen.spark_task rows that `task_call`
         // steps reference. Sits next to Workflows & Automations because
         // tasks ARE workflow building blocks — same mental model, same
         // group home.
-        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks", minTier: "pro" /* PRO: follow-up tasks are core CRM */},
-        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder", minTier: "business" /* BUSINESS (tier matrix 2026-08-06): multi-step branching journeys are the advanced-automation tier; Pro gets the prebuilt toggles */},
-        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests", minTier: "pro" /* PRO */},
-        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals", minTier: "business" /* BUSINESS: matters at 2+ marketers */},
-        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts", minTier: "business" /* BUSINESS */},
+        { key: "spark_tasks", label: "Tasks", route: "/app/services/spark_tasks"},
+        { key: "spark_journey_builder", label: "Journeys", route: "/app/services/spark_journey_builder"},
+        { key: "spark_ab_tests", label: "A/B Tests", route: "/app/services/spark_ab_tests"},
+        { key: "spark_approvals", label: "Approvals", route: "/app/services/spark_approvals"},
+        { key: "spark_anomaly_alerts", label: "Anomaly Alerts", route: "/app/services/spark_anomaly_alerts"},
         // Templates moved here from Outreach (2026-05-28 founder decision).
         // It's a library used by other features — configuration-like, not
         // an active send surface.
@@ -598,9 +583,9 @@ const SPARK_NAV: SubNavConfig = {
         // routes/webhookSubscriptions: CRUD, reveal-once signing secret, test
         // fire, per-subscription delivery log, tenant-wide log, one-click retry).
         // The page is that API now, so the nav entry is honest.
-        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks", minTier: "pro" /* PRO: an integration surface, same rung as the rest of this group */},
-        { key: "spark_webhook_deliveries", label: "Webhook deliveries", route: "/app/services/spark_webhook_deliveries", merged: true, minTier: "pro" /* merged: reached from the Webhooks page's "every delivery" link; Pro like Webhooks itself */},
-        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync", minTier: "business" /* BUSINESS: ad-platform audience push */},
+        { key: "spark_webhooks", label: "Webhooks", route: "/app/services/spark_webhooks"},
+        { key: "spark_webhook_deliveries", label: "Webhook deliveries", route: "/app/services/spark_webhook_deliveries", merged: true},
+        { key: "spark_audience_sync", label: "Audience Sync", route: "/app/services/spark_audience_sync"},
         // Lead Suppression + Lead Territories used to live here as separate
         // entries; both were absorbed into the unified Lead Inbox page
         // (Sales group) as tabs on 2026-06-25.
@@ -629,31 +614,31 @@ const SPARK_NAV: SubNavConfig = {
         // The same applies to Lead sources: how MANY sources a business may
         // connect is a Leads-package question the API answers at runtime, and
         // connecting the first one is how the inbox fills at all.
-        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox", everyTier: "a business's own inquiries (SPARK pack 1); purchased leads are masked by the API" },
+        { key: "spark_lead_inbox", label: "Lead Inbox", route: "/app/services/spark_lead_inbox" },
         // SPARK pack 2 (2026-09-09). Every text, call, voicemail and website
         // chat was reachable only THROUGH a lead, and both "is this a lead"
         // decisions refuse a greeting — so a live chat, or a text that had not
         // got to the point yet, had no screen anywhere. Beside the Lead Inbox
         // because they are the same job: somebody is trying to reach you.
-        { key: "spark_conversations", label: "Conversations", route: "/app/services/spark_conversations", everyTier: "a business's own texts and chats (SPARK pack 2); replying by text is refused below Pro by the API" },
-        { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources", everyTier: "connecting the first source is how the inbox fills; how many is a Leads-package question the API answers" },
-        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines", minTier: "pro" /* PRO: moved out of the Lead Gen add-on into the package */},
-        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals", minTier: "pro" /* PRO: deals + pipelines are what ActiveCampaign gates too */},
+        { key: "spark_conversations", label: "Conversations", route: "/app/services/spark_conversations" },
+        { key: "spark_lead_sources", label: "Lead sources", route: "/app/services/spark_lead_sources" },
+        { key: "spark_pipelines", label: "Pipelines", route: "/app/services/spark_pipelines"},
+        { key: "spark_deals", label: "Deals", route: "/app/services/spark_deals"},
       ],
     },
     {
       label: "Customer Success", icon: Heart, collapsible: true, sectionId: "spark_customer_success",
       items: [
-        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps", minTier: "business" /* BUSINESS: customer-success suite */},
-        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules", minTier: "business" /* BUSINESS: customer-success suite */},
+        { key: "spark_nps", label: "NPS", route: "/app/services/spark_nps"},
+        { key: "spark_nps_schedules", label: "NPS Schedules", route: "/app/services/spark_nps_schedules"},
         // BACK IN NAV, 2026-09-09 (SPARK pack 2). It was cut with the note
         // "reviews live in ARION My Business/GBP", which left a business that
         // has SPARK and not ARION with no reputation surface at all — and the
         // reply box here saved text and stamped a "posted" date without ever
         // posting anything. Replies go to Google through ARION's publisher now,
         // and a business with no Google connection is told so in a sentence.
-        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews", everyTier: "SPARK pack 2: the only reviews surface a SPARK-without-ARION business has" },
-        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals", minTier: "business" /* BUSINESS: customer-success suite */},
+        { key: "spark_reviews", label: "Reputation Hub", route: "/app/services/spark_reviews" },
+        { key: "spark_referrals", label: "Referrals", route: "/app/services/spark_referrals"},
       ],
     },
     {
@@ -667,8 +652,8 @@ const SPARK_NAV: SubNavConfig = {
         // its prices read from the one price list, so the reason is gone.
         // BUSINESS tier per the canonical matrix ("Business add-on … AI Writer
         // (full)"), which is also what the metering charges against.
-        { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer", minTier: "business" },
-        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true, minTier: "business" /* BUSINESS (tier matrix 2026-08-06) — merged: per-contact score is on the Contacts list (tier + score columns, Tier X/Y/Z filters); the trend lives in IA Insights. A third page showing the same distribution is the duplication Brandon flagged 2026-08-06 */ },
+        { key: "spark_ai_writer", label: "AI Writer", route: "/app/services/spark_ai_writer" },
+        { key: "spark_intelligence", label: "Contact Scoring", route: "/app/services/spark_intelligence", merged: true },
         { key: "spark_activity_stream", label: "Activity Stream", route: "/app/services/spark_activity_stream", merged: true /* merged: linked from IA Insights -> Health (activity stream) */ },
       ],
     },
@@ -685,16 +670,16 @@ const SPARK_NAV: SubNavConfig = {
     {
       label: "IA Insights", icon: Sparkles, collapsible: true, sectionId: "spark_ia_insights",
       items: [
-        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health", everyTier: "matrix 6: Health is every tier" },
-        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" }, everyTier: "matrix 6: Trends is every tier" },
+        { key: "spark_ia_insights_health", label: "Health", route: "/app/services/spark_ia_insights_health" },
+        { key: "spark_ia_insights_trends", label: "Trends", route: "/app/services/spark_ia_insights_trends", tag: { label: "SPARK", color: "#EF6C33" } },
         // IA INSIGHTS MODEL (Brandon 2026-08-06, applies to ARION/OLIVER/SPARK
         // identically): Health + Trends + Reports at EVERY tier — their depth
         // scales naturally because a lower tier simply connects fewer data
         // sources. Only the MODELLED layer (forecasts, anomaly detection,
         // weighted-impact opportunity) is a paid unlock at Pro. Cross-platform
         // intelligence stays ARGUS-only.
-        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" }, minTier: "pro" },
-        { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports", everyTier: "matrix 6: Reports is every tier" },
+        { key: "spark_ia_insights_intelligence", label: "Intelligence", route: "/app/services/spark_ia_insights_intelligence", tag: { label: "SPARK", color: "#EF6C33" } },
+        { key: "spark_ia_insights_reports", label: "Reports", route: "/app/services/spark_ia_insights_reports" },
       ],
     },
   ],
@@ -812,7 +797,6 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
 // The Pro/Business splits inside Ledger (Plaid item counts, multi-entity,
 // bookkeeper seat) are page-level and still "(rolling out)".
 const STELLA_TAG = "#4C5BD4";
-const STELLA_EVERY = "matrix 9: every STELLA tier gets everything live today";
 const STELLA_NAV: SubNavConfig = {
   productName: "STELLA",
   tagline: "Ledger & Unit Economics",
@@ -825,7 +809,7 @@ const STELLA_NAV: SubNavConfig = {
       // "Each feature has an overview and then STELLA is supposed to have it's
       // own dashboard/overview. all the other platforms call it a dashboard."
       label: "",
-      items: [{ key: "stella_dashboard", label: "Dashboard", route: "/app/services/stella_dashboard", everyTier: "the product home; every STELLA plan has one" }],
+      items: [{ key: "stella_dashboard", label: "Dashboard", route: "/app/services/stella_dashboard" }],
     },
     {
       // 2026-07-30 consolidation — founder capped every sub-nav at 8 items.
@@ -839,14 +823,14 @@ const STELLA_NAV: SubNavConfig = {
         // overview and the group's landing (clicking "Ledger" opens it).
         // Since 2 Oct 2026 it is no longer STELLA's default landing — the
         // Dashboard group above is. Group sits at 8 items — the cap.
-        { key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_receipts", label: "Receipts", route: "/app/services/stella_ledger_receipts", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials", everyTier: STELLA_EVERY },
-        { key: "stella_ledger_accounting", label: "Accounting", route: "/app/services/stella_ledger_accounting", everyTier: STELLA_EVERY },
+        { key: "stella_ledger_overview", label: "Overview", route: "/app/services/stella_ledger_overview" },
+        { key: "stella_ledger_inbox", label: "Inbox", route: "/app/services/stella_ledger_inbox" },
+        { key: "stella_ledger_transactions", label: "Transactions", route: "/app/services/stella_ledger_transactions" },
+        { key: "stella_ledger_vendors", label: "Vendors & Customers", route: "/app/services/stella_ledger_vendors" },
+        { key: "stella_ledger_coa", label: "Chart of Accounts", route: "/app/services/stella_ledger_coa" },
+        { key: "stella_ledger_receipts", label: "Receipts", route: "/app/services/stella_ledger_receipts" },
+        { key: "stella_ledger_mileage_materials", label: "Mileage & Materials", route: "/app/services/stella_ledger_mileage_materials" },
+        { key: "stella_ledger_accounting", label: "Accounting", route: "/app/services/stella_ledger_accounting" },
       ],
     },
     {
@@ -855,19 +839,19 @@ const STELLA_NAV: SubNavConfig = {
       // set (what you owe · what you own · what you planned).
       label: "Bills, Assets & Budgets", icon: Wallet, collapsible: true, sectionId: "stella_books",
       items: [
-        { key: "stella_bills", label: "Bills", route: "/app/services/stella_bills", everyTier: STELLA_EVERY },
-        { key: "stella_assets", label: "Assets", route: "/app/services/stella_assets", everyTier: STELLA_EVERY },
-        { key: "stella_budgets", label: "Budgets", route: "/app/services/stella_budgets", everyTier: STELLA_EVERY },
+        { key: "stella_bills", label: "Bills", route: "/app/services/stella_bills" },
+        { key: "stella_assets", label: "Assets", route: "/app/services/stella_assets" },
+        { key: "stella_budgets", label: "Budgets", route: "/app/services/stella_budgets" },
       ],
     },
     {
       label: "Unit Economics", icon: LineChart, collapsible: true, sectionId: "stella_ue",
       items: [
-        { key: "stella_ue_margins", label: "Margins", route: "/app/services/stella_ue_margins", everyTier: STELLA_EVERY },
+        { key: "stella_ue_margins", label: "Margins", route: "/app/services/stella_ue_margins" },
         // The mileage- and revenue-weighted methods inside are Pro (matrix 9);
         // that split is on the page, the page itself is every tier.
-        { key: "stella_ue_allocations", label: "Allocations", route: "/app/services/stella_ue_allocations", everyTier: STELLA_EVERY },
-        { key: "stella_ue_reconciliation", label: "Reconciliation", route: "/app/services/stella_ue_reconciliation", everyTier: STELLA_EVERY },
+        { key: "stella_ue_allocations", label: "Allocations", route: "/app/services/stella_ue_allocations" },
+        { key: "stella_ue_reconciliation", label: "Reconciliation", route: "/app/services/stella_ue_reconciliation" },
       ],
     },
     {
@@ -878,10 +862,10 @@ const STELLA_NAV: SubNavConfig = {
       // structure — do not build them against the current insights pages.
       label: "IA Insights", icon: TrendingUp, collapsible: true, sectionId: "stella_insights",
       items: [
-        { key: "stella_ia_insights_trends", label: "Trends", route: "/app/services/stella_ia_insights_trends", gated: true, tag: { label: "S", color: STELLA_TAG }, everyTier: "matrix 6: Trends is every tier" },
+        { key: "stella_ia_insights_trends", label: "Trends", route: "/app/services/stella_ia_insights_trends", gated: true, tag: { label: "S", color: STELLA_TAG } },
         // Matrix 6 + 9: Intelligence = Pro+ on every platform.
-        { key: "stella_ia_insights_intelligence", label: "Intelligence", route: "/app/services/stella_ia_insights_intelligence", gated: true, tag: { label: "S", color: STELLA_TAG }, minTier: "pro" },
-        { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports", everyTier: "matrix 6: Reports is every tier" },
+        { key: "stella_ia_insights_intelligence", label: "Intelligence", route: "/app/services/stella_ia_insights_intelligence", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports" },
       ],
     },
     {
@@ -889,29 +873,29 @@ const STELLA_NAV: SubNavConfig = {
       // opens the STELLA coming-soon sheet (StellaComingSoonPage).
       label: "Database Manager", icon: Server, collapsible: true, sectionId: "stella_db",
       items: [
-        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+, every STELLA tier" },
-        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
+        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", tag: { label: "S", color: STELLA_TAG } },
         // Import History folded into the Upload surface (batch list + rollback
         // live on the same page per master §5.3) — keeps this group at the 8 cap.
-        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
-        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
-        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
-        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
-        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
-        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Database Manager is Standard+" },
+        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
     {
       // Layer 3b — LOCKED.
       label: "Custom Reporting", icon: BarChart2, collapsible: true, sectionId: "stella_report",
       items: [
-        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Custom Reporting is Standard+, every STELLA tier" },
-        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Custom Reporting is Standard+" },
-        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Custom Reporting is Standard+" },
-        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Custom Reporting is Standard+" },
+        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", tag: { label: "S", color: STELLA_TAG } },
         // Matrix 9: "SQL Editor stays Pro+" (serviceCatalog tierGate 'Pro').
-        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", tag: { label: "Pro", color: STELLA_TAG }, minTier: "pro" },
-        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", tag: { label: "S", color: STELLA_TAG }, everyTier: "Brandon 2026-08-25: Custom Reporting is Standard+" },
+        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", tag: { label: "Pro", color: STELLA_TAG } },
+        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", tag: { label: "S", color: STELLA_TAG } },
       ],
     },
   ],
@@ -990,7 +974,7 @@ const SETTINGS_NAV: SubNavConfig = {
         { key: "oliver_service_categories", label: "Service Categories", route: "/app/services/oliver_service_categories" },
         { key: "oliver_team_access", label: "Team Access", route: "/app/services/oliver_team_access" },
         // Multi-location (Business earns the 2nd location; the default one is
-        // viewable/editable at every tier, so no minTier on the row).
+        // viewable/editable at every tier, so its catalog row has no tier).
         { key: "oliver_locations", label: "Locations", route: "/app/services/oliver_locations" },
       ],
     },
@@ -1013,14 +997,14 @@ const SETTINGS_NAV: SubNavConfig = {
         // the whole setup, domain and all.
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
-        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys", hidden: true /* cut: platform plumbing */ },
-        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets", hidden: true /* cut: platform plumbing */ },
+        { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
+        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
-        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours", hidden: true /* cut: niche */ },
-        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking", hidden: true /* cut: visitor tracking, niche */ },
-        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync", hidden: true /* cut: niche */ },
+        { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
+        { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
+        { key: "spark_calendar_sync", label: "Calendar Sync", route: "/app/services/spark_calendar_sync" },
         { key: "spark_service_category", label: "Service Category", route: "/app/services/spark_service_category" },
-        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup", hidden: true /* cut: platform plumbing */ },
+        { key: "spark_config_backup", label: "Config Backup", route: "/app/services/spark_config_backup" },
       ],
     },
     {
@@ -1273,151 +1257,6 @@ function getDefaultSection(path: string): string | null {
   return null;
 }
 
-/**
- * serviceKey → its visibility declaration, derived from the nav configs.
- *
- * Exported so ServiceRouter can enforce the SAME rules on the route as the nav
- * does on the link. Hiding a link without guarding its route just makes the
- * page reachable by URL — from a bookmark, an old deep link, or one of the
- * engagement alerts, which navigate by route.
- */
-/**
- * Pages that have NO menu row but can still be opened by URL (a bookmark, an
- * in-page link, an old alert). They follow the same plan as the menu would
- * give them, so a deep link to one shows the honest "Not in your plan" card
- * instead of a page of API refusals. FEATURE_TIER_MATRIX_FULL.md section 1
- * unless noted; each matches arion-api requireArionTier.
- */
-export const ROUTE_ONLY_RULES: Record<string, VisibilityRules> = {
-  arion_hosting_performance: { minTier: "standard" },          // Hosting Performance = Standard
-  arion_analytics_pages: { minTier: "pro" },                   // Analytics Pages = Pro
-  arion_analytics_reports: { minTier: "business" },            // Analytics Reports = Business
-  arion_analytics_ia_cross_platform: { minTier: "pro" },       // IA Cross-Platform = Pro (matrix 1, /intelligence)
-  arion_analytics_ia_cross_channel: { minTier: "pro" },        // legacy alias of the row above
-  arion_search_bing_indexnow: { minTier: "standard" },         // Bing IndexNow = Standard
-  arion_seo_reports: { addon: "seo" },                         // SEO Reports = the SEO add-on (matrix 7/13)
-
-  // 2026-10-11 skeptic pass: every one of these opened by URL on ANY tier,
-  // because the list above covered ARION only. A Standard SPARK business could
-  // run the Pro Workflows page at /spark_rules, an OLIVER Invoicing business
-  // could open Job Costing (Business). Each follows the menu row it was folded
-  // into, or oliver-api lib/tierFeatures.js where it has no row.
-  //
-  // My Brand pages with no menu row: matrix 10 + 13, Standard on the derived
-  // My Brand tier, exactly like the five rows in ARION's menu.
-  my_brand_compose: { minTier: "standard", tierProduct: "my_brand" },        // Social Hub composer
-  my_brand_social_channels: { minTier: "standard", tierProduct: "my_brand" }, // Facebook + Instagram connect = Standard
-  my_brand_social_report: { minTier: "standard", tierProduct: "my_brand" },   // 30-day analytics = Standard
-  my_brand_voice: { minTier: "standard", tierProduct: "my_brand" },           // Voice Monitor inside is Pro (LUMEN voice_monitor)
-  // OLIVER (matrix 2 + 13; tierFeatures.js). Invoicing has zero jobs.
-  oliver_projects: { minTier: "standard" },          // groups jobs (Invoicing max_jobs_per_month = 0)
-  oliver_job_offers: { minTier: "standard" },        // job_offer_queue = Standard
-  oliver_support_tickets: { minTier: "standard" },   // support_ticket_mode = Standard
-  oliver_workflow_templates: { minTier: "standard" }, // workflow_template_library = Standard (lite cap 0)
-  oliver_messages: { minTier: "standard" },          // portal_messaging = Standard (oliver-api messages.js tierGate standard)
-  oliver_portal_domains: { minTier: "standard" },    // customer portal + portal_custom_domain = Standard (same as the Portals hub row)
-  oliver_quote_options: { minTier: "pro" },          // multi_option_quoting = Pro
-  oliver_time_tracking: { minTier: "pro" },          // time_tracking = Pro
-  oliver_expenses: { minTier: "pro" },               // expense_tracking = Pro
-  oliver_job_costing: { minTier: "business" },       // job_costing = Business
-  oliver_territories: { minTier: "business" },       // territory_routing = Business
-  oliver_sla_policies: { minTier: "business" },      // sla_tracking = Business
-  // SPARK (matrix 3 + 11). The old automation / rules / trigger keys render
-  // the Workflows & Automations page (Pro); SMS is Pro (matrix 11).
-  spark_automations: { minTier: "pro" },
-  spark_workflow_triggers: { minTier: "pro" },
-  spark_automation_builder: { minTier: "pro" },
-  spark_rules: { minTier: "pro" },
-  spark_scoring_rules: { minTier: "pro" },           // the always-on rules of the Workflow group (Pro)
-  spark_routing_rules: { minTier: "pro" },
-  spark_autotag_rules: { minTier: "pro" },
-  spark_inbound_webhooks: { minTier: "pro" },        // Webhooks = Pro
-  spark_sms_campaigns: { minTier: "pro" },           // matrix 11: SMS = SPARK Pro+
-  spark_sms_templates: { minTier: "pro" },           // matrix 11
-  spark_contact_scoring: { minTier: "business" },    // Contact Scoring = Business (matrix 3), like spark_intelligence
-};
-
-/**
- * Pages with no menu row that are in EVERY tier of their product, each with
- * the reason. With ROUTE_ONLY_RULES and the menus this makes the rule total:
- * every page ServiceRouter can open carries a plan or says why it has none
- * (test/nav-tier-every-item.test.mjs reads all three). Documentation only;
- * nothing here locks or unlocks anything.
- */
-export const ROUTE_ONLY_EVERY_TIER: Record<string, string> = {
-  arion_analytics_ia_reports: "matrix 6: Reports is every tier",
-  arion_brand: "brand identity setting, used by every plan",
-  arion_onboarding: "setup of the site every plan has",
-  arion_usage: "the plan page; where any plan buys more",
-  arion_website_ai_builder: "matrix 1: AI Builder is Lite+ (limited on Lite)",
-  arion_website_content_seo_pages: "Rank Math in the IA plugin, base website (matrix 7)",
-  arion_website_content_seo_posts: "Rank Math in the IA plugin, base website (matrix 7)",
-  arion_website_content_seo_schema: "Rank Math in the IA plugin, base website (matrix 7)",
-  arion_website_support: "matrix 1: Website Support is Lite+",
-  oliver_activity_log: "matrix 6: reports are every tier (basic_reporting_30d is Invoicing+)",
-  oliver_argus: "no tierFeatures row; ARGUS ownership decides it",
-  oliver_billing_overview: "billing for invoices, which Invoicing has",
-  oliver_client_experience: "where any plan buys the Client Experience add-on",
-  oliver_customer_import: "customers for quotes and invoices (Invoicing+)",
-  oliver_disputes: "card disputes on invoice payments (Invoicing+)",
-  oliver_fees: "payment fees on invoices (Invoicing+)",
-  oliver_insights: "matrix 6: every tier",
-  oliver_notifications: "the business's own email history",
-  oliver_onboarding: "setup every plan has",
-  oliver_payouts: "the business's own Stripe payouts for invoice payments (Invoicing+); contractor payouts are gated in the API",
-  oliver_proposals: "tierFeatures proposals = every tier (matrix 13)",
-  oliver_reminders: "overdue invoice reminders (invoicing_stripe_link is Invoicing+)",
-  oliver_reports: "matrix 6: reports are every tier",
-  oliver_usage: "the plan page; where any plan buys more",
-  spark_account_profile: "the business's own profile",
-  spark_analytics_reports: "matrix 6: Reports is every tier",
-  spark_api_reference: "documentation",
-  spark_audit_log: "reached from IA Insights Reports, every tier",
-  spark_calendar: "matrix 3: retired to My Brand; no tier named",
-  spark_competitor_watch: "matrix 3 names no tier; leads found for the business are masked by the API",
-  spark_contact_bulk: "Contacts is the Standard base (matrix 3)",
-  spark_contact_merge: "Contacts is the Standard base (matrix 3)",
-  spark_dashboards: "matrix 6: reports are every tier",
-  spark_email_templates: "Templates is the Standard base (matrix 3)",
-  spark_engine_docs: "documentation",
-  spark_insights: "matrix 6: every tier",
-  spark_lead_suppression: "a tab of the Lead Inbox, every tier (SPARK pack 1)",
-  spark_lead_territories: "a tab of the Lead Inbox, every tier (SPARK pack 1)",
-  spark_leads: "the Lead Inbox, every tier (SPARK pack 1)",
-  spark_onboarding: "setup every plan has",
-  spark_realtime_metrics: "reached from IA Insights Reports, every tier",
-  spark_saved_searches: "filters on Contacts, which is the Standard base",
-  spark_scheduled_reports: "matrix 6: reports are every tier",
-  spark_sender_domains: "the Senders setting under an old name, every tier",
-  spark_search_profiles: "the Leads package decides it (LEADGEN_LOCKED_KEYS, server allow-list)",
-  spark_smoke_test: "a read-only check of the business's own endpoints",
-  spark_stella: "best time to send, folded into IA Insights (every tier)",
-  spark_template_i18n: "Templates is the Standard base (matrix 3)",
-  spark_usage: "the plan page; where any plan buys more",
-  spark_usage_report: "matrix 6: reports are every tier",
-  stella_coming: "matrix 9: every STELLA tier",
-  stella_db_import_history: "Brandon 2026-08-25: Database Manager is Standard+, every STELLA tier",
-  stella_expenses_coming: "matrix 9: every STELLA tier",
-};
-
-export const SERVICE_VISIBILITY: Record<string, VisibilityRules> = (() => {
-  const map: Record<string, VisibilityRules> = { ...ROUTE_ONLY_RULES };
-  for (const config of Object.values(SUB_NAV_CONFIGS)) {
-    if (!config) continue;
-    for (const group of config.groups) {
-      for (const item of group.items) {
-        if (item.hidden || item.merged || item.addon || item.minTier) {
-          map[item.key] = {
-            hidden: item.hidden, merged: item.merged, addon: item.addon, addonTier: item.addonTier,
-            minTier: item.minTier, tierProduct: item.tierProduct,
-          };
-        }
-      }
-    }
-  }
-  return map;
-})();
-
 /** Which product a config belongs to — configs are singletons, so identity works. */
 export function productOfConfig(config: SubNavConfig): ProductKey | undefined {
   return (Object.keys(SUB_NAV_CONFIGS) as ProductKey[])
@@ -1433,21 +1272,14 @@ export function SubNav({ config }: SubNavProps) {
   const navigate = useNavigate();
 
   // ── Feature wall ────────────────────────────────────────────────────────
-  // Hooks must run unconditionally, so always resolve a tier; whether it's
-  // APPLIED depends on the product (STELLA/FORGE/ARGUS placeholders, Settings
-  // and Consulting are not gated).
+  // Every row names its feature key and nothing else. Whether the plan
+  // includes it, and what it needs if not, is platform-api's catalog answer
+  // (features[key] on /me/entitlements), the same document the APIs gate on.
+  // No answer = undecided = open (navVisibility logs it).
   const productKey = productOfConfig(config);
-  const gatingActive = isGatedProduct(productKey);
-  const { tier } = useProductTier(gatingActive ? productKey : "spark");
-  // My Brand rows (ARION menu) are judged on platform-api's derived My Brand
-  // tier, the answer LUMEN gates on (navVisibility tierProduct).
-  const { tier: myBrandTier } = useProductTier("my_brand");
-  // Add-on ownership (SPARK Lead Gen, ARION SEO) + the SEO rung for
-  // `addonTier` rows. null = unresolved → the wall fails OPEN until the
-  // answer arrives (see navVisibility).
-  const { addons, seoAddonTier } = useNavAddons(gatingActive ? productKey : undefined);
   const { ownedProducts } = useAppState();
-  const visCtx = { tier, addons, seoAddonTier, gatingActive, myBrandTier };
+  const productAccess = useProductAccess(location.pathname);
+  const visCtx = featureContext(productAccess.payload);
 
   // 2026-08-06 (Brandon) — SHOW, DON'T HIDE. Features the tenant's plan doesn't
   // include stay VISIBLE and are marked "Upgrade", so they can see what they're
@@ -1471,7 +1303,6 @@ export function SubNav({ config }: SubNavProps) {
   // whose subscription ended mid-session locks within a minute), then the
   // sign-in list. For OLIVER, SPARK, ARION and STELLA the banner is the same
   // sentence and control the page shows (ProductEndedNotice, variant "nav").
-  const productAccess = useProductAccess(location.pathname);
   const railLock = needsKey ? productAccess.isLockedOnRail(needsKey) : null;
   const productLocked =
     FEATURE_GATING_ENABLED &&
@@ -1488,24 +1319,19 @@ export function SubNav({ config }: SubNavProps) {
 
   // 2026-08-17 — SHOW-DON'T-HIDE applies to ENTITLEMENT ONLY.
   //
-  // isVisible() returns false for three unrelated reasons: `hidden` (cut from
-  // the product), `merged` (folded into another surface), and unmet
-  // tier/add-on. The show-don't-hide change collapsed all three into
-  // `locked: true`, which RESURRECTED every merged and hidden item as a locked
-  // menu row — undoing the Phase 4b–5 SPARK consolidation and making ~13
-  // surfaces look "gated" even at business tier, where nothing should be.
-  //
-  // hidden/merged are product-STRUCTURE decisions, not entitlement, so they
-  // come out of the menu at every tier. Only tier/add-on gaps render as
-  // locked, which is the upsell the 2026-08-06 decision actually asked for.
-  // (merged routes still resolve — see isRoutable.)
+  // A row leaves the menu for two structure reasons: the catalog cut it from
+  // the product (availability "hidden") or it is `merged` into another page.
+  // Those come out at every tier. A row the plan does not include (the
+  // catalog's allowed false) stays, with a lock that says what it needs: the
+  // upsell the 2026-08-06 decision asked for. (Merged routes still resolve —
+  // see isRoutable.)
   const gatedGroups = config.groups
     .map((g) => ({
       ...g,
       items: g.items
-        .filter((it) => !it.hidden && !it.merged)
+        .filter((it) => !it.merged && !isHiddenFeature(it.key, visCtx))
         .map((it) =>
-          FEATURE_GATING_ENABLED && ((it.tierProduct === "my_brand" ? myBrandLocked : productLocked) || !isVisible(it, visCtx))
+          FEATURE_GATING_ENABLED && ((it.key.startsWith("my_brand_") ? myBrandLocked : productLocked) || !isEntitled(it.key, visCtx))
             ? { ...it, locked: true as const }
             : it
         ),
@@ -1742,8 +1568,8 @@ export function SubNav({ config }: SubNavProps) {
                             (FeatureLocked), not in the menu. API still 403s. */}
                         {item.locked && (
                           <span
-                            title={`Requires ${requirementLabel(item, productKey)}`}
-                            aria-label={`Locked — requires ${requirementLabel(item, productKey)}`}
+                            title={`Requires ${requirementLabel(item.key, visCtx)}`}
+                            aria-label={`Locked — requires ${requirementLabel(item.key, visCtx)}`}
                             style={{
                               flexShrink: 0,
                               marginLeft: 'auto',

@@ -53,18 +53,25 @@ while ((m = importRe.exec(router)) !== null) {
 }
 
 // ── Extract serviceCatalog entries ─────────────────────────────────────────
-// Also track which entries are explicitly marked coming_soon — those legitimately
+// Also track which features the catalog marks coming_soon — those legitimately
 // render via GenericServicePage placeholder, not a dedicated component, so
-// they should NOT be flagged as "missing ServiceRouter case".
+// they should NOT be flagged as "missing ServiceRouter case". Since 2026-10-11
+// that is the feature catalog's availability (platform-api
+// db/seed/feature_catalog.json, read from the sibling checkout when present),
+// not a column in serviceCatalog.ts.
 const catalogEntries = new Set();
 const comingSoonKeys = new Set();
-// Match { key: "...", ... defaultStatus: 'coming_soon' ... } across one line
 const catalogEntryRe = /\{[^{}]*?key:\s*["']([^"']+)["'][^{}]*?\}/gs;
 while ((m = catalogEntryRe.exec(catalog)) !== null) {
-  const block = m[0];
-  const key = m[1];
-  catalogEntries.add(key);
-  if (/defaultStatus:\s*['"]coming_soon['"]/.test(block)) comingSoonKeys.add(key);
+  catalogEntries.add(m[1]);
+}
+const SEED = path.resolve(ROOT, "..", "platform-api-septa", "db", "seed", "feature_catalog.json");
+if (fs.existsSync(SEED)) {
+  for (const row of JSON.parse(fs.readFileSync(SEED, "utf8")).features || []) {
+    if (row.availability === "coming_soon") comingSoonKeys.add(row.key);
+  }
+} else {
+  console.warn(`(no ${SEED}: coming-soon pages are not excused)`);
 }
 
 // ── Walk each nav entry ────────────────────────────────────────────────────

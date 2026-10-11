@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   RANK, rankOf, tierMeets, mayUseFeature, maySpend,
-  productOf, addonOf, tierOf, featureMinTier,
+  productOf, addonOf, tierOf, featuresOf, featureOf, enabledFeatureKeys,
   fetchEntitlements, clearEntitlementCache,
 } from '../src/lib/entitlements.ts';
 import { RANK as RANK_FROM_TIERRANK, tierMeets as tierMeetsFromTierRank } from '../src/lib/tierRank.ts';
@@ -82,7 +82,12 @@ test('the hook reads platform-api, never Stripe and never oliver-api', () => {
 const payload = {
   tenant_id: 't', resolved_at: '2026-09-06T00:00:00.000Z', decided: true,
   rank: CASES.rank,
-  feature_min_tier: { sms: { minTier: 'pro', product: 'spark' } },
+  features: {
+    spark_sms: { allowed: false, reason: 'SMS needs SPARK Business', needs: 'SPARK Business', product: 'spark', min_tier: 'business', addon: null, addon_min_tier: null, kind: 'action', availability: 'live' },
+    spark_contacts: { allowed: true, reason: 'SPARK Pro includes it', needs: null, product: 'spark', min_tier: null, addon: null, addon_min_tier: null, kind: 'page', availability: 'live' },
+  },
+  catalog_version: '2026-10-11T00:00:00.000Z',
+  sources: { catalog: 'ok' },
   products: {
     spark: { owned: true, tier: 'pro', decided: true },
     arion: { owned: false, tier: null, decided: true },
@@ -110,10 +115,13 @@ test('an undecided product still allows its features — that is the incident, f
   assert.equal(mayUseFeature(addonOf(payload, 'phone_line')), true, 'absent = undecided = allow');
 });
 
-test('the feature minimums come from the payload, not from a local table', () => {
-  assert.deepEqual(featureMinTier(payload, 'sms'), { minTier: 'pro', product: 'spark' });
-  assert.equal(featureMinTier(payload, 'nothing_declared'), null);
-  assert.equal(featureMinTier(null, 'sms'), null);
+test('each feature comes decided from the payload (the catalog answer), never from a local table', () => {
+  assert.equal(featureOf(payload, 'spark_sms').allowed, false);
+  assert.equal(featureOf(payload, 'spark_sms').needs, 'SPARK Business');
+  assert.equal(featureOf(payload, 'nothing_declared'), null);
+  assert.equal(featureOf(null, 'spark_sms'), null);
+  assert.deepEqual([...enabledFeatureKeys(featuresOf(payload))], ['spark_contacts']);
+  assert.equal(featuresOf({ ...payload, sources: { catalog: 'unreadable' } }), null, 'an unreadable catalog is no answer');
 });
 
 test('rankOf/tierMeets treat an unknown or absent tier as rank 0', () => {

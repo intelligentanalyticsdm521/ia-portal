@@ -74,10 +74,13 @@ export function buildPageSteps(
       // would happily walk someone to Contact 360 or Social Scheduler and then
       // stall, because the nav link it wants to highlight isn't rendered.
       //
-      // `hidden` and `addon` are static facts, so they're filtered here.
-      // (Tier-gated items still appear; a Standard user on a Pro step gets the
-      // runner's honest "can't find that control" rather than a dead end.)
-      if (item.hidden || item.merged || item.addon) continue;
+      // `merged` is a static fact (no menu row), so it is filtered here.
+      // Whether a page is cut from the product or in the business's plan is
+      // the feature catalog's answer, which this module-load list cannot
+      // know: the launcher drops cut pages at run time (navVisibility stepsShown), and a
+      // plan-locked page still has its (locked) menu row, so its step stays
+      // and the page shows "Not in your plan".
+      if (item.merged) continue;
       const c = content[item.key];
       if (!c) continue; // unauthored pages are reported, never filled with noise
       steps.push({

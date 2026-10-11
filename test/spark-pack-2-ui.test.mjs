@@ -202,11 +202,15 @@ function catalogRow(key) {
   return catalog.split("\n").find((l) => l.includes(`{ key: '${key}',`)) || "";
 }
 
+// 2026-10-11: live / coming soon is the feature catalog's availability
+// (platform-api db/seed/feature_catalog.json), no longer a column on these
+// rows. Both halves are live pages there (the menu shows Social Hub and
+// Social Content); the channel half says in its own words what it waits on.
 test("the image and design half is live", () => {
   for (const key of ["my_brand_image_studio", "my_brand_voice", "my_brand_templates", "my_brand_assets"]) {
     const row = catalogRow(key);
     assert.ok(row, `${key} row missing`);
-    assert.match(row, /defaultStatus: 'enabled'/, `${key} should be live — it needs nobody's permission`);
+    assert.doesNotMatch(row, /defaultStatus|coming_soon/, `${key} states no status of its own`);
   }
 });
 
@@ -215,7 +219,7 @@ test("the channel half stays off, and each row NAMES the step rather than a date
     "my_brand_social_content", "my_brand_social_report"]) {
     const row = catalogRow(key);
     assert.ok(row, `${key} row missing`);
-    assert.match(row, /defaultStatus: 'coming_soon'/, `${key} is vendor-gated`);
+    assert.match(row, /approv|connect/i, `${key} says what it waits on`);
     assert.equal(/v1\.1|v2|next (month|quarter)|later this year/.test(row), false,
       `${key} must not promise a version or a date`);
   }

@@ -107,10 +107,10 @@ const MUTATIONS = [
   },
   {
     id: "P12",
-    what: "the image and design half is left 'coming soon' after the launch decision",
+    what: "the image and design half states its own 'coming soon' again instead of the catalog's availability",
     file: "src/config/serviceCatalog.ts",
-    find: "{ key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'enabled'",
-    to: "{ key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon'",
+    find: "{ key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', route",
+    to: "{ key: 'my_brand_image_studio', displayName: 'Image Studio', section: 'MY_BRAND', defaultStatus: 'coming_soon', route",
     test: T,
   },
   {

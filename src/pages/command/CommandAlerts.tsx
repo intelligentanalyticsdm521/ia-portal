@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link } from "react-router-dom";
-import { useAppState } from "../../app/AppState";
+import { useEnabledServices } from "../../hooks/useEnabledServices";
 import { useOliverApi } from "../../hooks/useOliverApi";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { launchJourneyStep } from "../../components/walkthroughs/walkthroughLaunchBus";
@@ -30,7 +30,7 @@ interface EngagementAlert {
 }
 
 export function CommandAlerts() {
-  const { enabledServices } = useAppState();
+  const { enabledServices } = useEnabledServices();
   const oliver = useOliverApi();
   const spark = useSparkApi();
 

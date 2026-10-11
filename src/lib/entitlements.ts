@@ -17,8 +17,8 @@
 // 403'd, because LUMEN had no OLIVER_API_BASE_URL and the browser did not care.
 //
 // Now: ONE GET /me/entitlements from platform-api returns the ladder, the
-// feature minimums, the products, the add-ons and the limits — the same
-// document the API gates on. tierRank.ts keeps `tierMeets` for the pure nav
+// products, the add-ons, the limits and (since 11 Oct 2026) every catalog
+// feature decided for this business — the same document the API gates on. tierRank.ts keeps `tierMeets` for the pure nav
 // tests and takes its ladder from here.
 //
 // ═══ SEAM-3-B — allow the FEATURE, refuse the SPEND ═════════════════════════
@@ -70,18 +70,55 @@ export interface EntitlementNode {
   [k: string]: unknown;
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   The feature catalog answer (scope SCOPE_FEATURE_CATALOG_2026-10-11 §2.3/2.5)
+   ══════════════════════════════════════════════════════════════════════════
+   ONE list of features (platform-api core.features, seeded from
+   db/seed/feature_catalog.json) and ONE answer per business: platform-api
+   decides every feature against the subscription and sends it here as
+   `features[key]`. The Portal states no tier of its own any more: the menu
+   lock, the route wall, the "Not in your plan" card and the coming-soon
+   treatment all read this entry.
+
+     allowed true  -> open
+     allowed false -> locked; `needs` is what to buy ("SPARK Business")
+     allowed null  -> could not tell; a page view is a READ, so it opens and logs
+     availability  -> live | coming_soon | hidden (cut from the product)          */
+
+export type FeatureAvailability = 'live' | 'coming_soon' | 'hidden';
+export type FeatureKind = 'page' | 'action' | 'job' | 'send' | 'limit';
+
+export interface FeatureEntry {
+  allowed: boolean | null;
+  /** Plain words: why it is allowed, refused or undecided. */
+  reason: string;
+  /** What to buy, in a customer's words ("SPARK Business", "the SPARK Leads add-on"); null when allowed. */
+  needs: string | null;
+  product: string | null;
+  min_tier: string | null;
+  addon: string | null;
+  addon_min_tier?: string | null;
+  kind: FeatureKind;
+  availability: FeatureAvailability;
+}
+
+export type FeatureMap = Record<string, FeatureEntry>;
+
 export interface EntitlementPayload {
   tenant_id: string | null;
   resolved_at: string;
   decided: boolean;
   rule?: { feature: string; spend: string; why?: string };
   rank?: Record<string, number>;
-  feature_min_tier?: Record<string, { minTier: string; product: string }>;
   product_label?: Record<string, string>;
   tenant_tier?: EntitlementNode;
   products: Record<string, EntitlementNode>;
   addons: Record<string, EntitlementNode>;
   limits: Record<string, unknown>;
+  /** Every active catalog feature, decided for this business. Absent from an older platform-api. */
+  features?: FeatureMap;
+  /** The catalog's version (newest row's updated_at), or null. */
+  catalog_version?: string | null;
   sources?: Record<string, unknown>;
 }
 
@@ -123,13 +160,35 @@ export function tierOf(payload: EntitlementPayload | null, product: string): Tie
   return String(node.tier).toLowerCase() as TierKey;
 }
 
-/** The minimum tier a feature needs, from the payload's table (never a local copy). */
-export function featureMinTier(
-  payload: EntitlementPayload | null,
-  feature: string,
-): { minTier: string; product: string } | null {
-  const row = payload?.feature_min_tier?.[feature];
-  return row ? { minTier: row.minTier, product: row.product } : null;
+/**
+ * The catalog answer for this business, or null when there is none to read:
+ * no payload, an older platform-api that sends no `features`, or a catalog
+ * platform-api could not read (`sources.catalog: "unreadable"`). null means
+ * UNDECIDED for every key, which opens a page (a read) and never a spend.
+ */
+export function featuresOf(payload: EntitlementPayload | null | undefined): FeatureMap | null {
+  if (!payload || !payload.features || typeof payload.features !== 'object') return null;
+  if (payload.sources && (payload.sources as Record<string, unknown>).catalog === 'unreadable') return null;
+  return payload.features;
+}
+
+/** One feature's entry from the answer, or null (undecided / not in the answer). */
+export function featureOf(payload: EntitlementPayload | null | undefined, key: string): FeatureEntry | null {
+  return featuresOf(payload)?.[key] ?? null;
+}
+
+/**
+ * The keys this business may open: every key the answer does not refuse
+ * (allowed true or undecided) whose availability is live. This replaces the
+ * hand-written per-product lists AppState used to build (ARION keys, OLIVER
+ * keys, HESTIA keys): the catalog answer is the only source.
+ */
+export function enabledFeatureKeys(features: FeatureMap | null | undefined): Set<string> {
+  const out = new Set<string>();
+  for (const [key, entry] of Object.entries(features || {})) {
+    if (entry && entry.allowed !== false && entry.availability === 'live') out.add(key);
+  }
+  return out;
 }
 
 /* ══════════════════════════════════════════════════════════════════════════

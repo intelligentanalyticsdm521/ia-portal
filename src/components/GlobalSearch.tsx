@@ -14,6 +14,8 @@ import { useAppState } from "../app/AppState";
 import { SERVICE_CATALOG, type PortalService } from "../config/serviceCatalog";
 import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
 import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
+import { useEnabledServices } from "../hooks/useEnabledServices";
+import type { FeatureMap } from "../lib/entitlements";
 
 interface SearchableRoute {
   key: string;
@@ -42,7 +44,7 @@ const SECTION_TO_SERVICE_KEY: Record<PortalService["section"], string | null> = 
   MY_BRAND: null,
 };
 
-function buildSearchableRoutes(_activeServices: Set<string>, leadgenAllowed: boolean): SearchableRoute[] {
+function buildSearchableRoutes(_activeServices: Set<string>, leadgenAllowed: boolean, features: FeatureMap | null): SearchableRoute[] {
   // 2026-05-31 — F-127 fix: show ALL non-coming-soon routes regardless of
   // the tenant's active services. Earlier we filtered by active.services
   // but that returned only OLIVER for tenants whose session-verify hadn't
@@ -50,8 +52,15 @@ function buildSearchableRoutes(_activeServices: Set<string>, leadgenAllowed: boo
   // search box that "didn't work." The search is a navigation aid — gating
   // happens in the route handler (which renders the "not subscribed" page
   // for products the tenant doesn't have). Better to be permissive here.
+  //
+  // 2026-10-11: "not released" and "cut from the product" are the feature
+  // catalog's availability (features[key]), not a column here. No answer
+  // leaves every page in the box.
   return SERVICE_CATALOG
-    .filter((s) => s.defaultStatus !== "coming_soon")
+    .filter((s) => {
+      const availability = features?.[s.key]?.availability;
+      return availability !== "coming_soon" && availability !== "hidden";
+    })
     // SPARK pack 1: the Lead Gen search pages are in the search box for the
     // businesses the server allows to run a search, and nobody else.
     .filter((s) => leadgenAllowed || !LEADGEN_LOCKED_KEYS.includes(s.key))
@@ -101,9 +110,10 @@ export function GlobalSearch({ open, onClose }: { open: boolean; onClose: () => 
   // `allowed === null` is unresolved and behaves as not-allowed here: a search
   // result that 403s on click is worse than one that appears a moment later.
   const leadgen = useLeadgenAccess();
+  const { features } = useEnabledServices();
   const routes = useMemo(
-    () => buildSearchableRoutes(activeServices, leadgen.allowed === true),
-    [activeServices, leadgen.allowed],
+    () => buildSearchableRoutes(activeServices, leadgen.allowed === true, features),
+    [activeServices, leadgen.allowed, features],
   );
 
   const results = useMemo(() => {

@@ -585,7 +585,7 @@ describe("names and wiring a typecheck cannot see", () => {
     assert.ok(row);
     assert.equal(row.displayName, "Dashboard");
     assert.equal(row.section, "STELLA");
-    assert.equal(row.defaultStatus, "enabled");
+    assert.equal("defaultStatus" in row, false, "live or not is the feature catalog's availability");
     assert.equal(row.route, "/app/services/stella_dashboard");
     // First STELLA row in the catalog, like the nav.
     assert.equal(SERVICE_CATALOG.find((s) => s.section === "STELLA").key, "stella_dashboard");

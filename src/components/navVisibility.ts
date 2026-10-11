@@ -1,302 +1,204 @@
-// navVisibility.ts — the product "feature wall" (SPARK, OLIVER, ARION).
+// navVisibility.ts — the feature wall for every product menu and every page.
 //
-// WHY THIS EXISTS
-// ---------------
-// SPARK_FEATURE_MAP_SIMPLIFIED.md (2026-07-27) cuts the client-visible product
-// from ~39 SPARK nav items to ~7 for Standard, with the rest either gated to a
-// paid tier, sold as an add-on, or hidden outright. The map says to do this
-// "hide-not-delete, via feature flag (same as the Lead Gen lock)".
+// ONE LIST, ONE ANSWER (Brandon, 11 Oct 2026: "I would think we have a feature
+// list and then a subscription tier list and those are synced up").
 //
-// That mechanism did not exist. `SubNavItem.gated` renders a padlock ICON and
-// filters nothing; there was no feature-flag helper anywhere in the portal, and
-// the Lead Gen lock was a deploy-time env var, not a per-tenant capability. So
-// this module IS the mechanism, and it is deliberately small:
+// Until 11 Oct the Portal kept its own tier table: `minTier`, `addon`,
+// `addonTier`, `tierProduct` and an `everyTier` note on 187 menu rows, plus 34
+// ROUTE_ONLY_RULES for pages with no menu row, judged here against the tier
+// and add-ons from /me/entitlements. The APIs kept three more tables of their
+// own, and they disagreed (SCOPE_FEATURE_CATALOG_2026-10-11 Appendix A).
 //
-//   hidden    → cut from the client-visible product. Nobody sees it.
-//   addon     → only for tenants who bought that add-on.
-//   addonTier → only at or above that rung of the add-on ladder (SEO only).
-//   minTier   → only at or above that subscription tier.
+// Now every feature is one row in platform-api core.features with its
+// product, its lowest tier and its add-on, and platform-api decides every row
+// for the business and sends it on /me/entitlements as `features[key]`. This
+// module only READS that answer. A menu row and a page name their key and
+// nothing else; nothing in the Portal states a tier.
 //
-// 2026-08-21 (pricing rework, Brandon): the same declarations now carry the
-// OLIVER tier gates (Invoicing = quotes/proposals/invoices/payments/reports
-// only — every jobs / scheduling / portal / crew / team surface is Standard+)
-// and the ARION SEO add-on gate (every SE Ranking-powered surface requires
-// the SEO add-on; Market Monitor additionally requires the Authority rung —
-// Phase B1 `addonTier`). See SubNav.tsx for the per-item declarations.
+//   allowed true          -> open
+//   allowed false         -> locked; the lock says the catalog's `needs`
+//   allowed null          -> undecided: a page view is a READ, so it opens and
+//                            logs (a paying business is never locked out by a
+//                            hiccup; the API holds any send or spend)
+//   availability hidden   -> cut from the product: no menu row, not routable
+//   availability coming_soon -> the page's coming-soon treatment (ServiceRouter)
+//   no answer at all      -> undecided for every key: open, one log line
+//   key not in the answer -> a catalog mismatch: open (a read), logged at error
 //
-// NOTHING IS DELETED. Every page still exists and still routes; flipping a
-// declaration off in SUB_NAV_CONFIGS brings a surface straight back if a real
-// client turns out to need it.
+// `merged` stays on the menu rows because it is not a plan question: a merged
+// page is folded into another page (Contact 360 into Contacts), so it has no
+// menu row of its own but opens from its parent. The catalog has no column
+// for "where in the menu", and should not.
 //
 // NO FOUNDER OVERRIDE, on purpose. Brandon walks the product as a client and
-// needs to see exactly what they see — a founder bypass would hide the very
-// thing he's checking. Dev walks other tiers with VITE_DEV_TIER instead (see
-// useProductTier), which is a real tier change rather than a peek behind it.
-//
-// FAIL OPEN ON "UNKNOWN" (standing rule since the 2026-08-17 incident): a tier
-// or add-on we could not resolve — oliver-api down, arion-api down, the
-// request still in flight — is NOT a lower tier. Only a POSITIVELY resolved
-// lower tier / missing add-on locks a surface. The alternative locked every
-// customer out of their own product the moment one API hiccuped.
-import { tierMeets, type TierKey } from "../lib/tierRank";
+// needs to see exactly what they see. platform-api answers the platform owner
+// and agencies as "owned, business" for everything, so the founder's own
+// business is open by the answer, not by a bypass here.
+import { featuresOf, type EntitlementPayload, type FeatureEntry, type FeatureMap } from "../lib/entitlements";
 
-/** Tiers a nav surface can require. Mirrors useProductTier's ranking. */
-export type NavTier = "standard" | "pro" | "business";
-
-/**
- * Rungs of the ARION SEO add-on ladder (`arion.site.seo_addon_tier`), lowest
- * first. Mirrors arion-api seoOnboarding TIER_CONFIG / requireSeoAddon.
- */
-export type SeoAddonTier = "starter" | "essentials" | "growth" | "authority";
-const SEO_ADDON_RANK: Record<SeoAddonTier, number> = {
-  starter: 1, essentials: 2, growth: 3, authority: 4,
-};
-
-/**
- * Add-ons sold separately from the subscription tiers.
- *   seo — ARION SEO add-on (Starter / Essentials / Growth / Authority).
- *         Resolved from the selected ARION site's `seoAddonTier`, which is the
- *         same column arion-api gates its SE Ranking calls on.
- *
- * `leadgen` WAS a member here and is gone (SPARK pack 1, 2026-09-08). It gated
- * the Lead Inbox and Lead sources rows, which hid a SPARK business's OWN leads —
- * a web chat, a text, a missed call, a website form — behind an add-on that is
- * about leads we FIND and sell. The API already masks the purchased ones for a
- * business that has not paid. With no row declaring it, keeping the member would
- * be a gate with nothing behind it.
- */
-export type NavAddon = "seo";
-
-/** Customer-facing name of each add-on, for lock tooltips + FeatureLocked. */
-export const ADDON_LABELS: Record<NavAddon, string> = {
-  seo: "the ARION SEO add-on",
-};
-
-/** The visibility declaration a nav item may carry. */
+/** The one piece of menu structure a row may declare (see the header on why it is not in the catalog). */
 export interface VisibilityRules {
   /**
-   * CUT from the client-visible product: no nav entry, and the route is
-   * blocked too. For things we decided clients shouldn't see at all (Social
-   * Scheduler, Deals, NPS, the extra automation builders).
-   */
-  hidden?: boolean;
-  /**
-   * MERGED into another surface: no nav entry, but the route STILL WORKS.
-   *
-   * This distinction matters and I got it wrong first time. Merged pages are
-   * reached from their new parent — "Manage all tags →" on Contacts, the
-   * Deliverability pill on Senders, "Templates" on Campaigns, "Contact
-   * scoring →" on Insights. Treating them as `hidden` blocked those very
-   * links, so every merge shipped a dead end. Merged means "you don't need it
-   * in the menu", not "you can't go there".
+   * MERGED into another surface: no nav entry, but the route STILL WORKS
+   * (reached from its new parent: "Manage all tags" on Contacts, the
+   * Deliverability pill on Senders, "Contact scoring" on Insights). Whether
+   * the plan includes it is the catalog's answer, the same as any other page.
    */
   merged?: boolean;
-  /** Requires a purchased add-on, at any tier. */
-  addon?: NavAddon;
-  /**
-   * Requires this rung of the add-on ladder or higher. Only meaningful with
-   * `addon: "seo"` (the one add-on sold as a ladder) — Market Monitor is
-   * Authority-only because it runs on SE Ranking page-change monitoring.
-   */
-  addonTier?: SeoAddonTier;
-  /** Requires this subscription tier or higher. */
-  minTier?: NavTier;
-  /**
-   * Judge `minTier` against a DIFFERENT entitlement node than the nav's own
-   * product. Only "my_brand": My Brand sits in ARION's menu, but its tier is
-   * platform-api's derived products.my_brand (max of the ARION tier and
-   * "standard" when SPARK is owned), the same answer LUMEN gates on
-   * (FEATURE_TIER_MATRIX_FULL.md section 13). Judging it against the ARION tier
-   * alone would lock an ARION Lite + SPARK business out of what it pays for.
-   */
-  tierProduct?: "my_brand";
-  /**
-   * Documentation, never a lock: WHY this item is in every tier of its
-   * product. Rule (Brandon 2026-10-11, "it's by their subscription"): every
-   * item in a product menu carries a tier rule or says why it has none, so a
-   * missing gate is a decision someone wrote down, not an accident. The test
-   * test/nav-tier-every-item.test.mjs reads it.
-   */
-  everyTier?: string;
 }
 
 export interface VisibilityContext {
-  /** Resolved SPARK/OLIVER/ARION tier, or null when unknown (→ fail open). */
-  tier: TierKey;
   /**
-   * Add-ons this tenant has actually purchased, or null while unresolved
-   * (→ fail open). Produced by hooks/useNavAddons so the nav and the route
-   * guard read the same answer.
+   * platform-api's `features` for the active business (lib/entitlements
+   * featuresOf), or null when there is no answer to read: undecided, which
+   * opens every page and logs once.
    */
-  addons: NavAddon[] | null;
+  features: FeatureMap | null | undefined;
   /**
-   * Rung of the SEO add-on the selected ARION site is on (its
-   * `seoAddonTier`), or null/undefined when unresolved (→ fail open). Only
-   * consulted once `addons` says the SEO add-on is owned; a resolved LOWER
-   * rung is the only thing that locks an `addonTier` surface.
+   * The payload's product nodes, used only to tell "the product is off"
+   * (ProductGate's notice) from "the plan is below this feature" (the wall).
    */
-  seoAddonTier: string | null | undefined;
-  /**
-   * The derived My Brand tier (platform-api products.my_brand), for rules with
-   * `tierProduct: "my_brand"`. null/undefined = unresolved -> fail open.
-   */
-  myBrandTier?: TierKey;
-  /**
-   * Products we gate (GATED_PRODUCTS). Anything else (FORGE, ARGUS,
-   * Settings, Consulting) passes through untouched here: ARGUS has no tiers
-   * (it is owned or not, which lib/productAccess answers), and FORGE is
-   * gated per build by its forge_<slug> service key.
-   */
-  gatingActive: boolean;
+  products?: Record<string, { owned?: boolean; decided?: boolean }> | null;
 }
 
-/**
- * Add-ons that resolve WITHOUT a network call.
- *
- * There are none: the SEO add-on needs the tenant's ARION site and is resolved in
- * hooks/useNavAddons. This stays the synchronous baseline that hook starts from,
- * so adding a purchase-resolved add-on later has one obvious home.
- */
-export function activeAddons(): NavAddon[] {
-  return [];
+/** The context every menu and page wall reads, from one /me/entitlements answer. */
+export function featureContext(payload: EntitlementPayload | null | undefined): VisibilityContext {
+  return { features: featuresOf(payload), products: payload?.products ?? null };
 }
 
-// Fail-open events are logged once per rule so a 200-row nav doesn't flood
-// the console on every render while an API is down.
+export type FeatureState = "open" | "locked" | "coming_soon" | "hidden";
+
+// Undecided answers are logged once per product (and once for "no answer at
+// all"), so a 200-row menu does not flood the console on every render; a key
+// missing from a present answer is a catalog mismatch and is logged once per key.
 const warned = new Set<string>();
-function warnFailOpen(what: string) {
-  if (warned.has(what)) return;
-  warned.add(what);
-  console.error(`[navVisibility] ${what} is unresolved — allowing access (fail open). Only a positively-resolved lower tier / missing add-on locks a surface.`);
+function warnOnce(id: string, line: string, level: "error" | "warn" = "warn") {
+  if (warned.has(id)) return;
+  warned.add(id);
+  (level === "error" ? console.error : console.warn)(line);
+}
+
+/** The answer's entry for one key, logging the two undecided cases. */
+function entryFor(key: string, ctx: VisibilityContext): FeatureEntry | null {
+  if (!ctx.features) {
+    warnOnce("__no_answer__", "[navVisibility] no feature answer from platform-api for this business; every page opens (undecided allows a read).");
+    return null;
+  }
+  const entry = ctx.features[key];
+  if (!entry) {
+    warnOnce(`missing:${key}`, `[navVisibility] feature "${key}" is not in the catalog answer (catalog mismatch); opening it as a read.`, "error");
+    return null;
+  }
+  if (entry.allowed === null) {
+    warnOnce(`undecided:${entry.product ?? key}`, `[navVisibility] ${entry.product ?? key}: ${entry.reason || "undecided"}; opening its pages (undecided allows a read).`);
+  }
+  return entry;
+}
+
+/** What the answer says about one key, for a page view. */
+export function featureState(key: string, ctx: VisibilityContext): FeatureState {
+  const entry = entryFor(key, ctx);
+  if (!entry) return "open";
+  if (entry.availability === "hidden") return "hidden";
+  if (entry.allowed === false) return "locked";
+  if (entry.availability === "coming_soon") return "coming_soon";
+  return "open";
 }
 
 /**
- * Should this surface be visible?
- *
- * Order matters: `hidden` beats everything (it's a product decision, not an
- * upsell), then add-on ownership, then the add-on rung, then tier. An
- * undeclared item is visible — so adding a nav item never silently
- * disappears behind the wall.
+ * Does the business's plan include this feature? Only a decided `allowed:
+ * false` says no; undecided and a key missing from the answer open (and log).
+ * Shared by the menu (isVisible) and the route (isRoutable) so the two can
+ * never judge a plan differently.
  */
-export function isVisible(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
-  if (!rules) return true;
-  if (rules.hidden || rules.merged) return false;  // neither belongs in the menu
-  return isEntitled(rules, ctx);
+export function isEntitled(key: string, ctx: VisibilityContext): boolean {
+  const entry = entryFor(key, ctx);
+  return !entry || entry.allowed !== false;
+}
+
+/** Is this feature cut from the product (catalog availability "hidden")? */
+export function isHiddenFeature(key: string, ctx: VisibilityContext): boolean {
+  return ctx.features?.[key]?.availability === "hidden";
+}
+
+/** Is this feature not released yet (catalog availability "coming_soon")? */
+export function isComingSoon(key: string, ctx: VisibilityContext): boolean {
+  return ctx.features?.[key]?.availability === "coming_soon";
 }
 
 /**
- * Does the subscription (tier + add-ons) include this surface? The
- * entitlement half of the wall, shared by the menu (isVisible) and the route
- * (isRoutable) so the two can never judge a plan differently. Undecided
- * (null tier / null add-ons) ALLOWS and logs: only a positively-resolved
- * lower tier or missing add-on says no.
+ * Should a menu row show, unlocked? Merged rows and hidden features are not
+ * menu rows; everything else shows when the plan includes it. (SubNav shows
+ * a row the plan does NOT include too, with a lock: show, don't hide.)
  */
-export function isEntitled(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
-  if (!rules) return true;
-  if (!ctx.gatingActive) return true;       // non-gated product: tier/add-on don't apply
-  if (rules.addon) {
-    if (ctx.addons == null) warnFailOpen(`add-on "${rules.addon}"`);
-    else if (!ctx.addons.includes(rules.addon)) return false;
-    else if (rules.addonTier && rules.addon === "seo") {
-      // Owned — now the rung. An unknown/unrecognised rung is unresolved, not
-      // "below": only a positively-resolved lower rung locks the surface.
-      const have = SEO_ADDON_RANK[String(ctx.seoAddonTier ?? "").toLowerCase() as SeoAddonTier];
-      if (have == null) warnFailOpen(`add-on "seo" tier`);
-      else if (have < SEO_ADDON_RANK[rules.addonTier]) return false;
-    }
-  }
-  if (rules.minTier) {
-    const tier = rules.tierProduct === "my_brand" ? (ctx.myBrandTier ?? null) : ctx.tier;
-    if (tier == null) warnFailOpen(rules.tierProduct === "my_brand" ? "My Brand tier" : "subscription tier");
-    else if (!tierMeets(tier, rules.minTier)) return false;
-  }
+export function isVisible(item: { key: string } & VisibilityRules, ctx: VisibilityContext): boolean {
+  if (item.merged || isHiddenFeature(item.key, ctx)) return false;
+  return isEntitled(item.key, ctx);
+}
+
+/**
+ * Can this page be OPENED, whatever the menu shows? Merged pages are
+ * routable (their parent links to them); a hidden feature and a feature the
+ * plan does not include are not.
+ */
+export function isRoutable(key: string, ctx: VisibilityContext): boolean {
+  if (isHiddenFeature(key, ctx)) return false;
+  return isEntitled(key, ctx);
+}
+
+/**
+ * Is this feature refused because its whole PRODUCT is decided off (not in the
+ * subscription), rather than because the plan is below it?
+ */
+export function productOffFor(key: string, ctx: VisibilityContext): boolean {
+  const product = ctx.features?.[key]?.product;
+  const node = product ? ctx.products?.[product] : null;
+  return !!node && node.decided === true && node.owned === false;
+}
+
+/**
+ * Does the page's "Not in your plan" card show? When the page is not
+ * routable — except a page that stays open while its product is off (a
+ * product's own plan page, the ARGUS pages that control work under other
+ * products: productAccess.gateExemptServiceKey). For those the product gate
+ * decides, and it leaves them open so the owner can buy the product back.
+ */
+export function planWallLocks(key: string, ctx: VisibilityContext, exemptWhenProductOff: boolean): boolean {
+  if (isRoutable(key, ctx)) return false;
+  if (exemptWhenProductOff && productOffFor(key, ctx)) return false;
   return true;
 }
 
 /**
- * Can this surface be OPENED, whatever the nav shows?
- *
- * Merged pages are deliberately routable — their parent links to them. Cut
- * pages and unearned tiers/add-ons are not.
- *
- * 2026-10-11: a merged page is routable only if the plan includes it. Before,
- * `merged` returned true before the tier was read, so a Standard SPARK
- * business could open Contact 360 / Health Score / Contact Scoring (Business)
- * by URL, which is exactly the "locked in the menu, open by deep link" hole.
+ * What the lock says: the catalog's `needs` ("SPARK Business", "ARION Pro",
+ * "ARION Standard or SPARK", "the ARION SEO add-on (Authority)", "the SPARK
+ * Leads add-on"). Shared by the menu's lock pill and the "Not in your plan"
+ * card so the two never disagree. "a higher plan" only when the answer names
+ * nothing (a hidden feature, or no answer).
  */
-export function isRoutable(rules: VisibilityRules | undefined, ctx: VisibilityContext): boolean {
-  if (!rules) return true;
-  if (rules.hidden) return false;           // cut from the product
-  return isEntitled(rules, ctx);            // merged or not: the plan decides
+export function requirementLabel(key: string | null | undefined, ctx: VisibilityContext): string {
+  const needs = key ? ctx.features?.[key]?.needs : null;
+  return needs && String(needs).trim() ? String(needs) : "a higher plan";
 }
 
 /**
- * Products whose nav is subject to the feature wall.
- *
- * STELLA joined 2026-10-11 (Brandon: "it's by their subscription"). Its menu
- * carries two tier rules today (SQL Editor and IA Insights Intelligence = Pro,
- * FEATURE_TIER_MATRIX_FULL.md sections 6 and 9); everything else is every
- * STELLA tier and says so on the row.
+ * Tour steps to offer, without the pages the catalog cuts from the product
+ * (availability "hidden"). The tours are generated from the menu once, at
+ * load, before any answer; this drops the cut pages at run time. A step id is
+ * "<product>.<feature key>". No answer cuts nothing.
  */
-export const GATED_PRODUCTS = ["spark", "oliver", "arion", "stella"] as const;
-export type GatedProduct = (typeof GATED_PRODUCTS)[number];
-
-export function isGatedProduct(p: string | undefined): p is GatedProduct {
-  return !!p && (GATED_PRODUCTS as readonly string[]).includes(p);
+export function stepsShown<T extends { id: string }>(steps: T[], ctx: VisibilityContext): T[] {
+  return steps.filter((s) => !isHiddenFeature(s.id.slice(s.id.indexOf(".") + 1), ctx));
 }
 
 /**
- * Is a My Brand row (tierProduct "my_brand") locked because the PRODUCT is
- * not owned? My Brand is owned through ARION OR SPARK (platform-api
- * products.my_brand.owned = arion.owned || spark.owned, matrix 13), so the
- * rows that sit in ARION's menu lock only when BOTH are known to be locked.
- * Before 2026-10-11 they took ARION's lock, so a SPARK-only business, which
- * pays for My Brand Standard, saw every My Brand row padlocked.
+ * Is a My Brand row locked because the PRODUCT is not owned? My Brand is
+ * owned through ARION OR SPARK (platform-api products.my_brand.owned =
+ * arion.owned || spark.owned, matrix 13), so the rows that sit in ARION's menu
+ * take the product lock only when BOTH are known to be locked. The tier is the
+ * catalog's answer like every other row.
  * null = not known -> open (undecided never locks a paying business out).
  */
 export function myBrandLockedOnRail(arionLocked: boolean | null, sparkLocked: boolean | null): boolean {
   return arionLocked === true && sparkLocked === true;
-}
-
-/**
- * The product whose feature wall judges a service key's page. Normally the
- * key's own prefix; My Brand pages (my_brand_*) live in ARION's menu, so the
- * route guard judges them where the menu does. Without this a deep link to a
- * locked My Brand page opened as if it were unlocked, because "my" is not a
- * product.
- */
-export function wallProductOfServiceKey(serviceKey: string | null | undefined): string {
-  const key = String(serviceKey || "").toLowerCase();
-  if (key.startsWith("my_brand_")) return "arion";
-  return key.split("_")[0];
-}
-
-/**
- * Human-readable reason a surface is locked — "OLIVER Standard", "ARION Pro",
- * "the ARION SEO add-on", "the ARION SEO Authority add-on". Shared by the nav
- * lock tooltip and FeatureLocked so the menu and the page never disagree
- * about which plan a surface needs.
- */
-export function requirementLabel(
-  rules: { minTier?: string; addon?: string; addonTier?: string; tierProduct?: string } | undefined,
-  product: string | undefined,
-): string {
-  if (rules?.tierProduct === "my_brand" && rules.minTier) {
-    // My Brand's tier is the higher of the ARION tier and Standard-with-SPARK
-    // (section 13), so Standard is reachable two ways and the label says both.
-    const t = rules.minTier;
-    const word = `${t.charAt(0).toUpperCase()}${t.slice(1)}`;
-    return t === "standard" ? "ARION Standard or any SPARK plan" : `ARION ${word}`;
-  }
-  if (rules?.addon === "seo" && rules.addonTier) {
-    const t = rules.addonTier;
-    return `the ARION SEO ${t.charAt(0).toUpperCase()}${t.slice(1)} add-on`;
-  }
-  if (rules?.addon && rules.addon in ADDON_LABELS) return ADDON_LABELS[rules.addon as NavAddon];
-  if (rules?.minTier) {
-    const t = rules.minTier;
-    const brand = (product || "spark").toUpperCase();
-    return `${brand} ${t.charAt(0).toUpperCase()}${t.slice(1)}`;
-  }
-  return "a higher plan";
 }

@@ -27,7 +27,7 @@ function lazyNamed<T extends Record<string, unknown>>(
     loader().then((m) => ({ default: m[name] as React.ComponentType<any> })),
   );
 }
-import { useAppState } from '../app/AppState';
+import { useEnabledServices } from '../hooks/useEnabledServices';
 import { SERVICE_CATALOG, resolveServiceStatus, type PortalService, type ServiceStatus } from '../config/serviceCatalog';
 // ArionPageWrapper stays static — it's a small shared frame used by every
 // ARION page below. Lazy-loading it would just add a network round-trip
@@ -438,7 +438,7 @@ const OLD_AGENTS_PAGES: Record<string, string> = {
 
 function ServiceRouterInner() {
   const { serviceKey } = useParams<{ serviceKey: string }>();
-  const { enabledServices } = useAppState();
+  const { features } = useEnabledServices();
   const isFounder = useIsFounder();
   const leadgenAccess = useLeadgenAccess();
   const { pathname } = useLocation();
@@ -550,7 +550,9 @@ function ServiceRouterInner() {
   // have, not a placeholder. The API still 403s every call underneath, which
   // is why the overlay blocks interaction.
 
-  const status: ServiceStatus = resolveServiceStatus(service, enabledServices);
+  // The page's status is the feature catalog answer for its key (coming
+  // soon / not in the plan / open); the plan's lock card is PlanWall's.
+  const status: ServiceStatus = resolveServiceStatus(service, features);
 
   if (service.section === 'ARION') {
     let arionPage: React.ReactNode = null;
@@ -728,7 +730,7 @@ function ServiceRouterInner() {
       // Database Manager + Custom Reporting (Layer 3 — locked / coming soon).
       // Every db_/report_ key renders the STELLA coming-soon sheet (padlock +
       // tier badge driven by the catalog row).
-        stellaPage = <StellaComingSoonPage service={service} />; break;
+        stellaPage = <StellaComingSoonPage service={service} minTier={features?.[service.key]?.min_tier ?? null} />; break;
 
       // ── Custom Reporting (Layer 3b) — LIVE ───────────────────────────────
       case 'stella_report_library': stellaPage = <StellaReportLibraryPage />; break;

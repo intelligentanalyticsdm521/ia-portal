@@ -21,7 +21,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowUpRight, Calendar, FolderOpen, Palette, Share2, Zap } from "lucide-react";
-import { useAppState } from "../../app/AppState";
+import { useEnabledServices } from "../../hooks/useEnabledServices";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
 
@@ -62,7 +62,7 @@ function ymd(d: Date) {
 }
 
 export function BrandActivityCallout({ variant, className }: { variant: "today" | "week"; className?: string }) {
-  const { enabledServices } = useAppState();
+  const { enabledServices } = useEnabledServices();
   const { get, ready: sparkReady } = useSparkApi();
   const oliverApi = useOliverApi();
 

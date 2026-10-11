@@ -2,7 +2,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Shield, Settings } from "lucide-react";
 import { useAppState } from "../app/AppState";
 import { useIsSuperAdmin } from "../hooks/useIsSuperAdmin";
-import { resolveServiceStatus, SERVICE_CATALOG } from "../config/serviceCatalog";
+import { SERVICE_CATALOG } from "../config/serviceCatalog";
+import { enabledFeatureKeys, featuresOf } from "../lib/entitlements";
 import { FEATURE_GATING_ENABLED } from "../config/featureFlags";
 import { useProductAccess } from "../hooks/useProductAccess";
 import { useOffReasons } from "../hooks/useOffReasons";
@@ -99,7 +100,7 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // AccountMenu. Hide the gear entirely for non-super-admin users so they
   // aren't tempted into a /admin page they can't use.
   const isAdminActive = location.pathname.startsWith("/admin");
-  const { enabledServices, ownedProducts } = useAppState();
+  const { ownedProducts } = useAppState();
   const isSuperAdmin = useIsSuperAdmin();
   // SCOPE_ACCESS_FOLLOWS_SUBSCRIPTION_2026-10-07 §4.2 — the padlock follows
   // the subscription mid-session: platform-api's decided answer (one-minute
@@ -112,17 +113,12 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
   // tenant actually OWNS that product (core.tenant_services.is_enabled).
   //
   // The old test — "any service in this section resolves to enabled" — was
-  // bypassed entirely by `resolveServiceStatus()`, which returns 'enabled'
-  // unconditionally whenever a catalog row is declared `defaultStatus:'enabled'`.
-  // 41 rows are (12 SPARK, 11 ARION, 9 CONSULTING, 6 ARGUS, 2 OLIVER), so every
-  // tenant saw SPARK/ARGUS regardless of what they bought — Briarwood and
-  // Midwest Ag (ARION-only) both showed SPARK.
+  // bypassed by a per-page `defaultStatus:'enabled'` column (deleted
+  // 2026-10-11), so every tenant saw SPARK/ARGUS regardless of what they
+  // bought — Briarwood and Midwest Ag (ARION-only) both showed SPARK.
   //
-  // We gate on `ownedProducts` (the raw core.tenant_services keys) rather than
-  // `enabledServices`, because the latter is a derived granular set whose
-  // per-product branches only cover arion + oliver — no spark_* key is ever
-  // added, so using it would hide SPARK from tenants who DO pay for it.
-  // See memory: reference_subscription_gating_model.
+  // We gate on platform-api's decided answer, then `ownedProducts` (the raw
+  // core.tenant_services keys). See memory: reference_subscription_gating_model.
   const PRODUCT_SERVICE_KEY: Partial<Record<ProductKey, string>> = {
     arion: "arion", oliver: "oliver", spark: "spark",
     stella: "stella", forge: "forge", argus: "argus",
@@ -140,18 +136,20 @@ export function IconRail({ activeProduct, onSelect }: IconRailProps) {
     const railLock = access.isLockedOnRail(serviceKey);
     if (railLock !== null) return { ...p, enabled: !railLock };
 
-    // Dev / preview: no session payload exists (VITE_ENABLED_SERVICES drives
-    // the granular set instead), so fall back to the legacy catalog test rather
-    // than blanking the rail for local work.
+    // Dev / preview: no session payload exists, so fall back to the feature
+    // catalog answer: the product shows when the answer opens any of its
+    // pages. No answer at all is undecided, which opens (never blank the rail
+    // because a service did not answer).
     if (ownedProducts.size === 0) {
+      const features = featuresOf(access.payload);
+      if (!features) return { ...p, enabled: true };
+      const open = enabledFeatureKeys(features);
       const sectionMap: Record<string, string> = {
         arion: "ARION", oliver: "OLIVER", spark: "LUMEN",
         stella: "STELLA", forge: "FORGE", argus: "ARGUS",
       };
       const section = sectionMap[p.key];
-      const hasEnabled = SERVICE_CATALOG.some(
-        (s) => s.section === section && resolveServiceStatus(s, enabledServices) === "enabled"
-      );
+      const hasEnabled = SERVICE_CATALOG.some((s) => s.section === section && open.has(s.key));
       return { ...p, enabled: hasEnabled };
     }
 

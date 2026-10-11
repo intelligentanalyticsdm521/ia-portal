@@ -43,7 +43,7 @@ const approvalCard = read("src/components/agents/AgentApprovalCard.tsx");
 
 test("three employee pages in the catalog, all the same page", () => {
   for (const [key, name] of [["argus_team_web", "The web person"], ["argus_team_marketer", "The marketer"], ["argus_team_office", "The office administrator"]]) {
-    assert.match(catalog, new RegExp(`\\{ key: '${key}', displayName: '${name}', section: 'ARGUS', defaultStatus: 'enabled', route: '/app/services/${key}'`));
+    assert.match(catalog, new RegExp(`\\{ key: '${key}', displayName: '${name}', section: 'ARGUS', route: '/app/services/${key}'`));
   }
   assert.match(router, /const ArgusEmployeePage = lazyNamed\(\(\) => import\('\.\/argus\/ArgusEmployeePage'\), 'ArgusEmployeePage'\);/);
   assert.match(router, /const teamEmployee = employeeFromServiceKey\(service\.key\);/);

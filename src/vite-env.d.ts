@@ -11,7 +11,6 @@ interface ImportMetaEnv {
   readonly VITE_AUTH_SCOPES: string;
   readonly VITE_DEFAULT_TENANT_ID?: string;
   readonly VITE_DEFAULT_PORTAL_CONTEXT?: string;
-  readonly VITE_ENABLED_SERVICES?: string;
 }
 
 interface ImportMeta {

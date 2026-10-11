@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { useAppState } from "../app/AppState";
+import { useEnabledServices } from "../hooks/useEnabledServices";
 import { LEADGEN_LOCKED_KEYS } from "../config/featureFlags";
 import { useLeadgenAccess } from "../hooks/useLeadgenAccess";
 import {
@@ -33,7 +33,7 @@ function navItemClass(isActive: boolean): string {
 }
 
 export function SidebarNav() {
-  const { enabledServices } = useAppState();
+  const { features } = useEnabledServices();
   // SPARK pack 1: the Lead Gen search entries are shown when the SERVER says this
   // business may run a search (LEADGEN_TENANT_ALLOWLIST), not when the person
   // signed in happens to be the founder. Unresolved hides them — see
@@ -88,7 +88,7 @@ export function SidebarNav() {
               <div className="iadm-nav-title">{LAYER_LABELS[section]}</div>
               <ul className="space-y-0.5">
                 {services.map((service) => {
-                  const status = resolveServiceStatus(service, enabledServices);
+                  const status = resolveServiceStatus(service, features);
                   return (
                     <li key={service.key}>
                       <NavLink

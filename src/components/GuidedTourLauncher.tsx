@@ -11,7 +11,7 @@
 // — generated from the same ordered curriculum, so they can't drift. Every
 // step is individually launchable in either mode, which is also how
 // engagement alerts and ARGUS deep-link into help.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { HelpCircle, Play, CheckCircle2, ChevronDown, ChevronRight, MousePointerClick } from "lucide-react";
 import { GuidedTour, hasCompletedTour, resetTour, type TourDef } from "./GuidedTour";
 import {
@@ -30,6 +30,8 @@ import {
   type Journey,
   type JourneyStep,
 } from "../journeys";
+import { stepsShown } from "./navVisibility";
+import { useEnabledServices } from "../hooks/useEnabledServices";
 
 export function GuidedTourLauncher() {
   const [open, setOpen] = useState(false);
@@ -37,6 +39,13 @@ export function GuidedTourLauncher() {
   const [activeFlow, setActiveFlow] = useState<InteractiveFlow | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  // The feature catalog cuts some pages from the product (availability
+  // "hidden"); the list never offers a tour of a page with no menu row.
+  const { features } = useEnabledServices();
+  const journeys = useMemo(
+    () => ALL_JOURNEYS.map((j) => ({ ...j, steps: stepsShown(j.steps, { features }) })),
+    [features],
+  );
 
   function startTour(journey: Journey, fromStepId?: string) {
     const tour = journeyToTour(journey, fromStepId);
@@ -115,7 +124,7 @@ export function GuidedTourLauncher() {
           </div>
 
           <ul className="py-1 max-h-[60vh] overflow-y-auto">
-            {ALL_JOURNEYS.map((journey) => {
+            {journeys.map((journey) => {
               const expanded = expandedId === journey.product;
               const tourDone = hasCompletedTour(journey.tourId);
               const doable = doableSteps(journey).length;
