@@ -207,7 +207,7 @@ export function BusinessOverview() {
 
       <ConsultingUpsell
         headline="Dominate local search. IA manages your entire local presence — GBP, Bing, Apple Maps."
-        subtext="Full-service local SEO management included with Pro+ plans."
+        subtext="Full-service local SEO management, done for you."
         serviceType="Local SEO"
         triggerPage="business-overview"
       />

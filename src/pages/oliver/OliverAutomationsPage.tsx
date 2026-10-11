@@ -31,7 +31,14 @@ interface AutomationRule {
   category: string;
   trigger_event: string;
   action_type: string;
-  required_tier: "all" | "lite" | "standard" | "pro" | "business" | "enterprise";
+  /** The rule library's grouping (oliver.automation_rule.required_tier); decides nothing here. */
+  required_tier: string;
+  /** The catalog key this rule needs (oliver-api automationRuleFeature), or null when OLIVER is enough. */
+  feature?: string | null;
+  /** oliver-api's answer for that key: false = not in the plan, null = undecided, true = included. */
+  in_plan?: boolean | null;
+  /** What to buy, in the catalog's words, when in_plan is false. */
+  needs?: string | null;
   is_system: boolean;
   is_enabled: boolean;
   effective_params: Record<string, unknown> | null;
@@ -63,12 +70,10 @@ interface RunRow {
   fired_at: string;
 }
 
-function tierLabel(t: string) { return t.charAt(0).toUpperCase() + t.slice(1); }
-
 const CATEGORY_LABEL: Record<string, string> = {
   customer_comms: "Customer Communications",
   billing: "Billing & Payments",
-  orchestration: "Auto-Orchestration (Pro+)",
+  orchestration: "Auto-Orchestration",
   lifecycle: "Lifecycle",
 };
 const CATEGORY_ORDER = ["customer_comms", "billing", "orchestration", "lifecycle"];
@@ -241,14 +246,18 @@ function RuleRow({ rule, isOpen, onToggleOpen, onToggleEnabled, onTestFire }: {
   rule: AutomationRule; isOpen: boolean; onToggleOpen: () => void;
   onToggleEnabled: (next: boolean) => void; onTestFire: () => void;
 }) {
-  const locked = rule.required_tier === "pro" || rule.required_tier === "business" || rule.required_tier === "enterprise";
-  const tierBadge = rule.required_tier !== "all" && rule.required_tier !== "lite" && (
+  // oliver-api decides each rule on its catalog key and sends in_plan +
+  // needs (2026-10-11). Only a decided "not in the plan" locks; the badge and
+  // the sentence name the catalog's `needs`, never a tier written here (this
+  // used to lock every Pro rule even for a Pro business).
+  const locked = rule.in_plan === false;
+  const needs = (rule.needs || "").trim() || "a higher plan";
+  const tierBadge = locked && (
     <span style={{
       display: "inline-block", padding: "1px 6px", fontSize: 9, fontWeight: 700,
       borderRadius: 999, marginLeft: 8, letterSpacing: 0.4, textTransform: "uppercase",
-      background: rule.required_tier === "pro" ? "#FEF3C7" : rule.required_tier === "business" ? "#E0E7FF" : "#F1F5F9",
-      color: rule.required_tier === "pro" ? "#92400E" : rule.required_tier === "business" ? "#3730A3" : "#475569",
-    }}>{tierLabel(rule.required_tier)}+</span>
+      background: "#FEF3C7", color: "#92400E",
+    }}>Needs {needs}</span>
   );
 
   return (
@@ -268,7 +277,9 @@ function RuleRow({ rule, isOpen, onToggleOpen, onToggleEnabled, onTestFire }: {
           )}
         </div>
         <Button variant="ghost" onClick={onTestFire}>Test fire</Button>
-        <ToggleSwitch checked={rule.is_enabled} onChange={onToggleEnabled} />
+        {/* Turning a rule ON that the plan does not include is refused by
+            oliver-api; the switch only turns such a rule off. */}
+        <ToggleSwitch checked={rule.is_enabled} onChange={(next) => { if (!(locked && next)) onToggleEnabled(next); }} />
       </div>
 
       {isOpen && (
@@ -288,7 +299,7 @@ function RuleRow({ rule, isOpen, onToggleOpen, onToggleEnabled, onTestFire }: {
           )}
           {locked && (
             <div style={{ marginTop: 8, padding: "6px 10px", background: "#FEF3C7", border: "1px solid #FDE68A", borderRadius: 4, color: "#78350F", display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Lock size={12} /> This rule requires {tierLabel(rule.required_tier)}+ to fire. You can toggle it on now; it'll be skipped at runtime until you upgrade.
+              <Lock size={12} /> Not in your plan. This rule needs {needs}, so it can't be turned on yet.
             </div>
           )}
         </div>

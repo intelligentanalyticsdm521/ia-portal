@@ -8,19 +8,12 @@ import { useMsal } from "@azure/msal-react";
 import { useActiveAccount } from "../auth/useAccessToken";
 import { oliverGet, oliverPost, oliverPatch, oliverPut, oliverDelete, oliverUpload, oliverDownload, oliverBlob, BYPASS_TENANT_OVERRIDE } from "../lib/oliverApi";
 import { useClientTenantIdOverride } from "../lib/clientTenantContext";
+import type { PlanRefusal } from "../lib/planRefusal";
 import { useIsFounder } from "./useIsFounder";
 
-export interface TierGateError {
-  type: "tier_gate";
-  tierRequired: string;
-  currentTier: string;
-  /** Backend feature key that tripped the gate (e.g. "social_approval_workflow"
-   *  for the My Brand social approval toggle, "approval_workflow" for the SPARK
-   *  /approvals queue), when the API sent one. */
-  feature?: string;
-  /** Product-aware upgrade copy from the API, when sent. */
-  message?: string;
-}
+/** A plan refusal from any API (lib/planRefusal): the catalog key, its `needs`
+ *  ("SPARK Business") and the API's sentence; an older API's tier verbatim. */
+export type TierGateError = PlanRefusal;
 
 export function isTierGateError(err: unknown): err is TierGateError {
   return (

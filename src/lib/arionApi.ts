@@ -4,6 +4,7 @@ import { decidePathOk } from './team';
 import type {
   AgentActivityPayload, AgentRunsPayload, AgentSettingsResponse,
 } from '../components/agents/types';
+import { planRefusalFromBody, planRefusalSentence, isHeldSend, HELD_SEND_MESSAGE } from './planRefusal';
 
 export type SetupMode = 'ARION_AUTO_SETUP' | 'EXISTING_INTEGRATION';
 
@@ -311,6 +312,12 @@ async function requestJson<T>(params: {
       if (typeof e === 'string') msg = e;
       else if (e && typeof e === 'object') msg = e.message || e.code || JSON.stringify(e);
     }
+    // A plan refusal (403 feature_not_in_plan, lib/planRefusal) and a held
+    // send (503 subscription_undecided) carry a sentence for a person; show
+    // it, never the machine code.
+    const refusal = res.status === 403 ? planRefusalFromBody(body) : null;
+    if (refusal) msg = planRefusalSentence(refusal);
+    else if (isHeldSend(res.status, body)) msg = String((body as any).message || '').trim() || HELD_SEND_MESSAGE;
     throw new ArionApiError(msg, res.status, body);
   }
 

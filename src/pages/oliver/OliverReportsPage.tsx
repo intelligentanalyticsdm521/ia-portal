@@ -336,7 +336,7 @@ export function OliverReportsPage() {
           <div className="card-hdr">
             <div>
               <div className="card-ttl">Top clients by revenue</div>
-              <div className="card-sub">Pro+ — limited to selected range</div>
+              <div className="card-sub">Limited to the selected range</div>
             </div>
           </div>
           {topClients.slice(0, 10).map((c, i) => (

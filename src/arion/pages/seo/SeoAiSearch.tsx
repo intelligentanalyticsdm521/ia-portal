@@ -31,6 +31,7 @@ import {
   Cell,
 } from 'recharts';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useArionData } from '../../useArionData';
 import {
   AddonUpsell,
@@ -114,6 +115,10 @@ type DetailTab = 'rankings' | 'engines' | 'sources' | 'competitors' | 'prompts';
 export function SeoAiSearch() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const [activeTab, setActiveTab] = React.useState<DetailTab | null>(null);
+  // The add-on rung this page needs is the catalog's (arion_seo_ai_search:
+  // add-on seo at its addon_min_tier); the per-engine rungs are arion-api's
+  // (engine.unlocked / engine.tierRequired). Nothing here states a rung.
+  const featureGate = useFeatureGate();
 
   const { data, loading, errorCode } = useArionData<SeoAiSearchResponse | null>(
     () => (activeSiteId ? arionApi.getSeoAiSearch(activeSiteId) : Promise.resolve(null)),
@@ -135,12 +140,10 @@ export function SeoAiSearch() {
     );
   }
 
-  const tier = (selectedSite?.seoAddonTier || 'starter').toLowerCase();
-  const tierRank = ({ starter: 0, essentials: 1, growth: 2, authority: 3 } as Record<string, number>)[tier] ?? 0;
-
-  // Tier lock preview for Starter / Essentials
-  if (data?.tierGated === true || tierRank < 2) {
-    return <TierGatedPreview tier={tier} />;
+  // Lock preview when arion-api says the site's rung is below this page, or
+  // the catalog answer refuses the page for this business.
+  if (data?.tierGated === true || featureGate.locked('arion_seo_ai_search')) {
+    return <TierGatedPreview needs={featureGate.needs('arion_seo_ai_search')} />;
   }
 
   if (!data || data.connected === false) {
@@ -166,6 +169,9 @@ export function SeoAiSearch() {
   const heroEngineKeys: string[] = hasPerplexity ? [...SELF_SERVE_ENGINE_KEYS, 'perplexity'] : [...SELF_SERVE_ENGINE_KEYS];
   const totalEngines = heroEngineKeys.length;
   const trackedCount = engines.filter((e) => e.unlocked).length;
+  // Engines a self-serve upgrade would add, as arion-api names them.
+  const upgradeEngines = engines.filter((e) => !e.unlocked && String(e.tierRequired || '').toLowerCase() !== 'consulting');
+  const upgradeRung = upgradeEngines.length ? String(upgradeEngines[0].tierRequired || '') : '';
 
   const totalMentions = agg?.totalMentions ?? 0;
   const priorTotalMentions = engines.reduce((sum, e) => sum + (e.prior?.mentions ?? 0), 0);
@@ -231,7 +237,9 @@ export function SeoAiSearch() {
         <HeroStatCard
           label="Engines Tracked"
           value={`${trackedCount} / ${totalEngines}`}
-          sub={tierRank < 3 ? 'Upgrade to Authority for ChatGPT + Gemini' : 'All AI engines active'}
+          sub={upgradeEngines.length
+            ? `Upgrade${upgradeRung ? ` to ${upgradeRung.charAt(0).toUpperCase()}${upgradeRung.slice(1)}` : ''} for ${upgradeEngines.map((e) => engineLabel(e.baseName, e.label)).join(' + ')}`
+            : 'All AI engines active'}
           color="#1A73E8"
           onSeeDetails={() => setActiveTab('engines')}
         />
@@ -561,12 +569,13 @@ function EngineMiniHeroCard({
 }) {
   const color = engineColor(baseName);
   if (locked) {
-    const req = (tierRequired || 'growth').toLowerCase();
+    // The rung is arion-api's (engine.tierRequired); with none named, the
+    // card says the plan does not include it and names no rung of its own.
+    const req = (tierRequired || '').toLowerCase();
     // Perplexity is never a self-serve tier — it comes with a Build Your Brand
-    // consulting engagement (AI engine model, 2026-08-21). Only Growth and
-    // Authority are upgrade targets.
+    // consulting engagement (AI engine model, 2026-08-21).
     const consultingOnly = req === 'consulting';
-    const reqLabel = req === 'authority' ? 'Authority' : 'Growth';
+    const reqLabel = req ? `${req.charAt(0).toUpperCase()}${req.slice(1)}` : '';
     return (
       <div
         style={{
@@ -583,7 +592,7 @@ function EngineMiniHeroCard({
         <div style={{ fontSize: 10, color: '#5A7A8A', textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600 }}>{label}</div>
         <div style={{ fontSize: 22, fontWeight: 700, color: '#94A3B8', marginTop: 6 }}>Locked</div>
         <div style={{ fontSize: 11, color: '#5A7A8A', marginTop: 4 }}>
-          {consultingOnly ? `${label} tracking is available through a Build Your Brand consulting engagement` : `Upgrade to ${reqLabel}`}
+          {consultingOnly ? `${label} tracking is available through a Build Your Brand consulting engagement` : (reqLabel ? `Upgrade to ${reqLabel}` : 'Not in your plan')}
         </div>
         <div style={{ marginTop: 'auto', fontSize: 11, color: '#5A7A8A', fontStyle: 'italic' }}>
           {consultingOnly ? 'Consulting only — not a self-serve tier' : 'Not tracked on current tier'}
@@ -626,14 +635,15 @@ function EngineMiniHeroCard({
 // Tier-gated preview
 // ────────────────────────────────────────────────────────────────
 
-function TierGatedPreview({ tier }: { tier: string }) {
-  // AI engine model (Brandon 2026-08-21): Growth = Google AI Overviews + AI
-  // Mode · Authority = + ChatGPT + Gemini · Perplexity = consulting only.
+function TierGatedPreview({ needs }: { needs: string }) {
+  // The engines this tracker covers. Which rung unlocks each one is
+  // arion-api's answer (engine.tierRequired), shown on the live page; the
+  // page's own rung is the catalog's `needs`.
   const engines = [
-    { key: 'ai_overview', label: 'Google AI Overviews', min: 'Growth+' },
-    { key: 'ai_mode', label: 'Google AI Mode', min: 'Growth+' },
-    { key: 'chatgpt', label: 'ChatGPT', min: 'Authority' },
-    { key: 'gemini', label: 'Gemini', min: 'Authority' },
+    { key: 'ai_overview', label: 'Google AI Overviews' },
+    { key: 'ai_mode', label: 'Google AI Mode' },
+    { key: 'chatgpt', label: 'ChatGPT' },
+    { key: 'gemini', label: 'Gemini' },
   ];
   return (
     <div>
@@ -644,7 +654,7 @@ function TierGatedPreview({ tier }: { tier: string }) {
       </InfoCard>
       <div style={{ marginTop: 16, padding: 48, background: '#F8FAFC', borderRadius: 12, textAlign: 'center' }}>
         <div style={{ fontSize: 18, fontWeight: 700, color: '#0B1C24', marginBottom: 8 }}>
-          AI Search Tracking is a Growth feature
+          AI Search Tracking needs {needs}
         </div>
         <p style={{ fontSize: 13, color: '#5A7A8A', maxWidth: 520, margin: '0 auto 20px', lineHeight: 1.6 }}>
           AI search is changing how customers discover businesses. Google's AI Overviews and AI Mode, ChatGPT, and Gemini are increasingly the first stop. This tracker monitors whether your brand gets cited in their responses and which of your pages they reference as sources.
@@ -653,14 +663,12 @@ function TierGatedPreview({ tier }: { tier: string }) {
           {engines.map((e) => (
             <div key={e.key} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 10px', opacity: 0.7 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: '#0B1C24' }}>{e.label}</div>
-              <div style={{ fontSize: 10, color: '#5A7A8A', marginTop: 4 }}>{e.min}</div>
             </div>
           ))}
         </div>
         <button style={{ padding: '10px 24px', background: '#EF6C33', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-          Upgrade to Growth
+          Upgrade to {needs}
         </button>
-        <div style={{ fontSize: 10, color: '#94A3B8', marginTop: 12, fontStyle: 'italic' }}>Current tier: {tier}</div>
       </div>
     </div>
   );

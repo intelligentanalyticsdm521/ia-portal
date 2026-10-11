@@ -237,7 +237,7 @@ export function PortalActivationWizard({
                   <Globe className="h-3 w-3 text-slate-400" />
                   <code className="font-mono">{`https://${slug || 'your-slug'}.${portalKind}.ia-dm.com`}</code>
                 </div>
-                <p className="text-slate-500 mt-2">Bringing a custom domain later? Pro+ unlocks that in the Domain tab.</p>
+                <p className="text-slate-500 mt-2">Bringing a custom domain later? Add it in the Domain tab when your plan includes it.</p>
               </div>
               {publishMsg && (
                 <div className={`mt-3 rounded-md p-3 text-xs ${publishMsg.startsWith('Failed') ? 'bg-rose-50 text-rose-700 border border-rose-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
@@ -283,7 +283,7 @@ function NameStep({ portalKind, slug, setSlug, accent }: { portalKind: "customer
       </div>
 
       <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-[11px] text-amber-800">
-        <strong>Note:</strong> we can't change your subdomain after publishing without breaking existing customer links. Pick one you're happy with. Custom domains (e.g. portal.yourcompany.com) can be added later on Pro+.
+        <strong>Note:</strong> we can't change your subdomain after publishing without breaking existing customer links. Pick one you're happy with. Custom domains (e.g. portal.yourcompany.com) can be added later when your plan includes them.
       </div>
     </div>
   );

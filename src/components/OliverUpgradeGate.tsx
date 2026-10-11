@@ -1,20 +1,32 @@
 /**
- * OliverUpgradeGate — Shows a blurred overlay with upgrade CTA
- * when an OLIVER feature requires a higher tier plan.
+ * OliverUpgradeGate — Shows a blurred overlay with upgrade CTA when an API
+ * refused a feature the plan does not include (OliverPageWrapper,
+ * SparkPageShell).
+ *
+ * 2026-10-11 (feature catalog): the card names what the API named. The
+ * catalog refusal carries `needs` ("SPARK Business", "OLIVER Pro"), which is
+ * shown as is; an older API's tier word is shown through the OLIVER label
+ * table ("lite" -> "Invoicing"). The Portal never fills in a tier of its own:
+ * with neither, the card says "a higher plan".
  */
 
 import { tierDisplayName } from "../lib/tierLabels";
 
 interface OliverUpgradeGateProps {
-  tierRequired: string;
-  currentTier: string;
+  /** The catalog's `needs` from the refusal, when the API sent one. */
+  needs?: string | null;
+  /** An older API's tier word, verbatim ("" when none). */
+  tierRequired?: string;
+  currentTier?: string;
   featureName: string;
 }
 
-export function OliverUpgradeGate({ tierRequired, currentTier, featureName }: OliverUpgradeGateProps) {
+export function OliverUpgradeGate({ needs, tierRequired, currentTier, featureName }: OliverUpgradeGateProps) {
   // "lite" renders as "Invoicing" (pricing rework 2026-08-21) — one label table for all of OLIVER.
-  const requiredLabel = tierDisplayName("oliver", tierRequired) || tierRequired;
-  const currentLabel = tierDisplayName("oliver", currentTier) || currentTier;
+  const requiredLabel = (needs && needs.trim())
+    || (tierRequired ? tierDisplayName("oliver", tierRequired) || tierRequired : "")
+    || "a higher plan";
+  const currentLabel = !needs && currentTier ? tierDisplayName("oliver", currentTier) || currentTier : "";
 
   return (
     <div className="relative">
@@ -40,8 +52,8 @@ export function OliverUpgradeGate({ tierRequired, currentTier, featureName }: Ol
 
           <h2 className="mt-4 text-xl font-bold text-gray-900">{featureName}</h2>
           <p className="mt-2 text-sm text-gray-600">
-            This feature requires the <span className="font-semibold text-[#0C4A60]">{requiredLabel}</span> plan.
-            You are currently on the <span className="font-semibold">{currentLabel}</span> plan.
+            Not in your plan. This needs <span className="font-semibold text-[#0C4A60]">{requiredLabel}</span>.
+            {currentLabel && <> You are currently on the <span className="font-semibold">{currentLabel}</span> plan.</>}
           </p>
 
           <div className="mt-6">
@@ -57,7 +69,7 @@ export function OliverUpgradeGate({ tierRequired, currentTier, featureName }: Ol
           </div>
 
           <p className="mt-4 text-xs text-gray-400">
-            Upgrading unlocks {featureName.toLowerCase()} and all {requiredLabel}-tier features instantly.
+            Upgrading unlocks {featureName.toLowerCase()} right away.
           </p>
         </div>
       </div>

@@ -1,7 +1,8 @@
 import React from 'react';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useArionData } from '../../useArionData';
-import { Card, EmptyPanel, Loading, InfoCard, TierGate, meetsMinTier, ConsultingUpsell } from '../../components/Ui';
+import { Card, EmptyPanel, Loading, InfoCard, TierGate, ConsultingUpsell } from '../../components/Ui';
 import type { BusinessLocation } from '../../../lib/arionApi';
 
 /**
@@ -35,8 +36,11 @@ function fmtTimestamp(ts: string | null): string {
 
 export function BusinessLocations() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = (selectedSite?.arionTier || 'standard') as string;
-  const canManageMulti = meetsMinTier(tier, 'pro');
+  // Multi-location management is this page's own catalog key
+  // (arion_business_locations); arion-api refuses the same key.
+  const featureGate = useFeatureGate();
+  const canManageMulti = featureGate.allows('arion_business_locations', 'write');
+  const multiNeeds = featureGate.needs('arion_business_locations');
 
   const { data, loading, error, refetch } = useArionData(
     () => arionApi.listBusinessLocations().catch((e: any) => ({ error: e.message || 'Failed to load' } as any)),
@@ -57,7 +61,7 @@ export function BusinessLocations() {
 
   async function handleSetPrimary(loc: BusinessLocation) {
     if (!canManageMulti) {
-      setToast('Multi-location management is available on Pro and Business plans.');
+      setToast(`Multi-location management needs ${multiNeeds}.`);
       return;
     }
     if (loc.is_primary) return;
@@ -90,7 +94,7 @@ export function BusinessLocations() {
       const msg = e?.message || 'Sync failed.';
       // Friendly mapping for known backend codes
       if (/NOT_CONNECTED/i.test(msg) || /No Google-connected/i.test(msg)) {
-        setToast('No Google-connected site found for this tenant. Connect Google in Settings → Connected Accounts first.');
+        setToast('No Google-connected site found for this business. Connect Google in Settings → Connected Accounts first.');
       } else if (/AUTH_EXPIRED/i.test(msg) || /authorization expired/i.test(msg)) {
         setToast('Google authorization expired. Reconnect Google in Settings → Connected Accounts.');
       } else if (/GBP_QUOTA_EXCEEDED/i.test(msg)) {
@@ -237,7 +241,7 @@ export function BusinessLocations() {
                             className="abtn abtn-sky"
                             onClick={() => handleSetPrimary(loc)}
                             disabled={isPending || !canManageMulti}
-                            title={canManageMulti ? 'Promote this location to primary' : 'Multi-location management requires Pro+'}
+                            title={canManageMulti ? 'Promote this location to primary' : `Multi-location management needs ${multiNeeds}`}
                           >
                             {isPending ? 'Saving...' : 'Set as primary'}
                           </button>
@@ -261,23 +265,22 @@ export function BusinessLocations() {
               fontSize: 12, color: '#7C5A00',
             }}
           >
-            You have multiple GBP locations. <strong>Pro+</strong> unlocks setting a different primary
+            You have multiple GBP locations. <strong>{multiNeeds}</strong> unlocks setting a different primary
             and full multi-location management. Your current plan shows all imported locations read-only.
           </div>
         )}
       </Card>
 
-      {/* Pro+ multi-location features marketed as a TierGate'd preview so the
-          status of the feature is obvious to lower tiers without hiding the
+      {/* Multi-location features shown as a TierGate'd preview so the status
+          of the feature is obvious to a plan without it, without hiding the
           page entirely. */}
       <TierGate
-        currentTier={tier}
-        requiredTier="pro"
+        featureKey="arion_business_locations"
         featureName="Per-location analytics, posts, and reviews routing"
       >
-        <Card title="Multi-location features (Pro+)">
+        <Card title="Multi-location features">
           <p style={{ margin: 0, color: '#334155', fontSize: 13 }}>
-            On Pro and Business plans, each location gets its own GBP performance metrics,
+            Each location gets its own GBP performance metrics,
             review thread, and posting calendar. The primary location is what your single-page
             Business Overview, Reviews, Posts, and Insights tabs are anchored to.
           </p>
@@ -286,7 +289,7 @@ export function BusinessLocations() {
 
       <ConsultingUpsell
         headline="Multi-location SEO is its own discipline. IA manages it end-to-end."
-        subtext="Per-location optimization, review monitoring, posting cadence, and consolidated reporting — Pro+ plans."
+        subtext="Per-location optimization, review monitoring, posting cadence, and consolidated reporting."
         serviceType="Local SEO"
         triggerPage="business-locations"
       />

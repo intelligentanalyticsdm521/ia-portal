@@ -538,7 +538,7 @@ export function OliverRecurringPage() {
         !recurring.length ? (
           <EmptyState
             title="No recurring job templates"
-            description="Create job templates that automatically generate jobs on a schedule (weekly lawn care, monthly maintenance, quarterly checkups). Available with Standard plan and above."
+            description="Create job templates that automatically generate jobs on a schedule (weekly lawn care, monthly maintenance, quarterly checkups)."
           />
         ) : (
           <DataTable

@@ -2,16 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useArionContext } from '../useArionContext';
 import { IadmModal } from '../../components/IadmModal';
-
-/* ── Tier helpers ── */
-const TIER_ORDER = ['lite', 'standard', 'pro', 'business'] as const;
-export type ArionTier = (typeof TIER_ORDER)[number];
-
-export function meetsMinTier(current: string | null | undefined, required: ArionTier): boolean {
-  const idx = TIER_ORDER.indexOf((current || 'lite') as ArionTier);
-  const req = TIER_ORDER.indexOf(required);
-  return idx >= req;
-}
+import { useFeatureGate } from '../../hooks/useFeatureGate';
 
 /* ── Lock SVG ── */
 function LockIcon({ size = 20 }: { size?: number }) {
@@ -23,26 +14,34 @@ function LockIcon({ size = 20 }: { size?: number }) {
   );
 }
 
-/* ── TierGate ── */
+/* ── TierGate ──
+ * 2026-10-11 (feature catalog): a section of an ARION page names its catalog
+ * key and nothing else. platform-api decides it for the business
+ * (features[key]); only a decided allowed:false blurs the section, and the
+ * overlay says the catalog's `needs` ("ARION Pro"), the same words as the
+ * menu lock and arion-api's refusal. Undecided opens (a page view is a read).
+ * Until 11 Oct this compared the SITE's tier against a tier written here, and
+ * a site with no tier read as Lite, which locked paying businesses out. */
 export function TierGate({
-  currentTier, requiredTier, featureName, planLabel, children,
+  featureKey, featureName, children,
 }: {
-  currentTier: string | null | undefined;
-  requiredTier: ArionTier;
+  /** The catalog key for this section (platform-api core.features). */
+  featureKey: string;
   featureName: string;
-  planLabel?: string;
   children: React.ReactNode;
 }) {
-  if (meetsMinTier(currentTier, requiredTier)) return <>{children}</>;
-  const label = planLabel || `${requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)} plan required`;
+  const gate = useFeatureGate();
+  const navigate = useNavigate();
+  if (!gate.locked(featureKey)) return <>{children}</>;
+  const needs = gate.needs(featureKey);
   return (
     <div className="gated">
       <div className="gated-blur">{children}</div>
       <div className="gate-overlay">
         <LockIcon />
-        <div className="gate-ttl">{label}</div>
-        <div className="gate-sub">{featureName}</div>
-        <button className="gate-btn">Upgrade to {requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)}</button>
+        <div className="gate-ttl">Not in your plan</div>
+        <div className="gate-sub">{featureName} needs {needs}.</div>
+        <button className="gate-btn" onClick={() => navigate('/app/services/arion_usage')}>Upgrade to {needs}</button>
       </div>
     </div>
   );

@@ -28,12 +28,15 @@ import {
   needsFor, needsSummary, setupStepsFor, shortcutsFor,
   type NeedTile, type StellaShortcut,
 } from "./stellaDashboard";
+import { planBadgeLabel, planBadgeTitle } from "../../components/navVisibility";
+import type { FeatureMap } from "../../lib/entitlements";
 
 export function StellaDashboardView({
   setupSteps,
   needs,
   allowedServiceKeys = null,
   shortcuts,
+  features = null,
 }: {
   /** null while the setup reads are still out — the card waits rather than flickering. */
   setupSteps: StellaSetupStep[] | null;
@@ -41,6 +44,8 @@ export function StellaDashboardView({
   /** The person's nav allowlist (/overview/me or /ledger/me); null = an owner, who sees everything. */
   allowedServiceKeys?: string[] | null;
   shortcuts?: StellaShortcut[];
+  /** The catalog answer for this business (useFeatureGate().features); the shortcut badges read it. */
+  features?: FeatureMap | null;
 }) {
   const steps = setupStepsFor(setupSteps, allowedServiceKeys);
   const tiles = needsFor(needs, allowedServiceKeys);
@@ -72,9 +77,11 @@ export function StellaDashboardView({
               <span style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
                   <span style={{ fontSize: 13, fontWeight: 700, color: "#0B1C24" }}>{s.label}</span>
-                  {s.tag && (
-                    // The same badge the nav shows on this area's items.
-                    <span data-shortcut-tag={s.tag} title="Comes with the Standard plan" style={tagBadge}>{s.tag}</span>
+                  {s.badgeKey && planBadgeLabel(s.badgeKey, { features }) && (
+                    // The same badge the nav shows on this area's first item: the catalog's plan.
+                    <span data-shortcut-tag={planBadgeLabel(s.badgeKey, { features }) ?? ""} title={planBadgeTitle(s.badgeKey, { features }) ?? ""} style={tagBadge}>
+                      {planBadgeLabel(s.badgeKey, { features })}
+                    </span>
                   )}
                 </span>
                 <ArrowRight size={13} color={STELLA_INDIGO} />

@@ -121,7 +121,11 @@ export interface LayerInspectorProps {
   onSetBackground: (colour: string) => void;
   onBrandSync: () => void;
   brandSyncAvailable: boolean;
+  /** What to buy for Brand Sync, in the catalog's words (useFeatureGate().needs). */
+  brandSyncNeeds?: string;
   onRemoveBackground?: (id: string) => void;
+  /** Set when the plan does not include Remove background: the catalog's `needs`. */
+  removeBackgroundNeeds?: string | null;
   removeBackgroundBusy?: boolean;
   removeBackgroundError?: string | null;
 }
@@ -228,11 +232,11 @@ function NothingSelected(p: LayerInspectorProps & { tab: InspectorTab }) {
           onClick={p.brandSyncAvailable ? p.onBrandSync : undefined}
           disabled={!p.brandSyncAvailable}
           title={p.brandSyncAvailable
-            ? "Brand Sync — pull every colour in this design to the nearest colour in your brand. Undo puts it back."
-            : "Brand Sync is a Pro feature"}
+            ? "Brand Sync — pull every color in this design to the nearest color in your brand. Undo puts it back."
+            : `Brand Sync needs ${p.brandSyncNeeds || "a higher plan"}`}
           className="inline-flex w-full items-center justify-center gap-1 rounded border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300"
         >
-          <Palette className="h-3 w-3" /> Brand Sync{!p.brandSyncAvailable && " · Pro+"}
+          <Palette className="h-3 w-3" /> Brand Sync{!p.brandSyncAvailable && ` · ${p.brandSyncNeeds || "a higher plan"}`}
         </button>
       </Section>
     );
@@ -598,6 +602,7 @@ function OneLayer(p: LayerInspectorProps & { tab: InspectorTab; layer: Layer }) 
               onUploadToSlot={p.onUploadToSlot ? () => p.onUploadToSlot!(layer.id) : undefined}
               busy={p.removeBackgroundBusy}
               error={p.removeBackgroundError}
+              lockedNeeds={p.removeBackgroundNeeds}
             />
           </Section>
         )}
@@ -1017,9 +1022,9 @@ function TextStyle({ layer, brand, update }: {
 
 /* ── Content › Picture ─────────────────────────────────────────────────── */
 
-function ImageContent({ layer, onRemoveBackground, onFillSlot, onUploadToSlot, busy, error }: {
+function ImageContent({ layer, onRemoveBackground, onFillSlot, onUploadToSlot, busy, error, lockedNeeds }: {
   layer: ImageLayer; onRemoveBackground?: () => void; onFillSlot?: () => void;
-  onUploadToSlot?: () => void; busy?: boolean; error?: string | null;
+  onUploadToSlot?: () => void; busy?: boolean; error?: string | null; lockedNeeds?: string | null;
 }) {
   return (
     <>
@@ -1079,7 +1084,9 @@ function ImageContent({ layer, onRemoveBackground, onFillSlot, onUploadToSlot, b
         </button>
       ) : (
         <div className="text-[10px] text-slate-400">
-          Place a picture from your Media Library to unlock Remove background (Pro+).
+          {lockedNeeds
+            ? `Remove background needs ${lockedNeeds}.`
+            : "Place a picture from your Media Library to use Remove background."}
         </div>
       )}
       {error && <div className="rounded border border-red-200 bg-red-50 p-1.5 text-[10px] text-red-700">{error}</div>}

@@ -13,6 +13,7 @@ import {
   isEntitled,
   isHiddenFeature,
   myBrandLockedOnRail,
+  planBadgeLabel,
   requirementLabel,
   type VisibilityRules,
 } from "./navVisibility";
@@ -28,8 +29,6 @@ export interface SubNavItem extends VisibilityRules {
   key: string;
   label: string;
   route: string;
-  /** Renders a padlock ICON only — see navVisibility.ts for actual gating. */
-  gated?: boolean;
   intelligence?: boolean; // (legacy) — no longer changes the label color; harmless if set.
   crossPlatform?: boolean; // (legacy) — no longer changes the label color; harmless if set.
   /** @deprecated 2026-06-22 — use `crossPlatform`. Kept for back-compat with older callers. */
@@ -41,6 +40,13 @@ export interface SubNavItem extends VisibilityRules {
    * intelligence items, ARGUS Cross-Platform links, STELLA, etc.
    */
   tag?: { label: string; color: string };
+  /**
+   * Show the catalog's lowest plan for this row as a small badge, in this
+   * color ("S" for Standard, "Pro", "Business"). The label is read from the
+   * answer (features[key].min_tier, navVisibility.planBadgeLabel), never
+   * written on the row; no answer, or a row with no tier, shows no badge.
+   */
+  planBadge?: string;
   /**
    * Set at render time (not authored in the nav config) when the tenant's plan
    * does NOT include this feature. The item still renders — with an "Upgrade"
@@ -197,7 +203,7 @@ const OLIVER_NAV: SubNavConfig = {
         // tierFeatures crew_performance_reporting = Pro+ (matrix 2). It read
         // Standard here until 2026-10-11, so the menu offered a Pro report to
         // a Standard business.
-        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance", gated: true },
+        { key: "oliver_crew_performance", label: "Performance", route: "/app/services/oliver_crew_performance" },
       ],
     },
     {
@@ -785,17 +791,15 @@ const PLACEHOLDER_NAV = (name: string, tagline: string): SubNavConfig => ({
 
 // STELLA — Ledger + Unit Economics 4-nav shell (August build). Two live layers
 // (Ledger, Unit Economics) + two locked/coming-soon layers (Database Manager,
-// Custom Reporting) that render a padlock + tier badge. Supersedes the parked
+// Custom Reporting) that show the catalog's plan badge. Supersedes the parked
 // 0.1.0 MLP (Overview P&L + Expenses over oliver.expense).
-// STELLA Indigo #4C5BD4 drives the tier/lock badges.
+// STELLA Indigo #4C5BD4 drives the plan badges.
 //
-// TIER GATES (2026-10-11, Brandon: "it's by their subscription"). Matrix 9:
-// STELLA has no Lite (standard | pro | business), and Brandon 2026-08-25 put
-// Database Manager + Custom Reporting at Standard+, i.e. every STELLA tier.
-// So every row is every tier and says so, except the two the matrix names:
-// SQL Editor = Pro+ (section 9) and IA Insights Intelligence = Pro+ (section 6).
-// The Pro/Business splits inside Ledger (Plaid item counts, multi-entity,
-// bookkeeper seat) are page-level and still "(rolling out)".
+// PLANS (2026-10-11, the feature catalog): every STELLA row names its key and
+// nothing else. The plan badge on the Database Manager / Custom Reporting /
+// IA Insights rows is the catalog's min_tier, read from the answer
+// (planBadge), and a row the plan does not include gets the lock with the
+// catalog's `needs`, like every other product.
 const STELLA_TAG = "#4C5BD4";
 const STELLA_NAV: SubNavConfig = {
   productName: "STELLA",
@@ -862,40 +866,38 @@ const STELLA_NAV: SubNavConfig = {
       // structure — do not build them against the current insights pages.
       label: "IA Insights", icon: TrendingUp, collapsible: true, sectionId: "stella_insights",
       items: [
-        { key: "stella_ia_insights_trends", label: "Trends", route: "/app/services/stella_ia_insights_trends", gated: true, tag: { label: "S", color: STELLA_TAG } },
-        // Matrix 6 + 9: Intelligence = Pro+ on every platform.
-        { key: "stella_ia_insights_intelligence", label: "Intelligence", route: "/app/services/stella_ia_insights_intelligence", gated: true, tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_ia_insights_trends", label: "Trends", route: "/app/services/stella_ia_insights_trends", planBadge: STELLA_TAG },
+        { key: "stella_ia_insights_intelligence", label: "Intelligence", route: "/app/services/stella_ia_insights_intelligence", planBadge: STELLA_TAG },
         { key: "stella_ledger_reports", label: "Reports", route: "/app/services/stella_ledger_reports" },
       ],
     },
     {
-      // Layer 3a — LOCKED. Every item shows a padlock + Standard tier badge and
-      // opens the STELLA coming-soon sheet (StellaComingSoonPage).
+      // Layer 3a. Every item shows the catalog's plan badge and opens the
+      // STELLA coming-soon sheet (StellaComingSoonPage).
       label: "Database Manager", icon: Server, collapsible: true, sectionId: "stella_db",
       items: [
-        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_registry", label: "View Registry", route: "/app/services/stella_db_registry", planBadge: STELLA_TAG },
+        { key: "stella_db_entry", label: "Manual Entry", route: "/app/services/stella_db_entry", planBadge: STELLA_TAG },
         // Import History folded into the Upload surface (batch list + rollback
         // live on the same page per master §5.3) — keeps this group at the 8 cap.
-        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_db_upload", label: "Uploads & Import History", route: "/app/services/stella_db_upload", planBadge: STELLA_TAG },
+        { key: "stella_db_tags", label: "Tags", route: "/app/services/stella_db_tags", planBadge: STELLA_TAG },
+        { key: "stella_db_custom_fields", label: "Custom Fields", route: "/app/services/stella_db_custom_fields", planBadge: STELLA_TAG },
+        { key: "stella_db_documents", label: "Documents", route: "/app/services/stella_db_documents", planBadge: STELLA_TAG },
+        { key: "stella_db_compliance", label: "Compliance Reminders", route: "/app/services/stella_db_compliance", planBadge: STELLA_TAG },
+        { key: "stella_db_warnings", label: "Data Engineer Warnings", route: "/app/services/stella_db_warnings", planBadge: STELLA_TAG },
       ],
     },
     {
       // Layer 3b — LOCKED.
       label: "Custom Reporting", icon: BarChart2, collapsible: true, sectionId: "stella_report",
       items: [
-        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", tag: { label: "S", color: STELLA_TAG } },
-        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", tag: { label: "S", color: STELLA_TAG } },
-        // Matrix 9: "SQL Editor stays Pro+" (serviceCatalog tierGate 'Pro').
-        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", tag: { label: "Pro", color: STELLA_TAG } },
-        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", tag: { label: "S", color: STELLA_TAG } },
+        { key: "stella_report_library", label: "Report Library", route: "/app/services/stella_report_library", planBadge: STELLA_TAG },
+        { key: "stella_report_builder", label: "Report Builder", route: "/app/services/stella_report_builder", planBadge: STELLA_TAG },
+        { key: "stella_report_dashboards", label: "Dashboards", route: "/app/services/stella_report_dashboards", planBadge: STELLA_TAG },
+        { key: "stella_report_scheduled", label: "Scheduled Reports", route: "/app/services/stella_report_scheduled", planBadge: STELLA_TAG },
+        { key: "stella_report_sql", label: "SQL Editor", route: "/app/services/stella_report_sql", planBadge: STELLA_TAG },
+        { key: "stella_report_exports", label: "Exports", route: "/app/services/stella_report_exports", planBadge: STELLA_TAG },
       ],
     },
   ],
@@ -998,7 +1000,7 @@ const SETTINGS_NAV: SubNavConfig = {
         { key: "spark_senders", label: "Senders", route: "/app/services/spark_senders" },
         { key: "spark_signatures", label: "Signatures", route: "/app/services/spark_signatures" },
         { key: "spark_api_keys", label: "API Keys", route: "/app/services/spark_api_keys" },
-        { key: "spark_secrets", label: "Tenant Secrets", route: "/app/services/spark_secrets" },
+        { key: "spark_secrets", label: "Business Secrets", route: "/app/services/spark_secrets" },
         { key: "spark_custom_fields", label: "Custom Fields", route: "/app/services/spark_custom_fields" },
         { key: "spark_quiet_hours", label: "Quiet Hours", route: "/app/services/spark_quiet_hours" },
         { key: "spark_tracking", label: "Tracking Pixels", route: "/app/services/spark_tracking" },
@@ -1602,10 +1604,23 @@ export function SubNav({ config }: SubNavProps) {
                             {item.tag.label}
                           </span>
                         )}
-                        {item.gated && (
-                          <svg className="ml-auto h-3 w-3 flex-shrink-0 text-[#A8CDD8]/40" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
-                          </svg>
+                        {item.planBadge && !item.tag && !item.locked && planBadgeLabel(item.key, visCtx) && (
+                          <span
+                            data-plan-badge={item.key}
+                            style={{
+                              background: `${item.planBadge}22`,
+                              color: item.planBadge,
+                              fontSize: 9,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              padding: '1px 5px',
+                              borderRadius: 99,
+                              flexShrink: 0,
+                              marginLeft: 'auto',
+                            }}
+                          >
+                            {planBadgeLabel(item.key, visCtx)}
+                          </span>
                         )}
                       </NavLink>
                       )}

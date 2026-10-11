@@ -27,7 +27,7 @@ import {
 } from "recharts";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
-import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface AnalyticsSummary {
@@ -85,14 +85,13 @@ export function SocialAnalyticsPage() {
   // Tier gate — analytics requires Standard (30d window). 90d trends and CSV
   // export are further gated below where they render. Lite tenants see the
   // full-page upgrade card.
-  const gate = useMyBrandTier();
-  if (gate.ready && !gate.meets("social_analytics_30d")) {
+  const gate = useFeatureGate();
+  if (gate.locked("my_brand_social_analytics_30d")) {
     return (
       <div className="p-6">
         <MyBrandUpgradeGate
           featureName="Social Analytics"
-          requiredTier={gate.requiredTier("social_analytics_30d")}
-          currentTier={gate.tier}
+          needs={gate.needs("my_brand_social_analytics_30d")}
         />
       </div>
     );

@@ -11,7 +11,6 @@ export function AnalyticsPages() {
   const insightsPayload = useArionInsightsPayload();
 
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = selectedSite?.arionTier || 'standard';
   const [provider] = useState<'google'>('google');
 
   const { data: analytics, loading: analyticsLoading } = useArionData(
@@ -26,7 +25,7 @@ export function AnalyticsPages() {
   const topPages = (a?.breakdowns?.topPages as any[]) ?? [];
 
   return (
-    <TierGate currentTier={tier} requiredTier="pro" featureName="Page drill-down analytics">
+    <TierGate featureKey="arion_analytics_pages" featureName="Page drill-down analytics">
       <ReportBar detail={insightsPayload?.detail} reports={[
         { id: 'top_pages', label: 'Top pages' },
         { id: 'engagement_by_page', label: 'Engagement by page' },

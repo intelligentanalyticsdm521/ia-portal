@@ -10,6 +10,7 @@ import { authScopes } from "../auth/msalConfig";
 import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
+import { planRefusalFromBody } from "./planRefusal";
 
 // Exported: stellaApi.ts reuses this host since the 2026-08 fold put the
 // STELLA ledger routes on oliver-api (no standalone stella-api service).
@@ -110,18 +111,11 @@ async function oliverFetch<T>(
       // Parse tier-gate 403s into a structured error the UI can handle
       try {
         const body = JSON.parse(text);
-        // oliver-api emits "feature_not_available" from requireOliverAccess and
-        // "tier_upgrade_required" / "tier_required" from in-route gates (e.g.
-        // PATCH /workflow-settings refusing auto_confirm below Pro, with the
-        // tiers under `details`). All three are the same tier gate.
-        if (body.error === "feature_not_available" || body.error === "tier_upgrade_required" || body.error === "tier_required") {
-          throw {
-            type: "tier_gate" as const,
-            tierRequired: body.tier_required || body.details?.required_tier || body.required_tier || "pro",
-            currentTier: body.current_tier || body.details?.current_tier || "standard",
-            message: typeof body.message === "string" ? body.message : undefined,
-          };
-        }
+        // The catalog refusal "feature_not_in_plan" and oliver-api's older
+        // "feature_not_available" / "tier_upgrade_required" / "tier_required"
+        // (tiers under `details`), read in one place (lib/planRefusal).
+        const refusal = planRefusalFromBody(body);
+        if (refusal) throw refusal;
       } catch (e) {
         if (typeof e === "object" && e !== null && "type" in e) throw e;
       }

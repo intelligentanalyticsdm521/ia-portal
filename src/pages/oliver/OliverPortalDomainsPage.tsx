@@ -3,7 +3,7 @@
  *
  * Shows the tenant's current portal URLs (customer + crew + booking) with:
  *   - Default URL (xxx.customer.ia-dm.com) — auto-bound on click
- *   - Custom Domain entry — for Pro+ tenants who want to use their own
+ *   - Custom Domain entry — for businesses whose plan includes custom domains (catalog row oliver_portal_domains) who want to use their own
  *   - Status indicator: Pending DNS / Validating / Ready / Failed
  *   - Setup instructions (TXT + CNAME) when manual DNS is required
  *
@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useOliverApi } from "../../hooks/useOliverApi";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, Button } from "../../components/oliver/ui";
 import { Users, HardHat, Calendar as CalendarIcon, ExternalLink, Copy, RefreshCw } from "lucide-react";
@@ -49,24 +50,31 @@ interface BindResponse {
   error?: string | null;
 }
 
-const PORTAL_META: Record<PortalKind, { label: string; icon: typeof Users; defaultSuffix: string; available: boolean; tierGate: string }> = {
-  customer: { label: "Customer Portal", icon: Users, defaultSuffix: "customer.ia-dm.com", available: true, tierGate: "Standard+" },
-  crew:     { label: "Crew Portal",     icon: HardHat, defaultSuffix: "crew.ia-dm.com", available: true, tierGate: "Pro+" },
-  booking:  { label: "Booking",         icon: CalendarIcon, defaultSuffix: "book.ia-dm.com", available: true, tierGate: "Standard+ (no custom domain)" },
+// Each portal names its catalog row (2026-10-11: the one feature list); the
+// plan each one needs is the catalog's `needs`, never written here.
+const PORTAL_META: Record<PortalKind, { label: string; icon: typeof Users; defaultSuffix: string; available: boolean; featureKey: string; note?: string }> = {
+  customer: { label: "Customer Portal", icon: Users, defaultSuffix: "customer.ia-dm.com", available: true, featureKey: "oliver_customer_portal_access" },
+  crew:     { label: "Crew Portal",     icon: HardHat, defaultSuffix: "crew.ia-dm.com", available: true, featureKey: "oliver_crew_portal_access" },
+  booking:  { label: "Booking",         icon: CalendarIcon, defaultSuffix: "book.ia-dm.com", available: true, featureKey: "oliver_booking", note: "no custom domain" },
 };
 
 // F-58 — simple text-column preference for per-tenant custom portal
-// domains, exposed via /settings/portals/custom-domains. Pro+ only.
+// domains, exposed via /settings/portals/custom-domains. oliver-api decides
+// it on the catalog row oliver_portal_domains and sends `needs`.
 interface F58CustomDomains {
   tier: string;
   canUseCustomDomain: boolean;
-  minTier: string;
+  minTier: string | null;
+  /** What to buy, in the catalog's words, when the plan does not include it. */
+  needs?: string | null;
   customerPortalCustomDomain: string | null;
   crewPortalCustomDomain: string | null;
 }
 
 export function OliverPortalDomainsPage() {
   const { get, post, patch, del, ready } = useOliverApi();
+  const featureGate = useFeatureGate();
+  const domainNeeds = featureGate.needs("oliver_portal_domains");
   const [domains, setDomains] = useState<PortalDomain[]>([]);
   const [tenantSlug, setTenantSlug] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -115,7 +123,7 @@ export function OliverPortalDomainsPage() {
 
   async function bindDefault(kind: PortalKind) {
     if (!tenantSlug) {
-      alert("Tenant slug not loaded yet — refresh and try again.");
+      alert("Your business address is not loaded yet — refresh and try again.");
       return;
     }
     setBusyPortal(kind);
@@ -219,34 +227,35 @@ export function OliverPortalDomainsPage() {
     <OliverPageWrapper title="Portals & Domains" subtitle="Customer + crew portal URLs" error={error} loading={loading && !domains.length}>
       <PageHeader
         title="Portals & Domains"
-        subtitle="Manage the URLs your customers and crew use to access their portals. Default subdomains are free; bring your own domain on Pro+."
+        subtitle={`Manage the URLs your customers and crew use to access their portals. Default subdomains are free; your own domain needs ${domainNeeds}.`}
       />
 
       {/* F-58 — simple text-column preference for per-tenant custom portal
           domains. Sits above the automated /portal-domains card set so a
           tenant can declare intent even before running through the SWA
-          binding flow. Pro+ only (server 402s below-tier PATCHes). */}
+          binding flow. oliver-api refuses a PATCH the plan does not include
+          (catalog row oliver_portal_domains). */}
       {f58 && (
         <div className="card" style={{ marginBottom: 16 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-            <div className="card-ttl">Per-tenant custom portal domain</div>
+            <div className="card-ttl">Your custom portal domain</div>
             {f58.canUseCustomDomain ? (
               <span style={{
                 padding: "1px 6px", borderRadius: 999,
                 background: "#D1FAE5", color: "#065F46",
                 fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
-              }}>Pro+ · Available</span>
+              }}>In your plan</span>
             ) : (
               <span style={{
                 padding: "1px 6px", borderRadius: 999,
                 background: "#FEF3C7", color: "#92400E",
                 fontSize: 9, fontWeight: 700, letterSpacing: 0.4, textTransform: "uppercase",
-              }}>Pro+ · Locked</span>
+              }}>Not in your plan</span>
             )}
           </div>
           <div className="card-sub" style={{ marginBottom: 10 }}>
             Store the hostname you want your customer + crew portals to answer on.
-            You still need to add a <code style={{ fontFamily: "monospace", background: "#F1F5F9", padding: "1px 4px", borderRadius: 3 }}>CNAME</code> at your DNS provider pointing at the value shown on the portal-specific card below — this field just persists your choice. Requires the <strong>Pro</strong> plan or higher.
+            You still need to add a <code style={{ fontFamily: "monospace", background: "#F1F5F9", padding: "1px 4px", borderRadius: 3 }}>CNAME</code> at your DNS provider pointing at the value shown on the portal-specific card below — this field just persists your choice. Needs <strong>{f58.needs || domainNeeds}</strong>.
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
@@ -306,7 +315,7 @@ export function OliverPortalDomainsPage() {
             {f58Msg && <span style={{ fontSize: 11, color: f58Msg.startsWith("Error") ? "#B91C1C" : "#065F46" }}>{f58Msg}</span>}
             {!f58.canUseCustomDomain && (
               <span style={{ fontSize: 11, color: "#92400E" }}>
-                Your plan is <strong>{f58.tier}</strong> — upgrade to Pro to unlock custom portal domains.
+                Not in your plan. Custom portal domains need <strong>{f58.needs || domainNeeds}</strong>.
               </span>
             )}
           </div>
@@ -327,7 +336,10 @@ export function OliverPortalDomainsPage() {
               <Icon size={20} color="#1A7DB5" />
               <div>
                 <div className="card-ttl">{meta.label}</div>
-                <div className="card-sub">Available on {meta.tierGate}</div>
+                <div className="card-sub">
+                  {featureGate.locked(meta.featureKey) ? `Needs ${featureGate.needs(meta.featureKey)}` : "In your plan"}
+                  {meta.note ? ` (${meta.note})` : ""}
+                </div>
               </div>
             </div>
 

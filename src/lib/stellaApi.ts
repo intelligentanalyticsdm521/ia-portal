@@ -18,6 +18,7 @@ import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
 import { OLIVER_API_BASE } from "./oliverApi";
 import { apiBodySentence } from "./apiErrorMessage";
+import { planRefusalFromBody } from "./planRefusal";
 
 /**
  * A failed STELLA call, as an Error a person can read.
@@ -149,13 +150,8 @@ async function stellaFetch<T>(
       // Parse tier-gate 403s into a structured error the UI can handle.
       try {
         const body = JSON.parse(text);
-        if (body.error === "feature_not_available") {
-          throw {
-            type: "tier_gate" as const,
-            tierRequired: body.tier_required || "pro",
-            currentTier: body.current_tier || "standard",
-          };
-        }
+        const refusal = planRefusalFromBody(body);
+        if (refusal) throw refusal;
       } catch (e) {
         if (typeof e === "object" && e !== null && "type" in e) throw e;
       }
@@ -272,9 +268,8 @@ export async function stellaUpload<T>(
   if (!res.ok) {
     let parsed: { error?: string; details?: string[]; tier_required?: string; current_tier?: string } | null = null;
     try { parsed = JSON.parse(text); } catch { /* non-JSON body falls through */ }
-    if (res.status === 403 && parsed?.error === "feature_not_available") {
-      throw { type: "tier_gate" as const, tierRequired: parsed.tier_required || "standard", currentTier: parsed.current_tier || "standard" };
-    }
+    const refusal = res.status === 403 ? planRefusalFromBody(parsed) : null;
+    if (refusal) throw refusal;
     // Preserve `details` so the caller can list each validation line instead of
     // showing one opaque "header_mismatch".
     const err = new Error(parsed?.error ? `${parsed.error}` : `STELLA API ${res.status}: ${text}`) as Error & { details?: string[] };

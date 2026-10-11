@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import {
-  Card, HealthRow, InfoCard, EmptyPanel, Loading, meetsMinTier, ConsultingUpsell,
+  Card, HealthRow, InfoCard, EmptyPanel, Loading, ConsultingUpsell,
 } from '../../components/Ui';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useArionData } from '../../useArionData';
 
 // Session-scoped acknowledgement: "I understand DNS edits could break my site."
@@ -136,8 +137,11 @@ function EditRecordRow({ rec, onSave, onCancel, saving, errorMsg }: { rec: any; 
 
 export function HostingDomainDns() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const currentTier = selectedSite?.arionTier || 'standard';
-  const isPro = meetsMinTier(currentTier, 'pro');
+  // DNS editing follows the catalog key arion_hosting_domain_dns, the same
+  // key arion-api gates /hosting/dns on (reads and writes). Until 11 Oct this
+  // page hid editing below Pro while the API allowed it on every plan.
+  const featureGate = useFeatureGate();
+  const isPro = featureGate.allows('arion_hosting_domain_dns', 'write');
 
   const [refreshKey, setRefreshKey] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
@@ -275,7 +279,7 @@ export function HostingDomainDns() {
         </div>
       )}
 
-      {/* Add Record Form (Pro+) */}
+      {/* Add Record Form (when the plan includes DNS editing) */}
       {isPro && (
         <>
           <div className="dns-form-row">
@@ -370,7 +374,7 @@ export function HostingDomainDns() {
 
         {!isPro && (
           <InfoCard title="DNS Editing">
-            DNS record editing requires a Pro plan or above. Upgrade your plan to add, edit, or remove DNS records.
+            DNS record editing is not in your plan. It needs {featureGate.needs('arion_hosting_domain_dns')}.
           </InfoCard>
         )}
       </Card>

@@ -9,6 +9,7 @@
 // endpoints by free-text match across method+path+description.
 import { useMemo, useState } from "react";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import {
   Code as CodeIcon,
   Search as SearchIcon,
@@ -32,8 +33,8 @@ interface Endpoint {
   /** Whether the endpoint requires the bearer token + x-tenant-id header.
    *  Defaults to true. Public endpoints (form submit, hosted form, QR) are false. */
   authRequired?: boolean;
-  /** Tier required. Default null = all tiers. */
-  minTier?: "pro" | "business";
+  /** The catalog key the API gates this endpoint on; its plan is the catalog's, shown from the answer. */
+  featureKey?: string;
 }
 
 interface Section {
@@ -135,31 +136,31 @@ const SECTIONS: Section[] = [
   {
     key: "usage",
     label: "Usage & Activity",
-    description: "Tenant usage counts + the v4.5 real-time activity stream.",
+    description: "Business usage counts + the v4.5 real-time activity stream.",
     endpoints: [
       { method: "GET", path: "/api/v1/usage",                       summary: "Monthly usage vs tier limits" },
       { method: "GET", path: "/api/v1/usage/realtime",              summary: "Live activity counters (v4.5)", exampleQuery: "?minutes=60" },
       { method: "GET", path: "/api/v1/activity",                    summary: "Activity stream (v1.12)", exampleQuery: "?contact_id=1234&limit=50" },
       { method: "GET", path: "/api/v1/activity/summary",            summary: "30-day activity counts by type" },
-      { method: "GET", path: "/api/v1/audit-log",                   summary: "Tenant audit log (v1.16, Business)", minTier: "business" },
-      { method: "GET", path: "/api/v1/audit-log/export.csv",        summary: "Audit log CSV export (v2.3, Business)", minTier: "business" },
+      { method: "GET", path: "/api/v1/audit-log",                   summary: "Business audit log (v1.16)", featureKey: "spark_audit_log" },
+      { method: "GET", path: "/api/v1/audit-log/export.csv",        summary: "Audit log CSV export (v2.3)", featureKey: "spark_audit_log" },
     ],
   },
   {
     key: "admin",
     label: "Admin & Configuration",
-    description: "Secrets vault, tenant settings, quiet hours, rate limits, config backup.",
+    description: "Secrets vault, business settings, quiet hours, rate limits, config backup.",
     endpoints: [
       { method: "GET",    path: "/api/v1/tenant-secrets",            summary: "List secrets (v1.11)" },
-      { method: "POST",   path: "/api/v1/tenant-secrets",            summary: "Create secret (admin)", exampleBody: { name: "stripe_api_key", value: "sk_live_…", description: "Tenant's Stripe restricted key" } },
+      { method: "POST",   path: "/api/v1/tenant-secrets",            summary: "Create secret (admin)", exampleBody: { name: "stripe_api_key", value: "sk_live_…", description: "The business's Stripe restricted key" } },
       { method: "POST",   path: "/api/v1/tenant-secrets/:id/reveal", summary: "Reveal plaintext (audit-logged, admin)" },
-      { method: "GET",    path: "/api/v1/tenant-settings",           summary: "Read all tenant settings (v5.23)" },
-      { method: "PUT",    path: "/api/v1/tenant-settings/:key",      summary: "Upsert a tenant setting", exampleBody: { value: "home_services" } },
+      { method: "GET",    path: "/api/v1/tenant-settings",           summary: "Read all business settings (v5.23)" },
+      { method: "PUT",    path: "/api/v1/tenant-settings/:key",      summary: "Upsert a business setting", exampleBody: { value: "home_services" } },
       { method: "GET",    path: "/api/v1/quiet-hours",               summary: "Quiet hours config (v3.3)" },
       { method: "PUT",    path: "/api/v1/quiet-hours",               summary: "Update quiet hours", exampleBody: { enabled: true, timezone: "America/Chicago", start_hour: 21, end_hour: 9, block_action: "queue" } },
       { method: "GET",    path: "/api/v1/rate-limits",               summary: "Rate-limit config (v3.5)" },
       { method: "GET",    path: "/api/v1/rate-limits/usage",         summary: "Per-minute API call breakdown" },
-      { method: "GET",    path: "/api/v1/config/export",             summary: "Export tenant SPARK config (v4.4)" },
+      { method: "GET",    path: "/api/v1/config/export",             summary: "Export the business's SPARK config (v4.4)" },
       { method: "POST",   path: "/api/v1/config/import",             summary: "Import a previously exported config" },
     ],
   },
@@ -171,6 +172,7 @@ const METHOD_COLORS: Record<Method, string> = {
 
 export function SparkApiReferencePage() {
   const [search, setSearch] = useState("");
+  const featureGate = useFeatureGate();
   const [expanded, setExpanded] = useState<Record<string, boolean>>(
     Object.fromEntries(SECTIONS.map((s) => [s.key, true]))
   );
@@ -262,9 +264,9 @@ export function SparkApiReferencePage() {
                     <div className="flex items-center gap-2 mt-1 ml-1 flex-wrap">
                       {isPublic && <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">public</span>}
                       {!isPublic && <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">auth required</span>}
-                      {ep.minTier && (
-                        <span className={`text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded ${ep.minTier === "business" ? "bg-violet-100 text-violet-700" : "bg-blue-100 text-blue-700"}`}>
-                          {ep.minTier} tier
+                      {ep.featureKey && featureGate.entry(ep.featureKey)?.min_tier && (
+                        <span className="text-[9px] uppercase font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+                          {featureGate.entry(ep.featureKey)?.min_tier} tier
                         </span>
                       )}
                     </div>

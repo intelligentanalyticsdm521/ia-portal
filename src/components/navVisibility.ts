@@ -182,6 +182,27 @@ export function requirementLabel(key: string | null | undefined, ctx: Visibility
 }
 
 /**
+ * The small plan badge a menu row may show (SubNav `planBadge`): the
+ * catalog's lowest tier for the key, as the menu has always abbreviated it
+ * ("S" for Standard, "Pro", "Business"). Read from the answer; null when
+ * there is no answer or the row has no tier (every plan of its product).
+ */
+const PLAN_BADGE: Record<string, string> = { lite: "Lite", standard: "S", pro: "Pro", business: "Business", enterprise: "Enterprise" };
+export function planBadgeLabel(key: string | null | undefined, ctx: VisibilityContext): string | null {
+  const tier = key ? ctx.features?.[key]?.min_tier : null;
+  if (!tier) return null;
+  return PLAN_BADGE[String(tier).toLowerCase()] ?? String(tier);
+}
+
+/** The plan a row's badge stands for, in words ("the Standard plan"), for its tooltip. */
+export function planBadgeTitle(key: string | null | undefined, ctx: VisibilityContext): string | null {
+  const tier = key ? ctx.features?.[key]?.min_tier : null;
+  if (!tier) return null;
+  const t = String(tier).toLowerCase();
+  return `Comes with the ${t.charAt(0).toUpperCase()}${t.slice(1)} plan`;
+}
+
+/**
  * Tour steps to offer, without the pages the catalog cuts from the product
  * (availability "hidden"). The tours are generated from the menu once, at
  * load, before any answer; this drops the cut pages at run time. A step id is

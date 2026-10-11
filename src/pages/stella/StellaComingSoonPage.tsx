@@ -26,7 +26,7 @@ function moduleFor(key: string): { label: string; bullets: string[] } {
       bullets: [
         "Saved report library + field-picker builder over the view registry",
         "Dashboards and scheduled report delivery",
-        "SQL editor (Pro+) and exports",
+        "SQL editor and exports",
       ],
     };
   }

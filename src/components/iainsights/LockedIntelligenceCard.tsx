@@ -2,8 +2,9 @@
 // Intelligence-shelf cards that implement the locked + collecting states
 // per scope §8.4 (overnight-report doc 64).
 //
-// Locked   — tenant's tier is below the report's minimum tier. Shows the
-//            report title, description, "Requires <tier>" badge, the
+// Locked   — the plan answer refuses the report's catalog key. Shows the
+//            report title, description, "Requires <needs>" badge (the
+//            catalog's words, e.g. "SPARK Pro"), the
 //            reason it's locked, and a CTA to the pricing page. The
 //            report calculator does NOT run — the gauge displays a
 //            permanent grey dash. This is the post-rework Standard-tier
@@ -20,13 +21,11 @@
 //
 // Both share the same visual chrome as the existing per-platform cards so
 // dropping them in alongside the Live/Partial cards reads as one grid
-// rather than two visual languages. Tier badge styling follows the
-// existing scheme (Pro → blue, Business → violet, Data Plan → violet).
+// rather than two visual languages. 2026-10-11 (feature catalog): the card
+// states no tier; the caller passes the catalog's `needs` for the report's key.
 
 import { Lock, Clock, ArrowRight } from "lucide-react";
 import { Link } from "react-router-dom";
-
-export type IntelligenceMinTier = "standard" | "pro" | "business" | "data_plan";
 
 interface CommonProps {
   /** Display name of the report ("Churn Risk Model"). */
@@ -40,9 +39,9 @@ interface CommonProps {
 }
 
 interface LockedProps extends CommonProps {
-  /** The tier required to unlock this report. */
-  minTier: IntelligenceMinTier;
-  /** Free-text reason ("Requires Pro for advanced time-series modelling"). */
+  /** What to buy to unlock this report, in the catalog's words (useFeatureGate().needs(key)). */
+  needs: string;
+  /** Free-text reason ("Uses advanced time-series modelling"). */
   lockReason: string;
   /** Pricing-page deep link — defaults to /pricing. */
   ctaTarget?: string;
@@ -64,29 +63,15 @@ interface CollectingProps extends CommonProps {
   dataFloor?: string;
 }
 
-const TIER_LABEL: Record<IntelligenceMinTier, string> = {
-  standard: "Standard",
-  pro: "Pro",
-  business: "Business",
-  data_plan: "Data Plan",
-};
-
-function tierBadgeClass(tier: IntelligenceMinTier): string {
-  if (tier === "business" || tier === "data_plan") return "bg-violet-100 text-violet-700";
-  if (tier === "pro") return "bg-blue-100 text-blue-700";
-  return "bg-slate-200 text-slate-700";
-}
-
 /**
- * Standard-tier (or any tier below `minTier`) view of an Intelligence
- * report card. Renders the report shell with a tier-locked badge + CTA.
+ * The view of an Intelligence report card when the plan does not include it.
+ * Renders the report shell with a "Requires <needs>" badge + CTA.
  */
 export function LockedIntelligenceCard({
-  name, description, icon: Icon = Lock, minTier, lockReason, ctaTarget = "/pricing", ctaLabel, onOpen,
+  name, description, icon: Icon = Lock, needs, lockReason, ctaTarget = "/pricing", ctaLabel, onOpen,
 }: LockedProps) {
-  const tierName = TIER_LABEL[minTier];
-  const badgeClass = tierBadgeClass(minTier);
-  const label = ctaLabel || `Upgrade to ${tierName}`;
+  const needsLabel = String(needs || "").trim() || "a higher plan";
+  const label = ctaLabel || `Upgrade to ${needsLabel}`;
   return (
     <button
       onClick={onOpen}
@@ -99,8 +84,8 @@ export function LockedIntelligenceCard({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="font-semibold text-sm text-slate-900">{name}</span>
-            <span className={`text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded ${badgeClass}`}>
-              {minTier === "data_plan" ? "data plan" : minTier}
+            <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-violet-100 text-violet-700">
+              Not in your plan
             </span>
           </div>
           <p className="text-[10px] text-slate-500 mt-0.5 line-clamp-2">{description}</p>
@@ -112,7 +97,7 @@ export function LockedIntelligenceCard({
           <span className="text-2xl font-bold text-slate-300">—</span>
           <span className="flex items-center gap-1 text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-200 text-slate-500">
             <Lock className="h-3 w-3" />
-            Requires {minTier === "data_plan" ? "Data Plan" : tierName}
+            Requires {needsLabel}
           </span>
         </div>
         <ArrowRight className="h-4 w-4 text-slate-400" />

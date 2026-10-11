@@ -100,9 +100,6 @@ export interface LocationBreakdownRow {
   [metric: string]: unknown;
 }
 
-/** Plan that unlocks a second location (decisions 2026-08-21: Business = $349.99). */
-export const MULTI_LOCATION_PLAN_LABEL = "OLIVER Business";
-
 // ─── Query helpers ──────────────────────────────────────────────────────────
 
 /** Append query params to a path that may or may not already carry a `?`. Empty values are skipped. */

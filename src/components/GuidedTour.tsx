@@ -882,7 +882,7 @@ export const ARION_QUICK_TOUR: TourDef = {
     },
     {
       title: "Business Profile — Posts",
-      body: "Schedule GBP posts — events, updates, offers. Pro+ feature.",
+      body: "Schedule GBP posts — events, updates, offers.",
       targetSelector: "a[href='/app/services/arion_business_posts']",
       placement: "right",
     },

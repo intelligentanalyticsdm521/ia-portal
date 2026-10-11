@@ -36,6 +36,7 @@ import { useOliverRole } from "../../hooks/useOliverRole";
 import { useEffectiveTenantId } from "../../lib/tenantContext";
 import { StellaShell, STELLA_INDIGO, STELLA_LAVENDER } from "./StellaShell";
 import { StellaDashboardView } from "./StellaDashboardView";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import type { StellaSetupStep } from "./stellaSetupSteps";
 import { browserStorage, loadStellaSetup } from "./stellaSetupLoad";
 import {
@@ -56,6 +57,7 @@ type Paged = { pagination?: { total?: number } };
 export function StellaDashboardPage() {
   const { get, getFull, ready } = useStellaApi();
   const { roleInfo } = useOliverRole();
+  const featureGate = useFeatureGate();
   const businessId = useEffectiveTenantId();
   const [setupSteps, setSetupSteps] = useState<StellaSetupStep[] | null>(null);
   const [needs, setNeeds] = useState<NeedTile[] | null>(null);
@@ -141,7 +143,7 @@ export function StellaDashboardPage() {
           </button>
         </div>
       ) : needs ? (
-        <StellaDashboardView setupSteps={setupSteps} needs={needs} allowedServiceKeys={roleInfo.allowedServiceKeys} />
+        <StellaDashboardView setupSteps={setupSteps} needs={needs} allowedServiceKeys={roleInfo.allowedServiceKeys} features={featureGate.features} />
       ) : null}
     </StellaShell>
   );

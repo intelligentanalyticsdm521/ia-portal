@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Line, Bar, Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import {
   ARION_COLORS,
@@ -25,7 +26,10 @@ export function AnalyticsOverview() {
   const [period, setPeriod] = useState(30);
   const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
-  const canCompare = tier === 'pro' || tier === 'business';
+  // Comparing with the previous period is part of this page (catalog key
+  // arion_analytics_overview); the plan question is the page's own, never a tier written here.
+  const featureGate = useFeatureGate();
+  const canCompare = featureGate.allows('arion_analytics_overview');
 
   const { data, loading } = useAnalyticsData(activeSiteId, period, compare);
 

@@ -1933,7 +1933,7 @@ function Step4BusinessProfile({ profile, setProfile, businessName, setBusinessNa
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">
             Phone
-            <InfoTip text="Used on OLIVER customer-facing invoices/portals and SPARK SMS sender (Pro tier). Auto-formats as you type." />
+            <InfoTip text="Used on OLIVER customer-facing invoices/portals and the SPARK SMS sender. Auto-formats as you type." />
           </label>
           <PhoneInput value={profile.phone}
             onChange={(v) => setProfile({ ...profile, phone: v })}

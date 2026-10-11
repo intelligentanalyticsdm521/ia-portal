@@ -42,7 +42,7 @@ export function StellaMileageMaterialsPage() {
           phase="P3"
           tier="Pro"
           note="Track materials purchased for jobs so they flow into per-job costing and unit economics."
-          bullets={["Per-job materials capture", "Feeds job-level margin", "Pro tier and above"]}
+          bullets={["Per-job materials capture", "Feeds job-level margin"]}
         />
       )}
     </StellaShell>

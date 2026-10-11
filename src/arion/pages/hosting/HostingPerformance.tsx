@@ -4,7 +4,6 @@ import { useArionContext } from '../../useArionContext';
 
 export function HostingPerformance() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const currentTier = selectedSite?.arionTier || 'standard';
 
   const [desktopResult, setDesktopResult] = useState<any>(null);
   const [mobileResult, setMobileResult] = useState<any>(null);
@@ -34,7 +33,7 @@ export function HostingPerformance() {
   const bestPractices = activeResult?.bestPractices ?? null;
 
   return (
-    <TierGate currentTier={currentTier} requiredTier="pro" featureName="PageSpeed Insights">
+    <TierGate featureKey="arion_hosting_performance" featureName="PageSpeed Insights">
       <div>
         <Card title="Website Speed Test">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>

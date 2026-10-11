@@ -28,7 +28,7 @@ import { Plug, Unplug, AlertTriangle, RefreshCcw, Lock, ShieldCheck, Loader2 } f
 import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
-import { useMyBrandTier, MY_BRAND_FEATURE_TIERS } from "../../hooks/useMyBrandTier";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { isTierGateError } from "../../hooks/useOliverApi";
 import { useUserAccess } from "../../hooks/useUserAccess";
@@ -58,10 +58,9 @@ interface PlatformDef {
   initials: string;  // 1-2 char fallback glyph (lucide v1.8 ships no brand icons)
 }
 
-// Each platform's connect button is tier-gated. The featureKey here matches
-// LUMEN-API src/lib/myBrand/tierCheck.js FEATURE_MIN_TIER:
-//   social_connect_facebook  / instagram → standard
-//   social_connect_x         / linkedin  → pro
+// Each platform's connect button names its catalog key (platform-api
+// core.features; LUMEN refuses POST /social-accounts on the same key). The
+// plan each one needs is the catalog's, never stated here.
 // LAUNCH STATE (Brandon 2026-08-06). A network only appears here once we can
 // actually connect it — a Connect button that errors is worse than no button.
 //
@@ -78,16 +77,17 @@ interface PlatformDef {
 //                         tier, and it's behind TikTok in value. Revisit with
 //                         TikTok later.
 const PLATFORMS: Array<PlatformDef & {
-  featureKey: keyof typeof MY_BRAND_FEATURE_TIERS;
+  /** The catalog key for connecting this network. */
+  featureKey: string;
   /** Shown but not connectable, with a reason. */
   comingSoon?: string;
   /** Not shown at all. */
   hidden?: boolean;
 }> = [
-  { key: "facebook",  name: "Facebook",  brand: "#1877F2", initials: "f",  featureKey: "social_connect_facebook" },
-  { key: "instagram", name: "Instagram", brand: "#E4405F", initials: "IG", featureKey: "social_connect_instagram" },
-  { key: "x",         name: "X",         brand: "#0F1419", initials: "X",  featureKey: "social_connect_x", hidden: true },
-  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in", featureKey: "social_connect_linkedin",
+  { key: "facebook",  name: "Facebook",  brand: "#1877F2", initials: "f",  featureKey: "my_brand_social_connect_facebook" },
+  { key: "instagram", name: "Instagram", brand: "#E4405F", initials: "IG", featureKey: "my_brand_social_connect_instagram" },
+  { key: "x",         name: "X",         brand: "#0F1419", initials: "X",  featureKey: "my_brand_social_connect_x", hidden: true },
+  { key: "linkedin",  name: "LinkedIn",  brand: "#0A66C2", initials: "in", featureKey: "my_brand_social_connect_linkedin",
     comingSoon: "Coming soon — we're completing LinkedIn's partner approval." },
 ];
 
@@ -134,10 +134,10 @@ function formatDate(iso: string | null): string {
 export function SocialChannelsPage() {
   const { activeTenantId } = useAppState();
   const { getToken } = useAccessToken();
-  // Per-platform tier gate. We don't lock the whole page (the connection list
-  // is informational); instead each card shows its own Lite/Pro lock. Backend
-  // mirrors this with requireTier(featureKeyForProvider()) on POST /social-accounts.
-  const gate = useMyBrandTier();
+  // Per-network plan gate. We don't lock the whole page (the connection list
+  // is informational); instead each card shows its own lock with the
+  // catalog's `needs`. LUMEN refuses POST /social-accounts on the same key.
+  const gate = useFeatureGate();
   const [connections, setConnections] = useState<SocialConnection[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -328,8 +328,8 @@ export function SocialChannelsPage() {
             const conn = byPlatform.get(def.key) ?? null;
             // Coming-soon networks render the card (so people can see it's
             // planned) but can't be connected — the OAuth would fail anyway.
-            const locked = !!def.comingSoon || (gate.ready && !gate.meets(def.featureKey));
-            const requiredTier = gate.requiredTier(def.featureKey);
+            const locked = !!def.comingSoon || gate.locked(def.featureKey);
+            const needs = gate.needs(def.featureKey);
             return (
               <ChannelCard
                 key={def.key}
@@ -341,7 +341,7 @@ export function SocialChannelsPage() {
                 onDisconnect={() => conn && disconnectConnection(conn)}
                 locked={locked}
                 comingSoon={def.comingSoon}
-                requiredTier={requiredTier}
+                needs={needs}
               />
             );
           })}
@@ -365,11 +365,12 @@ export function SocialChannelsPage() {
 // (separate from the wave-4 settings JSON in lumen.tenant_settings; the
 // dispatcher reads exclusively from the new table — see migration 057 +
 // LUMEN-API src/lib/myBrand/approvalGate.js).
-// Tier: enabling it is gated server-side on `social_approval_workflow` (My
-// Brand — ARION Business; tierCheck.js). Distinct from the SPARK
-// `approval_workflow` key that fronts the /approvals queue (SPARK Business).
+// Plan: enabling it is gated server-side on the catalog key
+// `my_brand_social_approval_workflow`. Distinct from the SPARK
+// `spark_approvals` key that fronts the /approvals queue.
 function ApprovalWorkflowToggle() {
   const lumen = useLumenApi();
+  const gate = useFeatureGate();
   const access = useUserAccess();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -420,9 +421,8 @@ function ApprovalWorkflowToggle() {
     } catch (err) {
       setState((s) => ({ ...s, approval_required: prev })); // rollback
       if (isTierGateError(err)) {
-        // 403 { error: "tier_required", feature: "social_approval_workflow" }.
-        const tierLabel = String(err.tierRequired || "business");
-        setError(err.message || `Approval Workflow requires the ARION ${tierLabel.charAt(0).toUpperCase()}${tierLabel.slice(1)} plan.`);
+        // 403 { error: "feature_not_in_plan", feature: "my_brand_social_approval_workflow", needs }.
+        setError(err.message || `Not in your plan. Approval Workflow needs ${err.needs || gate.needs("my_brand_social_approval_workflow")}.`);
       } else {
         setError((err as Error)?.message || "Failed to save");
       }
@@ -456,7 +456,7 @@ function ApprovalWorkflowToggle() {
               className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60 ${
                 state.approval_required ? "bg-emerald-500" : "bg-slate-300"
               }`}
-              title={state.locked ? "Locked on for agency-managed tenants" : undefined}
+              title={state.locked ? "Locked on for businesses your agency manages" : undefined}
             >
               <span
                 className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${
@@ -493,10 +493,11 @@ interface ChannelCardProps {
   locked?: boolean;
   /** Reason this network can't be connected yet (shown instead of Upgrade). */
   comingSoon?: string;
-  requiredTier?: string;
+  /** What to buy to connect it, in the catalog's words. */
+  needs?: string;
 }
 
-function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect, locked = false, comingSoon, requiredTier = "standard" }: ChannelCardProps) {
+function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisconnect, locked = false, comingSoon, needs = "a higher plan" }: ChannelCardProps) {
   const state: "none" | "active" | "expired" =
     !connection ? "none" :
     connection.status === "active" ? "active" :
@@ -547,11 +548,11 @@ function ChannelCard({ def, connection, busy, disconnectBusy, onConnect, onDisco
         )}
         {!comingSoon && locked && state === "none" && (
           <a
-            href={`/pricing?platform=my_brand&required=${encodeURIComponent(requiredTier)}`}
+            href="/pricing?platform=my_brand"
             className="inline-flex items-center gap-1.5 rounded-md bg-[#1A3A4A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#0B1C24]"
           >
             <Lock className="h-3.5 w-3.5" />
-            Upgrade to {requiredTier.charAt(0).toUpperCase() + requiredTier.slice(1)}
+            Upgrade to {needs}
           </a>
         )}
         {!locked && state === "none" && (

@@ -734,7 +734,7 @@ function NewRuleModal({
                         <span style={{ fontSize: 12, fontWeight: 700, color: disabled ? "#94A3B8" : "#0B1C24" }}>{m.display_name}</span>
                         {disabled && (
                           <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 99, background: "#EEF2FF", color: "#3730A3" }}>
-                            Pro+ · later
+                            Coming later
                           </span>
                         )}
                       </span>

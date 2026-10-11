@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, BarElement, ArcElement, Filler, Tooltip } from 'chart.js';
 import { Doughnut } from 'react-chartjs-2';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useAnalyticsData } from '../../analytics/useAnalyticsData';
 import {
   ARION_COLORS,
@@ -28,7 +29,10 @@ export function AnalyticsTraffic() {
   const [period, setPeriod] = useState(30);
   const [compare, setCompare] = useState<'none' | 'previous_period'>('previous_period');
   const periodOptions = PERIOD_OPTIONS[tier] || PERIOD_OPTIONS.standard;
-  const canCompare = tier === 'pro' || tier === 'business';
+  // Comparing with the previous period is part of this page (catalog key
+  // arion_analytics_traffic); the plan question is the page's own, never a tier written here.
+  const featureGate = useFeatureGate();
+  const canCompare = featureGate.allows('arion_analytics_traffic');
 
   const { data, loading } = useAnalyticsData(activeSiteId, period, compare);
 
@@ -297,7 +301,7 @@ export function AnalyticsTraffic() {
 
       {/* ── Landing Pages table (locked on Standard) ── */}
       <div style={{ position: 'relative' }}>
-        {tier === 'standard' && (
+        {featureGate.locked('arion_analytics_pages') && (
           <div style={{
             position: 'absolute',
             inset: 0,
@@ -310,9 +314,9 @@ export function AnalyticsTraffic() {
             justifyContent: 'center',
             padding: 24,
           }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>Upgrade to Pro</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1C24', marginBottom: 6 }}>Not in your plan</div>
             <p style={{ fontSize: 13, color: '#5A7A8A', margin: 0, textAlign: 'center', maxWidth: 320 }}>
-              Landing page analytics are available on the Pro tier and above.
+              Landing page analytics need {featureGate.needs('arion_analytics_pages')}.
             </p>
           </div>
         )}

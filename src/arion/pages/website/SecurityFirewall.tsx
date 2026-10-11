@@ -86,7 +86,7 @@ export function SecurityFirewall() {
 
       <ConsultingUpsell
         headline="IA monitors threats 24/7"
-        subtext="Advanced firewall management included with Pro+."
+        subtext="Advanced firewall management, done for you."
         serviceType="Security Remediation"
         triggerPage="security-firewall"
       />

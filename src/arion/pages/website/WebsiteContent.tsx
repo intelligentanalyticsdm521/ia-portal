@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell, meetsMinTier } from '../../components/Ui';
+import { StatCard, Card, Loading, EmptyPanel, ConsultingUpsell } from '../../components/Ui';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useArionContext } from '../../useArionContext';
 import { useArionData } from '../../useArionData';
 import { ReportButton } from '../../../components/insights/ReportButton';
@@ -25,11 +26,13 @@ export function WebsiteContent() {
   // drill-down and the Reports catalog render (Brandon 2026-08-14).
   const insights = useArionInsightsPayload();
 
-  // F-AI-WB Phase 1 (2026-06-20) — Pro+ gate on the IL block generator.
-  // Shows the buttons greyed-out with a link to the full AI Builder page
-  // (which carries the standard TierGate overlay + upgrade CTA) for lower tiers.
-  const arionTier = (selectedSite?.arionTier || 'lite') as string;
-  const ilEnabled = meetsMinTier(arionTier, 'pro');
+  // F-AI-WB Phase 1 (2026-06-20) — the builder entry point. 2026-10-11: it
+  // follows the catalog key arion_website_ai_builder (the AI Builder page's
+  // own key) instead of a Pro rule written here, which disagreed with the
+  // menu (the catalog opens the AI Builder on every ARION plan). A site with
+  // no tier read as Lite and locked a paying business out.
+  const featureGate = useFeatureGate();
+  const ilEnabled = featureGate.allows('arion_website_ai_builder');
 
   const fetchIfId = <T,>(fn: (s: string) => Promise<T>) =>
     activeSiteId ? fn(activeSiteId) : Promise.resolve(null);
@@ -120,7 +123,7 @@ export function WebsiteContent() {
           <div style={{ fontSize: 12, color: '#0B1C24', marginTop: 2 }}>
             {ilEnabled
               ? 'Write and publish a page in the builder. Ask ARGUS is inside it.'
-              : 'Write and publish a page in the builder. Ask ARGUS needs a plan above Lite.'}
+              : `Write and publish a page in the builder. Ask ARGUS needs ${featureGate.needs('arion_website_ai_builder')}.`}
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>

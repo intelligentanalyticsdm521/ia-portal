@@ -48,6 +48,7 @@ import { useAccessToken } from "../../auth/useAccessToken";
 import { useAppState } from "../../app/AppState";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { isTierGateError, type TierGateError } from "../../hooks/useOliverApi";
+import { planRefusalSentence } from "../../lib/planRefusal";
 import { emergencyActAsHeaders } from "../../lib/emergencyActAs";
 import { IadmModal, IadmButton } from "../IadmModal";
 
@@ -626,7 +627,7 @@ export function SocialComposerModal({
     } catch (err: unknown) {
       if (isTierGateError(err)) {
         const g = err as TierGateError;
-        setError(`This action requires the ${g.tierRequired} plan (you're on ${g.currentTier}).`);
+        setError(planRefusalSentence(g));
       } else {
         const msg = (err as Error)?.message || "Submit failed";
         // Friendly hint for the known wave-2 backend gap.

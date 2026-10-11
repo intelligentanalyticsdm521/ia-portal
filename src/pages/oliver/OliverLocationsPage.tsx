@@ -1,11 +1,11 @@
 // OliverLocationsPage — Settings → OLIVER → Locations.
 //
-// Multi-location is the feature that earns OLIVER Business ($349.99,
-// PRICING_REWORK_DECISIONS 2026-08-21). Every business has one default
-// location (auto-created + backfilled server-side) which is viewable and
-// editable at every tier; the SECOND location is what Business unlocks.
-// The "Add location" button therefore locks below Business with the same
-// upgrade copy the nav wall uses — the API 402s underneath regardless.
+// Every business has one default location (auto-created + backfilled
+// server-side) which is viewable and editable on every plan; the SECOND
+// location is the catalog row oliver_multi_location. The "Add location"
+// button locks when the plan answer refuses that row and names the catalog's
+// `needs` (useOliverLocations().multiLocationNeeds), the same words the nav
+// wall uses — the API refuses underneath regardless.
 //
 // Hide-not-delete: "Deactivate" is the only removal. A location that still
 // owns jobs or workers asks where they should move first (reassign_to).
@@ -18,7 +18,6 @@ import { OliverPageWrapper } from "../../components/OliverPageWrapper";
 import { PageHeader, DataTable, EmptyState, Button, type Column } from "../../components/oliver/ui";
 import { productColor } from "../../config/productTheme";
 import {
-  MULTI_LOCATION_PLAN_LABEL,
   isLocationTierError,
   isMemberOf,
   locationAddressLine,
@@ -186,7 +185,7 @@ export function OliverLocationsPage() {
   const addButton = loc.canAddLocation ? (
     <Button variant="primary" onClick={onAddClick}><Plus size={12} /> Add location</Button>
   ) : (
-    <Button variant="secondary" onClick={onAddClick} title={`Requires ${MULTI_LOCATION_PLAN_LABEL}`}>
+    <Button variant="secondary" onClick={onAddClick} title={`Requires ${loc.multiLocationNeeds}`}>
       <Lock size={12} /> Add location
       <span style={{ marginLeft: 6, fontSize: 9, fontWeight: 700, letterSpacing: 0.4, padding: "1px 6px", borderRadius: 999, background: `${OLIVER}22`, color: "#8A5A00" }}>UPGRADE</span>
     </Button>
@@ -213,7 +212,7 @@ export function OliverLocationsPage() {
         </Banner>
       )}
 
-      {showUpgrade && <UpgradeCard onClose={() => setShowUpgrade(false)} />}
+      {showUpgrade && <UpgradeCard needs={loc.multiLocationNeeds} onClose={() => setShowUpgrade(false)} />}
 
       {!loc.locations.length ? (
         <EmptyState
@@ -233,7 +232,7 @@ export function OliverLocationsPage() {
           <div>New jobs, workers and invoices land on the location picked in the header (or the default). Workers can belong to several locations.</div>
           <div>Admins can limit a user to specific locations from <strong>Members</strong> here or from <strong>Team Access</strong>; users with no limit see everything.</div>
           {activeCount < 2 && !loc.canAddLocation && (
-            <div style={{ marginTop: 4 }}>A second location needs <strong>{MULTI_LOCATION_PLAN_LABEL}</strong>.</div>
+            <div style={{ marginTop: 4 }}>A second location needs <strong>{loc.multiLocationNeeds}</strong>.</div>
           )}
         </div>
       )}
@@ -288,7 +287,7 @@ function Banner({ tone, children }: { tone: "ok" | "err"; children: React.ReactN
 }
 
 /** Same copy as FeatureLocked / the nav wall, inline so the rest of the page stays usable. */
-function UpgradeCard({ onClose }: { onClose: () => void }) {
+function UpgradeCard({ needs, onClose }: { needs: string; onClose: () => void }) {
   return (
     <div role="status" style={{ marginBottom: 14, padding: 16, background: "#fff", borderRadius: 12, border: `1px solid ${OLIVER}55`, boxShadow: "0 4px 16px rgba(11,28,36,0.06)", display: "flex", gap: 14, alignItems: "flex-start" }}>
       <div style={{ width: 40, height: 40, borderRadius: 999, background: `${OLIVER}1A`, color: OLIVER, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -297,13 +296,13 @@ function UpgradeCard({ onClose }: { onClose: () => void }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <strong style={{ fontSize: 15, color: "#0B1C24" }}>Additional locations</strong>
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, padding: "2px 8px", borderRadius: 999, background: `${OLIVER}1A`, color: OLIVER }}>{MULTI_LOCATION_PLAN_LABEL.toUpperCase()}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.4, padding: "2px 8px", borderRadius: 999, background: `${OLIVER}1A`, color: OLIVER }}>{needs.toUpperCase()}</span>
         </div>
         <p style={{ margin: "6px 0 0", fontSize: 13, color: "#475569" }}>
           Run several branches from one account — each with its own jobs, team, invoices and reports.
         </p>
         <p style={{ margin: "8px 0 0", fontSize: 13, color: "#334155" }}>
-          This isn&apos;t included in your current plan. Upgrade to <strong>{MULTI_LOCATION_PLAN_LABEL}</strong> to turn it on.
+          This isn&apos;t included in your current plan. Upgrade to <strong>{needs}</strong> to turn it on.
         </p>
         <div style={{ marginTop: 12, display: "flex", gap: 12, alignItems: "center" }}>
           <a href="/app/settings/plan-pricing" style={{ padding: "7px 14px", borderRadius: 8, background: OLIVER, color: "#fff", fontSize: 13, fontWeight: 600, textDecoration: "none" }}>View plans</a>

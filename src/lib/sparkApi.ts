@@ -7,6 +7,7 @@ import { authScopes } from "../auth/msalConfig";
 import { acquireApiToken } from "./msalToken";
 import { emergencyActAsHeaders } from "./emergencyActAs";
 import { getCurrentTenantOverride } from "./tenantContext";
+import { planRefusalFromBody } from "./planRefusal";
 
 // Exported (2026-09-01): pages that hand the USER a LUMEN-API URL to paste
 // elsewhere — the tracking snippet, the iCal share link — used to re-derive
@@ -100,20 +101,10 @@ async function sparkFetch<T>(
     if (res.status === 403) {
       try {
         const body = JSON.parse(text);
-        // Same shapes as lumenApi.ts: requireSparkTier → "tier_upgrade_required"
-        // (requiredTier/currentTier) and tierCheck TierGateError →
-        // "tier_required" (required_tier/current_tier; feature
-        // "approval_workflow" fronts the SPARK Business /approvals queue).
-        // "feature_not_available" is the legacy name.
-        if (body.error === "tier_required" || body.error === "tier_upgrade_required" || body.error === "feature_not_available") {
-          throw {
-            type: "tier_gate" as const,
-            tierRequired: body.tier_required || body.requiredTier || "pro",
-            currentTier: body.current_tier || body.currentTier || "standard",
-            feature: typeof body.feature === "string" ? body.feature : undefined,
-            message: typeof body.message === "string" ? body.message : undefined,
-          };
-        }
+        // Same reader as lumenApi.ts (lib/planRefusal): the catalog refusal
+        // "feature_not_in_plan" and the older LUMEN shapes.
+        const refusal = planRefusalFromBody(body);
+        if (refusal) throw refusal;
       } catch (e) {
         if (typeof e === "object" && e !== null && "type" in e) throw e;
       }

@@ -104,17 +104,17 @@ export function DbEmpty({ title, reason }: { title: string; reason?: string }) {
 export function DbError({ error }: { error: unknown }) {
   if (!error) return null;
   if (isTierGateError(error)) {
-    // stellaApi throws the gate as { type, tierRequired, currentTier } — the
-    // camelCase shape, NOT the snake_case body the API sent.
-    const e = error as { tierRequired?: string; currentTier?: string };
+    // stellaApi throws the gate through lib/planRefusal: the catalog's
+    // `needs` when the API sent it, an older API's tier word otherwise.
+    const e = error as { tierRequired?: string; currentTier?: string; needs?: string | null };
     return (
       <div style={{ ...CARD, textAlign: "center", padding: "34px 24px" }}>
         <Lock size={22} color={STELLA_INDIGO} />
         <div style={{ fontSize: 14, fontWeight: 700, color: "#0B1C24", marginTop: 10 }}>
-          Database Manager is on {cap(e.tierRequired || "Standard")} and above
+          {e.needs ? `Database Manager needs ${e.needs}` : e.tierRequired ? `Database Manager is on ${cap(e.tierRequired)} and above` : "Database Manager is not in your plan"}
         </div>
         <div style={{ fontSize: 12, color: "#5A7A8A", marginTop: 6 }}>
-          Your plan is {cap(e.currentTier || "current")}. Upgrade to organise, tag and import your data.
+          {!e.needs && e.currentTier ? `Your plan is ${cap(e.currentTier)}. ` : ""}Upgrade to organize, tag and import your data.
         </div>
         <div style={{ marginTop: 14 }}>
           <a href="/app/billing" style={{

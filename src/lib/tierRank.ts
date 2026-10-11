@@ -16,9 +16,3 @@
 // definition. It is a doorway now, not a table.
 export type { TierKey } from './entitlements';
 export { RANK, rankOf, tierMeets } from './entitlements';
-
-// 2026-06-22 — Doc 64 §2 allows Standard-tier Intelligence reports
-// (simple_forecast/descriptive/basic_anomaly model classes). "standard" lets
-// per-report meta declare a Standard floor without the consumer falling
-// through to bg-slate-200 fallback styling.
-export type IntelMinTier = 'standard' | 'pro' | 'business';

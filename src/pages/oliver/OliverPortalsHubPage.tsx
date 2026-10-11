@@ -691,7 +691,7 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
       <div>
         <h3 className="text-sm font-semibold text-slate-900">Domain</h3>
         <p className="text-xs text-slate-600">
-          Your portal address is <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">{portalKind}.ia-dm.com/your-business/</code>, or bring your own custom domain (Pro+).
+          Your portal address is <code className="font-mono text-[11px] bg-slate-100 px-1 rounded">{portalKind}.ia-dm.com/your-business/</code>, or bring your own custom domain when your plan includes it.
         </p>
       </div>
 
@@ -743,7 +743,7 @@ function DomainTabStub({ portalKind, status, accent, onSaved }: { portalKind: Po
       </div>
 
       <div className="rounded-md border border-slate-200 bg-white p-3">
-        <div className="text-[10px] uppercase font-semibold text-slate-500 mb-2">Bind a custom domain (Pro+)</div>
+        <div className="text-[10px] uppercase font-semibold text-slate-500 mb-2">Bind a custom domain</div>
         <div className="text-[11px] text-slate-600 mb-2">
           Enter the hostname you want to use (e.g. <code className="font-mono bg-slate-100 px-1">portal.acme.com</code>).
           After you click Bind, the exact CNAME + TXT records you need to add at your DNS provider will appear below — with Copy buttons.

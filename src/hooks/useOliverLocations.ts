@@ -15,15 +15,17 @@
 // (backend not deployed yet) or any load error resolves to an empty list —
 // same outcome. Nothing changes for them.
 //
-// Tier: the second location is what OLIVER Business pays for. `canAddLocation`
-// is true for the first location at every tier, true at Business, and TRUE
-// while the tier is unresolved (fail open, standing rule since 2026-08-17 —
-// the API still 402s underneath). `tierResolved` lets the picker avoid
-// appearing for a single-location business whose tier is merely unknown.
+// Plan: the second location is the catalog row oliver_multi_location
+// (2026-10-11: the one feature list; the tier is the catalog's, never written
+// here). `canAddLocation` is true for the first location on every plan, true
+// when the answer allows the row, and TRUE while it is undecided (adding a
+// location is a write: fail open, standing rule since 2026-08-17 — the API
+// still refuses underneath). `tierResolved` lets the picker avoid appearing
+// for a single-location business whose answer is merely unknown.
+// `multiLocationNeeds` is what to buy, in the catalog's words.
 import { useCallback, useEffect, useMemo, useReducer } from "react";
 import { useOliverApi } from "./useOliverApi";
-import { useProductTier } from "./useProductTier";
-import { tierMeets } from "../lib/tierRank";
+import { useFeatureGate } from "./useFeatureGate";
 import { useEffectiveTenantId } from "../lib/tenantContext";
 import {
   ALL_LOCATIONS,
@@ -96,7 +98,11 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
   const enabled = opts.enabled !== false;
   const { get, ready } = useOliverApi();
   const scope = (useEffectiveTenantId() || "").toLowerCase();
-  const { tier, ready: tierReady } = useProductTier("oliver");
+  const featureGate = useFeatureGate();
+  const multiEntry = featureGate.entry("oliver_multi_location");
+  const tierReady = featureGate.ready;
+  const multiAllowed = featureGate.allows("oliver_multi_location", "write");
+  const multiLocationNeeds = featureGate.needs("oliver_multi_location");
   const [, rerender] = useReducer((n: number) => n + 1, 0);
 
   useEffect(() => {
@@ -135,8 +141,8 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
 
   return useMemo(() => {
     const multi = isMultiLocation(locations);
-    const tierResolved = tierReady && tier != null;
-    const meetsBusiness = tier == null ? true : tierMeets(tier, "business"); // null → fail open
+    const tierResolved = tierReady && !!multiEntry && multiEntry.allowed !== null;
+    const meetsBusiness = multiAllowed; // undecided → fail open (a write)
     // `locations` includes inactive rows — the same count the API's POST gate uses.
     const canAddLocation = locations.length === 0 || meetsBusiness;
     // normalizeSelection already guarantees "all" for a single-location business.
@@ -153,14 +159,14 @@ export function useOliverLocations(opts: UseOliverLocationsOptions = {}) {
       multi,
       canAddLocation,
       tierResolved,
-      tier,
+      multiLocationNeeds,
       /** GET /locations has answered (success or failure). */
       ready: loaded,
       loading,
       error,
       reload,
     };
-  }, [locations, active, defaultLocation, selected, setSelected, reload, loaded, loading, error, tier, tierReady]);
+  }, [locations, active, defaultLocation, selected, setSelected, reload, loaded, loading, error, multiEntry, multiAllowed, multiLocationNeeds, tierReady]);
 }
 
 export type OliverLocationsState = ReturnType<typeof useOliverLocations>;

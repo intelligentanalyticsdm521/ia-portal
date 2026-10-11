@@ -29,6 +29,7 @@ export function OliverPageWrapper({ title, subtitle, error, loading, children }:
             </div>
           </div>
           <OliverUpgradeGate
+            needs={(error as TierGateError).needs}
             tierRequired={(error as TierGateError).tierRequired}
             currentTier={(error as TierGateError).currentTier}
             featureName={title}

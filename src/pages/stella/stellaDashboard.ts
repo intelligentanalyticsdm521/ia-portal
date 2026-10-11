@@ -371,9 +371,10 @@ export function needsFor(needs: NeedTile[], allowedServiceKeys: string[] | null)
 // Labels are the catalog's displayName (single pages) or the STELLA nav group's
 // label (whole areas); each route is that page, or the group's landing (its
 // first item — what clicking the group header opens). test/stella-dashboard
-// holds every label to the catalog and the nav so they cannot drift. `tag` is
-// the badge the nav shows on that group's items ("S" = the Standard plan), so
-// a business on a lower plan is not walked into an upgrade panel unwarned.
+// holds every label to the catalog and the nav so they cannot drift.
+// `badgeKey` is the catalog key whose plan badge the nav shows on that group's
+// first item (SubNav planBadge); the badge text is the catalog's min_tier,
+// read from the answer, so the shortcut and the menu say the same thing.
 
 export interface StellaShortcut {
   key: string;
@@ -381,8 +382,8 @@ export interface StellaShortcut {
   route: string;
   /** One short line on what is there. */
   detail: string;
-  /** The nav's plan badge for this area, when it has one. */
-  tag?: string;
+  /** The catalog key whose plan badge the nav shows for this area, when it shows one. */
+  badgeKey?: string;
 }
 
 export const STELLA_SHORTCUTS: StellaShortcut[] = [
@@ -391,9 +392,9 @@ export const STELLA_SHORTCUTS: StellaShortcut[] = [
   { key: "assets", label: "Assets", route: "/app/services/stella_assets", detail: "Vehicles, machines and tools the business owns." },
   { key: "budgets", label: "Budgets", route: "/app/services/stella_budgets", detail: "What you planned, beside what happened." },
   { key: "unit_economics", label: "Unit Economics", route: "/app/services/stella_ue_margins", detail: "Profit per job, per customer and per service." },
-  { key: "data", label: "Database Manager", route: "/app/services/stella_db_registry", detail: "Your data, imports, documents and reminders.", tag: "S" },
+  { key: "data", label: "Database Manager", route: "/app/services/stella_db_registry", detail: "Your data, imports, documents and reminders.", badgeKey: "stella_db_registry" },
   { key: "reports", label: "Reports", route: "/app/services/stella_ledger_reports", detail: "Profit and loss, balance sheet, cash flow and more." },
-  { key: "custom_reporting", label: "Custom Reporting", route: "/app/services/stella_report_library", detail: "Build, schedule and export reports of your own.", tag: "S" },
+  { key: "custom_reporting", label: "Custom Reporting", route: "/app/services/stella_report_library", detail: "Build, schedule and export reports of your own.", badgeKey: "stella_report_library" },
   { key: "settings", label: "Settings", route: "/app/services/stella_settings_bank", detail: "Bank and card accounts, sales tax and period close." },
 ];
 

@@ -19,7 +19,6 @@ type UiService = {
 
 export function BusinessServices() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = selectedSite?.arionTier || 'standard';
 
   const { data, loading, refetch } = useArionData(
     () => activeSiteId ? arionApi.getGbpServices(activeSiteId).catch((e: any) => ({ error: e.message })) : Promise.resolve(null),
@@ -85,7 +84,7 @@ export function BusinessServices() {
   };
 
   return (
-    <TierGate currentTier={tier} requiredTier="pro" featureName="Services & products management">
+    <TierGate featureKey="arion_business_services" featureName="Services & products management">
       {toast && (
         <div style={{ marginBottom: 12, padding: '8px 12px', borderRadius: 8, fontSize: 13, background: toast.startsWith('Save failed') ? '#FEE2E2' : '#DCFCE7', color: toast.startsWith('Save failed') ? '#991B1B' : '#166534' }}>
           {toast}

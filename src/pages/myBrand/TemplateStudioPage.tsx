@@ -28,7 +28,7 @@ import { ArrowRight, LayoutTemplate, PenTool, Plus, Trash2 } from "lucide-react"
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal } from "../../components/IadmModal";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
-import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import { useLumenApi } from "../../hooks/useLumenApi";
 import { StudioBuilder } from "../../builder/adapters/mybrand/StudioBuilder";
 import type { DesignDto, TemplateDto } from "../../builder/adapters/mybrand/scene";
@@ -58,7 +58,7 @@ export function TemplateStudioPage() {
   // ALL hooks run unconditionally — the tier-gate return lives BELOW them.
   // (The old page returned before ~20 hooks; when gate.ready flipped after
   // mount the hook count changed between renders and React crashed.)
-  const gate = useMyBrandTier();
+  const gate = useFeatureGate();
   const { get, del, ready } = useLumenApi();
 
   const [confirmDelete, setConfirmDelete] = useState<GalleryCard | null>(null);
@@ -159,7 +159,7 @@ export function TemplateStudioPage() {
   // Tier gate — the studio requires Standard+. Rendered through the shell so
   // the page header survives; the backend mirrors this with
   // requireTier("template_studio") on every templateStudio endpoint.
-  if (gate.ready && !gate.meets("template_studio")) {
+  if (gate.locked("my_brand_templates")) {
     return (
       <SparkPageShell
         title="Design Studio"
@@ -167,8 +167,7 @@ export function TemplateStudioPage() {
       >
         <MyBrandUpgradeGate
           featureName="Design Studio"
-          requiredTier={gate.requiredTier("template_studio")}
-          currentTier={gate.tier}
+          needs={gate.needs("my_brand_templates")}
         />
       </SparkPageShell>
     );

@@ -13,7 +13,6 @@ const REPORT_TEMPLATES = [
 
 export function AnalyticsReports() {
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
-  const tier = selectedSite?.arionTier || 'standard';
   const [results, setResults] = React.useState<Record<string, any>>({});
   const [loading, setLoading] = React.useState<Record<string, boolean>>({});
 
@@ -32,7 +31,7 @@ export function AnalyticsReports() {
 
   return (
     <div>
-      <TierGate currentTier={tier} requiredTier="pro" featureName="Curated analytics reports">
+      <TierGate featureKey="arion_analytics_reports" featureName="Curated analytics reports">
         <div className="muted" style={{ fontSize: 12, marginBottom: 12 }}>
           Reports compare current month vs last month when generated.
         </div>

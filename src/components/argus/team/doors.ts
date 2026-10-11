@@ -184,7 +184,7 @@ export function doorRowView(
 }
 
 /** OLIVER's codes for "your plan doesn't include this" (oliverApi maps three of them to tier_gate; automations answers tier_not_met). */
-const TIER_CODES = /^(tier_not_met|tier_gate|tier_required|tier_upgrade_required|feature_not_available)$/;
+const TIER_CODES = /^(feature_not_in_plan|tier_not_met|tier_gate|tier_required|tier_upgrade_required|feature_not_available)$/;
 
 /**
  * A refused door write, as a plain sentence (§0.3): a plan refusal says the

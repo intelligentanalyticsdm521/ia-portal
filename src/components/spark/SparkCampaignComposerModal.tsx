@@ -9,8 +9,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import { Mail, MessageSquare, ArrowRight, ArrowLeft, Sparkles, Trash2, AlertTriangle } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
 import { useOliverApi } from "../../hooks/useOliverApi";
-import { useAppState } from "../../app/AppState";
-import { isPlatformOwner } from "../../lib/currentPlan";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import { IadmModal, IadmButton } from "../IadmModal";
 import { MergeTagPicker, useMergeTagAutoComplete } from "./MergeTagPicker";
 import { MergeTagHint } from "./MergeTagHint";
@@ -143,15 +142,14 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
     post: <T>(p: string, body?: unknown) => Promise<T>;
   };
 
-  // F-CS.2 — IL Suggestions tab is Pro/Business only. Platform owner always
-  // qualifies (see lib/currentPlan.ts). We fetch /api/v1/usage when the modal
-  // opens to learn the tenant's current feature tier; while we don't have a
-  // value yet, the tab stays hidden so we don't flash it for Standard users.
-  const { activeTenantId } = useAppState();
-  const [tenantTier, setTenantTier] = useState<string | null>(null);
-  const suggestionsAllowed = isPlatformOwner(activeTenantId)
-    || tenantTier === "pro"
-    || tenantTier === "business";
+  // F-CS.2 — the IL Suggestions tab is the catalog row spark_campaign_suggest
+  // (2026-10-11: the one feature list). It used to compare the SPARK tier from
+  // /api/v1/usage against "pro"/"business" here and let the platform owner's
+  // id through by name; the catalog answer covers both (platform-api answers
+  // the platform owner as owning every product). While the answer is not in
+  // yet the tab stays hidden, so it never flashes for a plan without it.
+  const featureGate = useFeatureGate();
+  const suggestionsAllowed = featureGate.ready && featureGate.allows("spark_campaign_suggest");
 
   const [step, setStep] = useState<Step>("channel");
   const [channel, setChannel] = useState<Channel | null>(null);
@@ -315,13 +313,9 @@ export function SparkCampaignComposerModal({ open, onClose, onCreated, editCampa
       }
     }).catch(() => setSignatures([]));
 
-    // F-CS.2 — tier probe + suggestion-count probe.
-    // /api/v1/usage returns { data: { tier: 'standard'|'pro'|'business', ... } }.
-    // We fetch in parallel with the lists so opening the modal stays snappy;
-    // if either fails, the tab silently stays hidden.
-    get<{ data: { tier?: string } }>("/api/v1/usage")
-      .then((r) => setTenantTier(r?.data?.tier || null))
-      .catch(() => setTenantTier(null));
+    // F-CS.2 — suggestion-count probe (the plan half is the catalog answer
+    // above). Fetched in parallel with the lists so opening the modal stays
+    // snappy; if it fails, the tab silently stays hidden.
     const suggestionsPath = contactId
       ? `/api/v1/il/suggestions?contact_id=${contactId}&limit=1`
       : "/api/v1/il/suggestions?limit=1";

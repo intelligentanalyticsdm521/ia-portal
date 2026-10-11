@@ -31,12 +31,13 @@
 //     templates seed inside oliver-api. No waitFor() — the response is
 //     "done" or "failed".
 //
-//   • Portal white-label is tier-gated. Lite/Standard tenants get the
-//     IA-skinned default subdomain and the step short-circuits to done
-//     immediately. Pro/Business tenants get the full custom-domain hook,
-//     which posts to /portal-domains/bind and polls verify status. The
-//     step factory inspects the tier passed in and emits the right
-//     action() body so the orchestrator does the right thing.
+//   • Portal white-label follows the catalog row oliver_portal_domains.
+//     A business whose plan does not include it gets the IA-skinned
+//     default subdomain and the step short-circuits to done immediately.
+//     One whose plan includes it gets the full custom-domain hook, which
+//     posts to /portal-domains/bind and polls verify status. The step
+//     factory takes the catalog answer (customDomainAllowed) and emits the
+//     right action() body so the orchestrator does the right thing.
 //
 //   • Product catalog is a synchronous bulk add — the wizard captures
 //     the tenant's first batch of services/products in oliver.catalog and
@@ -99,7 +100,7 @@ interface OliverRunnerExtras {
   /** Customer + employee portal config from OliverPortalSection. */
   customer_portal?: Record<string, unknown>;
   employee_portal?: Record<string, unknown>;
-  /** Custom domain — only used for tier=pro|business. */
+  /** Custom domain — only used when the plan includes oliver_portal_domains. */
   custom_domain?: string | null;
   /** Catalog items captured by OliverCatalogSection. */
   catalog?: Array<{ name: string; price?: string | number | null }>;
@@ -277,28 +278,31 @@ function stepTemplates(): Step {
 }
 
 /* ──────────────────────────────────────────────────────────────────────
- * Step: portal_white_label — tier-gated.
+ * Step: portal_white_label — plan-gated (oliver_portal_domains).
  *
- *   Lite / Standard  → IA-skinned default subdomain; action() persists
+ *   Not in the plan  → IA-skinned default subdomain; action() persists
  *                      the welcome copy + portal toggles and returns
  *                      done immediately (no DNS work).
  *
- *   Pro / Business   → custom domain. action() posts to the same
+ *   In the plan      → custom domain. action() posts to the same
  *                      /onboarding/runner/portal-white-label endpoint
  *                      but with custom_domain set; the orchestrator
  *                      runs the bind + DNS verify side-effect. waitFor
  *                      polls the orchestrator status endpoint until
  *                      verified. Customers without a domain yet pass
  *                      custom_domain=null and stay on the default
- *                      subdomain (the same short-circuit Lite/Standard
- *                      takes).
+ *                      subdomain (the same short-circuit as a plan
+ *                      without it).
  *
- * The tier gate lives in the action() body itself — the wizard captures
- * the tier in ctx.tier so the orchestrator can short-circuit when the
- * tier is below Pro.
+ * 2026-10-11 (feature catalog): whether the custom-domain path runs is the
+ * catalog answer for oliver_portal_domains (custom domains, alias
+ * portal_custom_domain), decided by platform-api and passed in by the caller
+ * as `customDomainAllowed`. It is never a tier written here (this said
+ * Pro/Business while the catalog says Standard). The orchestrator still
+ * refuses a custom domain the plan does not include.
  * ────────────────────────────────────────────────────────────────────── */
-function stepPortalWhiteLabel(tier: OliverTier): Step {
-  const isCustomDomainTier = tier === "pro" || tier === "business";
+function stepPortalWhiteLabel(tier: OliverTier, customDomainAllowed: boolean): Step {
+  const isCustomDomainTier = customDomainAllowed === true;
   return {
     id: "oliver_portal_white_label",
     label_user_facing: "Configuring your portals",
@@ -404,6 +408,8 @@ function stepProductCatalog(): Step {
 interface OliverStepArgs {
   stripe_path: OliverStripePath;
   tier: OliverTier;
+  /** The catalog answer for oliver_portal_domains: true only when decided allowed. */
+  customDomainAllowed: boolean;
 }
 
 interface OliverWorkflowNode {
@@ -417,7 +423,7 @@ interface OliverWorkflowNode {
 export const OLIVER_WORKFLOW_MANIFEST: OliverWorkflowNode[] = [
   { id: "oliver_stripe_connect", build: ({ stripe_path }) => stepStripeConnect(stripe_path) },
   { id: "oliver_templates", build: () => stepTemplates() },
-  { id: "oliver_portal_white_label", build: ({ tier }) => stepPortalWhiteLabel(tier) },
+  { id: "oliver_portal_white_label", build: ({ tier, customDomainAllowed }) => stepPortalWhiteLabel(tier, customDomainAllowed) },
   { id: "oliver_service_catalog_seed", build: () => stepProductCatalog() },
 ];
 
@@ -430,15 +436,16 @@ export const OLIVER_WORKFLOW_MANIFEST: OliverWorkflowNode[] = [
  *   3. portal_white_label      (tier-gated custom domain)
  *   4. product_catalog         (synchronous bulk add or skip)
  *
- * Tier matrix (Brandon-locked 2026-06-23):
- *   • Lite / Standard → portal_white_label short-circuits to default subdomain
- *   • Pro / Business  → portal_white_label honors custom_domain in the payload
+ * Custom domain (the catalog row oliver_portal_domains):
+ *   • not allowed / undecided → portal_white_label uses the default subdomain
+ *   • allowed                 → portal_white_label honors custom_domain
  */
 export function buildOliverSteps(
   stripe_path: OliverStripePath,
   tier: OliverTier,
+  customDomainAllowed = false,
 ): Step[] {
-  const args: OliverStepArgs = { stripe_path, tier };
+  const args: OliverStepArgs = { stripe_path, tier, customDomainAllowed };
   return OLIVER_WORKFLOW_MANIFEST.map((n) => n.build(args));
 }
 

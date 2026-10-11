@@ -178,6 +178,37 @@ export function featureOf(payload: EntitlementPayload | null | undefined, key: s
 }
 
 /**
+ * What a gate may do with one feature, the same rule platform-api exports as
+ * featureGate(features, key, intent) and the four APIs enforce:
+ *   allowed true                      -> runs
+ *   allowed false                     -> refused (the screen names `needs`)
+ *   allowed null, or no entry at all  -> a READ or WRITE runs (a paying business
+ *                                        is never locked out by a hiccup); a
+ *                                        SEND, a cross-product write, a model
+ *                                        SPEND or a JOB is held
+ * No answer at all (features null) is undecided for every key.
+ */
+export type FeatureIntent = 'read' | 'write' | 'send' | 'cross_write' | 'spend' | 'job';
+const HOLD_WHEN_UNDECIDED: ReadonlySet<string> = new Set(['send', 'cross_write', 'spend', 'job']);
+
+export function featureAllows(
+  features: FeatureMap | null | undefined,
+  key: string,
+  intent: FeatureIntent = 'read',
+): boolean {
+  const entry = features?.[key];
+  if (entry && entry.allowed === false) return false;
+  if (entry && entry.allowed === true) return true;
+  return !HOLD_WHEN_UNDECIDED.has(intent);
+}
+
+/** What to buy for one feature, in the catalog's words ("SPARK Business"); null when nothing is named. */
+export function featureNeeds(features: FeatureMap | null | undefined, key: string): string | null {
+  const needs = features?.[key]?.needs;
+  return needs && String(needs).trim() ? String(needs) : null;
+}
+
+/**
  * The keys this business may open: every key the answer does not refuse
  * (allowed true or undecided) whose availability is live. This replaces the
  * hand-written per-product lists AppState used to build (ARION keys, OLIVER

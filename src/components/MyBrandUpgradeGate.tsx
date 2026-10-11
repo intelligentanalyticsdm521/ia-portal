@@ -1,65 +1,42 @@
 /**
- * MyBrandUpgradeGate — Tier-locked overlay for My Brand pages.
+ * MyBrandUpgradeGate — the "Not in your plan" card for a My Brand page or a
+ * section of one.
  *
- * Wave 3 of the My Brand stack (Brandon 2026-06-22). Mirrors
- * OliverUpgradeGate's blur-+-CTA pattern so the visual language is
- * consistent across products, but reads its required-tier copy from the
- * ServiceCatalog tierGate metadata via the `requiredTier` prop and links
- * to `/pricing?platform=my_brand&required=<tier>` (the My Brand purchase
- * flow). Use it whenever `useMyBrandTier()` reports the active SPARK tier
- * is below the feature's gate.
+ * Wave 3 of the My Brand stack (Brandon 2026-06-22), blur-+-CTA like
+ * OliverUpgradeGate. 2026-10-11 (feature catalog): the card states no tier of
+ * its own. The page names a catalog key, useFeatureGate() reads platform-api's
+ * answer for it, and this card shows the catalog's `needs` ("ARION Pro",
+ * "ARION Standard or SPARK"), the same words the menu lock and the API's
+ * refusal use.
  *
- * Two usage modes:
+ *   const gate = useFeatureGate();
+ *   if (gate.locked("my_brand_templates")) {
+ *     return <MyBrandUpgradeGate featureName="Template Studio" needs={gate.needs("my_brand_templates")} />;
+ *   }
  *
- *   1. Full-page lock (no chrome below it):
- *        <MyBrandUpgradeGate featureName="Template Studio" requiredTier="standard" currentTier={tier} />
- *
- *   2. Inline lock for a single section/card — pass `compact` to render a
- *      smaller card without the blurred placeholder grid:
- *        <MyBrandUpgradeGate compact ... />
+ * Pass `compact` for an inline lock inside an existing layout.
  */
-
-const TIER_LABELS: Record<string, string> = {
-  lite: "Lite",
-  standard: "Standard",
-  active: "Standard",
-  pro: "Pro",
-  business: "Business",
-  enterprise: "Enterprise",
-};
 
 export interface MyBrandUpgradeGateProps {
   /** Feature label shown in the headline, e.g. "Template Studio". */
   featureName: string;
-  /** Lowercase tier key the feature requires (matches FEATURE_MIN_TIER in LUMEN-API). */
-  requiredTier: "lite" | "standard" | "pro" | "business" | string;
-  /** Current tier badge to display. May be null (treated as Lite). */
-  currentTier?: string | null;
+  /** What to buy, in the catalog's words (useFeatureGate().needs(key)). */
+  needs: string;
   /** Smaller card, no blurred placeholder grid. Use inside an existing layout. */
   compact?: boolean;
   /** Override the default short description. */
   description?: string;
 }
 
-// Build the upgrade CTA URL. We default to the pricing page with both
-// platform and required-tier query params so the pricing page can pre-select
-// the matching plan card.
-function upgradeUrl(requiredTier: string): string {
-  const q = new URLSearchParams({ platform: "my_brand", required: requiredTier });
-  return `/pricing?${q.toString()}`;
-}
+const UPGRADE_URL = "/pricing?platform=my_brand";
 
 export function MyBrandUpgradeGate({
   featureName,
-  requiredTier,
-  currentTier,
+  needs,
   compact = false,
   description,
 }: MyBrandUpgradeGateProps) {
-  const requiredKey = String(requiredTier || "standard").toLowerCase();
-  const currentKey = String(currentTier || "lite").toLowerCase();
-  const requiredLabel = TIER_LABELS[requiredKey] || requiredKey;
-  const currentLabel = TIER_LABELS[currentKey] || currentKey;
+  const needsLabel = String(needs || "").trim() || "a higher plan";
 
   const card = (
     <div className="w-full max-w-lg rounded-2xl bg-white p-8 shadow-xl ring-1 ring-gray-200 text-center">
@@ -77,26 +54,25 @@ export function MyBrandUpgradeGate({
       <p className="mt-2 text-sm text-gray-600">
         {description || (
           <>
-            This feature requires the <span className="font-semibold text-[#1A3A4A]">{requiredLabel}</span> plan.
-            You are currently on the <span className="font-semibold">{currentLabel}</span> plan.
+            Not in your plan. This needs <span className="font-semibold text-[#1A3A4A]">{needsLabel}</span>.
           </>
         )}
       </p>
 
       <div className="mt-6">
         <a
-          href={upgradeUrl(requiredKey)}
+          href={UPGRADE_URL}
           className="inline-flex items-center gap-2 rounded-lg bg-[#1A3A4A] px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-[#0B1C24] transition-colors"
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M13 7l5 5m0 0l-5 5m5-5H6" />
           </svg>
-          Upgrade to {requiredLabel}
+          Upgrade to {needsLabel}
         </a>
       </div>
 
       <p className="mt-4 text-xs text-gray-400">
-        Upgrading unlocks {featureName.toLowerCase()} and every other {requiredLabel}-tier My Brand feature instantly.
+        Upgrading unlocks {featureName.toLowerCase()} right away.
       </p>
     </div>
   );

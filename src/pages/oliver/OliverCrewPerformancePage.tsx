@@ -288,7 +288,7 @@ export function OliverCrewPerformancePage() {
       {!crew.length ? (
         <EmptyState
           title="No performance data yet"
-          description="Once jobs are assigned to your team and completed, performance metrics appear here. Pro+ tenants can view crew performance reports."
+          description="Once jobs are assigned to your team and completed, performance metrics appear here."
         />
       ) : (
         <>

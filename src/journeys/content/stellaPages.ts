@@ -35,7 +35,7 @@ export const STELLA_PAGES: PageContentMap = {
       {
         title: "Go to",
         body:
-          "One tile for each main part of STELLA — the Ledger, Bills, Assets, Budgets, Unit Economics, the Database Manager, Reports, Custom Reporting and Settings — named exactly as they are in the menu on the left. An S badge means the part comes with the Standard plan, the same badge the menu shows.",
+          "One tile for each main part of STELLA — the Ledger, Bills, Assets, Budgets, Unit Economics, the Database Manager, Reports, Custom Reporting and Settings — named exactly as they are in the menu on the left. A plan badge names the plan the part comes with, the same badge the menu shows.",
         targetSelector: '[data-tour="stella-dashboard-shortcuts"]',
         placement: "top",
       },

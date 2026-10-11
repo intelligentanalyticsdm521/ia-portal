@@ -27,6 +27,7 @@ import {
   PieChart, Pie, Cell,
 } from 'recharts';
 import { useArionContext } from '../../useArionContext';
+import { useFeatureGate } from '../../../hooks/useFeatureGate';
 import { useArionData } from '../../useArionData';
 import { AddonUpsell, EmptyPanel, Loading, ConsultingUpsell, ErrorBanner } from '../../components/Ui';
 import { SeoRangePicker, SeoStatCard, SeoFilterPills } from '../../components/SeoUi';
@@ -50,6 +51,7 @@ export function SeoOverview() {
   // Reports covering THIS function (Brandon 2026-08-14). Declared above
   // any early return — a hook below one runs on some renders only.
   const insightsPayload = useArionInsightsPayload();
+  const featureGate = useFeatureGate();
 
   const { selectedSite, activeSiteId, arionApi } = useArionContext();
   const navigate = useNavigate();
@@ -144,17 +146,20 @@ export function SeoOverview() {
     value: Math.round((d.top1 || 0) * 0.27 + (d.top2_3 || 0) * 0.13 + (d.top4_5 || 0) * 0.075),
   }));
 
-  // Tier gating for AI cards — AI engine model AGREED 2026-08-21
-  // (PRICING_REWORK_DECISIONS_2026-08-21):
-  // - Google AI Overviews + Google AI Mode: Growth and above
-  // - ChatGPT / Gemini: Authority
-  // - Perplexity: IA Consulting only (never self-serve)
+  // Plan gating for AI cards. The Google AI pair is the catalog row
+  // arion_seo_ai_search (the SEO add-on at its addon_min_tier) and the AI
+  // prompts are arion_seo_ai_prompts, read from the answer (2026-10-11). The
+  // further rung for ChatGPT / Gemini is per engine and the catalog has no row
+  // for it: it stays the site's rung (AI engine model AGREED 2026-08-21,
+  // arion-api's engine.tierRequired on the AI Search page). Perplexity: IA
+  // Consulting only (never self-serve).
   const tier = (selectedSite?.seoAddonTier || '').toLowerCase();
+  const googleAiAllowed = featureGate.allows('arion_seo_ai_search') && !!tier;
   type AiGateReason = 'available' | 'upgrade_growth' | 'upgrade_authority' | 'consulting_only';
   const aiGateFor = (type: string | null): AiGateReason => {
     const t = (type || '').toLowerCase();
     if (t === 'ai_mode' || t === 'aimode' || t === 'google_ai_mode' || t === 'ai_overview' || t === 'google_ai_overview') {
-      return (tier === 'growth' || tier === 'authority') ? 'available' : 'upgrade_growth';
+      return googleAiAllowed ? 'available' : 'upgrade_growth';
     }
     if (t === 'chatgpt') return tier === 'authority' ? 'available' : 'upgrade_authority';
     if (t === 'gemini') return tier === 'authority' ? 'available' : 'upgrade_authority';
@@ -294,7 +299,7 @@ export function SeoOverview() {
       <ProjectSettingsCard
         tier={tier}
         standardCards={standardCanonicalCards}
-        aiPromptsAvailable={tier === 'growth' || tier === 'authority'}
+        aiPromptsAvailable={featureGate.allows('arion_seo_ai_prompts')}
         onNavigate={(p) => navigate(p)}
       />
 

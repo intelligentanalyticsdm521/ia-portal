@@ -53,6 +53,7 @@ export function SparkPageShell({
         <SparkPageHeader title={title} subtitle={subtitle} leading={leading} />
         <div className="spark-page-body">
           <OliverUpgradeGate
+            needs={(error as TierGateError).needs}
             tierRequired={(error as TierGateError).tierRequired}
             currentTier={(error as TierGateError).currentTier}
             featureName={title}

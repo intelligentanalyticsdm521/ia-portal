@@ -73,8 +73,9 @@ export const LEADGEN_ENABLED = true;
 //      has no Stripe subscription for. Ownership is still the gate; Stripe wins
 //      wherever a live subscription exists. Verified in prod: Cold Start =
 //      business on 5 products, Rolling In It = pro on 3, Midwest Ag = arion only.
-//   2. useProductTier still hard-bypasses to "business" for the founder inside
-//      his OWN tenant, so a hole in (1) cannot lock Brandon out again.
+//   2. platform-api answers the platform owner as owning every product
+//      (sources.is_agency), and every gate reads that one answer (the feature
+//      catalog, 2026-10-11; the founder bypass in useProductTier went with it).
 //
 // If this ever needs killing again, set false and redeploy — but fix the tier
 // RESOLUTION, not this flag.

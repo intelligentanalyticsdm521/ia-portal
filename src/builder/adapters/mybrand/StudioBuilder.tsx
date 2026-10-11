@@ -51,8 +51,7 @@ import { useLumenApi } from "../../../hooks/useLumenApi";
    store. */
 import { useOliverApi } from "../../../hooks/useOliverApi";
 import { useSparkApi } from "../../../hooks/useSparkApi";
-import { useProductTier } from "../../../hooks/useProductTier";
-import { tierMeets } from "../../../lib/tierRank";
+import { useFeatureGate } from "../../../hooks/useFeatureGate";
 import { PixelCanvas, type PixelCanvasHandle } from "./PixelCanvas";
 import { LayerInspector } from "./LayerInspector";
 import { TemplateGallery, type SavedTemplate } from "./TemplateGallery";
@@ -144,8 +143,19 @@ export function StudioBuilder(p: StudioBuilderProps) {
   const navigate = useNavigate();
   const { kit } = useBrandKit();
   const { active } = useAppState();
-  const { tier } = useProductTier("spark");
-  const hasProTools = tierMeets(tier, "pro");
+  // The studio's smart tools follow the one feature list (2026-10-11). Until
+  // then they read the SPARK tier and wrote "Pro" here, so an ARION Pro
+  // business without SPARK Pro was refused tools its My Brand plan includes.
+  // Brand Sync, Smart Resize and Remove background are one family on one plan
+  // (G-21 gated Resize like Brand Sync; the builder parity doc puts Brand
+  // Sync beside Remove background), and the catalog row for that family is
+  // my_brand_bg_remove. Brand Sync and Resize run in the browser,
+  // so they are a read; Remove background spends model credits, so it HOLDS
+  // while the plan is undecided.
+  const featureGate = useFeatureGate();
+  const hasProTools = featureGate.allows("my_brand_bg_remove");
+  const studioNeeds = featureGate.needs("my_brand_bg_remove");
+  const canRemoveBackground = featureGate.allows("my_brand_bg_remove", "spend");
 
   /* ── The business, as the studio needs it ────────────────────────────── */
   /**
@@ -1241,8 +1251,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
             onSetBackground={(c) => apply(setBackgroundColor(doc, c))}
             onBrandSync={() => apply(brandSync(doc, brandSwatches(brand).map((s) => s.colour)))}
             brandSyncAvailable={hasProTools}
+            brandSyncNeeds={studioNeeds}
+            removeBackgroundNeeds={featureGate.locked("my_brand_bg_remove") ? featureGate.needs("my_brand_bg_remove") : null}
             onRemoveBackground={
-              selected?.kind === "image" && (selected as ImageLayer).asset_id && hasProTools
+              selected?.kind === "image" && (selected as ImageLayer).asset_id && canRemoveBackground
                 ? (id) => void removeLayerBackground(id)
                 : undefined
             }
@@ -1379,10 +1391,10 @@ export function StudioBuilder(p: StudioBuilderProps) {
                     disabled={!hasProTools}
                     title={hasProTools
                       ? "Resize this design for another platform, or a size of your own — everything re-anchors itself"
-                      : "Resizing a finished design is a Pro feature"}
+                      : `Resizing a finished design needs ${studioNeeds}`}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
                   >
-                    <Scaling className="h-3 w-3" /> Resize{!hasProTools && " · Pro+"}
+                    <Scaling className="h-3 w-3" /> Resize{!hasProTools && ` · ${studioNeeds}`}
                   </button>
                   <div className="h-4 w-px bg-slate-200" />
                   <button
@@ -1390,11 +1402,11 @@ export function StudioBuilder(p: StudioBuilderProps) {
                     onClick={hasProTools ? () => apply(brandSync(doc, brandSwatches(brand).map((s) => s.colour))) : undefined}
                     disabled={!hasProTools}
                     title={hasProTools
-                      ? "Brand Sync — pull every colour in this design to the nearest colour in your brand. Undo puts it back."
-                      : "Brand Sync is a Pro feature"}
+                      ? "Brand Sync — pull every color in this design to the nearest color in your brand. Undo puts it back."
+                      : `Brand Sync needs ${studioNeeds}`}
                     className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:text-slate-300"
                   >
-                    <Palette className="h-3 w-3" /> Brand Sync{!hasProTools && " · Pro+"}
+                    <Palette className="h-3 w-3" /> Brand Sync{!hasProTools && ` · ${studioNeeds}`}
                   </button>
                 </div>
               }

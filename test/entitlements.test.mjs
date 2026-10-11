@@ -66,8 +66,12 @@ test('tierRank.ts no longer contains a table of numbers', () => {
   assert.match(code, /export \{ RANK, rankOf, tierMeets \} from '\.\/entitlements'/);
 });
 
-test('the hook reads platform-api, never Stripe and never oliver-api', () => {
-  const src = fs.readFileSync(path.join(ROOT, 'src', 'hooks', 'useProductTier.ts'), 'utf8');
+test('the gates read platform-api, never Stripe and never oliver-api; the per-product tier hook is gone', () => {
+  // 2026-10-11 (feature catalog): useProductTier had no caller left once every
+  // gate read features[key], and it still held a founder "business" bypass and
+  // a dev tier of its own, so it is deleted (replace means delete).
+  assert.equal(fs.existsSync(path.join(ROOT, 'src', 'hooks', 'useProductTier.ts')), false);
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'hooks', 'useProductAccess.ts'), 'utf8');
   const code = src.split('\n')
     .filter((l) => { const x = l.trim(); return !(x.startsWith('//') || x.startsWith('*') || x.startsWith('/*')); })
     .join('\n');
@@ -75,6 +79,7 @@ test('the hook reads platform-api, never Stripe and never oliver-api', () => {
   assert.doesNotMatch(code, /billingApi/);
   assert.match(code, /fetchEntitlements/);
   assert.match(code, /VITE_PLATFORM_API_BASE_URL/);
+  assert.match(fs.readFileSync(path.join(ROOT, 'src', 'hooks', 'useFeatureGate.ts'), 'utf8'), /useProductAccess\(pathname\)/);
 });
 
 /* ── payload readers ──────────────────────────────────────────────────────── */

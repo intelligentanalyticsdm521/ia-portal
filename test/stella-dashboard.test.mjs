@@ -314,11 +314,11 @@ const ALL_DONE = {
   bookedCount: 3, accountantPackDownloaded: true,
 };
 
-function render(setupSteps, needs, allowedServiceKeys = null) {
+function render(setupSteps, needs, allowedServiceKeys = null, features = null) {
   const err = console.error;
   console.error = () => {};
   try {
-    return renderToStaticMarkup(h(MemoryRouter, null, h(StellaDashboardView, { setupSteps, needs, allowedServiceKeys })));
+    return renderToStaticMarkup(h(MemoryRouter, null, h(StellaDashboardView, { setupSteps, needs, allowedServiceKeys, features })));
   } finally {
     console.error = err;
   }
@@ -375,10 +375,18 @@ describe("StellaDashboardView — the order on the page", () => {
   });
 
   test("nine shortcuts, one per main feature area, each a link; the plan badge where the nav shows one", () => {
-    const html = render(null, NEEDS);
+    // The badge is the catalog's min_tier from the answer (2026-10-11), never
+    // a letter written on the shortcut: with no answer there is no badge.
+    const features = {
+      stella_db_registry: { allowed: true, reason: "", needs: null, product: "stella", min_tier: "standard", addon: null, kind: "page", availability: "live" },
+      stella_report_library: { allowed: true, reason: "", needs: null, product: "stella", min_tier: "standard", addon: null, kind: "page", availability: "live" },
+    };
+    const html = render(null, NEEDS, null, features);
     assert.equal((html.match(/data-shortcut="/g) || []).length, 9);
     for (const s of STELLA_SHORTCUTS) assert.ok(html.includes(`href="${s.route}"`), s.label);
     assert.equal((html.match(/data-shortcut-tag="S"/g) || []).length, 2, "Database Manager and Custom Reporting");
+    assert.match(html, /title="Comes with the Standard plan"/);
+    assert.equal((render(null, NEEDS).match(/data-shortcut-tag=/g) || []).length, 0, "no answer: no badge");
     assert.match(html, /The main parts of STELLA, one click away\./);
     assert.doesNotMatch(html, /Every part of STELLA/);
   });
@@ -479,7 +487,7 @@ describe("an accountant sees only what their own nav holds (2 Oct 2026 review)",
   test("the page hands the person's nav allowlist to the view", () => {
     const page = read("pages/stella/StellaDashboardPage.tsx");
     assert.match(page, /const \{ roleInfo \} = useOliverRole\(\);/);
-    assert.match(page, /<StellaDashboardView setupSteps=\{setupSteps\} needs=\{needs\} allowedServiceKeys=\{roleInfo\.allowedServiceKeys\} \/>/);
+    assert.match(page, /<StellaDashboardView setupSteps=\{setupSteps\} needs=\{needs\} allowedServiceKeys=\{roleInfo\.allowedServiceKeys\} features=\{featureGate\.features\} \/>/);
   });
 });
 
@@ -535,8 +543,9 @@ describe("names and wiring a typecheck cannot see", () => {
       // The STELLA nav, or (for Settings) the Settings nav.
       const row = (stellaNav + settingsNav).match(new RegExp(`\\{ key: "${key}"[^\\n]*\\}`));
       assert.ok(row, `${s.label}: ${key} is in the nav`);
-      const navTag = (row[0].match(/tag: \{ label: "([^"]+)"/) || [])[1];
-      assert.equal(s.tag, navTag, `${s.label}: badge matches the nav`);
+      const navBadge = /planBadge: /.test(row[0]);
+      assert.equal(s.badgeKey ?? null, navBadge ? key : null, `${s.label}: badge matches the nav`);
+      assert.doesNotMatch(row[0], /tag: \{ label: "(S|Pro|Business)"/, `${s.label}: the nav writes no plan letter of its own`);
     }
   });
 

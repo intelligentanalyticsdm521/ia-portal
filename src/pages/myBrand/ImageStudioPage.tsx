@@ -38,7 +38,7 @@ import { IadmModal, IadmButton } from "../../components/IadmModal";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { SparkStatStrip } from "../../components/spark/SparkStatStrip";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
-import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 
 // ─── Types matching LUMEN-API lib/myBrand/imageStudio.js ────────────────────
 
@@ -178,7 +178,7 @@ export function ImageStudioPage() {
   // we know). The gated early-return lives BELOW every hook declaration —
   // rules of hooks: the hook count must not change between renders when
   // `gate.ready` flips after mount.
-  const gate = useMyBrandTier();
+  const gate = useFeatureGate();
 
   // Prompt panel state
   const [prompt, setPrompt] = useState("");
@@ -385,7 +385,7 @@ export function ImageStudioPage() {
     : false;
 
   // Tier gate — rendered through the shell so the page header survives.
-  if (gate.ready && !gate.meets("image_studio")) {
+  if (gate.locked("my_brand_image_studio")) {
     return (
       <SparkPageShell
         title="Image Studio"
@@ -393,8 +393,7 @@ export function ImageStudioPage() {
       >
         <MyBrandUpgradeGate
           featureName="Image Studio"
-          requiredTier={gate.requiredTier("image_studio")}
-          currentTier={gate.tier}
+          needs={gate.needs("my_brand_image_studio")}
         />
       </SparkPageShell>
     );

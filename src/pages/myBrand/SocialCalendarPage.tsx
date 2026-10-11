@@ -4,10 +4,11 @@
 // post across every connected channel in one of two views:
 //
 //   • List view  — spark-table with status + platform + search filters.
-//                  Standard tier only sees this (grid is gated to Pro+).
+//                  Catalog key my_brand_social_calendar_list.
 //   • Calendar   — month grid with platform-colored chips per post. Click a
 //                  chip to open the post-detail modal (edit / reschedule /
-//                  cancel). Pro+ unlocks drag-to-reschedule across days.
+//                  cancel) and drag-to-reschedule across days. Catalog key
+//                  my_brand_social_calendar_grid.
 //
 // The composer is a centered IadmModal (SocialComposerModal) launched from
 // "+ New post", the empty-state CTA, and the detail modal's "Edit in
@@ -21,9 +22,9 @@
 //
 // Fetch is keyed ONLY on the date window; status/platform/search filter
 // client-side in one useMemo (convention_data_fetching — no per-facet
-// refetch). Tier gate is informational — LUMEN-API also enforces
-// server-side; we toggle the default view (list for Standard, calendar for
-// Pro+) and disable the grid toggle on Lite/Standard.
+// refetch). The gate is informational — LUMEN-API enforces the same catalog
+// keys server-side; we toggle the default view (calendar when the plan
+// includes the grid, else list) and disable the grid toggle when it does not.
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
@@ -37,9 +38,7 @@ import {
   Share2,
 } from "lucide-react";
 import { useSparkApi } from "../../hooks/useSparkApi";
-import { useProductTier } from "../../hooks/useProductTier";
-import { tierMeets } from "../../lib/tierRank";
-import { useMyBrandTier } from "../../hooks/useMyBrandTier";
+import { useFeatureGate } from "../../hooks/useFeatureGate";
 import { MyBrandUpgradeGate } from "../../components/MyBrandUpgradeGate";
 import { SparkPageShell } from "../../components/spark/SparkPageShell";
 import { IadmModal, IadmButton } from "../../components/IadmModal";
@@ -188,19 +187,20 @@ interface SocialCalendarPageProps {
 // ── Page ──────────────────────────────────────────────────────────────────
 export function SocialCalendarPage({ initialComposerOpen = false, composerDefaults }: SocialCalendarPageProps = {}) {
   const { get, patch, del, ready } = useSparkApi();
-  const { tier, ready: tierReady } = useProductTier("spark");
-  // My Brand Wave 3 gate — Calendar requires Standard (list view). Lite
-  // tenants see the upgrade card; Standard+ continues into the existing
-  // list/grid logic where grid is further gated to Pro+. NOTE: the gate's
-  // early return lives BELOW every hook declaration — returning before the
-  // hooks made the hook count change when gate.ready flipped mid-session
-  // (rules-of-hooks crash).
-  const gate = useMyBrandTier();
-  // Calendar grid only unlocked at Pro+. Drag-to-reschedule also Pro+.
-  const hasCalendar = tierMeets(tier, "pro");
+  // My Brand gates, from the one feature list (2026-10-11): the list view is
+  // my_brand_social_calendar_list, the month grid and drag-to-reschedule are
+  // my_brand_social_calendar_grid. Both are judged on the My Brand plan by
+  // platform-api (this page read the SPARK tier until 11 Oct, so an ARION Pro
+  // business without SPARK Pro was refused a grid its plan includes). NOTE:
+  // the gate's early return lives BELOW every hook declaration — returning
+  // before the hooks made the hook count change when the answer arrived
+  // mid-session (rules-of-hooks crash).
+  const gate = useFeatureGate();
+  const tierReady = gate.ready;
+  const hasCalendar = gate.allows("my_brand_social_calendar_grid");
   const hasDrag = hasCalendar;
 
-  // Default view depends on tier — Standard starts in list, Pro+ in calendar.
+  // Default view follows the plan answer: calendar when the grid is included, else list.
   const [view, setView] = useState<View>("list");
   const [scope, setScope] = useState<GridScope>("month");
   const [cursor, setCursor] = useState<Date>(() => startOfMonth(new Date()));
@@ -365,13 +365,12 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
 
   // Tier gate — rendered through the shell so the sticky header survives,
   // mirroring the shell's own OliverUpgradeGate short-circuit shape.
-  if (gate.ready && !gate.meets("social_calendar_list")) {
+  if (gate.locked("my_brand_social_calendar_list")) {
     return (
       <SparkPageShell title={pageTitle} subtitle={pageSubtitle}>
         <MyBrandUpgradeGate
           featureName="Social Calendar"
-          requiredTier={gate.requiredTier("social_calendar_list")}
-          currentTier={gate.tier}
+          needs={gate.needs("my_brand_social_calendar_list")}
         />
       </SparkPageShell>
     );
@@ -381,13 +380,14 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
     <SparkPageShell
       title={pageTitle}
       subtitle={pageSubtitle}
-      help="One calendar for every scheduled, published, and failed post. Click a post to reschedule or cancel it; + New post opens the composer. Pro unlocks the month grid and drag-to-reschedule."
+      help="One calendar for every scheduled, published, and failed post. Click a post to reschedule or cancel it; + New post opens the composer."
       actions={
         <>
           <ViewToggle
             view={view}
             onChange={(v) => { setUserToggled(true); setView(v); }}
             hasCalendar={hasCalendar}
+            calendarNeeds={gate.needs("my_brand_social_calendar_grid")}
           />
           <button
             type="button"
@@ -509,10 +509,12 @@ export function SocialCalendarPage({ initialComposerOpen = false, composerDefaul
 }
 
 // ── View toggle (canon segmented control) ─────────────────────────────────
-function ViewToggle({ view, onChange, hasCalendar }: {
+function ViewToggle({ view, onChange, hasCalendar, calendarNeeds }: {
   view: View;
   onChange: (v: View) => void;
   hasCalendar: boolean;
+  /** The catalog's `needs` for the month grid ("ARION Pro"). */
+  calendarNeeds: string;
 }) {
   return (
     <div className="flex gap-1 rounded-lg bg-slate-100 p-1">
@@ -529,7 +531,7 @@ function ViewToggle({ view, onChange, hasCalendar }: {
         type="button"
         onClick={() => hasCalendar && onChange("calendar")}
         disabled={!hasCalendar}
-        title={hasCalendar ? "" : "Calendar view available on Pro+"}
+        title={hasCalendar ? "" : `Calendar view needs ${calendarNeeds}`}
         className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-medium transition-colors ${
           view === "calendar"
             ? "bg-white text-slate-900 shadow-sm"
@@ -538,7 +540,7 @@ function ViewToggle({ view, onChange, hasCalendar }: {
               : "text-slate-300 cursor-not-allowed"
         }`}
       >
-        <LayoutGrid className="h-3.5 w-3.5" /> Calendar {!hasCalendar && <span className="text-[10px]">Pro+</span>}
+        <LayoutGrid className="h-3.5 w-3.5" /> Calendar {!hasCalendar && <span className="text-[10px]">{calendarNeeds}</span>}
       </button>
     </div>
   );

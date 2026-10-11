@@ -683,7 +683,7 @@ describe("Sizes", () => {
     assert.equal(clampCanvasSide(1240.6), 1241);
   });
 
-  test("Smart Resize is Pro+, like Brand Sync beside it (G-21)", () => {
+  test("Smart Resize is gated like Brand Sync beside it, by the catalog's smart-tool row (G-21)", () => {
     const builder = STUDIO("StudioBuilder.tsx");
     // THE BUTTON ITSELF, not a window around it. Brand Sync sits immediately
     // beside Resize and carries its own `hasProTools`, so a loose slice reads
@@ -696,6 +696,9 @@ describe("Sizes", () => {
     assert.ok(button.includes("Resize"), "this is not the Resize button");
     assert.ok(button.includes("disabled={!hasProTools}"), "the Resize button is not disabled below Pro");
     assert.ok(/hasProTools\s*\?/.test(button), "the Resize button has no tier check on what it does");
-    assert.ok(button.includes("Pro+"), "the Resize button does not say it is a Pro feature");
+    assert.ok(button.includes("${studioNeeds}"), "the Resize button does not say what the plan needs");
+    assert.ok(!button.includes("Pro+"), "the Resize button states a tier of its own");
+    assert.match(builder, /const hasProTools = featureGate\.allows\("my_brand_bg_remove"\);/,
+      "the smart tools are not read from the catalog answer");
   });
 });
